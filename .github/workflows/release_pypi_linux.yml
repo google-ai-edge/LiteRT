@@ -25,7 +25,7 @@ jobs:
     name: Build and Release Python Wheel for Linux
     strategy:
       matrix:
-        docker-python-version: ['3.9', '3.10', '3.11']
+        docker-python-version: ['3.9', '3.10', '3.11', '3.12']
     runs-on:
       labels: Linux_runner_8_core
 
