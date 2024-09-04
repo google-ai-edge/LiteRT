@@ -1,0 +1,87 @@
+# YAML schema for GitHub Actions:
+# https://help.github.com/en/actions/automating-your-workflow-with-github-actions/workflow-syntax-for-github-actions
+#
+# Helpful YAML parser to clarify YAML syntax:
+# https://yaml-online-parser.appspot.com/
+#
+# This workflow will
+# 1. Build Python Wheel for MacOS
+# 2. Upload Release Asset
+
+name: Build and Release Python Package for MacOS
+
+on:
+  workflow_call:
+    inputs:
+      tensorflow-commit:
+        required: false
+        type: string
+      nightly-release-date:
+        required: false
+        type: string
+
+jobs:
+  build_release:
+    name: Build and Release Python Wheel for MacOS
+    strategy:
+      matrix:
+        runner: [macos-latest, macos-13]
+        python-version: ['3.9', '3.10', '3.11']
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set nightly release date
+        if: ${{ inputs.nightly-release-date != '' }}
+        run: |
+          DATE="${{ inputs.nightly-release-date }}"
+          echo "NIGHTLY_RELEASE_DATE=${DATE}" >> $GITHUB_ENV
+
+      - name: Init submodule
+        run: |
+          git submodule update --init --recursive
+
+      - name: Update submodule
+        if: ${{ inputs.tensorflow-commit != '' }}
+        run: |
+          git submodule update --remote
+
+          cd ./third_party/tensorflow
+          TF_COMMIT="${{ inputs.tensorflow-commit }}"
+          echo "checking out tensorflow-commit=${TF_COMMIT}"
+          git checkout -q ${TF_COMMIT}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools
+          python -m pip install build wheel numpy twine
+          python -m pip list
+
+      - name: Build package
+        run: |
+          cd ./third_party/tensorflow
+          rm -rf gen/litert_pip
+          mkdir -p gen/litert_pip
+
+          ../../ci/build_pip_package_with_bazel.sh
+
+      - name: Verify the distribution
+        run: twine check ./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl
+
+      - name: List the contents of the wheel
+        run: |
+          wheels="./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl"
+          for wheel in $wheels
+          do
+            echo "Listing $wheel"
+            python -m zipfile --list $wheel
+          done
+
+      - name: Upload to PyPI
+        run: twine upload ./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}

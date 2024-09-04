@@ -1,0 +1,73 @@
+# YAML schema for GitHub Actions:
+# https://help.github.com/en/actions/automating-your-workflow-with-github-actions/workflow-syntax-for-github-actions
+#
+# Helpful YAML parser to clarify YAML syntax:
+# https://yaml-online-parser.appspot.com/
+#
+# This workflow will run at the end of every day to
+# 1. Build Python Wheels
+# 2. Upload Release Assets
+
+name: Python Package Build and Release (nightly)
+
+on:
+  workflow_dispatch:  # Allow manual triggers
+    inputs:
+      is-prod-release:
+        description: 'True for prod release, false for nightly release'
+        required: false
+        default: 'false'
+  schedule:
+  - cron: "0 14 * * *" # 2PM UTC (7AM PT)
+
+jobs:
+  setup_env:
+    name: Build and Release Python Wheel Nightly
+    runs-on: ubuntu-latest
+
+    outputs:
+      tf_commit: ${{ steps.update_submodule.outputs.tf_commit }}
+      nightly_release_date: ${{ steps.date.outputs.date }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get and set nightly date
+        id: date
+        if: ${{ inputs.is-prod-release != 'true' }}
+        run: |
+          DATE=$(date +'%Y%m%d')
+          echo "date=${DATE}" >> $GITHUB_OUTPUT
+
+      - name: Init submodule
+        run: |
+          git submodule update --init --recursive
+
+      - name: Update submodule
+        id: update_submodule
+        if: ${{ inputs.is-prod-release != 'true' }}
+        run: |
+          git submodule update --remote
+
+          cd ./third_party/tensorflow
+          TF_COMMIT=$(git rev-parse HEAD)
+
+          echo "tf_commit=${TF_COMMIT}" >> $GITHUB_OUTPUT
+
+  build_linux:
+    name: Build Linux Wheel
+    needs: setup_env
+    uses: ./.github/workflows/release_pypi_linux.yml
+    secrets: inherit
+    with:
+      tensorflow-commit: ${{ needs.setup_env.outputs.tf_commit }}
+      nightly-release-date: ${{ needs.setup_env.outputs.nightly_release_date }}
+
+  build_macos:
+    name: Build MacOS Wheel
+    needs: setup_env
+    uses: ./.github/workflows/release_pypi_macos.yml
+    secrets: inherit
+    with:
+      tensorflow-commit: ${{ needs.setup_env.outputs.tf_commit }}
+      nightly-release-date: ${{ needs.setup_env.outputs.nightly_release_date }}
