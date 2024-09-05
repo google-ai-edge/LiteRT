@@ -142,6 +142,7 @@ function make_placeholder_jar() {
 # - 2. Artifact path
 # - 3. Version
 # - 4. --depends-api to add litert-api into dependencies
+# - 5. --depends-gpu-api to add litert-gpu-api into dependencies
 prepare_pom_and_artifact() {
   local PACKAGE="$1"
   local ARTIFACT_PATH="$2"
@@ -154,7 +155,7 @@ prepare_pom_and_artifact() {
   mv "${ARTIFACT_PATH}" "${DST_DIR}/${NAME}.aar"
 
   POM_FILE="${DST_DIR}/${NAME}.pom"
-  build_pom_file "${POM_FILE}" "${PACKAGE}" "${VERSION}" "$4"
+  build_pom_file "${POM_FILE}" "${PACKAGE}" "${VERSION}" "$4" "$5"
 
   # Source JAR, javadoc JAR and pgp signs are required to publish to OSSRH.
   # https://central.sonatype.org/publish/requirements/
