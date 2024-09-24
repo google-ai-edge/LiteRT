@@ -25,7 +25,7 @@ jobs:
     name: Build and Release Python Wheel for MacOS
     strategy:
       matrix:
-        runner: [macos-latest, macos-13]
+        runner: [macos-latest]
         python-version: ['3.9', '3.10', '3.11', '3.12']
     runs-on: ${{ matrix.runner }}
 
