@@ -138,8 +138,12 @@ cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/interpreter_wrapper/_pywr
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tensorflow/lite/python:schema_py
 
+mkdir "${BUILD_DIR}/ai_edge_litert/python"
+
 cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/schema_py_generated.py" \
-   "${BUILD_DIR}/ai_edge_litert"
+   "${BUILD_DIR}/ai_edge_litert/python/"
+
+touch "${BUILD_DIR}/ai_edge_litert/python/__init__.py"
 
 # Bazel generates the wrapper library with r-x permissions for user.
 # At least on Windows, we need write permissions to delete the file.

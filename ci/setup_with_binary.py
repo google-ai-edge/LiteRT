@@ -61,6 +61,7 @@ setup(
     package_dir={'': '.'},
     package_data={'': ['*.so', '*.pyd']},
     install_requires=[
+        'flatbuffers',
         'numpy >= 1.23.2',  # Better to keep sync with both TF ci_build
         # and OpenCV-Python requirement.
     ],
