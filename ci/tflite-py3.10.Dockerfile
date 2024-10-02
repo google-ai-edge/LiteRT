@@ -1,1 +1,1 @@
-FROM tensorflow/build:latest-python3.10
+FROM tensorflow/build:2.16-python3.10
