@@ -306,6 +306,7 @@ cc_library(
     visibility = [
         "//tflite:__pkg__",
         "//tflite/core:__subpackages__",
+        "@org_tensorflow//third_party/odml/infra:__subpackages__",
     ],
     deps = [
         "//tflite/c:common",
