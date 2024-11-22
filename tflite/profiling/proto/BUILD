@@ -1,0 +1,54 @@
+# Placeholder: load py_proto_library
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load(
+    "@org_tensorflow//tensorflow/core/platform:build_config.bzl",
+    "tf_proto_library",
+)
+
+package(
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    default_visibility = ["//visibility:public"],
+    licenses = ["notice"],
+)
+
+proto_library(
+    name = "profiling_info_proto",
+    srcs = ["profiling_info.proto"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = ["//visibility:public"],
+)
+
+proto_library(
+    name = "model_runtime_info_proto",
+    srcs = ["model_runtime_info.proto"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = ["//visibility:public"],
+    deps = [":profiling_info_proto"],
+)
+
+tf_proto_library(
+    name = "profiling_info",  # bzl adds _py
+    srcs = ["profiling_info.proto"],
+    visibility = ["//visibility:public"],
+)
+
+tf_proto_library(
+    name = "model_runtime_info",  # bzl adds _py
+    srcs = ["model_runtime_info.proto"],
+    protodeps = [":profiling_info"],
+    visibility = ["//visibility:public"],
+)
+
+# copybara:uncomment_begin(google-only)
+# py_proto_library(
+#     name = "profiling_info_py_pb2",
+#     compatible_with = get_compatible_with_portable(),
+#     deps = [":profiling_info_proto"],
+# )
+#
+# py_proto_library(
+#     name = "model_runtime_info_py_pb2",
+#     compatible_with = get_compatible_with_portable(),
+#     deps = [":model_runtime_info_proto"],
+# )
+# copybara:uncomment_end
