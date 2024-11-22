@@ -65,16 +65,15 @@ jobs:
 
       - name: Build package
         run: |
-          cd ./ci
-          rm -rf litert_pip
-          mkdir -p litert_pip
+          rm -rf ./ci/litert_pip
+          mkdir -p ./ci/litert_pip
 
           export DOCKER_PYTHON_VERSION="${{ matrix.docker-python-version }}"
           echo "docker python version: ${DOCKER_PYTHON_VERSION}"
 
-          ./build_pip_package_with_docker.sh
+          ./ci/build_pip_package_with_docker.sh
 
-          cp ../third_party/tensorflow/gen/litert_pip/python3/dist/*.whl litert_pip/
+          cp ./tflite/gen/litert_pip/python3/dist/*.whl ./ci/litert_pip/
 
       - name: Verify the distribution
         run: twine check ./ci/litert_pip/*.whl
@@ -89,4 +88,6 @@ jobs:
           done
 
       - name: Upload to PyPI
+        # TODO: Remove below line when switching to public repo.
+        if: false
         run: twine upload ./ci/litert_pip/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}

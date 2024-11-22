@@ -15,6 +15,8 @@
 # ==============================================================================
 set -ex
 
+# Run this script under the root directory.
+
 # Expected env variables:
 #  - (Optional) RELEASE_VERSION (default=0.0.0-nightly-SNAPSHOT)
 #
@@ -176,41 +178,41 @@ BUILD_FLAGS=("-c" "opt" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11")
 bazel build "${BUILD_FLAGS[@]}" \
-    //tensorflow/lite/java:tensorflow-lite-api \
-    //tensorflow/lite/java:tensorflow-lite \
-    //tensorflow/lite/java:tensorflow-lite-gpu-api \
-    //tensorflow/lite/java:tensorflow-lite-gpu \
-    //tensorflow/lite/acceleration/configuration:gpu_plugin \
-    //tensorflow/lite/acceleration/configuration:nnapi_plugin
-    # //tensorflow/lite/delegates/hexagon/java:tensorflow-lite-hexagon
+    //tflite/java:tensorflow-lite-api \
+    //tflite/java:tensorflow-lite \
+    //tflite/java:tensorflow-lite-gpu-api \
+    //tflite/java:tensorflow-lite-gpu \
+    //tflite/acceleration/configuration:gpu_plugin \
+    //tflite/acceleration/configuration:nnapi_plugin
+    # //tflite/delegates/hexagon/java:tensorflow-lite-hexagon
 
 export VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}"
 
 prepare_pom_and_artifact "litert-api" \
-    "bazel-bin/tensorflow/lite/java/tensorflow-lite-api.aar" "${VERSION}"
+    "bazel-bin/tflite/java/tensorflow-lite-api.aar" "${VERSION}"
 prepare_pom_and_artifact "litert" \
-    "bazel-bin/tensorflow/lite/java/tensorflow-lite.aar" "${VERSION}" \
+    "bazel-bin/tflite/java/tensorflow-lite.aar" "${VERSION}" \
     --depends-api
 prepare_pom_and_artifact "litert-gpu-api" \
-    "bazel-bin/tensorflow/lite/java/tensorflow-lite-gpu-api.aar" "${VERSION}"
+    "bazel-bin/tflite/java/tensorflow-lite-gpu-api.aar" "${VERSION}"
 prepare_pom_and_artifact "litert-gpu" \
-    "bazel-bin/tensorflow/lite/java/tensorflow-lite-gpu.aar" "${VERSION}" \
+    "bazel-bin/tflite/java/tensorflow-lite-gpu.aar" "${VERSION}" \
     --depends-api --depends-gpu-api
 # prepare_pom_and_artifact "litert-hexagon" \
-#     "bazel-bin/tensorflow/lite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
+#     "bazel-bin/tflite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
 #     "${VERSION}"
 
 if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
   # Build debug version of litert, litert-gpu
   bazel build "${BUILD_FLAGS[@]}" \
       --define=tflite_keep_symbols=true \
-      //tensorflow/lite/java:tensorflow-lite \
-      //tensorflow/lite/java:tensorflow-lite-gpu
+      //tflite/java:tensorflow-lite \
+      //tflite/java:tensorflow-lite-gpu
   prepare_pom_and_artifact "litert" \
-      "bazel-bin/tensorflow/lite/java/tensorflow-lite.aar" \
+      "bazel-bin/tflite/java/tensorflow-lite.aar" \
       "0.0.0-nightly-debug-SNAPSHOT" --depends-api
   prepare_pom_and_artifact "litert-gpu" \
-      "bazel-bin/tensorflow/lite/java/tensorflow-lite-gpu.aar" \
+      "bazel-bin/tflite/java/tensorflow-lite-gpu.aar" \
       "0.0.0-nightly-debug-SNAPSHOT" --depends-api
 fi
 
@@ -218,8 +220,8 @@ fi
 # bazel build "${BUILD_FLAGS[@]}" \
 #     --config=monolithic --define=TENSORFLOW_PROTOS=lite \
 #     --copt=-mno-sse4 --copt=-mno-sse4a --copt=-mno-sse4.1 --copt=-mno-sse4.2 \
-#     //tensorflow/lite/java:tensorflow-lite-select-tf-ops
+#     //tflite/java:tensorflow-lite-select-tf-ops
 
 # prepare_pom_and_artifact "litert-select-tf-ops" \
-#     "bazel-bin/tensorflow/lite/java/tensorflow-lite-select-tf-ops.aar" \
+#     "bazel-bin/tflite/java/tensorflow-lite-select-tf-ops.aar" \
 #     "${VERSION}"

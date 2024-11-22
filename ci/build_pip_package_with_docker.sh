@@ -17,16 +17,18 @@ set -ex
 
 DOCKER_PYTHON_VERSION="${DOCKER_PYTHON_VERSION:-3.11}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="${SCRIPT_DIR}/.."
 
-if [ ! -d /third_party_tensorflow ]; then
+if [ ! -d /root_dir ]; then
   # Running on host.
   cd ${SCRIPT_DIR}
   docker build . -t tflite-builder -f tflite-py${DOCKER_PYTHON_VERSION}.Dockerfile
 
   docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
+    -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
-    --entrypoint /script_dir/build_pip_package_with_docker.sh tflite-builder
+    tflite-builder /script_dir/build_pip_package_with_docker.sh
   exit 0
 else
   # Running inside docker container
@@ -44,6 +46,12 @@ else
     'N'
   )
   printf '%s\n' "${configs[@]}" | ./configure
+  cp .tf_configure.bazelrc /root_dir
 
+  python3 -m pip install pip setuptools wheel
+
+  export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
+
+  cd /root_dir
   bash /script_dir/build_pip_package_with_bazel.sh
 fi

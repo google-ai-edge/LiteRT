@@ -15,13 +15,13 @@
 # ==============================================================================
 set -ex
 
-# Run this script under the "third_party/tensorflow" directory.
+# Run this script under the root directory.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON="${CI_BUILD_PYTHON:-python3}"
 VERSION_SUFFIX=${VERSION_SUFFIX:-}
-export TENSORFLOW_DIR="$(pwd)"
-TENSORFLOW_LITE_DIR="${TENSORFLOW_DIR}/tensorflow/lite"
+export TENSORFLOW_DIR="./third_party/tensorflow"
+TENSORFLOW_LITE_DIR="./tflite"
 ARCH="$(uname -m)"
 
 export PACKAGE_VERSION="1.0.1"
@@ -32,7 +32,7 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   export PROJECT_NAME="${PROJECT_NAME}_nightly"
 fi
 
-BUILD_DIR="${TENSORFLOW_DIR}/gen/litert_pip/${PYTHON}"
+BUILD_DIR="${TENSORFLOW_LITE_DIR}/gen/litert_pip/${PYTHON}"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
 if [ "${TENSORFLOW_TARGET}" = "rpi" ]; then
   export TENSORFLOW_TARGET="armhf"
@@ -74,7 +74,6 @@ echo "__version__ = '${PACKAGE_VERSION}'" >> "${BUILD_DIR}/ai_edge_litert/__init
 echo "__git_version__ = '$(git -C "${TENSORFLOW_DIR}" describe)'" >> "${BUILD_DIR}/ai_edge_litert/__init__.py"
 
 # Build python interpreter_wrapper.
-cd "${BUILD_DIR}"
 case "${TENSORFLOW_TARGET}" in
   armhf)
     BAZEL_FLAGS="--config=elinux_armhf
@@ -91,7 +90,7 @@ case "${TENSORFLOW_TARGET}" in
       --define=raspberry_pi_with_neon=true"
     ;;
   aarch64)
-    BAZEL_FLAGS="--config=elinux_aarch64
+    BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
       --copt=-O3"
     ;;
@@ -123,6 +122,8 @@ case "${ARCH}" in
   arm64)
     BAZEL_FLAGS="${BAZEL_FLAGS} --linkopt="-ld_classic""
     ;;
+  aarch64)
+    ;;
   *)
     echo "Unsupported architecture: ${ARCH}"
     exit 1
@@ -130,15 +131,15 @@ case "${ARCH}" in
 esac
 
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tensorflow/lite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper
 
-cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/interpreter_wrapper/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}" \
+cp "bazel-bin/tflite/python/interpreter_wrapper/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}" \
    "${BUILD_DIR}/ai_edge_litert"
 
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tensorflow/lite/python:schema_py
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/python:schema_py
 
-cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/schema_py_generated.py" \
+cp "bazel-bin/tflite/python/schema_py_generated.py" \
    "${BUILD_DIR}/ai_edge_litert"
 
 # Bazel generates the wrapper library with r-x permissions for user.
@@ -147,7 +148,7 @@ cp "${TENSORFLOW_DIR}/bazel-bin/tensorflow/lite/python/schema_py_generated.py" \
 chmod u+w "${BUILD_DIR}/ai_edge_litert/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}"
 
 # Build python wheel.
-cd "${BUILD_DIR}"
+pushd "${BUILD_DIR}"
 case "${TENSORFLOW_TARGET}" in
   armhf)
     WHEEL_PLATFORM_NAME="${WHEEL_PLATFORM_NAME:-linux-armv7l}"
@@ -190,7 +191,8 @@ case "${TENSORFLOW_TARGET}" in
 esac
 
 echo "Output can be found here:"
-find "${BUILD_DIR}"
+popd
+find "${BUILD_DIR}/dist"
 
 # Build debian package.
 if [[ "${BUILD_DEB}" != "y" ]]; then

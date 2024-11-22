@@ -65,18 +65,14 @@ jobs:
 
       - name: Build package
         run: |
-          cd ./third_party/tensorflow
-          rm -rf gen/litert_pip
-          mkdir -p gen/litert_pip
-
-          ../../ci/build_pip_package_with_bazel.sh
+          ./ci/build_pip_package_with_bazel.sh
 
       - name: Verify the distribution
-        run: twine check ./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl
+        run: twine check ./tflite/gen/litert_pip/python3/dist/*.whl
 
       - name: List the contents of the wheel
         run: |
-          wheels="./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl"
+          wheels="./tflite/gen/litert_pip/python3/dist/*.whl"
           for wheel in $wheels
           do
             echo "Listing $wheel"
@@ -84,4 +80,6 @@ jobs:
           done
 
       - name: Upload to PyPI
-        run: twine upload ./third_party/tensorflow/gen/litert_pip/python3/dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        # TODO: Remove below line when switching to public repo.
+        if: false
+        run: twine upload ./tflite/gen/litert_pip/python3/dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}

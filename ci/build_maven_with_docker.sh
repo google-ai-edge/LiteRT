@@ -17,8 +17,9 @@ set -ex
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEN_DIR="gen"
+ROOT_DIR="${SCRIPT_DIR}/.."
 
-if [ ! -d /third_party_tensorflow ]; then
+if [ ! -d /root_dir ]; then
   # Running on host.
   cd ${SCRIPT_DIR}
   rm -fr ${GEN_DIR}
@@ -26,13 +27,14 @@ if [ ! -d /third_party_tensorflow ]; then
   docker build . -t tflite-builder -f tflite-android.Dockerfile
 
   docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
+    -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e RELEASE_VERSION=1.0.1 \
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
   echo "Output can be found here:"
   tree ${GEN_DIR}
-  
+
   exit 0
 else
   # Running inside docker container, download the SDK first.
@@ -58,6 +60,8 @@ else
     '/android/sdk'
   )
   printf '%s\n' "${configs[@]}" | ./configure
+  cp .tf_configure.bazelrc /root_dir
 
+  cd /root_dir
   bash /script_dir/build_android_package.sh
 fi
