@@ -80,6 +80,4 @@ jobs:
           done
 
       - name: Upload to PyPI
-        # TODO: Remove below line when switching to public repo.
-        if: false
         run: twine upload ./tflite/gen/litert_pip/python3/dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}
