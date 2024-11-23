@@ -24,11 +24,13 @@ if [ ! -d /root_dir ]; then
   cd ${SCRIPT_DIR}
   docker build . -t tflite-builder -f tflite-py${DOCKER_PYTHON_VERSION}.Dockerfile
 
+  chmod +x "${SCRIPT_DIR}/build_pip_package_with_docker.sh"
+
   docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
-    tflite-builder /script_dir/build_pip_package_with_docker.sh
+    tflite-builder bash -c "ls -l /script_dir && /script_dir/build_pip_package_with_docker.sh"
   exit 0
 else
   # Running inside docker container
