@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/delegates/utils/async_type_helpers.h"
 
 #include <cstring>
-#include <string_view>
 
 #include "tflite/async/interop/c/attribute_map.h"
 #include "tflite/async/interop/c/constants.h"
