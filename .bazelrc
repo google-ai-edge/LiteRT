@@ -355,3 +355,7 @@ try-import %workspace%/warnings.bazelrc
 # Options to build TensorFlow 1.x or 2.x.
 build:v2 --define=tf_api_version=2 --action_env=TF2_BEHAVIOR=1
 build --config=v2
+
+# Options to filter filepath prefixes when generating python api's
+build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
+build --config=litert_prefixes
