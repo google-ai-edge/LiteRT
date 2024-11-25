@@ -30,6 +30,7 @@ if [ ! -d /root_dir ]; then
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
+    -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
     tflite-builder bash -c "ls -l /script_dir && /script_dir/build_pip_package_with_docker.sh"
   exit 0
 else
