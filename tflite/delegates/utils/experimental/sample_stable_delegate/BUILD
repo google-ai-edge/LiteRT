@@ -153,7 +153,7 @@ genrule(
         echo '
             {
               "stable_delegate_loader_settings": {
-                "delegate_path": "tensorflow/lite/delegates/utils/experimental/sample_stable_delegate/libtensorflowlite_sample_stable_delegate.so"
+                "delegate_path": "tflite/delegates/utils/experimental/sample_stable_delegate/libtensorflowlite_sample_stable_delegate.so"
               }
             }
         ' > $@

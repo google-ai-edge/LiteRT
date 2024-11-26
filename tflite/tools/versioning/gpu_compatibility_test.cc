@@ -57,7 +57,7 @@ absl::Status CheckGpuDelegateCompatibility(const tflite::Model* model) {
 
 TEST(CheckGpuDelegateCompatibility, Conv2DModel) {
   const std::string& full_path = tensorflow::GetDataDependencyFilepath(
-      "tensorflow/lite/testdata/conv_huge_im2col.bin");
+      "tflite/testdata/conv_huge_im2col.bin");
   auto model = FlatBufferModel::BuildFromFile(full_path.data());
   ASSERT_TRUE(model);
   EXPECT_TRUE(CheckGpuDelegateCompatibility(model->GetModel()).ok());
@@ -65,7 +65,7 @@ TEST(CheckGpuDelegateCompatibility, Conv2DModel) {
 
 TEST(CheckGpuDelegateCompatibility, Conv3DModel) {
   const std::string& full_path = tensorflow::GetDataDependencyFilepath(
-      "tensorflow/lite/testdata/conv3d_huge_im2col.bin");
+      "tflite/testdata/conv3d_huge_im2col.bin");
   auto model = FlatBufferModel::BuildFromFile(full_path.data());
   ASSERT_TRUE(model);
   EXPECT_EQ(CheckGpuDelegateCompatibility(model->GetModel()).message(),
@@ -74,7 +74,7 @@ TEST(CheckGpuDelegateCompatibility, Conv3DModel) {
 
 TEST(CheckGpuDelegateCompatibility, FlexModel) {
   const std::string& full_path = tensorflow::GetDataDependencyFilepath(
-      "tensorflow/lite/testdata/multi_add_flex.bin");
+      "tflite/testdata/multi_add_flex.bin");
   auto model = FlatBufferModel::BuildFromFile(full_path.data());
   ASSERT_TRUE(model);
   EXPECT_EQ(CheckGpuDelegateCompatibility(model->GetModel()).message(),

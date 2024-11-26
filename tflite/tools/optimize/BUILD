@@ -231,7 +231,7 @@ tf_cc_test(
     name = "quantization_utils_test",
     srcs = ["quantization_utils_test.cc"],
     args = [
-        "--test_model_file=$(location //tensorflow/compiler/mlir/lite/quantization/lite:testdata/single_conv_weights_min_0_max_plus_10.bin)",
+        "--test_model_file=$(location @org_tensorflow//tensorflow/compiler/mlir/lite/quantization/lite:testdata/single_conv_weights_min_0_max_plus_10.bin)",
     ],
     data = [
         "@org_tensorflow//tensorflow/compiler/mlir/lite/quantization/lite:testdata/single_conv_weights_min_0_max_plus_10.bin",
@@ -282,7 +282,7 @@ tf_cc_test(
     name = "quantize_model_test",
     srcs = ["quantize_model_test.cc"],
     args = [
-        "--test_model_file=$(location //tensorflow/compiler/mlir/lite/quantization/lite:testdata/single_conv_weights_min_0_max_plus_10.bin)",
+        "--test_model_file=$(location @org_tensorflow//tensorflow/compiler/mlir/lite/quantization/lite:testdata/single_conv_weights_min_0_max_plus_10.bin)",
     ],
     data = [
         "@org_tensorflow//tensorflow/compiler/mlir/lite/quantization/lite:testdata/add_with_const_input.bin",

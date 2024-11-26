@@ -41,7 +41,7 @@ namespace tflite {
 
 namespace {
 static const char* kSparseTensorTestModel =
-    "tensorflow/lite/testdata/sparse_tensor.bin";
+    "tflite/testdata/sparse_tensor.bin";
 }  // namespace
 
 class MockErrorReporter : public ErrorReporter {

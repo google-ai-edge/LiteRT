@@ -66,7 +66,7 @@ static void TestVersion(void) {
 
 static void TestInferenceUsingSignature(void) {
   TfLiteModel* model = TfLiteModelCreateFromFile(
-      "third_party/tensorflow/lite/testdata/multi_signatures.bin");
+      "tflite/testdata/multi_signatures.bin");
   ASSERT_NE(model, NULL);
 
   TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
@@ -154,7 +154,7 @@ static void TestInferenceUsingSignature(void) {
 // would invalidate input/output tensors.
 static void TestRepeatResizeInputTensor(void) {
   TfLiteModel* model = TfLiteModelCreateFromFile(
-      "third_party/tensorflow/lite/testdata/multi_signatures.bin");
+      "tflite/testdata/multi_signatures.bin");
   ASSERT_NE(model, NULL);
 
   TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
@@ -236,7 +236,7 @@ static void TestRepeatResizeInputTensor(void) {
 
 static void TestInferenceUsingInterpreter(void) {
   TfLiteModel* model =
-      TfLiteModelCreateFromFile("third_party/tensorflow/lite/testdata/add.bin");
+      TfLiteModelCreateFromFile("tflite/testdata/add.bin");
   ASSERT_NE(model, NULL);
 
   TfLiteInterpreterOptions* options = TfLiteInterpreterOptionsCreate();
@@ -321,7 +321,7 @@ TfLiteStatus PrepareThatChecksExecutionPlanSizeEqualsTwo(
 
 static void TestTfLiteOpaqueContextGetExecutionPlan(void) {
   TfLiteModel* model =
-      TfLiteModelCreateFromFile("third_party/tensorflow/lite/testdata/add.bin");
+      TfLiteModelCreateFromFile("tflite/testdata/add.bin");
 
   // Create and install a delegate instance.
   bool delegate_prepared = false;
@@ -348,7 +348,7 @@ static void TestTfLiteOpaqueContextReportErrorMacros(
     TfLiteStatus (*Prepare)(TfLiteOpaqueContext* context,
                             TfLiteOpaqueDelegate* delegate, void* data)) {
   TfLiteModel* model =
-      TfLiteModelCreateFromFile("third_party/tensorflow/lite/testdata/add.bin");
+      TfLiteModelCreateFromFile("tflite/testdata/add.bin");
 
   // Create and install a delegate instance.
   bool delegate_prepared_called = false;

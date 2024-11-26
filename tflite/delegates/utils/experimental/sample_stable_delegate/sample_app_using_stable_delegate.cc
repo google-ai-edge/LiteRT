@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
   // Load the example stable delegate plugin from a shared library file.
   const TfLiteStableDelegate* stable_delegate_handle =
       LoadDelegateFromSharedLibrary(
-          "tensorflow/lite/delegates/utils/experimental/"
+          "tflite/delegates/utils/experimental/"
           "sample_stable_delegate/libtensorflowlite_sample_stable_delegate.so");
   CHECK(stable_delegate_handle != nullptr);
 
