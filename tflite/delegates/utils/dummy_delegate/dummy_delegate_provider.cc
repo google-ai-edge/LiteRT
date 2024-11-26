@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/delegates/utils/dummy_delegate/dummy_delegate.h"
