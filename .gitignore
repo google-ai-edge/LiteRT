@@ -1,0 +1,4 @@
+/.bazelrc.user
+/bazel-*
+.vscode/
+*.whl
