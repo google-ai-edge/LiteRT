@@ -32,7 +32,7 @@ if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   export PROJECT_NAME="${PROJECT_NAME}_nightly"
 fi
 
-BUILD_DIR="${TENSORFLOW_LITE_DIR}/gen/litert_pip/python3"
+BUILD_DIR="${TENSORFLOW_LITE_DIR}/gen/litert_pip/${PYTHON}"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
 if [ "${TENSORFLOW_TARGET}" = "rpi" ]; then
   export TENSORFLOW_TARGET="armhf"
