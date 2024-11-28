@@ -14,11 +14,13 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/shim/tflite_tensor_view.h"
 
+#include <cstddef>
+#include <memory>
 #include <utility>
 
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/types/variant.h"
+#include "absl/types/span.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/shim/tensor_view.h"
 #include "tflite/string_util.h"
