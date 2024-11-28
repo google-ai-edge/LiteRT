@@ -14,10 +14,10 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/experimental/acceleration/mini_benchmark/c/c_api.h"
 
-#include <algorithm>
+#include <cstdarg>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <iterator>
 #include <memory>
 #include <vector>
 
@@ -25,9 +25,9 @@ limitations under the License.
 #include "flatbuffers/verifier.h"  // from @flatbuffers
 #include "tflite/acceleration/configuration/c/delegate_plugin.h"
 #include "tflite/acceleration/configuration/configuration_generated.h"
+#include "tflite/core/experimental/acceleration/mini_benchmark/c/c_api_types.h"
 #include "tflite/experimental/acceleration/mini_benchmark/benchmark_result_evaluator.h"
 #include "tflite/experimental/acceleration/mini_benchmark/blocking_validator_runner.h"
-#include "tflite/core/experimental/acceleration/mini_benchmark/c/c_api_types.h"
 #include "tflite/experimental/acceleration/mini_benchmark/status_codes.h"
 #include "tflite/experimental/acceleration/mini_benchmark/validator_runner_options.h"
 
