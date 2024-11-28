@@ -17,7 +17,6 @@ limitations under the License.
 #include <functional>
 #include <memory>
 
-#include "absl/memory/memory.h"
 #include "tflite/c/common.h"
 
 namespace tflite {
