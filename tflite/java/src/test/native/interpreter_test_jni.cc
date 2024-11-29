@@ -16,6 +16,7 @@ limitations under the License.
 #include <jni.h>
 
 #include <algorithm>
+#include <cstddef>
 
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/kernel_util.h"
