@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/core/api/op_resolver.h"
 
+#include <cstdarg>
+#include <cstdio>
 #include <cstring>
 
 #include <gtest/gtest.h>
