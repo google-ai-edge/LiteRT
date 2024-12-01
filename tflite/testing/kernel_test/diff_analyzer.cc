@@ -16,8 +16,12 @@ limitations under the License.
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/testing/split.h"
