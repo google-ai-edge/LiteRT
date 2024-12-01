@@ -15,9 +15,11 @@ limitations under the License.
 #include "tflite/tools/evaluation/stages/image_classification_stage.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <iterator>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/c/c_api_types.h"

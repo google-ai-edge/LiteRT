@@ -16,8 +16,6 @@ limitations under the License.
 
 #include <stdint.h>
 
-#include <string>
-
 #include <gtest/gtest.h>
 #include "tflite/core/c/common.h"
 #include "tflite/tools/evaluation/proto/evaluation_config.pb.h"
