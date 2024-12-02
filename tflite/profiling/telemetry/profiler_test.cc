@@ -15,9 +15,7 @@ limitations under the License.
 #include "tflite/profiling/telemetry/profiler.h"
 
 #include <cstdint>
-#include <iostream>
 #include <memory>
-#include <string>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
