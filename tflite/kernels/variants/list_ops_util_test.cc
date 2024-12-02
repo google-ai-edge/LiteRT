@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/variants/list_ops_util.h"
 
+#include <utility>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/array.h"

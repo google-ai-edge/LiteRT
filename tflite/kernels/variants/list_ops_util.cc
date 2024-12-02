@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/variants/list_ops_util.h"
 
+#include <vector>
+
 #include "tflite/array.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/common.h"
