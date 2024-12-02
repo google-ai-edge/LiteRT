@@ -14,7 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/coreml/builders/pooling_layer_builder.h"
 
+#include <cstdio>
 #include <string>
+#include <vector>
 
 #include "mlmodel/format/NeuralNetwork.pb.h"
 #include "tflite/builtin_ops.h"
