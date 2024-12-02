@@ -339,12 +339,14 @@ cc_library(
         "//tflite/toco/tflite:export",
         "//tflite/toco/tflite:import",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_protobuf//:protobuf_headers",
         "@org_tensorflow//tensorflow/core:core_cpu_lib",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//third_party/protobuf:protobuf_lite",
     ],
 )
 
@@ -352,9 +354,11 @@ tf_cc_test(
     name = "import_tensorflow_test",
     srcs = ["import_tensorflow_test.cc"],
     deps = [
+        ":model_flags_proto_cc",
         ":toco_port",
         ":toco_tooling",
         "//tflite/testing:util",
+        "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:graph",
