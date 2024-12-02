@@ -15,7 +15,7 @@
 
 # buildifier: disable=out-of-order-load
 
-load("@org_tensorflow//third_party/protobuf/bazel:proto_library.bzl", "proto_library")
+# Placeholder: load proto_library
 load("@flatbuffers//:build_defs.bzl", "DEFAULT_FLATC_ARGS", "flatbuffer_android_library", "flatbuffer_cc_library", "flatbuffer_java_library")
 
 # copybara:comment_begin(oss-only)
