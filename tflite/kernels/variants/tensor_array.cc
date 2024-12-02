@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/variants/tensor_array.h"
 
+#include <cstdlib>
 #include <cstring>
 
 #include "tflite/array.h"
