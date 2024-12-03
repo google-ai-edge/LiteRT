@@ -340,8 +340,7 @@ absl::Status InferenceContext::InitFromGpuModel(
   std::map<ValueId, Tensor> temp_external_tensors;
   for (const auto& external_tensor : create_info.external_mutable_tensors) {
     RETURN_IF_ERROR(
-        CreateTensor(env->context(),
-                     gpu_model->tensors[external_tensor.first],
+        CreateTensor(env->context(), gpu_model->tensors[external_tensor.first],
                      &temp_external_tensors[external_tensor.first]));
     external_mutable_tensors_[external_tensor.first] =
         &temp_external_tensors[external_tensor.first];
@@ -413,6 +412,13 @@ absl::Status InferenceContext::RestoreDeserialized(
   RETURN_IF_ERROR(tflite::gpu::Decode(decoded_fb->gpu_model(), &gpu_model));
   RETURN_IF_ERROR(AllocateMemory(gpu_model, env->GetDevicePtr()->GetInfo(),
                                  create_info, &env->context()));
+
+  gpu_info_ = env->device().GetInfo();
+  if (gpu_info_.opencl_info.IsCLVK() &&
+      gpu_info_.SupportsExtension("cl_khr_command_buffer")) {
+    use_command_buffer_ = true;
+  }
+
   InitFromGpuModel(&gpu_model);
 
   // deserializing kernels into program_cache
@@ -435,8 +441,7 @@ absl::Status InferenceContext::RestoreDeserialized(
     }
     for (const auto& external_tensor : create_info->external_mutable_tensors) {
       RETURN_IF_ERROR(
-          CreateTensor(env->context(),
-                       gpu_model.tensors[external_tensor.first],
+          CreateTensor(env->context(), gpu_model.tensors[external_tensor.first],
                        &temp_external_tensors[external_tensor.first]));
       external_mutable_tensors_[external_tensor.first] =
           &temp_external_tensors[external_tensor.first];
