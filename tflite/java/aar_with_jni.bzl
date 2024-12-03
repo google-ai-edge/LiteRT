@@ -69,7 +69,7 @@ cd $$(mktemp -d)
 unzip $$origdir/$(location :{1}_dummy_app_for_so_unsigned.apk) "lib/*"
 cp -r lib jni
 zip -r $$origdir/$(location :{1}.aar) jni/*/*.so
-cp $$origdir/$(location @org_tensorflow//tensorflow:LICENSE) ./
+cp $$origdir/$(location @org_tensorflow//:LICENSE) ./
 zip $$origdir/$(location :{1}.aar) LICENSE
 """.format(android_library, name)
 
@@ -128,7 +128,7 @@ cp $(location {0}.aar) $(location :{1}.aar)
 chmod +w $(location :{1}.aar)
 origdir=$$PWD
 cd $$(mktemp -d)
-cp $$origdir/$(location @org_tensorflow//tensorflow:LICENSE) ./
+cp $$origdir/$(location @org_tensorflow//:LICENSE) ./
 zip $$origdir/$(location :{1}.aar) LICENSE
 """.format(android_library, name)
 
