@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/toco/tflite/import.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 

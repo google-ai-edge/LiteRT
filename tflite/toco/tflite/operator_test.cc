@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/toco/tflite/operator.h"
 
+#include <limits>
+#include <map>
+#include <memory>
 #include <string>
 
 #include <gtest/gtest.h>
