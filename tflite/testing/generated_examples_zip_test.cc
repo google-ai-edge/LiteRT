@@ -28,6 +28,7 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "absl/strings/match.h"
 #include "re2/re2.h"
+#include "xla/tsl/platform/subprocess.h"
 #include "xla/tsl/util/command_line_flags.h"
 #include "tflite/string_type.h"
 #include "tflite/testing/parse_testdata.h"
@@ -35,7 +36,6 @@ limitations under the License.
 #include "tflite/testing/util.h"
 #include "tsl/platform/env.h"
 #include "tsl/platform/status.h"
-#include "tsl/platform/subprocess.h"
 
 namespace tflite {
 namespace testing {
