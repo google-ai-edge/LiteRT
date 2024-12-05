@@ -20,8 +20,6 @@ cc_library(
     deps = [
         ":portable",
         "//tflite/delegates/gpu/common:status",
-        "@org_tensorflow//third_party/GL:EGL_headers",
-        "@org_tensorflow//third_party/GL:GLES2_headers",
     ],
 )
 
