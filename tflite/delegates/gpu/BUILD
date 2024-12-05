@@ -353,6 +353,8 @@ cc_library(
         "//tflite/delegates/gpu/common:data_type",
         "//tflite/delegates/gpu/gl:gl_errors",
         "@com_google_absl//absl/status",
+        "@org_tensorflow//third_party/GL:EGL_headers",
+        "@org_tensorflow//third_party/GL:GLES3_headers",
     ],
 )
 
