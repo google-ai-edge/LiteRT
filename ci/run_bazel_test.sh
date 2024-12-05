@@ -43,6 +43,13 @@ BUILD_FLAGS=("-c" "opt"
   )
 
 # TODO(ecalubaquib): Remove the following once the tests are fixed.
+# The list of the following bugs are as follows:
+# TODO(b/381310257): Investigate failing test not included in cpu_full
+# TODO(b/381110338, b/381124292): Clang and ambiguous operator errors
+# TODO(b/380870133): Duplicate op error due to tf_gen_op_wrapper_py
+# TODO(b/382122737): Module 'keras.src.backend' has no attribute 'convert_to_numpy'
+# TODO(b/382123188): No member named 'ConvertGenerator' in namespace 'testing'
+# TODO(b/382123664): Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
 EXCLUDED_TEST=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/..."
