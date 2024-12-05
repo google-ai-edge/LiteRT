@@ -33,7 +33,7 @@ if [ ! -d /root_dir ]; then
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
   echo "Output can be found here:"
-  tree ${GEN_DIR}
+  ls -lR ${GEN_DIR}/*
 
   exit 0
 else
