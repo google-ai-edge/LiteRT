@@ -22,7 +22,7 @@ ROOT_DIR="${SCRIPT_DIR}/.."
 if [ ! -d /root_dir ]; then
   # Running on host.
   cd ${SCRIPT_DIR}
-  docker build . -t tflite-builder -f tflite-py${DOCKER_PYTHON_VERSION}.Dockerfile
+  docker build . -t tflite-builder -f tflite-py3.Dockerfile
 
   docker run \
     -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
@@ -34,6 +34,9 @@ if [ ! -d /root_dir ]; then
     tflite-builder
   exit 0
 else
+  export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
+  export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
+
   # Running inside docker container
   cd /third_party_tensorflow
 
@@ -52,8 +55,6 @@ else
   cp .tf_configure.bazelrc /root_dir
 
   python3 -m pip install pip setuptools wheel
-
-  export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
 
   cd /root_dir
   bash /script_dir/build_pip_package_with_bazel.sh
