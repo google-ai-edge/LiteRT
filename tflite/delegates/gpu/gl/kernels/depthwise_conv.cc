@@ -21,7 +21,6 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "tflite/delegates/gpu/common/convert.h"
 #include "tflite/delegates/gpu/common/operations.h"
 #include "tflite/delegates/gpu/common/shape.h"

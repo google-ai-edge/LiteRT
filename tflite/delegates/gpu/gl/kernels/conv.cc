@@ -16,12 +16,12 @@ limitations under the License.
 #include "tflite/delegates/gpu/gl/kernels/conv.h"
 
 #include <any>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "tflite/delegates/gpu/common/convert.h"
 #include "tflite/delegates/gpu/common/operations.h"
