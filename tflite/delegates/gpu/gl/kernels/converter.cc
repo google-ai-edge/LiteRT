@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/kernels/converter.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
