@@ -15,6 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_FLEX_DELEGATE_H_
 #define TENSORFLOW_LITE_DELEGATES_FLEX_DELEGATE_H_
 
+#include <memory>
+
 #include "tflite/core/c/common.h"
 #include "tflite/delegates/flex/delegate_data.h"
 #include "tflite/delegates/utils/simple_delegate.h"
