@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/signature/signature_def_util.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
