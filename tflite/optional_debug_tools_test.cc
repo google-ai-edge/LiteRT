@@ -15,6 +15,7 @@ limitations under the License.
 #include "tflite/optional_debug_tools.h"
 
 #include <algorithm>
+#include <memory>
 
 #include <gtest/gtest.h>
 #include "tflite/core/interpreter.h"
