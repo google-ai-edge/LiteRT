@@ -17,18 +17,19 @@ set -ex
 
 # Run this script under the root directory.
 
+TEST_TYPE="${TEST_TYPE:-cc,py}"
+
 BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
     # add the following flag to avoid clang undefine symbols
     "--copt=-Wno-gnu-offsetof-extensions"
     "--build_tests_only"
-    "--keep_going"
     "--test_output=errors"
     "--verbose_failures=true"
     "--test_summary=short"
     "--test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
     "--build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
-    "--test_lang_filters=cc,py"
+    "--test_lang_filters=${TEST_TYPE}"
     "--flaky_test_attempts=3"
     # Re-enable the following when the compiler supports AVX_VNNI
     "--define=xnn_enable_avxvnni=false"
