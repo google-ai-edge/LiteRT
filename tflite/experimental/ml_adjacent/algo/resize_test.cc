@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/experimental/ml_adjacent/algo/resize.h"
 
 #include <cstring>
-#include <numeric>
 #include <vector>
 
 #include <gtest/gtest.h>
