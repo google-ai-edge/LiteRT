@@ -17,10 +17,12 @@ limitations under the License.
 #include <stddef.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/experimental/acceleration/mini_benchmark/decode_jpeg_status.h"
