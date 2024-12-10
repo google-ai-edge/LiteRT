@@ -14,12 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/optimize/reduced_precision_support.h"
 
+#include <cstddef>
 #include <string>
-#include <vector>
+#include <utility>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/memory/memory.h"
 #include "tensorflow/core/platform/init_main.h"
 #include "tflite/core/model.h"
 #include "tflite/schema/schema_generated.h"

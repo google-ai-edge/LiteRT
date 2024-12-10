@@ -14,11 +14,14 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/optimize/model_utils.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
+#include <ios>
 #include <memory>
 #include <string>
+#include <vector>
 
-#include "absl/memory/memory.h"
 #include "tensorflow/compiler/mlir/lite/tools/optimize/operator_property.h"
 #include "tflite/core/model.h"
 #include "tflite/kernels/internal/tensor_utils.h"

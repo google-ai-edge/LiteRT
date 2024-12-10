@@ -14,12 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/optimize/modify_model_interface.h"
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/memory/memory.h"
 #include "tflite/core/model.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/schema/schema_utils.h"

@@ -14,15 +14,16 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/optimize/modify_model_interface.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
-#include <sstream>
-#include <string>
-#include <unordered_set>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "flatbuffers/flexbuffers.h"
 #include "absl/container/flat_hash_map.h"
-#include "absl/memory/memory.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/model.h"
 #include "tflite/error_reporter.h"
