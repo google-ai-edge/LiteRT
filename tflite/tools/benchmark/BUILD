@@ -182,6 +182,7 @@ cc_library(
         "//tflite/tools/delegates:tflite_execution_providers",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@org_tensorflow//tensorflow/core/example:example_protos_cc_impl",
         "@ruy//ruy/profiler",
