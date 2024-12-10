@@ -212,6 +212,10 @@ build:linux --copt="-Werror=unused-result"
 build:linux --copt="-Wswitch"
 build:linux --copt="-Werror=switch"
 
+# Toolchain and CUDA options for Linux CPU builds
+build:release_cpu_linux --crosstool_top="@local_config_cuda//crosstool:toolchain"
+build:release_cpu_linux --repo_env=TF_SYSROOT="/dt9"
+
 # Linux ARM64 specific options
 build:linux_arm64 --copt="-mtune=generic" --copt="-march=armv8-a" --copt="-O3"
 
