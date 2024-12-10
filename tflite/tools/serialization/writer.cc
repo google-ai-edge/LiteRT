@@ -18,7 +18,8 @@ limitations under the License.
 // Usage:
 //   writer <input tflite> <output tflite>
 
-#include <iostream>
+#include <cstdio>
+#include <memory>
 
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"
