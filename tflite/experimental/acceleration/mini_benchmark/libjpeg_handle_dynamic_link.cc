@@ -12,16 +12,16 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include "tflite/experimental/acceleration/mini_benchmark/libjpeg_handle.h"
-
 #include <dlfcn.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #include <memory>
+#include <type_traits>
 
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/experimental/acceleration/mini_benchmark/decode_jpeg_status.h"
+#include "tflite/experimental/acceleration/mini_benchmark/libjpeg_handle.h"
 
 namespace tflite {
 namespace acceleration {

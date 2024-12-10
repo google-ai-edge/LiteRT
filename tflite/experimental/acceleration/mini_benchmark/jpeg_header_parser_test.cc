@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/acceleration/mini_benchmark/jpeg_header_parser.h"
 
+#include <cstddef>
+#include <ostream>
 #include <string>
 
 #include <gmock/gmock.h>

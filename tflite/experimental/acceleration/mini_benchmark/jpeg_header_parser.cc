@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/experimental/acceleration/mini_benchmark/jpeg_header_parser.h"
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 #include "tflite/core/c/c_api_types.h"
