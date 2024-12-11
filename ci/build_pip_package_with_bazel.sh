@@ -142,6 +142,21 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogc
 cp "bazel-bin/tflite/python/schema_py_generated.py" \
    "${BUILD_DIR}/ai_edge_litert"
 
+# Build and add profiling protos to the package.
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/profiling/proto:profiling_info_py
+cp "bazel-bin/tflite/profiling/proto/profiling_info_pb2.py" \
+   "${BUILD_DIR}/ai_edge_litert"
+
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/profiling/proto:model_runtime_info_py
+cp "bazel-bin/tflite/profiling/proto/model_runtime_info_pb2.py" \
+   "${BUILD_DIR}/ai_edge_litert"
+
+# Rename the namespace in the generated proto files to ai_edge_litert.
+# This is required to maintain dependency between the two protos.
+sed -i -e 's/tflite\.profiling\.proto/ai_edge_litert/g' "${BUILD_DIR}/ai_edge_litert/model_runtime_info_pb2.py"
+
 # Bazel generates the wrapper library with r-x permissions for user.
 # At least on Windows, we need write permissions to delete the file.
 # Without this, setuptools fails to clean the build directory.
