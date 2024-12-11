@@ -390,6 +390,7 @@ tf_cc_test(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:protobuf",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
+        "@org_tensorflow//third_party/protobuf",
     ],
 )
 

@@ -14,10 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/list_flex_ops.h"
 
-#include <fstream>
-#include <sstream>
+#include <cstdint>
+#include <cstring>
 #include <string>
-#include <vector>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "json/json.h"
