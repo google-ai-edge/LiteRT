@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/serialization.h"
 
-#include <cstdint>
 #include <string>
 #include <vector>
 

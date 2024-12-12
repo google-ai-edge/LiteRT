@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/delegates/telemetry.h"
 
+#include <cstdint>
+
 #include "tflite/acceleration/configuration/configuration_generated.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/c/common.h"
