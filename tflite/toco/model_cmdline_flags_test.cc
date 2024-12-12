@@ -13,14 +13,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tflite/toco/model_cmdline_flags.h"
+
 #include <string>
 #include <unordered_map>
+#include <vector>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/testing/util.h"
 #include "tflite/toco/args.h"
-#include "tflite/toco/model_cmdline_flags.h"
 
 namespace toco {
 namespace {
