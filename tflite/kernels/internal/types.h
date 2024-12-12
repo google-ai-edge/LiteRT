@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <type_traits>
 
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/runtime_shape.h"
