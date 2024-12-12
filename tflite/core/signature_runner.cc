@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/core/signature_runner.h"
 
+#include <cstdint>
 #include <vector>
 
 #include "tflite/c/common.h"
