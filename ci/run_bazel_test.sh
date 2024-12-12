@@ -17,18 +17,19 @@ set -ex
 
 # Run this script under the root directory.
 
+TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
+
 BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
     # add the following flag to avoid clang undefine symbols
     "--copt=-Wno-gnu-offsetof-extensions"
     "--build_tests_only"
-    "--keep_going"
     "--test_output=errors"
     "--verbose_failures=true"
     "--test_summary=short"
     "--test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
     "--build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
-    "--test_lang_filters=cc,py"
+    "--test_lang_filters=${TEST_LANG_FILTERS}"
     "--flaky_test_attempts=3"
     # Re-enable the following when the compiler supports AVX_VNNI
     "--define=xnn_enable_avxvnni=false"
@@ -50,7 +51,7 @@ BUILD_FLAGS=("-c" "opt"
 # TODO(b/382122737): Module 'keras.src.backend' has no attribute 'convert_to_numpy'
 # TODO(b/382123188): No member named 'ConvertGenerator' in namespace 'testing'
 # TODO(b/382123664): Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
-EXCLUDED_TEST=(
+FAILING_TEST=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/..."
         "-//tflite/delegates/xnnpack:reduce_test"
@@ -91,4 +92,4 @@ EXCLUDED_TEST=(
         "-//tflite/tools:convert_image_to_csv_test"
 )
 
-bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TEST[@]}"
+bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${FAILING_TEST[@]}"
