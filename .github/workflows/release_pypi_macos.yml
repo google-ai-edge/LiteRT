@@ -60,7 +60,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip setuptools
-          python -m pip install build wheel numpy twine auditwheel
+          python -m pip install build wheel numpy twine
           python -m pip list
 
       - name: Build package
@@ -77,7 +77,6 @@ jobs:
           do
             echo "Listing $wheel"
             python -m zipfile --list $wheel
-            auditwheel show $wheel
           done
 
       - name: Upload to PyPI
