@@ -130,8 +130,13 @@ cc_test(
     data = [
         "//tflite/experimental/litert/test:testdata/simple_model.tflite",
     ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":compiled_model",
+        ":tensor_buffer",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
