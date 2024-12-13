@@ -65,6 +65,35 @@ cc_library(
 )
 
 cc_library(
+    name = "environment",
+    srcs = ["environment.cc"],
+    hdrs = [
+        "environment.h",
+        "//tflite/experimental/litert/c:litert_environment.h",
+    ],
+    deps = [
+        "//tflite/experimental/litert/c:litert_any",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_any",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "environment_test",
+    srcs = ["environment_test.cc"],
+    deps = [
+        ":environment",
+        "//tflite/experimental/litert/c:litert_any",
+        "//tflite/experimental/litert/cc:litert_any",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "filesystem",
     srcs = ["filesystem.cc"],
     hdrs = ["filesystem.h"],

@@ -25,14 +25,45 @@
 
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "tflite/experimental/litert/c/litert_any.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
+#include "tflite/experimental/litert/c/litert_environment.h"
+#include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/cc/litert_any.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
+#include "tflite/experimental/litert/core/environment.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 
 class LiteRtDispatchDelegateOptions {
  public:
+  LiteRtDispatchDelegateOptions() {
+    auto environment = litert::internal::Environment::Instance();
+    if (!environment) {
+      LITERT_LOG(LITERT_WARNING, "LiteRT environment not found");
+      return;
+    }
+
+    auto option =
+        (*environment)->GetOption(kLiteRtEnvOptionTagDispatchLibraryPath);
+    if (!option.has_value()) {
+      return;
+    }
+
+    if (option->type != kLiteRtAnyTypeString) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Ingoring option kLiteRtEnvOptionTagDispatchLibraryPath due "
+                 "to invalid value");
+      return;
+    }
+
+    LiteRtDispatchOption dispatch_option = {
+        /*.name=*/kDispatchOptionSharedLibraryDir,
+        /*.value=*/*option,
+    };
+    AddOption(dispatch_option);
+  }
+
   // Push a new dispatch option.
   void AddOption(LiteRtDispatchOption option) { options_.push_back(option); }
 
