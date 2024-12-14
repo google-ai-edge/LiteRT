@@ -19,7 +19,6 @@ limitations under the License.
 
 #include <cstddef>
 #include <memory>
-#include <utility>
 #include <vector>
 
 #include "tflite/builtin_ops.h"
