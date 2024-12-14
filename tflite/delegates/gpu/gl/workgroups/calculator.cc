@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/workgroups/calculator.h"
 
+#include <cstdint>
+
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/common/types.h"
 #include "tflite/delegates/gpu/gl/compiler/shader_code.h"

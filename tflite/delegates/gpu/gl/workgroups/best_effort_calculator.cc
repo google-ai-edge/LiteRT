@@ -15,6 +15,9 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/workgroups/best_effort_calculator.h"
 
+#include <cstdint>
+#include <memory>
+
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/gl/workgroups/calculator.h"
 #include "tflite/delegates/gpu/gl/workgroups/default_calculator.h"

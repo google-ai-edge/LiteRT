@@ -16,6 +16,9 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_GPU_GL_WORKGROUPS_CALCULATOR_FROM_METADATA_H_
 #define TENSORFLOW_LITE_DELEGATES_GPU_GL_WORKGROUPS_CALCULATOR_FROM_METADATA_H_
 
+#include <cstdint>
+#include <memory>
+
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/gl/workgroups/calculator.h"
 
