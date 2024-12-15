@@ -15,11 +15,7 @@ limitations under the License.
 
 #include "tflite/tools/delegates/compatibility/common/delegate_compatibility_checker_base.h"
 
-#include <memory>
-#include <string>
-#include <unordered_map>
-#include <utility>
-#include <vector>
+#include <cstdlib>
 
 #include "absl/status/status.h"
 #include "tflite/model_builder.h"
