@@ -14,6 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/microfrontend/lib/frontend.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include <cstddef>
+
 #include "tflite/experimental/microfrontend/lib/bits.h"
 
 struct FrontendOutput FrontendProcessSamples(struct FrontendState* state,

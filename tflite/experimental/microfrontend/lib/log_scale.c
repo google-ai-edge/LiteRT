@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/microfrontend/lib/log_scale.h"
 
+#include <stdint.h>
+
 #include "tflite/experimental/microfrontend/lib/bits.h"
 #include "tflite/experimental/microfrontend/lib/log_lut.h"
 

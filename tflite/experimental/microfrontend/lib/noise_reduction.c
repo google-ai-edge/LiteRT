@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/microfrontend/lib/noise_reduction.h"
 
+#include <stdint.h>
 #include <string.h>
 
 void NoiseReductionApply(struct NoiseReductionState* state, uint32_t* signal) {

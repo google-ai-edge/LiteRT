@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/experimental/microfrontend/lib/filterbank.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "tflite/experimental/microfrontend/lib/bits.h"
