@@ -1687,6 +1687,7 @@ cc_test(
         ":xnnpack_delegate_test_mode",
         "//tflite/c:c_api_types",
         "//tflite/schema:schema_fbs",
+        "@XNNPACK",
         "@com_google_googletest//:gtest",
     ],
 )
