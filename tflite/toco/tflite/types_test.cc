@@ -15,6 +15,10 @@ limitations under the License.
 #include "tflite/toco/tflite/types.h"
 
 #include <complex>
+#include <cstdint>
+#include <initializer_list>
+#include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

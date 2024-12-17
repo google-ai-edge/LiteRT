@@ -15,7 +15,9 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOCO_TFLITE_IMPORT_H_
 #define TENSORFLOW_LITE_TOCO_TFLITE_IMPORT_H_
 
+#include <memory>
 #include <string>
+#include <vector>
 
 #include "tflite/schema/schema_generated.h"
 #include "tflite/toco/model.h"
