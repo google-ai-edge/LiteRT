@@ -15,7 +15,6 @@ limitations under the License.
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 #include "tflite/array.h"
 #include "tflite/c/c_api_types.h"
