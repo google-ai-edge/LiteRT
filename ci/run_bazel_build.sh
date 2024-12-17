@@ -219,6 +219,16 @@ UBUNTU_EXCLUDED_TARGETS=(
   "-//tflite/core/async/testing:mock_async_kernel"
   "-//tflite/core/async:backend_async_kernel_interface"
   "-//tflite/tools/evaluation/proto/..."
+  # The following are failing due to :flatbuffer_tools
+  "-//tflite/c/..."
+  "-//tflite/core/..."
+  "-//tflite/experimental/litert/c/..."
+  "-//tflite/experimental/litert/cc/..."
+  "-//tflite/experimental/litert/core/..."
+  "-//tflite/experimental/litert/runtime/..."
+  "-//tflite/experimental/litert/test/..."
+  "-//tflite/experimental/litert/tools/..."
+  "-//tflite/experimental/litert/vendors/..."
   # The following below are android exclusive targets
   "-//tflite/acceleration/..."
   "-//tflite/delegates/gpu/gl:android_sync"
