@@ -270,7 +270,7 @@ IOS_TARGETS=(
 
 # Build targets for the specified platform.
 if [ "$PLATFORM_NAME" == "ubuntu" ]; then
-    bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
+    bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/... //litert/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
 elif [ "$PLATFORM_NAME" == "android" ]; then
     bazel build "${ANDROID_BUILD_FLAGS[@]}" -- "${ANDROID_TARGETS[@]}"
 elif [ "$PLATFORM_NAME" == "ios" ]; then
