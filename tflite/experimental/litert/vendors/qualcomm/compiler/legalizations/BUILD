@@ -330,6 +330,39 @@ litert_lib(
 )
 
 litert_lib(
+    name = "gelu_op_legalization",
+    srcs = ["gelu_op_legalization.cc"],
+    hdrs = ["gelu_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    visibility = ["//tflite/experimental/litert:__subpackages__"],
+    deps = [
+        ":legalization",
+        ":util",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/c:litert_options",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/experimental/litert/cc:litert_model_predicates",
+        "//tflite/experimental/litert/vendors/qualcomm:common",
+        "//tflite/experimental/litert/vendors/qualcomm:qnn_manager",
+        "//tflite/experimental/litert/vendors/qualcomm/compiler:graph_mapper",
+        "//tflite/experimental/litert/vendors/qualcomm/compiler/IR:qnn_op",
+        "//tflite/experimental/litert/vendors/qualcomm/compiler/IR:qnn_tensor",
+    ],
+)
+
+litert_lib(
     name = "greater_op_legalization",
     srcs = ["greater_op_legalization.cc"],
     hdrs = ["greater_op_legalization.h"],
