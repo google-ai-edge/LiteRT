@@ -16,7 +16,7 @@ limitations under the License.
 
 #include <stdint.h>
 
-#include <limits>
+#include <vector>
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"

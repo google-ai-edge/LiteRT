@@ -16,7 +16,6 @@ limitations under the License.
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"

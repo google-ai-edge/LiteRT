@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/builders/min_max_builder.h"
 
+#include <cstdint>
+
 #include "tflite/core/c/common.h"
 
 namespace tflite {
