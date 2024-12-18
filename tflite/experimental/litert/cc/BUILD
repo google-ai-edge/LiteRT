@@ -326,6 +326,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -346,6 +347,7 @@ cc_test(
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
