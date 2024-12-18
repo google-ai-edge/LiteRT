@@ -66,11 +66,11 @@ cc_library(
         "//tflite:string_util",
         "//tflite/core/c:common",
         "//tflite/experimental/resource",
+        "@org_tensorflow//tensorflow/core:framework",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
         "@org_tensorflow//tensorflow/c:c_api_internal",
-        "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/c:tf_tensor_internal",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:status",
