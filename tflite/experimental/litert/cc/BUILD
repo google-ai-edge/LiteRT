@@ -36,6 +36,7 @@ cc_library(
         ":litert_expected",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

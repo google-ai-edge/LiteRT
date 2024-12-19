@@ -29,6 +29,7 @@ cc_library(
         ":outstream",
         ":tool_display",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_detail",
