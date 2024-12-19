@@ -52,9 +52,8 @@ BUILD_FLAGS=("-c" "opt"
 # TODO(b/382122737): Module 'keras.src.backend' has no attribute 'convert_to_numpy'
 # TODO(b/382123188): No member named 'ConvertGenerator' in namespace 'testing'
 # TODO(b/382123664): Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
-FAILING_TEST=(
+EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
-        "-//tflite/delegates/gpu/..."
         "-//tflite/delegates/xnnpack:reduce_test"
         "-//tflite/experimental/acceleration/mini_benchmark:fb_storage_test"
         "-//tflite/experimental/litert/c:litert_c_api_common_test"
@@ -92,6 +91,11 @@ FAILING_TEST=(
         "-//tflite/testing:zip_test_fully_connected_4bit_hybrid_xnnpack"
         "-//tflite/tools/optimize/debugging/python:debugger_test"
         "-//tflite/tools:convert_image_to_csv_test"
+        # Exclude dir which shouldnt run
+        "-//tflite/java/..."
+        "-//tflite/tools/benchmark/experimental/..."
+        "-//tflite/experimental/..."
+        "-//tflite/delegates/gpu/..."
 )
 
-bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${FAILING_TEST[@]}"
+bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"

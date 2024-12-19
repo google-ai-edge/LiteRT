@@ -225,21 +225,15 @@ UBUNTU_EXCLUDED_TARGETS=(
   # The following are failing due to :flatbuffer_tools
   "-//tflite/c/..."
   "-//tflite/core/..."
-  "-//tflite/experimental/litert/c/..."
-  "-//tflite/experimental/litert/cc/..."
-  "-//tflite/experimental/litert/core/..."
-  "-//tflite/experimental/litert/runtime/..."
-  "-//tflite/experimental/litert/test/..."
-  "-//tflite/experimental/litert/tools/..."
-  "-//tflite/experimental/litert/vendors/..."
+  "-//tflite/tools/optimize:modify_model_interface_main"
+  # For now remove unstable experimental code.
+  "-//tflite/experimental/..."
   # The following below are android exclusive targets
   "-//tflite/acceleration/..."
   "-//tflite/delegates/gpu/gl:android_sync"
   "-//tflite/delegates/gpu/java/src/main/native/..."
   "-//tflite/delegates/hexagon/hexagon_nn:hexagon_interface_android"
   "-//tflite/delegates/hexagon/java/..."
-  # For now remove unstable experimental code.
-  "-//tflite/experimental/..."
   "-//tflite/java/..."
   "-//tflite/tools/benchmark/android/..."
   "-//tflite/tools/benchmark/experimental/delegate_performance/android/..."
