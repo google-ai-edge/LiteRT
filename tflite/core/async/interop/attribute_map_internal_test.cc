@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/interop/attribute_map_internal.h"
 
-#include <cstdint>
+#include <cstddef>
 
 #include <gtest/gtest.h>
 #include "tflite/core/async/interop/c/types.h"

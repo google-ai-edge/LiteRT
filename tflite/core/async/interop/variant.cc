@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/core/async/interop/variant.h"
 
 #include <cstring>
-#include <utility>
 
 namespace tflite {
 namespace interop {
