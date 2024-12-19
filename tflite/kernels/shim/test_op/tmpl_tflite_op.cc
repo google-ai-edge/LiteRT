@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/shim/test_op/tmpl_tflite_op.h"
 
+#include <cstdint>
+
 #include "tflite/c/common.h"
 #include "tflite/kernels/shim/op_kernel.h"
 #include "tflite/kernels/shim/test_op/tmpl_op.h"
