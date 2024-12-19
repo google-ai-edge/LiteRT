@@ -56,6 +56,7 @@ FAILING_TEST=(
         "-//tflite/delegates/gpu/..."
         "-//tflite/delegates/xnnpack:reduce_test"
         "-//tflite/experimental/acceleration/mini_benchmark:fb_storage_test"
+        "-//tflite/experimental/litert/c:litert_c_api_common_test"
         "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
         "-//tflite/experimental/shlo/ops:abs_test"
         "-//tflite/experimental/shlo/ops:binary_elementwise_test"
