@@ -21,7 +21,7 @@ on:
         type: string
 
 env:
-  CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+  CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux --show_timestamps"
 
 jobs:
   build_release:

@@ -41,6 +41,7 @@ BUILD_FLAGS=("-c" "opt"
     "--define=xnn_enable_avx512fp16=false"
     # TODO(ecalubaquib): Remove once all the visibility cl's are submitted.
     "--nocheck_visibility"
+    "--show_timestamps"
   )
 
 # TODO(ecalubaquib): Remove the following once the tests are fixed.

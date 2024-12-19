@@ -176,7 +176,8 @@ BUILD_FLAGS=("-c" "opt" \
     "--fat_apk_cpu=x86,x86_64,arm64-v8a,armeabi-v7a" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
-    "--repo_env=HERMETIC_PYTHON_VERSION=3.11")
+    "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
+    "--show_timestamps")
 bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \

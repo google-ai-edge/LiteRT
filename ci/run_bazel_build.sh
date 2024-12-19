@@ -30,6 +30,7 @@ UBUNTU_BUILD_FLAGS=("-c" "opt"
     # GCC > 13)
     "--define=xnn_enable_avx512fp16=false"
     "--nocheck_visibility"
+    "--show_timestamps"
   )
 
 ANDROID_BUILD_FLAGS=(
@@ -39,6 +40,7 @@ ANDROID_BUILD_FLAGS=(
   "--config=force_compact_protos"
   "--config=android_arm"
   "--android_ndk_min_sdk_version=28"
+  "--show_timestamps"
   )
 
 IOS_BUILD_FLAGS=(
@@ -47,6 +49,7 @@ IOS_BUILD_FLAGS=(
   "--swiftcopt=-enable-testing"
   # TODO(b/287670077): remove once code has been updated to handle newer versions of xcode
   "--xcode_version=15.4.0"
+  "--show_timestamps"
   )
 
 # TODO(b/383171538): Remove the following excluded targets once their bazel build are fixed.
