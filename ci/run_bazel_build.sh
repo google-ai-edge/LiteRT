@@ -235,7 +235,8 @@ UBUNTU_EXCLUDED_TARGETS=(
   "-//tflite/delegates/gpu/java/src/main/native/..."
   "-//tflite/delegates/hexagon/hexagon_nn:hexagon_interface_android"
   "-//tflite/delegates/hexagon/java/..."
-  "-//tflite/experimental/acceleration/..."
+  # For now remove unstable experimental code.
+  "-//tflite/experimental/..."
   "-//tflite/java/..."
   "-//tflite/tools/benchmark/android/..."
   "-//tflite/tools/benchmark/experimental/delegate_performance/android/..."
