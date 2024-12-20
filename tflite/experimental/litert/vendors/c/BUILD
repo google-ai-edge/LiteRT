@@ -46,6 +46,7 @@ cc_library(
     deps = [
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/runtime/dispatch",

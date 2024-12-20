@@ -18,6 +18,21 @@ package(
 )
 
 cc_library(
+    name = "event",
+    srcs = [
+        "event.cc",
+    ],
+    hdrs = [
+        "event.h",
+    ],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
     name = "tensor_buffer",
     srcs = [
         "ahwb_buffer.cc",
@@ -40,8 +55,10 @@ cc_library(
     ],
     deps = [
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/cc:litert_event",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "@com_google_absl//absl/base:core_headers",
@@ -116,6 +133,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_environment",
+        "//tflite/experimental/litert/cc:litert_event",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_tensor_buffer",

@@ -34,6 +34,18 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_event",
+    hdrs = ["litert_event.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
     deps = [
@@ -118,10 +130,12 @@ cc_library(
     ],
     deps = [
         ":litert_detail",
+        ":litert_event",
         ":litert_handle",
         ":litert_model",
         "//tflite/c:c_api_types",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_expected",
