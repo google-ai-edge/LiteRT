@@ -22,7 +22,14 @@ ROOT_DIR="${SCRIPT_DIR}/.."
 if [ ! -d /root_dir ]; then
   # Running on host.
   cd ${SCRIPT_DIR}
-  docker build . -t tflite-builder -f tflite-py3.Dockerfile
+
+  if [[ "$(uname -m)" == "aarch64" ]]; then
+    DOCKER_FILE="tflite-py3-arm64.Dockerfile"
+  else
+    DOCKER_FILE="tflite-py3.Dockerfile"
+  fi
+
+  docker build . -t tflite-builder -f ${DOCKER_FILE}
 
   docker run \
     -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
