@@ -83,6 +83,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/core:filesystem",
+        "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/log",
