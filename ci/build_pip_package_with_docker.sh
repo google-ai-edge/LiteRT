@@ -31,6 +31,7 @@ if [ ! -d /root_dir ]; then
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
     -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
     -e CUSTOM_BAZEL_FLAGS=${CUSTOM_BAZEL_FLAGS} \
+    -e RELEASE_VERSION=${RELEASE_VERSION} \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
     tflite-builder
   exit 0
