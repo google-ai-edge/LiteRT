@@ -25,3 +25,54 @@ cc_library(
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
     ],
 )
+
+cc_library(
+    name = "conversion",
+    hdrs = ["conversion.h"],
+    deps = [
+        ":backend_ir",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_model",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
+cc_library(
+    name = "backend_ir",
+    hdrs = ["backend_ir.h"],
+    deps = ["//tflite/experimental/litert/c:litert_common"],
+)
+
+cc_library(
+    name = "partition_with_capabilities",
+    hdrs = ["partition_with_capabilities.h"],
+    deps = [
+        ":backend_ir",
+        ":conversion",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_model",
+    ],
+)
+
+cc_test(
+    name = "partition_with_capabilities_test",
+    srcs = ["partition_with_capabilities_test.cc"],
+    deps = [
+        ":conversion",
+        ":partition_with_capabilities",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/core/model:model_graph",
+        "//tflite/experimental/litert/core/util:flatbuffer_tools",
+        "//tflite/experimental/litert/vendors/examples:example_conversion_impl",
+        "//tflite/experimental/litert/vendors/examples:example_ir",
+        "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
+    ],
+)
