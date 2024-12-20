@@ -78,6 +78,7 @@ cc_library(
         "//tflite/experimental/litert/vendors/cc:backend_ir",
         "//tflite/experimental/litert/vendors/cc:conversion",
         "//tflite/experimental/litert/vendors/cc:ir_types",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
