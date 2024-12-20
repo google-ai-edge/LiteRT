@@ -32,6 +32,7 @@ cc_library(
     deps = [
         ":backend_ir",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_model",
@@ -49,7 +50,6 @@ cc_library(
     name = "partition_with_capabilities",
     hdrs = ["partition_with_capabilities.h"],
     deps = [
-        ":backend_ir",
         ":conversion",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
@@ -58,11 +58,20 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "ir_types",
+    hdrs = ["ir_types.h"],
+    deps = [
+        ":backend_ir",
+        ":conversion",
+        "//tflite/experimental/litert/cc:litert_expected",
+    ],
+)
+
 cc_test(
     name = "partition_with_capabilities_test",
     srcs = ["partition_with_capabilities_test.cc"],
     deps = [
-        ":conversion",
         ":partition_with_capabilities",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_op_code",

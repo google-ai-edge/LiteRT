@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "tflite/experimental/litert/vendors/cc/backend_ir.h"
+#include "tflite/experimental/litert/vendors/cc/ir_types.h"
 
 namespace litert::example {
 
@@ -140,6 +141,8 @@ class ExampleGraphBuilder
  private:
   std::stringstream example_graph_;
 };
+
+using ExampleTypes = IrTypes<ExampleOp, ExampleTensor>;
 
 }  // namespace litert::example
 

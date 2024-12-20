@@ -72,12 +72,12 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/c:litert_options",
-        "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_element_type",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/vendors/cc:backend_ir",
         "//tflite/experimental/litert/vendors/cc:conversion",
+        "//tflite/experimental/litert/vendors/cc:ir_types",
     ],
 )
 
@@ -109,6 +109,7 @@ cc_library(
     deps = [
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/vendors/cc:backend_ir",
+        "//tflite/experimental/litert/vendors/cc:ir_types",
     ],
 )
 
