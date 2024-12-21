@@ -22,7 +22,6 @@
 #include "tflite/experimental/litert/c/litert_op_code.h"
 #include "tflite/experimental/litert/c/litert_options.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
-#include "tflite/experimental/litert/vendors/cc/backend_ir.h"
 #include "tflite/experimental/litert/vendors/cc/conversion.h"
 #include "tflite/experimental/litert/vendors/cc/ir_types.h"
 #include "tflite/experimental/litert/vendors/examples/example_ir.h"

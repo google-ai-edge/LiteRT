@@ -129,7 +129,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
-        "//tflite/experimental/litert/vendors/cc:conversion",
+        "//tflite/experimental/litert/vendors/cc:convert_graph",
         "//tflite/experimental/litert/vendors/cc:partition_with_capabilities",
         "@com_google_absl//absl/strings:str_format",
     ],

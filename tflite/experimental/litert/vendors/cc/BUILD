@@ -59,6 +59,18 @@ cc_library(
 )
 
 cc_library(
+    name = "convert_graph",
+    hdrs = ["convert_graph.h"],
+    deps = [
+        ":conversion",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_model",
+    ],
+)
+
+cc_library(
     name = "ir_types",
     hdrs = ["ir_types.h"],
     deps = [
@@ -81,6 +93,30 @@ cc_test(
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/vendors/examples:example_conversion_impl",
         "//tflite/experimental/litert/vendors/examples:example_ir",
+        "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
+    ],
+)
+
+cc_test(
+    name = "convert_graph_test",
+    srcs = ["convert_graph_test.cc"],
+    deps = [
+        ":backend_ir",
+        ":convert_graph",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/core/model:model_graph",
+        "//tflite/experimental/litert/core/util:flatbuffer_tools",
+        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/vendors/examples:example_conversion_impl",
+        "//tflite/experimental/litert/vendors/examples:example_ir",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
     ],
