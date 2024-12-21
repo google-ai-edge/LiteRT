@@ -146,6 +146,7 @@ cc_test(
     deps = [
         ":litert_options",
         "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:test_macros",
         "@com_google_googletest//:gtest_main",
     ],
 )
