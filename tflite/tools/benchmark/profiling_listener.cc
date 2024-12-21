@@ -15,7 +15,8 @@ limitations under the License.
 
 #include "tflite/tools/benchmark/profiling_listener.h"
 
-#include <fstream>
+#include <cstdint>
+#include <memory>
 #include <string>
 
 #include "tflite/interpreter.h"
