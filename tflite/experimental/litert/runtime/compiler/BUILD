@@ -52,3 +52,39 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "jit_compilation_mediatek_test",
+    srcs = ["jit_compilation_mediatek_test.cc"],
+    data = [
+        "//tflite/experimental/litert/test:simple_model",
+        "//tflite/experimental/litert/vendors/mediatek/compiler:compiler_plugin_so",
+        "//tflite/experimental/litert/vendors/mediatek/dispatch:dispatch_api_so",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_dispatch_delegate",
+        "//tflite/experimental/litert/cc:litert_compiled_model",
+        "//tflite/experimental/litert/cc:litert_environment",
+        "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer",
+        "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
+        "//tflite/experimental/litert/runtime:external_litert_buffer_context",
+        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:simple_model_npu",
+        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
