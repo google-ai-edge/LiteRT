@@ -193,7 +193,11 @@ case "${TENSORFLOW_TARGET}" in
       fi
     elif test -e "/etc/lsb-release"; then
       # Linux
-      WHEEL_PLATFORM_NAME="manylinux_2_17_x86_64"
+      if [[ "${ARCH}" == "aarch64" ]]; then
+        WHEEL_PLATFORM_NAME="manylinux_2_17_aarch64"
+      else
+        WHEEL_PLATFORM_NAME="manylinux_2_17_x86_64"
+      fi
     fi
 
     if [[ -n "${WHEEL_PLATFORM_NAME}" ]]; then

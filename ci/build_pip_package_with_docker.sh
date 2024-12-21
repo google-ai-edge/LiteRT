@@ -63,7 +63,7 @@ else
   printf '%s\n' "${configs[@]}" | ./configure
   cp .tf_configure.bazelrc /root_dir
 
-  python3 -m pip install pip setuptools wheel
+  ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
 
   cd /root_dir
   bash /script_dir/build_pip_package_with_bazel.sh
