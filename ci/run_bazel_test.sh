@@ -90,6 +90,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/testing:zip_test_fully_connected_4bit_hybrid_with-flex_xnnpack"
         "-//tflite/testing:zip_test_fully_connected_4bit_hybrid_xnnpack"
         "-//tflite/testing:zip_test_depthwiseconv_with-flex"
+        "-//tflite/testing:zip_test_depthwiseconv_forward-compat"
         "-//tflite/tools/optimize/debugging/python:debugger_test"
         "-//tflite/tools:convert_image_to_csv_test"
         # Exclude dir which shouldnt run
