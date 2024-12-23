@@ -13,7 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <iostream>
+#include <cstdlib>
 
 #include "tflite/tools/benchmark/benchmark_tflite_model.h"
 #include "tflite/tools/logging.h"

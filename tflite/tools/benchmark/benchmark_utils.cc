@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/tools/benchmark/benchmark_utils.h"
 
+#include <cstdint>
+
 #include "tflite/profiling/time.h"
 
 namespace tflite {
