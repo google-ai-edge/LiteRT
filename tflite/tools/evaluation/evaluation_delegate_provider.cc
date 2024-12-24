@@ -15,7 +15,10 @@ limitations under the License.
 
 #include "tflite/tools/evaluation/evaluation_delegate_provider.h"
 
+#include <cstdint>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/tools/command_line_flags.h"
