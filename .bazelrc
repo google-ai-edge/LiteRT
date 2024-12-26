@@ -363,3 +363,9 @@ build --config=v2
 # Options to filter filepath prefixes when generating python api's
 build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
 build --config=litert_prefixes
+
+# Config to use a gcs bucket as remote cache.
+build:public_cache --remote_cache="https://storage.googleapis.com/litert-bazel-artifacts" --remote_upload_local_results=false
+
+# Cache pushes are limited to CI system.
+build:public_cache_push --config=public_cache --remote_upload_local_results=true --google_default_credentials
