@@ -52,11 +52,40 @@ BUILD_FLAGS=("-c" "opt"
 # TODO(b/382122737): Module 'keras.src.backend' has no attribute 'convert_to_numpy'
 # TODO(b/382123188): No member named 'ConvertGenerator' in namespace 'testing'
 # TODO(b/382123664): Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
+# TODO(b/385356261): no matching constructor for initialization of 'litert::Tensor::TensorUse'
+# TODO(b/385360853): Qualcomm related tests do not build in LiteRT
+# TODO(b/385361335): sb_api.h file not found
+# TODO(b/385361755): no member named 'view' in 'std::basic_stringstream<char>'
 EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/xnnpack:reduce_test"
         "-//tflite/experimental/acceleration/mini_benchmark:fb_storage_test"
         "-//tflite/experimental/litert/c:litert_c_api_common_test"
+        "-//tflite/experimental/litert/c:litert_compiled_model_test"
+        "-//tflite/experimental/litert/cc:litert_compiled_model_test"
+        "-//tflite/experimental/litert/cc:litert_model_predicates_test"
+        "-//tflite/experimental/litert/cc:litert_model_test"
+        "-//tflite/experimental/litert/cc:litert_tensor_buffer_requirements_test"
+        "-//tflite/experimental/litert/cc:litert_tensor_buffer_test"
+        "-//tflite/experimental/litert/compiler/plugin:algo_test"
+        "-//tflite/experimental/litert/core:byte_code_util_test"
+        "-//tflite/experimental/litert/core/model:model_buffer_test"
+        "-//tflite/experimental/litert/core/model:model_file_test"
+        "-//tflite/experimental/litert/core/util:flatbuffer_tools_test"
+        "-//tflite/experimental/litert/runtime:compiled_model_test"
+        "-//tflite/experimental/litert/runtime/compiler:jit_compilation_qualcomm_test"
+        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
+        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_mediatek_test"
+        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_qualcomm_test"
+        "-//tflite/experimental/litert/tools:apply_plugin_test"
+        "-//tflite/experimental/litert/tools:dump_test"
+        "-//tflite/experimental/litert/tools:tool_display_test"
+        "-//tflite/experimental/litert/vendors/cc:partition_with_capabilities_test"
+        "-//tflite/experimental/litert/vendors/examples:example_conversion_impl_test"
+        "-//tflite/experimental/litert/vendors/examples:example_plugin_test"
+        "-//tflite/experimental/litert/vendors/examples:example_plugin_with_conversions_test"
+        "-//tflite/experimental/litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
+        "-//tflite/experimental/litert/vendors/mediatek/dispatch:dispatch_api_mediatek_test"
         "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
         "-//tflite/experimental/shlo/ops:abs_test"
         "-//tflite/experimental/shlo/ops:binary_elementwise_test"
@@ -98,7 +127,6 @@ EXCLUDED_TARGETS=(
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
-        "-//tflite/experimental/..."
         "-//tflite/delegates/gpu/..."
 )
 
