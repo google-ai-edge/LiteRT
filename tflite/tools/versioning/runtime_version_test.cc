@@ -16,7 +16,6 @@ limitations under the License.
 
 #include <string>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/core/kernels/register.h"
 #include "tflite/schema/schema_generated.h"
