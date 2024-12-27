@@ -95,7 +95,7 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3"
     ;;
   native)
-    BAZEL_FLAGS="--copt=-O3 --copt=-march=native --config=public_cache_push"
+    BAZEL_FLAGS="--copt=-O3 --copt=-march=native"
     ;;
   *)
     BAZEL_FLAGS="--copt=-O3"
@@ -115,9 +115,10 @@ case "${TENSORFLOW_TARGET}" in
     ;;
 esac
 
-# Set linkopt for arm64 architecture.
+# Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in
   x86_64)
+    BAZEL_FLAGS="${BAZEL_FLAGS} --config=public_cache_push"
     ;;
   arm64)
     BAZEL_FLAGS="${BAZEL_FLAGS} --linkopt="-ld_classic""
