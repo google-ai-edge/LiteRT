@@ -16,6 +16,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/api/error_reporter.h"
