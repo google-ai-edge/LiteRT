@@ -18,8 +18,6 @@ limitations under the License.
 #include <dlfcn.h>
 #include <fcntl.h>
 
-#include <cstdio>
-
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/logger.h"
 #include "tflite/minimal_logging.h"
