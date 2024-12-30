@@ -14,9 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/utils.h"
 
-#include <string>
-#include <vector>
-
 #include <gtest/gtest.h>
 #include "tflite/core/c/common.h"
 
