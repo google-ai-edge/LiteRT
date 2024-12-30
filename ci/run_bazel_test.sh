@@ -42,6 +42,7 @@ BUILD_FLAGS=("-c" "opt"
     # TODO(ecalubaquib): Remove once all the visibility cl's are submitted.
     "--nocheck_visibility"
     "--show_timestamps"
+    "--config=public_cache_push"
   )
 
 # TODO(ecalubaquib): Remove the following once the tests are fixed.
