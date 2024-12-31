@@ -299,7 +299,7 @@ cc_test(
     deps = [
         ":c_api",
         "//tflite/core/c:c_api",
-        "//tflite/core/c:c_api_experimental",
+        "//tflite/core/c:common",
         "@com_google_googletest//:gtest_main",
     ],
 )

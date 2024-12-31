@@ -14,6 +14,10 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/c/c_api.h"
 
+#include <stddef.h>
+#include <string.h>
+
+#include <cstdint>
 #include <memory>
 #include <mutex>  // NOLINT
 #include <utility>
@@ -22,12 +26,21 @@ limitations under the License.
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_internal.h"
 #include "tflite/c/common_internal.h"
+#include "tflite/core/api/error_reporter.h"
+#include "tflite/core/api/op_resolver.h"
+#include "tflite/core/c/c_api_types.h"
 #include "tflite/core/create_op_resolver.h"
 #include "tflite/core/interpreter.h"
-#include "tflite/core/model.h"
+#include "tflite/core/interpreter_builder.h"
+#include "tflite/core/model_builder.h"
 #include "tflite/delegates/interpreter_utils.h"
 #include "tflite/delegates/nnapi/nnapi_delegate.h"
 #include "tflite/kernels/internal/compatibility.h"
+#include "tflite/mutable_op_resolver.h"
+#include "tflite/profiling/telemetry/profiler.h"
+#include "tflite/schema/schema_generated.h"
+#include "tflite/signature_runner.h"
+#include "tflite/stderr_reporter.h"
 #include "tflite/version.h"
 
 namespace {
@@ -274,6 +287,92 @@ TfLiteStatus TfLiteTensorCopyToBuffer(const TfLiteTensor* tensor,
 }
 
 // LINT.ThenChange(//tflite/experimental/examples/unity/TensorFlowLitePlugin/Assets/TensorFlowLite/SDK/Scripts/Interpreter.cs)
+
+int32_t TfLiteInterpreterGetSignatureCount(
+    const TfLiteInterpreter* interpreter) {
+  return static_cast<int32_t>(interpreter->impl->signature_keys().size());
+}
+
+const char* TfLiteInterpreterGetSignatureKey(
+    const TfLiteInterpreter* interpreter, int32_t signature_index) {
+  int32_t signature_count = TfLiteInterpreterGetSignatureCount(interpreter);
+  if (signature_index < 0 || signature_index >= signature_count) {
+    return nullptr;
+  }
+  return interpreter->impl->signature_keys()[signature_index]->c_str();
+}
+
+TfLiteSignatureRunner* TfLiteInterpreterGetSignatureRunner(
+    const TfLiteInterpreter* interpreter, const char* signature_key) {
+  tflite::SignatureRunner* signature_runner =
+      interpreter->impl->GetSignatureRunner(signature_key);
+  if (!signature_runner) return nullptr;
+  return new TfLiteSignatureRunner{signature_runner};
+}
+
+size_t TfLiteSignatureRunnerGetInputCount(
+    const TfLiteSignatureRunner* signature_runner) {
+  return signature_runner->impl->input_size();
+}
+
+const char* TfLiteSignatureRunnerGetInputName(
+    const TfLiteSignatureRunner* signature_runner, const int32_t input_index) {
+  int32_t input_count = TfLiteSignatureRunnerGetInputCount(signature_runner);
+  if (input_index < 0 || input_index >= input_count) {
+    return nullptr;
+  }
+  return signature_runner->impl->input_names()[input_index];
+}
+
+TfLiteStatus TfLiteSignatureRunnerResizeInputTensor(
+    TfLiteSignatureRunner* signature_runner, const char* input_name,
+    const int* input_dims, int32_t input_dims_size) {
+  std::vector<int> dims{input_dims, input_dims + input_dims_size};
+  return signature_runner->impl->ResizeInputTensorStrict(input_name, dims);
+}
+
+TfLiteStatus TfLiteSignatureRunnerAllocateTensors(
+    TfLiteSignatureRunner* signature_runner) {
+  return signature_runner->impl->AllocateTensors();
+}
+
+TfLiteTensor* TfLiteSignatureRunnerGetInputTensor(
+    TfLiteSignatureRunner* signature_runner, const char* input_name) {
+  return signature_runner->impl->input_tensor(input_name);
+}
+
+TfLiteStatus TfLiteSignatureRunnerInvoke(
+    TfLiteSignatureRunner* signature_runner) {
+  return signature_runner->impl->Invoke();
+}
+
+size_t TfLiteSignatureRunnerGetOutputCount(
+    const TfLiteSignatureRunner* signature_runner) {
+  return signature_runner->impl->output_size();
+}
+
+const char* TfLiteSignatureRunnerGetOutputName(
+    const TfLiteSignatureRunner* signature_runner, int32_t output_index) {
+  int32_t output_count = TfLiteSignatureRunnerGetOutputCount(signature_runner);
+  if (output_index < 0 || output_index >= output_count) {
+    return nullptr;
+  }
+  return signature_runner->impl->output_names()[output_index];
+}
+
+const TfLiteTensor* TfLiteSignatureRunnerGetOutputTensor(
+    const TfLiteSignatureRunner* signature_runner, const char* output_name) {
+  return signature_runner->impl->output_tensor(output_name);
+}
+
+TfLiteStatus TfLiteSignatureRunnerCancel(
+    TfLiteSignatureRunner* signature_runner) {
+  return signature_runner->impl->Cancel();
+}
+
+void TfLiteSignatureRunnerDelete(TfLiteSignatureRunner* signature_runner) {
+  delete signature_runner;
+}
 
 }  // extern "C"
 
