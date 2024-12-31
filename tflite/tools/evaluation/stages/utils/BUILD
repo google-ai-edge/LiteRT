@@ -28,6 +28,7 @@ cc_library(
     copts = tflite_copts(),
     deps = [
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
 )
