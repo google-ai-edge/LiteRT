@@ -42,6 +42,7 @@ BUILD_FLAGS=("-c" "opt"
     # TODO(ecalubaquib): Remove once all the visibility cl's are submitted.
     "--nocheck_visibility"
     "--show_timestamps"
+    "--experimental_ui_max_stdouterr_bytes=3145728"
     "--config=public_cache_push"
   )
 

@@ -31,6 +31,7 @@ UBUNTU_BUILD_FLAGS=("-c" "opt"
     "--define=xnn_enable_avx512fp16=false"
     "--nocheck_visibility"
     "--show_timestamps"
+    "--experimental_ui_max_stdouterr_bytes=3145728"
   )
 
 ANDROID_BUILD_FLAGS=(
