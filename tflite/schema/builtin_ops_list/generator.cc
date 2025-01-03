@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/schema/builtin_ops_list/generator.h"
 
+#include <cctype>
 #include <iostream>
 #include <string>
 

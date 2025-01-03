@@ -16,8 +16,6 @@ limitations under the License.
 
 #include "tflite/schema/builtin_ops_list/generator.h"
 
-#include <fstream>
-
 #include <gtest/gtest.h>
 
 namespace {
