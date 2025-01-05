@@ -17,8 +17,6 @@ limitations under the License.
 
 #include "tflite/core/acceleration/configuration/c/nnapi_plugin.h"
 
-#include <memory>
-
 #include "tflite/acceleration/configuration/configuration_generated.h"
 #include "tflite/core/acceleration/configuration/c/delegate_plugin.h"
 #include "tflite/core/acceleration/configuration/nnapi_plugin.h"
