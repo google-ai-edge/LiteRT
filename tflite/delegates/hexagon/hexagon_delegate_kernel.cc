@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/hexagon_delegate_kernel.h"
 
+#include <cstdint>
+#include <cstdio>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <vector>

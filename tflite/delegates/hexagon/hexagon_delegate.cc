@@ -17,7 +17,6 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "tflite/core/c/common.h"
 #include "tflite/delegates/hexagon/hexagon_delegate_kernel.h"
