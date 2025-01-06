@@ -17,6 +17,7 @@ set -ex
 
 # Valid values for PLATFORM_NAME are "ubuntu", "android", "ios".
 PLATFORM_NAME="${PLATFORM_NAME:-ubuntu}"
+EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 
 UBUNTU_BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
@@ -48,13 +49,13 @@ IOS_BUILD_FLAGS=(
   "--config=ios_x86_64"
   "--compilation_mode=opt"
   "--swiftcopt=-enable-testing"
-  # TODO(b/287670077): remove once code has been updated to handle newer versions of xcode
+  # TODO: (b/287670077) - remove once code has been updated to handle newer versions of xcode
   "--xcode_version=15.4.0"
   "--show_timestamps"
   )
 
-# TODO(b/383171538): Remove the following excluded targets once their bazel build are fixed.
 UBUNTU_EXCLUDED_TARGETS=(
+  # TODO: (b/383171538) - Remove the following excluded targets once their bazel build are fixed.
   "-//tflite:tflite_internal_cc_3p_api_deps_src_all"
   "-//tflite/delegates/coreml:coreml_delegate"
   "-//tflite/delegates/coreml:coreml_delegate_kernel"
@@ -406,13 +407,22 @@ IOS_TARGETS=(
 )
 
 # Build targets for the specified platform.
-if [ "$PLATFORM_NAME" == "ubuntu" ]; then
-    bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/... //litert/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
-elif [ "$PLATFORM_NAME" == "android" ]; then
+case "$PLATFORM_NAME" in
+  "ubuntu")
+    if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
+        bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/experimental/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
+    else
+        bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/... //litert/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
+    fi
+    ;;
+  "android")
     bazel build "${ANDROID_BUILD_FLAGS[@]}" -- "${ANDROID_TARGETS[@]}"
-elif [ "$PLATFORM_NAME" == "ios" ]; then
+    ;;
+  "ios")
     bazel build "${IOS_BUILD_FLAGS[@]}" -- "${IOS_TARGETS[@]}"
-else
+    ;;
+  *)
     echo "Unsupported platform: ${PLATFORM_NAME}"
     exit 1
-fi
+    ;;
+esac

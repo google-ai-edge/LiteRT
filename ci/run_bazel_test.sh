@@ -18,6 +18,7 @@ set -ex
 # Run this script under the root directory.
 
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
+EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 
 BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
@@ -39,21 +40,19 @@ BUILD_FLAGS=("-c" "opt"
     # Re-enable the foolowing when the compiler supports AVX512_FP16 (clang > 15,
     # GCC > 13)
     "--define=xnn_enable_avx512fp16=false"
-    # TODO(ecalubaquib): Remove once all the visibility cl's are submitted.
     "--nocheck_visibility"
     "--show_timestamps"
     "--experimental_ui_max_stdouterr_bytes=3145728"
     "--config=public_cache_push"
   )
 
-# TODO(ecalubaquib): Remove the following once the tests are fixed.
-# The list of the following bugs are as follows:
-# TODO(b/381310257): Investigate failing test not included in cpu_full
-# TODO(b/381110338, b/381124292): Clang and ambiguous operator errors
-# TODO(b/380870133): Duplicate op error due to tf_gen_op_wrapper_py
-# TODO(b/382122737): Module 'keras.src.backend' has no attribute 'convert_to_numpy'
-# TODO(b/382123188): No member named 'ConvertGenerator' in namespace 'testing'
-# TODO(b/382123664): Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
+# TODO: (b/381310257) - Investigate failing test not included in cpu_full
+# TODO: (b/381110338) - Clang errors
+# TODO: (b/381124292) - Ambiguous operator errors
+# TODO: (b/380870133) - Duplicate op error due to tf_gen_op_wrapper_py
+# TODO: (b/382122737) - Module 'keras.src.backend' has no attribute 'convert_to_numpy'
+# TODO: (b/382123188) - No member named 'ConvertGenerator' in namespace 'testing'
+# TODO: (b/382123664) - Undefined reference due to --no-allow-shlib-undefined: google::protobuf::internal
 EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/xnnpack:reduce_test"
@@ -104,4 +103,8 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/gpu/..."
 )
 
-bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/...
+else
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+fi
