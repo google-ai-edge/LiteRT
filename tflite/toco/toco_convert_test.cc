@@ -16,9 +16,10 @@ limitations under the License.
 
 #include <string>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/testing/util.h"
+#include "tflite/toco/model_flags.pb.h"
+#include "tflite/toco/toco_flags.pb.h"
 #include "tflite/toco/toco_port.h"
 
 namespace toco {

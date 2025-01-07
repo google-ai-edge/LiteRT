@@ -15,25 +15,31 @@ limitations under the License.
 #include "tflite/toco/tooling_util.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_replace.h"
-#include "absl/strings/str_split.h"
+#include "absl/strings/string_view.h"
 #include "re2/re2.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/toco/dump_graphviz.h"
 #include "tflite/toco/model_flags.pb.h"
 #include "tflite/toco/toco_graphviz_dump_options.h"
+#include "tflite/toco/types.pb.h"
 
 namespace toco {
 

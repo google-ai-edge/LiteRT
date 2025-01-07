@@ -12,15 +12,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-#include <tuple>
+#include "tflite/toco/tooling_util.h"
+
+#include <cstdint>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/status/status.h"
 #include "tensorflow/core/lib/core/status.h"
 #include "tflite/testing/util.h"
 #include "tflite/toco/model.h"
 #include "tflite/toco/toco_port.h"
-#include "tflite/toco/tooling_util.h"
 
 namespace toco {
 

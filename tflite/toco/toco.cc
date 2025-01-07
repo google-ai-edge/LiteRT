@@ -13,9 +13,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <cstdio>
-#include <memory>
 #include <string>
 
+#include "absl/status/status.h"
 #include "tflite/toco/model_cmdline_flags.h"
 #include "tflite/toco/toco_cmdline_flags.h"
 #include "tflite/toco/toco_convert.h"

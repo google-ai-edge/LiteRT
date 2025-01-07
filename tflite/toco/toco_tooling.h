@@ -18,6 +18,9 @@ limitations under the License.
 #include <memory>
 #include <string>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "absl/status/status.h"
 #include "tflite/toco/model.h"
 #include "tflite/toco/model_flags.pb.h"
 #include "tflite/toco/toco_flags.pb.h"

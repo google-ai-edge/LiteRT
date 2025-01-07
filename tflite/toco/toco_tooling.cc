@@ -14,12 +14,13 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/toco/toco_tooling.h"
 
-#include <cstdlib>
 #include <memory>
 #include <set>
 #include <string>
 
-#include "absl/memory/memory.h"
+#include "absl/log/check.h"
+#include "absl/log/log.h"
+#include "absl/status/status.h"
 #include "absl/strings/str_join.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/toco/allocate_transient_arrays.h"
@@ -33,6 +34,7 @@ limitations under the License.
 #include "tflite/toco/tflite/import.h"
 #include "tflite/toco/toco_flags.pb.h"
 #include "tflite/toco/tooling_util.h"
+#include "tflite/toco/types.pb.h"
 
 namespace toco {
 namespace {
