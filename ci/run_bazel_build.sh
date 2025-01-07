@@ -209,6 +209,21 @@ UBUNTU_EXCLUDED_TARGETS=(
   "-//tflite/core/async:backend_async_kernel_interface"
   "-//tflite/tools/evaluation/proto/..."
   "-//tflite/tools/optimize:modify_model_interface_main"
+  # The following below are android exclusive targets
+  "-//tflite/acceleration/..."
+  "-//tflite/experimental/..."
+  "-//tflite/delegates/gpu/gl:android_sync"
+  "-//tflite/delegates/gpu/java/src/main/native/..."
+  "-//tflite/delegates/hexagon/hexagon_nn:hexagon_interface_android"
+  "-//tflite/delegates/hexagon/java/..."
+  "-//tflite/java/..."
+  "-//tflite/tools/benchmark/android/..."
+  "-//tflite/tools/benchmark/experimental/delegate_performance/android/..."
+  "-//tflite/tools/benchmark/experimental/firebase/android/..."
+  # Note: dont need to exclude ios as ios starts with BAZEL.apple
+)
+
+UBUNTU_EXCLUDED_EXPERIMENTAL_TARGETS=(
   # TODO(b/384562428): tflite/experimental/litert/core/util:flatbuffer_tools failing need c++20
   # Each failures in subdirectory below are failing due to b/384562428
   # "-//tflite/experimental/litert/compiler/"
@@ -410,7 +425,7 @@ IOS_TARGETS=(
 case "$PLATFORM_NAME" in
   "ubuntu")
     if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
-        bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/experimental/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
+        bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/experimental/... "${UBUNTU_EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
     else
         bazel build "${UBUNTU_BUILD_FLAGS[@]}" -- //tflite/... //litert/... "${UBUNTU_EXCLUDED_TARGETS[@]}"
     fi
