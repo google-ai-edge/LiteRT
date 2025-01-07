@@ -312,6 +312,8 @@ cc_test(
         ":graph_info",
         ":simple_planner",
         "//tflite/core/c:common",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],

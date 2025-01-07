@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tflite/simple_planner.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>

@@ -16,12 +16,16 @@ limitations under the License.
 
 #include <algorithm>
 #include <cstdarg>
+#include <cstddef>
+#include <cstdio>
 #include <initializer_list>
 #include <memory>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/core/c/common.h"
 #include "tflite/graph_info.h"
