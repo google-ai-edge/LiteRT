@@ -4,11 +4,11 @@
 # Helpful YAML parser to clarify YAML syntax:
 # https://yaml-online-parser.appspot.com/
 #
-# This workflow will run at the end of every day to
+# This workflow will:
 # 1. Build Python Wheels
 # 2. Upload Release Assets
 
-name: Python Package Build and Release (nightly)
+name: Python Package Build and Release
 
 on:
   workflow_dispatch:  # Allow manual triggers
@@ -17,12 +17,10 @@ on:
         description: 'True for prod release, false for nightly release'
         required: false
         default: 'false'
-  schedule:
-  - cron: "0 14 * * *" # 2PM UTC (7AM PT)
 
 jobs:
   setup_env:
-    name: Build and Release Python Wheel Nightly
+    name: Build and Release Python Wheel
     runs-on: ubuntu-latest
 
     outputs:

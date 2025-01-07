@@ -14,12 +14,6 @@ directly build and contribute here, at which time we will make a separate
 announcement.
 
 
-## Build Status
-
-Build Type         |    Status     |
------------        | --------------|
-PyPi Nightly Release    | [![](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_pypi_release.yml/badge.svg?branch=main)](https://github.com/google-ai-edge/LiteRT/actions/workflows/nightly_pypi_release.yml) |
-
 ## PyPi Installation Requirements
 
  * Python versions:  3.9, 3.10, 3.11
