@@ -29,6 +29,7 @@ if [ ! -d /root_dir ]; then
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
+    -e EXPERIMENTAL_TARGETS_ONLY=${EXPERIMENTAL_TARGETS_ONLY:-false} \
     --entrypoint /script_dir/run_bazel_test_with_docker.sh \
     tflite-builder
   exit 0
