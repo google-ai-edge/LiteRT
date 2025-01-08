@@ -30,6 +30,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:dynamic_loading",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
