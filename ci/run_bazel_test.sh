@@ -19,6 +19,7 @@ set -ex
 
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
+PUBLIC_CACHE_PUSH="${PUBLIC_CACHE_PUSH:-false}"
 
 BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
@@ -43,8 +44,11 @@ BUILD_FLAGS=("-c" "opt"
     "--nocheck_visibility"
     "--show_timestamps"
     "--experimental_ui_max_stdouterr_bytes=3145728"
-    "--config=public_cache_push"
   )
+
+if [ "$PUBLIC_CACHE_PUSH" == "true" ]; then
+    BUILD_FLAGS+=("--config=public_cache_push")
+fi
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
 # TODO: (b/381110338) - Clang errors
