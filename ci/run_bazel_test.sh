@@ -20,6 +20,7 @@ set -ex
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 PUBLIC_CACHE_PUSH="${PUBLIC_CACHE_PUSH:-false}"
+PUBLIC_CACHE="${PUBLIC_CACHE:-false}"
 
 BUILD_FLAGS=("-c" "opt"
     "--cxxopt=--std=c++17"
@@ -48,6 +49,10 @@ BUILD_FLAGS=("-c" "opt"
 
 if [ "$PUBLIC_CACHE_PUSH" == "true" ]; then
     BUILD_FLAGS+=("--config=public_cache_push")
+fi
+
+if [ "$PUBLIC_CACHE" == "true" ]; then
+    BUILD_FLAGS+=("--config=public_cache")
 fi
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
