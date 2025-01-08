@@ -118,7 +118,9 @@ esac
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in
   x86_64)
-    BAZEL_FLAGS="${BAZEL_FLAGS} --config=public_cache_push"
+    if [[ "${PUBLIC_CACHE_PUSH}" == "true" ]]; then
+      BAZEL_FLAGS="${BAZEL_FLAGS} --config=public_cache_push"
+    fi
     ;;
   arm64)
     BAZEL_FLAGS="${BAZEL_FLAGS} --linkopt="-ld_classic""
