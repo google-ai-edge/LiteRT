@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cstdlib>
+
 #include "tflite/tools/benchmark/benchmark_performance_options.h"
 #include "tflite/tools/benchmark/benchmark_tflite_model.h"
 #include "tflite/tools/logging.h"
