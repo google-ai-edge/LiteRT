@@ -60,6 +60,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
@@ -67,7 +68,10 @@ cc_library(
         "//tflite/experimental/litert/core/model:model_buffer",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/synchronization",
         "@local_tsl//tsl/platform",
     ],
 )

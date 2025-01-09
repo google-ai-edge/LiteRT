@@ -67,6 +67,12 @@ litert_test(
         # Sanitizer runtime doesn't work with anything that loads libQnnHtp.so.
         "nosan",
     ],
+    # This test can be run only on Android and Linux.
+    target_compatible_with = select({
+        "@org_tensorflow//third_party/bazel_platforms/os:android": [],
+        "@org_tensorflow//third_party/bazel_platforms/os:linux": [],
+        "//conditions:default": ["@org_tensorflow//third_party/bazel_platforms:incompatible"],
+    }),
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep

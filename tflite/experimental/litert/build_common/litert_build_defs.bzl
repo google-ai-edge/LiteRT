@@ -46,9 +46,6 @@ def _valid_so_name(name):
 def _make_target_ref(name):
     return ":{}".format(name)
 
-def _make_script_linkopt(script):
-    return make_linkopt("--version-script=$(location {})".format(script))
-
 ####################################################################################################
 # Explicitly Link System Libraries ("ungrte")
 
@@ -64,8 +61,28 @@ _SYS_ELF_INTERPRETER_LINKOPT_X86_64 = make_linkopt("--dynamic-linker={}".format(
 ####################################################################################################
 # Symbol Hiding
 
-_EXPORT_LRT_ONLY_SCRIPT = "//tflite/experimental/litert/build_common:export_litert_only.lds"
-_EXPORT_LRT_ONLY_LINKOPT = _make_script_linkopt(_EXPORT_LRT_ONLY_SCRIPT)
+_EXPORT_LRT_ONLY_SCRIPT_LINUX = "//tflite/experimental/litert/build_common:export_litert_only_linux.lds"
+_EXPORT_LRT_ONLY_SCRIPT_DARWIN = "//tflite/experimental/litert/build_common:export_litert_only_darwin.lds"
+_EXPORT_LRT_ONLY_LINKOPT_LINUX = make_linkopt("--version-script=$(location {})".format(_EXPORT_LRT_ONLY_SCRIPT_LINUX))
+_EXPORT_LRT_ONLY_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(location {})".format(_EXPORT_LRT_ONLY_SCRIPT_DARWIN))
+
+def export_lrt_only_script():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
+        "//conditions:default": [],
+    })
+
+def export_lrt_only_linkopt():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
+        "//conditions:default": [],
+    })
 
 ####################################################################################################
 # Macros
@@ -154,8 +171,8 @@ def litert_bin(
     if export_litert_only:
         append_rule_kwargs(
             cc_bin_kwargs,
-            linkopts = [_EXPORT_LRT_ONLY_LINKOPT],
-            deps = [_EXPORT_LRT_ONLY_SCRIPT],
+            linkopts = export_lrt_only_linkopt(),
+            deps = export_lrt_only_script(),
         )
 
     _litert_base(
@@ -205,8 +222,8 @@ def litert_dynamic_lib(
     user_link_flags = []
     additional_linker_inputs = []
     if export_litert_only:
-        user_link_flags.append(_EXPORT_LRT_ONLY_LINKOPT)
-        additional_linker_inputs.append(_EXPORT_LRT_ONLY_SCRIPT)
+        user_link_flags = export_lrt_only_linkopt()
+        additional_linker_inputs = export_lrt_only_script()
 
     native.cc_shared_library(
         name = shared_lib_name,
