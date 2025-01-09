@@ -18,8 +18,6 @@ set -ex
 # Run this script under the root directory.
 
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
-PUBLIC_CACHE_PUSH="${PUBLIC_CACHE_PUSH:-false}"
-PUBLIC_CACHE="${PUBLIC_CACHE:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
 BUILD_FLAGS=("-c" "opt"
@@ -48,7 +46,7 @@ BUILD_FLAGS=("-c" "opt"
   )
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
-BUILD_FLAGS += (${BAZEL_CONFIG_FLAGS})
+BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
 # TODO: (b/381110338) - Clang errors

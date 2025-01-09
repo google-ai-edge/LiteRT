@@ -102,6 +102,10 @@ case "${TENSORFLOW_TARGET}" in
     ;;
 esac
 
+if [[ -n "${BAZEL_CONFIG_FLAGS}" ]]; then
+  BAZEL_FLAGS="${BAZEL_FLAGS} ${BAZEL_CONFIG_FLAGS}"
+fi
+
 # We need to pass down the environment variable with a possible alternate Python
 # include path for Python 3.x builds to work.
 export CROSSTOOL_PYTHON_INCLUDE_PATH
@@ -118,9 +122,6 @@ esac
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.
 case "${ARCH}" in
   x86_64)
-    if [[ "${PUBLIC_CACHE_PUSH}" == "true" ]]; then
-      BAZEL_FLAGS="${BAZEL_FLAGS} --config=public_cache_push"
-    fi
     ;;
   arm64)
     BAZEL_FLAGS="${BAZEL_FLAGS} --linkopt="-ld_classic""
