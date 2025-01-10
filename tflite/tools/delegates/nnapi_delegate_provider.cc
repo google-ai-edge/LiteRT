@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "tflite/delegates/nnapi/nnapi_delegate.h"
 #include "tflite/nnapi/nnapi_implementation.h"

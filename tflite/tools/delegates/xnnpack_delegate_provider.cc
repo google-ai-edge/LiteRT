@@ -15,6 +15,7 @@ limitations under the License.
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 #include "tflite/tools/delegates/delegate_provider.h"
