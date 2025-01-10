@@ -37,6 +37,7 @@ if [ ! -d /root_dir ]; then
     -v ${SCRIPT_DIR}:/script_dir \
     -e NIGHTLY_RELEASE_DATE=${NIGHTLY_RELEASE_DATE} \
     -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
+    -e BAZEL_CONFIG_FLAGS=${BAZEL_CONFIG_FLAGS} \
     -e CUSTOM_BAZEL_FLAGS=${CUSTOM_BAZEL_FLAGS} \
     -e RELEASE_VERSION=${RELEASE_VERSION} \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
