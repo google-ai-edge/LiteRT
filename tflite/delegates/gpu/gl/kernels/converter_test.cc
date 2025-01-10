@@ -15,10 +15,10 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/kernels/converter.h"
 
-#include <algorithm>
+#include <cstdint>
+#include <memory>
 #include <vector>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/convert.h"
