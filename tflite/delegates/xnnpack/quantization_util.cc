@@ -16,6 +16,8 @@ limitations under the License.
 #include "tflite/delegates/xnnpack/quantization_util.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #include "fp16.h"  // from @FP16
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
