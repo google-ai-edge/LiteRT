@@ -43,7 +43,7 @@ config_setting(
 config_setting(
     name = "aarch64",
     constraint_values = [
-        "@org_tensorflow//third_party/bazel_platforms/cpu:aarch64",
+        "@platforms//cpu:aarch64",
     ],
     visibility = ["//visibility:private"],
 )

@@ -101,9 +101,9 @@ litert_test(
     ],
     # This test can be run only on Android and Linux.
     target_compatible_with = select({
-        "@org_tensorflow//third_party/bazel_platforms/os:android": [],
-        "@org_tensorflow//third_party/bazel_platforms/os:linux": [],
-        "//conditions:default": ["@org_tensorflow//third_party/bazel_platforms:incompatible"],
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
         ":qnn_manager",
