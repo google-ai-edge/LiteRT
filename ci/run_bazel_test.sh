@@ -140,6 +140,8 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/shlo/ops:sqrt_test"
         "-//tflite/experimental/shlo/ops:tanh_test"
         "-//tflite/experimental/shlo/ops:unary_elementwise_test"
+        "-//tflite/experimental/shlo:f16_test"
+        "-//tflite/experimental/shlo:f16_emulated_test"
 )
 
 if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
