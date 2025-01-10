@@ -22,6 +22,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/base/attributes.h"
+#include "absl/log/log.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter_builder.h"

@@ -21,6 +21,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include "absl/log/log.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/tools/evaluation/evaluation_delegate_provider.h"

@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
+#include "absl/log/log.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/core/c/common.h"
 #include "tflite/tools/evaluation/evaluation_delegate_provider.h"
