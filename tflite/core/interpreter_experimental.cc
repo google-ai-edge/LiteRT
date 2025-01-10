@@ -17,10 +17,8 @@ limitations under the License.
 #include <stdlib.h>
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <utility>
-#include <vector>
 
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/async/async_signature_runner.h"
