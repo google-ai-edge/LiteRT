@@ -73,6 +73,7 @@ config_setting(
     # constraint_values = [
     # "@org_tensorflow//third_party/bazel_platforms/os:linux",
     # "@org_tensorflow//third_party/bazel_platforms/cpu:x86_64",
+    # "//tools/cc_target_os:linux-google",
     # ],
     # copybara:uncomment_end
     values = {
