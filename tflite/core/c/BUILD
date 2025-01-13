@@ -280,10 +280,7 @@ tflite_cc_library_with_c_headers_test(
     hdrs = ["c_api_types.h"],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
-    visibility = [
-        "//tflite:__subpackages__",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/lrt:__subpackages__",
-    ] + c_api_visibility_allowlist(),
+    visibility = ["//tflite:__subpackages__"] + c_api_visibility_allowlist(),
     deps = [
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_common",
     ],
