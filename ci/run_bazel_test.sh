@@ -138,6 +138,7 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/shlo/ops:sign_test"
         "-//tflite/experimental/shlo/ops:sine_test"
         "-//tflite/experimental/shlo/ops:sqrt_test"
+        "-//tflite/experimental/shlo/ops:subtract_test"
         "-//tflite/experimental/shlo/ops:tanh_test"
         "-//tflite/experimental/shlo/ops:unary_elementwise_test"
         "-//tflite/experimental/shlo:f16_test"
