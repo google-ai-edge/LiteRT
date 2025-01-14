@@ -123,6 +123,8 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
         "-//tflite/experimental/litert/vendors/mediatek/dispatch:dispatch_api_mediatek_test"
         "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
+        # TODO(sosagarcia) - Remove the //tflite/experimental/shlo/... after RBE is fixed.
+        "-//tflite/experimental/shlo/..."
         "-//tflite/experimental/shlo/ops:abs_test"
         "-//tflite/experimental/shlo/ops:binary_elementwise_test"
         "-//tflite/experimental/shlo/ops:cbrt_test"
