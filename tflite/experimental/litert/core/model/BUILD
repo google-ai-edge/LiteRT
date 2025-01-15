@@ -35,7 +35,6 @@ cc_library(
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/core:byte_code_util",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
