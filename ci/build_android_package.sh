@@ -178,6 +178,10 @@ BUILD_FLAGS=("-c" "opt" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
     "--show_timestamps")
+
+# Add Bazel --config flags based on kokoro injected env
+BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
+
 bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \

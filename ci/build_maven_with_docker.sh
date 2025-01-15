@@ -30,6 +30,7 @@ if [ ! -d /root_dir ]; then
     -v ${ROOT_DIR}:/root_dir \
     -v ${SCRIPT_DIR}:/script_dir \
     -e RELEASE_VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}" \
+    -e BAZEL_CONFIG_FLAGS=${BAZEL_CONFIG_FLAGS} \
     --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
 
   echo "Output can be found here:"
