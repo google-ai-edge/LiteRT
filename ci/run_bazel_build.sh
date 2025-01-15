@@ -19,20 +19,9 @@ set -ex
 PLATFORM_NAME="${PLATFORM_NAME:-ubuntu}"
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 
-UBUNTU_BUILD_FLAGS=("-c" "opt"
-    "--cxxopt=--std=c++17"
-    "--copt=-Wno-gnu-offsetof-extensions"
-    "--build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-v1only"
-    # Re-enable the following when the compiler supports AVX_VNNI
-    "--define=xnn_enable_avxvnni=false"
-    # Re-enable the following when the compiler supports AVX512-AMX
-    "--define=xnn_enable_avx512amx=false"
-    # Re-enable the foolowing when the compiler supports AVX512_FP16 (clang > 15,
-    # GCC > 13)
-    "--define=xnn_enable_avx512fp16=false"
+UBUNTU_BUILD_FLAGS=(
+    "--config=bulk_test_cpu"
     "--nocheck_visibility"
-    "--show_timestamps"
-    "--experimental_ui_max_stdouterr_bytes=3145728"
   )
 
 ANDROID_BUILD_FLAGS=(

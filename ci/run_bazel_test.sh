@@ -20,29 +20,10 @@ set -ex
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
-BUILD_FLAGS=("-c" "opt"
-    "--cxxopt=--std=c++17"
-    # add the following flag to avoid clang undefine symbols
-    "--copt=-Wno-gnu-offsetof-extensions"
-    "--build_tests_only"
-    "--test_output=errors"
-    "--verbose_failures=true"
-    "--test_summary=short"
-    "--test_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
-    "--build_tag_filters=-no_oss,-oss_serial,-gpu,-tpu,-benchmark-test,-v1only"
+BUILD_FLAGS=(
+    "--config=bulk_test_cpu"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
-    "--flaky_test_attempts=3"
-    # Re-enable the following when the compiler supports AVX_VNNI
-    "--define=xnn_enable_avxvnni=false"
-    "--define=xnn_enable_avx256vnni=false"
-    # Re-enable the following when the compiler supports AVX512-AMX
-    "--define=xnn_enable_avx512amx=false"
-    # Re-enable the foolowing when the compiler supports AVX512_FP16 (clang > 15,
-    # GCC > 13)
-    "--define=xnn_enable_avx512fp16=false"
     "--nocheck_visibility"
-    "--show_timestamps"
-    "--experimental_ui_max_stdouterr_bytes=3145728"
   )
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
