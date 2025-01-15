@@ -23,7 +23,7 @@
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
-#include "third_party/opencl_headers/CL/cl.h"
+#include <CL/cl.h>
 #include "tflite/experimental/litert/runtime/opencl/cl_context.h"
 #include "tflite/experimental/litert/runtime/opencl/cl_device.h"
 #include "tflite/experimental/litert/runtime/opencl/opencl_wrapper.h"
