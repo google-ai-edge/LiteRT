@@ -179,7 +179,7 @@ BUILD_FLAGS=("-c" "opt" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
     "--show_timestamps")
 
-# Add Bazel --config flags based on kokoro injected env
+# Merge extra config flags from the environment
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
 bazel build "${BUILD_FLAGS[@]}" \
