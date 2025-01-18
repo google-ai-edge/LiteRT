@@ -11,9 +11,7 @@ cc_library(
     name = "delegate_registry",
     hdrs = ["delegate_registry.h"],
     compatible_with = get_compatible_with_portable(),
-    visibility = [
-        "//tflite:__subpackages__",
-    ] + delegate_registry_visibility_allowlist(),
+    visibility = delegate_registry_visibility_allowlist(),
     deps = [
         "//tflite/core/acceleration/configuration:delegate_registry",
     ],
