@@ -20,7 +20,7 @@
 
 #include "absl/container/flat_hash_set.h"
 #include "absl/log/absl_check.h"
-#include "third_party/llvm/llvm-project/llvm/include/llvm/ADT/MapVector.h"
+#include "llvm/ADT/MapVector.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_op_code.h"
 #include "tflite/experimental/litert/core/model/model.h"

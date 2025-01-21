@@ -17,8 +17,8 @@
 #include <utility>
 
 #include "absl/strings/str_format.h"
-#include "third_party/llvm/llvm-project/llvm/include/llvm/ADT/ArrayRef.h"
-#include "third_party/llvm/llvm-project/llvm/include/llvm/Support/CommandLine.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/CommandLine.h"
 #include "tflite/experimental/litert/core/byte_code_util.h"
 #include "tflite/experimental/litert/tools/apply_plugin.h"
 #include "tflite/experimental/litert/tools/outstream.h"
