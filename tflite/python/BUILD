@@ -18,7 +18,7 @@ package(
     licenses = ["notice"],
 )
 
-# This is a test commit test again
+# This is a test commit test with kokoro:run
 
 exports_files(["tflite_convert.py"])
 
