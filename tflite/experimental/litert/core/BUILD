@@ -71,6 +71,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_environment.h",
     ],
     deps = [
+        ":accelerator",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
@@ -89,6 +90,16 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_any",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "accelerator",
+    srcs = ["accelerator.cc"],
+    hdrs = ["accelerator.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_expected",
     ],
 )
 

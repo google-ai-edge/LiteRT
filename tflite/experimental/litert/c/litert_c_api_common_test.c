@@ -19,22 +19,20 @@
 #endif
 
 // Include all the header files in the litert/c directory.
-#include "tflite/experimental/litert/c/litert_common.h"  // NOLINT
+#include "tflite/experimental/litert/c/litert_accelerator.h"  // NOLINT
+#include "tflite/experimental/litert/c/litert_accelerator_registration.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_any.h"  // NOLINT
+#include "tflite/experimental/litert/c/litert_common.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_compiled_model.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_compiled_model_options.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_event.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_layout.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_logging.h"  // NOLINT
-#include "tflite/experimental/litert/c/litert_options.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_model.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_op_code.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_options.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"  // NOLINT
 #include "tflite/experimental/litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
 
-int main(void) {
-  return 0;
-}
-
+int main(void) { return 0; }
