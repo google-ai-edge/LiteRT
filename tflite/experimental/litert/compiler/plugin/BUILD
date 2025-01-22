@@ -84,11 +84,11 @@ cc_library(
     hdrs = ["algo.h"],
     deps = [
         "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/core:insert_order_map",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:model_graph",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
-        "@llvm-project//llvm:Support",
     ],
 )
 
