@@ -212,9 +212,21 @@ cc_library(
     name = "litert_macros",
     hdrs = ["litert_macros.h"],
     deps = [
+        ":litert_expected",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+cc_test(
+    name = "litert_macros_test",
+    srcs = ["litert_macros_test.cc"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//tflite/experimental/litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
