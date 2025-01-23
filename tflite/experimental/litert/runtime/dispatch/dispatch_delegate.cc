@@ -27,7 +27,7 @@
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/c/litert_logging.h"
-#include "tflite/experimental/litert/core/byte_code_util.h"
+#include "tflite/experimental/litert/core/build_stamp.h"
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_kernel.h"
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"

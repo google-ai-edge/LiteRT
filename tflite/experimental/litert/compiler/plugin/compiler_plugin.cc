@@ -40,7 +40,7 @@
 #include "tflite/experimental/litert/cc/litert_macros.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/compiler/plugin/algo.h"
-#include "tflite/experimental/litert/core/byte_code_util.h"
+#include "tflite/experimental/litert/core/build_stamp.h"
 #include "tflite/experimental/litert/core/dynamic_loading.h"
 #include "tflite/experimental/litert/core/environment.h"
 #include "tflite/experimental/litert/core/filesystem.h"
@@ -386,8 +386,7 @@ Expected<PartitionResult> PartitionModel(CompilerPlugin& compiler_plugin,
 }
 
 Expected<void> ApplyPlugin(CompilerPlugin& compiler_plugin, LiteRtModelT& model,
-                           absl::string_view soc_model,
-                           Serialization serialization) {
+                           absl::string_view soc_model) {
   // Collect partitions to pass to compilation.
   auto partitions = PartitionModel(compiler_plugin, model);
   if (!partitions) {
@@ -428,8 +427,8 @@ Expected<void> ApplyPlugin(CompilerPlugin& compiler_plugin, LiteRtModelT& model,
   }
 
   // Tag the model with make/model from the plugin.
-  auto build_stamp = MakeBuildStamp(compiler_plugin.SocManufacturer(),
-                                    soc_model, serialization);
+  auto build_stamp =
+      MakeBuildStamp(compiler_plugin.SocManufacturer(), soc_model);
   if (!build_stamp) {
     return build_stamp.Error();
   }

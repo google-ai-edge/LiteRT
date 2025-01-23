@@ -26,7 +26,7 @@
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_op_code.h"
 #include "tflite/experimental/litert/cc/litert_environment.h"
-#include "tflite/experimental/litert/core/byte_code_util.h"
+#include "tflite/experimental/litert/core/build_stamp.h"
 #include "tflite/experimental/litert/core/filesystem.h"
 #include "tflite/experimental/litert/test/common.h"
 #include "tflite/experimental/litert/test/test_macros.h"

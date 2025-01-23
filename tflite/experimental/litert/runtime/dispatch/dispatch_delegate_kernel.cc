@@ -14,14 +14,12 @@
 
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_kernel.h"
 
-#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <utility>
 
-#include "absl/strings/string_view.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -36,7 +34,6 @@
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer_requirements.h"
-#include "tflite/experimental/litert/core/byte_code_util.h"
 #include "tflite/experimental/litert/core/dispatch_op_schema.h"
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "tflite/experimental/litert/runtime/external_litert_buffer_context.h"
