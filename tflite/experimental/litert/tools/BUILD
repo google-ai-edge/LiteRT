@@ -67,6 +67,7 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/core:byte_code_util",
+        "//tflite/experimental/litert/core:dispatch_op_schema",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
         "@com_google_absl//absl/log:absl_check",
