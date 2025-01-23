@@ -149,6 +149,7 @@ cc_library(
         ":toco_graphviz_dump_options",
         ":toco_port",
         ":types_proto_cc",
+        "//base:raw_logging",
         "@com_google_absl//absl/strings",
         "@org_tensorflow//tensorflow/core:framework_internal",
         "@org_tensorflow//tensorflow/core:lib",
