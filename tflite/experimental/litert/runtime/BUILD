@@ -177,6 +177,7 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_compiled_model_options",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_expected",

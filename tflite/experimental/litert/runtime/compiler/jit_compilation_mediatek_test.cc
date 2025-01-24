@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #include <array>
-#include <cstring>
-#include <memory>
 #include <utility>
 #include <vector>
 
@@ -24,23 +22,13 @@
 #include "absl/log/log.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
-#include "tflite/c/c_api_opaque.h"
-#include "tflite/c/common.h"
 #include "tflite/experimental/litert/c/litert_common.h"
-#include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/cc/litert_compiled_model.h"
 #include "tflite/experimental/litert/cc/litert_environment.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
-#include "tflite/experimental/litert/compiler/plugin/compiler_plugin.h"
-#include "tflite/experimental/litert/runtime/external_litert_buffer_context.h"
 #include "tflite/experimental/litert/test/common.h"
-#include "tflite/experimental/litert/test/test_macros.h"
 #include "tflite/experimental/litert/test/testdata/simple_model_test_vectors.h"
-#include "tflite/interpreter.h"
-#include "tflite/kernels/register.h"
-#include "tflite/model_builder.h"
-#include "tflite/signature_runner.h"
 
 constexpr const char* kCompilerPluginLibSearchPath = "/data/local/tmp";
 
@@ -68,8 +56,13 @@ TEST(JitCompilation, MediaTek) {
                   "MediaTek NPU";
 #endif
 
+  auto compilation_options = litert::CompiledModel::Options::Create();
+  ASSERT_TRUE(compilation_options);
+  ASSERT_TRUE(
+      compilation_options->SetHardwareAccelerators(kLiteRtHwAccelatorNpu));
+
   auto compiled_model =
-      litert::CompiledModel::Create(*model, kLiteRtHwAccelatorNpu);
+      litert::CompiledModel::Create(*model, std::move(*compilation_options));
   ASSERT_TRUE(compiled_model);
 
   auto input_buffers =
