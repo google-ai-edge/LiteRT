@@ -51,6 +51,7 @@ cc_test(
     data = ["//tflite/experimental/litert/test:mlir_test_data"],
     deps = [
         ":example_plugin",  # buildcleaner: keep
+        "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_model",
