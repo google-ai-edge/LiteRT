@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/async/backend_async_kernel_interface.h"
 
+#include <cstddef>
 #include <vector>
 
 #include "tflite/async/c/async_kernel.h"
