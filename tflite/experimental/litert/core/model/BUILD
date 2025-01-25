@@ -80,7 +80,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
@@ -275,6 +274,16 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "buffer_manager",
+    hdrs = ["buffer_manager.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "//tflite/experimental/litert/cc:litert_expected",
+    ],
+)
+
 cc_test(
     name = "model_graph_test",
     srcs = ["model_graph_test.cc"],
@@ -309,5 +318,16 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
+    ],
+)
+
+cc_test(
+    name = "buffer_manager_test",
+    srcs = ["buffer_manager_test.cc"],
+    deps = [
+        ":buffer_manager",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
