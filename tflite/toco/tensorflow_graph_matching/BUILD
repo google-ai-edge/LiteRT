@@ -54,6 +54,8 @@ cc_library(
         "//tflite/toco:model",
         "//tflite/toco:toco_port",
         "//tflite/toco:tooling_util",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:check",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
