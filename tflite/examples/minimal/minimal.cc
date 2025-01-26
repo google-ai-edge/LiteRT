@@ -13,6 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include <cstdio>
+#include <cstdlib>
+#include <memory>
 
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
