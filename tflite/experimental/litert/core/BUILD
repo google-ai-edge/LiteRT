@@ -92,7 +92,6 @@ cc_library(
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/cc:litert_any",
         "//tflite/experimental/litert/cc:litert_expected",
         "@com_google_absl//absl/types:span",
     ],

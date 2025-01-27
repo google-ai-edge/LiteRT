@@ -28,6 +28,7 @@
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/core/build_stamp.h"
+#include "tflite/experimental/litert/core/environment.h"
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_kernel.h"
 #include "tflite/experimental/litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
@@ -108,8 +109,9 @@ DispatchDelegate::CreateDelegateKernelInterface() {
 
 }  // namespace
 
-LiteRtDispatchDelegateOptions* LiteRtCreateDefaultDispatchDelegateOptions() {
-  return new LiteRtDispatchDelegateOptions;
+LiteRtDispatchDelegateOptions* LiteRtCreateDefaultDispatchDelegateOptions(
+    LiteRtEnvironmentT& environment) {
+  return new LiteRtDispatchDelegateOptions(environment);
 }
 
 TfLiteStatus LiteRtAddDispatchDelegateOption(
@@ -135,9 +137,9 @@ void LiteRtDestroyDispatchDelegateOptions(
 }
 
 TfLiteDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtDispatchDelegateOptions* options) {
+    LiteRtEnvironmentT& environment, LiteRtDispatchDelegateOptions* options) {
   if (!options) {
-    options = LiteRtCreateDefaultDispatchDelegateOptions();
+    options = LiteRtCreateDefaultDispatchDelegateOptions(environment);
   }
   return DispatchDelegate::Create(options);
 }
@@ -148,14 +150,16 @@ void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate) {
 
 namespace litert {
 
-DispatchDelegateOptionsPtr CreateDispatchDelegateOptionsPtr() {
-  return {LiteRtCreateDefaultDispatchDelegateOptions(),
+DispatchDelegateOptionsPtr CreateDispatchDelegateOptionsPtr(
+    LiteRtEnvironmentT& environment) {
+  return {LiteRtCreateDefaultDispatchDelegateOptions(environment),
           LiteRtDestroyDispatchDelegateOptions};
 }
 
 DispatchDelegatePtr CreateDispatchDelegatePtr(
-    DispatchDelegateOptionsPtr&& options) {
-  return DispatchDelegatePtr(LiteRtCreateDispatchDelegate(options.release()),
-                             LiteRtDestroyDispatchDelegate);
+    LiteRtEnvironmentT& environment, DispatchDelegateOptionsPtr&& options) {
+  return DispatchDelegatePtr(
+      LiteRtCreateDispatchDelegate(environment, options.release()),
+      LiteRtDestroyDispatchDelegate);
 }
 }  // namespace litert

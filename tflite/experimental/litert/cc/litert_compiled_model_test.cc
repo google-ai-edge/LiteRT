@@ -24,6 +24,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "tflite/experimental/litert/c/litert_common.h"
+#include "tflite/experimental/litert/cc/litert_environment.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/test/common.h"
@@ -43,7 +44,10 @@ TEST(CompiledModelTest, Basic) {
   ASSERT_TRUE(options);
   ASSERT_TRUE(options->SetHardwareAccelerators(kLiteRtHwAccelatorCpu));
 
-  auto res_compiled_model = CompiledModel::Create(model, std::move(*options));
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto res_compiled_model =
+      CompiledModel::Create(*env, model, std::move(*options));
   ASSERT_TRUE(res_compiled_model) << "Failed to initialize CompiledModel";
 
   auto& compiled_model = *res_compiled_model;
@@ -99,7 +103,10 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   ASSERT_TRUE(options);
   ASSERT_TRUE(options->SetHardwareAccelerators(kLiteRtHwAccelatorCpu));
 
-  auto res_compiled_model = CompiledModel::Create(model, std::move(*options));
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+  auto res_compiled_model =
+      CompiledModel::Create(*env, model, std::move(*options));
   ASSERT_TRUE(res_compiled_model) << "Failed to initialize CompiledModel";
 
   auto& compiled_model = *res_compiled_model;

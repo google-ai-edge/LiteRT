@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
 #include "tflite/experimental/litert/c/litert_common.h"
+#include "tflite/experimental/litert/c/litert_environment.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
@@ -168,7 +169,8 @@ struct ApplyPluginsResult {
 };
 
 Expected<ApplyPluginsResult> ApplyPlugins(
-    LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators);
+    LiteRtEnvironment environment, LiteRtModel model,
+    LiteRtHwAcceleratorSet selected_hw_accelerators);
 
 }  // namespace litert::internal
 

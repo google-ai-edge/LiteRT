@@ -34,7 +34,6 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_compiled_model_options",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
         "//tflite/experimental/litert/cc:litert_compiled_model",
         "//tflite/experimental/litert/cc:litert_environment",
