@@ -63,7 +63,6 @@ cc_library(
 #     ],
 #     deps = [
 #         ":compiler_plugin",
-#         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tflite/experimental/litert/c:litert_common",
 #         "//tflite/experimental/litert/c:litert_environment",
@@ -74,6 +73,7 @@ cc_library(
 #         "//tflite/experimental/litert/test:common",
 #         "//tflite/experimental/litert/test:test_macros",
 #         "//tflite/experimental/litert/tools:dump",
+#         "@com_google_googletest//:gtest_main",
 #     ],
 # )
 # copybara:uncomment_end
