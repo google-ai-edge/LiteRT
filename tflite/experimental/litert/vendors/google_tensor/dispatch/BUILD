@@ -44,6 +44,10 @@ litert_dynamic_lib(
     linkstatic = 1,
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch.so",
+    tags = [
+        # Don't build/test in OSS until Southbound is available.
+        "nobuilder",
+    ],
     visibility = ["//tflite/experimental/litert:__subpackages__"],
     deps = [
         "//tflite/experimental/litert/c:litert_common",
@@ -72,6 +76,11 @@ cc_test(
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
+    tags = [
+        # Don't build/test in OSS until Southbound is available.
+        "nobuilder",
+        "no_oss",
+    ],
     deps = [
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
@@ -82,6 +91,39 @@ cc_test(
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dispatch_api_async_google_tensor_test",
+    srcs = [
+        "dispatch_api_async_google_tensor_test.cc",
+    ],
+    data = [
+        ":dispatch_api_so",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        # Don't build/test in OSS until Southbound is available.
+        "nobuilder",
+        "no_oss",
+    ],
+    deps = [
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/types:span",
+        # copybara:uncomment "@org_tensorflow//third_party/darwinn/driver_shared/fence:fence_test_util",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event",
+        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/core:filesystem",
+        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:simple_model_npu",
+        "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
         "@com_google_googletest//:gtest_main",
     ],
 )
