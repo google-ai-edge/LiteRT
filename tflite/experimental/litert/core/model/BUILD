@@ -136,6 +136,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:dispatch_op_schema",
+        "//tflite/experimental/litert/core:insert_order_map",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
         "//tflite/schema:schema_fbs_with_mutable",
