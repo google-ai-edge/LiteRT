@@ -28,6 +28,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_model_hdrs",
     ],
     deps = [
+        ":buffer_manager",
         ":ir_allocator",
         "//tflite/core/c:c_api_types",
         "//tflite/experimental/litert/c:litert_common",
@@ -52,6 +53,7 @@ cc_test(
         "//tflite/experimental/litert/test:testdata/simple_model.tflite",
     ],
     deps = [
+        ":buffer_manager",
         ":model",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
@@ -69,6 +71,7 @@ cc_library(
     srcs = ["model_load.cc"],
     hdrs = ["model_load.h"],
     deps = [
+        ":buffer_manager",
         ":flatbuffer_to_litert",
         ":model",
         ":model_graph",
