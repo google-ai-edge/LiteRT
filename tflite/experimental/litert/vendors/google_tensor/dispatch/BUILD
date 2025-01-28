@@ -16,7 +16,6 @@ load("//tflite/experimental/litert/build_common:litert_build_defs.bzl", "litert_
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//tflite/experimental/litert:__subpackages__"],
 )
 
 litert_dynamic_lib(
