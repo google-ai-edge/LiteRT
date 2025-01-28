@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/nnapi/nnapi_handler.h"
 
 #include <cstdint>
-#include <cstdio>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
