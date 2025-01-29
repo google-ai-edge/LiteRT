@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/tools/versioning/op_signature.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
