@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//tflite/experimental/litert/build_common:special_rule.bzl", "lite_rt_friends")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # copybara:uncomment "@org_tensorflow//third_party/mediapipe/calculators/tensor:__subpackages__",
         "//tflite/experimental/litert:__subpackages__",
-    ],
+    ] + lite_rt_friends(),
 )
 
 cc_library(
