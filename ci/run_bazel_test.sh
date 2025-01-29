@@ -74,6 +74,7 @@ EXCLUDED_TARGETS=(
 EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/c:litert_c_api_common_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_test"
+        "-//tflite/experimental/litert/c:litert_compiled_model_shared_lib_test"
         "-//tflite/experimental/litert/cc:litert_compiled_model_test"
         "-//tflite/experimental/litert/compiler/plugin:algo_test"
         "-//tflite/experimental/litert/runtime:compiled_model_test"
