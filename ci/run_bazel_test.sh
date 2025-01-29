@@ -13,12 +13,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+# Usage:
+#   ./run_bazel_test.sh [test target]
+#
+# If no test target is specified, all tests under //tflite/ will be run.
+#
+# If experimental targets are requested using env var
+# "EXPERIMENTAL_TARGETS_ONLY=true", the script will run all tests under
+# //tflite/experimental/.
+
 set -ex
 
 # Run this script under the root directory.
 
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
+CUSTOM_TEST_TARGET="${1}"
 
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
@@ -118,7 +128,16 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
 )
 
 if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
+    EXCLUSION_LIST=("${EXCLUDED_EXPERIMENTAL_TARGETS[@]}")
+    TEST_TARGET="//tflite/experimental/..."
 else
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    EXCLUSION_LIST=("${EXCLUDED_TARGETS[@]}")
+    TEST_TARGET="//tflite/..."
 fi
+
+if ! [ -z $CUSTOM_TEST_TARGET  ]; then
+    TEST_TARGET="${CUSTOM_TEST_TARGET}"
+    EXCLUSION_LIST=()
+fi
+
+bazel test "${BUILD_FLAGS[@]}" -- "$TEST_TARGET" "${EXCLUSION_LIST[@]}"
