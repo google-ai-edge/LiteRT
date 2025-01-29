@@ -1,4 +1,4 @@
-load("//tflite/experimental/litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//tflite/experimental/litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -305,6 +305,26 @@ cc_test(
     ],
 )
 
+# The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
+cc_test(
+    name = "litert_compiled_model_shared_lib_test",
+    srcs = [
+        "litert_compiled_model_test.cc",
+    ],
+    data = [
+        "//tflite/experimental/litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":litert_runtime_c_api_shared_lib",
+        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:simple_model",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_accelerator_options",
     srcs = ["litert_accelerator_options.cc"],
@@ -401,6 +421,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_compiled_model_options",
     ":litert_dispatch_delegate",
     ":litert_event",
+    ":litert_environment",
     ":litert_layout",
     ":litert_logging",
     ":litert_model",
@@ -419,16 +440,31 @@ cc_test(
 )
 
 # Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
-litert_dynamic_lib(
-    name = "litert_runtime_c_api",
-    export_litert_only = True,
-    linkopts = select({
+cc_shared_library(
+    name = "litert_runtime_c_api_so",
+    additional_linker_inputs = export_lrt_runtime_only_script(),
+    shared_lib_name = "libLiteRtRuntimeCApi.so",
+    user_link_flags = export_lrt_runtime_only_linkopt() + select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
-    shared_lib_name = "litert_runtime_c_api_so",
-    so_name = "libLiteRtRuntimeCApi.so",
     deps = LITERT_C_API_COMMON_DEPS,
+)
+
+# This is cc_library target based on `libLiteRtRuntimeCApi.so`.
+cc_library(
+    name = "litert_runtime_c_api_shared_lib",
+    srcs = [":litert_runtime_c_api_so"],
+    hdrs = glob(["litert_*.h"]) + [
+        # Needed for litert/c/litert_op_code.h
+        "//tflite:builtin_ops.h",
+        # Neeeded for litert/c/litert_model.h
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+        "//tflite/core/c:headers_filegroup",
+        "//tflite/experimental/litert/vendors/c:litert_dispatch.h",
+    ],
+    linkstatic = 1,
+    deps = ["@opencl_headers"],
 )
 
 exports_files(srcs = glob(["litert_*.h"]))
