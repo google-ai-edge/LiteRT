@@ -47,6 +47,7 @@ cc_library(
         "dispatch_delegate_kernel.h",
         "dispatch_delegate_options.h",
         "//tflite/experimental/litert/c:litert_dispatch_delegate.h",
+        "//tflite/experimental/litert/cc:litert_dispatch_delegate.h",
     ],
     deps = [
         "//tflite/c:c_api",
@@ -88,6 +89,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":dispatch_delegate",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
@@ -124,6 +126,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":dispatch_delegate",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
@@ -157,6 +160,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":dispatch_delegate",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",

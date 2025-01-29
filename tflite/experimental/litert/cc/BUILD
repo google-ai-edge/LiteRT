@@ -262,6 +262,24 @@ cc_library(
     ],
 )
 
+# Dispatch Delegate of LiteRt.
+# Warning: This API is not ABI stable and is subject to change.
+cc_library(
+    name = "litert_dispatch_delegate",
+    hdrs = [
+        "litert_dispatch_delegate.h",
+    ],
+    deps = [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+        "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/runtime/dispatch:dispatch_delegate",
+    ],
+)
+
 cc_test(
     name = "litert_buffer_ref_test",
     srcs = ["litert_buffer_ref_test.cc"],

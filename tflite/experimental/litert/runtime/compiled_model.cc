@@ -43,6 +43,7 @@
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer_requirements.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
+#include "tflite/experimental/litert/cc/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer_requirements.h"

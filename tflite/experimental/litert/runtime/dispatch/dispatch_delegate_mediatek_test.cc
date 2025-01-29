@@ -30,6 +30,7 @@
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/cc/litert_compiled_model.h"
+#include "tflite/experimental/litert/cc/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/cc/litert_environment.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
