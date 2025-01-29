@@ -114,9 +114,12 @@ cc_test(
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:test_macros",
         "//tflite/experimental/litert/test:test_models",
+        "//tflite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
