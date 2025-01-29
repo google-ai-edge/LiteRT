@@ -263,6 +263,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_expected",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
     ],
 )
