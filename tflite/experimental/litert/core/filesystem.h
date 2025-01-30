@@ -22,7 +22,6 @@
 
 #include "absl/strings/string_view.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
-#include "tflite/experimental/litert/cc/litert_detail.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 
 // Generic file operations. Try to encapsulate the std filesystem header as much
