@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/tools/command_line_flags.h"
 
+#include <cctype>
+#include <cstdint>
 #include <string>
 
 #include <gtest/gtest.h>

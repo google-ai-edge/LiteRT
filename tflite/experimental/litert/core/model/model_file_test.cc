@@ -14,6 +14,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <functional>
@@ -25,6 +26,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"
 #include "absl/types/span.h"
+#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_op_code.h"
@@ -34,7 +36,8 @@
 #include "tflite/experimental/litert/cc/litert_macros.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_model_predicates.h"
-#include "tflite/experimental/litert/core/byte_code_util.h"
+#include "tflite/experimental/litert/core/dispatch_op_schema.h"
+#include "tflite/experimental/litert/core/model/buffer_manager.h"
 #include "tflite/experimental/litert/core/model/graph_validation.h"
 #include "tflite/experimental/litert/core/model/model.h"
 #include "tflite/experimental/litert/core/model/model_file_test_util.h"
@@ -44,6 +47,8 @@
 #include "tflite/experimental/litert/test/common.h"
 #include "tflite/experimental/litert/test/test_macros.h"
 #include "tflite/experimental/litert/test/test_models.h"
+#include "tflite/schema/mutable/schema_generated.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
@@ -77,12 +82,12 @@ Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
   OwningBufferRef buf;
   auto [data, size, offset] = buf.GetWeak();
 
-  LITERT_EXPECT_OK(
+  LITERT_RETURN_IF_ERROR(
       LiteRtSerializeModel(model->Release(), &data, &size, &offset));
 
   // Reload model.
   LiteRtModel result = nullptr;
-  LITERT_EXPECT_OK(
+  LITERT_RETURN_IF_ERROR(
       LiteRtCreateModelFromBuffer(buf.Data(), buf.Size(), &result));
 
   return Model::CreateFromOwnedHandle(result);
@@ -217,81 +222,316 @@ TEST(ModelSerializeTest, WithSignature) {
   EXPECT_EQ(&sig.GetSubgraph(), re_loaded->get()->MainSubgraph());
 }
 
-TEST(ModelSerializeTest, WithMetadataByteCode) {
-  auto model = litert::testing::LoadTestFileModel(kAddSimple);
-  auto& litert_model = *model.Get();
+TEST(ModelLoadTest, WithOffsetTensorBuffer) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
 
-  static constexpr absl::string_view kManufacturer = "Dodge";
-  static constexpr absl::string_view kModel = "Dart";
-  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
-  static constexpr auto kSerialization = Serialization::kMetadata;
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kAddSimple));
+  auto tfl_model = flatbuffer->get()->Unpack();
+  const auto buf_ind = tfl_model->subgraphs[0]->tensors[0]->buffer;
+  auto& tfl_buffer = tfl_model->buffers[buf_ind];
+  tfl_buffer->offset = 1;
+  tfl_buffer->size = 1;
+  auto model_buf = SerializeFlatbuffer(*tfl_model);
+  auto* packed_tfl = tflite::GetMutableModel(model_buf.Data());
+  auto* buf = packed_tfl->mutable_buffers()->GetMutableObject(buf_ind);
+  ASSERT_TRUE(buf->mutate_offset(model_buf.Size()));
+  ASSERT_TRUE(buf->mutate_size(kTensorData.size()));
+  OwningBufferRef<uint8_t> final_serializd(kTensorData.size() +
+                                           model_buf.Size());
+  std::memcpy(final_serializd.Data(), model_buf.Data(), model_buf.Size());
+  std::memcpy(final_serializd.Data() + model_buf.Size(), kTensorData.data(),
+              kTensorData.size());
 
-  // TODO(@lukeboyer) consider wrapping the tag & push metadata for npu
-  // in a helper function somewhere.
-  {
-    auto build_stamp = MakeBuildStamp(kManufacturer, kModel, kSerialization);
-    litert_model.PushMetadata(kLiteRtBuildStampKey, *build_stamp);
-    litert_model.PushMetadata(kByteCodeMetadataKey, kByteCode);
-  }
+  auto litert_model = LoadModelFromBuffer(final_serializd);
+  ASSERT_TRUE(litert_model);
 
-  auto serialized = SerializeModel(std::move(*model.Get()));
-  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
-  auto re_loaded = LoadModelFromBuffer(*serialized);
-  ASSERT_TRUE(re_loaded);
-  auto& re_loaded_model = **re_loaded;
-
-  auto build_stamp =
-      ParseBuildStamp(*re_loaded_model.FindMetadata(kLiteRtBuildStampKey));
-  ASSERT_TRUE(build_stamp);
-
-  EXPECT_EQ(std::get<0>(*build_stamp), kManufacturer);
-  EXPECT_EQ(std::get<1>(*build_stamp), kModel);
-  EXPECT_EQ(std::get<2>(*build_stamp), kSerialization);
-
-  auto byte_code = re_loaded_model.FindMetadata(kByteCodeMetadataKey);
-  ASSERT_TRUE(byte_code);
-  EXPECT_EQ(byte_code->StrView(), kByteCode);
+  const auto& weights_buffer =
+      litert_model->get()->Subgraph(0).Tensor(0).Weights();
+  EXPECT_EQ(weights_buffer.Buffer().StrView(), kTensorData);
 }
 
-TEST(ModelSerializeTest, WithAppendByteCode) {
-  auto model = litert::testing::LoadTestFileModel(kAddSimple);
-  auto& litert_model = *model.Get();
+TEST(ModelSerializeTest, WithOffsetTensorBuffer) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
 
-  static constexpr absl::string_view kManufacturer = "Honda";
-  static constexpr absl::string_view kModel = "Civic";
-  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
-  static constexpr auto kSerialization = Serialization::kAppend;
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& tensor = sg.EmplaceTensor();
+  sg.EmplaceOp();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& weights = tensor.Weights();
+  weights.SetBufferManager(root.Buffers());
+
+  OwningBufferRef<uint8_t> buffer(kTensorData);
+  BufferContext context;
+  context.should_append = true;
+  SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  // Verify the op contains an offset and size to the byte code and the correct
+  // name.
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+
+  auto tfl = fb->get()->Unpack();
+  const auto& tfl_tensor = tfl->subgraphs[0]->tensors[0];
+  const auto tfl_buffer_ind = tfl_tensor->buffer;
+  const auto& tfl_buffer = tfl->buffers[tfl_buffer_ind];
+
+  auto data =
+      serialized->StrView().substr(tfl_buffer->offset, tfl_buffer->size);
+  EXPECT_EQ(data, kTensorData);
+}
+
+TEST(ModelSerializeTest, WithMultipleOffsetTensorBuffer) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
+  static constexpr absl::string_view kTensorData2 = "SOME_TENSOR_DATA2";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  sg.EmplaceOp();
 
   {
-    auto build_stamp = MakeBuildStamp(kManufacturer, kModel, kSerialization);
-    litert_model.PushMetadata(kLiteRtBuildStampKey, *build_stamp);
-    litert_model.PushMetadata(kByteCodeMetadataKey, kByteCode);
+    auto& tensor = sg.EmplaceTensor();
+    tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+    auto& weights = tensor.Weights();
+    weights.SetBufferManager(root.Buffers());
+
+    OwningBufferRef<uint8_t> buffer(kTensorData);
+    BufferContext context;
+    context.should_append = true;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
   }
 
-  auto serialized = SerializeModel(std::move(*model.Get()));
-  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
-  auto re_loaded = LoadModelFromBuffer(*serialized);
-  ASSERT_TRUE(re_loaded);
-  auto& re_loaded_model = **re_loaded;
+  {
+    auto& tensor = sg.EmplaceTensor();
+    tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+    auto& weights = tensor.Weights();
+    weights.SetBufferManager(root.Buffers());
 
-  auto build_stamp =
-      ParseBuildStamp(*re_loaded_model.FindMetadata(kLiteRtBuildStampKey));
-  ASSERT_TRUE(build_stamp);
+    OwningBufferRef<uint8_t> buffer(kTensorData2);
+    BufferContext context;
+    context.should_append = true;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+  }
 
-  EXPECT_EQ(std::get<0>(*build_stamp), kManufacturer);
-  EXPECT_EQ(std::get<1>(*build_stamp), kModel);
-  EXPECT_EQ(std::get<2>(*build_stamp), kSerialization);
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
 
-  auto byte_code_metadata = re_loaded_model.FindMetadata(kByteCodeMetadataKey);
-  ASSERT_TRUE(byte_code_metadata);
-  auto byte_code_offset = ParseByteCodePlaceholder(*byte_code_metadata);
-  ASSERT_TRUE(byte_code_offset);
+  // Verify the op contains an offset and size to the byte code and the correct
+  // name.
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
 
-  const auto offset = std::get<0>(*byte_code_offset);
-  const auto size = std::get<1>(*byte_code_offset);
+  auto tfl = fb->get()->Unpack();
 
-  ASSERT_EQ(offset + size, serialized->Size());
-  EXPECT_EQ(serialized->StrView().substr(offset, size), kByteCode);
+  {
+    const auto& tfl_tensor = tfl->subgraphs[0]->tensors[0];
+    const auto tfl_buffer_ind = tfl_tensor->buffer;
+    const auto& tfl_buffer = tfl->buffers[tfl_buffer_ind];
+
+    auto data =
+        serialized->StrView().substr(tfl_buffer->offset, tfl_buffer->size);
+    EXPECT_EQ(data, kTensorData);
+  }
+
+  {
+    const auto& tfl_tensor = tfl->subgraphs[0]->tensors[1];
+    const auto tfl_buffer_ind = tfl_tensor->buffer;
+    const auto& tfl_buffer = tfl->buffers[tfl_buffer_ind];
+
+    auto data =
+        serialized->StrView().substr(tfl_buffer->offset, tfl_buffer->size);
+    EXPECT_EQ(data, kTensorData2);
+  }
+}
+
+TEST(ModelSerializeTest, WithSingleExternalBuffer) {
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+  static constexpr absl::string_view kName = "foo";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+
+  OwningBufferRef<uint8_t> buffer(kByteCode);
+  const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  root.AttachAssetToOp(&op, buf_id, std::string(kName));
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  // Verify the op contains an offset and size to the byte code and the correct
+  // name.
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+
+  auto tfl = fb->get()->Unpack();
+  const auto& opts = tfl->subgraphs[0]->operators[0]->custom_options;
+  BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+  auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+  EXPECT_EQ(dispatch_opts.name, kName);
+  EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                         dispatch_opts.bytecode_size),
+            kByteCode);
+}
+
+TEST(ModelSerializeTest, WithMultipleUniqueExternalBuffer) {
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+  static constexpr absl::string_view kName = "foo";
+  static constexpr absl::string_view kByteCode2 = "SOME_BYTE_CODE2";
+  static constexpr absl::string_view kName2 = "bar";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  auto& op2 = sg.EmplaceOp();
+
+  OwningBufferRef<uint8_t> buffer(kByteCode);
+  const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  root.AttachAssetToOp(&op, buf_id, std::string(kName));
+
+  OwningBufferRef<uint8_t> buffer2(kByteCode2);
+  const auto buf_id2 = root.Buffers()->RegisterOwnedBuffer(std::move(buffer2));
+  root.AttachAssetToOp(&op2, buf_id2, std::string(kName2));
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  // Verify both ops contains an offset and size to the byte code and the
+  // correct name.
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+
+  auto tfl = fb->get()->Unpack();
+
+  {
+    const auto& opts = tfl->subgraphs[0]->operators[0]->custom_options;
+    BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+    auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+    EXPECT_EQ(dispatch_opts.name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                           dispatch_opts.bytecode_size),
+              kByteCode);
+  }
+
+  {
+    const auto& opts = tfl->subgraphs[0]->operators[1]->custom_options;
+    BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+    auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+    EXPECT_EQ(dispatch_opts.name, kName2);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                           dispatch_opts.bytecode_size),
+              kByteCode2);
+  }
+}
+
+TEST(ModelSerializeTest, WithSharedExternalBuffer) {
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+  static constexpr absl::string_view kName = "foo";
+  static constexpr absl::string_view kName2 = "bar";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  auto& op2 = sg.EmplaceOp();
+
+  OwningBufferRef<uint8_t> buffer(kByteCode);
+  const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+
+  root.AttachAssetToOp(&op, buf_id, std::string(kName));
+  root.AttachAssetToOp(&op2, buf_id, std::string(kName2));
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  // Verify both ops point to the same appended buffer.
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+
+  auto tfl = fb->get()->Unpack();
+
+  {
+    const auto& opts = tfl->subgraphs[0]->operators[0]->custom_options;
+    BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+    auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+    EXPECT_EQ(dispatch_opts.name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                           dispatch_opts.bytecode_size),
+              kByteCode);
+  }
+
+  {
+    const auto& opts = tfl->subgraphs[0]->operators[1]->custom_options;
+    BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+    auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+    EXPECT_EQ(dispatch_opts.name, kName2);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                           dispatch_opts.bytecode_size),
+              kByteCode);
+  }
+}
+
+TEST(ModelSerializeTest, WithOffsetTensorBufferAndOpAsset) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
+  static constexpr absl::string_view kByteCode = "SOME_BYTE_CODE";
+  static constexpr absl::string_view kName = "name";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  auto& tensor = sg.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& weights = tensor.Weights();
+  weights.SetBufferManager(root.Buffers());
+
+  {
+    OwningBufferRef<uint8_t> buffer(kTensorData);
+    BufferContext context;
+    context.should_append = true;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+  }
+
+  {
+    OwningBufferRef<uint8_t> buffer(kByteCode);
+    const auto buf_id = root.Buffers()->RegisterOwnedBuffer(std::move(buffer));
+    root.AttachAssetToOp(&op, buf_id, std::string(kName));
+  }
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+  auto tfl = fb->get()->Unpack();
+
+  {
+    const auto& tfl_tensor = tfl->subgraphs[0]->tensors[0];
+    const auto tfl_buffer_ind = tfl_tensor->buffer;
+    const auto& tfl_buffer = tfl->buffers[tfl_buffer_ind];
+
+    auto data =
+        serialized->StrView().substr(tfl_buffer->offset, tfl_buffer->size);
+    EXPECT_EQ(data, kTensorData);
+  }
+
+  {
+    const auto& opts = tfl->subgraphs[0]->operators[0]->custom_options;
+    BufferRef<uint8_t> opts_buffer(opts.data(), opts.size());
+
+    auto dispatch_opts = GetDispatchOpOptions(opts_buffer);
+    EXPECT_EQ(dispatch_opts.name, kName);
+    EXPECT_EQ(serialized->StrView().substr(dispatch_opts.bytecode_offset,
+                                           dispatch_opts.bytecode_size),
+              kByteCode);
+  }
 }
 
 // Tests that explicitly check litert graph structure.

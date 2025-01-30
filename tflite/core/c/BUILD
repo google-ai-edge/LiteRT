@@ -49,6 +49,7 @@ filegroup(
         "c_api_types.h",
         "common.h",
         "operator.h",
+        "//tflite/core/async/c:types.h",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:lite_headers_filegroup",
     ],
 )

@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//tflite/experimental/litert/build_common:special_rule.bzl", "lite_rt_friends")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # copybara:uncomment "@org_tensorflow//third_party/mediapipe/calculators/tensor:__subpackages__",
         "//tflite/experimental/litert:__subpackages__",
-    ],
+    ] + lite_rt_friends(),
 )
 
 cc_library(
@@ -28,6 +29,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_model_hdrs",
     ],
     deps = [
+        ":buffer_manager",
         ":ir_allocator",
         "//tflite/core/c:c_api_types",
         "//tflite/experimental/litert/c:litert_common",
@@ -36,7 +38,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
-        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
@@ -52,6 +53,7 @@ cc_test(
         "//tflite/experimental/litert/test:testdata/simple_model.tflite",
     ],
     deps = [
+        ":buffer_manager",
         ":model",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
@@ -69,6 +71,7 @@ cc_library(
     srcs = ["model_load.cc"],
     hdrs = ["model_load.h"],
     deps = [
+        ":buffer_manager",
         ":flatbuffer_to_litert",
         ":model",
         ":model_graph",
@@ -80,7 +83,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
@@ -94,6 +96,7 @@ cc_test(
         "//tflite/experimental/litert/test:tflite_test_data",
     ],
     deps = [
+        ":buffer_manager",
         ":graph_validation",
         ":model",
         ":model_file_test_util",
@@ -107,14 +110,17 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
-        "//tflite/experimental/litert/core:byte_code_util",
+        "//tflite/experimental/litert/core:dispatch_op_schema",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:test_macros",
         "//tflite/experimental/litert/test:test_models",
+        "//tflite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -130,10 +136,14 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/core:byte_code_util",
+        "//tflite/experimental/litert/core:build_stamp",
+        "//tflite/experimental/litert/core:dispatch_op_schema",
+        "//tflite/experimental/litert/core:insert_order_map",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -199,11 +209,10 @@ cc_library(
         ":model",
         ":model_load",
         ":model_serialize",
+        "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/core:byte_code_util",
         "//tflite/experimental/litert/core:filesystem",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -255,6 +264,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_expected",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
     ],
 )
@@ -268,6 +278,16 @@ cc_library(
         ":model_graph",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_detail",
+    ],
+)
+
+cc_library(
+    name = "buffer_manager",
+    hdrs = ["buffer_manager.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "//tflite/experimental/litert/cc:litert_expected",
     ],
 )
 
@@ -297,12 +317,24 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
-        "//tflite/experimental/litert/core:byte_code_util",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/core:dispatch_op_schema",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
+    ],
+)
+
+cc_test(
+    name = "buffer_manager_test",
+    srcs = ["buffer_manager_test.cc"],
+    deps = [
+        ":buffer_manager",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )

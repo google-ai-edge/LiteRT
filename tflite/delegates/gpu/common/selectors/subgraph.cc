@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/selectors/subgraph.h"
 
 #include <memory>
+#include <vector>
 
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/shape.h"

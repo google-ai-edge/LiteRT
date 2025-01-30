@@ -7,18 +7,10 @@ post](https://developers.googleblog.com/en/tensorflow-lite-is-now-litert/).
 
 The official documentation can be found at https://ai.google.dev/edge/litert
 
-In its current state, the LiteRT repository is not intended for open source
-development because it is pulling in existing TensorFlow code via a git
-submodule. We intend to evolve this repo to a point where developers can
-directly build and contribute here, at which time we will make a separate
-announcement.
-
-
 ## PyPi Installation Requirements
 
- * Python versions:  3.9, 3.10, 3.11
+ * Python versions: 3.9, 3.10, 3.11, 3.12
  * Operating system: Linux, MacOS
-
 
 ## FAQs
 
@@ -52,3 +44,44 @@ announcement.
     runtime (now called LiteRT), as well as the conversion and optimization
     tools. To ensure you're using the most up-to-date version of the runtime,
     please use LiteRT.
+
+## Build From Source with Bazel
+
+1. From the LiteRT root folder (where this README file is), run
+
+    ```
+    git submodule init && git submodule update --remote
+    ```
+
+    to make sure you have the latest version of the tensorflow submodule.
+
+2. You will need docker, but nothing else. Create the image with
+
+    ```
+    docker build . -t tflite-builder -f ci/tflite-py3.Dockerfile
+
+    # Confirm the container was created with
+    docker image ls
+    ```
+
+3. Run bash inside the container
+
+    ```
+    docker run -it -w /host_dir -v $PWD:/host_dir -v $HOME/.cache/bazel:/root/.cache/bazel tflite-builder bash
+    ```
+
+    where `-v $HOME/.cache/bazel:/root/.cache/bazel` is optional, but useful to
+    map your Bazel cache into the container.
+
+4. Run configure script, use default settings for this example.
+
+    ```
+    ./configure
+    ```
+
+5. Build and run e.g. `//tflite:interpreter_test`
+
+    ```
+    bazel test //tflite:interpreter_test
+    ```
+

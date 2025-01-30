@@ -192,18 +192,25 @@ LiteRtStatus LiteRtGetTensorBufferOffset(LiteRtTensorBuffer tensor_buffer,
 LiteRtStatus LiteRtHasTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
                                         bool* has_event);
 
+// Return an event attached a given tensor buffer, or NULL if no such event
+// exists. The tensor buffer retains ownership of the returned event.
 LiteRtStatus LiteRtGetTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
                                         LiteRtEvent* event);
 
+// Attach a given event to a given tensor buffer. The tensor buffer takes
+// ownership of the event.
 LiteRtStatus LiteRtSetTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
                                         LiteRtEvent event);
 
+// Remove any event that may have been previously attached to the given tensor
+// buffer and deallocate such event.
 LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
 
-// Lock a tensor buffer and map it to host memory, optionally synchronizing on a
-// given input event (parameter `event` can be NULL).
+// Lock a tensor buffer and map it to host memory, potentially synchronizing on
+// an event that was previously attached to the tensor buffer with
+// `LiteRtSetTensorBufferEvent`.
 LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
-                                    void** host_mem_addr, LiteRtEvent event);
+                                    void** host_mem_addr);
 
 // Unlock a tensor buffer and (potentially) unmap it from host memory.
 LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);

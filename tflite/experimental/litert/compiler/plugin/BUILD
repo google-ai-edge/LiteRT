@@ -27,11 +27,10 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
-        "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
-        "//tflite/experimental/litert/core:byte_code_util",
+        "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:dynamic_loading",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core:filesystem",
@@ -64,16 +63,17 @@ cc_library(
 #     ],
 #     deps = [
 #         ":compiler_plugin",
-#         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tflite/experimental/litert/c:litert_common",
+#         "//tflite/experimental/litert/c:litert_environment",
 #         "//tflite/experimental/litert/c:litert_op_code",
 #         "//tflite/experimental/litert/cc:litert_environment",
-#         "//tflite/experimental/litert/core:byte_code_util",
+#         "//tflite/experimental/litert/core:build_stamp",
 #         "//tflite/experimental/litert/core:filesystem",
 #         "//tflite/experimental/litert/test:common",
 #         "//tflite/experimental/litert/test:test_macros",
 #         "//tflite/experimental/litert/tools:dump",
+#         "@com_google_googletest//:gtest_main",
 #     ],
 # )
 # copybara:uncomment_end
@@ -84,11 +84,11 @@ cc_library(
     hdrs = ["algo.h"],
     deps = [
         "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/core:insert_order_map",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:model_graph",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
-        "@llvm-project//llvm:Support",
     ],
 )
 

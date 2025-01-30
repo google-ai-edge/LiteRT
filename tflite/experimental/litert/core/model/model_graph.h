@@ -16,7 +16,9 @@
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_MODEL_MODEL_GRAPH_H_
 
 #include <functional>
+#include <optional>
 
+#include "absl/container/inlined_vector.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_op_code.h"

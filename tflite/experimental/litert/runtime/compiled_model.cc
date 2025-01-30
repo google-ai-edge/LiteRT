@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"
+#include "tflite/experimental/litert/c/litert_environment.h"
 #include "tflite/experimental/litert/cc/litert_event.h"
 
 #if defined(__ANDROID__)
@@ -42,6 +43,7 @@
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer_requirements.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
+#include "tflite/experimental/litert/cc/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer_requirements.h"
@@ -87,18 +89,24 @@ Expected<void> LiteRtCompiledModelT::Initialize() {
 }
 
 Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
-    LiteRtModel model, LiteRtCompilationOptions compilation_options) {
+    LiteRtEnvironmentT* env, LiteRtModel model,
+    OptionsPtr compilation_options) {
   auto compiled_model = std::make_unique<LiteRtCompiledModelT>();
 
   std::optional<OwningBufferRef<uint8_t>> new_flatbuffer;
+  LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
+  if (compilation_options) {
+    LiteRtGetCompilationOptionsHardwareAccelerators(compilation_options.get(),
+                                                    &hardware_accelerators);
+  }
   // TODO: b/379317134 - Support other delegates with compilation options.
-  if (compilation_options != kLiteRtHwAccelatorNone) {
+  if (hardware_accelerators != kLiteRtHwAcceleratorNone) {
     LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
     if (auto result =
-            litert::internal::ApplyPlugins(model, compilation_options);
+            litert::internal::ApplyPlugins(env, model, hardware_accelerators);
         !result) {
       LITERT_LOG(LITERT_WARNING, "Failed to apply compiler plugins: %s",
-                 result.Error().Message().data());
+                 result.Error().Message().c_str());
     } else {
       if (result->num_applied_plugins > 0) {
         LITERT_LOG(LITERT_INFO, "Successfully applied %d compiler plugins: %s",
@@ -120,7 +128,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   if (new_flatbuffer) {
     model_buffer = reinterpret_cast<const char*>(new_flatbuffer->Data());
     model_buffer_size = new_flatbuffer->Size();
-  } else if (auto init_model_buffer = detail::GetTflInitFlatbuffer(*model);
+  } else if (auto init_model_buffer = detail::GetTflFlatbuffer(*model).Buf();
              init_model_buffer.Size() != 0) {
     // Use the saved the original FB pointer when the LiteRtModel was created
     // from a buffer.
@@ -153,11 +161,12 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
   // Apply the dispatch delegate, unconditionally, since the loaded model may
   // have been compiled for NPU at AOT.
-  auto dispatch_delegate_options = litert::CreateDispatchDelegateOptionsPtr();
+  auto dispatch_delegate_options =
+      litert::CreateDispatchDelegateOptionsPtr(*env);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            model_buffer);
-  auto dispatch_delegate =
-      litert::CreateDispatchDelegatePtr(std::move(dispatch_delegate_options));
+  auto dispatch_delegate = litert::CreateDispatchDelegatePtr(
+      *env, std::move(dispatch_delegate_options));
   if (auto status = compiled_model->interp_->ModifyGraphWithDelegate(
           dispatch_delegate.get());
       status != kTfLiteOk) {
@@ -305,8 +314,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 #endif
     if (buffer_is_cpu_compatible) {
       void* host_mem_addr;
-      if (auto status =
-              LiteRtLockTensorBuffer(buffer, &host_mem_addr, /*event=*/nullptr);
+      if (auto status = LiteRtLockTensorBuffer(buffer, &host_mem_addr);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to lock the tensor buffer");
       }

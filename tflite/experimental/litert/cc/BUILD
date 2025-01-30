@@ -27,6 +27,7 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_expected",
+        ":litert_handle",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_environment",
         "@com_google_absl//absl/types:span",
@@ -212,9 +213,21 @@ cc_library(
     name = "litert_macros",
     hdrs = ["litert_macros.h"],
     deps = [
+        ":litert_expected",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+cc_test(
+    name = "litert_macros_test",
+    srcs = ["litert_macros_test.cc"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//tflite/experimental/litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -225,7 +238,6 @@ cc_library(
         ":litert_detail",
         "//tflite/experimental/litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -235,8 +247,8 @@ cc_test(
     deps = [
         ":litert_buffer_ref",
         ":litert_expected",
-        ":litert_macros",
         "//tflite/experimental/litert/c:litert_common",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -247,6 +259,24 @@ cc_library(
     deps = [
         "//tflite/experimental/litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+# Dispatch Delegate of LiteRt.
+# Warning: This API is not ABI stable and is subject to change.
+cc_library(
+    name = "litert_dispatch_delegate",
+    hdrs = [
+        "litert_dispatch_delegate.h",
+    ],
+    deps = [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+        "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/runtime/dispatch:dispatch_delegate",
     ],
 )
 
@@ -333,9 +363,10 @@ cc_library(
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
     deps = [
-        ":litert_detail",
+        ":litert_environment",
         ":litert_expected",
         ":litert_handle",
+        ":litert_macros",
         ":litert_model",
         ":litert_tensor_buffer",
         "//tflite:framework",
@@ -346,6 +377,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compiled_model",
         "//tflite/experimental/litert/c:litert_compiled_model_options",
+        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/kernels:builtin_ops",
@@ -362,11 +394,14 @@ cc_test(
     ],
     deps = [
         ":litert_compiled_model",
+        ":litert_environment",
         ":litert_model",
         ":litert_tensor_buffer",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model",
         "//tflite/kernels:builtin_ops",

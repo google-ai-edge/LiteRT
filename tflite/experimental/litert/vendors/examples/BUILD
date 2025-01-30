@@ -51,6 +51,7 @@ cc_test(
     data = ["//tflite/experimental/litert/test:mlir_test_data"],
     deps = [
         ":example_plugin",  # buildcleaner: keep
+        "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_model",
@@ -78,6 +79,7 @@ cc_library(
         "//tflite/experimental/litert/vendors/cc:backend_ir",
         "//tflite/experimental/litert/vendors/cc:conversion",
         "//tflite/experimental/litert/vendors/cc:ir_types",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -149,6 +151,7 @@ cc_test(
         "//tflite/experimental/litert/test:test_macros",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )

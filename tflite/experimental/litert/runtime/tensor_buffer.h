@@ -32,6 +32,7 @@
 #include "tflite/experimental/litert/c/litert_layout.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
+#include "tflite/experimental/litert/cc/litert_event.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/runtime/open_cl_buffer.h"
 
@@ -94,10 +95,10 @@ class LiteRtTensorBufferT {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "TensorBuffer has no event");
     }
-    return *event_;
+    return event_->Get();
   }
 
-  void SetEvent(LiteRtEvent e) { event_ = e; }
+  void SetEvent(LiteRtEvent e) { event_ = litert::Event(e, true); }
   void ClearEvent() { event_ = std::nullopt; }
 
   litert::Expected<void*> GetHostBuffer();
@@ -107,7 +108,7 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
   litert::Expected<litert::internal::OpenClBuffer*> GetOpenClBuffer();
 
-  litert::Expected<void*> Lock(LiteRtEvent event = nullptr);
+  litert::Expected<void*> Lock();
   litert::Expected<void> Unlock();
 
   // Used to duplicate the current tensor buffer. Internally it increases
@@ -192,7 +193,7 @@ class LiteRtTensorBufferT {
   std::variant<HostBuffer, AhwbBuffer, IonBuffer, DmaBufBuffer, FastRpcBuffer,
                litert::internal::OpenClBuffer>
       buffer_;
-  std::optional<LiteRtEvent> event_;
+  std::optional<litert::Event> event_;
   mutable std::atomic_int_fast32_t ref_;
 };
 

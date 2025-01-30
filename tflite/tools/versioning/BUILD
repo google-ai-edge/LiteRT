@@ -30,6 +30,7 @@ cc_library(
         "//tflite/kernels/internal:compatibility",
         "//tflite/schema:schema_fbs",
         "//tflite/schema:schema_utils",
+        "@com_google_absl//absl/log",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@flatbuffers",

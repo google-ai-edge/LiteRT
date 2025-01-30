@@ -14,7 +14,10 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//tflite/experimental/litert:__subpackages__"],
+    default_visibility = [
+        # copybara:uncomment "@org_tensorflow//third_party/mediapipe/calculators/tensor:__subpackages__",
+        "//tflite/experimental/litert:__subpackages__",
+    ],
 )
 
 cc_library(
@@ -33,7 +36,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:filesystem",
         "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",

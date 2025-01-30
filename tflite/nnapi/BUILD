@@ -85,6 +85,7 @@ cc_library(
         ":nnapi_implementation",
         ":nnapi_lib",
         "//tflite:framework",
+        "@com_google_absl//absl/log:check",
         "@org_tensorflow//tensorflow/core/platform:logging",
     ],
 )

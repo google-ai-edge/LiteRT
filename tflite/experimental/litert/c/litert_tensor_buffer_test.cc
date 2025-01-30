@@ -73,15 +73,13 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
@@ -125,15 +123,13 @@ TEST(TensorBuffer, Ahwb) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
@@ -177,15 +173,13 @@ TEST(TensorBuffer, Ion) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
@@ -230,15 +224,13 @@ TEST(TensorBuffer, DmaBuf) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
@@ -283,15 +275,13 @@ TEST(TensorBuffer, FastRpc) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
@@ -311,8 +301,8 @@ TEST(TensorBuffer, Event) {
             kLiteRtStatusOk);
   EXPECT_FALSE(has_event);
 
-  LiteRtEventT event;
-  ASSERT_EQ(LiteRtSetTensorBufferEvent(tensor_buffer, &event), kLiteRtStatusOk);
+  LiteRtEvent event = new LiteRtEventT;
+  ASSERT_EQ(LiteRtSetTensorBufferEvent(tensor_buffer, event), kLiteRtStatusOk);
 
   has_event = false;
   ASSERT_EQ(LiteRtHasTensorBufferEvent(tensor_buffer, &has_event),
@@ -322,10 +312,10 @@ TEST(TensorBuffer, Event) {
   LiteRtEvent actual_event;
   ASSERT_EQ(LiteRtGetTensorBufferEvent(tensor_buffer, &actual_event),
             kLiteRtStatusOk);
-  ASSERT_EQ(actual_event, &event);
+  ASSERT_EQ(actual_event, event);
 
   ASSERT_EQ(LiteRtClearTensorBufferEvent(tensor_buffer), kLiteRtStatusOk);
-  ASSERT_EQ(actual_event, &event);
+  ASSERT_EQ(actual_event, event);
 
   has_event = true;
   ASSERT_EQ(LiteRtHasTensorBufferEvent(tensor_buffer, &has_event),
@@ -337,8 +327,8 @@ TEST(TensorBuffer, Event) {
 
 TEST(TensorBuffer, OpenCL) {
 // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported In msan";
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
 #endif
 
   if (!litert::internal::OpenClBuffer::IsSupported()) {
@@ -377,15 +367,13 @@ TEST(TensorBuffer, OpenCL) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(
-      LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr, /*event=*/nullptr),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+            kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
