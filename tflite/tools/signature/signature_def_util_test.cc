@@ -20,12 +20,12 @@ limitations under the License.
 #include "absl/status/status.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "tensorflow/cc/saved_model/signature_constants.h"
+#include "xla/tsl/platform/status.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/protobuf/meta_graph.pb.h"
 #include "tflite/core/model_builder.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/string_type.h"
-#include "tsl/platform/status.h"
 
 namespace tflite {
 namespace {

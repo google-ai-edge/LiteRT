@@ -17,9 +17,9 @@ limitations under the License.
 
 #include <cstdio>
 
+#include "xla/tsl/platform/logging.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/string_type.h"
-#include "tsl/platform/logging.h"
 
 namespace tflite {
 
