@@ -39,7 +39,11 @@ else
   # Running inside docker container
   if [[ "${IS_PRESUBMIT_GITHUB}" == "true" ]]; then
     cd /root_dir
+    # Add safe directory to avoid git submodule update error.
+    # Main repo
     git config --global --add safe.directory /root_dir
+    # Submodule
+    git config --global --add safe.directory /root_dir/third_party/tensorflow
     git submodule update --init --recursive
     git submodule update --remote
   fi
