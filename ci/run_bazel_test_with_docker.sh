@@ -39,6 +39,7 @@ else
   # Running inside docker container
   if [[ "${IS_PRESUBMIT_GITHUB}" == "true" ]]; then
     cd /root_dir
+    git config --global --add safe.directory /root_dir
     git submodule update --init --recursive
     git submodule update --remote
   fi
