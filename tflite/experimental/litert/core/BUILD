@@ -44,7 +44,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
@@ -168,11 +168,11 @@ cc_test(
 #     deps = [
 #         ":dynamic_loading",
 #         ":filesystem",
+#         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tflite/experimental/litert/c:litert_logging",  # buildcleaner: keep
 #         "//tflite/experimental/litert/test:common",
-#         "//tflite/experimental/litert/test:test_macros",
-#         "@com_google_googletest//:gtest_main",
+#         "//tflite/experimental/litert/test:matchers",
 #     ],
 # )
 # copybara:uncomment_end

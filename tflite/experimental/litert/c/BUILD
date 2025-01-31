@@ -107,7 +107,7 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -143,9 +143,10 @@ cc_test(
     ],
     tags = ["no_oss"],
     deps = [
+        ":litert_common",
         ":litert_options",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

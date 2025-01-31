@@ -112,7 +112,7 @@ cc_test(
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:model_graph",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/vendors/examples:example_conversion_impl",
         "//tflite/experimental/litert/vendors/examples:example_ir",
         "@com_google_absl//absl/strings:string_view",

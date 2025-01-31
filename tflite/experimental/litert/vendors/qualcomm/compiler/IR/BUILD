@@ -53,14 +53,14 @@ cc_test(
     ],
     deps = [
         ":qnn_tensor",
+        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/test:test_models",
-        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -92,12 +92,12 @@ cc_test(
     ],
     deps = [
         ":qnn_op",
+        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/test:common",
-        "@com_google_googletest//:gtest_main",
+        "//tflite/experimental/litert/test:matchers",
     ],
 )
 
@@ -112,12 +112,12 @@ cc_test(
     ],
     deps = [
         ":qnn_op",
+        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
-        "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/test:common",
-        "@com_google_googletest//:gtest_main",
+        "//tflite/experimental/litert/test:matchers",
     ],
 )

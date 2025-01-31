@@ -108,6 +108,7 @@ litert_test(
     deps = [
         ":qnn_manager",
         "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:matchers_oss",
         "//tflite/experimental/litert/vendors/qualcomm/tools:dump",
     ],
 )

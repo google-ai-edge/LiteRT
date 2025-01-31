@@ -28,7 +28,7 @@
 #include "tflite/experimental/litert/core/model/model.h"
 #include "tflite/experimental/litert/core/model/model_graph.h"
 #include "tflite/experimental/litert/core/util/flatbuffer_tools.h"
-#include "tflite/experimental/litert/test/test_macros.h"
+#include "tflite/experimental/litert/test/matchers.h"
 #include "tflite/experimental/litert/vendors/cc/conversion.h"
 #include "tflite/experimental/litert/vendors/examples/example_ir.h"
 #include "tflite/schema/schema_generated.h"
@@ -77,10 +77,10 @@ TEST(ExampleConversionImplTest, ExampleGraphBuilder) {
   static constexpr absl::string_view kName = "FOO_GRAPH";
 
   builder.InitGraph(std::string(kName));
-  LITERT_ASSERT_STATUS_OK(builder.RegisterTensor(input));
-  LITERT_ASSERT_STATUS_OK(builder.RegisterOp(op));
-  LITERT_ASSERT_STATUS_OK(builder.RegisterTensor(output));
-  LITERT_ASSERT_STATUS_OK(builder.FinalizeGraph());
+  LITERT_ASSERT_OK(builder.RegisterTensor(input));
+  LITERT_ASSERT_OK(builder.RegisterOp(op));
+  LITERT_ASSERT_OK(builder.RegisterTensor(output));
+  LITERT_ASSERT_OK(builder.FinalizeGraph());
 
   const auto serialized = builder.Serialize();
   EXPECT_THAT(serialized, HasSubstr("1FLOAT[2, 2]"));

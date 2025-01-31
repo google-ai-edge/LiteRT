@@ -54,7 +54,7 @@ cc_test(
         ":flatbuffer_tools",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

@@ -16,7 +16,6 @@
 
 #include <array>
 #include <sstream>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -29,13 +28,11 @@
 #include "tflite/experimental/litert/core/build_stamp.h"
 #include "tflite/experimental/litert/core/filesystem.h"
 #include "tflite/experimental/litert/test/common.h"
-#include "tflite/experimental/litert/test/test_macros.h"
 #include "tflite/experimental/litert/tools/dump.h"
 
 namespace litert::internal {
 namespace {
 
-using ::testing::HasSubstr;
 using testing::UniqueTestDirectory;
 
 constexpr absl::string_view kTestPluginSearchPath =

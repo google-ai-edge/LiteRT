@@ -69,6 +69,7 @@ cc_test(
         "//tflite/experimental/litert/core:dispatch_op_schema",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
