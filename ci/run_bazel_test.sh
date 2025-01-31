@@ -73,7 +73,6 @@ EXCLUDED_TARGETS=(
 )
 
 EXCLUDED_EXPERIMENTAL_TARGETS=(
-        "-//tflite/experimental/litert/c:litert_c_api_common_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_shared_lib_test"
         "-//tflite/experimental/litert/cc:litert_compiled_model_test"
@@ -92,7 +91,6 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/vendors/examples:example_conversion_impl_test"
         "-//tflite/experimental/litert/vendors/examples:example_plugin_with_conversions_test"
         "-//tflite/experimental/litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
-        "-//tflite/experimental/litert/vendors/mediatek/dispatch:dispatch_api_mediatek_test"
         "-//tflite/experimental/litert/cc:litert_model_predicates_test"
         "-//tflite/experimental/litert/cc:litert_model_test"
         "-//tflite/experimental/litert/core/model:model_buffer_test"
