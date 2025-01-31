@@ -30,12 +30,19 @@ if [ ! -d /root_dir ]; then
     -v ${SCRIPT_DIR}:/script_dir \
     -e DOCKER_PYTHON_VERSION=${DOCKER_PYTHON_VERSION} \
     -e EXPERIMENTAL_TARGETS_ONLY=${EXPERIMENTAL_TARGETS_ONLY:-false} \
+    -e IS_PRESUBMIT_GITHUB=${IS_PRESUBMIT_GITHUB:-false} \
     -e BAZEL_CONFIG_FLAGS=${BAZEL_CONFIG_FLAGS} \
     --entrypoint /script_dir/run_bazel_test_with_docker.sh \
     tflite-builder
   exit 0
 else
   # Running inside docker container
+  if [[ "${IS_PRESUBMIT_GITHUB}" == "true" ]]; then
+    cd /root_dir
+    git submodule update --init --recursive
+    git submodule update --remote
+  fi
+
   cd /third_party_tensorflow
 
   # Run configure.
