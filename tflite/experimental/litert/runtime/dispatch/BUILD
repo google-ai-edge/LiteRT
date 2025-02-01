@@ -26,6 +26,7 @@ cc_library(
         "//tflite/experimental/litert/vendors/c:litert_dispatch.h",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_api.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
