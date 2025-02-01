@@ -24,6 +24,7 @@ package(
 cc_library(
     name = "litert_environment",
     hdrs = ["litert_environment.h"],
+    visibility = ["//visibility:public"],
     deps = [
         ":litert_any",
         ":litert_expected",
@@ -269,6 +270,7 @@ cc_library(
     hdrs = [
         "litert_dispatch_delegate.h",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
