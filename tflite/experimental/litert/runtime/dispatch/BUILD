@@ -163,6 +163,11 @@ cc_test(
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
+    tags = [
+        "no_oss",
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         ":dispatch_delegate",
         "//tflite:framework",
