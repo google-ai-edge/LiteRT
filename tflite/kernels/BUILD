@@ -1497,6 +1497,7 @@ cc_test(
         ":test_util",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
         "@flatbuffers",
     ],
 )
