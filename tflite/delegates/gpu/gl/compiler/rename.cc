@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/compiler/rename.h"
 
-#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
