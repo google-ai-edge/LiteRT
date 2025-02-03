@@ -14,11 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/utils/utils.h"
 
-#include <algorithm>
-#include <memory>
-#include <utility>
-#include <vector>
-
 #include "absl/status/status.h"
 #include "tflite/array.h"
 #include "tflite/minimal_logging.h"

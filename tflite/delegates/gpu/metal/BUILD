@@ -5,6 +5,7 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
+load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
 load(
     "//tflite:special_rules.bzl",
     "tflite_ios_lab_runner",
@@ -20,8 +21,7 @@ package(
 
 DEFAULT_COPTS = [
     "-Wno-shorten-64-to-32",
-    "-std=c++17",
-]
+] + CXX17_BAZEL_ONLY_COPTS
 
 objc_library(
     name = "buffer",

@@ -1,3 +1,7 @@
+# copybara:uncomment_begin(google-only)
+# load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
+#
+# copybara:uncomment_end
 load("//tflite/experimental/litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
 
 package(
@@ -107,7 +111,7 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -143,9 +147,10 @@ cc_test(
     ],
     tags = ["no_oss"],
     deps = [
+        ":litert_common",
         ":litert_options",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -466,5 +471,13 @@ cc_library(
     linkstatic = 1,
     deps = ["@opencl_headers"],
 )
+
+# copybara:uncomment_begin(google-only)
+# # Check that litert runtime doesn't depend on MLIR.
+# check_dependencies(
+#     of = [":litert_runtime_c_api_shared_lib"],
+#     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
+# )
+# copybara:uncomment_end
 
 exports_files(srcs = glob(["litert_*.h"]))

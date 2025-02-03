@@ -44,6 +44,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/cl/kernels:convolution_transposed_3x3_test"
         "-//tflite/delegates/xnnpack:reduce_test"
+        "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
         "-//tflite/kernels/variants/py:end_to_end_test"
         "-//tflite/profiling:memory_info_test"
         "-//tflite/profiling:profile_summarizer_test"
@@ -67,12 +68,11 @@ EXCLUDED_TARGETS=(
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
-        "-//tflite/experimental/..."
+        "-//tflite/experimental/litert/..."
         "-//tflite/delegates/gpu/..."
 )
 
 EXCLUDED_EXPERIMENTAL_TARGETS=(
-        "-//tflite/experimental/litert/c:litert_c_api_common_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_shared_lib_test"
         "-//tflite/experimental/litert/cc:litert_compiled_model_test"
@@ -91,18 +91,16 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/vendors/examples:example_conversion_impl_test"
         "-//tflite/experimental/litert/vendors/examples:example_plugin_with_conversions_test"
         "-//tflite/experimental/litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
-        "-//tflite/experimental/litert/vendors/mediatek/dispatch:dispatch_api_mediatek_test"
         "-//tflite/experimental/litert/cc:litert_model_predicates_test"
         "-//tflite/experimental/litert/cc:litert_model_test"
         "-//tflite/experimental/litert/core/model:model_buffer_test"
         "-//tflite/experimental/litert/core/model:model_file_test"
         "-//tflite/experimental/litert/core/util:flatbuffer_tools_test"
         "-//tflite/experimental/litert/vendors/examples:example_plugin_test"
-        "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
 )
 
 if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/litert/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
 else
     bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
 fi

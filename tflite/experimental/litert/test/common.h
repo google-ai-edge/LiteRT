@@ -23,7 +23,6 @@
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/core/model/model_buffer.h"
 #include "tflite/experimental/litert/core/util/flatbuffer_tools.h"
-#include "tflite/experimental/litert/test/test_macros.h"  // IWYU pragma: keep
 #include "tflite/interpreter.h"
 
 namespace litert {
