@@ -19,7 +19,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "tflite/core/c/c_api.h"
-#include "tflite/core/c/c_api_experimental.h"
+#include "tflite/core/c/common.h"
 
 namespace tflite {
 namespace {
