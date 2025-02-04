@@ -55,26 +55,68 @@ cc_library(
         "//tflite/experimental/litert/c:litert_tensor_buffer_requirements.h",
     ],
     deps = [
-        "//tflite/experimental/litert/c:litert_any",
+        ":environment",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/c:litert_layout",
-        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_event",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/runtime/opencl:buffer",
         "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
         "//tflite/experimental/litert/runtime/opencl:cl_context",
-        "//tflite/experimental/litert/runtime/opencl:cl_device",
         "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "environment",
+    srcs = [
+        "environment.cc",
+    ],
+    hdrs = [
+        "environment.h",
+    ],
+    visibility = ["@org_tensorflow//third_party/odml/infra/ml_drift_delegate/litert:__subpackages__"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_any",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
+        "//tflite/experimental/litert/runtime/opencl:cl_context",
+        "//tflite/experimental/litert/runtime/opencl:cl_device",
+        "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
+        "@opencl_headers",
+    ],
+)
+
+cc_test(
+    name = "environment_test",
+    srcs = ["environment_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":environment",
+        "@com_google_googletest//:gtest_main",
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//third_party/ml_drift/cl:environment",
+        # "@org_tensorflow//third_party/ml_drift/cl:opencl_wrapper",
+        # copybara:uncomment_end
+        "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/cc:litert_any",
+        "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
     ],
 )
 
