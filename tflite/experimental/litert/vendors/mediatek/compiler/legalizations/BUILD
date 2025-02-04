@@ -32,7 +32,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
-        "//tflite/experimental/litert/vendors/mediatek:neuron_adapter",
+        "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -53,7 +53,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
-        "//tflite/experimental/litert/vendors/mediatek:neuron_adapter",
+        "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

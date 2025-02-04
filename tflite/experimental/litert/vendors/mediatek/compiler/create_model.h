@@ -20,12 +20,12 @@
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
-#include "tflite/experimental/litert/vendors/mediatek/neuron_adapter.h"
+#include "tflite/experimental/litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
 // Create a new NeuronModel Graph from given LiteRt Graph.
-Expected<NeuronModelPtr> CreateModel(const NeuronAdapter& neuron_adapter,
+Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                                      const Subgraph& partition,
                                      const std::string& model_name);
 

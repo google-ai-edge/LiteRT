@@ -19,12 +19,12 @@
 #include <string>
 
 #include "tflite/experimental/litert/cc/litert_expected.h"
-#include "tflite/experimental/litert/vendors/mediatek/neuron_adapter.h"
+#include "tflite/experimental/litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
 Expected<NeuronCompilationPtr> CompileModel(
-    const NeuronAdapter& neuron_adapter, NeuronModel* model,
+    const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model);
 
 }  // namespace litert::mediatek
