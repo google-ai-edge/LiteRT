@@ -66,7 +66,7 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:test_macros",
+        "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",

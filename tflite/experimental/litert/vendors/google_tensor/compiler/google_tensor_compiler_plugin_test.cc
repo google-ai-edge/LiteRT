@@ -22,7 +22,7 @@
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/core/model/model.h"
 #include "tflite/experimental/litert/test/common.h"
-#include "tflite/experimental/litert/test/test_macros.h"
+#include "tflite/experimental/litert/test/matchers.h"
 #include "tflite/experimental/litert/vendors/c/litert_compiler_plugin.h"
 #include "tflite/experimental/litert/vendors/cc/litert_compiler_plugin.h"
 
