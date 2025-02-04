@@ -15,9 +15,7 @@
 #include "tflite/experimental/litert/runtime/tfl_utils.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
-#include <vector>
 
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
