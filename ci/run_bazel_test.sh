@@ -78,6 +78,7 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/cc:litert_compiled_model_test"
         "-//tflite/experimental/litert/compiler/plugin:algo_test"
         "-//tflite/experimental/litert/runtime:compiled_model_test"
+        "-//tflite/experimental/litert/runtime:environment_test"
         "-//tflite/experimental/litert/runtime/compiler:jit_compilation_mediatek_test"
         "-//tflite/experimental/litert/runtime/compiler:jit_compilation_qualcomm_test"
         "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
