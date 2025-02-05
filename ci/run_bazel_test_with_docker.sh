@@ -37,8 +37,9 @@ if [ ! -d /root_dir ]; then
   exit 0
 else
   # Running inside docker container
+  cd /root_dir
+
   if [[ "${IS_PRESUBMIT_GITHUB}" == "true" ]]; then
-    cd /root_dir
     # Add safe directory to avoid git submodule update error.
     # Main repo
     git config --global --add safe.directory /root_dir
@@ -48,12 +49,8 @@ else
     git submodule update --remote
   fi
 
-  cd /third_party_tensorflow
-
   # Run configure.
   configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
     'N'
     'N'
     'Y'
@@ -62,10 +59,8 @@ else
     'N'
   )
   printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
 
   export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
 
-  cd /root_dir
   bash /script_dir/run_bazel_test.sh
 fi

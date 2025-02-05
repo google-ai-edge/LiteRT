@@ -46,12 +46,10 @@ else
     "platform-tools" \
     "platforms;android-${ANDROID_API_LEVEL}"
 
-  cd /third_party_tensorflow
+  cd /root_dir
 
   # Run configure.
   configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
     'N'
     'N'
     'Y'
@@ -61,8 +59,6 @@ else
     '/android/sdk'
   )
   printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
 
-  cd /root_dir
   bash /script_dir/build_android_package.sh
 fi
