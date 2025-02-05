@@ -120,6 +120,8 @@ class QnnManager {
   LiteRtStatus GenerateContextBinary(Qnn_ContextHandle_t context_handle,
                                      std::vector<char>& buffer);
 
+  LiteRtStatus ValidateOp(const Qnn_OpConfig_t& op_config);
+
  private:
   QnnManager() = default;
 
