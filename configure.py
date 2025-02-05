@@ -143,6 +143,107 @@ def cygpath(path):
   return os.path.abspath(path).replace('\\', '/')
 
 
+def get_python_path(environ_cp, python_bin_path):
+  """Get the python site package paths."""
+  python_paths = []
+  if environ_cp.get('PYTHONPATH'):
+    python_paths = environ_cp.get('PYTHONPATH').split(':')
+  try:
+    stderr = open(os.devnull, 'wb')
+    library_paths = run_shell([
+        python_bin_path, '-c',
+        'import site; print("\\n".join(site.getsitepackages()))'
+    ],
+                              stderr=stderr).split('\n')
+  except subprocess.CalledProcessError:
+    library_paths = [
+        run_shell([
+            python_bin_path,
+            '-c',
+            'import sysconfig;print(sysconfig.get_path("purelib")',
+        ])
+    ]
+
+  all_paths = set(python_paths + library_paths)
+  # Sort set so order is deterministic
+  all_paths = sorted(all_paths)
+
+  paths = []
+  for path in all_paths:
+    if os.path.isdir(path):
+      paths.append(path)
+  return paths
+
+
+def get_python_major_version(python_bin_path):
+  """Get the python major version."""
+  return run_shell([python_bin_path, '-c', 'import sys; print(sys.version[0])'])
+
+
+def setup_python(environ_cp):
+  """Setup python related env variables."""
+  # Get PYTHON_BIN_PATH, default is the current running python.
+  default_python_bin_path = sys.executable
+  ask_python_bin_path = ('Please specify the location of python. [Default is '
+                         '{}]: ').format(default_python_bin_path)
+  while True:
+    python_bin_path = get_from_env_or_user_or_default(environ_cp,
+                                                      'PYTHON_BIN_PATH',
+                                                      ask_python_bin_path,
+                                                      default_python_bin_path)
+    # Check if the path is valid
+    if os.path.isfile(python_bin_path) and os.access(python_bin_path, os.X_OK):
+      break
+    elif not os.path.exists(python_bin_path):
+      print('Invalid python path: {} cannot be found.'.format(python_bin_path))
+    else:
+      print('{} is not executable.  Is it the python binary?'.format(
+          python_bin_path))
+    environ_cp['PYTHON_BIN_PATH'] = ''
+
+  # Convert python path to Windows style before checking lib and version
+  if is_windows() or is_cygwin():
+    python_bin_path = cygpath(python_bin_path)
+
+  # Get PYTHON_LIB_PATH
+  python_lib_path = environ_cp.get('PYTHON_LIB_PATH')
+  if not python_lib_path:
+    python_lib_paths = get_python_path(environ_cp, python_bin_path)
+    if environ_cp.get('USE_DEFAULT_PYTHON_LIB_PATH') == '1':
+      python_lib_path = python_lib_paths[0]
+    else:
+      print('Found possible Python library paths:\n  %s' %
+            '\n  '.join(python_lib_paths))
+      default_python_lib_path = python_lib_paths[0]
+      python_lib_path = get_input(
+          'Please input the desired Python library path to use.  '
+          'Default is [{}]\n'.format(python_lib_paths[0]))
+      if not python_lib_path:
+        python_lib_path = default_python_lib_path
+    environ_cp['PYTHON_LIB_PATH'] = python_lib_path
+
+  python_major_version = get_python_major_version(python_bin_path)
+  if python_major_version == '2':
+    write_to_bazelrc('build --host_force_python=PY2')
+
+  # Convert python path to Windows style before writing into bazel.rc
+  if is_windows() or is_cygwin():
+    python_lib_path = cygpath(python_lib_path)
+
+  # Set-up env variables used by python_configure.bzl
+  write_action_env_to_bazelrc('PYTHON_BIN_PATH', python_bin_path)
+  write_action_env_to_bazelrc('PYTHON_LIB_PATH', python_lib_path)
+  write_to_bazelrc('build --python_path=\"{}"'.format(python_bin_path))
+  environ_cp['PYTHON_BIN_PATH'] = python_bin_path
+
+  # If chosen python_lib_path is from a path specified in the PYTHONPATH
+  # variable, need to tell bazel to include PYTHONPATH
+  if environ_cp.get('PYTHONPATH'):
+    python_paths = environ_cp.get('PYTHONPATH').split(':')
+    if python_lib_path in python_paths:
+      write_action_env_to_bazelrc('PYTHONPATH', environ_cp.get('PYTHONPATH'))
+
+
 def reset_tf_configure_bazelrc():
   """Reset file that contains customized config settings."""
   open(_TF_BAZELRC, 'w').close()
@@ -1108,6 +1209,7 @@ def main():
   reset_tf_configure_bazelrc()
 
   cleanup_makefile()
+  setup_python(environ_cp)
 
   if is_windows():
     environ_cp['TF_NEED_OPENCL'] = '0'

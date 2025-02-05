@@ -95,9 +95,6 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
-# Set default hermetic python version
-build --repo_env=HERMETIC_PYTHON_VERSION=3.11
-
 # Default options should come above this line.
 
 # Android configs. Bazel needs to have --cpu and --fat_apk_cpu both set to the

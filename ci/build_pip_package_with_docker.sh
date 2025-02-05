@@ -48,10 +48,12 @@ else
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
 
   # Running inside docker container
-  cd /root_dir
+  cd /third_party_tensorflow
 
   # Run configure.
   configs=(
+    '/usr/bin/python3'
+    '/usr/lib/python3/dist-packages'
     'N'
     'N'
     'Y'
@@ -60,8 +62,10 @@ else
     'N'
   )
   printf '%s\n' "${configs[@]}" | ./configure
+  cp .tf_configure.bazelrc /root_dir
 
   ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
 
+  cd /root_dir
   bash /script_dir/build_pip_package_with_bazel.sh
 fi
