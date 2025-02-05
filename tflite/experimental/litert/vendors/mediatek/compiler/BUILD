@@ -29,6 +29,7 @@ litert_dynamic_lib(
     tags = [
         # Don't build/test in OS until MediaTek SDK is available.
         "nobuilder",
+        "notap",
     ],
     ungrte = True,
     visibility = ["//tflite/experimental/litert:__subpackages__"],
@@ -53,7 +54,14 @@ cc_library(
     name = "create_model",
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
+        "@com_google_absl//absl/strings:string_view",
+        # copybara:uncomment "@org_tensorflow//third_party/neuro_pilot:latest_host_headers",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_op_code",
@@ -66,7 +74,6 @@ cc_library(
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
         "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
         "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:operand_map",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -74,7 +81,14 @@ cc_library(
     name = "compile_model",
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
+        "@com_google_absl//absl/strings:string_view",
+        # copybara:uncomment "@org_tensorflow//third_party/neuro_pilot:latest_host_headers",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_op_code",
@@ -85,7 +99,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

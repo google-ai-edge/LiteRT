@@ -25,13 +25,18 @@ cc_library(
     hdrs = [
         "neuron_adapter_api.h",
     ],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        # copybara:uncomment "@org_tensorflow//third_party/neuro_pilot:latest_host_headers",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:dynamic_loading",
-        "//tflite/experimental/litert/tools:dump",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
