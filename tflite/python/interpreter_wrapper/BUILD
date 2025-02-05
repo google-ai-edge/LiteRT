@@ -95,6 +95,7 @@ pybind_extension(
         ":interpreter_wrapper_lib",
         "//tflite:framework",
         "//tflite/core:framework_stable",
+        "//tflite/experimental/genai:genai_ops",
         "@org_tensorflow//tensorflow/python/lib/core:pybind11_lib",
         "@org_tensorflow//third_party/python_runtime:headers",
         "@pybind11",

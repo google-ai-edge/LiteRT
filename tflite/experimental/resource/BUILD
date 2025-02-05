@@ -13,6 +13,7 @@ cc_library(
         "cache_buffer.h",
         "//tflite/core/c:common.h",
     ],
+    compatible_with = get_compatible_with_portable(),
     deps = [
         ":resource",
         "//tflite/core/c:c_api_types",
