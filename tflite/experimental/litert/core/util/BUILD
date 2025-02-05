@@ -36,6 +36,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:filesystem",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
