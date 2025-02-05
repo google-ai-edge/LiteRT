@@ -128,7 +128,7 @@ litert_test(
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
-        "//tflite/experimental/litert/test:matchers",
+        "//tflite/experimental/litert/test:matchers_oss",
         "//tflite/experimental/litert/test:test_models",
         "//tflite/experimental/litert/vendors/cc:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
