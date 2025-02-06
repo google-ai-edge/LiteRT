@@ -37,6 +37,7 @@ cc_library(
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:ir_allocator",
         "//tflite/experimental/litert/core/model:model_serialize",
+        "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin_api",
         "@com_google_absl//absl/log:absl_check",
