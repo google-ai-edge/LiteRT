@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_op_code.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
