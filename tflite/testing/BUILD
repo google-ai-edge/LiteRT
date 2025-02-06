@@ -176,7 +176,7 @@ py_strict_library(
         ":_pywrap_string_util",
         ":generate_examples_report",
         "//tflite/tools:flatbuffer_utils",
-        "@ml_dtypes",
+        "@ml_dtypes_py//ml_dtypes",
         "@org_tensorflow//tensorflow:tensorflow_py",
         "@org_tensorflow//tensorflow/python/framework:convert_to_constants",
         "@org_tensorflow//tensorflow/python/saved_model:signature_constants",
