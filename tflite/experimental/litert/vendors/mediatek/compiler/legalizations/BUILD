@@ -21,20 +21,18 @@ cc_library(
     name = "operand_map",
     srcs = ["operand_map.cc"],
     hdrs = ["operand_map.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/c:litert_op_code",
-        "//tflite/experimental/litert/c:litert_options",
         "//tflite/experimental/litert/cc:litert_element_type",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
-        "//tflite/experimental/litert/cc:litert_model_predicates",
-        "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -42,18 +40,17 @@ cc_library(
     name = "add_op_legalization",
     srcs = ["add_op_legalization.cc"],
     hdrs = ["add_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/c:litert_options",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
-        "//tflite/experimental/litert/cc:litert_model_predicates",
-        "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )

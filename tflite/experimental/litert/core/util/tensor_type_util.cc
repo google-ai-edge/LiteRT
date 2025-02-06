@@ -14,8 +14,6 @@
 
 #include "tflite/experimental/litert/core/util/tensor_type_util.h"
 
-#include <cstddef>
-
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"

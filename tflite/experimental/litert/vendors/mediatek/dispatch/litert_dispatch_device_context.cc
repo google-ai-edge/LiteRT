@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
@@ -26,10 +27,6 @@
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 #include "tflite/experimental/litert/vendors/mediatek/neuron_adapter_api.h"
-
-// NOLINTNEXTLINE
-using litert::mediatek::NEURON_NO_ERROR;
-using litert::mediatek::NeuronMemory;
 
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() = default;
 
