@@ -13,9 +13,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#include <vector>
-
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/delegates/gpu/cl/kernels/cl_test.h"
 #include "tflite/delegates/gpu/common/operations.h"
