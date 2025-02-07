@@ -14,9 +14,14 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/toco/graph_transformations/quantization_util.h"
 
+#include <cmath>
+#include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 
+#include "absl/log/check.h"
+#include "absl/log/log.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/toco/graph_transformations/graph_transformations.h"
 #include "tflite/toco/model.h"
