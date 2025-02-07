@@ -64,6 +64,7 @@ cc_test(
 objc_library(
     name = "signpost_profiler",
     hdrs = ["signpost_profiler.h"],
+    aspect_hints = ["//tools/build_defs/kotlin/native:disable_kotlin_interop"],
     copts = common_copts,
     non_arc_srcs = ["signpost_profiler.mm"],
     tags = ["apple"],
