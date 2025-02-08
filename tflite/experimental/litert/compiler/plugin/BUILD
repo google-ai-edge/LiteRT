@@ -68,7 +68,7 @@ cc_library(
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//tflite/experimental/litert/c:litert_common",
-#         "//tflite/experimental/litert/c:litert_environment",
+#         "//tflite/experimental/litert/c:litert_model",
 #         "//tflite/experimental/litert/c:litert_op_code",
 #         "//tflite/experimental/litert/cc:litert_environment",
 #         "//tflite/experimental/litert/core:build_stamp",
