@@ -140,6 +140,13 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogc
 cp "bazel-bin/tflite/python/interpreter_wrapper/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}" \
    "${BUILD_DIR}/ai_edge_litert"
 
+# Build and add GenAI Ops library into the package.
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/experimental/genai:pywrap_genai_ops
+
+cp "bazel-bin/tflite/experimental/genai/pywrap_genai_ops${LIBRARY_EXTENSION}" \
+   "${BUILD_DIR}/ai_edge_litert"
+
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt -s --config=monolithic --config=nogcp --config=nonccl \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //tflite/python:schema_py
 
@@ -165,6 +172,7 @@ sed -i -e 's/tflite\.profiling\.proto/ai_edge_litert/g' "${BUILD_DIR}/ai_edge_li
 # At least on Windows, we need write permissions to delete the file.
 # Without this, setuptools fails to clean the build directory.
 chmod u+w "${BUILD_DIR}/ai_edge_litert/_pywrap_tensorflow_interpreter_wrapper${LIBRARY_EXTENSION}"
+chmod u+w "${BUILD_DIR}/ai_edge_litert/pywrap_genai_ops${LIBRARY_EXTENSION}"
 
 # Build python wheel.
 pushd "${BUILD_DIR}"
