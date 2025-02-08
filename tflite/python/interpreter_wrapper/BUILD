@@ -43,6 +43,7 @@ cc_library(
         "//tflite/kernels:reference_ops",
         "//tflite/kernels/internal:compatibility",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@org_tensorflow//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
