@@ -15,8 +15,8 @@ limitations under the License.
 
 #include "tflite/core/async/testing/test_backend.h"
 
+#include <cstddef>
 #include <string>
-#include <vector>
 
 #include "tflite/array.h"
 #include "tflite/builtin_ops.h"
