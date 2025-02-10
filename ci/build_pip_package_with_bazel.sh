@@ -24,7 +24,7 @@ export TENSORFLOW_DIR="./third_party/tensorflow"
 TENSORFLOW_LITE_DIR="./tflite"
 ARCH="$(uname -m)"
 
-export PACKAGE_VERSION="${RELEASE_VERSION:-1.1.1}"
+export PACKAGE_VERSION="${RELEASE_VERSION:-1.1.2}"
 export PROJECT_NAME=${WHEEL_PROJECT_NAME:-ai_edge_litert}
 
 if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
