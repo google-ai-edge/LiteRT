@@ -93,6 +93,7 @@ cc_library(
     ],
     deps = [
         ":accelerator",
+        "//tflite:shared_library",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
