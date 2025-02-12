@@ -64,7 +64,6 @@ tf_staging/tflite/lib_package/BUILD:
 tf_staging/tflite/model.h:
 tf_staging/tflite/model_builder.h:
 tf_staging/tflite/namespace.h:
-tf_staging/tflite/python/interpreter.py:
 tf_staging/tflite/schema/conversion_metadata_generated.h:
 tf_staging/tflite/schema/schema_generated.h:
 tf_staging/tflite/signature_runner.h:
