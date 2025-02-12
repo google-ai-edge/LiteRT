@@ -34,6 +34,8 @@ litert_dynamic_lib(
     visibility = ["//tflite/experimental/litert:__subpackages__"],
     deps = [
         ":qnn_compose_graph",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
