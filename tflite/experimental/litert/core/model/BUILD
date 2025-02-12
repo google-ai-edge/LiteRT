@@ -83,6 +83,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
