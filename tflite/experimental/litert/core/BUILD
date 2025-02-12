@@ -134,6 +134,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
