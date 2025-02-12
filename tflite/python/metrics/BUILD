@@ -16,7 +16,7 @@ cc_library(
     ),
     hdrs = ["wrapper/metrics_wrapper.h"],
     compatible_with = get_compatible_with_portable(),
-    visibility = ["@org_tensorflow//tensorflow/python:__pkg__"],
+    visibility = ["//visibility:private"],
     deps = [
         "@org_tensorflow//third_party/python_runtime:headers",
     ] + if_portable(
