@@ -34,6 +34,7 @@ litert_dynamic_lib(
     visibility = ["//tflite/experimental/litert:__subpackages__"],
     deps = [
         ":qnn_compose_graph",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
@@ -45,9 +46,11 @@ litert_dynamic_lib(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
+        "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/qualcomm:qnn_manager",
         "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
     ],
 )
 
