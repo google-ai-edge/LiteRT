@@ -1011,6 +1011,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:tensor_desc",
         "//tflite/delegates/gpu/common/task:util",
+        "@com_google_absl//absl/status",
     ],
 )
 
