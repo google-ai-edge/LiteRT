@@ -370,6 +370,11 @@ build --config=v2
 build:litert_prefixes --define=litert_prefixes="external/org_tensorflow/"
 build --config=litert_prefixes
 
+# Options to disable generating api v2 under tensorflow/lite/python.
+# This is not on by default and don't use this flag during wheel generation.
+# Remove the flag once tf/lite is fully separated from tf.
+build:disable_tf_lite_py --define=disable_tf_lite_py=true
+
 # Config to use a gcs bucket as remote cache.
 build:public_cache --remote_cache="https://storage.googleapis.com/litert-bazel-artifacts" --remote_upload_local_results=false
 
