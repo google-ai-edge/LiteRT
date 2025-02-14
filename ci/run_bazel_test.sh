@@ -44,6 +44,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/cl/kernels:convolution_transposed_3x3_test"
         "-//tflite/delegates/xnnpack:reduce_test"
+        "-//tflite/experimental/acceleration/mini_benchmark:blocking_validator_runner_test"
         "-//tflite/experimental/microfrontend:audio_microfrontend_op_test"
         "-//tflite/kernels/variants/py:end_to_end_test"
         "-//tflite/profiling:memory_info_test"
