@@ -70,6 +70,7 @@ tf_cc_test(
         ":resolve_cluster",
         ":resolve_svdf",
         "//tflite/toco:toco_port",
+        "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
