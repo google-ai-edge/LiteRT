@@ -20,7 +20,6 @@
 
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
