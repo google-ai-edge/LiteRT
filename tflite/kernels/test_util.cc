@@ -33,6 +33,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/base/casts.h"
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
+#include "xla/tsl/platform/logging.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
@@ -52,7 +53,6 @@ limitations under the License.
 #include "tflite/tools/logging.h"
 #include "tflite/tools/versioning/op_version.h"
 #include "tflite/version.h"
-#include "tsl/platform/logging.h"
 
 namespace tflite {
 
