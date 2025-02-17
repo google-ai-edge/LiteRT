@@ -539,6 +539,29 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "subgraph_composite_inlining_test",
+    srcs = ["subgraph_composite_inlining_test.cc"],
+    deps = [
+        ":model_building",
+        ":subgraph",
+        "//tflite:array",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite:util",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core/c:common",
+        "//tflite/kernels:kernel_util",
+        "//tflite/kernels:subgraph_test_util",
+        "//tflite/kernels:test_util",
+        "//tflite/kernels/internal:tensor_ctypes",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 tflite_self_contained_libs_test_suite(name = "self_contained_libs_test_suite")
 
 tflite_portable_test_suite()

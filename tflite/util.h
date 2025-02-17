@@ -31,6 +31,7 @@ limitations under the License.
 
 #include "tflite/array.h"
 #include "tflite/core/c/common.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace tflite {
 
@@ -124,6 +125,9 @@ TensorUniquePtr BuildTfLiteTensor(TfLiteType type, const std::vector<int>& dims,
                                   TfLiteAllocationType allocation_type);
 TensorUniquePtr BuildTfLiteTensor(TfLiteType type, IntArrayUniquePtr dims,
                                   TfLiteAllocationType allocation_type);
+
+int GetBuiltinDataSize(BuiltinOperator op);
+
 }  // namespace tflite
 
 #endif  // TENSORFLOW_LITE_UTIL_H_
