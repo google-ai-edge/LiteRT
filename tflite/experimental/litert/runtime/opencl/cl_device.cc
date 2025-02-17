@@ -16,7 +16,6 @@
 #include "tflite/experimental/litert/runtime/opencl/cl_device.h"
 
 #include <algorithm>
-#include <string>
 #include <utility>
 #include <vector>
 
