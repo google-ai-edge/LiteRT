@@ -1,5 +1,5 @@
-//  Copyright (c) Qualcomm Innovation Center, Inc.
-//  All Rights Reserved.
+// Copyright (c) Qualcomm Innovation Center, Inc.
+// All Rights Reserved.
 
 #include "tflite/experimental/litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 
