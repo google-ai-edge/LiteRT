@@ -80,7 +80,6 @@ cc_library(
         "//tflite/experimental/litert/runtime:external_litert_buffer_context",
         "//tflite/experimental/litert/runtime:tfl_utils",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
-        "//tflite/experimental/litert/vendors/qualcomm:common",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
