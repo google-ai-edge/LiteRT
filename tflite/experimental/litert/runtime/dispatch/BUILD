@@ -151,6 +151,7 @@ cc_test(
         "//tflite/experimental/litert/runtime:external_litert_buffer_context",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
+        "//tflite/experimental/litert/vendors/qualcomm:QnnLiteRTDelegate",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
