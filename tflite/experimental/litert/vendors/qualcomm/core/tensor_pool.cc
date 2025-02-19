@@ -3,6 +3,10 @@
 
 #include "tflite/experimental/litert/vendors/qualcomm/core/tensor_pool.h"
 
+#include <cstdint>
+#include <functional>
+#include <vector>
+
 namespace qnn {
 
 TensorPool::TensorPool() = default;
