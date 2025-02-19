@@ -616,6 +616,7 @@ cc_test(
         "//tflite/c:c_api_types",
         "//tflite/delegates:delegate_test_util",
         "//tflite/testing:util",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )

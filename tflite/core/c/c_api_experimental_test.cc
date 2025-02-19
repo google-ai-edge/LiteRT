@@ -27,6 +27,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/c_api.h"
