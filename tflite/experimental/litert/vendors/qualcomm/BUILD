@@ -21,6 +21,16 @@ package(
 )
 
 cc_library(
+    name = "QnnLiteRTDelegate",
+    hdrs = ["QnnLiteRTDelegate.h"],
+)
+
+cc_library(
+    name = "hexagon_backend_utils",
+    hdrs = ["hexagon_backend_utils.h"],
+)
+
+cc_library(
     name = "common",
     hdrs = ["common.h"],
     deps = [
@@ -55,6 +65,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/vendors/qualcomm:perf_control",
     ],
 )
 
@@ -82,6 +93,7 @@ litert_cc_lib_with_qnn(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:dynamic_loading",
+        "//tflite/experimental/litert/vendors/qualcomm:perf_control",
     ],
 )
 
@@ -125,6 +137,8 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/vendors/qualcomm:QnnLiteRTDelegate",
+        "//tflite/experimental/litert/vendors/qualcomm:perf_control",
     ],
 )
 
@@ -139,5 +153,21 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
+    name = "perf_control",
+    srcs = ["perf_control.cc"],
+    hdrs = ["perf_control.h"],
+    deps = [
+        ":common",
+        # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/vendors/qualcomm:QnnLiteRTDelegate",
+        "//tflite/experimental/litert/vendors/qualcomm:hexagon_backend_utils",
     ],
 )

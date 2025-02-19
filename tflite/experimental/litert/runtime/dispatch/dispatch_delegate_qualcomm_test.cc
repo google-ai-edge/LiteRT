@@ -36,6 +36,7 @@
 #include "tflite/experimental/litert/runtime/external_litert_buffer_context.h"
 #include "tflite/experimental/litert/test/common.h"
 #include "tflite/experimental/litert/test/testdata/simple_model_test_vectors.h"
+#include "tflite/experimental/litert/vendors/qualcomm/QnnLiteRTDelegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/signature_runner.h"
 
@@ -78,6 +79,20 @@ TEST(DispatchDelegate, QualcommCpuBuffer) {
       CreateDispatchDelegateOptionsPtr(*env->Get());
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            rt.Flatbuffer().Buf().Data());
+
+  TfLiteQnnDelegateOptions qnn_delegate_options = QNN_DELEGATE_OPTION_INIT;
+  qnn_delegate_options.log_level = kLogLevelInfo;
+  qnn_delegate_options.htp_options.performance_mode = kHtpBurst;
+  LiteRtAddDispatchDelegateOption(
+      dispatch_delegate_options.get(),
+      LiteRtDispatchOption{
+          .name = kDispatchOptionQnnDelegateOptions,
+          .value =
+              LiteRtAny{
+                  .type = kLiteRtAnyTypeVoidPtr,
+                  .ptr_value = &qnn_delegate_options,
+              },
+      });
   auto dispatch_delegate = CreateDispatchDelegatePtr(
       *env->Get(), std::move(dispatch_delegate_options));
 
@@ -152,6 +167,20 @@ TEST(DispatchDelegate, QualcommHwBuffer) {
       CreateDispatchDelegateOptionsPtr(*env->Get());
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            rt.Flatbuffer().Buf().Data());
+
+  TfLiteQnnDelegateOptions qnn_delegate_options = QNN_DELEGATE_OPTION_INIT;
+  qnn_delegate_options.log_level = kLogLevelInfo;
+  qnn_delegate_options.htp_options.performance_mode = kHtpBurst;
+  LiteRtAddDispatchDelegateOption(
+      dispatch_delegate_options.get(),
+      LiteRtDispatchOption{
+          .name = kDispatchOptionQnnDelegateOptions,
+          .value =
+              LiteRtAny{
+                  .type = kLiteRtAnyTypeVoidPtr,
+                  .ptr_value = &qnn_delegate_options,
+              },
+      });
   auto dispatch_delegate = CreateDispatchDelegatePtr(
       *env->Get(), std::move(dispatch_delegate_options));
 
