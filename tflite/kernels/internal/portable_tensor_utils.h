@@ -617,6 +617,8 @@ void ApplySignbitToVector(const float* __restrict__ vector, int v_size,
 void UnpackDenseInt4IntoInt8(const int8_t* src_buffer, int num_elements,
                              int8_t* dst_buffer);
 
+void PackInt4ValuesDensely(const int8_t* src_buffer, int num_elements,
+                           int8_t* dst_buffer);
 }  // namespace tensor_utils
 
 }  // namespace tflite

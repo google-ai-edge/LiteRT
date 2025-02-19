@@ -16,7 +16,10 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include <cstddef>
+
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
 #include "tflite/kernels/kernel_util.h"
@@ -125,6 +128,25 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     case kTfLiteInt8:
       TF_LITE_TRANSPOSE(reference_ops, int8_t);
       break;
+    case kTfLiteInt4: {
+      const size_t bytes_unpacked = op_context.input->bytes * 2;
+      auto unpacked_input_data = std::make_unique<int8_t[]>(bytes_unpacked);
+      auto unpacked_output_data = std::make_unique<int8_t[]>(bytes_unpacked);
+
+      tflite::tensor_utils::UnpackDenseInt4IntoInt8(
+          GetTensorData<int8_t>(op_context.input),
+          GetTensorShape(op_context.input).FlatSize(),
+          unpacked_input_data.get());
+      reference_ops::Transpose(
+          params, GetTensorShape(op_context.input), unpacked_input_data.get(),
+          GetTensorShape(op_context.output), unpacked_output_data.get());
+      // Pack the output back to int4.
+      tflite::tensor_utils::PackInt4ValuesDensely(
+          unpacked_output_data.get(),
+          GetTensorShape(op_context.input).FlatSize(),
+          GetTensorData<int8_t>(op_context.output));
+      break;
+    }
     case kTfLiteInt16:
       TF_LITE_TRANSPOSE(reference_ops, int16_t);
       break;
