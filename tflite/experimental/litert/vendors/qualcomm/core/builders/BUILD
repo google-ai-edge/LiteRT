@@ -357,6 +357,7 @@ cc_library(
     deps = [
         ":op_builder",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
