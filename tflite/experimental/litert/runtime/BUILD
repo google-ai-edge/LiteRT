@@ -245,6 +245,7 @@ cc_test(
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/test:simple_model",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/log:absl_log",
