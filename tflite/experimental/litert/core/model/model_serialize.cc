@@ -26,8 +26,14 @@
 #include <utility>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"
+// schema/mutable/schema_generated.h and schema/schema_generated.h (included
+// through flatbuffer_tools.h via model.h) have the same #ifdef, thus this line
+// need to be put at the top to ensure we get the "mutable" version.
+#if 1
 #include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#endif
+
+#include "absl/container/flat_hash_map.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
