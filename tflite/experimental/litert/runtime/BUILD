@@ -182,6 +182,7 @@ cc_library(
     deps = [
         ":external_litert_buffer_context",
         ":tensor_buffer",
+        "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
         "//tflite/c:c_api_opaque",
@@ -200,6 +201,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
         "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
+        "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:model_serialize",
@@ -207,6 +209,7 @@ cc_library(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
