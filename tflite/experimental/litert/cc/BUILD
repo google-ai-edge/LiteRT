@@ -52,8 +52,10 @@ cc_library(
     hdrs = ["litert_any.h"],
     deps = [
         ":litert_expected",
+        ":litert_macros",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
