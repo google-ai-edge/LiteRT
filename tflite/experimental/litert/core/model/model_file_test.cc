@@ -54,7 +54,6 @@
 #include "tflite/experimental/litert/test/matchers.h"
 #include "tflite/experimental/litert/test/test_models.h"
 #include "tflite/schema/mutable/schema_generated.h"
-#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
