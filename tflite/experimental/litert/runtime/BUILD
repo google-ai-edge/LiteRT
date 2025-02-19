@@ -263,10 +263,53 @@ cc_test(
     ],
     deps = [
         ":tensor_buffer",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/test:matchers",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "tensor_buffer_conversion",
+    srcs = ["tensor_buffer_conversion.cc"],
+    hdrs = ["tensor_buffer_conversion.h"],
+    linkopts = gles_linkopts(),
+    deps = [
+        ":tensor_buffer",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer_utils",
+        "@com_google_absl//absl/strings:str_format",
+    ] + gles_deps(),
+)
+
+cc_test(
+    name = "tensor_buffer_conversion_test",
+    srcs = ["tensor_buffer_conversion_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "notap",
+    ],
+    deps = [
+        ":tensor_buffer",
+        ":tensor_buffer_conversion",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/cc:litert_layout",
+        "//tflite/experimental/litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],
     }),
