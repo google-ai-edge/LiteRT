@@ -28,6 +28,7 @@
 #include "tflite/experimental/litert/cc/litert_environment.h"
 #include "tflite/experimental/litert/core/build_stamp.h"
 #include "tflite/experimental/litert/core/filesystem.h"
+#include "tflite/experimental/litert/core/model/model.h"
 #include "tflite/experimental/litert/test/common.h"
 #include "tflite/experimental/litert/tools/dump.h"
 
@@ -174,10 +175,9 @@ TEST(PartitionModelTest, PartitionDirect) {
   auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
   auto& model = *model_wrap.Get();
 
-  std::vector<LiteRtOp> selected_ops = {
-      model.MainSubgraph()->Ops().front(),
-      model.MainSubgraph()->Ops().back(),
-  };
+  std::vector<LiteRtOpWithPartitionIndex> selected_ops = {
+      {model.MainSubgraph()->Ops().front(), 0},
+      {model.MainSubgraph()->Ops().back(), 0}};
 
   auto partition_result = PartitionModelDirect(std::move(selected_ops), model);
   ASSERT_TRUE(partition_result);
@@ -220,9 +220,9 @@ TEST(PartitionModelTest, CstMultiSubgraph) {
   auto& model = *model_wrap.Get();
   ASSERT_EQ(model.MainSubgraph()->Ops().size(), 3);
 
-  std::vector<LiteRtOp> selected_ops = {
-      model.MainSubgraph()->Ops().front(),
-      model.MainSubgraph()->Ops().back(),
+  std::vector<LiteRtOpWithPartitionIndex> selected_ops = {
+      {model.MainSubgraph()->Ops().front(), 0},
+      {model.MainSubgraph()->Ops().back(), 0},
   };
   auto partition_result = PartitionModelDirect(std::move(selected_ops), model);
   ASSERT_TRUE(partition_result);
