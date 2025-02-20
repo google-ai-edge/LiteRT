@@ -185,3 +185,22 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_binary(
+    name = "run_model",
+    srcs = ["run_model.cc"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/cc:litert_compiled_model",
+        "//tflite/experimental/litert/cc:litert_environment",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_model",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
