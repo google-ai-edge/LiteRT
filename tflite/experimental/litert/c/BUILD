@@ -346,6 +346,7 @@ cc_test(
         ":litert_accelerator_options",
         ":litert_common",
         "//tflite/experimental/litert/core:accelerator",
+        "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
