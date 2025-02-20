@@ -23,7 +23,6 @@ TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
-    "--nocheck_visibility"
   )
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
