@@ -7,12 +7,7 @@ load("//tflite/experimental/litert/build_common:special_rule.bzl", "gles_deps", 
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        # copybara:uncomment "@org_tensorflow//third_party/mediapipe/calculators/tensor:__subpackages__",
-        # copybara:uncomment "@org_tensorflow//third_party/odml/infra:__subpackages__",
-        # copybara:uncomment "@org_tensorflow//third_party/odml/litert:__subpackages__",
-        "//tflite/experimental/litert:__subpackages__",
-    ],
+    default_visibility = ["//visibility:public"],
 )
 
 cc_library(
