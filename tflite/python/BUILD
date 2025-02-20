@@ -104,6 +104,7 @@ py_strict_library(
 py_strict_library(
     name = "test_util",
     srcs = ["test_util.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":lite",
         ":schema_py",
