@@ -95,6 +95,7 @@ cc_test(
     data = [
         "//tflite/experimental/litert/test:mlir_test_data",
         "//tflite/experimental/litert/test:tflite_test_data",
+        # copybara:uncomment "//tflite/java/demo/app/src/main/assets:mobilenet_v1_1.0_224.tflite",
     ],
     deps = [
         ":buffer_manager",
