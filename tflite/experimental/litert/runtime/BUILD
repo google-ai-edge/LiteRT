@@ -189,6 +189,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
         "//tflite/delegates/utils:simple_opaque_delegate",
+        "//tflite/experimental/litert/c:litert_accelerator_options",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compiled_model_options",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
