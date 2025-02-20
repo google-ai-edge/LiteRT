@@ -17,7 +17,7 @@
 
 #include "tflite/experimental/litert/c/litert_accelerator.h"
 #include "tflite/experimental/litert/c/litert_common.h"
-#include "tflite/experimental/litert/c/litert_compiled_model.h"
+#include "tflite/experimental/litert/c/litert_environment.h"
 
 #ifdef __cplusplus
 extern "C" {
