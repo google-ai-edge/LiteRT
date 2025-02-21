@@ -19,6 +19,8 @@ limitations under the License.
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <vector>
+
 #include "tflite/c/jni/jni_utils.h"
 
 namespace tflite {
