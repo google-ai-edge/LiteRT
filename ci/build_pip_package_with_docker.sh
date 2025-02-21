@@ -40,6 +40,7 @@ if [ ! -d /root_dir ]; then
     -e BAZEL_CONFIG_FLAGS="${BAZEL_CONFIG_FLAGS}" \
     -e CUSTOM_BAZEL_FLAGS=${CUSTOM_BAZEL_FLAGS} \
     -e RELEASE_VERSION=${RELEASE_VERSION} \
+    -e TEST_WHEEL=${TEST_WHEEL:-false} \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
     tflite-builder
   exit 0
@@ -50,7 +51,7 @@ else
   # Running inside docker container
   cd /third_party_tensorflow
 
-  # Run configure.
+  # Run configure
   configs=(
     '/usr/bin/python3'
     '/usr/lib/python3/dist-packages'
@@ -67,5 +68,20 @@ else
   ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
 
   cd /root_dir
+  if [[ "${TEST_WHEEL}" == "true" ]]; then
+    # Source test_pip_package.sh to get environment variables.
+    source /script_dir/test_pip_package.sh
+    create_venv
+    initialize_pip_wheel_environment
+  fi
+
   bash /script_dir/build_pip_package_with_bazel.sh
+
+  # Test build wheel
+  if [[ "${TEST_WHEEL}" == "true" ]]; then
+    install_wheel
+    test_import
+    uninstall_pip
+    deactivate  # deactivate virtualenv
+  fi
 fi

@@ -24,6 +24,12 @@ PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 echo "Testing on Python version ${PYTHON_VERSION}"
 
 function create_venv {
+  # Install libssl-dev to use pyenv.
+  # https://github.com/pyenv/pyenv/wiki/Common-build-problems#0-first-check
+  sudo apt-get update -y
+  sudo apt install libssl-dev build-essential libbz2-dev libncurses5-dev \
+    libncursesw5-dev libffi-dev libreadline-dev libsqlite3-dev liblzma-dev zlib1g-dev -y
+
   PYENV_ROOT="$(pwd)/pyenv"
   if ! git clone https://github.com/pyenv/pyenv.git 2>/dev/null && [ -d "${PYENV_ROOT}" ] ; then
       echo "${PYENV_ROOT} exists"
@@ -35,7 +41,8 @@ function create_venv {
   pyenv install -s "${PYTHON_VERSION}"
   pyenv global "${PYTHON_VERSION}"
 
-  PYTHON_BIN=$(which python)
+  PYTHON_BIN=$(pyenv which python)
+  echo "PYTHON_BIN: ${PYTHON_BIN}"
   export PYTHON_BIN
 
   ${PYTHON_BIN} -m pip install virtualenv
@@ -43,7 +50,7 @@ function create_venv {
   source ai_edge_litert_env/bin/activate
 }
 
-function build_pip_and_install {
+function initialize_pip_wheel_environment {
   # Build and install pip package.
   if [[ "${PYTHON_BIN}" == "" ]]; then
     echo "python is not available."
@@ -58,12 +65,9 @@ function build_pip_and_install {
   # Clean up distributions.
   rm -r -f tflite/gen/litert_pip/python3/dist
 
-  if [[ -n "${USE_DOCKER_BUILD}" ]]; then
-    ./ci/build_pip_package_with_docker.sh
-  else
-    ./ci/build_pip_package_with_bazel.sh
-  fi
+}
 
+function install_wheel {
   local dist_pkg="$(ls ./tflite/gen/litert_pip/python3/dist/${pkg}*.whl)"
   ${PYTHON_BIN} -m pip install ${dist_pkg?} --ignore-installed
 
@@ -91,11 +95,19 @@ function test_ai_edge_litert {
   echo "===== Test AI Edge Litert ====="
 
   create_venv
-  build_pip_and_install
+  initialize_pip_wheel_environment
+  ./ci/build_pip_package_with_bazel.sh
+  install_wheel
   test_import
   uninstall_pip
+  deactivate  # deactivate virtualenv
   echo
 }
 
-test_ai_edge_litert
-deactivate  # deactivate virtualenv
+function test_ai_edge_litert_with_docker {
+  echo "===== Test AI Edge Litert with Docker ====="
+  export TEST_WHEEL=true
+  ./ci/build_pip_package_with_docker.sh
+  echo
+}
+
