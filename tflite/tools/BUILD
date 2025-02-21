@@ -143,7 +143,9 @@ py_strict_test(
     deps = [
         ":flatbuffer_utils",
         ":test_utils",
+        "@org_tensorflow//third_party/py/flatbuffers",
         #internal proto upb dep
+        "//tflite/python:schema_py",
         "@org_tensorflow//tensorflow/python/framework:test_lib",
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
     ],
