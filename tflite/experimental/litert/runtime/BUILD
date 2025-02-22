@@ -245,6 +245,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/test:common",
