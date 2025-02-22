@@ -40,6 +40,7 @@ cc_library(
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin_api",
+        "//tflite/experimental/litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -75,6 +76,7 @@ cc_library(
 #         "//tflite/experimental/litert/core:filesystem",
 #         "//tflite/experimental/litert/core/model",
 #         "//tflite/experimental/litert/test:common",
+#         "//tflite/experimental/litert/test:matchers",
 #         "//tflite/experimental/litert/tools:dump",
 #     ],
 # )
