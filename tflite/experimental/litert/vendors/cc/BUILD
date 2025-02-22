@@ -21,6 +21,7 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
+        "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
     ],
@@ -119,5 +120,17 @@ cc_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
+    ],
+)
+
+cc_test(
+    name = "litert_compiler_plugin_test",
+    srcs = ["litert_compiler_plugin_test.cc"],
+    deps = [
+        ":litert_compiler_plugin",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/test:matchers",
+        "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
+        "@com_google_googletest//:gtest_main",
     ],
 )
