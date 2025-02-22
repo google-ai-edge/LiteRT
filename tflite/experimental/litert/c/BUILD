@@ -94,6 +94,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:model_load",
+        "//tflite/experimental/litert/core/model:model_serialize",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

@@ -76,7 +76,12 @@ cc_test(
     }),
     deps = [
         ":adapter",
+        "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/cc:litert_buffer_ref",
+        "//tflite/experimental/litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
