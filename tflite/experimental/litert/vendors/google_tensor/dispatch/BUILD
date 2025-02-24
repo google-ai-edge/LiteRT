@@ -33,6 +33,7 @@ litert_dynamic_lib(
         "litert_dispatch_device_context.h",
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",
+        "litert_dispatch_metrics.h",
         "southbound.h",
         # copybara:uncomment "@org_tensorflow//third_party/odml/infra/southbound:sb_api.h",
     ],
@@ -50,6 +51,7 @@ litert_dynamic_lib(
     ],
     visibility = ["//tflite/experimental/litert:__subpackages__"],
     deps = [
+        "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_logging",
