@@ -1,0 +1,12 @@
+# go/google3metadata
+# proto-file: devtools/metadata/metadata.proto
+# proto-message: MetaData
+
+tricorder: {
+  options: {
+    builder: {
+      android_platforms: "//buildenv/platforms/android:arm64-v8a"
+      android_ndk_min_sdk_version: 28
+    }
+  }
+}

@@ -1,0 +1,11 @@
+set noparent
+file: //depot/google3/OWNERS
+
+# eng
+lukeboyer
+weiyiw
+terryheo
+yunandrew
+
+# lead
+cbasile

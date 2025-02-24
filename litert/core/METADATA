@@ -1,0 +1,9 @@
+tricorder: {
+  options: {
+    builder: {
+      target: "tensor_buffer_test"
+      config: "android_arm64"
+      android_ndk_min_sdk_version: 26
+    }
+  }
+}
