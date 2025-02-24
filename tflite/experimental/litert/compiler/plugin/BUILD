@@ -23,6 +23,7 @@ cc_library(
     hdrs = ["compiler_plugin.h"],
     deps = [
         ":algo",
+        ":compiler_flags",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
@@ -40,7 +41,6 @@ cc_library(
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin_api",
-        "//tflite/experimental/litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -115,6 +115,32 @@ cc_test(
         "//tflite/experimental/litert/core/model:graph_validation",
         "//tflite/experimental/litert/test:common",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "compiler_flags",
+    srcs = ["compiler_flags.cc"],
+    hdrs = ["compiler_flags.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "compiler_flags_test",
+    srcs = ["compiler_flags_test.cc"],
+    deps = [
+        ":compiler_flags",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/test:matchers",
+        "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
+        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )

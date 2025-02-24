@@ -29,10 +29,10 @@
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
+#include "tflite/experimental/litert/compiler/plugin/compiler_flags.h"
 #include "tflite/experimental/litert/core/model/model.h"
 #include "tflite/experimental/litert/vendors/c/litert_compiler_plugin.h"
 #include "tflite/experimental/litert/vendors/c/litert_compiler_plugin_api.h"
-#include "tflite/experimental/litert/vendors/cc/litert_compiler_plugin.h"
 
 // C++ wrappers and high-level functions for managing compiler plugins
 // and applying them to models.

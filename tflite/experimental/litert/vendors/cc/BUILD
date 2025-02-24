@@ -24,6 +24,8 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -120,17 +122,5 @@ cc_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
-    ],
-)
-
-cc_test(
-    name = "litert_compiler_plugin_test",
-    srcs = ["litert_compiler_plugin_test.cc"],
-    deps = [
-        ":litert_compiler_plugin",
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/test:matchers",
-        "//tflite/experimental/litert/vendors/c:litert_compiler_plugin",
-        "@com_google_googletest//:gtest_main",
     ],
 )
