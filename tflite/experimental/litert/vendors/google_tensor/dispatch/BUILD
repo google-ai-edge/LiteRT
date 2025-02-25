@@ -98,6 +98,7 @@ cc_test(
     deps = [
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_any",
         "//tflite/experimental/litert/core:filesystem",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
@@ -135,6 +136,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_any",
         "//tflite/experimental/litert/core:filesystem",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
