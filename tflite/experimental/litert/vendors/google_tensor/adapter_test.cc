@@ -26,7 +26,9 @@
 #include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_buffer_ref.h"
+#include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/test/common.h"
+
 namespace litert {
 namespace google_tensor {
 
@@ -63,8 +65,9 @@ TEST(AdapterTest, CompileSuccess) {
   // Using weak pointer to link the data to the buffer.
   auto [data, size, offset] = buf.GetWeak();
 
+  const auto opts = litert::SerializationOptions::Defaults();
   auto status =
-      LiteRtSerializeModel(litert_model, &data, &size, &offset, false);
+      LiteRtSerializeModel(litert_model, &data, &size, &offset, false, opts);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to serialize model");
   }
