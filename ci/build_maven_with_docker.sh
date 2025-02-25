@@ -65,4 +65,44 @@ else
 
   cd /root_dir
   bash /script_dir/build_android_package.sh
+
+  # Bundle the Maven package
+  VERSION=${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}
+  PACKAGE_PATH=com/google/ai/edge/litert
+  DEBUG_VERSION="0.0.0-nightly-debug-SNAPSHOT"
+
+  rm -fr ${PACKAGE_PATH}
+
+  LITERT_DIR=${PACKAGE_PATH}/litert/$VERSION
+  mkdir -p ${LITERT_DIR}
+  cp ./ci/gen/litert-$VERSION/* ${LITERT_DIR}
+
+  LITERT_API_DIR=${PACKAGE_PATH}/litert-api/$VERSION
+  mkdir -p ${LITERT_API_DIR}
+  cp ./ci/gen/litert-api-$VERSION/* ${LITERT_API_DIR}
+
+  LITERT_GPU_DIR=${PACKAGE_PATH}/litert-gpu/$VERSION
+  mkdir -p ${LITERT_GPU_DIR}
+  cp ./ci/gen/litert-gpu-$VERSION/* ${LITERT_GPU_DIR}
+
+  LITERT_GPU_API_DIR=${PACKAGE_PATH}/litert-gpu-api/$VERSION
+  mkdir -p ${LITERT_GPU_API_DIR}
+  cp ./ci/gen/litert-gpu-api-$VERSION/* ${LITERT_GPU_API_DIR}
+
+  if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
+    # Package debug version of litert, litert-gpu
+    LITERT_DEBUG_DIR=${PACKAGE_PATH}/litert/${DEBUG_VERSION}
+    mkdir -p ${LITERT_DEBUG_DIR}
+    cp ./ci/gen/litert-${DEBUG_VERSION}/* ${LITERT_DEBUG_DIR}
+
+    LITERT_GPU_DEBUG_DIR=${PACKAGE_PATH}/litert-gpu/${DEBUG_VERSION}
+    mkdir -p ${LITERT_GPU_DEBUG_DIR}
+    cp ./ci/gen/litert-gpu-${DEBUG_VERSION}/* ${LITERT_GPU_DEBUG_DIR}
+  fi
+
+  # Install zip
+  sudo apt-get install zip
+
+  ARTIFACT=litert-$VERSION.zip
+  zip -r $ARTIFACT ${PACKAGE_PATH}
 fi
