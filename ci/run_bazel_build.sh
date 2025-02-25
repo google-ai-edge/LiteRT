@@ -21,6 +21,7 @@ EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
 
 UBUNTU_BUILD_FLAGS=(
     "--config=bulk_test_cpu"
+    "--config=disable_tf_lite_py"
     "--nocheck_visibility"
   )
 

@@ -22,6 +22,7 @@ TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
+    "--config=disable_tf_lite_py"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
   )
 
