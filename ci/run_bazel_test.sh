@@ -16,8 +16,9 @@
 set -ex
 
 # Run this script under the root directory.
-
+# TODO: b/398924022  remove these once litert is migrated to tflite/
 EXPERIMENTAL_TARGETS_ONLY="${EXPERIMENTAL_TARGETS_ONLY:-false}"
+LITERT_TARGETS_ONLY="${LITERT_TARGETS_ONLY:-false}"
 TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
 BUILD_FLAGS=(
@@ -73,6 +74,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/gpu/..."
 )
 
+# TODO: b/398924022  remove these once litert is migrated to tflite/
 EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/c:litert_compiled_model_test"
         "-//tflite/experimental/litert/c:litert_compiled_model_shared_lib_test"
@@ -101,8 +103,39 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/vendors/examples:example_plugin_test"
 )
 
+LITERT_EXCLUDED_TARGETS=(
+        "-//litert/c:litert_compiled_model_test"
+        "-//litert/c:litert_compiled_model_shared_lib_test"
+        "-//litert/cc:litert_compiled_model_test"
+        "-//litert/compiler/plugin:algo_test"
+        "-//litert/runtime:compiled_model_test"
+        "-//litert/runtime:environment_test"
+        "-//litert/runtime/compiler:jit_compilation_mediatek_test"
+        "-//litert/runtime/compiler:jit_compilation_qualcomm_test"
+        "-//litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
+        "-//litert/runtime/dispatch:dispatch_delegate_mediatek_test"
+        "-//litert/runtime/dispatch:dispatch_delegate_qualcomm_test"
+        "-//litert/tools:apply_plugin_test"
+        "-//litert/tools:dump_test"
+        "-//litert/tools:tool_display_test"
+        "-//litert/vendors/cc:convert_graph_test"
+        "-//litert/vendors/cc:partition_with_capabilities_test"
+        "-//litert/vendors/examples:example_conversion_impl_test"
+        "-//litert/vendors/examples:example_plugin_with_conversions_test"
+        "-//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
+        "-//litert/cc:litert_model_predicates_test"
+        "-//litert/cc:litert_model_test"
+        "-//litert/core/model:model_buffer_test"
+        "-//litert/core/model:model_file_test"
+        "-//litert/core/util:flatbuffer_tools_test"
+        "-//litert/vendors/examples:example_plugin_test"
+)
+
+
 if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
     bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/litert/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
+elif [ "$LITERT_TARGETS_ONLY" == "true" ]; then
+    bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 else
     bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
 fi
