@@ -24,4 +24,5 @@ cc_library(
 cc_library(
     name = "common",
     hdrs = ["common.h"],
+    visibility = ["//tflite/experimental/litert:__subpackages__"],
 )

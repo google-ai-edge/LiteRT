@@ -52,12 +52,15 @@ litert_dynamic_lib(
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_any",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
         "//tflite/experimental/litert/vendors/qualcomm:common",
         "//tflite/experimental/litert/vendors/qualcomm:context_binary_info",
+        "//tflite/experimental/litert/vendors/qualcomm:qnn_litert_delegate",
         "//tflite/experimental/litert/vendors/qualcomm:qnn_manager",
+        "//tflite/experimental/litert/vendors/qualcomm/core:common",
     ],
 )
 

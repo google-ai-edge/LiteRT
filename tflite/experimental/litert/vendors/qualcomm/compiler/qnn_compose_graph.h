@@ -15,11 +15,18 @@
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 
+#include <vector>
+
 #include "absl/strings/string_view.h"
+#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
+#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_model.h"
+#include "tflite/experimental/litert/cc/litert_element_type.h"
+#include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/vendors/qualcomm/core/tensor_pool.h"
 #include "tflite/experimental/litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "tflite/experimental/litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "tflite/experimental/litert/vendors/qualcomm/qnn_manager.h"
 
 namespace litert::qnn {
