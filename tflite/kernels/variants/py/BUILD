@@ -27,6 +27,7 @@ py_strict_test(
         "@org_tensorflow//third_party/py/numpy",
         "@org_tensorflow//tensorflow:tensorflow_py",
         "//tflite/python:interpreter",
+        "//tflite/python:lite",
         "@org_tensorflow//tensorflow/python/ops:list_ops",
         "@org_tensorflow//tensorflow/python/platform:test",
     ],

@@ -11,6 +11,7 @@ py_strict_binary(
     srcs = ["mnist_tflite.py"],
     deps = [
         ":dataset",
+        "//tflite/python:lite",
         "@org_tensorflow//tensorflow:tensorflow_py",
         "@org_tensorflow//third_party/py/numpy",
     ],
