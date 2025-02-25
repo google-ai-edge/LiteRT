@@ -38,6 +38,7 @@
 #include "tflite/experimental/litert/runtime/fastrpc_buffer.h"
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/experimental/litert/runtime/gl_buffer.h"
+#include "tflite/experimental/litert/runtime/gl_texture.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/experimental/litert/runtime/ion_buffer.h"
 #include "tflite/experimental/litert/runtime/open_cl_buffer.h"
@@ -110,6 +111,9 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeGlBuffer:
       // internal gl buffer is auto-disposed by the
       // litert::internal::GlBuffer destructor.
+    case kLiteRtTensorBufferTypeGlTexture:
+      // internal gl texture is auto-disposed by the
+      // litert::internal::GlTexture destructor.
       break;
   }
 }
@@ -334,6 +338,18 @@ LiteRtTensorBufferT::CreateManagedOpenClBuffer(
 }
 
 #if LITERT_HAS_OPENGL_SUPPORT
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
+    const LiteRtRankedTensorType& tensor_type, GLenum target, GLuint id,
+    GLenum format, size_t size_bytes, GLint layer,
+    LiteRtGlTextureDeallocator deallocator) {
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
+  tensor_buffer->buffer_.emplace<litert::internal::GlTexture>(
+      litert::internal::GlTexture(target, id, format, size_bytes, layer,
+                                  deallocator));
+  return tensor_buffer;
+}
+
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
     const LiteRtRankedTensorType& tensor_type, GLenum target, GLuint id,
     size_t bytes_size, size_t offset, LiteRtGlBufferDeallocator deallocator) {
@@ -382,6 +398,10 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "OpenGL buffers are not supported");
 #endif
+    }
+    case kLiteRtTensorBufferTypeGlTexture: {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "LiteRT does not support managed GL textures.");
     }
     default:
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
