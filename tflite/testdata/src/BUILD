@@ -9,5 +9,9 @@ package(
 py_strict_binary(
     name = "intermediate_tensor_output",
     srcs = ["intermediate_tensor_output.py"],
-    deps = ["@org_tensorflow//tensorflow:tensorflow_py"],
+    python_version = "PY3",
+    deps = [
+        "//tflite/python:lite",
+        "@org_tensorflow//tensorflow:tensorflow_py",
+    ],
 )

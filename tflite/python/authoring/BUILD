@@ -26,5 +26,6 @@ py_strict_test(
         ":authoring",
         #internal proto upb dep
         "@org_tensorflow//tensorflow:tensorflow_py",
+        "//tflite/python:lite",
     ],
 )

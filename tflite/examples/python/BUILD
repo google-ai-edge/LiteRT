@@ -15,7 +15,7 @@ package(
 #     deps = [
 #         "@org_tensorflow//third_party/py/PIL:pil",
 #         "@org_tensorflow//third_party/py/numpy",
-#         "@org_tensorflow//tensorflow:tensorflow_py",
+#         "//tflite/python:lite",
 #     ],
 # )
 # copybara:uncomment_end

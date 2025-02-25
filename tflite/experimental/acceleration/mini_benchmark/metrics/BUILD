@@ -46,6 +46,7 @@ py_strict_binary(
     srcs = ["mobilenet.py"],
     deps = [
         ":kl_divergence",
+        "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],
@@ -89,6 +90,7 @@ py_strict_binary(
     srcs = ["blazeface_metrics.py"],
     deps = [
         ":kl_divergence",
+        "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
         "@org_tensorflow//tensorflow:tensorflow_py",
     ],

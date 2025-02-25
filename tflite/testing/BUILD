@@ -130,8 +130,8 @@ py_strict_library(
     ],
     deps = [
         ":zip_test_utils",
+        "//tflite/python:lite",
         "//tflite/python:test_util",
-        "@org_tensorflow//tensorflow:tensorflow_py",
         "@org_tensorflow//tensorflow/python/platform:resource_loader",
         "@org_tensorflow//tensorflow/python/saved_model:signature_constants",
         "@org_tensorflow//third_party/py/numpy",
@@ -149,6 +149,7 @@ py_strict_library(
         # "@org_tensorflow//third_party/py/tensorflow_addons",
         # copybara:uncomment_end
         "@org_tensorflow//tensorflow/python/framework:test_lib",
+        "//tflite/python:lite",
         "@org_tensorflow//tensorflow/python/ops:array_ops",
         "@org_tensorflow//tensorflow/python/ops:list_ops",
         "@org_tensorflow//tensorflow/python/ops:rnn",
@@ -171,6 +172,7 @@ py_strict_library(
     deps = [
         ":_pywrap_string_util",
         ":generate_examples_report",
+        "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
         "@ml_dtypes_py//ml_dtypes",
         "@org_tensorflow//tensorflow:tensorflow_py",

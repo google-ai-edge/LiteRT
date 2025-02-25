@@ -28,8 +28,8 @@ import sys
 # conversion in v2.
 import tensorflow.compat.v1 as tf
 from tflite.experimental.acceleration.mini_benchmark.metrics import kl_divergence
+from tflite.python import lite
 from tflite.tools import flatbuffer_utils
-
 parser = argparse.ArgumentParser(
     description='Script to generate a metrics model for mobilenet v1.')
 parser.add_argument('output', help='Output filepath')
@@ -51,7 +51,7 @@ def main(output_path):
     ok = tf.reshape(
         tf.logical_and(kld_metric < 5.5, mse < 0.003), [1], name='ok')
     sess = tf.compat.v1.Session()
-    converter = tf.lite.TFLiteConverter.from_session(sess, [
+    converter = lite.TFLiteConverter.from_session(sess, [
         expected_scores,
         actual_scores,
     ], [kld_metric, mse, ok])
