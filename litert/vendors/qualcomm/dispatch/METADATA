@@ -1,9 +1,0 @@
-tricorder: {
-  options: {
-    builder: {
-      target: "dispatch_api_qualcomm_test"
-      config: "android_arm64"
-      android_ndk_min_sdk_version: 26
-    }
-  }
-}

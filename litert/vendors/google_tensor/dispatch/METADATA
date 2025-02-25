@@ -1,9 +1,0 @@
-tricorder: {
-  options: {
-    builder: {
-      target: ""
-      config: "android_arm64"
-      android_ndk_min_sdk_version: 26
-    }
-  }
-}
