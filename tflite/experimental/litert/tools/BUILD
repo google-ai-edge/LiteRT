@@ -34,6 +34,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/experimental/litert/compiler/plugin:compiler_flags",
         "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
         "//tflite/experimental/litert/core/model:model_serialize",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
@@ -96,7 +97,9 @@ litert_cc_bin_with_qnn(
     deps = [
         ":apply_plugin",
         ":outstream",
+        "//tflite/experimental/litert/compiler/plugin:compiler_flags",
         "//tflite/experimental/litert/core:build_stamp",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@llvm-project//llvm:Support",
@@ -121,7 +124,8 @@ cc_binary(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "//tflite/experimental/litert/core:build_stamp",
+        "//tflite/experimental/litert/compiler/plugin:compiler_flags",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@llvm-project//llvm:Support",
     ],
