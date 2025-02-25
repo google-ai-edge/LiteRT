@@ -385,7 +385,6 @@ cc_library(
         ":litert_accelerator",
         ":litert_accelerator_options",
         ":litert_common",
-        ":litert_compiled_model",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:accelerator",
         "//tflite/experimental/litert/core:environment",
