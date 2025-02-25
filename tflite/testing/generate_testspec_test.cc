@@ -15,6 +15,7 @@ limitations under the License.
 #include "tflite/testing/generate_testspec.h"
 
 #include <random>
+#include <set>
 
 #include <gtest/gtest.h>
 
