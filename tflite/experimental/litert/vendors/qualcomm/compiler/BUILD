@@ -147,6 +147,7 @@ litert_lib(
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:quantize_op_builder",
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:reduce_op_builder",
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//tflite/experimental/litert/vendors/qualcomm/core/builders:rms_norm_op_builder",
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:select_op_builder",
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//tflite/experimental/litert/vendors/qualcomm/core/builders:softmax_op_builder",

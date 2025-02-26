@@ -32,7 +32,6 @@ cc_library(
         "//tflite:stderr_reporter",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
-        "//tflite/experimental/litert/cc:litert_detail",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:filesystem",
         "//tflite/schema:schema_fbs",

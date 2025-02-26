@@ -29,9 +29,9 @@ cc_library(
         "nobuilder",
     ],
     deps = [
+        ":quantize_params_wrapper",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/vendors/qualcomm/core/utils:log",
-        "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
     ],
 )
 
