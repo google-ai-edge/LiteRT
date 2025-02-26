@@ -103,6 +103,6 @@ else
   # Install zip
   sudo apt-get install zip
 
-  ARTIFACT=litert-$VERSION.zip
+  ARTIFACT=litert.zip
   zip -r $ARTIFACT ${PACKAGE_PATH}
 fi
