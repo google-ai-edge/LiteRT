@@ -241,6 +241,24 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
+LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
+    const LiteRtRankedTensorType* tensor_type, GLenum target, GLuint id,
+    GLenum format, size_t size_bytes, GLint layer,
+    LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto created_tensor_buffer = LiteRtTensorBufferT::CreateFromGlTexture(
+      *tensor_type, target, id, format, size_bytes, layer, deallocator);
+  if (!created_tensor_buffer) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               created_tensor_buffer.Error().Message().c_str());
+    return created_tensor_buffer.Error().Status();
+  }
+  *tensor_buffer = created_tensor_buffer->release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     const LiteRtRankedTensorType* tensor_type, GLenum target, GLuint id,
     size_t bytes_size, size_t offset, LiteRtGlBufferDeallocator deallocator,
