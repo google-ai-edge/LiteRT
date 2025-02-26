@@ -37,6 +37,7 @@
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_macros.h"  // IWYU pragma: keep
+#include "tflite/experimental/litert/cc/litert_shared_library.h"
 #include "tflite/experimental/litert/vendors/qualcomm/common.h"
 
 //===----------------------------------------------------------------------===//
@@ -178,8 +179,8 @@ class QnnManager {
   // if backendCreate has not been called.
   LiteRtStatus FreeBackend();
 
-  void* lib_so_ = nullptr;
-  void* lib_system_so_ = nullptr;
+  SharedLibrary lib_;
+  SharedLibrary lib_system_;
 
   const QnnInterface_t* interface_ = nullptr;
   const QnnSystemInterface_t* system_interface_ = nullptr;
