@@ -130,6 +130,7 @@ litert_lib(
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/tools:dump",
         "//tflite/experimental/litert/vendors/qualcomm:common",
         "//tflite/experimental/litert/vendors/qualcomm:qnn_manager",
         "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
