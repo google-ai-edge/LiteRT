@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("//tflite/experimental/litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
-load("//tflite/experimental/litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts")
+load("//tflite/experimental/litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts", "lite_rt_friends")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -159,6 +159,9 @@ cc_library(
     name = "external_litert_buffer_context",
     srcs = ["external_litert_buffer_context.cc"],
     hdrs = ["external_litert_buffer_context.h"],
+    visibility = [
+        "//tflite/experimental/litert:__subpackages__",
+    ] + lite_rt_friends(),
     deps = [
         ":tfl_utils",
         "//tflite/c:c_api",
