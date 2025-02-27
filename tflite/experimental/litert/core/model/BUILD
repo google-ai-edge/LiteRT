@@ -262,6 +262,7 @@ cc_library(
     deps = [
         ":model",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_op_code",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_detail",
@@ -298,6 +299,7 @@ cc_test(
     srcs = ["model_graph_test.cc"],
     deps = [
         ":graph_validation",
+        ":ir_allocator",
         ":model",
         ":model_graph",
         "//tflite/experimental/litert/c:litert_op_code",
