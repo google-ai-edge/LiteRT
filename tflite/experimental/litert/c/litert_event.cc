@@ -15,7 +15,6 @@
 #include "tflite/experimental/litert/c/litert_event.h"
 
 #include <fcntl.h>
-#include <unistd.h>
 
 #include <cstdint>
 
