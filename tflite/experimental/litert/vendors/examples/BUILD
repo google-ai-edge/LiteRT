@@ -41,6 +41,7 @@ litert_dynamic_lib(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
+        "//tflite/experimental/litert/cc:litert_op_options",
     ],
 )
 
