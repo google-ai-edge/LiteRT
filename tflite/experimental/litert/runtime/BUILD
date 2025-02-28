@@ -30,7 +30,6 @@ cc_library(
     ],
     deps = [
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
     ],
 )

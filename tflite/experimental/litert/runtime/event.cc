@@ -15,16 +15,17 @@
 #include "tflite/experimental/litert/runtime/event.h"
 
 #include <fcntl.h>
-#include <poll.h>
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
 
 #include "tflite/experimental/litert/c/litert_common.h"
-#include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
+
+#if LITERT_HAS_SYNC_FENCE_SUPPORT
+#include <poll.h>
+#endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 
 using litert::Error;
 using litert::Expected;
