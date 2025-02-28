@@ -39,6 +39,6 @@ litert_cc_lib_with_mtk(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/core:dynamic_loading",
+        "//tflite/experimental/litert/cc:litert_shared_library",
     ],
 )
