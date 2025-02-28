@@ -41,6 +41,7 @@ cc_library(
         "dmabuf_buffer.cc",
         "fastrpc_buffer.cc",
         "gl_buffer.cc",
+        "gl_texture.cc",
         "ion_buffer.cc",
         "open_cl_buffer.cc",
         "tensor_buffer.cc",
@@ -51,6 +52,7 @@ cc_library(
         "event.h",
         "fastrpc_buffer.h",
         "gl_buffer.h",
+        "gl_texture.h",
         "ion_buffer.h",
         "open_cl_buffer.h",
         "tensor_buffer.h",
@@ -65,14 +67,18 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_layout",
         "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_tensor_buffer_types",
         "//tflite/experimental/litert/cc:litert_event",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_tensor_buffer_utils",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/runtime/opencl:buffer",
         "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
         "//tflite/experimental/litert/runtime/opencl:cl_context",
         "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -82,6 +88,7 @@ cc_library(
     ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/gl:gl_buffer",
+            "//tflite/delegates/gpu/gl:gl_texture",
         ],
         "//conditions:default": [],
     }),
@@ -267,6 +274,12 @@ cc_test(
 cc_test(
     name = "gl_buffer_test",
     srcs = ["gl_buffer_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [
+            "-landroid",
+        ],
+        "//conditions:default": [],
+    }),
     tags = [
         "notap",
     ],
@@ -291,6 +304,7 @@ cc_library(
     deps = [
         ":tensor_buffer",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_utils",
@@ -312,8 +326,10 @@ cc_test(
         ":tensor_buffer",
         ":tensor_buffer_conversion",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_layout",
+        "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ] + select({
