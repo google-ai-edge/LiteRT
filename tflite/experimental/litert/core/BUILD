@@ -110,7 +110,6 @@ cc_test(
         ":environment",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/cc:litert_any",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )
