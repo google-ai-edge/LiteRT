@@ -131,6 +131,19 @@ build:macos --copt=-DGRPC_BAZEL_BUILD
 # Avoid hitting command line argument limit
 build:macos --features=archive_param_file
 
+# Bazel 7.0.0 no longer supports dynamic symbol lookup on macOS. To resolve
+# undefined symbol errors in macOS arm64 builds, explicitly add the necessary
+# linker flags until dependencies are well defined. See
+# https://github.com/bazelbuild/bazel/issues/19730.
+build:macos --linkopt=-Wl,-undefined,dynamic_lookup
+build:macos --host_linkopt=-Wl,-undefined,dynamic_lookup
+
+# Use cc toolchains from apple_support for Apple builds.
+# https://github.com/bazelbuild/apple_support/tree/master?tab=readme-ov-file#bazel-6-setup
+build:macos --apple_crosstool_top=@local_config_apple_cc//:toolchain
+build:macos --crosstool_top=@local_config_apple_cc//:toolchain
+build:macos --host_crosstool_top=@local_config_apple_cc//:toolchain
+
 # Settings for MacOS on ARM CPUs.
 build:macos_arm64 --cpu=darwin_arm64
 build:macos_arm64 --macos_minimum_os=11.0
