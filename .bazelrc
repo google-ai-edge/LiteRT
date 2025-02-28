@@ -72,6 +72,7 @@ build --define=grpc_no_ares=true
 # all library archives in -whole_archive -no_whole_archive.
 build --noincompatible_remove_legacy_whole_archive
 build --features=-force_no_whole_archive
+build --host_features=-force_no_whole_archive
 
 # TODO(mihaimaruseac): Document this option or remove if no longer needed
 build --enable_platform_specific_config
@@ -448,3 +449,10 @@ test:bulk_test_cpu --test_output=errors
 test:bulk_test_cpu --verbose_failures=true
 test:bulk_test_cpu --flaky_test_attempts=3
 test:bulk_test_cpu --build_tests_only
+
+# TODO: b/397625618 Enable bzlmod
+common --noenable_bzlmod
+
+# TODO: Migrate for https://github.com/bazelbuild/bazel/issues/7260
+common --noincompatible_enable_cc_toolchain_resolution
+common --noincompatible_enable_android_toolchain_resolution
