@@ -50,11 +50,7 @@ litert_dynamic_lib(
     ],
     visibility = ["//tflite/experimental/litert:__subpackages__"],
     deps = [
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_event",
-        "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/c:litert_model",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",

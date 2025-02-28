@@ -22,6 +22,8 @@ package(
     ],
 )
 
+# Dispatch API implementation, it is used by the dispatch delegate to call the vendor's dispatch
+# API.
 cc_library(
     name = "dispatch",
     srcs = [
@@ -56,6 +58,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_dispatch_delegate.h",
     ],
     deps = [
+        ":dispatch",
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",
@@ -107,11 +110,7 @@ cc_test(
         # copybara:uncomment "@org_tensorflow//third_party/darwinn/driver_shared/fence:fence_test_util",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
-        "//tflite/c:common",
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_compiled_model_options",
-        "//tflite/experimental/litert/c:litert_dispatch_delegate",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/experimental/litert/cc:litert_buffer_ref",
         "//tflite/experimental/litert/cc:litert_compiled_model",
         "//tflite/experimental/litert/cc:litert_environment",
@@ -125,7 +124,6 @@ cc_test(
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/test:simple_model_npu",
-        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -144,18 +142,15 @@ cc_test(
         ":dispatch_delegate",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
-        "//tflite/c:common",
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_dispatch_delegate",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/experimental/litert/cc:litert_compiled_model",
+        "//tflite/experimental/litert/cc:litert_dispatch_delegate",
         "//tflite/experimental/litert/cc:litert_environment",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/runtime:external_litert_buffer_context",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:simple_model_npu",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
@@ -185,10 +180,7 @@ cc_test(
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_compiled_model_options",
-        "//tflite/experimental/litert/c:litert_dispatch_delegate",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/experimental/litert/cc:litert_compiled_model",
         "//tflite/experimental/litert/cc:litert_environment",
         "//tflite/experimental/litert/cc:litert_model",

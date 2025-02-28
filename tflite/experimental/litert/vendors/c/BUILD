@@ -37,6 +37,8 @@ cc_library(
     ],
 )
 
+# This library is used to build the C API header files for the vendor dispatch API.
+# All the vendor dispatch .so tragets should depend on this library.
 cc_library(
     name = "litert_dispatch_c_api",
     hdrs = [
@@ -44,12 +46,8 @@ cc_library(
         "litert_dispatch_api.h",
     ],
     deps = [
-        "//tflite/experimental/litert/c:litert_any",
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_event",
-        "//tflite/experimental/litert/c:litert_model",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
-        "//tflite/experimental/litert/runtime/dispatch",
+        # only depend on the headers, not the implementation.
+        "//tflite/experimental/litert/c:litert_dispatch_headers",
     ],
 )
 

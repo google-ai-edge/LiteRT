@@ -21,7 +21,6 @@
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer_requirements.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
-#include "tflite/experimental/litert/cc/litert_tensor_buffer_requirements.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 #include "tflite/experimental/litert/vendors/mediatek/neuron_adapter_api.h"
 
