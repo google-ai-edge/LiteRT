@@ -459,7 +459,7 @@ cc_test(
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
-#         "@org_tensorflow//third_party/odml/infra/ml_drift_delegate:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         "@org_tensorflow//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//tflite:framework",
 #         "//tflite/c:c_api_opaque",
 #         "//tflite/c:common",
