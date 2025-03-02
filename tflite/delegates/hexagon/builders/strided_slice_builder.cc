@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/builders/strided_slice_builder.h"
 
+#include <cstdint>
 #include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
