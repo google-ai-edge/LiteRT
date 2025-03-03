@@ -18,7 +18,9 @@
 #include <memory.h>
 #include <stddef.h>
 
+#if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_event.h"
 #include "tflite/experimental/litert/c/litert_model.h"
