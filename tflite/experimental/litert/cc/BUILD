@@ -481,4 +481,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_op_options",
+    srcs = ["litert_op_options.cc"],
+    hdrs = ["litert_op_options.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_model",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/c:litert_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_op_options_test",
+    srcs = ["litert_op_options_test.cc"],
+    deps = [
+        ":litert_op_options",
+        "//tflite/experimental/litert/c:litert_op_code",
+        "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/core/util:flatbuffer_tools",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(srcs = glob(["litert_*.h"]))
