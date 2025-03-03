@@ -20,7 +20,6 @@
 #include <utility>
 
 #include "absl/types/span.h"
-#include <CL/cl.h>
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_event.h"
 #include "tflite/experimental/litert/c/litert_model.h"
@@ -30,6 +29,10 @@
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_handle.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include <CL/cl.h>
+#endif
 
 namespace litert {
 
@@ -158,8 +161,8 @@ class TensorBuffer
 #endif
   }
 
-  Expected<cl_mem> GetOpenClBuffer() const {
 #if LITERT_HAS_OPENCL_SUPPORT
+  Expected<cl_mem> GetOpenClBuffer() const {
     cl_mem cl_mem;
     if (LiteRtGetTensorBufferOpenClBuffer(Get(), &cl_mem) == kLiteRtStatusOk) {
       return cl_mem;
@@ -168,11 +171,8 @@ class TensorBuffer
           kLiteRtStatusErrorRuntimeFailure,
           "Failed to get OpenCL buffer from tensor buffer");
     }
-#else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "OpenCL is not supported on this platform");
-#endif
   }
+#endif
 
   Expected<LiteRtTensorBufferType> BufferType() const {
     LiteRtTensorBufferType tensor_buffer_type;
