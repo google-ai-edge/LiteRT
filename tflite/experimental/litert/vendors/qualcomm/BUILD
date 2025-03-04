@@ -55,6 +55,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_shared_library",
     ],
 )
 
@@ -81,6 +82,7 @@ litert_cc_lib_with_qnn(
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/cc:litert_shared_library",
         "//tflite/experimental/litert/core:dynamic_loading",
     ],
 )

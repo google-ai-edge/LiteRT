@@ -33,6 +33,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_op_options",
+        "//tflite/experimental/litert/cc:litert_shared_library",
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:dynamic_loading",
         "//tflite/experimental/litert/core:environment",
