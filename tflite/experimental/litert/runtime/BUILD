@@ -69,6 +69,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_event",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/runtime/opencl:buffer",
         "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
