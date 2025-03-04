@@ -76,7 +76,7 @@ jobs:
 
           ./ci/build_pip_package_with_docker.sh
 
-          cp ./tflite/gen/litert_pip/python3/dist/*.whl ./ci/litert_pip/
+          cp ./bazel-bin/tflite/tools/pip_package/dist/*.whl ./ci/litert_pip/
 
       - name: Verify the distribution
         run: twine check ./ci/litert_pip/*.whl
