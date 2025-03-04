@@ -291,6 +291,7 @@ cc_library(
     deps = [
         ":tensor_buffer",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_utils",
@@ -312,8 +313,10 @@ cc_test(
         ":tensor_buffer",
         ":tensor_buffer_conversion",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/cc:litert_layout",
+        "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ] + select({
