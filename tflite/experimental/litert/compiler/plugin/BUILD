@@ -76,6 +76,7 @@ cc_library(
 #         "//tflite/experimental/litert/c:litert_model",
 #         "//tflite/experimental/litert/c:litert_op_code",
 #         "//tflite/experimental/litert/cc:litert_environment",
+#         "//tflite/experimental/litert/cc:litert_op_options",
 #         "//tflite/experimental/litert/core:build_stamp",
 #         "//tflite/experimental/litert/core:filesystem",
 #         "//tflite/experimental/litert/core/model",
