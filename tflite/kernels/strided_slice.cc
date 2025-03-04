@@ -22,6 +22,7 @@ limitations under the License.
 #include <cmath>
 #include <vector>
 
+#include "Eigen/Core"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
@@ -250,6 +251,16 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
   switch (op_context.input->type) {
     case kTfLiteFloat32:
       reference_ops::StridedSlice<float>(
+          op_params, op_context.effective_input_shape, op_context.input,
+          GetTensorShape(op_context.output), op_context.output);
+      break;
+    case kTfLiteFloat16:
+      reference_ops::StridedSlice<Eigen::half>(
+          op_params, op_context.effective_input_shape, op_context.input,
+          GetTensorShape(op_context.output), op_context.output);
+      break;
+    case kTfLiteBFloat16:
+      reference_ops::StridedSlice<Eigen::bfloat16>(
           op_params, op_context.effective_input_shape, op_context.input,
           GetTensorShape(op_context.output), op_context.output);
       break;
