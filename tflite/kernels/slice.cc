@@ -19,6 +19,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
+#include "Eigen/Core"
 #include "tflite/context_util.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
@@ -253,6 +254,12 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       break;
     case kTfLiteString:
       TF_LITE_SLICE(string);
+      break;
+    case kTfLiteFloat16:
+      TF_LITE_SLICE(Eigen::half);
+      break;
+    case kTfLiteBFloat16:
+      TF_LITE_SLICE(Eigen::bfloat16);
       break;
     default:
       TF_LITE_KERNEL_LOG(
