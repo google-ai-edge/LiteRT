@@ -47,6 +47,7 @@ litert_dynamic_lib(
     deps = [
         "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:dynamic_loading",
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
