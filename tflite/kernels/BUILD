@@ -1722,6 +1722,7 @@ cc_test(
         ":test_util",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -1835,6 +1836,7 @@ cc_test(
         ":test_util",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
     ],
 )
 
@@ -2558,6 +2560,7 @@ cc_test(
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
+        "@eigen_archive//:eigen3",
     ],
 )
 
