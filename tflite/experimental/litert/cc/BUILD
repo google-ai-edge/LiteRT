@@ -182,7 +182,6 @@ cc_test(
         ":litert_macros",
         ":litert_model",
         ":litert_tensor_buffer",
-        "//tflite/delegates/gpu/gl:egl_environment",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
@@ -190,7 +189,12 @@ cc_test(
         "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
