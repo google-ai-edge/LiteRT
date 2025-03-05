@@ -19,6 +19,7 @@
 
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
+#include "tflite/experimental/litert/cc/litert_shared_library.h"
 
 namespace litert::internal {
 
@@ -56,6 +57,10 @@ Expected<LiteRtParamIndex> AcceleratorRegistry::FindAcceleratorIndex(
   }
   return Error(kLiteRtStatusErrorNotFound,
                "The accelerator is not registered in the LiteRT environment.");
+}
+
+void AcceleratorRegistry::TakeOwnershipOfSharedLibrary(SharedLibrary lib) {
+  accelerator_shared_libraries_.push_back(std::move(lib));
 }
 
 }  // namespace litert::internal

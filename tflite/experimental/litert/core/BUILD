@@ -121,6 +121,7 @@ cc_library(
     deps = [
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_shared_library",
     ],
 )
 
