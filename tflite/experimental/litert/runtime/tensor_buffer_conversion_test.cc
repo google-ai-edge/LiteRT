@@ -23,6 +23,7 @@
 #include "tflite/experimental/litert/c/litert_environment.h"
 #include "tflite/experimental/litert/c/litert_model.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
+#include "tflite/experimental/litert/c/litert_tensor_buffer_types.h"
 #include "tflite/experimental/litert/cc/litert_layout.h"
 #include "tflite/experimental/litert/core/environment.h"
 #include "tflite/experimental/litert/runtime/tensor_buffer.h"
