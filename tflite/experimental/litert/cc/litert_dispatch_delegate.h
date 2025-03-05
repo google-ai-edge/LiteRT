@@ -19,7 +19,7 @@
 
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
-#include "tflite/experimental/litert/c/litert_environment.h"
+#include "tflite/experimental/litert/core/environment.h"
 
 namespace litert {
 

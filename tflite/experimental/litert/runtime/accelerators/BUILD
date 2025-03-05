@@ -29,6 +29,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_shared_library",
         "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime/accelerators/dispatch:dispatch_accelerator",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

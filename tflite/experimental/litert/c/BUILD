@@ -37,8 +37,9 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        ":litert_logging",
+        "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
     ],
 )
