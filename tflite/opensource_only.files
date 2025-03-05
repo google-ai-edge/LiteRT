@@ -57,7 +57,6 @@ tf_staging/tflite/experimental/litert/build_common/special_rule.bzl:
 tf_staging/tflite/interpreter.h:
 tf_staging/tflite/interpreter_builder.h:
 tf_staging/tflite/ios/BUILD:
-tf_staging/tflite/java/jni/BUILD:
 tf_staging/tflite/kernels/builtin_op_kernels.h:
 tf_staging/tflite/kernels/register.h:
 tf_staging/tflite/lib_package/BUILD:
