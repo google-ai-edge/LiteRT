@@ -19,10 +19,10 @@
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
-#include "tflite/experimental/litert/c/litert_environment.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 
 typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
+typedef struct LiteRtEnvironmentT* LiteRtEnvironment;
 
 // Returns DispatchDelegateOptions populated with default values.
 LiteRtDispatchDelegateOptions* LiteRtCreateDefaultDispatchDelegateOptions(
