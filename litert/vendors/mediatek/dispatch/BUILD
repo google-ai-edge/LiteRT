@@ -54,6 +54,7 @@ litert_dynamic_lib(
         # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/core:dynamic_loading",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
