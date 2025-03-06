@@ -20,7 +20,6 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"
-#include "absl/types/optional.h"
 #include "tflite/core/c/common.h"
 #include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/evaluation/evaluation_delegate_provider.h"
