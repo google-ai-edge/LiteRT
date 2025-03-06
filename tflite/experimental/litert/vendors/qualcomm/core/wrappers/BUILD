@@ -30,6 +30,7 @@ cc_library(
     ],
     deps = [
         ":quantize_params_wrapper",
+        "@com_google_absl//absl/types:span",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/vendors/qualcomm/core/utils:log",
     ],
