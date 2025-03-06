@@ -1,4 +1,4 @@
-name: "Presubmit"
+name: "CI"
 on:
   push:
     branches:
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   presubmit:
-    name: "presubmit (py ${{ matrix.docker-python-version }} on linux-x86-n2-16)"
+    name: "experimental_presubmit_test (py ${{ matrix.docker-python-version }} on linux-x86-n2-16)"
     runs-on: linux-x86-n2-16
     container:
       image: us-central1-docker.pkg.dev/tensorflow-sigs/tensorflow/ml-build:latest
