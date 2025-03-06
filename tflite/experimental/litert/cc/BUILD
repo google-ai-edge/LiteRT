@@ -308,7 +308,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/delegates/utils:simple_opaque_delegate",
-        "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/runtime/dispatch:dispatch_delegate",
     ],
 )
@@ -523,9 +523,10 @@ cc_library(
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
     deps = [
+        ":litert_expected",
+        ":litert_macros",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/c:litert_logging",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
