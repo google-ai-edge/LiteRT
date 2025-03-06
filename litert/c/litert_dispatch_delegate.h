@@ -17,12 +17,12 @@
 
 #include <stddef.h>
 
-#include "litert/c/litert_environment.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
 
 typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
+typedef struct LiteRtEnvironmentT* LiteRtEnvironment;
 
 // Returns DispatchDelegateOptions populated with default values.
 LiteRtDispatchDelegateOptions* LiteRtCreateDefaultDispatchDelegateOptions(
