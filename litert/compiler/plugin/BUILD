@@ -76,6 +76,7 @@ cc_library(
 #         "//litert/c:litert_model",
 #         "//litert/c:litert_op_code",
 #         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_op_options",
 #         "//litert/core:build_stamp",
 #         "//litert/core:filesystem",
 #         "//litert/core/model",
