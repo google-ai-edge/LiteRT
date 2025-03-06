@@ -36,6 +36,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/runtime:accelerator_model_compilation_data",
-        "@com_google_absl//absl/strings:string_view",
+        "//tflite/experimental/litert/runtime/accelerators:accelerator_implementation_helper",
     ],
 )
