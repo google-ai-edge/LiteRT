@@ -189,8 +189,12 @@ cc_test(
         "//litert/c:litert_tensor_buffer",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
