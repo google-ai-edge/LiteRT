@@ -51,6 +51,8 @@ class TensorWrapper final {
     return quantize_params_;
   };
 
+  QuantizeParamsWrapperVariant& GetQuantParams() { return quantize_params_; };
+
   bool IsPerTensorQuantWithOffsetDiff(const TensorWrapper& rhs) const;
 
   bool IsQuant8() const {
@@ -93,6 +95,15 @@ class TensorWrapper final {
   const void* GetStaticTensorData() const {
     return qnn_tensor_.v2.clientBuf.data;
   };
+
+  void ConvertAxisScaleOffsetToScaleOffset() {
+    if (!std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
+            quantize_params_)) {
+      return;
+    }
+
+    quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(0.0, 0);
+  }
 
   size_t GetTensorSize() const;
 
