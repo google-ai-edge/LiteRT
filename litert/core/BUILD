@@ -121,6 +121,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_shared_library",
     ],
 )
 
