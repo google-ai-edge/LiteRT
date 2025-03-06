@@ -80,7 +80,11 @@ litert_cc_bin_with_qnn(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = [
+        # copybara:uncomment_begin(google-only)
+        # "//platforms/darwinn/compiler:compiler_api_wrapper",
+        # copybara:uncomment_end
         "//tflite/experimental/litert/vendors/examples:example_plugin_so",
+        "//tflite/experimental/litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//tflite/experimental/litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
     ],
     export_litert_only = 1,
