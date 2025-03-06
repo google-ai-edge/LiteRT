@@ -60,7 +60,9 @@ static llvm::cl::list<std::string> libs(
     llvm::cl::list_init(llvm::ArrayRef<std::string>{
         "litert/vendors/examples",
         "litert/vendors/qualcomm/"
-        "compiler"}));
+        "compiler",
+        "litert/vendors/"
+        "google_tensor/compiler"}));
 
 // NOLINTNEXTLINE
 static llvm::cl::list<std::string> outs(
