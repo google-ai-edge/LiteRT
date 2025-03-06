@@ -27,6 +27,11 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 //
 // Model
 //
@@ -495,3 +500,7 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
       per_channel.quantized_dimension;
   return kLiteRtStatusOk;
 }
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
