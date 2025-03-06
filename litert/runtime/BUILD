@@ -75,6 +75,7 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/core/util:tensor_type_util",
         "//litert/runtime/opencl:buffer",
         "//litert/runtime/opencl:cl_command_queue",
