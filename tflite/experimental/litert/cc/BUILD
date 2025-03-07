@@ -472,6 +472,7 @@ cc_test(
 #         "//tflite/c:c_api_opaque",
 #         "//tflite/c:common",
 #         "//tflite/experimental/litert/c:litert_common",
+#         "//tflite/experimental/litert/c:litert_tensor_buffer",
 #         "//tflite/experimental/litert/test:common",
 #         "//tflite/experimental/litert/test:simple_model",
 #         "//tflite/kernels:builtin_ops",
