@@ -524,9 +524,10 @@ cc_library(
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
     deps = [
+        ":litert_expected",
+        ":litert_macros",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/c:litert_logging",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
