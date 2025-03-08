@@ -16,8 +16,8 @@
 #include "tflite/experimental/litert/runtime/opencl/cl_command_queue.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"
