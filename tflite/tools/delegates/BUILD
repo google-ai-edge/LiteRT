@@ -1,3 +1,4 @@
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_copts_warnings")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite", "cc_test_with_tflite")
 
@@ -16,6 +17,7 @@ cc_library_with_tflite(
     hdrs = [
         "delegate_provider.h",
     ],
+    compatible_with = get_compatible_with_portable(),
     copts = common_copts,
     tflite_deps = [
         "//tflite/c:common",
