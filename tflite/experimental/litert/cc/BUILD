@@ -192,6 +192,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_tensor_buffer_types",
         "//tflite/experimental/litert/runtime:tensor_buffer",
         "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/types:span",
@@ -495,7 +496,7 @@ cc_library(
     hdrs = ["litert_tensor_buffer_utils.h"],
     deps = [
         "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_tensor_buffer_types",
     ],
 )
 

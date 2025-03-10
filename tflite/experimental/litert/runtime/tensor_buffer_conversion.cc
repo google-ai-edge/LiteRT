@@ -17,6 +17,7 @@
 #include "absl/strings/str_format.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_tensor_buffer.h"
+#include "tflite/experimental/litert/c/litert_tensor_buffer_types.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer_utils.h"
 
