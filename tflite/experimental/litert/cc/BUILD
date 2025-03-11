@@ -457,6 +457,28 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "litert_compiled_model_integration_test",
+    srcs = ["litert_compiled_model_integration_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_model",
+        ":litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_dispatch_headers",
+        "//tflite/experimental/litert/core/model:model_buffer",
+        "//tflite/experimental/litert/runtime:tensor_buffer",
+        "//tflite/experimental/litert/test:common",
+        "//tflite/experimental/litert/test:matchers",
+        "//tflite/experimental/litert/test:simple_model",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_test(
 #     name = "litert_compiled_model_gpu_test",
