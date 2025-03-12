@@ -132,11 +132,29 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/vendors/examples:example_plugin_test"
 )
 
+check_excluded_targets() {
+  local -n TARGET_LIST="$1"
+  local EXCLUDE=()
+
+  # Check if the target exists. If it does, add it to the exclude list.
+  for target in "${TARGET_LIST[@]}"; do
+    plain_target="${target/-/}"
+    bazel query "$plain_target" 2>/dev/null
+
+    if [[ $? -eq 0 ]]; then
+      EXCLUDE+=("$target")
+    fi
+  done
+  echo "${EXCLUDE[@]}"
+}
 
 if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/litert/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
+    EXCLUDE=$(check_excluded_targets EXCLUDED_EXPERIMENTAL_TARGETS)
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/litert/... $(echo "$EXCLUDE" | xargs)
 elif [ "$LITERT_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+    EXCLUDE=$(check_excluded_targets LITERT_EXCLUDED_TARGETS)
+    bazel test "${BUILD_FLAGS[@]}" -- //litert/... $(echo "$EXCLUDE" | xargs)
 else
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    EXCLUDE=$(check_excluded_targets EXCLUDED_TARGETS)
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... $(echo "$EXCLUDE" | xargs)
 fi
