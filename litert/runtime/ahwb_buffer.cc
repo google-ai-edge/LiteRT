@@ -71,7 +71,7 @@ Expected<size_t> AhwbBuffer::GetSize(AHardwareBuffer* ahwb) {
 #endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
-Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEvent event) {
+Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
 #if LITERT_HAS_AHWB_SUPPORT
   int fence = -1;
   if (event) {
