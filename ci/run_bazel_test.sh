@@ -102,6 +102,10 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/core/model:model_file_test"
         "-//tflite/experimental/litert/core/util:flatbuffer_tools_test"
         "-//tflite/experimental/litert/vendors/examples:example_plugin_test"
+        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:op_wrapper_test"
+        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test"
+        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_test"
+        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test"
 )
 
 LITERT_EXCLUDED_TARGETS=(
@@ -130,6 +134,10 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/core/model:model_file_test"
         "-//litert/core/util:flatbuffer_tools_test"
         "-//litert/vendors/examples:example_plugin_test"
+        "-//litert/vendors/qualcomm/core/wrappers/tests:op_wrapper_test"
+        "-//litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test"
+        "-//litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_test"
+        "-//litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test"
 )
 
 
