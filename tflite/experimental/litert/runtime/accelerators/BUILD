@@ -24,7 +24,7 @@ cc_library(
     srcs = ["auto_registration.cc"],
     hdrs = ["auto_registration.h"],
     deps = [
-        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_shared_library",
