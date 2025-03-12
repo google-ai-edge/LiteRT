@@ -256,7 +256,6 @@ cc_library(
         ":litert_expected",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
-        "@com_google_absl//absl/log:absl_check",
     ],
 )
 
