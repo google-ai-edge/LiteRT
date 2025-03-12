@@ -192,6 +192,7 @@ cc_library(
     srcs = ["compiled_model.cc"],
     hdrs = ["compiled_model.h"],
     deps = [
+        ":compilation_options",
         ":external_litert_buffer_context",
         ":tensor_buffer",
         "//tflite:builtin_ops",
@@ -203,7 +204,7 @@ cc_library(
         "//tflite/delegates/utils:simple_opaque_delegate",
         "//tflite/experimental/litert/c:litert_accelerator_options",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_compiled_model_options",
+        "//tflite/experimental/litert/c:litert_compilation_options",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
@@ -216,6 +217,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
         "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
+        "//tflite/experimental/litert/core:accelerator",
         "//tflite/experimental/litert/core:accelerator_model_compilation_data",
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:environment",
@@ -252,7 +254,7 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_compiled_model_options",
+        "//tflite/experimental/litert/c:litert_compilation_options",
         "//tflite/experimental/litert/c:litert_environment",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
@@ -268,6 +270,20 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "compilation_options",
+    hdrs = [
+        "compilation_options.h",
+        "//tflite/experimental/litert/c:litert_compilation_options.h",
+    ],
+    deps = [
+        "//tflite/experimental/litert/c:litert_accelerator_options",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_layout",
+        "//tflite/experimental/litert/c:litert_tensor_buffer",
     ],
 )
 
