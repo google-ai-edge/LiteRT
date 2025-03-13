@@ -183,7 +183,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
-        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
