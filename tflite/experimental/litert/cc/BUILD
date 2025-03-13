@@ -475,6 +475,7 @@ cc_test(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/c:litert_tensor_buffer_types",
         "//tflite/experimental/litert/test:common",
         "//tflite/experimental/litert/test:matchers",
         "//tflite/experimental/litert/test:simple_model",
