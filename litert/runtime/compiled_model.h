@@ -25,7 +25,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model_options.h"
+#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -45,12 +45,6 @@
 class LiteRtCompiledModelT {
  public:
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
-  struct OptionsDeleter {
-    void operator()(LiteRtCompilationOptionsT* options) {
-      LiteRtDestroyCompilationOptions(options);
-    }
-  };
-  using OptionsPtr = std::unique_ptr<LiteRtCompilationOptionsT, OptionsDeleter>;
 
   LiteRtCompiledModelT() = default;
   ~LiteRtCompiledModelT() = default;
@@ -58,9 +52,9 @@ class LiteRtCompiledModelT {
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
   // The model is loaded into memory and the caller takes ownership of the
   // returned object.
-  static litert::Expected<Ptr> Create(LiteRtEnvironmentT* env,
-                                      LiteRtModel model,
-                                      OptionsPtr compilation_options = nullptr);
+  static litert::Expected<Ptr> Create(
+      LiteRtEnvironmentT* env, LiteRtModel model,
+      LiteRtCompilationOptions jit_compilation_options = nullptr);
 
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor

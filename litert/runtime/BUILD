@@ -192,6 +192,7 @@ cc_library(
     srcs = ["compiled_model.cc"],
     hdrs = ["compiled_model.h"],
     deps = [
+        ":compilation_options",
         ":external_litert_buffer_context",
         ":tensor_buffer",
         "@com_google_absl//absl/cleanup",
@@ -201,7 +202,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator_options",
         "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model_options",
+        "//litert/c:litert_compilation_options",
         "//litert/c:litert_dispatch_delegate",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -214,6 +215,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/compiler/plugin:compiler_plugin",
+        "//litert/core:accelerator",
         "//litert/core:accelerator_model_compilation_data",
         "//litert/core:build_stamp",
         "//litert/core:environment",
@@ -253,7 +255,7 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model_options",
+        "//litert/c:litert_compilation_options",
         "//litert/c:litert_environment",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
@@ -268,6 +270,20 @@ cc_test(
         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
         "@org_tensorflow//tensorflow/lite/c:common",
         "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+    ],
+)
+
+cc_library(
+    name = "compilation_options",
+    hdrs = [
+        "compilation_options.h",
+        "//litert/c:litert_compilation_options.h",
+    ],
+    deps = [
+        "//litert/c:litert_accelerator_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_tensor_buffer",
     ],
 )
 

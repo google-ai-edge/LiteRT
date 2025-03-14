@@ -21,10 +21,10 @@
 // Include all the header files in the litert/c directory.
 #include "litert/c/litert_accelerator.h"  // NOLINT
 #include "litert/c/litert_accelerator_registration.h"  // NOLINT
-#include "litert/c/litert_any.h"             // NOLINT
-#include "litert/c/litert_common.h"          // NOLINT
+#include "litert/c/litert_any.h"     // NOLINT
+#include "litert/c/litert_common.h"  // NOLINT
+#include "litert/c/litert_compilation_options.h"  // NOLINT
 #include "litert/c/litert_compiled_model.h"  // NOLINT
-#include "litert/c/litert_compiled_model_options.h"  // NOLINT
 #include "litert/c/litert_dispatch_delegate.h"  // NOLINT
 #include "litert/c/litert_event.h"          // NOLINT
 #include "litert/c/litert_layout.h"         // NOLINT
