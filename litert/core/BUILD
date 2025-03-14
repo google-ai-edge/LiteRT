@@ -99,7 +99,6 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
-        "@org_tensorflow//tensorflow/lite:shared_library",
     ],
 )
 

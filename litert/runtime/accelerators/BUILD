@@ -25,7 +25,7 @@ cc_library(
     hdrs = ["auto_registration.h"],
     deps = [
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",

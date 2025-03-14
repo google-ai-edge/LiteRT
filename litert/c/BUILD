@@ -37,9 +37,10 @@ cc_library(
     deps = [
         ":litert_any",
         ":litert_common",
-        ":litert_logging",
         "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_macros",
         "//litert/core:environment",
+        "//litert/runtime/accelerators:auto_registration",
     ],
 )
 
