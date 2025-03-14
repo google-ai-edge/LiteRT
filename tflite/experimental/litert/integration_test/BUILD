@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//tflite/experimental/litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//tflite/experimental/litert:__subpackages__"],
@@ -21,7 +23,7 @@ cc_test(
     name = "gen_device_test",
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = [":classic_ml_models"],
+    data = [":single_op_models"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -62,4 +64,10 @@ cc_library(
 filegroup(
     name = "classic_ml_models",
     srcs = glob(["classic_ml_models/*.tflite"]),
+)
+
+tfl_model_gen(
+    name = "single_op_models",
+    srcs = glob(["single_op_models/*.mlir"]),
+    subdir = "single_op_models",
 )
