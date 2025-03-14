@@ -39,6 +39,7 @@ cc_library(
         ":litert_environment_options",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime:gpu_environment",
         "//tflite/experimental/litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
     ],
