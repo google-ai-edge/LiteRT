@@ -61,7 +61,6 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_common",
         "//litert/c:litert_event",
     ],
 )
@@ -170,6 +169,7 @@ cc_library(
         "//litert/c:litert_event",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "@opencl_headers",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
     ],
@@ -586,6 +586,16 @@ cc_test(
         ":litert_shared_library",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings",
+        "//litert/test:matchers",
+    ],
+)
+
+cc_test(
+    name = "litert_event_test",
+    srcs = ["litert_event_test.cc"],
+    deps = [
+        ":litert_event",
+        "@com_google_googletest//:gtest_main",
         "//litert/test:matchers",
     ],
 )
