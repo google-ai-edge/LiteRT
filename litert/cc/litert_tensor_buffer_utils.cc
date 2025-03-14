@@ -17,7 +17,7 @@
 #include <string>
 
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 
 std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
   switch (buffer_type) {

@@ -194,6 +194,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
     ] + select({
@@ -495,7 +496,7 @@ cc_library(
     hdrs = ["litert_tensor_buffer_utils.h"],
     deps = [
         "//litert/c:litert_logging",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
     ],
 )
 

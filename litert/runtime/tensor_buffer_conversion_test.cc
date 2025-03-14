@@ -23,6 +23,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/tensor_buffer.h"
