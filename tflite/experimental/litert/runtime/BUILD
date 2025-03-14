@@ -205,6 +205,7 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compilation_options",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",

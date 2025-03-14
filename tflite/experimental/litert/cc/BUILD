@@ -318,7 +318,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/delegates/utils:simple_opaque_delegate",
-        "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/runtime/dispatch:dispatch_delegate",
     ],
 )

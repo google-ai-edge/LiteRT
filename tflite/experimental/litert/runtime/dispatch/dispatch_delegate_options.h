@@ -16,36 +16,35 @@
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_DISPATCH_DISPATCH_DELEGATE_OPTIONS_H_
 
 #include <any>
-#include <cstdint>
-#include <map>
-#include <optional>
-#include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
-#include "absl/types/span.h"
 #include "tflite/experimental/litert/c/litert_any.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
-#include "tflite/experimental/litert/c/litert_environment.h"
+#include "tflite/experimental/litert/c/litert_environment_options.h"
 #include "tflite/experimental/litert/c/litert_logging.h"
 #include "tflite/experimental/litert/cc/litert_any.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
-#include "tflite/experimental/litert/core/environment.h"
+#include "tflite/experimental/litert/core/environment_options.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 
 class LiteRtDispatchDelegateOptions {
  public:
-  explicit LiteRtDispatchDelegateOptions(LiteRtEnvironmentT& environment) {
-    auto option = environment.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-    if (!option.has_value()) {
+  explicit LiteRtDispatchDelegateOptions(
+      const LiteRtEnvironmentOptionsT* environment_options) {
+    if (!environment_options) {
+      return;
+    }
+    auto option =
+        environment_options->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
+    if (!option.HasValue()) {
       return;
     }
 
     if (option->type != kLiteRtAnyTypeString) {
       LITERT_LOG(LITERT_WARNING,
-                 "Ingoring option kLiteRtEnvOptionTagDispatchLibraryDir due "
+                 "Ignoring option kLiteRtEnvOptionTagDispatchLibraryDir due "
                  "to invalid value");
       return;
     }

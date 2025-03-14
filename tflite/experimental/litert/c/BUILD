@@ -276,6 +276,7 @@ cc_library(
         "litert_dispatch_delegate.h",
     ],
     deps = [
+        ":litert_environment_options",
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",

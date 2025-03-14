@@ -19,6 +19,7 @@
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
+#include "tflite/experimental/litert/c/litert_environment_options.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
 
 typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
@@ -37,7 +38,8 @@ void LiteRtDestroyDispatchDelegateOptions(
 // Create a delegate that uses the Dispatch API for execution. Takes ownership
 // of the passed `options`. Must outlive the TFL interpreter.
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtEnvironment environment, LiteRtDispatchDelegateOptions* options);
+    LiteRtEnvironmentOptions environment_options,
+    LiteRtDispatchDelegateOptions* options);
 
 // Do any needed cleanup and delete 'delegate'.
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate);

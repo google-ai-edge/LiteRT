@@ -43,6 +43,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:dynamic_loading",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
@@ -67,6 +68,7 @@ cc_library(
         "//tflite/delegates/utils:simple_opaque_delegate",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/c:litert_event",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
@@ -78,14 +80,12 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:dispatch_op_schema",
-        "//tflite/experimental/litert/core:dynamic_loading",
-        "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/core:environment_options",
         "//tflite/experimental/litert/runtime:external_litert_buffer_context",
         "//tflite/experimental/litert/runtime:tfl_utils",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
