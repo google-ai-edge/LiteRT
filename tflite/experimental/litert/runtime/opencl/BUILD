@@ -56,6 +56,23 @@ cc_library(
 )
 
 cc_library(
+    name = "cl_event",
+    srcs = [
+        "cl_event.cc",
+    ],
+    hdrs = [
+        "cl_event.h",
+    ],
+    deps = [
+        ":opencl_wrapper",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "@com_google_absl//absl/strings:str_format",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
     name = "opencl_wrapper",
     srcs = [
         "opencl_wrapper.cc",

@@ -29,8 +29,13 @@ cc_library(
         "event.h",
     ],
     deps = [
+        ":gpu_environment",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event_type",
         "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "//tflite/experimental/litert/runtime/opencl:cl_event",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -65,6 +70,7 @@ cc_library(
     deps = [
         ":gpu_environment",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_event_type",
         "//tflite/experimental/litert/c:litert_layout",
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer_types",
@@ -104,6 +110,7 @@ cc_library(
     ],
     visibility = [
         "//tflite/experimental/litert:__subpackages__",
+        "//tflite/experimental/litert/c:__subpackages__",
     ],
     deps = [
         "//tflite/experimental/litert/c:litert_any",

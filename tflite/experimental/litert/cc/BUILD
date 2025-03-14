@@ -63,6 +63,7 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         "//tflite/experimental/litert/c:litert_event",
+        "//tflite/experimental/litert/c:litert_event_type",
     ],
 )
 
