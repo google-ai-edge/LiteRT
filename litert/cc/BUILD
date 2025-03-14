@@ -469,6 +469,7 @@ cc_test(
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/c:litert_common",
+#         "//litert/c:litert_tensor_buffer",
 #         "//litert/test:common",
 #         "//litert/test:simple_model",
 #         "@org_tensorflow//tensorflow/lite:framework",
