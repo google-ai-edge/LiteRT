@@ -16,6 +16,7 @@
 
 #include "absl/types/span.h"
 #include "tflite/experimental/litert/c/litert_common.h"
+#include "tflite/experimental/litert/c/litert_environment_options.h"
 #include "tflite/experimental/litert/cc/litert_macros.h"
 #include "tflite/experimental/litert/core/environment.h"
 #include "tflite/experimental/litert/runtime/accelerators/auto_registration.h"
@@ -40,6 +41,18 @@ void LiteRtDestroyEnvironment(LiteRtEnvironment environment) {
   if (environment != nullptr) {
     delete environment;
   }
+}
+
+LiteRtStatus LiteRtGetEnvironmentOptions(LiteRtEnvironment environment,
+                                         LiteRtEnvironmentOptions* options) {
+  LITERT_RETURN_IF_ERROR(
+      environment, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+                       << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      options, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+                   << "Options pointer is null.");
+  *options = &environment->GetOptions();
+  return kLiteRtStatusOk;
 }
 
 #ifdef __cplusplus

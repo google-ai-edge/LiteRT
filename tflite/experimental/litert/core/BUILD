@@ -94,11 +94,38 @@ cc_library(
     ],
     deps = [
         ":accelerator",
+        ":environment_options",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "environment_options",
+    srcs = ["environment_options.cc"],
+    hdrs = ["environment_options.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_any",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment_options_header",
+        "//tflite/experimental/litert/cc:litert_expected",
+    ],
+)
+
+cc_test(
+    name = "environment_options_test",
+    srcs = ["environment_options_test.cc"],
+    deps = [
+        ":environment_options",
+        "//tflite/experimental/litert/c:litert_any",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment_options",
+        "//tflite/experimental/litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
