@@ -457,6 +457,28 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "litert_compiled_model_integration_test",
+    srcs = ["litert_compiled_model_integration_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_model",
+        ":litert_tensor_buffer",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/core/model:model_buffer",
+        "//litert/runtime:tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_test(
 #     name = "litert_compiled_model_gpu_test",
