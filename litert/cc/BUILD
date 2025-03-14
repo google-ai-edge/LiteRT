@@ -254,7 +254,6 @@ cc_library(
     hdrs = ["litert_macros.h"],
     deps = [
         ":litert_expected",
-        "@com_google_absl//absl/log:absl_check",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
     ],
