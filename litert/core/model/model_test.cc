@@ -28,6 +28,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
@@ -57,6 +58,21 @@ TEST(ModelTest, MetadataDNE) {
   LiteRtModelT model;
   auto res = model.FindMetadata("FOO");
   ASSERT_FALSE(res.HasValue());
+}
+
+TEST(ModelTest, GetBuildStamp) {
+  static constexpr absl::string_view kSocManufacturer = "honda";
+  static constexpr absl::string_view kSocModel = "accord";
+
+  LiteRtModelT model;
+
+  LITERT_ASSERT_OK(model.PushMetadata(
+      kLiteRtBuildStampKey, *MakeBuildStamp(kSocManufacturer, kSocModel)));
+  auto build_stamp = GetBuildStamp(model);
+  ASSERT_TRUE(build_stamp);
+  EXPECT_TRUE(IsCompiled(model));
+  EXPECT_EQ(build_stamp->soc_manufacturer, kSocManufacturer);
+  EXPECT_EQ(build_stamp->soc_model, kSocModel);
 }
 
 TEST(ModelTest, EmplaceSubgraph) {
