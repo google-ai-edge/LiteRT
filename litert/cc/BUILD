@@ -60,7 +60,7 @@ cc_library(
     deps = [
         ":litert_expected",
         ":litert_handle",
-        "@com_google_absl//absl/types:span",
+        ":litert_macros",
         "//litert/c:litert_common",
         "//litert/c:litert_event",
     ],
@@ -185,6 +185,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":litert_element_type",
         ":litert_layout",
         ":litert_macros",
         ":litert_model",
