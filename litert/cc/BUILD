@@ -524,11 +524,12 @@ cc_library(
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
     deps = [
+        ":litert_expected",
+        ":litert_macros",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
+        "//litert/c:litert_logging",
     ],
 )
 
