@@ -24,6 +24,7 @@
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
