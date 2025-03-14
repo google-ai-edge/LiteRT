@@ -541,6 +541,39 @@ cc_test(
 #         "//tflite/kernels:builtin_ops",
 #     ],
 # )
+#
+# # The same test as above, but for Android.
+# # This test doesn't run on TAP.
+# # libLiteRtGpuAccelerator.so and libLiteRtRuntimeCApi.so are required to run this test.
+# cc_test(
+#     name = "litert_compiled_model_gpu_android_test",
+#     srcs = ["litert_compiled_model_gpu_test.cc"],
+#     data = [
+#         "//tflite/experimental/litert/test:testdata/simple_model.tflite",
+#     ],
+#     tags = [
+#         "notap",
+#     ],
+#     deps = [
+#         ":litert_compiled_model",
+#         ":litert_environment",
+#         ":litert_model",
+#         ":litert_tensor_buffer",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/debugging:leak_check",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "@org_tensorflow//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+#         "//tflite:framework",
+#         "//tflite/c:c_api_opaque",
+#         "//tflite/c:common",
+#         "//tflite/experimental/litert/c:litert_runtime_c_api_shared_lib",
+#         "//tflite/experimental/litert/test:common",
+#         "//tflite/experimental/litert/test:simple_model",
+#         "//tflite/kernels:builtin_ops",
+#     ],
+# )
 # copybara:uncomment_end
 
 cc_library(

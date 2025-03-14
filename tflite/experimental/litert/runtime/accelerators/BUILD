@@ -30,6 +30,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_shared_library",
         "//tflite/experimental/litert/core:environment",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
