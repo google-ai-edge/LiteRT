@@ -121,9 +121,6 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/runtime:gpu_environment_test"
         "-//litert/runtime/compiler:jit_compilation_mediatek_test"
         "-//litert/runtime/compiler:jit_compilation_qualcomm_test"
-        "-//litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
-        "-//litert/runtime/dispatch:dispatch_delegate_mediatek_test"
-        "-//litert/runtime/dispatch:dispatch_delegate_qualcomm_test"
         "-//litert/tools:apply_plugin_test"
         # TODO: b/407376374 - Mobilenet is larger than copybara size limit.
         "-//litert/tools:benchmark_litert_model_test"
@@ -134,7 +131,6 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/vendors/examples:example_conversion_impl_test"
         "-//litert/vendors/examples:example_plugin_with_conversions_test"
         "-//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
-        "-//litert/cc:litert_compiled_model_gpu_test"
         "-//litert/cc:litert_model_predicates_test"
         "-//litert/cc:litert_model_test"
         "-//litert/core/model:model_buffer_test"
