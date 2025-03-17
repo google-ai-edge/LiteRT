@@ -15,15 +15,17 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/gl/compiler/variable_accessor.h"
 
+#include <array>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/types.h"
 #include "tflite/delegates/gpu/gl/compiler/preprocessor.h"
 #include "tflite/delegates/gpu/gl/variable.h"
