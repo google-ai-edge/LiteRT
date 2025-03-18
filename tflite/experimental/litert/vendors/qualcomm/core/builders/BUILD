@@ -86,6 +86,7 @@ cc_library(
         ":op_builder",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
         "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
+        "//tflite/experimental/litert/vendors/qualcomm/core/utils:log",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
     ],

@@ -3,6 +3,15 @@
 
 #include "tflite/experimental/litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 
+#include <cstdint>
+#include <vector>
+
+#include "third_party/qairt/latest/include/QNN/QnnOpDef.h"
+#include "tflite/experimental/litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "tflite/experimental/litert/vendors/qualcomm/core/tensor_pool.h"
+#include "tflite/experimental/litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "tflite/experimental/litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+
 namespace qnn {
 
 std::vector<OpWrapper> BuildElementwiseAddOp(
