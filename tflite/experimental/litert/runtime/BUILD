@@ -231,6 +231,8 @@ cc_library(
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core/model",
+        "//tflite/experimental/litert/core/model:model_serialize",
+        "//tflite/experimental/litert/core/util:flatbuffer_tools",
         "//tflite/experimental/litert/runtime/dispatch:dispatch_delegate",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/cleanup",
