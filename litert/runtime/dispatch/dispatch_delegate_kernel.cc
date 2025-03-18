@@ -21,20 +21,24 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/metrics.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
@@ -651,6 +655,38 @@ TfLiteStatus DispatchDelegateKernel::Eval(TfLiteOpaqueContext* context,
   }
 
   return kTfLiteOk;
+}
+
+LiteRtStatus DispatchDelegateKernel::StartMetricsCollection(int detail_level) {
+  return LiteRtDispatchStartMetricsCollection(invocation_context_,
+                                              detail_level);
+}
+
+Expected<LiteRtMetricsT> DispatchDelegateKernel::StopMetricsCollection() {
+  LiteRtDispatchMetrics dispatch_metrics;
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchStopMetricsCollection(
+      invocation_context_, &dispatch_metrics));
+
+  absl::Cleanup metrics_cleanup = [&dispatch_metrics] {
+    if (auto status = LiteRtDispatchDestroyMetrics(dispatch_metrics);
+        status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_ERROR, "Failed to destroy metrics: %d", status);
+    }
+  };
+
+  int num_metrics = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtDispatchGetNumMetrics(dispatch_metrics, &num_metrics));
+
+  std::vector<LiteRtMetricsT::Metric> metrics;
+  metrics.reserve(num_metrics);
+  for (int i = 0; i < num_metrics; ++i) {
+    LiteRtMetric metric;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchGetMetric(dispatch_metrics, i, &metric));
+    metrics.push_back({metric.name, metric.value});
+  }
+  return LiteRtMetricsT{.metrics = std::move(metrics)};
 }
 
 }  // namespace internal

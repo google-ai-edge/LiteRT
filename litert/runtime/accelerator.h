@@ -21,6 +21,7 @@
 
 #include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
+#include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
 struct LiteRtCompiledModelT;
@@ -67,6 +68,13 @@ struct LiteRtAcceleratorT {
 
   LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
       LiteRtAcceleratorT* accelerator, bool* does_jit_compilation);
+
+  // Starts collection of HW-specific metrics at a specific level of detail.
+  LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level);
+
+  // Stops collection of HW-specific metrics and report the collected metrics.
+  LiteRtStatus (*StopMetricsCollection)(void* delegate,
+                                        LiteRtMetricsT* metrics);
 
   // NOLINTEND(*-readability-class-member-naming)
 };

@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -128,6 +129,14 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
 
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
+
+// Start collection of HW-specific metrics at a specific level of detail (>= 0).
+LiteRtStatus LiteRtCompiledModelStartMetricsCollection(
+    LiteRtCompiledModel compiled_model, int detail_level);
+
+// Stop collection of HW-specific metrics and report the collected metrics.
+LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
+    LiteRtCompiledModel compiled_model, LiteRtMetrics metrics);
 
 #ifdef __cplusplus
 }

@@ -21,10 +21,12 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -209,6 +211,34 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
   }
   return RunCApiHelper(signature_index, num_inputs, input_buffers_ptr.get(),
                        num_outputs, output_buffers_ptr.get(), async);
+}
+
+Expected<void> CompiledModel::StartMetricsCollection(int detail_level) {
+  if (auto status =
+          LiteRtCompiledModelStartMetricsCollection(Get(), detail_level);
+      status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to start metrics collection");
+  }
+  return {};
+}
+
+Expected<CompiledModel::Metrics> CompiledModel::StopMetricsCollection() {
+  LiteRtMetrics metrics = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateMetrics(&metrics));
+  absl::Cleanup metrics_cleanup = [&metrics] { LiteRtDestroyMetrics(metrics); };
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCompiledModelStopMetricsCollection(Get(), metrics));
+  int num_metrics;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumMetrics(metrics, &num_metrics));
+
+  std::vector<Metrics::Metric> compiled_model_metrics;
+  compiled_model_metrics.reserve(num_metrics);
+  for (int i = 0; i < num_metrics; ++i) {
+    LiteRtMetric metric;
+    LITERT_RETURN_IF_ERROR(LiteRtGetMetric(metrics, i, &metric));
+    compiled_model_metrics.push_back({metric.name, metric.value});
+  }
+  return CompiledModel::Metrics{.metrics = std::move(compiled_model_metrics)};
 }
 
 }  // namespace litert
