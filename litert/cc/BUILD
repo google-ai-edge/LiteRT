@@ -477,6 +477,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
