@@ -17,7 +17,6 @@
 #include <stddef.h>
 
 #include <memory>
-#include <utility>
 
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_compilation_options.h"
