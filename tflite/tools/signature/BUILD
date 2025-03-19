@@ -33,7 +33,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_protobuf//:protobuf",
         "@flatbuffers",
-        "@local_tsl//tsl/platform:status",
+        "@local_xla//xla/tsl/platform:status",
         "@org_tensorflow//tensorflow/core:protos_all_cc_impl",
     ],
 )
@@ -60,7 +60,7 @@ cc_test(
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
-        "@local_tsl//tsl/platform:status",
+        "@local_xla//xla/tsl/platform:status",
         "@org_tensorflow//tensorflow/cc/saved_model:signature_constants",
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@org_tensorflow//tensorflow/core/protobuf:for_core_protos_cc",

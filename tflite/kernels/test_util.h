@@ -43,6 +43,7 @@ limitations under the License.
 #include "absl/types/span.h"
 #include "Eigen/Core"  // from @eigen_archive
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
+#include "xla/tsl/platform/logging.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
@@ -57,7 +58,6 @@ limitations under the License.
 #include "tflite/tools/optimize/quantization_utils.h"
 #include "tflite/type_to_tflitetype.h"
 #include "tflite/util.h"
-#include "tsl/platform/logging.h"
 
 namespace tflite {
 
