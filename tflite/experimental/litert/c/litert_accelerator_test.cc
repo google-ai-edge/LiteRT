@@ -22,7 +22,7 @@
 #include "tflite/experimental/litert/c/litert_accelerator_registration.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_environment.h"
-#include "tflite/experimental/litert/core/accelerator.h"
+#include "tflite/experimental/litert/runtime/accelerator.h"
 
 #define LITERT_ENSURE_OK(expr)       \
   do {                               \

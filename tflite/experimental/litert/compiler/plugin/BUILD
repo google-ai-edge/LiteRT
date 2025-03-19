@@ -38,6 +38,7 @@ cc_library(
         "//tflite/experimental/litert/core:dynamic_loading",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core:filesystem",
+        "//tflite/experimental/litert/core:version",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/core/model:buffer_manager",
         "//tflite/experimental/litert/core/model:ir_allocator",

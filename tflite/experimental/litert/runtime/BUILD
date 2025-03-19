@@ -200,6 +200,8 @@ cc_library(
     srcs = ["compiled_model.cc"],
     hdrs = ["compiled_model.h"],
     deps = [
+        ":accelerator",
+        ":accelerator_model_compilation_data",
         ":compilation_options",
         ":external_litert_buffer_context",
         ":tensor_buffer",
@@ -210,7 +212,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
         "//tflite/delegates/utils:simple_opaque_delegate",
-        "//tflite/experimental/litert/c:litert_accelerator_options",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compilation_options",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
@@ -226,8 +228,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_tensor_buffer",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_requirements",
         "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
-        "//tflite/experimental/litert/core:accelerator",
-        "//tflite/experimental/litert/core:accelerator_model_compilation_data",
         "//tflite/experimental/litert/core:build_stamp",
         "//tflite/experimental/litert/core:environment",
         "//tflite/experimental/litert/core/model",
@@ -291,10 +291,11 @@ cc_library(
         "//tflite/experimental/litert/c:litert_compilation_options.h",
     ],
     deps = [
-        "//tflite/experimental/litert/c:litert_accelerator_options",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_layout",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
+        "//tflite/experimental/litert/cc:litert_accelerator_compilation_options",
     ],
 )
 
@@ -367,4 +368,51 @@ cc_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "accelerator",
+    hdrs = ["accelerator.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
+        "//tflite/experimental/litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "accelerator_registry",
+    srcs = ["accelerator_registry.cc"],
+    hdrs = ["accelerator_registry.h"],
+    deps = [
+        ":accelerator",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_shared_library",
+    ],
+)
+
+cc_library(
+    name = "accelerator_model_compilation_data",
+    hdrs = ["accelerator_model_compilation_data.h"],
+    deps = [
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/cc:litert_accelerator_compilation_options",
+        "//tflite/experimental/litert/cc:litert_expected",
+        "//tflite/experimental/litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "accelerator_model_compilation_data_test",
+    srcs = ["accelerator_model_compilation_data_test.cc"],
+    deps = [
+        ":accelerator_model_compilation_data",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
+        "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/core:version",
+        "//tflite/experimental/litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
 )

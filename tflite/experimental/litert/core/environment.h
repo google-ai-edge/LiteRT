@@ -22,8 +22,8 @@
 #include "tflite/experimental/litert/c/litert_any.h"
 #include "tflite/experimental/litert/c/litert_environment_options.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
-#include "tflite/experimental/litert/core/accelerator.h"
 #include "tflite/experimental/litert/core/environment_options.h"
+#include "tflite/experimental/litert/runtime/accelerator_registry.h"
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {

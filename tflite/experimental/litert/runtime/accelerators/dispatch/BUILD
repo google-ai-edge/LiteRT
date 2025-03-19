@@ -26,7 +26,7 @@ cc_library(
     deps = [
         "//tflite/c:c_api_types",
         "//tflite/experimental/litert/c:litert_accelerator",
-        "//tflite/experimental/litert/c:litert_accelerator_options",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_accelerator_registration",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_dispatch_delegate",
@@ -34,8 +34,8 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_dispatch_delegate",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/core:accelerator_model_compilation_data",
         "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime:accelerator_model_compilation_data",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

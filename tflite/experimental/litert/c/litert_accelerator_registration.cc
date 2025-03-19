@@ -18,12 +18,12 @@
 #include <utility>
 
 #include "tflite/experimental/litert/c/litert_accelerator.h"
-#include "tflite/experimental/litert/c/litert_accelerator_options.h"
+#include "tflite/experimental/litert/c/litert_accelerator_compilation_options.h"
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_environment.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
-#include "tflite/experimental/litert/core/accelerator.h"
 #include "tflite/experimental/litert/core/environment.h"
+#include "tflite/experimental/litert/runtime/accelerator.h"
 
 LiteRtStatus LiteRtCreateAccelerator(LiteRtAccelerator* accelerator) {
   if (!accelerator) {

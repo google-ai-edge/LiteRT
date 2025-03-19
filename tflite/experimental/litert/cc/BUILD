@@ -437,6 +437,7 @@ cc_library(
     name = "litert_compilation_options",
     hdrs = ["litert_compilation_options.h"],
     deps = [
+        ":litert_accelerator_compilation_options",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
@@ -448,6 +449,7 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compilation_options",
         "//tflite/experimental/litert/c:litert_compiled_model",
@@ -670,6 +672,21 @@ cc_test(
         ":litert_event",
         "//tflite/experimental/litert/test:matchers",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_accelerator_compilation_options",
+    hdrs = [
+        "litert_accelerator_compilation_options.h",
+    ],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
+        "//tflite/experimental/litert/c:litert_common",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
