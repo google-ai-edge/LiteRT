@@ -24,12 +24,21 @@
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "tflite/experimental/litert/c/litert_any.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_model.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer.h"
 #include "tflite/experimental/litert/cc/litert_tensor_buffer_requirements.h"
 #include "tflite/experimental/litert/vendors/c/litert_dispatch.h"
+
+struct LiteRtDispatchDelegateMetricsT {
+  struct Metric {
+    std::string name;
+    LiteRtAny value;
+  };
+  std::vector<Metric> metrics;
+};
 
 namespace litert::internal {
 
@@ -55,6 +64,10 @@ class DispatchDelegateKernel
 
   TfLiteStatus Eval(TfLiteOpaqueContext* context,
                     TfLiteOpaqueNode* node) override;
+
+  TfLiteStatus StartMetricsCollection(int detail_level);
+
+  TfLiteStatus StopMetricsCollection(LiteRtDispatchDelegateMetricsT& metrics);
 
  private:
   DispatchDelegateKernel(const LiteRtDispatchDelegateOptions& options,

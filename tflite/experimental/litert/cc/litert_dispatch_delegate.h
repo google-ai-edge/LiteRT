@@ -18,8 +18,10 @@
 #include <memory>
 
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/c/litert_dispatch_delegate.h"
 #include "tflite/experimental/litert/c/litert_environment_options.h"
+#include "tflite/experimental/litert/cc/litert_expected.h"
 
 namespace litert {
 
@@ -35,6 +37,22 @@ DispatchDelegateOptionsPtr CreateDispatchDelegateOptionsPtr(
 DispatchDelegatePtr CreateDispatchDelegatePtr(
     LiteRtEnvironmentOptions environment_options,
     DispatchDelegateOptionsPtr&& options);
+
+using DispatchDelegateMetricsPtr =
+    std::unique_ptr<LiteRtDispatchDelegateMetricsT,
+                    void (*)(LiteRtDispatchDelegateMetricsT*)>;
+
+Expected<void> StartDispatchDelegateMetricsCollection(
+    DispatchDelegatePtr& delegate, int detail_level);
+
+Expected<DispatchDelegateMetricsPtr> StopDispatchDelegateMetricsCollection(
+    DispatchDelegatePtr& delegate);
+
+Expected<int> DispatchDelegateGetNumMetrics(
+    DispatchDelegateMetricsPtr& metrics);
+
+Expected<LiteRtMetric> DispatchDelegateGetMetric(
+    DispatchDelegateMetricsPtr& metrics, int metric_index);
 
 }  // namespace litert
 
