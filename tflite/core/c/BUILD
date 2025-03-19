@@ -53,6 +53,9 @@ filegroup(
         "//tflite/core/async/c:types.h",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:lite_headers_filegroup",
     ],
+    visibility = [
+        "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+    ],
 )
 
 filegroup(
@@ -538,6 +541,9 @@ tflite_cc_library_with_c_headers_test(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     tags = ["allow_undefined_symbols"],  # For tflite::CreateOpResolver().
+    visibility = [
+        "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+    ],
     deps = [
         ":c_api_types",
         ":c_api_without_op_resolver",
