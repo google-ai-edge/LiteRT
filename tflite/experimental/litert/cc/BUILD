@@ -199,10 +199,14 @@ cc_test(
         "//tflite/experimental/litert/c:litert_model",
         "//tflite/experimental/litert/c:litert_tensor_buffer",
         "//tflite/experimental/litert/c:litert_tensor_buffer_types",
+        "//tflite/experimental/litert/runtime:gpu_environment",
         "//tflite/experimental/litert/runtime:tensor_buffer",
+        "//tflite/experimental/litert/runtime/opencl:buffer",
+        "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
         "//tflite/experimental/litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@opencl_headers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/gl:egl_environment",
