@@ -198,6 +198,14 @@ cc_binary(
     name = "run_model",
     srcs = ["run_model.cc"],
     deps = [
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        # copybara:uncomment_begin(google-only)
+        # "@org_tensorflow//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_compiled_model",
@@ -205,10 +213,5 @@ cc_binary(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ],
 )
