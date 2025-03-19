@@ -213,5 +213,6 @@ cc_binary(
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_model",
+        "//tflite/profiling:time",
     ],
 )
