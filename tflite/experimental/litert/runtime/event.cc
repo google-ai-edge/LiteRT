@@ -24,13 +24,13 @@
 #include "tflite/experimental/litert/c/litert_event_type.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_macros.h"
-#include "tflite/experimental/litert/runtime/gpu_environment.h"
 
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
 #include <poll.h>
 #include <unistd.h>
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
+#include "tflite/experimental/litert/runtime/gpu_environment.h"
 #include "tflite/experimental/litert/runtime/opencl/cl_event.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
