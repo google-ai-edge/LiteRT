@@ -31,8 +31,7 @@
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
 #include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 class ExternalLiteRtBufferContext;
 
@@ -117,7 +116,6 @@ class DispatchDelegateKernel
   std::vector<size_t> output_tensor_buffer_used_size_;
 };
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_DISPATCH_DISPATCH_DELEGATE_KERNEL_H_

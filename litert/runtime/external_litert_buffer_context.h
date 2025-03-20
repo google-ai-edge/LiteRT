@@ -16,9 +16,9 @@
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
 #include <memory>
+#include <unordered_map>
 #include <utility>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
@@ -28,8 +28,7 @@
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 class ExternalLiteRtBufferContext : public TfLiteExternalContext {
  public:
@@ -119,9 +118,9 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   inline bool IsAsyncExecutionMode() const { return async_execution_mode_; }
 
  private:
-  absl::flat_hash_map<const TfLiteOpaqueTensor*, TensorBufferRequirements>
+  std::unordered_map<const TfLiteOpaqueTensor*, TensorBufferRequirements>
       buffer_requirements_;
-  absl::flat_hash_map<const TfLiteOpaqueTensor*, TensorBuffer> tensor_buffers_;
+  std::unordered_map<const TfLiteOpaqueTensor*, TensorBuffer> tensor_buffers_;
 
   ExternalLiteRtBufferContext(const ExternalLiteRtBufferContext&) = delete;
   ExternalLiteRtBufferContext& operator=(const ExternalLiteRtBufferContext&) =
@@ -130,7 +129,6 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   bool async_execution_mode_ = false;
 };
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

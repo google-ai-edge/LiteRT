@@ -94,11 +94,38 @@ cc_library(
     ],
     deps = [
         ":accelerator",
+        ":environment_options",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
+    name = "environment_options",
+    srcs = ["environment_options.cc"],
+    hdrs = ["environment_options.h"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options_header",
+        "//litert/cc:litert_expected",
+    ],
+)
+
+cc_test(
+    name = "environment_options_test",
+    srcs = ["environment_options_test.cc"],
+    deps = [
+        ":environment_options",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/test:matchers",
     ],
 )
 
