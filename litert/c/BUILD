@@ -40,6 +40,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
+        "//litert/runtime:gpu_environment",
         "//litert/runtime/accelerators:auto_registration",
     ],
 )
