@@ -196,6 +196,7 @@ cc_test(
         ":litert_layout",
         ":litert_macros",
         ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/types:span",
@@ -511,6 +512,7 @@ cc_test(
         ":litert_environment",
         ":litert_event",
         ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
@@ -665,6 +667,15 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "litert_platform_support",
+    srcs = [],
+    hdrs = ["litert_platform_support.h"],
+    deps = [
+        "//litert/c:litert_platform_support",
     ],
 )
 

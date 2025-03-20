@@ -31,11 +31,8 @@
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/runtime/ahwb_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/dmabuf_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/fastrpc_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/ion_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/test/matchers.h"
 
@@ -49,7 +46,6 @@
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
-#include "litert/runtime/open_cl_buffer.h"
 #include <CL/cl.h>
 #include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
 #include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
@@ -123,7 +119,7 @@ TEST(TensorBuffer, HostMemory) {
 }
 
 TEST(TensorBuffer, Ahwb) {
-  if (!internal::AhwbBuffer::IsSupported()) {
+  if (!SupportsAhwb()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
                     "skipping the test";
   }
@@ -172,7 +168,7 @@ TEST(TensorBuffer, Ahwb) {
 }
 
 TEST(TensorBuffer, Ion) {
-  if (!internal::IonBuffer::IsSupported()) {
+  if (!SupportsIon()) {
     GTEST_SKIP()
         << "ION buffers are not supported on this platform; skipping the test";
   }
@@ -221,7 +217,7 @@ TEST(TensorBuffer, Ion) {
 }
 
 TEST(TensorBuffer, DmaBuf) {
-  if (!internal::DmaBufBuffer::IsSupported()) {
+  if (!SupportsDmaBuf()) {
     GTEST_SKIP()
         << "DMA-BUF buffers are not supported on this platform; skipping "
            "the test";
@@ -271,7 +267,7 @@ TEST(TensorBuffer, DmaBuf) {
 }
 
 TEST(TensorBuffer, FastRpc) {
-  if (!internal::FastRpcBuffer::IsSupported()) {
+  if (!SupportsFastRpc()) {
     GTEST_SKIP()
         << "FastRPC buffers are not supported on this platform; skipping "
            "the test";
@@ -586,8 +582,9 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
 
 #if LITERT_HAS_OPENCL_SUPPORT
 TEST(TensorBuffer, GetClBufferFromAhwb) {
-  if (!internal::OpenClBuffer::IsSupported()) {
-    GTEST_SKIP() << "OpenCL is not supported on this platform; skipping the "
+  if (!SupportsOpenCl() || !SupportsAhwb()) {
+    GTEST_SKIP() << "OpenCL and/or AHWB are not supported on this platform; "
+                    "skipping the "
                     "test";
   }
   // Create AHWB Tensor buffer.
@@ -620,7 +617,7 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 TEST(TensorBuffer, GetAhwb) {
-  if (!internal::AhwbBuffer::IsSupported()) {
+  if (!SupportsAhwb()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
                     "skipping the test";
   }
