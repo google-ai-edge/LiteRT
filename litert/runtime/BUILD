@@ -172,7 +172,6 @@ cc_library(
     ] + lite_rt_friends(),
     deps = [
         ":tfl_utils",
-        "@com_google_absl//absl/container:flat_hash_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
