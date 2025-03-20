@@ -62,8 +62,8 @@ cc_library(
         ":filesystem",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_logging",  # buildcleaner: keep
+        "//tflite/experimental/litert/cc:litert_macros",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
