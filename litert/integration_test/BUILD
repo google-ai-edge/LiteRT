@@ -12,20 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
+load("//litert/integration_test:run_on_device.bzl", "device_rlocation", "get_driver", "run_on_device")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
 
+# C++ TEST SCAFFOLD ################################################################################
+
 cc_test(
     name = "gen_device_test",
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = [":classic_ml_models"],
+    data = [":single_op_models"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
+    tags = ["manual"],
     deps = [
         ":gen_device_test_lib",
         "@com_google_googletest//:gtest",
@@ -39,6 +45,7 @@ cc_test(
         "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
+        "//litert/tools:dump",
     ],
 )
 
@@ -59,7 +66,105 @@ cc_library(
     ],
 )
 
+# TEST MODELS ######################################################################################
+
 filegroup(
     name = "classic_ml_models",
     srcs = glob(["classic_ml_models/*.tflite"]),
+)
+
+tfl_model_gen(
+    name = "single_op_models",
+    srcs = glob(["single_op_models/*.mlir"]),
+    subdir = "single_op_models",
+)
+
+filegroup(
+    name = "pre_compiled_models",
+    srcs = glob(["pre_compiled_models/*.tflite"]),
+)
+
+# ON DEVICE INTEGRATION TESTS ######################################################################
+
+# NOTE: Everything here should be built with -c opt --config=android_arm64.
+
+sh_binary(
+    name = "run_on_device_driver_OSS",
+    srcs = ["run_on_device_driver_OSS.sh"],
+)
+
+run_on_device(
+    name = "single_op_device_tests_cpu",
+    data = [":single_op_models_files"],
+    driver = get_driver(),
+    exec_args = [
+        "--model_path={}".format(device_rlocation("single_op_models")),
+        "--hw=cpu",
+    ],
+    exec_env_vars = [
+        # TODO: Programatically set these and install proper vendor libraries.
+        "LD_LIBRARY_PATH=/data/local/tmp",
+        "ADSP_LIBRARY_PATH=/data/local/tmp",
+    ],
+    target = ":gen_device_test",
+)
+
+run_on_device(
+    name = "single_op_device_tests_npu_JIT",
+    data = [":single_op_models_files"],
+    driver = get_driver(),
+    exec_args = [
+        "--model_path={}".format(device_rlocation("single_op_models")),
+        "--hw=npu",
+    ],
+    exec_env_vars = [
+        "LD_LIBRARY_PATH=/data/local/tmp",
+        "ADSP_LIBRARY_PATH=/data/local/tmp",
+    ],
+    target = ":gen_device_test",
+)
+
+run_on_device(
+    name = "classic_ml_device_tests_cpu",
+    data = [":classic_ml_models"],
+    driver = get_driver(),
+    exec_args = [
+        "--model_path={}".format(device_rlocation("classic_ml_models")),
+        "--hw=cpu",
+    ],
+    exec_env_vars = [
+        "LD_LIBRARY_PATH=/data/local/tmp",
+        "ADSP_LIBRARY_PATH=/data/local/tmp",
+    ],
+    target = ":gen_device_test",
+)
+
+run_on_device(
+    name = "classic_ml_device_tests_npu_JIT",
+    data = [":classic_ml_models"],
+    driver = get_driver(),
+    exec_args = [
+        "--model_path={}".format(device_rlocation("classic_ml_models")),
+        "--hw=npu",
+    ],
+    exec_env_vars = [
+        "LD_LIBRARY_PATH=/data/local/tmp",
+        "ADSP_LIBRARY_PATH=/data/local/tmp",
+    ],
+    target = ":gen_device_test",
+)
+
+run_on_device(
+    name = "pre_compiled_device_tests_qnn",
+    data = [":pre_compiled_models"],
+    driver = get_driver(),
+    exec_args = [
+        "--model_path={}".format(device_rlocation("pre_compiled_models")),
+        "--hw=npu",
+    ],
+    exec_env_vars = [
+        "LD_LIBRARY_PATH=/data/local/tmp",
+        "ADSP_LIBRARY_PATH=/data/local/tmp",
+    ],
+    target = ":gen_device_test",
 )

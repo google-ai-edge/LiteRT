@@ -29,6 +29,7 @@
 #include "litert/integration_test/gen_device_test_lib.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "litert/tools/dump.h"
 
 ABSL_FLAG(std::string, model_path, "",
           "Tflite models to test. This can be a single tflite model or a "
@@ -92,12 +93,17 @@ class InvokeOnceTest : public GenDeviceTestFixt {
             litert::Environment::OptionTag::DispatchLibraryDir,
             absl::string_view(dispatch_library_dir_),
         },
+        litert::Environment::Option{
+            litert::Environment::OptionTag::CompilerPluginLibraryDir,
+            absl::string_view(dispatch_library_dir_),
+        },
     };
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto env, litert::Environment::Create(environment_options));
 
     LITERT_ASSERT_OK_AND_ASSIGN(auto model,
                                 litert::Model::CreateFromFile(model_path_));
+    litert::internal::Dump(*model.Get());
 
     invoker_ = std::make_unique<InvokerT>(std::move(env), std::move(model));
     invoker_->MaybeSkip();
@@ -123,8 +129,9 @@ void ParseTests() {
 #if defined(__ANDROID__)
     model_path_flag = "/data/local/tmp/";
 #else
-    model_path_flag =
-        testing::GetLiteRtPath("integration_test/classic_ml_models/");
+    // Set this on linux for smoke check linux presubmit.
+    model_path_flag = testing::GetLiteRtPath(
+        "integration_test/single_op_models/add_f32.tflite");
 #endif
   }
   const auto model_paths = GetModelPaths(model_path_flag);
@@ -142,6 +149,7 @@ void ParseTests() {
   }
 
   for (const auto& model_path : model_paths) {
+    LITERT_LOG(LITERT_INFO, "model_path: %s", model_path.c_str());
     const auto test_name = absl::StrFormat("%s_%s", ModelName(model_path), hw);
     ::testing::RegisterTest("GenDeviceTest", test_name.c_str(), nullptr,
                             nullptr, __FILE__, __LINE__,

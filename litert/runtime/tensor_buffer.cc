@@ -28,24 +28,26 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include "litert/runtime/dmabuf_buffer.h"
 #include "litert/runtime/event.h"
 #include "litert/runtime/fastrpc_buffer.h"
-#include <CL/cl.h>
-#if LITERT_HAS_OPENGL_SUPPORT
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-#include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/runtime/ion_buffer.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_buffer.h"
+#include <CL/cl.h>
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 using litert::Expected;
 using litert::Unexpected;
@@ -312,6 +314,7 @@ LiteRtTensorBufferT::CreateManagedFastRpcBuffer(
                                  litert::internal::FastRpcBuffer::Free);
 }
 
+#if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClBuffer(
     const LiteRtRankedTensorType& tensor_type, cl_mem buffer,
     size_t buffer_size, LiteRtOpenClDeallocator deallocator) {
@@ -335,23 +338,12 @@ LiteRtTensorBufferT::CreateManagedOpenClBuffer(
       std::move(*buffer));
   return tensor_buffer;
 }
-
-#if LITERT_HAS_OPENGL_SUPPORT
-Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
-    const LiteRtRankedTensorType& tensor_type, GLenum target, GLuint id,
-    GLenum format, size_t size_bytes, GLint layer,
-    LiteRtGlTextureDeallocator deallocator) {
-  Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
-  tensor_buffer->buffer_.emplace<litert::internal::GlTexture>(
-      litert::internal::GlTexture(target, id, format, size_bytes, layer,
-                                  deallocator));
-  return tensor_buffer;
-}
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
-    const LiteRtRankedTensorType& tensor_type, GLenum target, GLuint id,
-    size_t size_bytes, size_t offset, LiteRtGlBufferDeallocator deallocator) {
+    const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
+    LiteRtGLuint id, size_t size_bytes, size_t offset,
+    LiteRtGlBufferDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
   tensor_buffer->buffer_.emplace<litert::internal::GlBuffer>(
@@ -371,7 +363,18 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
       std::move(*buffer));
   return tensor_buffer;
 }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
+    const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
+    LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer,
+    LiteRtGlTextureDeallocator deallocator) {
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
+  tensor_buffer->buffer_.emplace<litert::internal::GlTexture>(
+      litert::internal::GlTexture(target, id, format, size_bytes, layer,
+                                  deallocator));
+  return tensor_buffer;
+}
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     LiteRtTensorBufferType buffer_type,
@@ -388,15 +391,15 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeFastRpc:
       return CreateManagedFastRpcBuffer(tensor_type, buffer_size);
     case kLiteRtTensorBufferTypeOpenCl: {
+#if LITERT_HAS_OPENCL_SUPPORT
       return CreateManagedOpenClBuffer(tensor_type, buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "OpenCL buffers are not supported.");
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlBuffer: {
-#if LITERT_HAS_OPENGL_SUPPORT
       return CreateManagedGlBuffer(tensor_type, buffer_size);
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "OpenGL buffers are not supported");
-#endif
     }
     case kLiteRtTensorBufferTypeGlTexture: {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
@@ -509,6 +512,7 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
                       BufferTypeToString(buffer_type_)));
 }
 
+#if LITERT_HAS_OPENCL_SUPPORT
 Expected<litert::internal::OpenClBuffer*>
 LiteRtTensorBufferT::GetOpenClBuffer() {
   if (buffer_type_ == kLiteRtTensorBufferTypeOpenCl) {
@@ -520,8 +524,8 @@ LiteRtTensorBufferT::GetOpenClBuffer() {
                       BufferTypeToString(kLiteRtTensorBufferTypeOpenCl),
                       BufferTypeToString(buffer_type_)));
 }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_HAS_OPENGL_SUPPORT
 Expected<litert::internal::GlTexture*> LiteRtTensorBufferT::GetGlTexture() {
   if (buffer_type_ != kLiteRtTensorBufferTypeGlTexture) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -565,7 +569,6 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
                       BufferTypeToString(kLiteRtTensorBufferTypeGlBuffer),
                       BufferTypeToString(buffer_type_)));
 }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 Expected<void*> LiteRtTensorBufferT::Lock() {
   if (event_ != nullptr) {
@@ -589,6 +592,7 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
     case kLiteRtTensorBufferTypeFastRpc:
       return GetFastRpcBuffer()->first;
     case kLiteRtTensorBufferTypeOpenCl: {
+#if LITERT_HAS_OPENCL_SUPPORT
       auto opencl_buffer = *GetOpenClBuffer();
       auto host_memory_ptr = opencl_buffer->Lock<float>();
       if (host_memory_ptr.HasValue()) {
@@ -596,6 +600,10 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
       } else {
         return Unexpected(host_memory_ptr.Error());
       }
+#else
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "OpenCL buffers are not supported");
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlBuffer: {
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -624,8 +632,13 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return litert::internal::AhwbBuffer::Unlock(ahwb);
     }
     case kLiteRtTensorBufferTypeOpenCl: {
+#if LITERT_HAS_OPENCL_SUPPORT
       auto opencl_buffer = *GetOpenClBuffer();
       return opencl_buffer->Unlock<float>();
+#else
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "OpenCL buffers are not supported");
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlBuffer: {
 #if LITERT_HAS_OPENGL_SUPPORT

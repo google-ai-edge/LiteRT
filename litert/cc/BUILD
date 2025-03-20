@@ -63,6 +63,7 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
     ],
 )
 
@@ -168,6 +169,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_event",
+        "//litert/c:litert_gl_types",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -495,19 +497,26 @@ cc_test(
         ":litert_buffer_ref",
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_event",
         ":litert_model",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
         "//litert/core/model:model_buffer",
         "//litert/runtime:tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # copybara:uncomment_begin(google-only)
@@ -533,6 +542,40 @@ cc_test(
 #         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_tensor_buffer",
+#         "//litert/test:common",
+#         "//litert/test:simple_model",
+#         "@org_tensorflow//tensorflow/lite:framework",
+#         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
+#         "@org_tensorflow//tensorflow/lite/c:common",
+#         "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+#     ],
+# )
+# 
+# # The same test as above, but for Android.
+# # This test doesn't run on TAP.
+# # libLiteRtGpuAccelerator.so and libLiteRtRuntimeCApi.so are required to run this test.
+# cc_test(
+#     name = "litert_compiled_model_gpu_android_test",
+#     srcs = ["litert_compiled_model_gpu_test.cc"],
+#     data = [
+#         "//litert/test:testdata/simple_model.tflite",
+#     ],
+#     tags = [
+#         "manual",
+#         "notap",
+#     ],
+#     deps = [
+#         ":litert_compiled_model",
+#         ":litert_environment",
+#         ":litert_model",
+#         ":litert_tensor_buffer",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/debugging:leak_check",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+#         "//litert/c:litert_runtime_c_api_shared_lib",
 #         "//litert/test:common",
 #         "//litert/test:simple_model",
 #         "@org_tensorflow//tensorflow/lite:framework",

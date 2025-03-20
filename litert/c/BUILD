@@ -191,12 +191,19 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_event_type",
+    hdrs = ["litert_event_type.h"],
+)
+
+cc_library(
     name = "litert_event",
     srcs = ["litert_event.cc"],
     hdrs = ["litert_event.h"],
     deps = [
         ":litert_common",
+        ":litert_event_type",
         ":litert_logging",
+        "//litert/cc:litert_macros",
         "//litert/runtime:event",
     ],
 )
@@ -205,6 +212,12 @@ cc_library(
     name = "litert_tensor_buffer_types",
     srcs = [],
     hdrs = ["litert_tensor_buffer_types.h"],
+)
+
+cc_library(
+    name = "litert_gl_types",
+    srcs = [],
+    hdrs = ["litert_gl_types.h"],
 )
 
 cc_library(
@@ -226,10 +239,12 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_event",
+        ":litert_gl_types",
         ":litert_logging",
         ":litert_model",
         ":litert_tensor_buffer_types",
         "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_expected",
         "//litert/runtime:tensor_buffer",
         "@opencl_headers",
     ] + gles_deps(),
@@ -514,6 +529,7 @@ cc_library(
         ":litert_compiled_model.h",
         ":litert_compilation_options.h",
         ":litert_event.h",
+        ":litert_event_type.h",
         ":litert_layout.h",
         ":litert_logging.h",
         ":litert_model.h",
@@ -522,6 +538,7 @@ cc_library(
         ":litert_tensor_buffer.h",
         ":litert_tensor_buffer_requirements.h",
         ":litert_tensor_buffer_types.h",
+        ":litert_gl_types.h",
         # Needed for litert/c/litert_op_code.h
         "@org_tensorflow//tensorflow/lite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h

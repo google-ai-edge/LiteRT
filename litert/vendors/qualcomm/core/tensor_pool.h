@@ -1,12 +1,14 @@
-// Copyright (c) Qualcomm Innovation Center, Inc.
-// All Rights Reserved.
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_TENSOR_POOL_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_TENSOR_POOL_H_
 
-#include <functional>
+#include <cstdint>
 #include <list>
+#include <vector>
 
+#include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
@@ -15,8 +17,6 @@ namespace qnn {
 class TensorPool {
  public:
   TensorPool();
-
-  TensorPool(std::function<void(TensorWrapper&)> tensor_callback);
 
   TensorWrapper& CreateInputTensor(
       Qnn_DataType_t data_type,
@@ -47,8 +47,17 @@ class TensorPool {
   TensorWrapper& CloneStaticTensorFrom(const TensorWrapper& src,
                                        Qnn_DataType_t data_type);
 
+  TensorWrapper& CloneStaticTensorFrom(
+      const TensorWrapper& src, const std::vector<std::uint32_t>& dimentions);
+
+  template <typename UnaryFunc>
+  void ForEach(UnaryFunc f) {
+    for (auto& tensor_wrapper : tensor_wrappers_) {
+      f(tensor_wrapper);
+    }
+  }
+
  private:
-  std::function<void(TensorWrapper&)> tensor_callback_{};
   std::list<TensorWrapper> tensor_wrappers_{};
 };
 
