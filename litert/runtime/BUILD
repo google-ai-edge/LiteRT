@@ -229,6 +229,8 @@ cc_library(
         "//litert/core:build_stamp",
         "//litert/core:environment",
         "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_delegate",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
         "@org_tensorflow//tensorflow/lite:builtin_ops",
