@@ -35,12 +35,47 @@ cc_library(
     srcs = ["litert_environment.cc"],
     hdrs = ["litert_environment.h"],
     deps = [
-        ":litert_any",
         ":litert_common",
+        ":litert_environment_options",
         "@com_google_absl//absl/types:span",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:auto_registration",
+    ],
+)
+
+cc_library(
+    name = "litert_environment_options",
+    srcs = ["litert_environment_options.cc"],
+    hdrs = ["litert_environment_options.h"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:environment_options",
+    ],
+)
+
+cc_library(
+    name = "litert_environment_options_header",
+    hdrs = ["litert_environment_options.h"],
+    tags = ["avoid_dep"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+    ],
+)
+
+cc_test(
+    name = "litert_environment_options_test",
+    srcs = ["litert_environment_options_test.cc"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+        ":litert_environment_options",
+        "@com_google_googletest//:gtest_main",
+        "//litert/core:environment_options",
+        "//litert/test:matchers",
     ],
 )
 
@@ -469,6 +504,7 @@ cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
         ":litert_environment.h",
+        ":litert_environment_options.h",
         ":litert_accelerator.h",
         ":litert_accelerator_options.h",
         ":litert_any.h",
