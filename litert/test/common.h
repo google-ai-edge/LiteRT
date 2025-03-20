@@ -25,8 +25,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tensorflow/lite/interpreter.h"  // from @org_tensorflow
 
-namespace litert {
-namespace testing {
+namespace litert::testing {
 
 // A x-platform compatible replacement for testing::UniqueTestDirectory.
 class UniqueTestDirectory {
@@ -104,7 +103,6 @@ inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFileWithNpuModel(
   return TflRuntime::CreateFromFlatBuffer(std::move(*flatbuffer));
 }
 
-}  // namespace testing
-}  // namespace litert
+}  // namespace litert::testing
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TEST_COMMON_H_

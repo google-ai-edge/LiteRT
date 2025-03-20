@@ -28,8 +28,7 @@
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 class ExternalLiteRtBufferContext : public TfLiteExternalContext {
  public:
@@ -130,7 +129,6 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   bool async_execution_mode_ = false;
 };
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

@@ -40,8 +40,7 @@
 #include "tensorflow/lite/kernels/register.h"  // from @org_tensorflow
 #include "tsl/platform/platform.h"  // from @org_tensorflow
 
-namespace litert {
-namespace testing {
+namespace litert::testing {
 
 Expected<UniqueTestDirectory> UniqueTestDirectory::Create() {
   constexpr size_t kMaxTries = 1000;
@@ -123,5 +122,4 @@ Expected<TflRuntime::Ptr> TflRuntime::CreateFromFlatBuffer(
       new TflRuntime(std::move(flatbuffer), std::move(interp)));
 }
 
-}  // namespace testing
-}  // namespace litert
+}  // namespace litert::testing
