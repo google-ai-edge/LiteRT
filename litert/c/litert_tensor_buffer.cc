@@ -25,7 +25,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/tensor_buffer.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
 extern "C" {
