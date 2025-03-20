@@ -1767,10 +1767,7 @@ class FromSavedModelTest(lite_v2_test_util.ModelTest):
     model = util._convert_model_from_bytearray_to_object(tflite_model)
     if unfold_large_constant:
       self.assertEqual(
-          model.operatorCodes[0].builtinCode, schema_fb.BuiltinOperator.FILL
-      )
-      self.assertEqual(
-          model.operatorCodes[1].builtinCode, schema_fb.BuiltinOperator.ADD
+          model.operatorCodes[0].builtinCode, schema_fb.BuiltinOperator.ADD
       )
     else:
       self.assertEqual(
