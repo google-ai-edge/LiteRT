@@ -14,7 +14,6 @@
 
 #include "tflite/experimental/litert/vendors/qualcomm/compiler/legalizations/softmax_op_legalization.h"
 
-#include <cstdint>
 #include <string>
 
 #include "absl/strings/str_format.h"
