@@ -553,6 +553,7 @@ cc_test(
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
 #     tags = [
+#         "manual",
 #         "notap",
 #     ],
 #     deps = [
