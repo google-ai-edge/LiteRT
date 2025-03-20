@@ -212,6 +212,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
         "//tflite/delegates/utils:simple_opaque_delegate",
+        "//tflite/experimental/litert/c:litert_accelerator",
         "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_compilation_options",
