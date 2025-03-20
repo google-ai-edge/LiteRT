@@ -276,6 +276,7 @@ cc_library(
         "litert_dispatch_delegate.h",
     ],
     deps = [
+        ":litert_environment_options",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@org_tensorflow//tensorflow/lite/c:c_api",

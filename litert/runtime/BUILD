@@ -203,6 +203,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
         "//litert/c:litert_dispatch_delegate",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",

@@ -17,6 +17,7 @@
 
 #include <stddef.h>
 
+#include "litert/c/litert_environment_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
@@ -37,7 +38,8 @@ void LiteRtDestroyDispatchDelegateOptions(
 // Create a delegate that uses the Dispatch API for execution. Takes ownership
 // of the passed `options`. Must outlive the TFL interpreter.
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtEnvironment environment, LiteRtDispatchDelegateOptions* options);
+    LiteRtEnvironmentOptions environment_options,
+    LiteRtDispatchDelegateOptions* options);
 
 // Do any needed cleanup and delete 'delegate'.
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate);

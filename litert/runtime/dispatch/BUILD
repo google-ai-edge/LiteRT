@@ -43,6 +43,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
@@ -61,9 +62,9 @@ cc_library(
         ":dispatch",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_event",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -75,8 +76,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
-        "//litert/core:dynamic_loading",
-        "//litert/core:environment",
+        "//litert/core:environment_options",
         "//litert/runtime:external_litert_buffer_context",
         "//litert/runtime:tfl_utils",
         "//litert/vendors/c:litert_dispatch_c_api",

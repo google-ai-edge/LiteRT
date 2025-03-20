@@ -18,7 +18,7 @@
 #include <memory>
 
 #include "litert/c/litert_dispatch_delegate.h"
-#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
 
 namespace litert {
@@ -30,10 +30,11 @@ using DispatchDelegateOptionsPtr =
 using DispatchDelegatePtr = tflite::TfLiteOpaqueDelegateUniquePtr;
 
 DispatchDelegateOptionsPtr CreateDispatchDelegateOptionsPtr(
-    LiteRtEnvironmentT& environment);
+    LiteRtEnvironmentOptions environment_options);
 
 DispatchDelegatePtr CreateDispatchDelegatePtr(
-    LiteRtEnvironmentT& environment, DispatchDelegateOptionsPtr&& options);
+    LiteRtEnvironmentOptions environment_options,
+    DispatchDelegateOptionsPtr&& options);
 
 }  // namespace litert
 

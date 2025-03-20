@@ -313,7 +313,7 @@ cc_library(
         "litert_dispatch_delegate.h",
     ],
     deps = [
-        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
         "//litert/runtime/dispatch:dispatch_delegate",
         "@org_tensorflow//tensorflow/lite/c:c_api",
         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
