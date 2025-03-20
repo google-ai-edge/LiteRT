@@ -72,6 +72,7 @@ class RankedTensorType {
 // Tensor weights. C++ equivalent of LiteRtWeights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
  public:
+  Weights() = default;
   explicit Weights(LiteRtWeights weights)
       : internal::NonOwnedHandle<LiteRtWeights>(weights) {}
 
@@ -86,6 +87,7 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 // Tensor. C++ equivalent of LiteRtTensor.
 class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
+  Tensor() = default;
   explicit Tensor(LiteRtTensor tensor)
       : internal::NonOwnedHandle<LiteRtTensor>(tensor) {}
 
@@ -230,6 +232,7 @@ using OpOutputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpOutputs>;
 // Operator. C++ equivalent of LiteRtOp.
 class Op : public internal::NonOwnedHandle<LiteRtOp> {
  public:
+  Op() = default;
   explicit Op(LiteRtOp op) : internal::NonOwnedHandle<LiteRtOp>(op) {}
 
   LiteRtOpCode Code() const {
@@ -255,6 +258,7 @@ using SubgraphOutputs =
 // Model subgraph. C++ equivalent of LiteRtSubgraph.
 class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
  public:
+  Subgraph() = default;
   explicit Subgraph(LiteRtSubgraph subgraph)
       : internal::NonOwnedHandle<LiteRtSubgraph>(subgraph) {}
 
@@ -272,6 +276,7 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
 // Model signature. C++ equivalent of LiteRtSignature.
 class Signature : public internal::NonOwnedHandle<LiteRtSignature> {
  public:
+  Signature() = default;
   explicit Signature(LiteRtSignature signature)
       : internal::NonOwnedHandle<LiteRtSignature>(signature) {}
 
