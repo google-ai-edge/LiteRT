@@ -169,6 +169,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_event",
+        "//litert/c:litert_gl_types",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -496,19 +497,26 @@ cc_test(
         ":litert_buffer_ref",
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_event",
         ":litert_model",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
         "//litert/core/model:model_buffer",
         "//litert/runtime:tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # copybara:uncomment_begin(google-only)
