@@ -63,6 +63,7 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
     ],
 )
 

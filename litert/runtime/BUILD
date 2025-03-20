@@ -29,8 +29,13 @@ cc_library(
         "event.h",
     ],
     deps = [
+        ":gpu_environment",
+        "@com_google_absl//absl/strings:str_format",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/runtime/opencl:cl_event",
     ],
 )
 
@@ -72,6 +77,7 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer_types",
@@ -104,6 +110,7 @@ cc_library(
     ],
     visibility = [
         "//litert:__subpackages__",
+        "//litert/c:__subpackages__",
     ],
     deps = [
         "//litert/c:litert_any",
