@@ -20,6 +20,7 @@
 #include "tflite/experimental/litert/c/litert_common.h"
 #include "tflite/experimental/litert/cc/litert_expected.h"
 #include "tflite/experimental/litert/cc/litert_shared_library.h"
+#include "tflite/experimental/litert/runtime/accelerator.h"
 
 namespace litert::internal {
 
