@@ -29,8 +29,13 @@ cc_library(
         "event.h",
     ],
     deps = [
+        ":gpu_environment",
+        "@com_google_absl//absl/strings:str_format",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/runtime/opencl:cl_event",
     ],
 )
 
@@ -63,7 +68,7 @@ cc_library(
     ],
     linkopts = gles_linkopts(),
     deps = [
-        ":environment",
+        ":gpu_environment",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
@@ -72,7 +77,10 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
         "//litert/c:litert_layout",
+        "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_event",
@@ -95,15 +103,16 @@ cc_library(
 )
 
 cc_library(
-    name = "environment",
+    name = "gpu_environment",
     srcs = [
-        "environment.cc",
+        "gpu_environment.cc",
     ],
     hdrs = [
-        "environment.h",
+        "gpu_environment.h",
     ],
     visibility = [
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//litert:__subpackages__",
+        "//litert/c:__subpackages__",
     ],
     deps = [
         "//litert/c:litert_any",
@@ -120,8 +129,8 @@ cc_library(
 )
 
 cc_test(
-    name = "environment_test",
-    srcs = ["environment_test.cc"],
+    name = "gpu_environment_test",
+    srcs = ["gpu_environment_test.cc"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -130,7 +139,7 @@ cc_test(
         "requires-gpu-nvidia",
     ],
     deps = [
-        ":environment",
+        ":gpu_environment",
         "@com_google_googletest//:gtest_main",
         # copybara:uncomment_begin(google-only)
         # "@ml_drift//ml_drift/cl:environment",
@@ -172,7 +181,6 @@ cc_library(
     ] + lite_rt_friends(),
     deps = [
         ":tfl_utils",
-        "@com_google_absl//absl/container:flat_hash_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -204,6 +212,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
         "//litert/c:litert_dispatch_delegate",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
@@ -220,6 +229,8 @@ cc_library(
         "//litert/core:build_stamp",
         "//litert/core:environment",
         "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_delegate",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
         "@org_tensorflow//tensorflow/lite:builtin_ops",

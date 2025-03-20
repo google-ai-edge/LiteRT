@@ -25,11 +25,22 @@
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/environment.h"
 
+// Define a function pointer to allow the accelerator registration to be
+// overridden by the LiteRT environment. This is to use the GPU accelerator
+// statically linked.
+extern "C" bool (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
+    LiteRtEnvironmentT& environment) = nullptr;
+
 namespace litert {
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
   // Register the GPU accelerator.
+  if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
+      LiteRtRegisterStaticLinkedAcceleratorGpu(environment)) {
+    LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    return {};
+  }
   auto gpu_registration = RegisterSharedObjectAccelerator(
       environment, /*plugin_path=*/"libLiteRtGpuAccelerator.so",
       /*registration_function_name=*/"LiteRtRegisterAcceleratorGpuOpenCl");

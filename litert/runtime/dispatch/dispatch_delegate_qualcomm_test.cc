@@ -26,6 +26,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -76,12 +78,15 @@ TEST(DispatchDelegate, QualcommCpuBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
+  LiteRtEnvironmentOptions env_options;
+  LiteRtGetEnvironmentOptions(env->Get(), &env_options);
+
   auto dispatch_delegate_options =
-      CreateDispatchDelegateOptionsPtr(*env->Get());
+      CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            rt.Flatbuffer().Buf().Data());
   auto dispatch_delegate = CreateDispatchDelegatePtr(
-      *env->Get(), std::move(dispatch_delegate_options));
+      env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -150,12 +155,15 @@ TEST(DispatchDelegate, QualcommHwBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
+  LiteRtEnvironmentOptions env_options;
+  LiteRtGetEnvironmentOptions(env->Get(), &env_options);
+
   auto dispatch_delegate_options =
-      CreateDispatchDelegateOptionsPtr(*env->Get());
+      CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            rt.Flatbuffer().Buf().Data());
   auto dispatch_delegate = CreateDispatchDelegatePtr(
-      *env->Get(), std::move(dispatch_delegate_options));
+      env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
