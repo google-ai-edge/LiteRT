@@ -3,7 +3,15 @@
 
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 
+#include <vector>
+
+#include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "third_party/qairt/latest/include/QNN/QnnOpDef.h"
+#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
 namespace qnn {
 

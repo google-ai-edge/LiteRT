@@ -15,13 +15,11 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
 namespace qnn {
-
-template <typename...>
-inline constexpr bool always_false = false;
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>

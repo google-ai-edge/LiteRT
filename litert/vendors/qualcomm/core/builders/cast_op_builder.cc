@@ -3,6 +3,13 @@
 
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 
+#include <vector>
+
+#include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "third_party/qairt/latest/include/QNN/QnnOpDef.h"
+
 namespace qnn {
 
 std::vector<OpWrapper> BuildCastOp(
