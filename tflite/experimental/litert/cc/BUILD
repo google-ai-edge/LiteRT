@@ -118,6 +118,7 @@ cc_library(
         ":litert_handle",
         ":litert_layout",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/c:litert_model",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
