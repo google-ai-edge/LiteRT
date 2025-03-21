@@ -1,5 +1,6 @@
 /.bazelrc.user
 /bazel-*
 .vscode/
+.DS_Store
 .idea/
 *.whl
