@@ -30,12 +30,13 @@ cc_library(
     ],
     deps = [
         ":gpu_environment",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_event_type",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/runtime/opencl:cl_event",
         "@com_google_absl//absl/strings:str_format",
+        "@opencl_headers",
     ],
 )
 
@@ -69,6 +70,10 @@ cc_library(
     linkopts = gles_linkopts(),
     deps = [
         ":gpu_environment",
+        "//tflite/delegates/gpu/cl:buffer",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/c:litert_event_type",
         "//tflite/experimental/litert/c:litert_gl_types",
@@ -81,10 +86,6 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_macros",
         "//tflite/experimental/litert/cc:litert_tensor_buffer_utils",
         "//tflite/experimental/litert/core/util:tensor_type_util",
-        "//tflite/experimental/litert/runtime/opencl:buffer",
-        "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
-        "//tflite/experimental/litert/runtime/opencl:cl_context",
-        "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:node_hash_map",
@@ -115,15 +116,16 @@ cc_library(
         "//tflite/experimental/litert/c:__subpackages__",
     ],
     deps = [
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:cl_device",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "//tflite/experimental/litert/c:litert_any",
         "//tflite/experimental/litert/c:litert_common",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/core:environment",
-        "//tflite/experimental/litert/runtime/opencl:cl_command_queue",
-        "//tflite/experimental/litert/runtime/opencl:cl_context",
-        "//tflite/experimental/litert/runtime/opencl:cl_device",
-        "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
         "@opencl_headers",
     ],
 )
@@ -146,8 +148,8 @@ cc_test(
         # "@org_tensorflow//third_party/ml_drift/cl:opencl_wrapper",
         # copybara:uncomment_end
         "//tflite/experimental/litert/c:litert_environment",
+        "//tflite/experimental/litert/c:litert_environment_options",
         "//tflite/experimental/litert/cc:litert_any",
-        "//tflite/experimental/litert/runtime/opencl:opencl_wrapper",
     ],
 )
 
