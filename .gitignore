@@ -1,4 +1,5 @@
 /.bazelrc.user
 /bazel-*
 .vscode/
+.idea/
 *.whl
