@@ -91,6 +91,7 @@ EXCLUDED_EXPERIMENTAL_TARGETS=(
         "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_mediatek_test"
         "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_qualcomm_test"
         "-//tflite/experimental/litert/tools:apply_plugin_test"
+        "-//tflite/experimental/litert/tools:benchmark_litert_model_test"
         "-//tflite/experimental/litert/tools:dump_test"
         "-//tflite/experimental/litert/tools:tool_display_test"
         "-//tflite/experimental/litert/vendors/cc:convert_graph_test"
