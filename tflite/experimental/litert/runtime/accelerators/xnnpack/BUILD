@@ -20,33 +20,19 @@ package(
 )
 
 cc_library(
-    name = "auto_registration",
-    srcs = ["auto_registration.cc"],
-    hdrs = ["auto_registration.h"],
+    name = "xnnpack_accelerator",
+    srcs = ["xnnpack_accelerator.cc"],
+    hdrs = ["xnnpack_accelerator.h"],
     deps = [
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/cc:litert_shared_library",
-        "//tflite/experimental/litert/core:environment",
-        "//tflite/experimental/litert/runtime/accelerators/dispatch:dispatch_accelerator",
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
-    name = "accelerator_implementation_helper",
-    hdrs = ["accelerator_implementation_helper.h"],
-    deps = [
+        "//tflite/c:c_api_types",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/experimental/litert/c:litert_accelerator",
         "//tflite/experimental/litert/c:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/c:litert_accelerator_registration",
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_expected",
         "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/runtime:accelerator_model_compilation_data",
-        "@com_google_absl//absl/strings:string_view",
+        "//tflite/experimental/litert/core:environment",
+        "//tflite/experimental/litert/runtime/accelerators:accelerator_implementation_helper",
     ],
 )

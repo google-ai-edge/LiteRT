@@ -397,8 +397,6 @@ cc_library(
         "//tflite/experimental/litert/c:litert_common",
         "//tflite/experimental/litert/cc:litert_accelerator_compilation_options",
         "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
