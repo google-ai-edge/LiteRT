@@ -15,6 +15,8 @@ limitations under the License.
 #include "tflite/delegates/coreml/builders/util.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
