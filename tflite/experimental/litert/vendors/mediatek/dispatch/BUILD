@@ -62,6 +62,7 @@ litert_dynamic_lib(
         "//tflite/experimental/litert/core/util:tensor_type_util",
         "//tflite/experimental/litert/vendors/c:litert_dispatch_c_api",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
+        "//tflite/experimental/litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_set",
