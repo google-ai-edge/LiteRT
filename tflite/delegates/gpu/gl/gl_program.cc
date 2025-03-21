@@ -21,7 +21,6 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/status.h"
 #include "tflite/delegates/gpu/common/types.h"
 #include "tflite/delegates/gpu/gl/gl_call.h"

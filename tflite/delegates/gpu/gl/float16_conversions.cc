@@ -20,7 +20,6 @@ limitations under the License.
 #include <vector>
 
 #include "fp16.h"  // from @FP16
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/tensor.h"
 
