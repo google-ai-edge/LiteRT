@@ -38,6 +38,7 @@ cc_library(
         "//tflite/experimental/litert/compiler/plugin:compiler_plugin",
         "//tflite/experimental/litert/core/model:model_serialize",
         "//tflite/experimental/litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
