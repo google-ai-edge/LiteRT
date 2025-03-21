@@ -45,6 +45,7 @@ litert_dynamic_lib(
         "//tflite/experimental/litert/cc:litert_model",
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
+        "//tflite/experimental/litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -73,7 +74,20 @@ cc_library(
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
         "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:batch_matmul_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:concat_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:fully_connected_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:gelu_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:mean_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:mul_op_legalization",
         "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:operand_map",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:quantize_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:reshape_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:rsqrt_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:softmax_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
+        "//tflite/experimental/litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
     ],
 )
 
@@ -99,6 +113,7 @@ cc_library(
         "//tflite/experimental/litert/cc:litert_model_predicates",
         "//tflite/experimental/litert/core/model",
         "//tflite/experimental/litert/vendors/mediatek:neuron_adapter_api",
+        "//tflite/experimental/litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],
 )
 
