@@ -51,6 +51,7 @@ cc_library(
     deps = [
         ":op_builder",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/c:litert_logging",
         "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:param_wrapper",
@@ -150,6 +151,23 @@ cc_library(
     name = "gelu_op_builder",
     srcs = ["gelu_op_builder.cc"],
     hdrs = ["gelu_op_builder.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        ":op_builder",
+        # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/vendors/qualcomm/core:tensor_pool",
+        "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+    ],
+)
+
+cc_library(
+    name = "relu_op_builder",
+    srcs = ["relu_op_builder.cc"],
+    hdrs = ["relu_op_builder.h"],
     tags = [
         # Don't build/test in OS until qnn is available.
         "nobuilder",
