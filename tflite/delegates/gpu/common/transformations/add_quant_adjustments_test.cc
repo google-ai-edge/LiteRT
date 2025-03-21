@@ -24,7 +24,6 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"
 #include "absl/types/any.h"
-#include "absl/types/optional.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/model_transformer.h"

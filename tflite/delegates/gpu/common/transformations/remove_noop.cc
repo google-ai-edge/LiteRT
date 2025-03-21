@@ -20,11 +20,11 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/memory/memory.h"
 #include "absl/types/any.h"
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/model.h"
 #include "tflite/delegates/gpu/common/model_transformer.h"
