@@ -37,6 +37,7 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment "@org_tensorflow//third_party/qairt/latest:qnn_lib_headers",
+        "//tflite/experimental/litert/vendors/qualcomm/core/utils:miscs",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//tflite/experimental/litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
     ],
