@@ -309,9 +309,10 @@ cc_library(
         "litert_compilation_options.h",
     ],
     deps = [
-        ":litert_accelerator_options",
+        ":litert_accelerator_compilation_options",
         ":litert_common",
         ":litert_logging",
+        "//litert/cc:litert_macros",
         "//litert/runtime:compilation_options",
     ],
 )
@@ -320,11 +321,12 @@ cc_test(
     name = "litert_compilation_options_test",
     srcs = ["litert_compilation_options_test.cc"],
     deps = [
-        ":litert_accelerator_options",
+        ":litert_accelerator_compilation_options",
         ":litert_common",
         ":litert_compilation_options",
         "@com_google_googletest//:gtest_main",
-        "//litert/core:accelerator",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
     ],
 )
 
@@ -391,36 +393,14 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_accelerator_options",
-    srcs = ["litert_accelerator_options.cc"],
-    hdrs = ["litert_accelerator_options.h"],
-    deps = [
-        ":litert_common",
-        "//litert/core:accelerator",
-    ],
-)
-
-cc_test(
-    name = "litert_accelerator_options_test",
-    srcs = ["litert_accelerator_options_test.cc"],
-    deps = [
-        ":litert_accelerator_options",
-        ":litert_common",
-        "@com_google_googletest//:gtest_main",
-        "//litert/core:accelerator",
-        "//litert/test:matchers",
-    ],
-)
-
-cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
     deps = [
         ":litert_common",
         "//litert/cc:litert_expected",
-        "//litert/core:accelerator",
         "//litert/core:environment",
+        "//litert/runtime:accelerator",
     ],
 )
 
@@ -433,7 +413,30 @@ cc_test(
         ":litert_common",
         ":litert_environment",
         "@com_google_googletest//:gtest_main",
-        "//litert/core:accelerator",
+        "//litert/runtime:accelerator",
+    ],
+)
+
+cc_library(
+    name = "litert_accelerator_compilation_options",
+    srcs = ["litert_accelerator_compilation_options.cc"],
+    hdrs = ["litert_accelerator_compilation_options.h"],
+    deps = [
+        ":litert_common",
+    ],
+)
+
+cc_test(
+    name = "litert_accelerator_compilation_options_test",
+    srcs = ["litert_accelerator_compilation_options_test.cc"],
+    deps = [
+        ":litert_accelerator_compilation_options",
+        ":litert_common",
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:version",
+        "//litert/test:matchers",
     ],
 )
 
@@ -443,11 +446,11 @@ cc_library(
     hdrs = ["litert_accelerator_registration.h"],
     deps = [
         ":litert_accelerator",
-        ":litert_accelerator_options",
+        ":litert_accelerator_compilation_options",
         ":litert_common",
         "//litert/cc:litert_expected",
-        "//litert/core:accelerator",
         "//litert/core:environment",
+        "//litert/runtime:accelerator",
     ],
 )
 
@@ -456,12 +459,12 @@ cc_test(
     srcs = ["litert_accelerator_registration_test.cc"],
     deps = [
         ":litert_accelerator",
-        ":litert_accelerator_options",
+        ":litert_accelerator_compilation_options",
         ":litert_accelerator_registration",
         ":litert_common",
         ":litert_environment",
         "@com_google_googletest//:gtest_main",
-        "//litert/core:accelerator",
+        "//litert/runtime:accelerator",
     ],
 )
 
@@ -523,7 +526,7 @@ cc_library(
         ":litert_environment.h",
         ":litert_environment_options.h",
         ":litert_accelerator.h",
-        ":litert_accelerator_options.h",
+        ":litert_accelerator_compilation_options.h",
         ":litert_any.h",
         ":litert_common.h",
         ":litert_compiled_model.h",

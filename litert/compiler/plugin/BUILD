@@ -44,6 +44,7 @@ cc_library(
         "//litert/core:dynamic_loading",
         "//litert/core:environment",
         "//litert/core:filesystem",
+        "//litert/core:version",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/core/model:ir_allocator",

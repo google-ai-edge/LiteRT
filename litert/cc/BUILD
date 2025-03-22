@@ -255,9 +255,12 @@ cc_library(
 
 cc_library(
     name = "litert_macros",
+    srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     deps = [
         ":litert_expected",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
     ],
@@ -437,6 +440,7 @@ cc_library(
     name = "litert_compilation_options",
     hdrs = ["litert_compilation_options.h"],
     deps = [
+        ":litert_accelerator_compilation_options",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
@@ -445,6 +449,7 @@ cc_library(
         ":litert_tensor_buffer",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
         "//litert/c:litert_compiled_model",
@@ -670,6 +675,21 @@ cc_test(
         ":litert_event",
         "@com_google_googletest//:gtest_main",
         "//litert/test:matchers",
+    ],
+)
+
+cc_library(
+    name = "litert_accelerator_compilation_options",
+    hdrs = [
+        "litert_accelerator_compilation_options.h",
+    ],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_accelerator_compilation_options",
+        "//litert/c:litert_common",
     ],
 )
 
