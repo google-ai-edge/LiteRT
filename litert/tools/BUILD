@@ -86,7 +86,6 @@ litert_cc_bin_with_qnn(
         "//litert/vendors/examples:example_plugin_so",
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
     ],
     export_litert_only = 1,
     include_system = 1,
@@ -204,6 +203,9 @@ cc_binary(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_compiled_model",
@@ -211,5 +213,6 @@ cc_binary(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "@org_tensorflow//tensorflow/lite/profiling:time",
     ],
 )

@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,15 +24,16 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "litert/c/litert_accelerator_options.h"
+#include "litert/c/litert_accelerator.h"
+#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/core/accelerator.h"
-#include "litert/core/accelerator_model_compilation_data.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/runtime/accelerator.h"
+#include "litert/runtime/accelerator_model_compilation_data.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -160,29 +162,29 @@ namespace {
 class ScopedCompilationOptionsModifier {
  public:
   explicit ScopedCompilationOptionsModifier(
-      LiteRtCompilationOptions compilation_options) {
-    last_accelerator_option_ptr_ =
-        &compilation_options->accelerator_compilation_options;
-    while (*last_accelerator_option_ptr_) {
-      last_accelerator_option_ptr_ = &((*last_accelerator_option_ptr_)->next);
-    }
-  }
+      LiteRtCompilationOptions compilation_options)
+      : accelerator_options_(
+            compilation_options->accelerator_compilation_options) {}
 
   ~ScopedCompilationOptionsModifier() {
     // Remove any option that was appended during the lifetime of this object.
-    if (*last_accelerator_option_ptr_) {
-      LiteRtDestroyAcceleratorCompilationOptions(*last_accelerator_option_ptr_);
-      *last_accelerator_option_ptr_ = nullptr;
+    while (--num_appended_options_ >= 0) {
+      accelerator_options_.Pop();
     }
   }
 
-  LiteRtStatus Append(LiteRtAcceleratorCompilationOptions accelerator_options) {
-    return LiteRtAppendAcceleratorCompilationOptions(
-        last_accelerator_option_ptr_, accelerator_options);
+  Expected<void> Append(
+      litert::AcceleratorCompilationOptions&& accelerator_options) {
+    auto status = accelerator_options_.Append(std::move(accelerator_options));
+    if (status) {
+      ++num_appended_options_;
+    }
+    return status;
   }
 
  private:
-  LiteRtAcceleratorCompilationOptions* last_accelerator_option_ptr_;
+  litert::AcceleratorCompilationOptions& accelerator_options_;
+  int num_appended_options_ = 0;
 };
 
 }  // namespace
@@ -221,8 +223,14 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
   // Add a new link in the accelerator compilation options that holds some data
   // that is computed during model compilation.
-  LITERT_ASSIGN_OR_RETURN(auto model_compilation_data,
-                          litert::internal::ModelCompilationData::Create());
+  LITERT_ASSIGN_OR_RETURN(
+      auto model_compilation_data_options,
+      litert::internal::ModelCompilationData::CreateOptions());
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto* model_compilation_data,
+      model_compilation_data_options
+          .GetData<litert::internal::ModelCompilationData>());
   model_compilation_data->allocation_base = compiled_model->GetModelBase();
 
   // Temporarily append model_compilation_data to the jit_compilation_options,
@@ -230,7 +238,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   // jit_compilation_options and may use it for other purposes.
   ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
   LITERT_RETURN_IF_ERROR(
-      scoped_modifier.Append(model_compilation_data.release()));
+      scoped_modifier.Append(std::move(model_compilation_data_options)));
 
   // Retrieve the accelerator options list.
   LiteRtAcceleratorCompilationOptions accelerator_options = nullptr;
@@ -240,26 +248,36 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
   for (auto& accelerator : env->GetAcceleratorRegistry()) {
+    bool delegate_responsible_for_jit = false;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
+            accelerator.get(), &delegate_responsible_for_jit));
     LiteRtHwAcceleratorSet accelerator_supported_hardware;
     LITERT_RETURN_IF_ERROR(accelerator->GetHardwareSupport(
         accelerator.get(), &accelerator_supported_hardware));
-    if (hardware_accelerators & accelerator_supported_hardware) {
-      TfLiteOpaqueDelegate* delegate_ptr = nullptr;
-      LITERT_RETURN_IF_ERROR(
-          accelerator->CreateDelegate(accelerator.get(), accelerator_options,
-                                      reinterpret_cast<void**>(&delegate_ptr)));
-
-      auto delegate = tflite::TfLiteOpaqueDelegateUniquePtr(
-          delegate_ptr, reinterpret_cast<void (*)(TfLiteOpaqueDelegate*)>(
-                            accelerator->DestroyDelegate));
-
-      if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
-          kTfLiteOk) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to modify graph with delegate");
-      }
-      compiled_model->RegisterDelegate(std::move(delegate));
+    // We don't apply the delegate if:
+    //   - the delegate is responsible for JIT compilation
+    //   - and JIT has not been requested for the hardware it supports.
+    if (delegate_responsible_for_jit &&
+        !(hardware_accelerators & accelerator_supported_hardware)) {
+      continue;
     }
+
+    TfLiteOpaqueDelegate* delegate_ptr = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        accelerator->CreateDelegate(accelerator.get(), accelerator_options,
+                                    reinterpret_cast<void**>(&delegate_ptr)));
+
+    auto delegate = tflite::TfLiteOpaqueDelegateUniquePtr(
+        delegate_ptr, reinterpret_cast<void (*)(TfLiteOpaqueDelegate*)>(
+                          accelerator->DestroyDelegate));
+
+    if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
+        kTfLiteOk) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to modify graph with delegate");
+    }
+    compiled_model->RegisterDelegate(std::move(delegate));
   }
 
   // Apply the dispatch delegate, unconditionally, since the loaded model may

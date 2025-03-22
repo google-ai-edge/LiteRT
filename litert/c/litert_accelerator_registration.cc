@@ -18,12 +18,12 @@
 #include <utility>
 
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_options.h"
+#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/core/accelerator.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerator.h"
 
 LiteRtStatus LiteRtCreateAccelerator(LiteRtAccelerator* accelerator) {
   if (!accelerator) {
@@ -106,5 +106,17 @@ LiteRtStatus LiteRtSetDelegateFunction(
   }
   accelerator->CreateDelegate = CreateDelegate;
   accelerator->DestroyDelegate = DestroyDelegate;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
+        LiteRtAcceleratorT* accelerator, bool* does_jit_compilation)) {
+  if (!accelerator) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  accelerator->IsTfLiteDelegateResponsibleForJitCompilation =
+      IsTfLiteDelegateResponsibleForJitCompilation;
   return kLiteRtStatusOk;
 }
