@@ -20,33 +20,19 @@ package(
 )
 
 cc_library(
-    name = "auto_registration",
-    srcs = ["auto_registration.cc"],
-    hdrs = ["auto_registration.h"],
+    name = "xnnpack_accelerator",
+    srcs = ["xnnpack_accelerator.cc"],
+    hdrs = ["xnnpack_accelerator.h"],
     deps = [
-        "@com_google_absl//absl/base:core_headers",
-        "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
-        "//litert/core:environment",
-        "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
-    ],
-)
-
-cc_library(
-    name = "accelerator_implementation_helper",
-    hdrs = ["accelerator_implementation_helper.h"],
-    deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator",
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/runtime:accelerator_model_compilation_data",
+        "//litert/core:environment",
+        "//litert/runtime/accelerators:accelerator_implementation_helper",
+        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/delegates/xnnpack:xnnpack_delegate",
     ],
 )

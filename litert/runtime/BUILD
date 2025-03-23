@@ -394,11 +394,9 @@ cc_library(
     name = "accelerator_model_compilation_data",
     hdrs = ["accelerator_model_compilation_data.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/cc:litert_accelerator_compilation_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
     ],
 )
 
