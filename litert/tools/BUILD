@@ -213,5 +213,6 @@ cc_binary(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "@org_tensorflow//tensorflow/lite/profiling:time",
     ],
 )
