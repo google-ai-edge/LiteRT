@@ -255,9 +255,12 @@ cc_library(
 
 cc_library(
     name = "litert_macros",
+    srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     deps = [
         ":litert_expected",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
     ],
