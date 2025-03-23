@@ -33,6 +33,7 @@
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace {
 

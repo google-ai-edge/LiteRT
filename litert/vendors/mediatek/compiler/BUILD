@@ -47,6 +47,9 @@ litert_dynamic_lib(
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "//litert/vendors/mediatek/schema:neuron_litert_schema",
     ],
 )
 
@@ -60,20 +63,27 @@ cc_library(
         "notap",
     ],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
-        "//litert/core/model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:batch_matmul_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:concat_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:fully_connected_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:gelu_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:mean_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:mul_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
+        "//litert/vendors/mediatek/compiler/legalizations:reshape_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:rsqrt_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:softmax_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:sub_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],
 )
 
@@ -99,6 +109,7 @@ cc_library(
         "//litert/cc:litert_model_predicates",
         "//litert/core/model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],
 )
 

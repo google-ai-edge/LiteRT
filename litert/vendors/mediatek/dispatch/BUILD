@@ -69,6 +69,7 @@ litert_dynamic_lib(
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],
 )
 
