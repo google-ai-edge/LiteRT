@@ -17,7 +17,6 @@ limitations under the License.
 #include <optional>
 #include <string>
 
-#include "absl/types/optional.h"
 #include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/evaluation/proto/evaluation_config.pb.h"
 #include "tflite/tools/logging.h"
