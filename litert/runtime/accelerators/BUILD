@@ -32,5 +32,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
         "//litert/core:environment",
+        "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
     ],
 )

@@ -24,6 +24,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 
 // Define a function pointer to allow the accelerator registration to be
 // overridden by the LiteRT environment. This is to use the GPU accelerator
@@ -35,6 +36,18 @@ namespace litert {
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
+  // Register the NPU accelerator.
+
+  auto npu_registration =
+      LiteRtRegisterNpuAccelerator(&environment, /*options=*/nullptr);
+  if (npu_registration != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_WARNING,
+               "GPU accelerator could not be loaded and registered: %s.",
+               LiteRtGetStatusString(npu_registration));
+  } else {
+    LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
+  }
+
   // Register the GPU accelerator.
   if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
       LiteRtRegisterStaticLinkedAcceleratorGpu(environment)) {
