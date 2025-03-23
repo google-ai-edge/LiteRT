@@ -18,10 +18,10 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_options.h"
+#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
-#include "litert/core/accelerator.h"
+#include "litert/runtime/accelerator.h"
 
 namespace {
 

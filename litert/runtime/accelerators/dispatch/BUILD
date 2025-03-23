@@ -26,7 +26,7 @@ cc_library(
     deps = [
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator",
-        "//litert/c:litert_accelerator_options",
+        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_delegate",
@@ -34,8 +34,8 @@ cc_library(
         "//litert/cc:litert_dispatch_delegate",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core:accelerator_model_compilation_data",
         "//litert/core:environment",
+        "//litert/runtime:accelerator_model_compilation_data",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
     ],
 )

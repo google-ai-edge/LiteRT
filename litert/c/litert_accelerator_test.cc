@@ -22,7 +22,7 @@
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
-#include "litert/core/accelerator.h"
+#include "litert/runtime/accelerator.h"
 
 #define LITERT_ENSURE_OK(expr)       \
   do {                               \

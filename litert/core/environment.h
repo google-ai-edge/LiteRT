@@ -22,8 +22,8 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/core/accelerator.h"
 #include "litert/core/environment_options.h"
+#include "litert/runtime/accelerator_registry.h"
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {

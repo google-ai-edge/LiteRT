@@ -61,8 +61,6 @@ static llvm::cl::list<std::string> libs(
         "litert/vendors/examples",
         "litert/vendors/qualcomm/"
         "compiler",
-        "litert/vendors/mediatek/"
-        "compiler",
         "litert/vendors/"
         "google_tensor/compiler"}));
 

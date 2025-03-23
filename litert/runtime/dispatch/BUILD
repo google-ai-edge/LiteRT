@@ -41,7 +41,10 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_shared_library",
         "//litert/core:dynamic_loading",
+        "//litert/core:version",
     ],
     alwayslink = 1,
 )

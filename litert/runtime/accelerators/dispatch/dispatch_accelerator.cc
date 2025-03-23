@@ -20,7 +20,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_options.h"
+#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
@@ -29,8 +29,8 @@
 #include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/accelerator_model_compilation_data.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerator_model_compilation_data.h"
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 
 namespace litert {
@@ -104,16 +104,13 @@ class NpuAccelerator final {
   // compilation data if it exists.
   static Expected<const litert::internal::ModelCompilationData*>
   GetModelCompilationData(LiteRtAcceleratorCompilationOptions options) {
-    while (options) {
-      if (options->identifier ==
-          litert::internal::ModelCompilationData::kIdentifier) {
-        return reinterpret_cast<litert::internal::ModelCompilationData*>(
-            options);
-      }
-      LiteRtGetNextAcceleratorCompilationOptions(&options);
-    }
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                      "Could not retrieve mode compilation data.");
+    LiteRtApiVersion payload_version;
+    void* payload_data;
+    LITERT_RETURN_IF_ERROR(LiteRtFindAcceleratorCompilationOptionsData(
+        options, litert::internal::ModelCompilationData::kIdentifier,
+        &payload_version, &payload_data));
+    return reinterpret_cast<litert::internal::ModelCompilationData*>(
+        payload_data);
   }
 
   // Creates a Dispatch delegate instance.

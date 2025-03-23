@@ -200,6 +200,8 @@ cc_library(
     srcs = ["compiled_model.cc"],
     hdrs = ["compiled_model.h"],
     deps = [
+        ":accelerator",
+        ":accelerator_model_compilation_data",
         ":compilation_options",
         ":external_litert_buffer_context",
         ":tensor_buffer",
@@ -208,7 +210,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_accelerator_options",
+        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
         "//litert/c:litert_dispatch_delegate",
@@ -224,8 +226,6 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/compiler/plugin:compiler_plugin",
-        "//litert/core:accelerator",
-        "//litert/core:accelerator_model_compilation_data",
         "//litert/core:build_stamp",
         "//litert/core:environment",
         "//litert/core/model",
@@ -291,10 +291,11 @@ cc_library(
         "//litert/c:litert_compilation_options.h",
     ],
     deps = [
-        "//litert/c:litert_accelerator_options",
+        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_accelerator_compilation_options",
     ],
 )
 
@@ -367,4 +368,51 @@ cc_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "accelerator",
+    hdrs = ["accelerator.h"],
+    deps = [
+        "//litert/c:litert_accelerator_compilation_options",
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
+    name = "accelerator_registry",
+    srcs = ["accelerator_registry.cc"],
+    hdrs = ["accelerator_registry.h"],
+    deps = [
+        ":accelerator",
+        "//litert/c:litert_accelerator_compilation_options",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_shared_library",
+    ],
+)
+
+cc_library(
+    name = "accelerator_model_compilation_data",
+    hdrs = ["accelerator_model_compilation_data.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_accelerator_compilation_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+)
+
+cc_test(
+    name = "accelerator_model_compilation_data_test",
+    srcs = ["accelerator_model_compilation_data_test.cc"],
+    deps = [
+        ":accelerator_model_compilation_data",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_accelerator_compilation_options",
+        "//litert/c:litert_common",
+        "//litert/core:version",
+        "//litert/test:matchers",
+    ],
 )
