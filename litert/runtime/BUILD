@@ -210,6 +210,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_accelerator",
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
