@@ -154,6 +154,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:pool2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
         "//litert/vendors/qualcomm/core/builders:reduce_op_builder",
+        "//litert/vendors/qualcomm/core/builders:relu_op_builder",
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
         "//litert/vendors/qualcomm/core/builders:resize_op_builder",
         "//litert/vendors/qualcomm/core/builders:rms_norm_op_builder",
