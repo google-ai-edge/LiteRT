@@ -24,13 +24,13 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/runtime/gpu_environment.h"
 
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
 #include <poll.h>
 #include <unistd.h>
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
+#include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/opencl/cl_event.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
