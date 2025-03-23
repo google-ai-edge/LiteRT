@@ -538,6 +538,7 @@ cc_test(
 #     deps = [
 #         ":litert_compiled_model",
 #         ":litert_environment",
+#         ":litert_event",
 #         ":litert_model",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
@@ -547,8 +548,11 @@ cc_test(
 #         "@com_google_absl//absl/types:span",
 #         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/c:litert_common",
-#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_event",
+#         "//litert/c:litert_event_type",
+#         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/test:common",
+#         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #         "@org_tensorflow//tensorflow/lite:framework",
 #         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
@@ -573,6 +577,7 @@ cc_test(
 #     deps = [
 #         ":litert_compiled_model",
 #         ":litert_environment",
+#         ":litert_event",
 #         ":litert_model",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
@@ -583,6 +588,7 @@ cc_test(
 #         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/c:litert_runtime_c_api_shared_lib",
 #         "//litert/test:common",
+#         "//litert/test:matchers",
 #         "//litert/test:simple_model",
 #         "@org_tensorflow//tensorflow/lite:framework",
 #         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
