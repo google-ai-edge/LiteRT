@@ -196,6 +196,50 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "benchmark_litert_model",
+    srcs = ["benchmark_litert_model.cc"],
+    hdrs = ["benchmark_litert_model.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_compilation_options",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/c:common",
+        "@org_tensorflow//tensorflow/lite/tools:utils",
+        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
+        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
+    ],
+)
+
+cc_test(
+    name = "benchmark_litert_model_test",
+    srcs = ["benchmark_litert_model_test.cc"],
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+    ],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps =
+        [
+            ":benchmark_litert_model",
+            "@com_google_googletest//:gtest_main",
+            # copybara:uncomment_begin(google-only)
+            # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # copybara:uncomment_end
+            "@org_tensorflow//tensorflow/lite/core/c:c_api_types",
+            "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
+            "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
+        ],
+)
+
 cc_binary(
     name = "run_model",
     srcs = ["run_model.cc"],
@@ -216,5 +260,21 @@ cc_binary(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "@org_tensorflow//tensorflow/lite/profiling:time",
+    ],
+)
+
+# We create a library for benchmark_main.cc to faciliate the creation of a
+# customized benchmark model binary that only needs linking with extra
+# dependency, e.g., enabling creating of benchmark binaries with a custom
+# delegate provider.
+cc_library(
+    name = "benchmark_model_main",
+    srcs = [
+        "benchmark_litert_model_main.cc",
+    ],
+    deps = [
+        ":benchmark_litert_model",
+        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/tools:logging",
     ],
 )

@@ -121,6 +121,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/c:litert_model",
     ],
 )
