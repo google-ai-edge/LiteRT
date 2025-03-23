@@ -203,6 +203,9 @@ cc_binary(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_compiled_model",
