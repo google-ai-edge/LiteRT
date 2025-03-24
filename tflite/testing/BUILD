@@ -640,7 +640,7 @@ cc_library(
         "//tflite/python/interpreter_wrapper:numpy",
         "//tflite/python/interpreter_wrapper:python_utils",
         "@com_google_absl//absl/strings",
-        "@org_tensorflow//third_party/python_runtime:headers",
+        "@local_xla//third_party/python_runtime:headers",
     ],
 )
 
@@ -706,8 +706,8 @@ pybind_extension(
     deps = [
         ":string_util_lib",
         "//tflite/python/interpreter_wrapper:numpy",
+        "@local_xla//third_party/python_runtime:headers",
         "@org_tensorflow//tensorflow/python/lib/core:pybind11_lib",
-        "@org_tensorflow//third_party/python_runtime:headers",
         "@pybind11",
     ],
 )
