@@ -15,6 +15,10 @@ limitations under the License.
 
 #include "tflite/python/interpreter_wrapper/python_error_reporter.h"
 
+#include <Python.h>
+
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 
 namespace tflite {
