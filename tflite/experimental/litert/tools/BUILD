@@ -225,6 +225,9 @@ cc_test(
     data = [
         "//tflite/experimental/litert/test:testdata/mobilenet_v2_1.0_224.tflite",
     ],
+    env = {
+        "ASAN_OPTIONS": "detect_odr_violation=0",
+    },
     tags = [
         "requires-gpu-nvidia",
     ],
@@ -239,29 +242,6 @@ cc_test(
             "//tflite/tools/benchmark:benchmark_model_lib",
             "//tflite/tools/benchmark:benchmark_params",
         ],
-)
-
-cc_binary(
-    name = "run_model",
-    srcs = ["run_model.cc"],
-    deps = [
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        # copybara:uncomment_begin(google-only)
-        # "@org_tensorflow//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
-        # copybara:uncomment_end
-        "//tflite/experimental/litert/c:litert_common",
-        "//tflite/experimental/litert/c:litert_logging",
-        "//tflite/experimental/litert/cc:litert_compiled_model",
-        "//tflite/experimental/litert/cc:litert_environment",
-        "//tflite/experimental/litert/cc:litert_expected",
-        "//tflite/experimental/litert/cc:litert_macros",
-        "//tflite/experimental/litert/cc:litert_model",
-        "//tflite/profiling:time",
-    ],
 )
 
 # We create a library for benchmark_main.cc to faciliate the creation of a
