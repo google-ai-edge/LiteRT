@@ -15,12 +15,9 @@
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
 
-#include <memory>
-
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_accelerator_compilation_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 
 namespace litert::internal {
 
@@ -44,6 +41,9 @@ struct ModelCompilationData {
 
   // Pointer to the start of the model file memory allocation.
   const char* allocation_base;
+  // File descriptor of the model file memory allocation. If there is no such
+  // file descriptor, this must be set to -1.
+  int allocation_fd;
 
  private:
   ModelCompilationData() = default;
