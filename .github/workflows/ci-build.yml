@@ -18,6 +18,10 @@ jobs:
     runs-on: linux-x86-n2-16
     container:
       image: us-central1-docker.pkg.dev/tensorflow-sigs/tensorflow/ml-build:latest
+    if: |
+      github.event.pull_request.user.type == 'Bot' ||
+      github.event.pull_request.user.type == 'Organization' ||
+      contains(github.event.pull_request.labels.*.name, 'external-pr-review')
     timeout-minutes: 60
     strategy:
       matrix:
