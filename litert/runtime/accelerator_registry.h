@@ -17,8 +17,6 @@
 
 #include <cstddef>
 #include <memory>
-#include <string>
-#include <utility>
 #include <vector>
 
 #include "litert/c/litert_common.h"
