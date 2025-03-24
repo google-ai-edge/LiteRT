@@ -54,12 +54,12 @@ cc_library(
         "@com_google_protobuf//:protobuf_headers",
         "@flatbuffers//:runtime_cc",
         "@local_tsl//tsl/platform:status",
+        "@local_xla//third_party/python_runtime:headers",  # build_cleaner: keep; DNR: b/35864863
         "@org_tensorflow//tensorflow/c:kernels",
         "@org_tensorflow//tensorflow/c:tf_status_headers",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
-        "@org_tensorflow//third_party/python_runtime:headers",  # build_cleaner: keep; DNR: b/35864863
     ] + select({
         # This is required when running `tflite_convert` from `bazel`.
         # It requires to link with TensorFlow Ops to get the op definitions.
