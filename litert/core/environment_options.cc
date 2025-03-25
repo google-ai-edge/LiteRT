@@ -14,38 +14,13 @@
 
 #include "litert/core/environment_options.h"
 
-#include <string>
-#include <utility>
+#include <cstring>
+#include <memory>
 
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-
-LiteRtEnvironmentOptionsT::LiteRtEnvironmentOptionsT(
-    LiteRtEnvironmentOptionsT&& other)
-    : options_(std::move(other.options_)),
-      string_option_values_(std::move(other.string_option_values_)) {
-  // Update the string pointers in case they have changed when moving the
-  // container. This can happen because of small string optimization.
-  RefreshStringOptionValuePointers();
-}
-
-LiteRtEnvironmentOptionsT& LiteRtEnvironmentOptionsT::operator=(
-    LiteRtEnvironmentOptionsT&& other) {
-  options_ = std::move(other.options_);
-  string_option_values_ = std::move(other.string_option_values_);
-  // Update the string pointers in case they have changed when moving the
-  // container. This can happen because of small string optimization.
-  RefreshStringOptionValuePointers();
-  return *this;
-}
-
-void LiteRtEnvironmentOptionsT::RefreshStringOptionValuePointers() {
-  for (const auto& [tag, value] : string_option_values_) {
-    options_[tag].str_value = value.c_str();
-  }
-}
 
 litert::Expected<LiteRtAny> LiteRtEnvironmentOptionsT::GetOption(
     LiteRtEnvOptionTag tag) const {
@@ -59,10 +34,12 @@ litert::Expected<LiteRtAny> LiteRtEnvironmentOptionsT::GetOption(
 litert::Expected<void> LiteRtEnvironmentOptionsT::SetOption(
     LiteRtEnvOption option) {
   if (option.value.type == kLiteRtAnyTypeString) {
+    const int size = strlen(option.value.str_value) + 1;
     auto [string_it, _] = string_option_values_.insert_or_assign(
-        option.tag, option.value.str_value);
+        option.tag, std::unique_ptr<char[]>(new char[size]));
+    std::memcpy(string_it->second.get(), option.value.str_value, size);
     LiteRtAny value{/*type=*/kLiteRtAnyTypeString};
-    value.str_value = string_it->second.c_str();
+    value.str_value = string_it->second.get();
     options_[option.tag] = value;
   } else {
     options_[option.tag] = option.value;

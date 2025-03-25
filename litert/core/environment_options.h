@@ -15,7 +15,7 @@
 #ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_ENVIRONMENT_OPTIONS_H_
 #define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_ENVIRONMENT_OPTIONS_H_
 
-#include <string>
+#include <memory>
 #include <unordered_map>
 
 #include "litert/c/litert_any.h"
@@ -26,17 +26,15 @@ class LiteRtEnvironmentOptionsT {
  public:
   LiteRtEnvironmentOptionsT() = default;
 
-  LiteRtEnvironmentOptionsT(LiteRtEnvironmentOptionsT&& other);
-  LiteRtEnvironmentOptionsT& operator=(LiteRtEnvironmentOptionsT&& other);
-
   litert::Expected<LiteRtAny> GetOption(LiteRtEnvOptionTag tag) const;
   litert::Expected<void> SetOption(LiteRtEnvOption option);
 
  private:
-  void RefreshStringOptionValuePointers();
-
   std::unordered_map<LiteRtEnvOptionTag, LiteRtAny> options_;
-  std::unordered_map<LiteRtEnvOptionTag, std::string> string_option_values_;
+  // Note: we don't use a string because we want to ensure pointer stability
+  // which small string optimization may break.
+  std::unordered_map<LiteRtEnvOptionTag, std::unique_ptr<char[]>>
+      string_option_values_;
 };
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_ENVIRONMENT_OPTIONS_H_
