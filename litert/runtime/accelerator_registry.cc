@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_shared_library.h"
+#include "litert/runtime/accelerator.h"
 
 namespace litert::internal {
 
