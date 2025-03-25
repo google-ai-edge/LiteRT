@@ -24,7 +24,6 @@ cc_library(
     srcs = ["dispatch_accelerator.cc"],
     hdrs = ["dispatch_accelerator.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator",
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_accelerator_registration",
@@ -36,6 +35,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime:accelerator_model_compilation_data",
+        "//litert/runtime/accelerators:accelerator_implementation_helper",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
     ],
 )
