@@ -78,19 +78,10 @@ class AcceleratorRegistry {
   auto end() { return accelerators_.end(); }
 
  private:
-  // Warning: the order of these members is VERY important. When the
-  // accelerators are destroyed they call into functions that are in their
-  // libraries. This means that the libraries must be released AFTER the
-  // accelerators are.
-  //
-  // Remember that C++'s order of destruction is the reverse of the order of
-  // construction (which is the same as the order of declaration for class
-  // fields).
-
+  std::vector<Ptr> accelerators_;
   // Some accelerators are loaded as shared libraries. This list keeps these
   // libraries loaded while the environment uses them.
   std::vector<SharedLibrary> accelerator_shared_libraries_;
-  std::vector<Ptr> accelerators_;
 };
 
 }  // namespace litert::internal
