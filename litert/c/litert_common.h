@@ -22,7 +22,9 @@ extern "C" {
 #endif  // __cplusplus
 
 // Declares canonical opaque type.
-#define LITERT_DEFINE_HANDLE(name) typedef struct name##T* name
+#define LITERT_DEFINE_HANDLE(name) \
+  typedef struct name##T* name;    \
+  typedef const struct name##T* name##Const
 
 #if __ANDROID_API__ >= 26
 #define LITERT_HAS_AHWB_SUPPORT 1
@@ -72,6 +74,12 @@ typedef struct LiteRtApiVersion {
   int minor;
   int patch;
 } LiteRtApiVersion;
+
+// Compares `v1` and `v2`.
+//
+// Returns 0 if they are the same, a negative number if v1 < v2 and a positive
+// number if v1 > v2.
+int LiteRtCompareApiVersion(LiteRtApiVersion v1, LiteRtApiVersion v2);
 
 typedef enum {
   kLiteRtStatusOk = 0,
