@@ -37,9 +37,9 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:filesystem",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/lite:model_builder",
-        "@org_tensorflow//tensorflow/lite:stderr_reporter",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite:model_builder",
+        "//tflite:stderr_reporter",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
