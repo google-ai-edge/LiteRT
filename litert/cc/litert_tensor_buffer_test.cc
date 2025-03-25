@@ -50,9 +50,9 @@
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/open_cl_buffer.h"
-#include "litert/runtime/opencl/buffer.h"
-#include "litert/runtime/opencl/cl_command_queue.h"
 #include <CL/cl.h>
+#include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
+#include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 namespace litert {
@@ -609,8 +609,8 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   // TODO(gcarranza): Add ClBuffer ReadLock functionality to LiteRT
   // TensorBuffer. ClBuffer::Unlock currently writes to CL buffer.
 
-  cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
-  cl::ClCommandQueue* queue =
+  tflite::gpu::cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
+  tflite::gpu::cl::CLCommandQueue* queue =
       internal::GpuEnvironmentSingleton::GetInstance().getCommandQueue();
   std::vector<float> read_data;
   auto status = cl_buffer_from_ahwb.ReadData(queue, &read_data);

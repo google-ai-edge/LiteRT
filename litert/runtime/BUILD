@@ -35,7 +35,8 @@ cc_library(
         "//litert/c:litert_event_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/runtime/opencl:cl_event",
+        "@opencl_headers",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
     ],
 )
 
@@ -88,11 +89,11 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_utils",
         "//litert/core/util:tensor_type_util",
-        "//litert/runtime/opencl:buffer",
-        "//litert/runtime/opencl:cl_command_queue",
-        "//litert/runtime/opencl:cl_context",
-        "//litert/runtime/opencl:opencl_wrapper",
         "@opencl_headers",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:buffer",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_context",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
     ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:gl_buffer",
@@ -117,14 +118,15 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
-        "//litert/runtime/opencl:cl_command_queue",
-        "//litert/runtime/opencl:cl_context",
-        "//litert/runtime/opencl:cl_device",
-        "//litert/runtime/opencl:opencl_wrapper",
         "@opencl_headers",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_context",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_device",
+        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
     ],
 )
 
@@ -146,8 +148,8 @@ cc_test(
         # "@ml_drift//ml_drift/cl:opencl_wrapper",
         # copybara:uncomment_end
         "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
         "//litert/cc:litert_any",
-        "//litert/runtime/opencl:opencl_wrapper",
     ],
 )
 

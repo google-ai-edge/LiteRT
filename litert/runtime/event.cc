@@ -31,7 +31,9 @@
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
-#include "litert/runtime/opencl/cl_event.h"
+#include <CL/cl.h>
+#include <CL/cl_platform.h>
+#include "tensorflow/lite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 using litert::Error;
@@ -67,8 +69,14 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
 #endif
   } else if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    return litert::cl::WaitForEvents(/*num_events=*/1,
-                                     /*event_list=*/&opencl_event);
+    cl_int res = tflite::gpu::cl::clWaitForEvents(/*num_events=*/1,
+                                                  /*event_list=*/&opencl_event);
+    if (res != CL_SUCCESS) {
+      return Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("clWaitForEvents fails with error code %d", res));
+    }
+    return {};
 #else
     return Error(kLiteRtStatusErrorUnsupported,
                  "LiteRtEventWait not implemented for this platform");
@@ -96,7 +104,13 @@ LiteRtEventT::~LiteRtEventT() {
 Expected<void> LiteRtEventT::Signal() {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
-    return litert::cl::SetUserEventStatus(opencl_event);
+    cl_int res =
+        tflite::gpu::cl::clSetUserEventStatus(opencl_event, CL_COMPLETE);
+    if (res != CL_SUCCESS) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrFormat(
+                       "clSetUserEventStatus fails with error code %d", res));
+    }
   }
 #endif
   return Error(kLiteRtStatusErrorInvalidArgument,
@@ -107,9 +121,14 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEventType type) {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
     auto& env = litert::internal::GpuEnvironmentSingleton::GetInstance();
-    LITERT_ASSIGN_OR_RETURN(
-        cl_event user_event,
-        litert::cl::CreateUserEvent(env.getContext()->context()));
+    cl_int res;
+    cl_event user_event =
+        tflite::gpu::cl::clCreateUserEvent(env.getContext()->context(), &res);
+    if (res != CL_SUCCESS) {
+      return Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("clCreateUserEvent fails with error code %d", res));
+    }
     return new LiteRtEventT{
         .type = LiteRtEventTypeOpenCl,
         .opencl_event = user_event,

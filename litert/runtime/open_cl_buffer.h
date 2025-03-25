@@ -23,9 +23,8 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
-#include "litert/runtime/opencl/buffer.h"
-#include "litert/runtime/opencl/opencl_wrapper.h"
 #include <CL/cl.h>
+#include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
 
 namespace litert::internal {
 
@@ -45,7 +44,7 @@ class OpenClBuffer {
     other.ahwb_ = nullptr;
   }
 
-  explicit OpenClBuffer(litert::cl::Buffer buffer,
+  explicit OpenClBuffer(tflite::gpu::cl::Buffer buffer,
                         AHardwareBuffer* ahwb = nullptr)
       : buffer_(std::move(buffer)),
         size_(buffer_.GetMemorySizeInBytes()),
@@ -54,9 +53,9 @@ class OpenClBuffer {
   OpenClBuffer(cl_mem buffer, size_t size, LiteRtOpenClDeallocator deallocator)
       : deallocator_(deallocator), size_(size) {
     if (deallocator_ != nullptr) {
-      buffer_ = litert::cl::CreateBufferShared(buffer);
+      buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
     } else {  // The buffer will be deallocated automatically.
-      buffer_ = litert::cl::Buffer(buffer, size);
+      buffer_ = tflite::gpu::cl::Buffer(buffer, size);
     }
   }
 
@@ -88,7 +87,7 @@ class OpenClBuffer {
   absl::Mutex mutex_;
   // The cpu memory buffer pointer.
   void* data_ = nullptr;
-  litert::cl::Buffer buffer_;
+  tflite::gpu::cl::Buffer buffer_;
   LiteRtOpenClDeallocator deallocator_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_ = 0;

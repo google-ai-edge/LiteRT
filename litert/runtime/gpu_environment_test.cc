@@ -23,8 +23,8 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
-#include "litert/runtime/opencl/opencl_wrapper.h"
 
 namespace litert {
 namespace {
@@ -37,9 +37,6 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
 
   if (!ml_drift::cl::LoadOpenCL().ok()) {
     GTEST_SKIP() << "OpenCL not loaded for ml_drift";
-  }
-  if (!litert::cl::LoadOpenCL().ok()) {
-    GTEST_SKIP() << "OpenCL not loaded for litert";
   }
 
   ml_drift::cl::Environment env;

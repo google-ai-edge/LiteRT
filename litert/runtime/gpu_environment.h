@@ -20,9 +20,9 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
-#include "litert/runtime/opencl/cl_command_queue.h"
-#include "litert/runtime/opencl/cl_context.h"
-#include "litert/runtime/opencl/cl_device.h"
+#include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
+#include "tensorflow/lite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
+#include "tensorflow/lite/delegates/gpu/cl/cl_device.h"  // from @org_tensorflow
 
 namespace litert::internal {
 
@@ -33,9 +33,9 @@ class GpuEnvironmentSingleton {
   GpuEnvironmentSingleton(const GpuEnvironmentSingleton&) = delete;
   GpuEnvironmentSingleton& operator=(const GpuEnvironmentSingleton&) = delete;
   ~GpuEnvironmentSingleton() = default;
-  litert::cl::ClDevice* getDevice() { return &device_; }
-  litert::cl::ClContext* getContext() { return &context_; }
-  litert::cl::ClCommandQueue* getCommandQueue() { return &command_queue_; }
+  tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
+  tflite::gpu::cl::CLContext* getContext() { return &context_; }
+  tflite::gpu::cl::CLCommandQueue* getCommandQueue() { return &command_queue_; }
 
   static GpuEnvironmentSingleton& GetInstance() {
     if (instance_ == nullptr) {
@@ -63,9 +63,9 @@ class GpuEnvironmentSingleton {
   // available. Otherwise, create the default device, context and command queue.
   explicit GpuEnvironmentSingleton(LiteRtEnvironmentT* environment);
 
-  litert::cl::ClDevice device_;
-  litert::cl::ClContext context_;
-  litert::cl::ClCommandQueue command_queue_;
+  tflite::gpu::cl::CLDevice device_;
+  tflite::gpu::cl::CLContext context_;
+  tflite::gpu::cl::CLCommandQueue command_queue_;
   static GpuEnvironmentSingleton* instance_;
 };
 
