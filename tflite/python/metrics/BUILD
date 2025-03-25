@@ -74,7 +74,11 @@ pytype_strict_library(
     name = "metrics_interface",
     srcs = ["metrics_interface.py"],
     compatible_with = get_compatible_with_portable(),
-    visibility = ["//tflite/tools/pip_package:__subpackages__"],
+    # copybara:uncomment_begin(google-only)
+    # visibility = ["//tflite/tools/pip_package:__subpackages__"],
+    # copybara:uncomment_end_and_comment_begin
+    visibility = ["//visibility:public"],
+    # copybara:comment_end
 )
 
 genrule(
