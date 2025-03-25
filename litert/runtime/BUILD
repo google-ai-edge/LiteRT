@@ -49,7 +49,7 @@ cc_library(
         "gl_buffer.cc",
         "gl_texture.cc",
         "ion_buffer.cc",
-        "open_cl_buffer.cc",
+        "open_cl_memory.cc",
         "tensor_buffer.cc",
     ],
     hdrs = [
@@ -60,7 +60,7 @@ cc_library(
         "gl_buffer.h",
         "gl_texture.h",
         "ion_buffer.h",
-        "open_cl_buffer.h",
+        "open_cl_memory.h",
         "tensor_buffer.h",
         "tensor_buffer_requirements.h",
         "//litert/c:litert_event.h",
