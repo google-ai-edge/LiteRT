@@ -45,7 +45,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -448,7 +447,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
-        buffer->buffer_type() == kLiteRtTensorBufferTypeOpenClBuffer;
+        buffer->buffer_type() == kLiteRtTensorBufferTypeOpenCl;
 #if defined(__ANDROID__)
     if (buffer->buffer_type() == kLiteRtTensorBufferTypeAhwb) {
       if (__builtin_available(android 26, *)) {
