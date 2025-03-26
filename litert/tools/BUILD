@@ -213,6 +213,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
         "@org_tensorflow//tensorflow/lite/c:common",
+        "@org_tensorflow//tensorflow/lite/tools:command_line_flags",
         "@org_tensorflow//tensorflow/lite/tools:utils",
         "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
         "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
@@ -277,5 +278,27 @@ cc_library(
         ":benchmark_litert_model",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
         "@org_tensorflow//tensorflow/lite/tools:logging",
+    ],
+)
+
+cc_library(
+    name = "benchmark_stripped_litert_model",
+    srcs = ["benchmark_stripped_litert_model.cc"],
+    hdrs = ["benchmark_stripped_litert_model.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":benchmark_litert_model",
+        "@flatbuffers//:runtime_cc",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_model",
+        "@org_tensorflow//tensorflow/lite:model_builder",
+        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/c:common",
+        "@org_tensorflow//tensorflow/lite/tools:logging",
+        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
+        "@org_tensorflow//tensorflow/lite/tools/strip_buffers:stripping_lib",
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
     ],
 )

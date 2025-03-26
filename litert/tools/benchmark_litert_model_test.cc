@@ -54,8 +54,9 @@ TEST(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
   params.Set<int>("num_runs", 1);
   params.Set<int>("warmup_runs", 0);
-  params.Set<bool>("use_xnnpack", true);
+  params.Set<bool>("use_cpu", true);
   params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", true);
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
   TestBenchmarkListener listener;
   benchmark.AddListener(&listener);
@@ -73,8 +74,9 @@ TEST(BenchmarkLiteRtModelTest, GPUAcceleration) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
   params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
-  params.Set<bool>("use_xnnpack", false);
+  params.Set<bool>("use_cpu", false);
   params.Set<bool>("use_gpu", true);
+  params.Set<bool>("require_full_delegation", true);
 
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
 

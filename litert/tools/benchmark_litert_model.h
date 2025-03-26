@@ -36,6 +36,7 @@ limitations under the License.
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
 #include "tensorflow/lite/tools/benchmark/benchmark_model.h"  // from @org_tensorflow
 #include "tensorflow/lite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
+#include "tensorflow/lite/tools/command_line_flags.h"  // from @org_tensorflow
 #include "tensorflow/lite/tools/utils.h"  // from @org_tensorflow
 
 namespace litert {
@@ -61,8 +62,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("graph", BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("signature_to_run_for",
                             BenchmarkParam::Create<std::string>(""));
-    default_params.AddParam("use_xnnpack", BenchmarkParam::Create<bool>(true));
+    default_params.AddParam("use_cpu", BenchmarkParam::Create<bool>(true));
     default_params.AddParam("use_gpu", BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("require_full_delegation",
+                            BenchmarkParam::Create<bool>(true));
 
     return default_params;
   }
@@ -96,6 +99,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
       return kTfLiteError;
     }
     auto signature = params_.Get<std::string>("signature_to_run_for");
+    if (signature.empty()) {
+      signature = model_->GetSignature(0)->Key();
+    }
     if (compiled_model_->Run(signature, *input_buffers_, *output_buffers_)) {
       return kTfLiteOk;
     } else {
@@ -137,9 +143,27 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   }
 
   TfLiteStatus ResetInputsAndOutputs() override { return kTfLiteOk; }
+  std::vector<tflite::Flag> GetFlags() override {
+    std::vector<tflite::Flag> flags = BenchmarkModel::GetFlags();
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "graph", &params_, "The path to the model file."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "signature_to_run_for", &params_, "The signature to run for."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "use_cpu", &params_, "Whether to use CPU accelerator."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "use_gpu", &params_, "Whether to use GPU accelerator."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "require_full_delegation", &params_,
+        "Whether to require full delegation."));
+    return flags;
+  }
+
+ protected:
+  virtual TfLiteStatus LoadModel();
+  std::unique_ptr<Model> model_;
 
  private:
-  Model model_;
   std::unique_ptr<litert::CompiledModel> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
