@@ -1,0 +1,289 @@
+# Copyright 2024 The TensorFlow Authors. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+
+"""Basic types used in the LiteRt AOT flow."""
+
+import abc
+from collections.abc import Iterable
+import dataclasses
+import pathlib
+from typing import Any, Mapping, MutableMapping, Protocol, Self, Type, TypeAlias
+
+
+@dataclasses.dataclass(frozen=True)
+class SubgraphPartitionStats:
+  """Subgraph partition stats."""
+
+  subgraph_index: int
+  num_ops_offloaded: int
+  num_total_ops: int
+  num_partitions_offloaded: int
+
+
+@dataclasses.dataclass(frozen=True)
+class PartitionStats:
+  """Model partition stats."""
+
+  subgraph_stats: list[SubgraphPartitionStats]
+
+
+class Model:
+  """A model.
+
+  Note: If the model is not in memory, data_ will be a path to a file on disk.
+  If the model is in memory, data_ will be the model bytes.
+
+  However, there's no guarantee that the path will be a valid path to a file
+  on disk, and/or that the file are a valid TFLite model.
+  """
+
+  data_: pathlib.Path | bytes
+  partition_stats: PartitionStats | None = None
+
+  def __init__(
+      self,
+      path: pathlib.Path | str | None = None,
+      model_bytes: bytes | None = None,
+  ):
+    if path is not None:
+      if isinstance(path, str):
+        path = pathlib.Path(path)
+      assert not model_bytes
+      self.data_ = path
+    else:
+      assert model_bytes is not None
+      self.data_ = model_bytes
+
+  @property
+  def in_memory(self) -> bool:
+    return isinstance(self.data_, bytes)
+
+  @property
+  def path(self) -> pathlib.Path:
+    assert isinstance(self.data_, pathlib.Path)
+    return self.data_
+
+  @property
+  def model_bytes(self) -> bytes:
+    assert isinstance(self.data_, bytes)
+    return self.data_
+
+  @classmethod
+  def create_from_path(cls, path: pathlib.Path) -> Self:
+    return Model(path=path, model_bytes=None)
+
+  @classmethod
+  def create_from_bytes(cls, model_bytes: bytes) -> Self:
+    return Model(path=None, model_bytes=model_bytes)
+
+  def set_path(self, path: pathlib.Path | str):
+    if isinstance(path, str):
+      path = pathlib.Path(path)
+    self.data_ = path
+
+  def set_bytes(self, model_bytes: bytes):
+    self.data_ = model_bytes
+
+  def load(self):
+    assert isinstance(self.data_, pathlib.Path)
+    self.data_ = self.data_.read_bytes()
+
+  def save(self, path: pathlib.Path | str):
+    assert isinstance(self.data_, bytes)
+    if isinstance(path, str):
+      path = pathlib.Path(path)
+    path.write_bytes(self.data_)
+    self.data_ = path
+
+
+@dataclasses.dataclass()
+class CompiledModels:
+  """A collection of compiled models."""
+
+  models_with_backend: list[tuple['Backend', Model]] = dataclasses.field(
+      default_factory=list
+  )
+
+  @property
+  def models(self) -> list[Model]:
+    return [model for _, model in self.models_with_backend]
+
+  def load(self):
+    for _, model in self.models_with_backend:
+      if not model.in_memory:
+        model.load()
+
+  def export(self, output_dir: pathlib.Path | str, model_name: str = 'model'):
+    if isinstance(output_dir, str):
+      output_dir = pathlib.Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for backend, model in self.models_with_backend:
+      model.save(
+          output_dir / (model_name + backend.target_id_suffix + '.tflite')
+      )
+
+  def compilation_report(self) -> str:
+    """Returns a human readable compilation report."""
+    report = []
+    for backend, model in self.models_with_backend:
+      report.append(f'Backend: {backend.id()}')
+      report.append(f'  Target: {backend.target_id_suffix}')
+      report.append(f'  Partition Stats: {model.partition_stats}')
+    return '\n'.join(report)
+
+
+class Component(Protocol):
+  """An arbitrary module in the AOT flow that inputs and outputs a Model.
+
+  For example quantizer, graph rewriter, compiler plugin etc.
+  """
+
+  @property
+  def component_name(self) -> str:
+    ...
+
+  def __call__(self, input_model: Model, output_model: Model, *args, **kwargs):
+    ...
+
+
+# A user provided configuration. This will contain all the information needed
+# to select the proper backend and run components (e.g. quant recipe,
+# backend id etc). Backends will validate and resolve configurations and are
+# ultimately responsible deciding how to configure the components.
+# NOTE: Consider a typed config approach (proto, data class, etc.)
+Config: TypeAlias = MutableMapping[str, Any]
+
+
+# Backend specific compilation configuration.
+BackendCompilationConfig: TypeAlias = Mapping[str, Any]
+
+
+# The following is experimental and for protyping only.
+class CompilationConfig:
+  """A typed configuration."""
+
+  target: 'Target'
+  compilation_config: BackendCompilationConfig = dataclasses.field(
+      default_factory=dict
+  )
+  quant_recipe: str | None = None
+
+  def __init__(self, target: 'Target', **kwargs: Any):
+    self.target = target
+    self.quant_recipe = kwargs.pop('quantize_recipe', None)
+    self.compilation_config = kwargs
+
+  def to_dict(self) -> dict[str, Any]:
+    ret = self.target.flatten() | self.compilation_config
+    if self.quant_recipe is not None:
+      ret['quantize_recipe'] = self.quant_recipe
+    return ret
+
+
+class Backend(metaclass=abc.ABCMeta):
+  """A backend pertaining to a particular SoC vendor.
+
+  Mainly responsible for resolving configurations and managing vendor specific
+  resources (e.g. .so etc).
+  """
+
+  # NOTE: Only initialize through "create".
+  def __init__(self, config: Config):
+    self._config = config
+
+  @classmethod
+  @abc.abstractmethod
+  def create(cls, config: Config) -> Self:
+    """Creates a backend instance.
+
+    If no target is specified, the backend will represent all targets.
+
+    Args:
+      config: The compilation configuration.
+
+    Returns:
+      The backend instance.
+    """
+
+  @classmethod
+  @abc.abstractmethod
+  def id(cls) -> str:
+    pass
+
+  @property
+  @abc.abstractmethod
+  def target_id_suffix(self) -> str:
+    pass
+
+  @property
+  def config(self) -> Config:
+    return self._config
+
+  @property
+  def soc_manufacturer(self) -> str:
+    """Manufacturer name or enum."""
+    raise NotImplementedError()
+
+  @property
+  def soc_model(self) -> str:
+    """Model name or enum."""
+    raise NotImplementedError()
+
+  @property
+  def shared_pass_names(self) -> list[str]:
+    """Names of shared passes."""
+    raise NotImplementedError()
+
+  @property
+  def quantize_recipe(self) -> str | None:
+    """Optional quantization recipe."""
+    return None
+
+  @abc.abstractmethod
+  def call_component(
+      self, input_model: Model, output_model: Model, component: Component
+  ):
+    pass
+
+  def specialize(self) -> Iterable['Backend']:
+    yield self
+
+
+BackendT: TypeAlias = Type[Backend]
+
+
+class Target(metaclass=abc.ABCMeta):
+  """Compilation target."""
+
+  @abc.abstractmethod
+  def __hash__(self) -> int:
+    pass
+
+  @abc.abstractmethod
+  def __eq__(self, other) -> bool:
+    pass
+
+  @abc.abstractmethod
+  def __repr__(self) -> str:
+    pass
+
+  @classmethod
+  @abc.abstractmethod
+  def backend_id(cls) -> str:
+    pass
+
+  @abc.abstractmethod
+  def flatten(self) -> dict[str, Any]:
+    return {'backend_id': self.backend_id()}
