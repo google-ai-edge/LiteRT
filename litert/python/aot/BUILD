@@ -35,6 +35,19 @@ pytype_strict_library(
     ],
 )
 
+pytype_strict_library(
+    name = "aot_compile",
+    srcs = ["aot_compile.py"],
+    deps = [
+        ":prepare_for_npu",
+        "//litert/python/aot/core:apply_plugin",
+        "//litert/python/aot/core:components",
+        "//litert/python/aot/core:mlir_transforms",
+        "//litert/python/aot/core:types",
+        "//litert/python/aot/vendors:import_vendor",
+    ],
+)
+
 pytype_strict_contrib_test(
     name = "prepare_for_npu_test",
     srcs = ["prepare_for_npu_test.py"],

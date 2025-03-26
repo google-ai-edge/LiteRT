@@ -43,7 +43,6 @@ pytype_strict_library(
     name = "vendors",
     srcs = ["__init__.py"],
     deps = [
-        ":import_vendor",
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
     ],

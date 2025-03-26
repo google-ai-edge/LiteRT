@@ -19,7 +19,7 @@ import abc
 from collections.abc import Iterable
 import dataclasses
 import pathlib
-from typing import Any, Mapping, MutableMapping, Protocol, Self, Type, TypeAlias
+from typing import Any, MutableMapping, Protocol, Self, Type, TypeAlias
 
 
 @dataclasses.dataclass(frozen=True)
@@ -167,7 +167,7 @@ Config: TypeAlias = MutableMapping[str, Any]
 
 
 # Backend specific compilation configuration.
-BackendCompilationConfig: TypeAlias = Mapping[str, Any]
+BackendCompilationConfig: TypeAlias = MutableMapping[str, Any]
 
 
 # The following is experimental and for protyping only.
