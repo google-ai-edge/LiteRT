@@ -84,6 +84,7 @@ const auto kSupportedOps =
                     "simple_space_to_depth_op.tflite",
                     "simple_resize_nearest_neighbor_op.tflite",
                     "simple_relu_op.tflite",
+                    "simple_conv_2d_fused_relu_op.tflite",
                     kFeedForwardModel,
                     kKeyEinsumModel,
                     kQueryEinsumModel,

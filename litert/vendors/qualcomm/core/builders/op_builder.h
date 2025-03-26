@@ -19,6 +19,15 @@ enum class PaddingType {
   Valid,
 };
 
+typedef enum {
+  FusedActivationNone = 0,
+  FusedActivationRelu = 1,
+  FusedActivationReluN1To1 = 2,
+  FusedActivationRelu6 = 3,
+  FusedActivationTanh = 4,
+  FusedActivationSignBit = 5,
+} FusedActivationType;
+
 std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
     const std::uint32_t input_size, const std::uint32_t filter_size,
     const std::uint32_t stride, const std::uint32_t dilation_rate,
@@ -31,6 +40,10 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
                                     const TensorWrapper& input_tensor,
                                     const TensorWrapper& output_tensor);
 
+void AddFusedActivationNode(std::vector<OpWrapper>& res,
+                            const uint32_t fused_activation_function,
+                            const TensorWrapper& input_tensor,
+                            const TensorWrapper& output_tensor);
 }  // namespace qnn
 
 #endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_OP_BUILDER_H_

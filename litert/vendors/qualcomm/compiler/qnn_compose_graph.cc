@@ -511,12 +511,15 @@ LiteRtStatus ConvertOp(
       int32_t dilation_h_factor;
       LITERT_RETURN_IF_ERROR(
           LiteRtGetConv2dDilationWOption(litert_op.Get(), &dilation_h_factor));
+      uint32_t fused_activation;
+      LITERT_RETURN_IF_ERROR(LiteRtGetConv2dFusedActivationOption(
+          litert_op.Get(), &fused_activation));
 
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
       op_wrappers = ::qnn::BuildConv2dOp(
           tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
-          dilation_h_factor, dilation_w_factor, qnn_padding);
+          dilation_h_factor, dilation_w_factor, fused_activation, qnn_padding);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d: {
@@ -535,12 +538,15 @@ LiteRtStatus ConvertOp(
       int32_t dilation_h_factor;
       LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDilationHOptions(
           litert_op.Get(), &dilation_h_factor));
+      uint32_t fused_activation;
+      LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dFusedActivationOption(
+          litert_op.Get(), &fused_activation));
 
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
       op_wrappers = ::qnn::BuildDepthwiseConv2dOp(
           tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
-          dilation_h_factor, dilation_w_factor, qnn_padding);
+          dilation_h_factor, dilation_w_factor, fused_activation, qnn_padding);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d: {

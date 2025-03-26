@@ -34,7 +34,8 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs, const std::uint32_t stride_h,
     const std::uint32_t stride_w, const std::uint32_t dilation_h,
-    const std::uint32_t dilation_w, const PaddingType padding_type) {
+    const std::uint32_t dilation_w, const std::uint32_t fused_activation,
+    const PaddingType padding_type) {
   std::vector<OpWrapper> res;
 
   // reshape filter
@@ -57,6 +58,19 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     reshape_op.AddOutputTensor(*reshaped_filter_tensor);
   }
 
+  TensorWrapper* conv2d_output_tensor = nullptr;
+
+  // If Conv2d fused activation is available, create a new tensor for the
+  // output of Conv2d, which is also the input of the activation op.
+  if (fused_activation != FusedActivationNone) {
+    conv2d_output_tensor = &tensor_pool.CreateNativeTensor(
+        outputs[kOutputIndex].get().GetDataType(),
+        outputs[kOutputIndex].get().GetQuantParams(),
+        outputs[kOutputIndex].get().GetDims());
+  } else {
+    conv2d_output_tensor = &outputs[kOutputIndex].get();
+  }
+
   // conv
   OpWrapper& conv_op = CreateOpWrapper(res, QNN_OP_DEPTH_WISE_CONV_2D);
   TensorWrapper& input_tensor = inputs[kInputIndex];
@@ -70,8 +84,7 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
     conv_op.AddInputTensor(bias_tensor);
   }
 
-  TensorWrapper& output_tensor = outputs[kOutputIndex];
-  conv_op.AddOutputTensor(output_tensor);
+  conv_op.AddOutputTensor(*conv2d_output_tensor);
   // TODO: fused activation
 
   // stride param
@@ -111,6 +124,12 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
       sizeof(decltype(padding_data)::value_type) * padding_data.size(),
       padding_data.data());
   conv_op.AddTensorParam(QNN_OP_CONV_2D_PARAM_PAD_AMOUNT, padding_tensor);
+
+  // Fused activation if available.
+  if (fused_activation != FusedActivationNone) {
+    AddFusedActivationNode(res, fused_activation, *conv2d_output_tensor,
+                           outputs[0].get());
+  }
 
   return res;
 }

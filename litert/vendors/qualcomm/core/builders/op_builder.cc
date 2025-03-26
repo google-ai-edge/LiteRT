@@ -8,8 +8,10 @@
 #include <utility>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "third_party/qairt/latest/include/QNN/QnnOpDef.h"
 
 namespace qnn {
 
@@ -61,6 +63,23 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
   ret.AddInputTensor(input_tensor);
   ret.AddOutputTensor(output_tensor);
   return ret;
+}
+
+void AddFusedActivationNode(std::vector<OpWrapper>& res,
+                            const uint32_t fused_activation_function,
+                            const TensorWrapper& input_tensor,
+                            const TensorWrapper& output_tensor) {
+  switch (fused_activation_function) {
+    case FusedActivationRelu: {
+      CreateSimpleActivationOp(res, QNN_OP_RELU, input_tensor, output_tensor);
+      break;
+    }
+    default: {
+      QNN_LOG_WARNING("Unsupported fused activation function: %d",
+                      fused_activation_function);
+      break;
+    }
+  }
 }
 
 /*
