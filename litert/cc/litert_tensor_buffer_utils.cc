@@ -33,22 +33,12 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "DmaBuf";
     case kLiteRtTensorBufferTypeFastRpc:
       return "FastRpc";
+    case kLiteRtTensorBufferTypeOpenCl:
+      return "OpenCl";
     case kLiteRtTensorBufferTypeGlBuffer:
       return "GlBuffer";
     case kLiteRtTensorBufferTypeGlTexture:
       return "GlTexture";
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-      return "OpenClBuffer";
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      return "OpenClBufferFp16";
-    case kLiteRtTensorBufferTypeOpenClTexture:
-      return "OpenClTexture";
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      return "OpenClTextureFp16";
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-      return "OpenClImageBuffer";
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      return "OpenClImageBufferFp16";
   }
   LITERT_LOG(LITERT_ERROR, "Unexpected value for LiteRtTensorBufferType: %d",
              static_cast<int>(buffer_type));

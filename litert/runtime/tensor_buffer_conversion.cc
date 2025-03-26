@@ -171,7 +171,7 @@ Expected<LiteRtTensorBufferT::Ptr> TensorBufferConvertGlTo(
                           BufferTypeToString(tensor_buffer.buffer_type()),
                           BufferTypeToString(buffer_type)));
 #endif
-    case kLiteRtTensorBufferTypeOpenClBuffer:
+    case kLiteRtTensorBufferTypeOpenCl:
 #if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
       return TensorBufferConvertGlToCl(tensor_buffer);
 #else
