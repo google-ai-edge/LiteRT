@@ -32,6 +32,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -486,18 +487,18 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> input_buffers,
       CreateInputBuffersOfType(*model, signature_key,
-                               kLiteRtTensorBufferTypeOpenCl,
+                               kLiteRtTensorBufferTypeOpenClBuffer,
                                sizeof(float) * kTestInput0Size));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> output_buffers,
       CreateOutputBuffersOfType(*model, signature_key,
-                                kLiteRtTensorBufferTypeOpenCl,
+                                kLiteRtTensorBufferTypeOpenClBuffer,
                                 sizeof(float) * kTestOutputSize));
 
   // Fill model inputs.
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
-  EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenClBuffer);
   {
     TensorBuffer opencl_buffer(input_0_buffer, /*owned=*/false);
     opencl_buffer.Write<float>(

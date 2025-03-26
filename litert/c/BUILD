@@ -263,6 +263,7 @@ cc_test(
         ":litert_common",
         ":litert_model",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_layout",
         "//litert/runtime:tensor_buffer",

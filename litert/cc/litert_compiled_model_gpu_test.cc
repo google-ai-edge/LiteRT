@@ -68,10 +68,12 @@ void BasicTest() {
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
-  EXPECT_EQ(*input_buffers[0].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*input_buffers[0].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  EXPECT_EQ(*input_buffers[1].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*input_buffers[1].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
@@ -82,7 +84,8 @@ void BasicTest() {
   auto output_names = signatures[0].OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
-  EXPECT_EQ(*output_buffers[0].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*output_buffers[0].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   {
     auto lock_and_addr =
         litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
@@ -158,10 +161,12 @@ TEST(CompiledModelGpuTest, Async) {
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
-  EXPECT_EQ(*input_buffers[0].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*input_buffers[0].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  EXPECT_EQ(*input_buffers[1].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*input_buffers[1].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
@@ -186,7 +191,8 @@ TEST(CompiledModelGpuTest, Async) {
   auto output_names = signatures[0].OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
-  EXPECT_EQ(*output_buffers[0].BufferType(), kLiteRtTensorBufferTypeOpenCl);
+  EXPECT_EQ(*output_buffers[0].BufferType(),
+            kLiteRtTensorBufferTypeOpenClBuffer);
   {
     auto lock_and_addr =
         litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
