@@ -29,8 +29,8 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/task/buffer_desc.h"
 #include "tflite/delegates/gpu/common/task/compiler_options.h"
 #include "tflite/delegates/gpu/common/task/gpu_tensor.h"
-#include "tflite/delegates/gpu/common/task/serialization_base_generated.h"
 #include "tflite/delegates/gpu/common/task/tensor_desc.h"
+#include "tflite/delegates/gpu/common/task/tflite_serialization_base_generated.h"
 #include "tflite/delegates/gpu/common/task/tuning_type.h"
 #include "tflite/delegates/gpu/common/types.h"
 

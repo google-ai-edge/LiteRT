@@ -27,7 +27,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/gpu_info.h"
 #include "tflite/delegates/gpu/common/status.h"
-#include "tflite/delegates/gpu/common/task/serialization_base_generated.h"
+#include "tflite/delegates/gpu/common/task/tflite_serialization_base_generated.h"
 
 namespace tflite {
 namespace gpu {
