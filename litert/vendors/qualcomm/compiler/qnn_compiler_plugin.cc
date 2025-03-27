@@ -1,3 +1,4 @@
+
 // Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
@@ -41,7 +41,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
-
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
 using LiteRtContextHandleIdx = uint32_t;
@@ -72,35 +71,6 @@ constexpr const char* kSocModelsSupportsWeightSharing[] = {
   "V79",
 };
 
-constexpr LiteRtOpCode kSupportedOps[] = {
-  kLiteRtOpCodeTflAdd,
-  kLiteRtOpCodeTflDiv,
-  kLiteRtOpCodeTflMul,
-  kLiteRtOpCodeTflRsqrt,
-  kLiteRtOpCodeTflSlice,
-  kLiteRtOpCodeTflSelect,
-  kLiteRtOpCodeTflSelectV2,
-  kLiteRtOpCodeTflSub,
-  kLiteRtOpCodeTflTanh,
-  kLiteRtOpCodeTflBatchMatmul,
-  kLiteRtOpCodeTflReshape,
-  kLiteRtOpCodeTflSum,
-  kLiteRtOpCodeTflConcatenation,
-  kLiteRtOpCodeTflSoftmax,
-  kLiteRtOpCodeTflCast,
-  kLiteRtOpCodeTflTranspose,
-  kLiteRtOpCodeTflSin,
-  kLiteRtOpCodeTflCos,
-  kLiteRtOpCodeTflFullyConnected,
-  kLiteRtOpCodeTflEmbeddingLookup,
-  kLiteRtOpCodeTflLogicalAnd,
-  kLiteRtOpCodeTflLess,
-  kLiteRtOpCodeTflGreater,
-  kLiteRtOpCodeTflGelu,
-  kLiteRtOpCodeTflDynamicUpdateSlice,
-  kLiteRtOpCodeTflPack,
-  kLiteRtOpCodeTflQuantize,
-};
 // clang-format on
 
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
@@ -151,7 +121,6 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(
   *supported_hardware = kLiteRtHwAcceleratorNpu;
   return kLiteRtStatusOk;
 }
-
 LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtParamIndex* num_supported_soc_models) {
@@ -304,6 +273,13 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
         op, tensor_pool, input_tensors, output_tensors, op_wrappers));
+    tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
+      // TODO(chunhsue): Use compile interface to get useQInt16AsQUint16.
+      constexpr bool useQInt16AsQUint16 = true;
+      if constexpr (useQInt16AsQUint16) {
+        tensor_wrapper.ConvertQint16ToQuint16();
+      }
+    });
     // Empty op_wrappers means the op is not supported by QNN.
     if (op_wrappers.empty()) {
       continue;

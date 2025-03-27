@@ -1,6 +1,5 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
-
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert/vendors/qualcomm:__subpackages__"],
@@ -28,12 +27,14 @@ cc_library(
 
 cc_library(
     name = "miscs",
+    srcs = ["miscs.cc"],
     hdrs = ["miscs.h"],
     tags = [
         # Don't build/test in OS until qnn is available.
         "nobuilder",
     ],
     deps = [
+        "@com_google_absl//absl/types:span",
     ],
 )
 

@@ -1,3 +1,4 @@
+
 // Copyright 2024 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,7 +33,6 @@
 #include "litert/vendors/qualcomm/compiler/IR/qnn_op.h"
 #include "litert/vendors/qualcomm/compiler/legalizations/quantize_op_legalization.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
-
 namespace litert {
 namespace {
 
@@ -84,7 +84,6 @@ const auto kSupportedOps =
                     "simple_space_to_depth_op.tflite",
                     "simple_resize_nearest_neighbor_op.tflite",
                     "simple_relu_op.tflite",
-                    "simple_conv_2d_fused_relu_op.tflite",
                     kFeedForwardModel,
                     kKeyEinsumModel,
                     kQueryEinsumModel,
@@ -95,13 +94,13 @@ const auto kSupportedOps =
                     kRMSNormModel,
                     kSDPAModel,
                     kAttentionModel,
-                    kTransformerBlockModel
-                    // kQSimpleMul16x16Model,
-                    // kQMulAdd16x16Model,
-                    // kQQueryEinsum16x8Model,
-                    // kQKeyEinsum16x8Model,
-                    // kQVauleEinsum16x8Model,
-                    // kQAttnVecEinsum16x8Model
+                    kTransformerBlockModel,
+                    kQSimpleMul16x16Model,
+                    kQMulAdd16x16Model,
+                    kQQueryEinsum16x8Model,
+                    kQKeyEinsum16x8Model,
+                    kQVauleEinsum16x8Model,
+                    kQAttnVecEinsum16x8Model
                     );
 
 const auto kSupportedSocModels = Values(
