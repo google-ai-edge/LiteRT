@@ -266,6 +266,25 @@ LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOptions(
 
 //==============================================================================
 //
+// Get option APIs for LiteRt TransposeConv op.
+//  Options:
+// - padding : uint32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - fused_activation_function : uint32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetTransposeConvPaddingOption(LiteRtOp op,
+                                                   uint32_t* padding);
+LiteRtStatus LiteRtGetTransposeConvStrideWOption(LiteRtOp op,
+                                                   int32_t* stride_w);
+LiteRtStatus LiteRtGetTransposeConvStrideHOption(LiteRtOp op,
+                                                   int32_t* stride_h);
+LiteRtStatus LiteRtGetTransposeConvFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt AveragePool2d op.
 //  Options:
 // - padding : uint32_t
