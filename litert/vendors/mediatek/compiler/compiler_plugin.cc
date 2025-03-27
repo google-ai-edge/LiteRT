@@ -310,8 +310,8 @@ Expected<std::vector<uint8_t>> CompilePartition(
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  static constexpr char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXX";
-  char* dla_directory_name = mkdtemp(const_cast<char*>(dla_directory_template));
+  char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
+  char* dla_directory_name = mkdtemp(dla_directory_template);
   if (dla_directory_name == nullptr) {
     LITERT_LOG(LITERT_ERROR, "Failed to make DLA temporary directory")
     return kLiteRtStatusErrorFileIO;
