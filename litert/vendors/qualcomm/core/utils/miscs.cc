@@ -24,4 +24,19 @@ void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
     dst.emplace_back(data - kUint16ZeroPoint);
   }
 }
+
+void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
+                               size_t num_bytes) {
+  dst.clear();
+  const std::uint8_t* byte_data = reinterpret_cast<const std::uint8_t*>(src);
+  for (size_t i = 0; i < num_bytes; i++) {
+    std::uint8_t byte = byte_data[i];
+    std::int8_t lower = byte & 0x0F;
+    std::int8_t upper = (byte >> 4) & 0x0F;
+    if (lower > 7) lower -= 16;
+    if (upper > 7) upper -= 16;
+    dst.emplace_back(lower);
+    dst.emplace_back(upper);
+  }
+}
 }  // namespace qnn
