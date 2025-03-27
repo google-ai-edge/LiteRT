@@ -13,9 +13,9 @@
 # limitations under the License.
 
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
-load("//third_party/bazel_skylib/rules:common_settings.bzl", "bool_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//litert/python/aot/core:build_defs.bzl", "tflxx_deps_if_enabled")
-load("//tools/build_defs/testing:bzl_library.bzl", "bzl_library")
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -138,6 +138,6 @@ pytype_strict_contrib_test(
 bzl_library(
     name = "build_defs_bzl",
     srcs = ["build_defs.bzl"],
-    parse_tests = False,
+    # copybara:uncomment parse_tests = False,
     visibility = ["//visibility:private"],
 )

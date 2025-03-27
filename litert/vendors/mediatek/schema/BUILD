@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
-load("@org_tensorflow//tensorflow:tensorflow.google.bzl", "get_compatible_with_portable")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -23,7 +22,6 @@ package(
 flatbuffer_cc_library(
     name = "neuron_litert_schema",
     srcs = ["neuron_schema.fbs"],
-    compatible_with = get_compatible_with_portable(),
 )
 
 cc_library(

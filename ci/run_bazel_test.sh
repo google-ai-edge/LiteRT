@@ -115,7 +115,6 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/cc:litert_compiled_model_test"
         "-//litert/compiler/plugin:algo_test"
         "-//litert/runtime:compiled_model_test"
-        "-//litert/runtime:environment_test"
         "-//litert/runtime/compiler:jit_compilation_mediatek_test"
         "-//litert/runtime/compiler:jit_compilation_qualcomm_test"
         "-//litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
