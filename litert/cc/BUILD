@@ -158,6 +158,9 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer",
+    srcs = [
+        "litert_tensor_buffer_requirements.cc",
+    ],
     hdrs = [
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
@@ -176,6 +179,7 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/runtime:tensor_buffer",
         "@opencl_headers",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
     ],
