@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("//litert/build_common:special_rule.bzl", "gles_linkopts")
-load("//litert/integration_test:run_on_device.bzl", "GOOGLE_TENSOR_ID", "MEDIATEK_ID", "QUALCOMM_ID", "run_on_device")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -136,7 +135,6 @@ cc_test(
     name = "dispatch_delegate_qualcomm_test",
     srcs = ["dispatch_delegate_qualcomm_test.cc"],
     data = [
-        "//litert/c:libLiteRtRuntimeCApi.so",
         "//litert/test:testdata/shared_input_cpu_npu.tflite",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
     ],
@@ -206,45 +204,3 @@ cc_test(
         "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
     ],
 )
-
-# copybara:uncomment_begin(google-only)
-# 
-# run_on_device(
-#     name = "dispatch_delegate_google_tensor_test_run_on_google_tensor",
-#     backend_id = GOOGLE_TENSOR_ID,
-#     data = [
-#         "//litert/test:testdata/shared_input_cpu_npu.tflite",
-#         "//litert/test:testdata/simple_model_google_tensor.bin",
-#         "//litert/test:testdata/simple_model_npu.tflite",
-#     ],
-#     exec_args = [],
-#     exec_env_vars = [],
-#     target = ":dispatch_delegate_google_tensor_test",
-# )
-# 
-# run_on_device(
-#     name = "dispatch_delegate_qualcomm_test_run_on_qualcomm",
-#     backend_id = QUALCOMM_ID,
-#     data = [
-#         "//litert/test:testdata/shared_input_cpu_npu.tflite",
-#         "//litert/test:testdata/simple_model_npu.tflite",
-#         "//litert/test:testdata/simple_model_qualcomm.bin",
-#     ],
-#     exec_args = [],
-#     exec_env_vars = [],
-#     target = ":dispatch_delegate_qualcomm_test",
-# )
-# 
-# run_on_device(
-#     name = "dispatch_delegate_mediatek_test_run_on_mediatek",
-#     backend_id = MEDIATEK_ID,
-#     data = [
-#         "//litert/test:testdata/shared_input_cpu_npu.tflite",
-#         "//litert/test:testdata/simple_model_mtk.bin",
-#         "//litert/test:testdata/simple_model_npu.tflite",
-#     ],
-#     exec_args = [],
-#     exec_env_vars = [],
-#     target = ":dispatch_delegate_mediatek_test",
-# )
-# copybara:uncomment_end(google-only)

@@ -41,9 +41,8 @@ namespace litert {
 namespace {
 
 void BasicTest() {
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+  auto model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -51,7 +50,6 @@ void BasicTest() {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
-
   auto signatures = model.GetSignatures().Value();
   EXPECT_EQ(signatures.size(), 1);
 
@@ -132,9 +130,8 @@ TEST(CompiledModelGpuTest, Async) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+  auto model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
