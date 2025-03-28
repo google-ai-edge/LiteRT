@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
 load("//litert/integration_test:run_on_device.bzl", "litert_integration_test")
 
 package(
@@ -26,7 +25,7 @@ cc_test(
     name = "gen_device_test",
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = [":single_op_models"],
+    data = ["//litert/integration_test/models:single_op_models"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -67,24 +66,6 @@ cc_library(
     ],
 )
 
-# TEST MODELS ######################################################################################
-
-filegroup(
-    name = "classic_ml_models",
-    srcs = glob(["classic_ml_models/*.tflite"]),
-)
-
-tfl_model_gen(
-    name = "single_op_models",
-    srcs = glob(["single_op_models/*.mlir"]),
-    subdir = "single_op_models",
-)
-
-filegroup(
-    name = "pre_compiled_models",
-    srcs = glob(["pre_compiled_models/*.tflite"]),
-)
-
 # ON DEVICE INTEGRATION TESTS ######################################################################
 
 # NOTE: Everything here should be built with -c opt --config=android_arm64.
@@ -97,13 +78,13 @@ sh_binary(
 litert_integration_test(
     name = "single_op_device_tests_cpu",
     hw = "cpu",
-    models = ":single_op_models",
+    models = "//litert/integration_test/models:single_op_models",
 )
 
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
     hw = "qualcomm",
-    models = ":single_op_models",
+    models = "//litert/integration_test/models:single_op_models",
     skips = [
         "greater_f32",  # TODO: lukeboyer - Investigate (segfault).
         "less_f32",  # TODO: lukeboyer - Investigate (segfault).
@@ -113,17 +94,17 @@ litert_integration_test(
 litert_integration_test(
     name = "classic_ml_device_tests_cpu",
     hw = "cpu",
-    models = ":classic_ml_models",
+    models = "//litert/integration_test/models:classic_ml_models",
 )
 
 litert_integration_test(
     name = "classic_ml_device_tests_qualcomm_JIT",
     hw = "qualcomm",
-    models = ":classic_ml_models",
+    models = "//litert/integration_test/models:classic_ml_models",
 )
 
 litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
     hw = "qualcomm",
-    models = ":pre_compiled_models",
+    models = "//litert/integration_test/models:pre_compiled_models",
 )

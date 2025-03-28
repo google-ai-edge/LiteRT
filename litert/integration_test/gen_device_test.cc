@@ -141,7 +141,7 @@ void ParseTests() {
 #else
     // Set this on linux for smoke check linux presubmit.
     model_path_flag = testing::GetLiteRtPath(
-        "integration_test/single_op_models/add_f32.tflite");
+        "integration_test/models/single_op/add_f32.tflite");
 #endif
   }
   const auto model_paths = GetModelPaths(model_path_flag);
