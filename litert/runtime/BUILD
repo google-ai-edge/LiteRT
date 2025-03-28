@@ -51,6 +51,7 @@ cc_library(
         "ion_buffer.cc",
         "open_cl_buffer.cc",
         "tensor_buffer.cc",
+        "tensor_buffer_requirements.cc",
     ],
     hdrs = [
         "ahwb_buffer.h",
@@ -89,6 +90,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_utils",
         "//litert/core/util:tensor_type_util",
+        "//litert/core/util:to_string",
         "@opencl_headers",
         "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:buffer",
         "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
@@ -166,7 +168,9 @@ cc_library(
         "//litert/cc:litert_detail",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/core/util:tensor_type_util",
         "@org_tensorflow//tensorflow/lite/c:c_api",
         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
@@ -183,6 +187,7 @@ cc_library(
     ] + lite_rt_friends(),
     deps = [
         ":tfl_utils",
+        "@com_google_absl//absl/strings:str_format",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",

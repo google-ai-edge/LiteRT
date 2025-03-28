@@ -20,11 +20,8 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 LiteRtStatus LiteRtCreateTensorBufferRequirements(
     int num_supported_tensor_buffer_types,
@@ -87,6 +84,16 @@ void LiteRtDestroyTensorBufferRequirements(
   delete requirements;
 }
 
-#ifdef __cplusplus
-}  // extern "C"
-#endif
+LiteRtStatus LiteRtJoinTensorBufferRequirements(
+    LiteRtTensorBufferRequirements src_requirements_1,
+    LiteRtTensorBufferRequirements src_requirements_2,
+    LiteRtTensorBufferRequirements* joined_requirements) {
+  if (!src_requirements_1 || !src_requirements_2 || !joined_requirements) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto result,
+      litert::internal::Join(*src_requirements_1, *src_requirements_2));
+  *joined_requirements = result.release();
+  return kLiteRtStatusOk;
+}
