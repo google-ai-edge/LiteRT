@@ -25,7 +25,6 @@
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
-#include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
 
 // Define a function pointer to allow the accelerator registration to be
 // overridden by the LiteRT environment. This is to use the GPU accelerator
@@ -53,6 +52,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
       LiteRtRegisterStaticLinkedAcceleratorGpu(environment)) {
     LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    return {};
   }
   auto gpu_registration = RegisterSharedObjectAccelerator(
       environment, /*plugin_path=*/"libLiteRtGpuAccelerator.so",
@@ -64,18 +64,6 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   } else {
     LITERT_LOG(LITERT_INFO, "GPU accelerator registered.");
   }
-
-  // Register the CPU accelerator.
-  if (auto cpu_registration =
-          LiteRtRegisterCpuAccelerator(&environment, /*options=*/nullptr);
-      cpu_registration != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_WARNING,
-               "CPU accelerator could not be loaded and registered: %s.",
-               LiteRtGetStatusString(cpu_registration));
-  } else {
-    LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
-  }
-
   return {};
 };
 
