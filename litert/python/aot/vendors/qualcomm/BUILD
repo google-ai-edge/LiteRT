@@ -45,7 +45,7 @@ pytype_strict_contrib_test(
     deps = [
         ":qualcomm_backend",
         ":target",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
         "//litert/python/aot/core:types",

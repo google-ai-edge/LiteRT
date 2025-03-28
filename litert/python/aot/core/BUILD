@@ -43,7 +43,7 @@ pytype_strict_library(
     ],
     deps = [
         ":common",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
     ],
 )
 
@@ -82,7 +82,7 @@ pytype_strict_contrib_test(
         ":apply_plugin",
         ":test_common",
         ":types",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
     ],
 )
 
@@ -94,7 +94,7 @@ pytype_strict_contrib_test(
     ],
     deps = [
         ":common",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
     ],
 )
 
@@ -130,6 +130,6 @@ pytype_strict_contrib_test(
         ":mlir_transforms",
         ":test_common",
         ":types",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
     ],
 )

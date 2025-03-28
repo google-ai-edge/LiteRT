@@ -128,3 +128,12 @@ load(
 )
 
 nccl_configure(name = "local_config_nccl")
+
+http_archive(
+    name = "tqdm",
+    sha256 = "cedbe5ae6f460a59d5ea05dbbccd988ab9174c4bb1b0d8409001b72a335d0aff",
+    strip_prefix = "tqdm-4.67.1",
+    urls = [
+        "https://github.com/tqdm/tqdm/archive/refs/tags/v4.67.1.tar.gz",
+    ],
+)

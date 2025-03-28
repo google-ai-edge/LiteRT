@@ -89,7 +89,10 @@ litert_cc_bin_with_qnn(
         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-        "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
+        # TODO: b/407046837 - Remove the comment once we are able to add the deps in OSS.
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
+        # copybara:uncomment_end
     ],
     export_litert_only = 1,
     include_system = 1,

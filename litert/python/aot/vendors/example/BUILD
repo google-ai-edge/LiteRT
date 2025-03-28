@@ -37,7 +37,7 @@ pytype_strict_contrib_test(
     srcs = ["example_backend_test.py"],
     deps = [
         ":example_backend",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
         "//litert/python/aot/core:types",

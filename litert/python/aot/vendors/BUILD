@@ -27,7 +27,7 @@ pytype_strict_contrib_test(
     srcs = ["import_vendor_test.py"],
     deps = [
         ":import_vendor",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
         "//litert/python/aot/core:types",
         "//litert/python/aot/vendors/example:example_backend",
     ],

@@ -31,7 +31,7 @@ pytype_strict_library(
         "//litert/python/aot/core:types",
         "//litert/python/aot/vendors",  # buildcleaner: keep
         "//litert/python/aot/vendors:import_vendor",
-        "//third_party/py/tqdm",
+        "@tqdm",
     ],
 )
 
@@ -53,7 +53,7 @@ pytype_strict_contrib_test(
     srcs = ["prepare_for_npu_test.py"],
     deps = [
         ":prepare_for_npu",
-        "//testing/pybase",
+        "@absl_py//absl/testing",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
