@@ -25,6 +25,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -721,6 +722,7 @@ class LiteRtModelT {
   using TflOpCodes = std::vector<litert::internal::TflOpCodePtr>;
 
   using BufferManager = ::litert::internal::BufferManager;
+  using StoredBufferManager = std::variant<BufferManager::Ptr, BufferManager*>;
   using BufferId = BufferManager::BufferId;
 
   using OpAssetReference = std::pair<BufferId, std::string>;
@@ -790,6 +792,14 @@ class LiteRtModelT {
   void TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
                           std::vector<size_t> indices);
 
+  // Splits a model along the given subgraph indices. Returns a new model with
+  // the specified subgraphs that were moved from the model. Similar to
+  // TransferSubgraphTo but also handles op codes and buffer manager.
+  //
+  // NOTE: This only copies enough IR to build a valid model. It does not handle
+  // signatures, metadata etc.
+  LiteRtModelT Yank(std::vector<size_t> indices);
+
   // SIGNATURES
 
   // All signatures registered with this model.
@@ -835,7 +845,13 @@ class LiteRtModelT {
   // BUFFERS
 
   // Get stable pointer to buffer manager object.
-  BufferManager* Buffers() const { return buffer_manager_.get(); }
+  BufferManager* Buffers() const {
+    if (std::holds_alternative<BufferManager::Ptr>(buffer_manager_)) {
+      return std::get<BufferManager::Ptr>(buffer_manager_).get();
+    } else {
+      return std::get<BufferManager*>(buffer_manager_);
+    }
+  }
 
   // Attach an asset to the given op. An asset is a non-tensor buffer
   // that is used by the op. Assets may be referenced by multiple ops.
@@ -900,8 +916,8 @@ class LiteRtModelT {
   MetadataMap metadata_;
   OpAssetMap external_buffer_map_;
 
-  // Use unique ptr here to keep stable.
-  BufferManager::Ptr buffer_manager_ = std::make_unique<BufferManager>();
+  // Use unique ptr here to keep stable. Optionally non-owned.
+  StoredBufferManager buffer_manager_ = std::make_unique<BufferManager>();
 
   // TFLITE
   TflOpCodes tfl_operator_codes_;

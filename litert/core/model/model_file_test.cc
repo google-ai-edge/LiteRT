@@ -674,6 +674,72 @@ TEST(ModelSerializeTest, WithOffsetTensorBufferAndOpAssetHasAlignment) {
   }
 }
 
+TEST(ModelSerializeTest, TransferAndSerializeNoConstants) {
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  sg.EmplaceOp();
+  auto& tensor = sg.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& weights = tensor.Weights();
+  weights.SetBufferManager(root.Buffers());
+
+  auto other = root.Yank({0});
+  ASSERT_EQ(other.Subgraphs().size(), 1);
+
+  auto serialized = SerializeModel(std::move(other));
+  ASSERT_TRUE(serialized);
+}
+
+TEST(ModelSerializeTest, TransferAndSerializeWithConstants) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  sg.EmplaceOp();
+  auto& tensor = sg.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& weights = tensor.Weights();
+  weights.SetBufferManager(root.Buffers());
+
+  {
+    OwningBufferRef<uint8_t> buffer(kTensorData);
+    BufferContext context;
+    context.should_append = false;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+  }
+
+  auto other = root.Yank({0});
+  ASSERT_EQ(other.Subgraphs().size(), 1);
+
+  auto serialized = SerializeModel(std::move(other));
+  ASSERT_TRUE(serialized);
+}
+
+TEST(ModelSerializeTest, TransferAndSerializeOffsetBuffers) {
+  static constexpr absl::string_view kTensorData = "SOME_TENSOR_DATA";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  sg.EmplaceOp();
+  auto& tensor = sg.EmplaceTensor();
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& weights = tensor.Weights();
+  weights.SetBufferManager(root.Buffers());
+
+  {
+    OwningBufferRef<uint8_t> buffer(kTensorData);
+    BufferContext context;
+    context.should_append = true;
+    SetWeightsFromOwnedBuffer(weights, std::move(buffer), context);
+  }
+
+  auto other = root.Yank({0});
+  ASSERT_EQ(other.Subgraphs().size(), 1);
+
+  auto serialized = SerializeModel(std::move(other));
+  ASSERT_TRUE(serialized);
+}
+
 // Tests that explicitly check litert graph structure.
 //===---------------------------------------------------------------------------
 

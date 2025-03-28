@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -159,6 +160,30 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
       });
 
   subgraphs_.TransferTo(dest, std::move(indices));
+}
+
+LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
+  LiteRtSubgraphT::Alloc yanked;
+  TransferSubgraphTo(yanked, std::move(indices));
+
+  LiteRtModelT res;
+  res.TransferSubgraphsFrom(std::move(yanked));
+
+  // Copy op codes.
+  const auto& op_codes = litert::internal::GetTflOpCodes(*this);
+
+  LiteRtModelT::TflOpCodes codes;
+  codes.reserve(op_codes.size());
+  for (const auto& op_code : op_codes) {
+    codes.emplace_back(
+        std::make_unique<::litert::internal::TflOpCode>(*op_code));
+  }
+
+  litert::internal::SetTflOpCodes(res, std::move(codes));
+
+  res.buffer_manager_ = LiteRtModelT::StoredBufferManager(Buffers());
+
+  return res;
 }
 
 namespace litert::internal {
