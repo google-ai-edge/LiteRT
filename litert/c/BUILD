@@ -459,6 +459,12 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_platform_support",
+    hdrs = ["litert_platform_support.h"],
+    deps = [":litert_common"],
+)
+
 cc_test(
     name = "litert_accelerator_registration_test",
     srcs = ["litert_accelerator_registration_test.cc"],
@@ -543,6 +549,7 @@ cc_library(
         ":litert_model.h",
         ":litert_op_code.h",
         ":litert_options.h",
+        ":litert_platform_support.h",
         ":litert_tensor_buffer.h",
         ":litert_tensor_buffer_requirements.h",
         ":litert_tensor_buffer_types.h",
