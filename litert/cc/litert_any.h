@@ -111,7 +111,8 @@ inline Expected<LiteRtAny> ToLiteRtAny(const std::any& any) {
 
   } else {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Invalid argument for ToLiteRtAny");
+                 absl::StrFormat("Invalid argument for ToLiteRtAny, %s",
+                                 any.type().name()));
   }
 }
 

@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -50,9 +51,9 @@ using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::SizeIs;
 
-constexpr absl::string_view kNpuFile = kGoogleTensorModelFileName;
-constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
-constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
+constexpr absl::string_view kGoogleTensorTflite = "simple_model_npu.tflite";
+constexpr absl::string_view kDispatchLibraryDir =
+    "vendors/google_tensor/dispatch";
 
 TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   if (!litert::internal::AhwbBuffer::IsSupported()) {
@@ -62,10 +63,13 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   }
 
   // Environment setup.
+  const std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  absl::string_view dispatch_library_dir_view(dispatch_library_dir);
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
+          dispatch_library_dir_view,
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
@@ -77,14 +81,16 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   // file.
   LITERT_ASSERT_OK_AND_ASSIGN(
       BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
+      internal::GetModelBufWithByteCode(
+          testing::GetTestFilePath(kGoogleTensorTflite),
+          testing::GetTestFilePath(kGoogleTensorModelFileName)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
@@ -146,14 +152,16 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   // file.
   LITERT_ASSERT_OK_AND_ASSIGN(
       BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
+      internal::GetModelBufWithByteCode(
+          testing::GetTestFilePath(kGoogleTensorTflite),
+          testing::GetTestFilePath(kGoogleTensorModelFileName)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
@@ -296,8 +304,9 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   // file.
   LITERT_ASSERT_OK_AND_ASSIGN(
       BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
+      internal::GetModelBufWithByteCode(
+          testing::GetTestFilePath(kGoogleTensorTflite),
+          testing::GetTestFilePath(kGoogleTensorModelFileName)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/integration_test:run_on_device.bzl", "GOOGLE_TENSOR_ID", "run_on_device")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//visibility:public"],
@@ -501,8 +503,8 @@ cc_test(
 )
 
 cc_test(
-    name = "litert_compiled_model_integration_test",
-    srcs = ["litert_compiled_model_integration_test.cc"],
+    name = "litert_compiled_model_npu_test",
+    srcs = ["litert_compiled_model_npu_test.cc"],
     deps = [
         ":litert_buffer_ref",
         ":litert_compiled_model",
@@ -529,78 +531,40 @@ cc_test(
     }),
 )
 
-# copybara:uncomment_begin(google-only)
-# cc_test(
-#     name = "litert_compiled_model_gpu_test",
-#     srcs = ["litert_compiled_model_gpu_test.cc"],
-#     data = [
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     tags = [
-#         "requires-gpu-nvidia",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_event",
-#         ":litert_model",
-#         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/debugging:leak_check",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings:string_view",
-#         "@com_google_absl//absl/types:span",
-#         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_event",
-#         "//litert/c:litert_event_type",
-#         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:simple_model",
-#         "@org_tensorflow//tensorflow/lite:framework",
-#         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-#         "@org_tensorflow//tensorflow/lite/c:common",
-#         "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
-#     ],
-# )
-# 
-# # The same test as above, but for Android.
-# # This test doesn't run on TAP.
-# # libLiteRtGpuAccelerator.so and libLiteRtRuntimeCApi.so are required to run this test.
-# cc_test(
-#     name = "litert_compiled_model_gpu_android_test",
-#     srcs = ["litert_compiled_model_gpu_test.cc"],
-#     data = [
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     tags = [
-#         "manual",
-#         "notap",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_event",
-#         ":litert_model",
-#         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/debugging:leak_check",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings:string_view",
-#         "@com_google_absl//absl/types:span",
-#         "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
-#         "//litert/c:litert_runtime_c_api_shared_lib",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:simple_model",
-#         "@org_tensorflow//tensorflow/lite:framework",
-#         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-#         "@org_tensorflow//tensorflow/lite/c:common",
-#         "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
-#     ],
-# )
-# copybara:uncomment_end
+cc_test(
+    name = "litert_compiled_model_gpu_test",
+    srcs = ["litert_compiled_model_gpu_test.cc"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    tags = [
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_event",
+        ":litert_model",
+        ":litert_tensor_buffer",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        "//litert/c:litert_common",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "@org_tensorflow//tensorflow/lite:framework",
+        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
+        "@org_tensorflow//tensorflow/lite/c:common",
+        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+    ],
+)
 
 cc_library(
     name = "litert_tensor_buffer_utils",
@@ -702,6 +666,30 @@ cc_library(
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
     ],
+)
+
+# === On-device tests ===
+run_on_device(
+    name = "litert_compiled_model_npu_test_on_google_tensor",
+    backend_id = GOOGLE_TENSOR_ID,
+    data = [
+        "//litert/test:testdata/simple_model_google_tensor.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
+    ],
+    exec_args = [],
+    exec_env_vars = [],
+    target = ":litert_compiled_model_npu_test",
+)
+
+run_on_device(
+    name = "litert_compiled_model_gpu_test_on_google_tensor",
+    backend_id = GOOGLE_TENSOR_ID,
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    exec_args = [],
+    exec_env_vars = [],
+    target = ":litert_compiled_model_gpu_test",
 )
 
 exports_files(srcs = glob(["litert_*.h"]))
