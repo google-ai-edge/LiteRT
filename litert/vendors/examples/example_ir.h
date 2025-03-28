@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_
+#define ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_
 
 #include <cstdint>
 #include <list>
@@ -150,4 +150,4 @@ using ExampleTypes = IrTypes<ExampleOp, ExampleTensor>;
 
 }  // namespace litert::example
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_IR_H_

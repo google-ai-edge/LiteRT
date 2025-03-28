@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_DUMP_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_DUMP_H_
+#ifndef ODML_LITERT_LITERT_TOOLS_DUMP_H_
+#define ODML_LITERT_LITERT_TOOLS_DUMP_H_
 
 #include <iostream>
 #include <istream>
@@ -65,4 +65,4 @@ void Dump(const CompilerPlugin& plugin, std::ostream& out = std::cerr);
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_DUMP_H_
+#endif  // ODML_LITERT_LITERT_TOOLS_DUMP_H_

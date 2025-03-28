@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
+#ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
+#define ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_accelerator_compilation_options.h"
@@ -51,4 +51,4 @@ struct ModelCompilationData {
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
+#endif  // ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_

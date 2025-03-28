@@ -1,8 +1,8 @@
 // Copyright (c) Qualcomm Innovation Center, Inc.
 // All Rights Reserved.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -16,4 +16,4 @@ std::vector<OpWrapper> BuildSliceOp(
     const std::vector<TensorWrapperRef>& outputs);
 }  // namespace qnn
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_SLICE_OP_BUILDER_H_

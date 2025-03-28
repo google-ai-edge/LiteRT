@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_
 
 #include <cstdint>
 
@@ -72,4 +72,4 @@ LiteRtStatus LegalizeTensor(const litert::Tensor& src, Qnn_Tensor_t& dest);
 
 }  // namespace litert::qnn
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_IR_QNN_TENSOR_H_

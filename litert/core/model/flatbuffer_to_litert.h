@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
+#ifndef ODML_LITERT_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
+#define ODML_LITERT_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
@@ -40,4 +40,4 @@ Expected<Quantization> MapQuantization(const TflQuantization* tfl_quantization,
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_
+#endif  // ODML_LITERT_LITERT_CORE_MODEL_FLATBUFFER_TO_LITERT_H_

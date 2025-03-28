@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_TOOL_DISPLAY_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_TOOL_DISPLAY_H_
+#ifndef ODML_LITERT_LITERT_TOOLS_TOOL_DISPLAY_H_
+#define ODML_LITERT_LITERT_TOOLS_TOOL_DISPLAY_H_
 
 #include <memory>
 #include <ostream>
@@ -99,4 +99,4 @@ void DumpPreamble(ToolDisplay& display);
 
 }  // namespace litert::tools
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_TOOL_DISPLAY_H_
+#endif  // ODML_LITERT_LITERT_TOOLS_TOOL_DISPLAY_H_

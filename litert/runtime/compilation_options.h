@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
+#define ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_accelerator_compilation_options.h"
@@ -31,4 +31,4 @@ struct LiteRtCompilationOptionsT {
   litert::AcceleratorCompilationOptions accelerator_compilation_options;
 };
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_

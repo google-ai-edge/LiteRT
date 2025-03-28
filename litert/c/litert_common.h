@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_COMMON_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_COMMON_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_COMMON_H_
+#define ODML_LITERT_LITERT_C_LITERT_COMMON_H_
 
 #include <stddef.h>
 
@@ -136,4 +136,4 @@ typedef size_t LiteRtParamIndex;
 }
 #endif  // __cplusplus
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_COMMON_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_COMMON_H_

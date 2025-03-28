@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_MODEL_PREDICATES_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_MODEL_PREDICATES_H_
+#ifndef ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
+#define ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 
 #include <cstdint>
 #include <optional>
@@ -75,4 +75,4 @@ bool MatchUses(const Tensor& tensor, const std::vector<UseInfo>& expected_uses,
 
 }  // namespace litert
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_MODEL_PREDICATES_H_
+#endif  // ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_

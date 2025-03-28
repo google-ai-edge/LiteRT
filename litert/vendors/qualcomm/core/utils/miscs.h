@@ -2,8 +2,8 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -35,4 +35,4 @@ void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
 void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
                                   std::vector<std::int16_t>& dst);
 }  // namespace qnn
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

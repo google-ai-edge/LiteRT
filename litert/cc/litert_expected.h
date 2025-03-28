@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_EXPECTED_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_EXPECTED_H_
+#ifndef ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_
+#define ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_
 
 #include <initializer_list>
 #include <memory>
@@ -387,4 +387,4 @@ class Expected<void> {
 
 }  // namespace litert
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_EXPECTED_H_
+#endif  // ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_LAYOUT_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_LAYOUT_H_
+#ifndef ODML_LITERT_LITERT_CC_LITERT_LAYOUT_H_
+#define ODML_LITERT_LITERT_CC_LITERT_LAYOUT_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -155,4 +155,4 @@ class Layout {
 
 }  // namespace litert
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_LAYOUT_H_
+#endif  // ODML_LITERT_LITERT_CC_LITERT_LAYOUT_H_

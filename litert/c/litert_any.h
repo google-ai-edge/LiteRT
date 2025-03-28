@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_ANY_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_ANY_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_ANY_H_
+#define ODML_LITERT_LITERT_C_LITERT_ANY_H_
 
 #include <stdbool.h>  // NOLINT: To use bool type in C
 #include <stdint.h>
@@ -64,4 +64,4 @@ typedef struct {
 }
 #endif  // __cplusplus
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_ANY_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_ANY_H_

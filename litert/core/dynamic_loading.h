@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_DYNAMIC_LOADING_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_DYNAMIC_LOADING_H_
+#ifndef ODML_LITERT_LITERT_CORE_DYNAMIC_LOADING_H_
+#define ODML_LITERT_LITERT_CORE_DYNAMIC_LOADING_H_
 
 #include <dlfcn.h>
 #include <stdlib.h>
@@ -65,4 +65,4 @@ LiteRtStatus PutLibOnLdPath(absl::string_view search_path,
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_DYNAMIC_LOADING_H_
+#endif  // ODML_LITERT_LITERT_CORE_DYNAMIC_LOADING_H_

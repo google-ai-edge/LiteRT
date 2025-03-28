@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_
+#ifndef ODML_LITERT_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_
+#define ODML_LITERT_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_
 
 #include <cstdint>
 #include <initializer_list>
@@ -311,4 +311,4 @@ OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model);
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_
+#endif  // ODML_LITERT_LITERT_CORE_UTIL_FLATBUFFER_TOOLS_H_

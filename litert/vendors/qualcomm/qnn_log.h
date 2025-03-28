@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
 
 #include "third_party/qairt/latest/include/QNN/QnnLog.h"
 
@@ -25,4 +25,4 @@ QnnLog_Callback_t GetDefaultStdOutLogger();
 
 }  // namespace litert::qnn
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_

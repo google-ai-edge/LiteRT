@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
+#ifndef ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
+#define ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
 
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
@@ -30,4 +30,4 @@ Expected<LiteRtTensorBufferT::Ptr> TensorBufferConvertTo(
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
+#endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_

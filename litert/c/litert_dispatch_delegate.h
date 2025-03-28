@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_DISPATCH_DELEGATE_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_DISPATCH_DELEGATE_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_DISPATCH_DELEGATE_H_
+#define ODML_LITERT_LITERT_C_LITERT_DISPATCH_DELEGATE_H_
 
 #include <stddef.h>
 
@@ -58,4 +58,4 @@ TfLiteStatus LiteRtDispatchDelegateAddAllocBaseOption(
 TfLiteStatus LiteRtDispatchDelegateAddAllocFdOption(
     LiteRtDispatchDelegateOptions* options, int alloc_fd);
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_DISPATCH_DELEGATE_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_DISPATCH_DELEGATE_H_

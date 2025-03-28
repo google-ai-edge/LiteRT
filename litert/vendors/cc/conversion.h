@@ -17,8 +17,8 @@
 // that may be used in a stndalone fashion. They also may be composed
 // to create lowerings of entire graphs with topology.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_CC_CONVERSION_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_CC_CONVERSION_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_CC_CONVERSION_H_
+#define ODML_LITERT_LITERT_VENDORS_CC_CONVERSION_H_
 
 #include <cstddef>
 #include <functional>
@@ -259,4 +259,4 @@ LegalizationMap<BackendOp, BackendTensor> MakeLegalizationMap(
 
 }  // namespace litert
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_CC_CONVERSION_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_CC_CONVERSION_H_

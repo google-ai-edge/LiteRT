@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_APPLY_PLUGIN_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_APPLY_PLUGIN_H_
+#ifndef ODML_LITERT_LITERT_TOOLS_APPLY_PLUGIN_H_
+#define ODML_LITERT_LITERT_TOOLS_APPLY_PLUGIN_H_
 
 #include <cstdint>
 #include <iostream>
@@ -157,4 +157,4 @@ LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run);
 
 }  // namespace litert::tools
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_TOOLS_APPLY_PLUGIN_H_
+#endif  // ODML_LITERT_LITERT_TOOLS_APPLY_PLUGIN_H_

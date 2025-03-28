@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_GL_TYPES_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_GL_TYPES_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_GL_TYPES_H_
+#define ODML_LITERT_LITERT_C_LITERT_GL_TYPES_H_
 
 #include <stdint.h>
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -40,4 +40,4 @@ typedef int32_t LiteRtGLint;
 }
 #endif  // __cplusplus
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_C_LITERT_GL_TYPES_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_GL_TYPES_H_

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_
+#ifndef ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_
+#define ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_
 
 #include <ostream>
 #include <string>
@@ -66,4 +66,4 @@ Expected<CompilerFlags> ParseCompilerFlags(absl::string_view flags_str);
 
 // For logging.
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_
+#endif  // ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_FLAGS_H_

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_SHARED_LIBRARY_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_SHARED_LIBRARY_H_
+#ifndef ODML_LITERT_LITERT_CC_LITERT_SHARED_LIBRARY_H_
+#define ODML_LITERT_LITERT_CC_LITERT_SHARED_LIBRARY_H_
 
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
     defined(__NT__) || defined(_WIN64)
@@ -169,4 +169,4 @@ class SharedLibrary {
 
 }  // namespace litert
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_CC_LITERT_SHARED_LIBRARY_H_
+#endif  // ODML_LITERT_LITERT_CC_LITERT_SHARED_LIBRARY_H_

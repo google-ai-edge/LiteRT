@@ -11,8 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
+#define ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
 #include <memory>
 #include <optional>
 #include <string>
@@ -65,4 +65,4 @@ struct Adapter::Api {
 
 }  // namespace litert::google_tensor
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_ADAPTER_H_

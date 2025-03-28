@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
+#ifndef ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
+#define ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -71,4 +71,4 @@ class GpuEnvironmentSingleton {
 
 }  // namespace litert::internal
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
+#endif  // ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_

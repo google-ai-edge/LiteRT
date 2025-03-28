@@ -1,8 +1,8 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-#ifndef TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
-#define TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
 
 #include <cstdio>
 
@@ -53,4 +53,4 @@ class QNNLogger {
   ::qnn::QNNLogger::Log(kLogLevelDebug, ("DEBUG: [Qnn] " format), \
                         ##__VA_ARGS__);
 
-#endif  // TENSORFLOW_LITE_EXPERIMENTAL_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_
