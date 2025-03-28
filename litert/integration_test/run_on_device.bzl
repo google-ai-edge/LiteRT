@@ -16,6 +16,10 @@
 This module defines the `run_on_device` macro, which helps to execute a binary target on a device.
 """
 
+# copybara:uncomment_begin(google-only)
+# load("//research/aimatter/testing:xeno_lab.bzl", "xeno_mobile_test")
+# 
+# copybara:uncomment_end(google-only)
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 
@@ -90,13 +94,20 @@ def make_path_args(spec):
 
 # DYNAMIC LIBRARY DEPENDENCIES #####################################################################
 
-LITERT_CORE_LIBS = [
+LITERT_BASE_LIBS = [
     "//litert/c:libLiteRtRuntimeCApi.so",
 ]
 
+def make_device_spec(**kwargs):
+    return struct(
+        backend_id = kwargs["backend_id"],
+        libraries = kwargs["libraries"],
+        env_vars = kwargs["env_vars"],
+    )
+
 def make_lib_spec(**kwargs):
     return struct(
-        litert_base_libs = LITERT_CORE_LIBS,
+        litert_base_libs = LITERT_BASE_LIBS,
         core_libs = kwargs["core_libs"],
         kernel_libs = kwargs["kernel_libs"],
         dispatch_lib = kwargs["dispatch_lib"],
@@ -126,7 +137,9 @@ def all_libs(spec):
             libs.append(lib)
     return libs
 
-# QNN
+# QUALCOMM
+
+QUALCOMM_ID = "qualcomm"
 
 QUALCOMM_LIB_SPEC = make_lib_spec(
     core_libs = [
@@ -136,15 +149,72 @@ QUALCOMM_LIB_SPEC = make_lib_spec(
         "//third_party/qairt/latest:lib/aarch64-android/libQnnHtpPrepare.so",
     ],
     kernel_libs = ["//third_party/qairt/latest:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so"],
-    dispatch_lib = "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
+    dispatch_lib = "//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so",
     compiler_lib = "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
 )
 
-# MTK
-# TODO
+QUALCOMM_DEVICE_SPEC = make_device_spec(
+    backend_id = QUALCOMM_ID,
+    libraries = all_libs(QUALCOMM_LIB_SPEC),
+    env_vars = make_path_args(
+        {
+            "ADSP_LIBRARY_PATH": ["//third_party/qairt/latest/lib/hexagon-v75/unsigned"],
+            "LD_LIBRARY_PATH": [
+                "//litert/vendors/qualcomm/dispatch",
+                "//third_party/qairt/latest/lib/aarch64-android",
+                "//litert/c",
+            ],
+        },
+    ),
+)
+
+# MEDIATEK
+
+MEDIATEK_ID = "mediatek"
+
+MEDIATEK_LIB_SPEC = make_lib_spec(
+    core_libs = [],
+    kernel_libs = [],
+    dispatch_lib = "//litert/vendors/mtk/dispatch:libLiteRtDispatch_Mtk.so",
+    compiler_lib = None,
+)
+
+MEDIATEK_DEVICE_SPEC = make_device_spec(
+    backend_id = MEDIATEK_ID,
+    libraries = all_libs(MEDIATEK_LIB_SPEC),
+    env_vars = make_path_args(
+        {
+            "LD_LIBRARY_PATH": [
+                "//litert/vendors/mediatek/dispatch",
+                "//litert/c",
+            ],
+        },
+    ),
+)
 
 # GOOGLE TENSOR
-# TODO
+
+GOOGLE_TENSOR_ID = "google_tensor"
+
+GOOGLE_TENSOR_LIB_SPEC = make_lib_spec(
+    core_libs = [],
+    kernel_libs = [],
+    dispatch_lib = "//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so",
+    compiler_lib = None,
+)
+
+GOOGLE_TENSOR_DEVICE_SPEC = make_device_spec(
+    backend_id = GOOGLE_TENSOR_ID,
+    libraries = all_libs(GOOGLE_TENSOR_LIB_SPEC),
+    env_vars = make_path_args(
+        {
+            "LD_LIBRARY_PATH": [
+                "//litert/vendors/google_tensor/dispatch",
+                "//litert/c",
+            ],
+        },
+    ),
+)
 
 def get_lib_spec(backend_id):
     """
@@ -156,10 +226,14 @@ def get_lib_spec(backend_id):
     Returns:
         The dynamic library spec for the given backend id.
     """
-    if backend_id == "qualcomm":
+    if backend_id == QUALCOMM_ID:
         return QUALCOMM_LIB_SPEC
     if backend_id == "cpu":
         return BASE_LIB_SPEC
+    if backend_id == GOOGLE_TENSOR_ID:
+        return GOOGLE_TENSOR_LIB_SPEC
+    if backend_id == MEDIATEK_ID:
+        return MEDIATEK_LIB_SPEC
     else:
         fail("Unsupported backend id: {}".format(backend_id))
 
@@ -171,27 +245,76 @@ def get_driver():
         "//litert/integration_test/google:run_on_device_driver",
     )
 
+#copybara:comment_begin(google-only)
+
+# Mobile Harness Specific Macros
+
+def get_mh_dimensions(backend_id = ""):
+    """
+    Returns the Mobile Harness dimensions for the given backend id.
+
+    Args:
+        backend_id: The backend id to get the dimensions for.
+
+    Returns:
+        The Mobile Harness dimensions for the given backend id.
+    """
+    if backend_id == QUALCOMM_ID:
+        return {
+            "model": "sm-s928b",
+        }
+    if backend_id == GOOGLE_TENSOR_ID:
+        return {
+            "label": "odml-test",
+            "model": "pixel 9",
+        }
+    if backend_id == MEDIATEK_ID:
+        return {
+            "hardware": "mt6989",
+        }
+    else:
+        return {}
+
+#copybara:comment_end(google-only)
+
 def run_on_device(
         name,
         target,
-        driver,
+        backend_id = "",
+        driver = get_driver(),
         data = [],
         exec_args = [],
         exec_env_vars = []):
     """
-    Macro to execute a binary target on a device (locally through ADB).
+    Macro to execute a binary target on a device.
+
+    #copybara:comment_begin(google-only)
+    Note: Allows running the target on a locally connected device through ADB or via Mobile Harness
+    (see xeno_mobile_test target below).
+    #copybara:comment_end(google-only)
 
     The output of this macro is an executable shell script that pushes all the necessary files to
     the device and executes the target with the given arguments and environment variables.
 
     Args:
         name: Name of the target.
+        backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
         target: The binary target to execute on device.
         driver: The driver script to use for execution.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
         exec_env_vars: List of environment variables to set before executing the target.
     """
+    if backend_id == QUALCOMM_ID:
+        data += QUALCOMM_DEVICE_SPEC.libraries
+        exec_env_vars += QUALCOMM_DEVICE_SPEC.env_vars
+    if backend_id == GOOGLE_TENSOR_ID:
+        data += GOOGLE_TENSOR_DEVICE_SPEC.libraries
+        exec_env_vars += GOOGLE_TENSOR_DEVICE_SPEC.env_vars
+    if backend_id == MEDIATEK_ID:
+        data += MEDIATEK_DEVICE_SPEC.libraries
+        exec_env_vars += MEDIATEK_DEVICE_SPEC.env_vars
+
     call_mobile_install = """
     echo '$(location {driver}) \
         --bin=$(rlocationpath {target}) \
@@ -241,6 +364,27 @@ def run_on_device(
         srcs = [exec_script],
         data = [target] + data,
     )
+
+    # copybara:uncomment_begin(google-only)
+    # xeno_mobile_test(
+        # name = name + "_lab_test",
+        # test_target = target,
+        # args = [
+            # "--run_as=xeno-mh-guitar",
+        # ],
+        # dimensions = get_mh_dimensions(backend_id),
+        # tags = [
+            # "android",
+            # "external",
+            # "guitar",
+            # "manual",
+            # "notap",
+        # ],
+        # test_data = data,
+        # run_as_top_app = False,
+        # env_vars = exec_env_vars,
+    # )
+    # copybara:uncomment_end(google-only)
 
 def litert_integration_test(
         name,

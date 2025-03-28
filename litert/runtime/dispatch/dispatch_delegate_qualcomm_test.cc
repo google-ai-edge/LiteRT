@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -52,7 +53,8 @@ using ::testing::Pointwise;
 
 static constexpr absl::string_view kNpuFile = kQualcommModelFileName;
 static constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
-static constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
+static constexpr absl::string_view kDispatchLibraryDir =
+    "vendors/qualcomm/dispatch";
 
 TEST(DispatchDelegate, QualcommCpuBuffer) {
   auto runtime = MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile);
@@ -60,10 +62,13 @@ TEST(DispatchDelegate, QualcommCpuBuffer) {
   auto& rt = **runtime;
   auto& interpreter = rt.Interpreter();
 
+  const std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  absl::string_view dispatch_library_dir_view(dispatch_library_dir);
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
+          dispatch_library_dir_view,
       },
   };
   auto env =
@@ -137,10 +142,14 @@ TEST(DispatchDelegate, QualcommHwBuffer) {
   ASSERT_TRUE(runtime) << "Failed to initialize tflite interpreter";
   auto& rt = **runtime;
   auto& interpreter = rt.Interpreter();
+
+  const std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  absl::string_view dispatch_library_dir_view(dispatch_library_dir);
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
+          dispatch_library_dir_view,
       },
   };
   auto env =
@@ -269,10 +278,13 @@ TEST(DispatchDelegate, CompiledModel) {
   ASSERT_TRUE(jit_compilation_options->SetHardwareAccelerators(
       kLiteRtHwAcceleratorCpu));
 
+  std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  absl::string_view dispatch_library_dir_view(dispatch_library_dir);
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
+          dispatch_library_dir_view,
       },
   };
   auto env =
@@ -343,10 +355,13 @@ TEST(DispatchDelegate, QualcommSharedInput) {
   ASSERT_TRUE(jit_compilation_options->SetHardwareAccelerators(
       kLiteRtHwAcceleratorCpu));
 
+  std::string dispatch_library_dir =
+      testing::GetLiteRtPath(kDispatchLibraryDir);
+  absl::string_view dispatch_library_dir_view(dispatch_library_dir);
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
+          dispatch_library_dir_view,
       },
   };
   auto env =

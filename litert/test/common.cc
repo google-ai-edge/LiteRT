@@ -74,15 +74,23 @@ UniqueTestDirectory::~UniqueTestDirectory() {
   std::filesystem::remove_all(tmpdir_);
 }
 
+#ifdef __ANDROID__
+// Test is run on a mobile device and files are stored under
+// "/data/local/tmp/runfiles".
+constexpr char kBaseDir[] = "/data/local/tmp/runfiles";
+#else
+constexpr char kBaseDir[] = "";
+#endif  // __ANDROID__
+
 std::string GetTestFilePath(absl::string_view filename) {
   static constexpr absl::string_view kTestDataDir =
       "odml/litert/litert/"
       "test/testdata/";
 
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({"third_party", kTestDataDir, filename});
+    return internal::Join({kBaseDir, "third_party", kTestDataDir, filename});
   } else {
-    return internal::Join({kTestDataDir, filename});
+    return internal::Join({kBaseDir, kTestDataDir, filename});
   }
 }
 
@@ -90,9 +98,9 @@ std::string GetTfliteFilePath(absl::string_view filename) {
   static constexpr absl::string_view kTestDataDir = "tensorflow/lite/";
 
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({"third_party", kTestDataDir, filename});
+    return internal::Join({kBaseDir, "third_party", kTestDataDir, filename});
   } else {
-    return internal::Join({kTestDataDir, filename});
+    return internal::Join({kBaseDir, kTestDataDir, filename});
   }
 }
 
@@ -100,9 +108,9 @@ std::string GetLiteRtPath(absl::string_view rel_path) {
   static constexpr absl::string_view kLiteRtRoot = "odml/litert/litert/";
 
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({"third_party", kLiteRtRoot, rel_path});
+    return internal::Join({kBaseDir, "third_party", kLiteRtRoot, rel_path});
   } else {
-    return internal::Join({kLiteRtRoot, rel_path});
+    return internal::Join({kBaseDir, kLiteRtRoot, rel_path});
   }
 }
 
