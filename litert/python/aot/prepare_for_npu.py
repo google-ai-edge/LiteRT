@@ -100,10 +100,11 @@ def compile_model(
     pipeline: list[types.Component],
 ) -> types.CompiledModels:
   """Compiles a TFLite model for NPU execution."""
-  #  Support in memory models?
-  assert not flatbuffer.in_memory
+  if flatbuffer.in_memory:
+    base_name = "model"
+  else:
+    base_name = flatbuffer.path.name.removesuffix(common.DOT_TFLITE)
   compile_models = types.CompiledModels()
-  base_name = flatbuffer.path.name.removesuffix(common.DOT_TFLITE)
   with autonotebook.tqdm(backends, desc="Backend") as t_backends:
     for backend in t_backends:
       component_input = flatbuffer

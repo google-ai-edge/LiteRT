@@ -26,7 +26,7 @@ from ai_edge_litert.aot.vendors import import_vendor
 
 
 def aot_compile(
-    input_model: types.Model,
+    input_model: types.Model | str,
     output_dir: str | pathlib.Path | None = None,
     target: types.Target | list[types.Target] | None = None,
     config: (
@@ -67,15 +67,22 @@ def aot_compile(
     else:
       raise ValueError("Unsupported target type.")
 
+  if isinstance(input_model, str):
+    input_path = pathlib.Path(input_model)
+    input_model = types.Model.create_from_path(input_path)
+
   # Resolve output paths.
   temp_dir = None
   if not output_dir:
     if input_model.in_memory:
-      input_path = input_model.path
-      output_dir = str(input_path.parent)
-    else:
+      # Use a temp dir for in-memory models.
+      # The temp dir will be cleaned up after the models are compiled and loaded
+      # back to memory (i.e. function returns).
       temp_dir = tempfile.TemporaryDirectory()
       output_dir = temp_dir.name
+    else:
+      input_path = input_model.path
+      output_dir = str(input_path.parent)
   output_dir_path = pathlib.Path(output_dir)
 
   if isinstance(config, types.CompilationConfig) or not config:
