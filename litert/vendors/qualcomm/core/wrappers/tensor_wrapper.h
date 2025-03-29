@@ -96,6 +96,8 @@ class TensorWrapper final {
                          const std::vector<std::uint32_t>& dimentions,
                          std::uint32_t bytes, const void* data);
 
+  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
+
   TensorWrapper(const TensorWrapper& other);
 
   TensorWrapper(TensorWrapper&& other);
@@ -145,6 +147,10 @@ class TensorWrapper final {
   bool IsQuant16() const {
     return GetDataType() == QNN_DATATYPE_SFIXED_POINT_16 ||
            GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
+  }
+
+  bool IsQuantU16() const {
+    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
   }
 
   bool IsF32() const { return GetDataType() == QNN_DATATYPE_FLOAT_32; }

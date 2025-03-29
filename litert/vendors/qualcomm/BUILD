@@ -127,6 +127,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )

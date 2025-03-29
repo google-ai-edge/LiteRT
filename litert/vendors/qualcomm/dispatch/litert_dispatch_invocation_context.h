@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
 #include <memory>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
@@ -68,14 +69,22 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> AttachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
 
+  litert::Expected<void> ConvertToUint16(
+      LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
+
+  litert::Expected<void> ConvertToInt16(
+      LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
+
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContextT& device_context_;
   litert::qnn::QnnManager::ContextHandle context_handle_;
   Qnn_ProfileHandle_t profile_handle_;
   int graph_index_;
   Qnn_GraphHandle_t graph_handle_;
-  std::vector<litert::qnn::QnnTensor> inputs_;
-  std::vector<litert::qnn::QnnTensor> outputs_;
+  std::vector<::qnn::TensorWrapper> inputs_;
+  std::vector<::qnn::TensorWrapper> outputs_;
+  std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
+  std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
