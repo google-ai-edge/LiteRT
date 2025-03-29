@@ -111,7 +111,7 @@ litert_cc_bin_with_qnn(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "//third_party/llvm/llvm-project/llvm:Support",
+        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
         "//litert/core:build_stamp",
     ],
@@ -137,7 +137,7 @@ cc_binary(
         ":outstream",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "//third_party/llvm/llvm-project/llvm:Support",
+        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
     ],
 )
