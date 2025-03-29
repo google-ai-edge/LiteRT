@@ -21,8 +21,8 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "litert/vendors/qualcomm/qnn_tensor.h"
 #include "third_party/qairt/latest/include/QNN/QnnInterface.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
@@ -33,15 +33,15 @@ class GraphInfo {
   static Expected<GraphInfo> Create(
       const QnnSystemContext_GraphInfo_t& graph_info);
   const std::string& Name() const { return name_; }
-  const std::vector<QnnTensor>& Inputs() const { return inputs_; }
-  const std::vector<QnnTensor>& Outputs() const { return outputs_; }
+  const std::vector<::qnn::TensorWrapper>& Inputs() const { return inputs_; }
+  const std::vector<::qnn::TensorWrapper>& Outputs() const { return outputs_; }
 
  private:
   GraphInfo() = default;
   Expected<void> Init(const QnnSystemContext_GraphInfo_t& graph_info);
   std::string name_;
-  std::vector<QnnTensor> inputs_;
-  std::vector<QnnTensor> outputs_;
+  std::vector<::qnn::TensorWrapper> inputs_;
+  std::vector<::qnn::TensorWrapper> outputs_;
 };
 
 class ContextBinaryInfo {
@@ -49,7 +49,7 @@ class ContextBinaryInfo {
   static Expected<ContextBinaryInfo> Create(QnnManager& qnn,
                                             const void* exec_bytecode_ptr,
                                             size_t exec_bytecode_size);
-  const std::vector<QnnTensor>& ContextTensors() const {
+  const std::vector<::qnn::TensorWrapper>& ContextTensors() const {
     return context_tensors_;
   }
   const std::vector<GraphInfo>& Graphs() const { return graphs_; }
@@ -57,8 +57,8 @@ class ContextBinaryInfo {
  private:
   ContextBinaryInfo() = default;
   Expected<void> Init(const QnnSystemContext_BinaryInfo_t& binary_info);
-  std::vector<QnnTensor> context_tensors_;
   std::vector<GraphInfo> graphs_;
+  std::vector<::qnn::TensorWrapper> context_tensors_;
 };
 
 }  // namespace litert::qnn
