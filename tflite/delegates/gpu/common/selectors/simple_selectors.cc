@@ -18,6 +18,7 @@ limitations under the License.
 #include <memory>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/gpu_info.h"
