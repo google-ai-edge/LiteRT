@@ -170,13 +170,13 @@ TEST(PartitionModelTest, Simple) {
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 1);
 
-  const auto& [ops, subgraphs] = *partition_result;
+  const auto& [ops, new_model] = *partition_result;
 
   EXPECT_EQ(ops.size(), 1);
   EXPECT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  EXPECT_EQ(subgraphs.Size(), 1);
-  EXPECT_EQ(subgraphs.Elements().front()->Ops().size(), 2);
+  EXPECT_EQ(new_model.NumSubgraphs(), 1);
+  EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 2);
 }
 
 TEST(PartitionModelTest, PartitionDirect) {
@@ -191,13 +191,13 @@ TEST(PartitionModelTest, PartitionDirect) {
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 1);
 
-  const auto& [ops, subgraphs] = *partition_result;
+  const auto& [ops, new_model] = *partition_result;
 
   EXPECT_EQ(ops.size(), 1);
   EXPECT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  EXPECT_EQ(subgraphs.Size(), 1);
-  EXPECT_EQ(subgraphs.Elements().front()->Ops().size(), 2);
+  EXPECT_EQ(new_model.NumSubgraphs(), 1);
+  EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 2);
 }
 
 TEST(PartitionModelTest, MultiSubgraph) {
@@ -212,15 +212,15 @@ TEST(PartitionModelTest, MultiSubgraph) {
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 2);
 
-  const auto& [ops, subgraphs] = *partition_result;
+  const auto& [ops, new_model] = *partition_result;
 
   EXPECT_EQ(ops.size(), 2);
   EXPECT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
   EXPECT_EQ(ops.back()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  EXPECT_EQ(subgraphs.Size(), 2);
-  EXPECT_EQ(subgraphs.Elements().front()->Ops().size(), 1);
-  EXPECT_EQ(subgraphs.Elements().back()->Ops().size(), 1);
+  EXPECT_EQ(model.NumSubgraphs(), 2);
+  EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 1);
+  EXPECT_EQ(new_model.Subgraphs().back()->Ops().size(), 1);
 }
 
 TEST(PartitionModelTest, MultiSubgraphWithSelectedSubgraphs) {
@@ -235,13 +235,13 @@ TEST(PartitionModelTest, MultiSubgraphWithSelectedSubgraphs) {
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 2);
 
-  const auto& [ops, subgraphs] = *partition_result;
+  const auto& [ops, new_model] = *partition_result;
 
   EXPECT_EQ(ops.size(), 1);
   EXPECT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  EXPECT_EQ(subgraphs.Size(), 1);
-  EXPECT_EQ(subgraphs.Elements().front()->Ops().size(), 1);
+  EXPECT_EQ(new_model.NumSubgraphs(), 1);
+  EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 1);
 }
 
 TEST(PartitionModelTest, CstMultiSubgraph) {
@@ -256,20 +256,20 @@ TEST(PartitionModelTest, CstMultiSubgraph) {
   auto partition_result = PartitionModelDirect(std::move(selected_ops), model);
   ASSERT_TRUE(partition_result);
 
-  const auto& [ops, subgraphs] = *partition_result;
+  const auto& [ops, new_model] = *partition_result;
 
   EXPECT_EQ(ops.size(), 2);
   EXPECT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
   EXPECT_EQ(ops.back()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  EXPECT_EQ(subgraphs.Size(), 2);
-  EXPECT_EQ(subgraphs.Elements().front()->Ops().size(), 1);
-  EXPECT_EQ(subgraphs.Elements().back()->Ops().size(), 1);
+  EXPECT_EQ(new_model.NumSubgraphs(), 2);
+  EXPECT_EQ(new_model.Subgraphs().front()->Ops().size(), 1);
+  EXPECT_EQ(new_model.Subgraphs().back()->Ops().size(), 1);
 
   const auto& cst_1 =
-      subgraphs.Elements().front()->Ops().front()->Input(1).Weights();
+      new_model.Subgraphs().front()->Ops().front()->Input(1).Weights();
   const auto& cst_2 =
-      subgraphs.Elements().back()->Ops().front()->Input(1).Weights();
+      new_model.Subgraphs().back()->Ops().front()->Input(1).Weights();
 
   // Both weights should have the same object managed by the same buffer
   // manager.
@@ -402,7 +402,7 @@ TEST(PartitionTest, MappedCompositeOp) {
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
   // One new subgraph for the consumed composite op only, decomp not consumed.
-  ASSERT_EQ(partition_result->second.Size(), 1);
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
 }
 
 TEST(PartitionTest, SimpleNpuCallComposite) {
@@ -420,9 +420,9 @@ TEST(PartitionTest, SimpleNpuCallComposite) {
   ASSERT_EQ(ops.size(), 1);
   ASSERT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  auto& sgs = partition_result->second;
-  ASSERT_EQ(sgs.Size(), 1);
-  ASSERT_EQ(sgs.Elements().front(), decomp);
+  const auto& sgs = partition_result->second.Subgraphs();
+  ASSERT_EQ(sgs.size(), 1);
+  ASSERT_EQ(sgs.front(), decomp);
 }
 
 TEST(PartitionTest, MultiNpuCallComposite) {
@@ -466,11 +466,11 @@ TEST(PartitionTest, MultiNpuCallComposite) {
 
   {
     // Bodies to compile are the decompositions of npu call ops.
-    auto& sgs = partition_result->second;
+    const auto& sgs = partition_result->second.Subgraphs();
 
-    ASSERT_EQ(sgs.Size(), 2);
-    ASSERT_EQ(sgs.Elements().front(), decomp1);
-    ASSERT_EQ(sgs.Elements().back(), decomp2);
+    ASSERT_EQ(sgs.size(), 2);
+    ASSERT_EQ(sgs.front(), decomp1);
+    ASSERT_EQ(sgs.back(), decomp2);
   }
 }
 
@@ -489,9 +489,9 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(ops.size(), 1);
   ASSERT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  auto& sgs = partition_result->second;
-  ASSERT_EQ(sgs.Size(), 1);
-  ASSERT_EQ(sgs.Elements().front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+  const auto& sgs = partition_result->second.Subgraphs();
+  ASSERT_EQ(sgs.size(), 1);
+  ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
 }
 
 }  // namespace

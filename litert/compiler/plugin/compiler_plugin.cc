@@ -21,7 +21,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -40,7 +39,6 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -51,10 +49,7 @@
 #include "litert/core/dynamic_loading.h"
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
-#include "litert/core/model/buffer_manager.h"
-#include "litert/core/model/ir_allocator.h"
 #include "litert/core/model/model.h"
-#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
@@ -357,8 +352,8 @@ namespace {
 
 LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
-    LiteRtSubgraphT& subgraph, PartitionResult& result,
-    BufferManager* buffer_manager) {
+    LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
+    LiteRtModelT& model) {
   // Group selected ops into connected islands.
   auto islands = GroupPartitions(selected_ops);
   if (islands.empty()) {
@@ -368,9 +363,9 @@ LiteRtStatus PartitionSubgraph(
   // For each connected island, slice into new subgraph and replace use with
   // single dispatch op.
   for (auto& island : islands) {
-    auto& new_subgraph = result.second.EmplaceBack(buffer_manager);
+    auto& new_subgraph = model.EmplaceSubgraph();
     auto* dispatch_op = OutlinePartition(subgraph, &new_subgraph, island);
-    result.first.push_back(dispatch_op);
+    res_ops.push_back(dispatch_op);
   }
 
   return kLiteRtStatusOk;
@@ -419,6 +414,7 @@ Expected<PartitionResult> PartitionModel(
   // partitions.
   absl::flat_hash_set<uint32_t> decomp_subgraphs;
   std::vector<CompositeOptions> npu_calls;
+  const auto input_num_sgs = model.NumSubgraphs();
 
   ForEachIr(&model, [&](LiteRtOp op) {
     auto info = GetOptionsAs<CompositeOptions>(op);
@@ -432,8 +428,8 @@ Expected<PartitionResult> PartitionModel(
   });
 
   // Build partition result via calling plugin on non-decomposition subgraphs.
-  PartitionResult result;
-  for (auto i = 0; i < model.Subgraphs().size(); ++i) {
+  std::vector<LiteRtOp> dispatch_ops;
+  for (auto i = 0; i < input_num_sgs; ++i) {
     if (decomp_subgraphs.contains(i)) {
       continue;
     }
@@ -450,28 +446,37 @@ Expected<PartitionResult> PartitionModel(
     auto num_selected_ops = selected_ops->size();
     auto num_ops = subgraph->Ops().size();
 
-    auto num_partitions = result.first.size();
-    LITERT_RETURN_IF_ERROR(PartitionSubgraph(
-        std::move(*selected_ops), *subgraph, result, model.Buffers()));
-    num_partitions = result.first.size() - num_partitions;
+    auto num_partitions = dispatch_ops.size();
+    LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
+                                             *subgraph, dispatch_ops, model));
+    num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "PartitionSubgraph: %d, selected num ops: %lu, from totoal ops: "
                "%lu, num partitions: %lu",
                i, num_selected_ops, num_ops, num_partitions);
   }
+  ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - input_num_sgs);
 
-  // Add npu_call partitions to result. Update the npu_call ops to be dispatch
-  // ops.
+  // Add collect all the subgraphs to be compiled. These are the bodies of
+  // outlined partitions or npu_calls.
   std::vector<size_t> decomps_to_compile;
   for (auto& npu_call : npu_calls) {
     auto* op = npu_call.op;
     MakeDispatchOp(*op);
-    result.first.push_back(op);
+    dispatch_ops.push_back(op);
     decomps_to_compile.push_back(npu_call.subgraph);
   }
-  model.TransferSubgraphTo(result.second, std::move(decomps_to_compile));
+  for (auto i = input_num_sgs; i < model.NumSubgraphs(); ++i) {
+    // Outlined subgraphs are pushed to the back of the model.
+    decomps_to_compile.push_back(i);
+  }
 
-  return result;
+  // Create a new model split from the input model.
+  auto new_model = model.Yank(std::move(decomps_to_compile));
+  LITERT_LOG(LITERT_INFO, "Compiler input prepared for subgraphs %lu subgraphs",
+             new_model.Subgraphs().size());
+
+  return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
 
 Expected<PartitionResult> PartitionModelDirect(
@@ -481,12 +486,20 @@ Expected<PartitionResult> PartitionModelDirect(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure);
   }
   // Accumulate partition results for each subgraph in model.
-  PartitionResult result;
   auto* subgraph = model.Subgraphs().front();
+  std::vector<LiteRtOp> dispatch_ops;
   LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(selected_ops), *subgraph,
-                                           result, model.Buffers()));
-  ABSL_DCHECK_EQ(result.first.size(), result.second.Size());
-  return result;
+                                           dispatch_ops, model));
+  ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - 1);
+
+  std::vector<size_t> decomps_to_compile;
+  for (auto i = 1; i < model.NumSubgraphs(); ++i) {
+    // Outlined subgraphs are pushed to the back of the model.
+    decomps_to_compile.push_back(i);
+  }
+  auto new_model = model.Yank(std::move(decomps_to_compile));
+
+  return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
 
 Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
@@ -494,22 +507,7 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         PartitionResult partitions,
                                         absl::string_view soc_model) {
   auto& dispatch_ops = partitions.first;
-  auto& subgraphs = partitions.second;
-
-  // Wrap the partitioned subgraphs in a LiteRtModel.
-  LiteRtModelT sliced_model;
-  sliced_model.TransferSubgraphsFrom(std::move(subgraphs));
-
-  // Copy op codes.
-  const auto& op_codes = litert::internal::GetTflOpCodes(model);
-
-  LiteRtModelT::TflOpCodes codes;
-  codes.reserve(op_codes.size());
-  for (const auto& op_code : op_codes) {
-    codes.emplace_back(std::make_unique<TflOpCode>(*op_code));
-  }
-
-  litert::internal::SetTflOpCodes(sliced_model, std::move(codes));
+  auto& sliced_model = partitions.second;
 
   // Pass sliced subgraphs to plugin for compilation.
   auto compiled_result = compiler_plugin.Compile(&sliced_model, soc_model);

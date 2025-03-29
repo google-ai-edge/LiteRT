@@ -83,6 +83,7 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest) {
 void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest) {
   dest.SetCustomOptions(src.CustomOptions().Data(), src.CustomOptions().Size());
   litert::internal::SetTflOptions(dest, litert::internal::GetTflOptions(src));
+  litert::internal::SetTflOptions2(dest, litert::internal::GetTflOptions2(src));
   litert::internal::SetTflOpCodeInd(dest,
                                     litert::internal::GetTflOpCodeInd(src));
   dest.SetOpCode(src.OpCode());

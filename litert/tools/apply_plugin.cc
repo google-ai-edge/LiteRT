@@ -113,7 +113,7 @@ class Context {
 };
 
 void DumpSubgraphs(ToolDisplay& display, absl::string_view label,
-                   absl::Span<LiteRtSubgraph> subgraphs) {
+                   absl::Span<const LiteRtSubgraph> subgraphs) {
   for (auto* subgraph : subgraphs) {
     display.Labeled();
     display.Indented() << absl::StreamFormat("(%s graph)", label);
@@ -144,9 +144,9 @@ void DumpModelStats(ToolDisplay& display, BufferRef<uint8_t> buf) {
 
 void DumpPartitionResult(ToolDisplay& display, const PartitionResult& result) {
   display.Labeled() << absl::StreamFormat(
-      "Partitioning yielded %lu new subgraphs\n", result.second.Size());
+      "Partitioning yielded %lu new subgraphs\n", result.second.NumSubgraphs());
 
-  DumpSubgraphs(display, "new subgraphs", result.second.Elements());
+  DumpSubgraphs(display, "new subgraphs", result.second.Subgraphs());
 }
 
 absl::string_view Context::CmdStr(ApplyPluginRun::Cmd cmd) {
@@ -318,8 +318,13 @@ LiteRtStatus Partition(Context& ctx) {
   ctx.Dump().Done();
   DumpPartitionResult(ctx.Dump(), *partition_result);
 
-  auto& new_subgraphs = partition_result->second;
-  model.TransferSubgraphsFrom(std::move(new_subgraphs));
+  // TODO: Handle the edge case where the result contains composites and
+  // their decompositions. See opposite logic in TransferSubgraphTo.
+  LiteRtSubgraphT::Alloc alloc;
+  for (auto* subgraph : partition_result->second.Subgraphs()) {
+    alloc.EmplaceBack(std::move(*subgraph));
+  }
+  model.TransferSubgraphsFrom(std::move(alloc));
 
   ctx.Dump().Start("Serializing model");
   auto serialized = SerializeModel(std::move(model));
