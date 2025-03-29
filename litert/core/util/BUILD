@@ -25,7 +25,6 @@ cc_library(
     srcs = ["flatbuffer_tools.cc"],
     hdrs = [
         "flatbuffer_tools.h",
-        "//litert/cc:litert_consts.h",
     ],
     deps = [
         "@com_google_absl//absl/container:inlined_vector",
@@ -34,6 +33,7 @@ cc_library(
         "@flatbuffers//:runtime_cc",
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_consts",
         "//litert/cc:litert_expected",
         "//litert/core:filesystem",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",

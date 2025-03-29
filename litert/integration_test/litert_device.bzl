@@ -23,6 +23,23 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 
+# MISCELLANEOUS ####################################################################################
+
+def hidden_test_tags():
+    """
+    Get tags to disable a test that is not expected to work on Forge.
+
+    Returns:
+        A list of tags to hide a test from various tools.
+    """
+    return [
+        "no-remote-exec",
+        "manual",
+        "notap",
+        "nobuilder",
+        "no_oss",
+    ]
+
 # DEVICE PATHS #####################################################################################
 
 DEVICE_RLOCATION_ROOT = "/data/local/tmp/runfiles"
@@ -277,7 +294,7 @@ def get_mh_dimensions(backend_id = ""):
 
 #copybara:comment_end(google-only)
 
-def run_on_device(
+def litert_device_exec(
         name,
         target,
         backend_id = "",
@@ -305,6 +322,9 @@ def run_on_device(
         exec_args: List of arguments to pass to the executable.
         exec_env_vars: List of environment variables to set before executing the target.
     """
+    data = data + []
+    exec_env_vars = exec_env_vars + []
+
     if backend_id == QUALCOMM_ID:
         data += QUALCOMM_DEVICE_SPEC.libraries
         exec_env_vars += QUALCOMM_DEVICE_SPEC.env_vars
@@ -370,7 +390,7 @@ def run_on_device(
         # name = name + "_lab_test",
         # test_target = target,
         # args = [
-            # "--run_as=xeno-mh-guitar",
+            # "--run_as=odml-device-lab",
         # ],
         # dimensions = get_mh_dimensions(backend_id),
         # tags = [
@@ -385,6 +405,61 @@ def run_on_device(
         # env_vars = exec_env_vars,
     # )
     # copybara:uncomment_end(google-only)
+
+def litert_device_test(
+        name,
+        srcs,
+        deps,
+        rule = native.cc_test,
+        backend_id = "",
+        driver = get_driver(),
+        data = [],
+        exec_args = [],
+        exec_env_vars = [],
+        tags = [],
+        linkopts = []):
+    """
+    Syntactic sugar for the litert_device_exec macro.
+
+    Creates a target to run internally given the srcs and deps (default cc_test).
+
+    Args:
+        name: Name of the target.
+        srcs: The source files for the target to be generated.
+        deps: The dependencies for the target to be generated.
+        rule: The rule to use for the target to be generated.
+        backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
+        driver: The driver script to use for execution.
+        data: List of data files to push to the device and for the target to be generated.
+        exec_args: List of arguments to pass to the executable.
+        exec_env_vars: List of environment variables to set before executing the target.
+        tags: List of tags to apply to the target to be generated.
+        linkopts: List of linkopts to apply to the target to be generated.
+    """
+
+    target = name + "_{}".format(name)
+
+    rule(
+        name = target,
+        srcs = srcs,
+        deps = deps,
+        data = data,
+        linkopts = select({
+            "@org_tensorflow//tensorflow:android": ["-landroid"],
+            "//conditions:default": [],
+        }) + linkopts,
+        tags = hidden_test_tags() + tags,
+    )
+
+    litert_device_exec(
+        name = name,
+        target = absolute_label(":{}".format(target)),
+        backend_id = backend_id,
+        driver = driver,
+        data = data,
+        exec_args = exec_args,
+        exec_env_vars = exec_env_vars,
+    )
 
 def litert_integration_test(
         name,
@@ -430,7 +505,7 @@ def litert_integration_test(
 
     # TODO: Also kick off a xeno mobile test here.
 
-    run_on_device(
+    litert_device_exec(
         name = name,
         target = target,
         driver = driver,
