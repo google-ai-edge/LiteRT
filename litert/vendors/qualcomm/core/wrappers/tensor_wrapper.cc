@@ -92,7 +92,16 @@ TensorWrapper::TensorWrapper(
     const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
     const void* data)
     : TensorWrapper(id, tensor_type, data_type, quantize_params, dimentions) {
-  SetDataBy(bytes, data);
+  // Use QNN_DATATYPE_SFIXED_POINT_8 for 4 bit quantization
+  if (data_type == QNN_DATATYPE_SFIXED_POINT_4) {
+    QNN_LOG_DEBUG("4bit Qunat, converting 4bit data to 8bit for QNN.");
+    SetDataType(QNN_DATATYPE_SFIXED_POINT_8);
+    std::vector<std::int8_t> int8_data;
+    ConvertDataFromInt4ToInt8(data, int8_data, bytes);
+    SetDataBy(GetTensorBytes(), int8_data.data());
+  } else {
+    SetDataBy(bytes, data);
+  }
 }
 
 TensorWrapper::TensorWrapper(const TensorWrapper& other)
