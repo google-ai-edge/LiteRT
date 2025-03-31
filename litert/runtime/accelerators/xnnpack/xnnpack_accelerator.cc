@@ -32,11 +32,17 @@ namespace litert {
 
 namespace {
 constexpr const char kCpuAcceleratorName[] = "CpuAccelerator";
-constexpr const LiteRtApiVersion kCpuAcceleratorVersion{1, 0, 0};
+
+struct CpuAcceleratorVersion {
+  static constexpr int kMajor = 1;
+  static constexpr int kMinor = 0;
+  static constexpr int kPatch = 0;
+  static constexpr LiteRtApiVersion version = {kMajor, kMinor, kPatch};  // NOLINT
+};
 
 class CpuAccelerator final
     : public internal::AcceleratorImplementationHelper<
-          CpuAccelerator, kCpuAcceleratorName, kCpuAcceleratorVersion,
+          CpuAccelerator, kCpuAcceleratorName, CpuAcceleratorVersion,
           kLiteRtHwAcceleratorCpu> {
  public:
   CpuAccelerator() = default;

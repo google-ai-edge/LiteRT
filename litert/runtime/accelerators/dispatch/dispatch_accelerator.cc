@@ -37,12 +37,17 @@ namespace litert {
 
 namespace {
 constexpr const char kNpuAcceleratorName[] = "NpuAccelerator";
-constexpr const LiteRtApiVersion kNpuAcceleratorVersion{1, 0, 0};
+struct NpuAcceleratorVersion {
+  static constexpr int kMajor = 1;
+  static constexpr int kMinor = 0;
+  static constexpr int kPatch = 0;
+  static constexpr LiteRtApiVersion version = {kMajor, kMinor, kPatch};  // NOLINT
+};
 }  // namespace
 
 class NpuAccelerator final
     : public internal::AcceleratorImplementationHelper<
-          NpuAccelerator, kNpuAcceleratorName, kNpuAcceleratorVersion,
+          NpuAccelerator, kNpuAcceleratorName, NpuAcceleratorVersion,
           kLiteRtHwAcceleratorNpu> {
  public:
   explicit NpuAccelerator(std::string library_folder)

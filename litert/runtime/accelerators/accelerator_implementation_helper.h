@@ -77,14 +77,25 @@ GetModelCompilationData(LiteRtAcceleratorCompilationOptions options) {
 //
 // Warning: `version` should be incremented every time the code of this
 // accelerator is updated according to semanting versioning.
-template <class AcceleratorClass, const char* name_, LiteRtApiVersion version_,
+//
+// Pre C++20, it's unable to use struct as non-type template parameter.
+// The following example will be used instead of templating on LiteRtApiVersion
+// directly.
+//
+// struct LiteRtApiVersionTrait {
+//   static constexpr int kMajor = 0;
+//   static constexpr int kMinor = 0;
+//   static constexpr int kPatch = 0;
+//   static constexpr LiteRtApiVersion version = {kMajor, kMinor, kPatch};
+// };
+template <class AcceleratorClass, const char* name_, typename VersionTrait,
           LiteRtHwAcceleratorSet hardware_support_>
 class AcceleratorImplementationHelper {
  public:
   // The accelerator name returned by `GetName`.
   constexpr static const absl::string_view kName = name_;
   // The accelerator version returned by `GetVersion`.
-  constexpr static const LiteRtApiVersion kVersion = version_;
+  constexpr static const LiteRtApiVersion kVersion = VersionTrait::version;
   // The accelerator hardware support returned by `GetHardwareSupport`.
   constexpr static const LiteRtHwAcceleratorSet kHwSupport = hardware_support_;
 
