@@ -27,19 +27,19 @@ TEST(AcceleratorRegistryTest, CreateEmptyAcceleratorWorks) {
 TEST(AcceleratorRegistryTest, AcceleratorCanBeRegisteredAndRetrieved) {
   AcceleratorRegistry registry;
 
-  auto registered_accelerator1 = registry.RegisterAccelerator(
+  auto registered_accelerator = registry.RegisterAccelerator(
       AcceleratorRegistry::CreateEmptyAccelerator());
-  ASSERT_TRUE(registered_accelerator1);
+  ASSERT_TRUE(registered_accelerator);
 
   auto registered_accelerator2 = registry.RegisterAccelerator(
       AcceleratorRegistry::CreateEmptyAccelerator());
   ASSERT_TRUE(registered_accelerator2);
 
-  ASSERT_NE(registered_accelerator1, registered_accelerator2);
+  ASSERT_NE(registered_accelerator, registered_accelerator2);
 
   auto queried_accelerator1 = registry.Get(0);
   ASSERT_TRUE(queried_accelerator1);
-  EXPECT_EQ(queried_accelerator1, registered_accelerator1);
+  EXPECT_EQ(queried_accelerator1, registered_accelerator);
 
   auto queried_accelerator2 = registry.Get(1);
   ASSERT_TRUE(queried_accelerator2);
