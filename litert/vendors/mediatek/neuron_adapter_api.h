@@ -144,6 +144,8 @@ struct NeuronAdapterApi::Api {
   decltype(&NeuronModel_setOperandSymmPerChannelQuantParams)
       model_set_symm_per_channel_quant_params = nullptr;
   decltype(&Neuron_getVersion) get_version = nullptr;
+  decltype(&NeuronModel_relaxComputationFloat32toFloat16) relax_fp32_to_fp16 =
+      nullptr;
 };
 
 }  // namespace litert::mediatek
