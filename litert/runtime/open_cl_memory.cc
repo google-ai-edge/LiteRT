@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/runtime/open_cl_buffer.h"
+#include "litert/runtime/open_cl_memory.h"
 
 #include <stdlib.h>
 
@@ -41,13 +41,13 @@
 namespace litert {
 namespace internal {
 
-template Expected<float*> OpenClBuffer::Lock<float>();
-template Expected<char*> OpenClBuffer::Lock<char>();
-template Expected<void> OpenClBuffer::Unlock<float>();
-template Expected<void> OpenClBuffer::Unlock<char>();
+template Expected<float*> OpenClMemory::Lock<float>();
+template Expected<char*> OpenClMemory::Lock<char>();
+template Expected<void> OpenClMemory::Unlock<float>();
+template Expected<void> OpenClMemory::Unlock<char>();
 
 template <typename T>
-Expected<T*> OpenClBuffer::Lock() {
+Expected<T*> OpenClMemory::Lock() {
   absl::MutexLock lock(&mutex_);
   // The buffer has not been locked, so we need to read from the OpenCL
   // buffer.
@@ -76,7 +76,7 @@ Expected<T*> OpenClBuffer::Lock() {
 }
 
 template <typename T>
-Expected<void> OpenClBuffer::Unlock() {
+Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
   tflite::gpu::cl::CLCommandQueue* queue =
       GpuEnvironmentSingleton::GetInstance().getCommandQueue();
@@ -98,12 +98,12 @@ Expected<void> OpenClBuffer::Unlock() {
       "The data failed to write to the OpenCL buffer when unlocked");
 }
 
-bool OpenClBuffer::IsSupported() {
+bool OpenClMemory::IsSupported() {
   static bool is_supported = ::tflite::gpu::cl::LoadOpenCL().ok();
   return is_supported;
 }
 
-Expected<OpenClBuffer> OpenClBuffer::Alloc(size_t bytes_size) {
+Expected<OpenClMemory> OpenClMemory::Alloc(size_t bytes_size) {
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
@@ -119,14 +119,14 @@ Expected<OpenClBuffer> OpenClBuffer::Alloc(size_t bytes_size) {
                       "Failed to create OpenCL buffer");
   }
 
-  return Expected<OpenClBuffer>(std::move(buffer));
+  return Expected<OpenClMemory>(std::move(buffer));
 }
 
 bool IsAhwbToClInteropSupported() {
   return ::tflite::gpu::cl::clImportMemoryARM != nullptr;
 }
 
-Expected<OpenClBuffer> OpenClBuffer::AllocFromAhwbBuffer(
+Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
     AhwbBuffer& ahwb_buffer) {
   cl_int error = CL_SUCCESS;
   const cl_import_properties_arm properties[] = {
@@ -154,7 +154,7 @@ Expected<OpenClBuffer> OpenClBuffer::AllocFromAhwbBuffer(
 
   tflite::gpu::cl::Buffer cl_buffer(buffer, size_bytes);
 
-  return OpenClBuffer(std::move(cl_buffer), ahwb_buffer.ahwb);
+  return OpenClMemory(std::move(cl_buffer), ahwb_buffer.ahwb);
 }
 
 }  // namespace internal

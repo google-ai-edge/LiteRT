@@ -142,10 +142,10 @@ class TensorBuffer
 #endif
   }
 
-  Expected<cl_mem> GetOpenClBuffer() const {
+  Expected<cl_mem> GetOpenClMemory() const {
 #if LITERT_HAS_OPENCL_SUPPORT
     cl_mem cl_mem;
-    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClBuffer(Get(), &cl_mem));
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClMemory(Get(), &cl_mem));
     return cl_mem;
 #else
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,

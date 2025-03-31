@@ -23,6 +23,7 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/tensor_buffer.h"
 
@@ -170,15 +171,16 @@ LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-LiteRtStatus LiteRtCreateTensorBufferFromOpenClBuffer(
-    const LiteRtRankedTensorType* tensor_type, cl_mem cl_mem_addr,
+LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer) {
   if (!tensor_type || !buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto created_tensor_buffer = LiteRtTensorBufferT::CreateFromOpenClBuffer(
-      *tensor_type, cl_mem_addr, opencl_buffer_size);
+  auto created_tensor_buffer = LiteRtTensorBufferT::CreateFromOpenClMemory(
+      *tensor_type, buffer_type, cl_mem_addr, opencl_buffer_size);
   if (!created_tensor_buffer) {
     LITERT_LOG(LITERT_ERROR, "%s",
                created_tensor_buffer.Error().Message().c_str());
@@ -188,19 +190,19 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClBuffer(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetTensorBufferOpenClBuffer(LiteRtTensorBuffer tensor_buffer,
+LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                cl_mem* cl_mem_addr) {
   if (!tensor_buffer || !cl_mem_addr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto opencl_buffer = tensor_buffer->GetOpenClBuffer();
-  if (!opencl_buffer) {
-    LITERT_LOG(LITERT_ERROR, "%s", opencl_buffer.Error().Message().c_str());
-    return opencl_buffer.Error().Status();
+  auto opencl_memory = tensor_buffer->GetOpenClMemory();
+  if (!opencl_memory) {
+    LITERT_LOG(LITERT_ERROR, "%s", opencl_memory.Error().Message().c_str());
+    return opencl_memory.Error().Status();
   }
 
-  *cl_mem_addr = (*opencl_buffer)->GetMemoryPtr();
+  *cl_mem_addr = (*opencl_memory)->GetMemoryPtr();
   return kLiteRtStatusOk;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT

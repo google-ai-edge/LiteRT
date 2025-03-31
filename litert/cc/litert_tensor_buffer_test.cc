@@ -36,6 +36,7 @@
 #include "litert/runtime/dmabuf_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/fastrpc_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/ion_buffer.h"  // IWYU pragma: keep
+#include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/test/matchers.h"
 
@@ -49,7 +50,6 @@
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
-#include "litert/runtime/open_cl_buffer.h"
 #include <CL/cl.h>
 #include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
 #include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
@@ -586,7 +586,7 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
 
 #if LITERT_HAS_OPENCL_SUPPORT
 TEST(TensorBuffer, GetClBufferFromAhwb) {
-  if (!internal::OpenClBuffer::IsSupported()) {
+  if (!internal::OpenClMemory::IsSupported()) {
     GTEST_SKIP() << "OpenCL is not supported on this platform; skipping the "
                     "test";
   }
@@ -602,7 +602,7 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
       kTensorData, sizeof(kTensorData) / sizeof(kTensorData[0]))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(cl_mem cl_buffer,
-                              ahwb_tensor_buffer.GetOpenClBuffer());
+                              ahwb_tensor_buffer.GetOpenClMemory());
   EXPECT_THAT(cl_buffer, Ne(nullptr));
 
   // Read from CL buffer.

@@ -29,12 +29,12 @@
 namespace litert::internal {
 
 /**
- * The OpenCL buffer class that provides GPU memory allocation and two-way sync
+ * The OpenCL memory class that provides GPU memory allocation and two-way sync
  * between the CPU memory and the GPU OpenCL buffer.
  */
-class OpenClBuffer {
+class OpenClMemory {
  public:
-  OpenClBuffer(OpenClBuffer&& other) {
+  OpenClMemory(OpenClMemory&& other) {
     data_ = other.data_;
     buffer_ = std::move(other.buffer_);
     size_ = other.size_;
@@ -44,13 +44,13 @@ class OpenClBuffer {
     other.ahwb_ = nullptr;
   }
 
-  explicit OpenClBuffer(tflite::gpu::cl::Buffer buffer,
+  explicit OpenClMemory(tflite::gpu::cl::Buffer buffer,
                         AHardwareBuffer* ahwb = nullptr)
       : buffer_(std::move(buffer)),
         size_(buffer_.GetMemorySizeInBytes()),
         ahwb_(ahwb) {}
 
-  OpenClBuffer(cl_mem buffer, size_t size, LiteRtOpenClDeallocator deallocator)
+  OpenClMemory(cl_mem buffer, size_t size, LiteRtOpenClDeallocator deallocator)
       : deallocator_(deallocator), size_(size) {
     if (deallocator_ != nullptr) {
       buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
@@ -59,7 +59,7 @@ class OpenClBuffer {
     }
   }
 
-  ~OpenClBuffer() {
+  ~OpenClMemory() {
     if (deallocator_ != nullptr) {
       deallocator_(buffer_.GetMemoryPtr());
     }
@@ -79,8 +79,8 @@ class OpenClBuffer {
   Expected<void> Unlock();
 
   static bool IsSupported();
-  static Expected<OpenClBuffer> Alloc(size_t bytes_size);
-  static Expected<OpenClBuffer> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
+  static Expected<OpenClMemory> Alloc(size_t bytes_size);
+  static Expected<OpenClMemory> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
   size_t size_bytes() const { return size_; }
 
  private:

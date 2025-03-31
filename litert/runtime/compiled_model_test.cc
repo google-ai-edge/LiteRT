@@ -38,7 +38,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/model/model.h"
-#include "litert/runtime/open_cl_buffer.h"
+#include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
@@ -413,8 +413,8 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   GTEST_SKIP() << "GPU tests are not supported In msan";
 #endif
 
-  if (!litert::internal::OpenClBuffer::IsSupported()) {
-    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+  if (!litert::internal::OpenClMemory::IsSupported()) {
+    GTEST_SKIP() << "OpenCL memory is not supported on this platform; "
                     "skipping the test";
   }
   // Environment setup.
