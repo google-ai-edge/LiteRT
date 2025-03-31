@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "litert_integration_test")
+load("//litert/integration_test:litert_device.bzl", "litert_integration_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
