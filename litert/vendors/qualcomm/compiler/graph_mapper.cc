@@ -11,6 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 
@@ -39,7 +42,7 @@
 namespace litert::qnn {
 
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs() {
-  static std::array<QnnHtpGraph_CustomConfig_t, 2> graph_custom_configs;
+  static std::array<QnnHtpGraph_CustomConfig_t, 4> graph_custom_configs;
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
@@ -51,8 +54,17 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs() {
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
   graph_custom_configs[1].optimizationOption.floatValue = 3;
+  // VTCM
+  graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[2].option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
+  graph_custom_configs[2].vtcmSizeInMB = QNN_HTP_GRAPH_CONFIG_OPTION_MAX;
+  // FoldRelu Off
+  graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[3].option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
+  graph_custom_configs[3].foldReluActivationIntoConvOff = true;
 
-  static std::array<QnnGraph_Config_t, 2> graph_configs;
+  static std::array<QnnGraph_Config_t, 4> graph_configs;
   graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
   graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
   graph_configs[0].customConfig = &graph_custom_configs[0];
@@ -61,29 +73,56 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs() {
   graph_configs[1].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
   graph_configs[1].customConfig = &graph_custom_configs[1];
 
-  static std::array<const QnnGraph_Config_t*, 3> result = {
-      &graph_configs[0], &graph_configs[1], nullptr};
+  graph_configs[2] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[2].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[2].customConfig = &graph_custom_configs[2];
+
+  graph_configs[3] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[3].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[3].customConfig = &graph_custom_configs[3];
+
+  static std::array<const QnnGraph_Config_t*, 5> result = {
+      &graph_configs[0], &graph_configs[1], &graph_configs[2],
+      &graph_configs[3], nullptr};
 
   return absl::MakeSpan(result.data(), result.size());
 }
 
 inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs() {
-  static QnnHtpGraph_CustomConfig_t graph_custom_config;
+  static std::array<QnnHtpGraph_CustomConfig_t, 3> graph_custom_configs;
   // Default use O3 for now.
-  graph_custom_config = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-  graph_custom_config.option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
-  graph_custom_config.optimizationOption.type =
+  graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
+  graph_custom_configs[0].optimizationOption.type =
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
-  graph_custom_config.optimizationOption.floatValue = 3;
+  graph_custom_configs[0].optimizationOption.floatValue = 3;
 
-  static QnnGraph_Config_t graph_config;
-  graph_config = QNN_GRAPH_CONFIG_INIT;
-  graph_config.option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_config.customConfig = &graph_custom_config;
+  // VTCM
+  graph_custom_configs[1] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[1].option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
+  graph_custom_configs[1].vtcmSizeInMB = QNN_HTP_GRAPH_CONFIG_OPTION_MAX;
+  // FoldRelu Off
+  graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[2].option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
+  graph_custom_configs[2].foldReluActivationIntoConvOff = true;
 
-  static std::array<const QnnGraph_Config_t*, 2> result = {&graph_config,
-                                                           nullptr};
+  static std::array<QnnGraph_Config_t, 3> graph_configs;
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+
+  graph_configs[1] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[1].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[1].customConfig = &graph_custom_configs[1];
+
+  graph_configs[2] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[2].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[2].customConfig = &graph_custom_configs[2];
+
+  static std::array<const QnnGraph_Config_t*, 4> result = {
+      &graph_configs[0], &graph_configs[1], &graph_configs[2], nullptr};
 
   return absl::MakeSpan(result.data(), result.size());
 }

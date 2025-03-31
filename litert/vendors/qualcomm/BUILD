@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_lib", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
@@ -85,6 +88,8 @@ litert_cc_lib_with_qnn(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
         "//litert/core:dynamic_loading",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/backends:htp_device_config",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )
