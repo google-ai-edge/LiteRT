@@ -18,9 +18,9 @@
 import functools
 from typing import Any, Self
 
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import types
-from ai_edge_litert.aot.vendors import import_vendor
+from litert.python.aot.core import components
+from litert.python.aot.core import types
+from litert.python.aot.vendors import import_vendor
 
 
 class ExampleTarget(types.Target):

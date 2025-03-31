@@ -19,7 +19,7 @@ import copy
 import dataclasses
 from typing import Any, Iterable
 
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import types
 
 
 @dataclasses.dataclass

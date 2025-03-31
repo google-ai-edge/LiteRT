@@ -14,10 +14,10 @@
 # ==============================================================================
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot.core import common
-from ai_edge_litert.aot.core import mlir_transforms
-from ai_edge_litert.aot.core import test_common
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import common
+from litert.python.aot.core import mlir_transforms
+from litert.python.aot.core import test_common
+from litert.python.aot.core import types
 
 
 class MlirTransformsTest(test_common.TestWithTfliteModels):

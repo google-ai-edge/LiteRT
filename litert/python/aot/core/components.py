@@ -18,7 +18,7 @@
 import abc
 from typing import Any, TypeAlias
 
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import types
 
 QuantRecipe: TypeAlias = list[dict[str, Any]] | str
 

@@ -16,12 +16,12 @@
 from unittest import mock
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot import prepare_for_npu
-from ai_edge_litert.aot.core import common
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import test_common
-from ai_edge_litert.aot.core import types
-from ai_edge_litert.aot.vendors.example import example_backend
+from litert.python.aot import prepare_for_npu
+from litert.python.aot.core import common
+from litert.python.aot.core import components
+from litert.python.aot.core import test_common
+from litert.python.aot.core import types
+from litert.python.aot.vendors.example import example_backend
 
 
 class MockAieQuantizer(components.AieQuantizerT):

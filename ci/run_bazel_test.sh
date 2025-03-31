@@ -25,6 +25,7 @@ BUILD_FLAGS=(
     "--config=bulk_test_cpu"
     "--config=disable_tf_lite_py"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
+    "--keep_going"
   )
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache

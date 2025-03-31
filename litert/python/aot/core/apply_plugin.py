@@ -21,9 +21,9 @@ import re
 import subprocess
 import tempfile
 
-from ai_edge_litert.aot.core import common
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import common
+from litert.python.aot.core import components
+from litert.python.aot.core import types
 
 _BINARY = pathlib.Path("tools/apply_plugin_main")
 

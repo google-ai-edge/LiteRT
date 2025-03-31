@@ -24,9 +24,8 @@ DOT_TFLITE = f".{TFLITE}"
 NPU = "npu"
 
 
-# TODO(b/394678954): This will need to be tweaked during copybara.
-_WORKSPACE_PREFIX = "ai_edge_litert"
-_LITERT_ROOT = "litert"
+_WORKSPACE_PREFIX = "litert"
+_LITERT_ROOT = ""
 _PYTHON_ROOT = "python/aot"
 
 MODULE_ROOT = ".".join([

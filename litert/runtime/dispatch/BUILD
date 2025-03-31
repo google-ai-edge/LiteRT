@@ -88,7 +88,7 @@ cc_library(
         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
         "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core/c:c_api_opaque_without_op_resolver",
+        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_opaque_without_op_resolver",
         "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
     ],
 )

@@ -53,7 +53,7 @@ pytype_strict_contrib_test(
     srcs = ["prepare_for_npu_test.py"],
     deps = [
         ":prepare_for_npu",
-        "@absl_py//absl/testing",
+        "@absl_py//absl/testing:absltest",
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",

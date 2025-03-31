@@ -4,7 +4,7 @@ import dataclasses
 import enum
 from typing import Any
 
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import types
 
 _QUALCOMM_BACKEND_ID = "qualcomm"
 

@@ -14,9 +14,9 @@
 # ==============================================================================
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot.core import types
-from ai_edge_litert.aot.vendors import import_vendor
-from ai_edge_litert.aot.vendors.example import example_backend  # pylint: disable=unused-import
+from litert.python.aot.core import types
+from litert.python.aot.vendors import import_vendor
+from litert.python.aot.vendors.example import example_backend  # pylint: disable=unused-import
 
 
 class ImportVendorTest(googletest.TestCase):

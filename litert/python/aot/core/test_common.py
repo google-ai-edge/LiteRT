@@ -20,7 +20,7 @@ import tempfile
 from typing import Any
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot.core import common
+from litert.python.aot.core import common
 
 _TEST_DATA_DIR = pathlib.Path("test/testdata")
 

@@ -86,11 +86,11 @@ litert_cc_bin_with_qnn(
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
         # copybara:uncomment_end
         "//litert/vendors/examples:example_plugin_so",
-        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         # TODO: b/407046837 - Remove the comment once we are able to add the deps in OSS.
         # copybara:uncomment_begin(google-only)
+        # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+        # "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         # "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
         # copybara:uncomment_end
     ],
@@ -111,7 +111,7 @@ litert_cc_bin_with_qnn(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "//third_party/llvm/llvm-project/llvm:Support",
+        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
         "//litert/core:build_stamp",
     ],
@@ -137,7 +137,7 @@ cc_binary(
         ":outstream",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        "//third_party/llvm/llvm-project/llvm:Support",
+        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
     ],
 )
@@ -240,7 +240,7 @@ cc_test(
             # copybara:uncomment_begin(google-only)
             # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end
-            "@org_tensorflow//tensorflow/lite/core/c:c_api_types",
+            "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
             "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
             "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
         ],

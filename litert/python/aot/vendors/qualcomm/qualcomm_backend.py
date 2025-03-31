@@ -19,10 +19,10 @@ import copy
 import functools
 from typing import Iterable, Self
 
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import types
-from ai_edge_litert.aot.vendors import import_vendor
-from ai_edge_litert.aot.vendors.qualcomm import target as target_lib
+from litert.python.aot.core import components
+from litert.python.aot.core import types
+from litert.python.aot.vendors import import_vendor
+from litert.python.aot.vendors.qualcomm import target as target_lib
 
 
 @import_vendor.register_backend

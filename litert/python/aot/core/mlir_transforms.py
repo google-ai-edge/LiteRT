@@ -15,9 +15,9 @@
 
 """Wrapper for suite of MLIR passes."""
 
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import tflxx_util
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import components
+from litert.python.aot.core import tflxx_util
+from litert.python.aot.core import types
 
 
 class MlirTransforms(components.MlirTransformsT):

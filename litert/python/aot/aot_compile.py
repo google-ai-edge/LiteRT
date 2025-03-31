@@ -17,12 +17,12 @@
 import pathlib
 import tempfile
 
-from ai_edge_litert.aot import prepare_for_npu as core
-from ai_edge_litert.aot.core import apply_plugin
-from ai_edge_litert.aot.core import components
-from ai_edge_litert.aot.core import mlir_transforms
-from ai_edge_litert.aot.core import types
-from ai_edge_litert.aot.vendors import import_vendor
+from litert.python.aot import prepare_for_npu as core
+from litert.python.aot.core import apply_plugin
+from litert.python.aot.core import components
+from litert.python.aot.core import mlir_transforms
+from litert.python.aot.core import types
+from litert.python.aot.vendors import import_vendor
 
 
 def aot_compile(

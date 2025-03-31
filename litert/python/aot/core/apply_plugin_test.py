@@ -19,9 +19,9 @@ import subprocess
 from unittest import mock
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot.core import apply_plugin
-from ai_edge_litert.aot.core import test_common
-from ai_edge_litert.aot.core import types
+from litert.python.aot.core import apply_plugin
+from litert.python.aot.core import test_common
+from litert.python.aot.core import types
 
 
 class ApplyPluginTest(test_common.TestWithTfliteModels):

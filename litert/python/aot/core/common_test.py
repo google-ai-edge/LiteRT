@@ -16,7 +16,7 @@
 import pathlib
 
 from absl.testing import absltest as googletest
-from ai_edge_litert.aot.core import common
+from litert.python.aot.core import common
 
 _TFL_MODEL = pathlib.Path("test/testdata/add_simple.tflite")
 

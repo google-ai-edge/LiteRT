@@ -1,4 +1,4 @@
-# Copyright 2024 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2025 The LiteRT Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Vendor backends for LiteRt."""
 
-from litert.python.aot.vendors.qualcomm import qualcomm_backend as _
+"""LiteRT is a library for running ML models on mobile devices."""

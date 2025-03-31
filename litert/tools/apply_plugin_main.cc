@@ -19,8 +19,8 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "third_party/llvm/llvm-project/llvm/include/llvm/ADT/ArrayRef.h"
-#include "third_party/llvm/llvm-project/llvm/include/llvm/Support/CommandLine.h"
+#include "llvm/include/llvm/ADT/ArrayRef.h"
+#include "llvm/include/llvm/Support/CommandLine.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/outstream.h"

@@ -115,7 +115,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
-        "@org_tensorflow//tensorflow/lite/core/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
     ],
 )
 
@@ -132,7 +132,7 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
-        "@org_tensorflow//tensorflow/lite/core/c:c_api_types",
+        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
     ],
 )
 
@@ -547,7 +547,7 @@ cc_library(
         "@org_tensorflow//tensorflow/lite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h
         "@org_tensorflow//tensorflow/lite/c:tensorflowlite_c_api_hdrs_filegroup",
-        "@org_tensorflow//tensorflow/lite/core/c:headers_filegroup",
+        "@org_tensorflow//tensorflow/lite/c:tensorflowlite_c_impl_hdrs_filegroup",
     ],  # Export all header files (.h) in this directory
     deps = [
         "@opencl_headers",
