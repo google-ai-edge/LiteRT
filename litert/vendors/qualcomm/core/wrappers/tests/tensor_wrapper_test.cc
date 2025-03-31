@@ -140,7 +140,7 @@ TEST(TensorWrapperTest, QnnTensorTest) {
     EXPECT_EQ(cloned_data[i], data[i]);
   }
 
-  Qnn_Tensor_t& ref = tensor_wrapper.GetQnnTensor();
+  const Qnn_Tensor_t& ref = tensor_wrapper.GetQnnTensor();
   EXPECT_EQ(ref.version, QNN_TENSOR_VERSION_2);
   EXPECT_EQ(ref.v2.id, 0);
   EXPECT_EQ(ref.v2.type, QNN_TENSOR_TYPE_APP_WRITE);
