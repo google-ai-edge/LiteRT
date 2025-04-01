@@ -13,51 +13,49 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Backend implementation for the example compiler plugin.."""
+"""A Fallback backend for LITERT."""
 
-import copy
 import functools
-from typing import Iterable, Self
+from typing import Any, Self
 
 from litert.python.aot.core import components
 from litert.python.aot.core import types
-from litert.python.aot.vendors import import_vendor
-from litert.python.aot.vendors.qualcomm import target as target_lib
 
 
-@import_vendor.register_backend
-class QualcommBackend(types.Backend):
-  """Backend implementation for the example compiler plugin."""
+class FallbackTarget(types.Target):
+  """A virtual Compilation target."""
+
+  def __hash__(self) -> int:
+    return hash(self.backend_id())
+
+  def __eq__(self, other: types.Target) -> bool:
+    return self.backend_id() == other.backend_id()
+
+  def __repr__(self) -> str:
+    return f"{self.backend_id()}"
+
+  @classmethod
+  def backend_id(cls) -> str:
+    return "fallback"
+
+  def flatten(self) -> dict[str, Any]:
+    return {"backend_id": self.backend_id()}
+
+
+class FallbackBackend(types.Backend):
+  """Fallback backend for LITERT."""
 
   @property
-  def soc_manufacturer(self) -> target_lib.SocManufacturer:
-    return target_lib.SocManufacturer.QUALCOMM
-
-  @property
-  def soc_model(self) -> target_lib.SocModel:
-    return target_lib.SocModel(self.config.get("soc_model", "ALL"))
-
-  @property
-  def target(self) -> target_lib.Target:
-    return target_lib.Target(self.soc_model, self.soc_manufacturer)
+  def target(self) -> FallbackTarget:
+    return FallbackTarget()
 
   @property
   def target_id(self) -> str:
     return repr(self.target)
 
-  def specialize(self) -> Iterable["QualcommBackend"]:
-    if self.soc_model != target_lib.SocModel.ALL:
-      yield self
-    else:
-      for soc_model in target_lib.SocModel:
-        if soc_model != target_lib.SocModel.ALL:
-          new_config = copy.deepcopy(self.config)
-          new_config["soc_model"] = soc_model.value
-          yield self.create(new_config)
-
   @classmethod
   def id(cls) -> str:
-    return target_lib._QUALCOMM_BACKEND_ID  # pylint: disable=protected-access
+    return "fallback"
 
   @classmethod
   def create(cls, config: types.Config) -> Self:
@@ -81,7 +79,7 @@ class QualcommBackend(types.Backend):
 @functools.singledispatch
 def _call_component(
     component: types.Component,
-    backend: QualcommBackend,
+    backend: FallbackBackend,
     unused_input_model: types.Model,
     unused_output_model: types.Model,
 ):
@@ -94,22 +92,22 @@ def _call_component(
 @_call_component.register
 def _apply_plugin(
     component: components.ApplyPluginT,
-    backend: QualcommBackend,
+    backend: FallbackBackend,
     input_model: types.Model,
     output_model: types.Model,
 ):
-  return component(
-      input_model,
-      output_model,
-      backend.soc_manufacturer,
-      backend.soc_model,
-  )
+  """A no-op component that just copies the input model to the output model."""
+  del component, backend
+  if input_model.in_memory:
+    output_model.set_bytes(input_model.model_bytes)
+  else:
+    output_model.set_path(input_model.path)
 
 
 @_call_component.register
 def _aie_quantizer(
     component: components.AieQuantizerT,
-    backend: QualcommBackend,
+    backend: FallbackBackend,
     input_model: types.Model,
     output_model: types.Model,
 ):
@@ -123,7 +121,7 @@ def _aie_quantizer(
 @_call_component.register
 def _mlir_transforms(
     component: components.MlirTransformsT,
-    unused_backend: QualcommBackend,
+    unused_backend: FallbackBackend,
     input_model: types.Model,
     output_model: types.Model,
 ):
