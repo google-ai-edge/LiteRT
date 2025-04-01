@@ -38,7 +38,18 @@ using ::testing::Values;
 const auto kSupportedOps = Values(
     "add_cst.tflite",
     "add_simple.tflite",
-    "simple_add_op.tflite");
+    "simple_add_op.tflite",
+    "simple_mul_op.tflite",
+    "simple_batch_matmul_op.tflite",
+    "simple_rsqrt_op.tflite",
+    "simple_concatenation_op.tflite",
+    "simple_slice_op.tflite",
+    "simple_sub_op.tflite",
+    "simple_tanh_op.tflite",
+    "simple_softmax_op.tflite",
+    "simple_mean_op.tflite",
+    "simple_gelu_op.tflite"
+    );
 // clang-format on
 
 TEST(TestMediatekPlugin, GetConfigInfo) {
@@ -80,16 +91,12 @@ class MtkPluginOpCompatibilityTest
     : public ::testing::TestWithParam<std::string> {};
 
 TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
-#ifndef __ANDROID__
-  GTEST_SKIP() << "Loading shared lib not currently supported on linux.";
-#endif  // __ANDROID__
-
   LITERT_LOG(LITERT_INFO, "Testing TFLite model: %s", GetParam().c_str());
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel(GetParam());
 
   LiteRtCompiledResult compiled;
-  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin.get(), /*soc_model=*/nullptr,
+  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin.get(), /*soc_model=*/"mt6991",
                                         model.Get(), &compiled),
             kLiteRtStatusOk);
 
