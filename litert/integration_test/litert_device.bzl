@@ -23,6 +23,23 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 
+# MISCELLANEOUS ####################################################################################
+
+def hidden_test_tags():
+    """
+    Get tags to disable a test that is not expected to work on Forge.
+
+    Returns:
+        A list of tags to hide a test from various tools.
+    """
+    return [
+        "no-remote-exec",
+        "manual",
+        "notap",
+        "nobuilder",
+        "no_oss",
+    ]
+
 # DEVICE PATHS #####################################################################################
 
 DEVICE_RLOCATION_ROOT = "/data/local/tmp/runfiles"
@@ -94,148 +111,123 @@ def make_path_args(spec):
 
 # DYNAMIC LIBRARY DEPENDENCIES #####################################################################
 
-LITERT_BASE_LIBS = [
-    "//litert/c:libLiteRtRuntimeCApi.so",
-]
-
-def make_device_spec(**kwargs):
-    return struct(
-        backend_id = kwargs["backend_id"],
-        libraries = kwargs["libraries"],
-        env_vars = kwargs["env_vars"],
-    )
-
-def make_lib_spec(**kwargs):
-    return struct(
-        litert_base_libs = LITERT_BASE_LIBS,
-        core_libs = kwargs["core_libs"],
-        kernel_libs = kwargs["kernel_libs"],
-        dispatch_lib = kwargs["dispatch_lib"],
-        compiler_lib = kwargs["compiler_lib"],
-    )
-
-BASE_LIB_SPEC = make_lib_spec(
-    core_libs = [],
-    kernel_libs = [],
-    dispatch_lib = None,
-    compiler_lib = None,
-)
-
-def all_libs(spec):
-    """
-    Returns all the dynamic libraries needed for the given spec.
-
-    Args:
-        spec: The lib spec to get the libs for.
-
-    Returns:
-        A list of all the dynamic libraries needed for the given spec.
-    """
-    libs = spec.litert_base_libs + spec.core_libs + spec.kernel_libs
-    for lib in [spec.dispatch_lib, spec.compiler_lib]:
-        if lib:
-            libs.append(lib)
-    return libs
-
 # QUALCOMM
 
-QUALCOMM_ID = "qualcomm"
+def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None):
+    """
+    Defines a backend specification.
 
-QUALCOMM_LIB_SPEC = make_lib_spec(
-    core_libs = [
-        "//third_party/qairt/latest:lib/aarch64-android/libQnnHtp.so",
-        "//third_party/qairt/latest:lib/aarch64-android/libQnnHtpV75Stub.so",
-        "//third_party/qairt/latest:lib/aarch64-android/libQnnSystem.so",
-        "//third_party/qairt/latest:lib/aarch64-android/libQnnHtpPrepare.so",
+    Args:
+        id: The backend id.
+        libs: A list of tuples of (library target, environment variable). Path to the target
+            will be added to the environment variable.
+        mh_devices: A list of mobile harness device specifications.
+        dispatch: The dispatch library target name.
+        plugin: The compiler plugin library target name.
+
+    Returns:
+        A struct representing the backend specification.
+    """
+
+    libs = libs + [
+        ("//litert/c:libLiteRtRuntimeCApi.so", "LD_LIBRARY_PATH"),
+    ]
+    libs_agg = []
+    env_paths = {}
+    for lib in libs:
+        lib_targ = lib[0]
+        libs_agg.append(lib_targ)
+        if dispatch and lib_targ.endswith(dispatch):
+            dispatch = lib_targ
+        if plugin and lib_targ.endswith(plugin):
+            plugin = lib_targ
+        paths = []
+        if len(lib) > 1:
+            paths = lib[1]
+        if "append" not in dir(paths):
+            paths = [paths]
+        for p in paths:
+            if p not in env_paths:
+                env_paths[p] = []
+            env_paths[p].append(lib_targ)
+    if not mh_devices:
+        mh_devices = [{}]
+    return struct(
+        id = id,
+        libs = libs_agg,
+        env_paths = make_path_args(env_paths),
+        mh_devices = mh_devices,
+        default_mh_device = mh_devices[0],
+        dispatch = dispatch,
+        plugin = plugin,
+    )
+
+QUALCOMM_SPEC = BackendSpec(
+    id = "qualcomm",
+    libs = [
+        ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
+        ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtpV75Stub.so", "LD_LIBRARY_PATH"),
+        ("//third_party/qairt/latest:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
+        ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+        ("//third_party/qairt/latest:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
+        ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
+        ("//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so", "LD_LIBRARY_PATH"),
     ],
-    kernel_libs = ["//third_party/qairt/latest:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so"],
-    dispatch_lib = "//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so",
-    compiler_lib = "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-)
-
-QUALCOMM_DEVICE_SPEC = make_device_spec(
-    backend_id = QUALCOMM_ID,
-    libraries = all_libs(QUALCOMM_LIB_SPEC),
-    env_vars = make_path_args(
-        {
-            "ADSP_LIBRARY_PATH": ["//third_party/qairt/latest/lib/hexagon-v75/unsigned"],
-            "LD_LIBRARY_PATH": [
-                "//litert/vendors/qualcomm/dispatch",
-                "//third_party/qairt/latest/lib/aarch64-android",
-                "//litert/c",
-            ],
-        },
-    ),
+    mh_devices = [{
+        "model": "sm-s928b",
+    }],
+    plugin = "qnn_compiler_plugin_so",
+    dispatch = "libLiteRtDispatch_Qualcomm.so",
 )
 
 # MEDIATEK
 
-MEDIATEK_ID = "mediatek"
-
-MEDIATEK_LIB_SPEC = make_lib_spec(
-    core_libs = [],
-    kernel_libs = [],
-    dispatch_lib = "//litert/vendors/mtk/dispatch:libLiteRtDispatch_Mtk.so",
-    compiler_lib = None,
-)
-
-MEDIATEK_DEVICE_SPEC = make_device_spec(
-    backend_id = MEDIATEK_ID,
-    libraries = all_libs(MEDIATEK_LIB_SPEC),
-    env_vars = make_path_args(
-        {
-            "LD_LIBRARY_PATH": [
-                "//litert/vendors/mediatek/dispatch",
-                "//litert/c",
-            ],
-        },
-    ),
+MEDIATEK_SPEC = BackendSpec(
+    id = "mediatek",
+    libs = [
+        ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mtk.so", "LD_LIBRARY_PATH"),
+    ],
+    mh_devices = [{
+        "hardware": "mt6989",
+    }],
+    dispatch = "libLiteRtDispatch_Mtk.so",
 )
 
 # GOOGLE TENSOR
 
-GOOGLE_TENSOR_ID = "google_tensor"
-
-GOOGLE_TENSOR_LIB_SPEC = make_lib_spec(
-    core_libs = [],
-    kernel_libs = [],
-    dispatch_lib = "//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so",
-    compiler_lib = None,
+GOOGLE_TENSOR_SPEC = BackendSpec(
+    id = "google_tensor",
+    libs = [
+        ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
+    ],
+    mh_devices = [{
+        "label": "odml-test",
+        "model": "pixel 9",
+    }],
+    dispatch = "libLiteRtDispatch_GoogleTensor.so",
 )
 
-GOOGLE_TENSOR_DEVICE_SPEC = make_device_spec(
-    backend_id = GOOGLE_TENSOR_ID,
-    libraries = all_libs(GOOGLE_TENSOR_LIB_SPEC),
-    env_vars = make_path_args(
-        {
-            "LD_LIBRARY_PATH": [
-                "//litert/vendors/google_tensor/dispatch",
-                "//litert/c",
-            ],
-        },
-    ),
+# CPU
+
+CPU_SPEC = BackendSpec(
+    id = "cpu",
 )
 
-def get_lib_spec(backend_id):
-    """
-    Returns the dynamic library spec for the given backend id.
+# GPU
 
-    Args:
-        backend_id: The backend id to get the lib spec for.
+GPU_SPEC = BackendSpec(
+    id = "gpu",
+)
 
-    Returns:
-        The dynamic library spec for the given backend id.
-    """
-    if backend_id == QUALCOMM_ID:
-        return QUALCOMM_LIB_SPEC
-    if backend_id == "cpu":
-        return BASE_LIB_SPEC
-    if backend_id == GOOGLE_TENSOR_ID:
-        return GOOGLE_TENSOR_LIB_SPEC
-    if backend_id == MEDIATEK_ID:
-        return MEDIATEK_LIB_SPEC
-    else:
-        fail("Unsupported backend id: {}".format(backend_id))
+# COMMON
+
+_SPECS = {
+    QUALCOMM_SPEC.id: QUALCOMM_SPEC,
+    GOOGLE_TENSOR_SPEC.id: GOOGLE_TENSOR_SPEC,
+    MEDIATEK_SPEC.id: MEDIATEK_SPEC,
+    CPU_SPEC.id: CPU_SPEC,
+    GPU_SPEC.id: GPU_SPEC,
+}
 
 # RUN ON DEVICE MACRO ##############################################################################
 
@@ -245,46 +237,16 @@ def get_driver():
         "//litert/integration_test/google:run_on_device_driver",
     )
 
-#copybara:comment_begin(google-only)
-
-# Mobile Harness Specific Macros
-
-def get_mh_dimensions(backend_id = ""):
-    """
-    Returns the Mobile Harness dimensions for the given backend id.
-
-    Args:
-        backend_id: The backend id to get the dimensions for.
-
-    Returns:
-        The Mobile Harness dimensions for the given backend id.
-    """
-    if backend_id == QUALCOMM_ID:
-        return {
-            "model": "sm-s928b",
-        }
-    if backend_id == GOOGLE_TENSOR_ID:
-        return {
-            "label": "odml-test",
-            "model": "pixel 9",
-        }
-    if backend_id == MEDIATEK_ID:
-        return {
-            "hardware": "mt6989",
-        }
-    else:
-        return {}
-
-#copybara:comment_end(google-only)
-
-def run_on_device(
+def litert_device_exec(
         name,
         target,
-        backend_id = "",
+        backend_id = "cpu",
         driver = get_driver(),
         data = [],
         exec_args = [],
-        exec_env_vars = []):
+        exec_env_vars = [],
+        remote_suffix = "",
+        local_suffix = "_adb"):
     """
     Macro to execute a binary target on a device.
 
@@ -304,16 +266,16 @@ def run_on_device(
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
         exec_env_vars: List of environment variables to set before executing the target.
+        remote_suffix: Suffix for the target runnin on device cloud if enabled.
+        local_suffix: Suffix for the target that runs locally on physical device through adb.
     """
-    if backend_id == QUALCOMM_ID:
-        data += QUALCOMM_DEVICE_SPEC.libraries
-        exec_env_vars += QUALCOMM_DEVICE_SPEC.env_vars
-    if backend_id == GOOGLE_TENSOR_ID:
-        data += GOOGLE_TENSOR_DEVICE_SPEC.libraries
-        exec_env_vars += GOOGLE_TENSOR_DEVICE_SPEC.env_vars
-    if backend_id == MEDIATEK_ID:
-        data += MEDIATEK_DEVICE_SPEC.libraries
-        exec_env_vars += MEDIATEK_DEVICE_SPEC.env_vars
+    data = data + []
+    exec_env_vars = exec_env_vars + []
+
+    backend = _SPECS[backend_id]
+
+    data.extend(backend.libs)
+    exec_env_vars.extend(backend.env_paths)
 
     call_mobile_install = """
     echo '$(location {driver}) \
@@ -359,7 +321,7 @@ def run_on_device(
     native.sh_binary(
         testonly = True,
         tags = ["manual", "notap"],
-        name = name,
+        name = name + local_suffix,
         deps = [driver_targ],
         srcs = [exec_script],
         data = [target] + data,
@@ -367,12 +329,12 @@ def run_on_device(
 
     # copybara:uncomment_begin(google-only)
     # xeno_mobile_test(
-        # name = name + "_lab_test",
+        # name = name + remote_suffix,
         # test_target = target,
         # args = [
-            # "--run_as=xeno-mh-guitar",
+            # "--run_as=odml-device-lab",
         # ],
-        # dimensions = get_mh_dimensions(backend_id),
+        # dimensions = backend.default_mh_device,
         # tags = [
             # "android",
             # "external",
@@ -386,10 +348,65 @@ def run_on_device(
     # )
     # copybara:uncomment_end(google-only)
 
+def litert_device_test(
+        name,
+        srcs,
+        deps,
+        rule = native.cc_test,
+        backend_id = "",
+        driver = get_driver(),
+        data = [],
+        exec_args = [],
+        exec_env_vars = [],
+        tags = [],
+        linkopts = []):
+    """
+    Syntactic sugar for the litert_device_exec macro.
+
+    Creates a target to run internally given the srcs and deps (default cc_test).
+
+    Args:
+        name: Name of the target.
+        srcs: The source files for the target to be generated.
+        deps: The dependencies for the target to be generated.
+        rule: The rule to use for the target to be generated.
+        backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
+        driver: The driver script to use for execution.
+        data: List of data files to push to the device and for the target to be generated.
+        exec_args: List of arguments to pass to the executable.
+        exec_env_vars: List of environment variables to set before executing the target.
+        tags: List of tags to apply to the target to be generated.
+        linkopts: List of linkopts to apply to the target to be generated.
+    """
+
+    target = "_{}".format(name)
+
+    rule(
+        name = target,
+        srcs = srcs,
+        deps = deps,
+        data = data,
+        linkopts = select({
+            "@org_tensorflow//tensorflow:android": ["-landroid"],
+            "//conditions:default": [],
+        }) + linkopts,
+        tags = hidden_test_tags() + tags,
+    )
+
+    litert_device_exec(
+        name = name,
+        target = absolute_label(":{}".format(target)),
+        backend_id = backend_id,
+        driver = driver,
+        data = data,
+        exec_args = exec_args,
+        exec_env_vars = exec_env_vars,
+    )
+
 def litert_integration_test(
         name,
         models,
-        hw = "cpu",
+        backend_id = "cpu",
         skips = []):
     """
     Higher level macro that configures run_on_device or a mobile test to run with gen_device_test.
@@ -397,44 +414,39 @@ def litert_integration_test(
     Args:
         name: Name of the target.
         models: A single target that may contain model or many models in the same directory.
-        hw: The backend to test against (see gen_device_test).
+        backend_id: The backend to test against (see gen_device_test).
         skips: List of substrings of models to skip.
     """
 
-    # Get libs for the given backend.
-    lib_spec = get_lib_spec(hw)
+    backend = _SPECS[backend_id]
+
+    req_hardware = backend.id != "cpu" and backend.id != "gpu"
 
     # Accelerator option to pass to the compiled model api on device.
-    hw_cfg = hw if hw == "cpu" else "npu"
-
-    # Create env args for paths to dynamic libraries.
-    env_args = make_path_args({
-        "LD_LIBRARY_PATH": lib_spec.litert_base_libs + lib_spec.core_libs + [lib_spec.dispatch_lib, lib_spec.compiler_lib],
-        "ADSP_LIBRARY_PATH": lib_spec.kernel_libs,
-    })
+    hw_cfg = "npu" if req_hardware else backend.id
 
     skips_str = ",".join(skips)
 
     # Create CLI args for the gen_device_test binary on device.
     cli_args = [
         "--model_path={}".format(device_rlocation(models)),
-        "--dispatch_library_dir={}".format(device_rlocation(lib_spec.dispatch_lib, True)),
-        "--compiler_library_dir={}".format(device_rlocation(lib_spec.compiler_lib, True)),
         "--hw={}".format(hw_cfg),
         "--skips={}".format(skips_str),
     ]
+    if backend.dispatch:
+        cli_args.append("--dispatch_library_dir={}".format(device_rlocation(backend.dispatch, True)))
+    if backend.plugin:
+        cli_args.append("--compiler_library_dir={}".format(device_rlocation(backend.plugin, True)))
 
-    data = [models] + all_libs(lib_spec)
+    data = [models]
     driver = get_driver()
     target = "//litert/integration_test:gen_device_test"
 
-    # TODO: Also kick off a xeno mobile test here.
-
-    run_on_device(
+    litert_device_exec(
         name = name,
         target = target,
         driver = driver,
+        backend_id = backend_id,
         data = data,
         exec_args = cli_args,
-        exec_env_vars = env_args,
     )
