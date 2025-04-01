@@ -15,6 +15,8 @@ limitations under the License.
 
 #include "tflite/c/common_internal.h"
 
+#include <cstdint>
+
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
 
