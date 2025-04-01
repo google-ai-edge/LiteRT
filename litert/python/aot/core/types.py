@@ -60,10 +60,12 @@ class Model:
     if path is not None:
       if isinstance(path, str):
         path = pathlib.Path(path)
-      assert not model_bytes
+      if model_bytes:
+        raise ValueError('Cannot specify both path and model_bytes.')
       self.data_ = path
     else:
-      assert model_bytes is not None
+      if model_bytes is None:
+        raise ValueError('Cannot specify neither path nor model_bytes.')
       self.data_ = model_bytes
 
   @property
@@ -72,12 +74,14 @@ class Model:
 
   @property
   def path(self) -> pathlib.Path:
-    assert isinstance(self.data_, pathlib.Path)
+    if not isinstance(self.data_, pathlib.Path):
+      raise ValueError('Model is not on disk.')
     return self.data_
 
   @property
   def model_bytes(self) -> bytes:
-    assert isinstance(self.data_, bytes)
+    if not isinstance(self.data_, bytes):
+      raise ValueError('Model is not in memory.')
     return self.data_
 
   @classmethod
@@ -97,15 +101,45 @@ class Model:
     self.data_ = model_bytes
 
   def load(self):
-    assert isinstance(self.data_, pathlib.Path)
+    """Loads the model from the given path.
+
+    Raises:
+      ValueError: If the model is already in memory.
+    """
+    if not isinstance(self.data_, pathlib.Path):
+      raise ValueError('Cannot load a model that is already in memory.')
     self.data_ = self.data_.read_bytes()
 
-  def save(self, path: pathlib.Path | str):
-    assert isinstance(self.data_, bytes)
+  def save(self, path: pathlib.Path | str, export_only: bool = False):
+    """Saves the model to the given path from the in-memory model content.
+
+    If export_only is True, the model will be copied to the given path without
+    modifying the internal state, regardless of whether the model is already on
+    disk or in memory.
+
+    Args:
+      path: The path to save the model to.
+      export_only: Whether to only export the model without modifying the
+        internal stat (i.e. transfer the in-memory model to disk).
+
+    Raises:
+      ValueError: If export_only is False and the model is not in memory.
+    """
     if isinstance(path, str):
       path = pathlib.Path(path)
-    path.write_bytes(self.data_)
-    self.data_ = path
+    if isinstance(self.data_, pathlib.Path):
+      if not export_only:
+        raise ValueError(
+            'Cannot save a model that is not in memory. Use export_only=True'
+            ' for copying the model to a new path.'
+        )
+      with open(self.data_, 'rb') as f:
+        model_content = f.read()
+    else:
+      model_content = self.data_
+    path.write_bytes(model_content)
+    if not export_only:
+      self.data_ = path
 
 
 @dataclasses.dataclass()
@@ -139,7 +173,7 @@ class CompiledModels:
     report = []
     for backend, model in self.models_with_backend:
       report.append(f'Backend: {backend.id()}')
-      report.append(f'  Target: {backend.target_id_suffix}')
+      report.append(f'  Target: {backend.target_id}')
       report.append(f'  Partition Stats: {model.partition_stats}')
     return '\n'.join(report)
 
@@ -224,8 +258,19 @@ class Backend(metaclass=abc.ABCMeta):
 
   @property
   @abc.abstractmethod
-  def target_id_suffix(self) -> str:
+  def target(self) -> 'Target':
     pass
+
+  @property
+  @abc.abstractmethod
+  def target_id(self) -> str:
+    pass
+
+  @property
+  def target_id_suffix(self) -> str:
+    if self.target_id:
+      return '_' + self.target_id
+    return ''
 
   @property
   def config(self) -> Config:

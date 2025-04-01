@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "GOOGLE_TENSOR_ID", "run_on_device")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -502,9 +502,10 @@ cc_test(
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "litert_compiled_model_npu_test",
     srcs = ["litert_compiled_model_npu_test.cc"],
+    backend_id = "google_tensor",
     deps = [
         ":litert_buffer_ref",
         ":litert_compiled_model",
@@ -531,9 +532,10 @@ cc_test(
     }),
 )
 
-cc_test(
+litert_device_test(
     name = "litert_compiled_model_gpu_test",
     srcs = ["litert_compiled_model_gpu_test.cc"],
+    backend_id = "google_tensor",
     data = [
         "//litert/test:testdata/simple_model.tflite",
     ],
@@ -668,28 +670,4 @@ cc_library(
     ],
 )
 
-# === On-device tests ===
-run_on_device(
-    name = "litert_compiled_model_npu_test_on_google_tensor",
-    backend_id = GOOGLE_TENSOR_ID,
-    data = [
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
-    ],
-    exec_args = [],
-    exec_env_vars = [],
-    target = ":litert_compiled_model_npu_test",
-)
-
-run_on_device(
-    name = "litert_compiled_model_gpu_test_on_google_tensor",
-    backend_id = GOOGLE_TENSOR_ID,
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
-    exec_args = [],
-    exec_env_vars = [],
-    target = ":litert_compiled_model_gpu_test",
-)
-
-exports_files(srcs = glob(["litert_*.h"]))
+exports_files(srcs = ["litert_dispatch_delegate.h"])
