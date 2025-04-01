@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "litert_integration_test")
+load("//litert/integration_test:litert_device.bzl", "litert_integration_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -77,13 +77,13 @@ sh_binary(
 
 litert_integration_test(
     name = "single_op_device_tests_cpu",
-    hw = "cpu",
+    backend_id = "cpu",
     models = "//litert/integration_test/models:single_op_models",
 )
 
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:single_op_models",
     skips = [
         "greater_f32",  # TODO: lukeboyer - Investigate (segfault).
@@ -93,18 +93,18 @@ litert_integration_test(
 
 litert_integration_test(
     name = "classic_ml_device_tests_cpu",
-    hw = "cpu",
+    backend_id = "cpu",
     models = "//litert/integration_test/models:classic_ml_models",
 )
 
 litert_integration_test(
     name = "classic_ml_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:classic_ml_models",
 )
 
 litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:pre_compiled_models",
 )
