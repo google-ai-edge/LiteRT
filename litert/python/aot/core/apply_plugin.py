@@ -93,7 +93,7 @@ class ApplyPlugin(components.ApplyPluginT):
           text=True,
       )
     except subprocess.CalledProcessError as e:
-      tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False)
+      tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
       tmp_file.write(e.stderr)
       tmp_file.close()
       raise ValueError(
