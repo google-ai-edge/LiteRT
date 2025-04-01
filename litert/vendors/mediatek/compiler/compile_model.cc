@@ -51,6 +51,17 @@ Expected<NeuronCompilationPtr> CompileModel(
 #endif
   // NOLINTEND
 
+  // This is needed in order to support FP32 acativations since TFLite doesn't
+  // contain support for FP16 activations currently.
+  if (auto status = neuron_adapter_api.api().relax_fp32_to_fp16(model, true);
+      status != NEURON_NO_ERROR) {
+    LITERT_LOG(
+        LITERT_INFO,
+        "NeuronModel_relaxComputationFloat32toFloat16 failed with error %d",
+        status);
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to relaxFp32ToFp16");
+  }
+
   auto compilation =
 #if __ANDROID__
       neuron_adapter_api.CreateCompilation(model);
