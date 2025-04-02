@@ -166,6 +166,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:tanh_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",

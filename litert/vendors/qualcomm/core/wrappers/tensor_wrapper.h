@@ -10,7 +10,6 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <variant>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -96,6 +95,8 @@ class TensorWrapper final {
                          const std::vector<std::uint32_t>& dimentions,
                          std::uint32_t bytes, const void* data);
 
+  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
+
   TensorWrapper(const TensorWrapper& other);
 
   TensorWrapper(TensorWrapper&& other);
@@ -142,9 +143,14 @@ class TensorWrapper final {
            GetDataType() == QNN_DATATYPE_UFIXED_POINT_8;
   }
 
+  // TODO: rename IsQuant16 or IsQuantU16
   bool IsQuant16() const {
     return GetDataType() == QNN_DATATYPE_SFIXED_POINT_16 ||
            GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
+  }
+
+  bool IsQuantU16() const {
+    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
   }
 
   bool IsF32() const { return GetDataType() == QNN_DATATYPE_FLOAT_32; }
@@ -293,6 +299,10 @@ class TensorWrapper final {
 
  private:
   Qnn_TensorType_t GetTensorType() const;
+
+  void SetDataType(Qnn_DataType_t data_type) {
+    qnn_tensor_.v2.dataType = data_type;
+  }
 
   void SetDataBy(std::uint32_t bytes, const void* data);
 

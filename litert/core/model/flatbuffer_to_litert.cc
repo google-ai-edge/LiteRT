@@ -93,6 +93,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeFloat16;
     case tflite::TensorType_INT32:
       return kLiteRtElementTypeInt32;
+    case tflite::TensorType_UINT32:
+      return kLiteRtElementTypeUInt32;
     case tflite::TensorType_INT64:
       return kLiteRtElementTypeInt64;
     case tflite::TensorType_BOOL:
@@ -120,7 +122,8 @@ Expected<TensorType> MapTensorType(const TflTensorType& tfl_tensor_type) {
 
   auto litert_element_type = MapElementType(element_type);
   if (litert_element_type == kLiteRtElementTypeNone) {
-    LITERT_LOG(LITERT_ERROR, "Element type not currently supported");
+    LITERT_LOG(LITERT_ERROR, "Element type (%d) not currently supported",
+               element_type);
     return Error(kLiteRtStatusErrorUnsupported);
   }
 
