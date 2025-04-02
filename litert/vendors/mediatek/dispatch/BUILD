@@ -43,7 +43,7 @@ litert_dynamic_lib(
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }) + [
-        "-Wl,-soname=libLiteRtDispatch_GoogleTensor.so",
+        "-Wl,-soname=libLiteRtDispatch_Mediatek.so",
         "-Wl,-lc++abi",
     ],
     shared_lib_name = "dispatch_api_so",
@@ -91,9 +91,6 @@ cc_test(
     srcs = [
         "dispatch_api_mediatek_test.cc",
     ],
-    data = [
-        ":dispatch_api_so",
-    ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -106,6 +103,7 @@ cc_test(
         "notap",
     ],
     deps = [
+        ":dispatch_api",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",

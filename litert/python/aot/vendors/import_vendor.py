@@ -20,6 +20,7 @@ import dataclasses
 from typing import Any, Iterable
 
 from litert.python.aot.core import types
+from litert.python.aot.vendors import fallback_backend
 
 
 @dataclasses.dataclass
@@ -39,6 +40,8 @@ def register_backend(
   _VENDOR_REGISTRY[backend_id] = VendorRegistry(backend_class)
 
   return backend_class
+
+register_backend(fallback_backend.FallbackBackend)
 
 
 def import_vendor(backend_id: str) -> types.BackendT:
@@ -97,7 +100,11 @@ class AllRegisteredBackend(types.Backend):
     return 'all'
 
   @property
-  def target_id_suffix(self) -> str:
+  def target(self) -> AllRegisteredTarget:
+    return AllRegisteredTarget()
+
+  @property
+  def target_id(self) -> str:
     return ''
 
   @property
