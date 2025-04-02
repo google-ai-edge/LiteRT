@@ -118,5 +118,6 @@ cc_test(
         "//litert/test:common",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/mediatek/dispatch:dispatch_api",
     ],
 )
