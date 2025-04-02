@@ -266,6 +266,25 @@ LiteRtStatus LiteRtGetDepthwiseConv2dDilationHOptions(
 
 //==============================================================================
 //
+// Get option APIs for LiteRt TransposeConv op.
+//  Options:
+// - padding : uint32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - fused_activation_function : uint32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetTransposeConvPaddingOption(LiteRtOp op,
+                                                 uint32_t* padding);
+LiteRtStatus LiteRtGetTransposeConvStrideWOption(LiteRtOp op,
+                                                 int32_t* stride_w);
+LiteRtStatus LiteRtGetTransposeConvStrideHOption(LiteRtOp op,
+                                                 int32_t* stride_h);
+LiteRtStatus LiteRtGetTransposeConvFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt AveragePool2d op.
 //  Options:
 // - padding : uint32_t
@@ -287,6 +306,28 @@ LiteRtStatus LiteRtGetAveragePool2dFilterWidthOption(LiteRtOp op,
 LiteRtStatus LiteRtGetAveragePool2dFilterHeightOption(LiteRtOp op,
                                                       int32_t* filter_height);
 LiteRtStatus LiteRtGetAveragePool2dFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt MaxPool2d op.
+//  Options:
+// - padding : uint32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - filter_width : int32_t
+// - filter_height : int32_t
+// - fused_activation_function : uint32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetMaxPool2dPaddingOption(LiteRtOp op, uint32_t* padding);
+LiteRtStatus LiteRtGetMaxPool2dStrideWOption(LiteRtOp op, int32_t* stride_w);
+LiteRtStatus LiteRtGetMaxPool2dStrideHOption(LiteRtOp op, int32_t* stride_h);
+LiteRtStatus LiteRtGetMaxPool2dFilterWidthOption(LiteRtOp op,
+                                                 int32_t* filter_width);
+LiteRtStatus LiteRtGetMaxPool2dFilterHeightOption(LiteRtOp op,
+                                                  int32_t* filter_height);
+LiteRtStatus LiteRtGetMaxPool2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
 
 //==============================================================================
@@ -343,6 +384,17 @@ LiteRtStatus LiteRtGetResizeNearestNeighborAlignCornersOption(
     LiteRtOp op, bool* align_corners);
 LiteRtStatus LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
     LiteRtOp op, bool* half_pixel_centers);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt CumSum op.
+//  Options:
+// - exclusive : bool
+// - reverse : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetCumsumExclusiveOption(LiteRtOp op, bool* exclusive);
+LiteRtStatus LiteRtGetCumsumReverseOption(LiteRtOp op, bool* reverse);
 
 #ifdef __cplusplus
 }

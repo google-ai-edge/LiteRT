@@ -21,6 +21,24 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "tensor_pool_test",
+    srcs = [
+        "tensor_pool_test.cc",
+    ],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        ":tensor_pool",
+        "@com_google_googletest//:gtest_main",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+    ],
+)
+
 cc_library(
     name = "common",
     hdrs = ["common.h"],
