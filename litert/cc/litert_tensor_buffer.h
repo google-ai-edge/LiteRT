@@ -211,6 +211,28 @@ class TensorBuffer
     return tensor_buffer_type;
   }
 
+  // Returns true if the tensor buffer is an OpenCL memory.
+  // Note: This function doesn't return Expected<bool> users can easily make
+  // mistakes when using it.
+  bool IsOpenClMemory() const {
+    LiteRtTensorBufferType tensor_buffer_type;
+    if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
+        status != kLiteRtStatusOk) {
+      return false;
+    }
+    switch (tensor_buffer_type) {
+      case kLiteRtTensorBufferTypeOpenClBuffer:
+      case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      case kLiteRtTensorBufferTypeOpenClTexture:
+      case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   Expected<RankedTensorType> TensorType() const {
     LiteRtRankedTensorType tensor_type;
     if (auto status = LiteRtGetTensorBufferTensorType(Get(), &tensor_type);

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "litert_integration_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test", "litert_integration_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -68,22 +68,55 @@ cc_library(
 
 # ON DEVICE INTEGRATION TESTS ######################################################################
 
-# NOTE: Everything here should be built with -c opt --config=android_arm64.
-
 sh_binary(
     name = "run_on_device_driver_OSS",
     srcs = ["run_on_device_driver_OSS.sh"],
 )
 
+# NOTE: Everything here should be built with -c opt --config=android_arm64.
+
+# CPU ----------------------------------------------------------------------------------------------
+
 litert_integration_test(
     name = "single_op_device_tests_cpu",
-    hw = "cpu",
+    backend_id = "cpu",
     models = "//litert/integration_test/models:single_op_models",
 )
 
 litert_integration_test(
+    name = "classic_ml_device_tests_cpu",
+    backend_id = "cpu",
+    models = "//litert/integration_test/models:classic_ml_models",
+)
+
+# GOOGLE TENSOR ------------------------------------------------------------------------------------
+
+litert_device_test(
+    name = "google_tensor_smoketest",
+    srcs = ["smoketests/google_tensor_smoketest.cc"],
+    backend_id = "google_tensor",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+    ],
+)
+# QUALCOMM -----------------------------------------------------------------------------------------
+
+litert_device_test(
+    name = "qnn_smoketest",
+    srcs = ["smoketests/qnn_smoketest.cc"],
+    backend_id = "qualcomm",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm:qnn_manager",
+    ],
+)
+
+litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:single_op_models",
     skips = [
         "greater_f32",  # TODO: lukeboyer - Investigate (segfault).
@@ -92,19 +125,13 @@ litert_integration_test(
 )
 
 litert_integration_test(
-    name = "classic_ml_device_tests_cpu",
-    hw = "cpu",
-    models = "//litert/integration_test/models:classic_ml_models",
-)
-
-litert_integration_test(
     name = "classic_ml_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:classic_ml_models",
 )
 
 litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
-    hw = "qualcomm",
+    backend_id = "qualcomm",
     models = "//litert/integration_test/models:pre_compiled_models",
 )
