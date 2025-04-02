@@ -104,6 +104,17 @@ litert_integration_test(
     models = "//litert/integration_test/models:classic_ml",
 )
 
+# GOOGLE TENSOR ------------------------------------------------------------------------------------
+
+litert_device_test(
+    name = "google_tensor_smoketest",
+    srcs = ["smoketests/google_tensor_smoketest.cc"],
+    backend_id = "google_tensor",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+    ],
+)
 # QUALCOMM -----------------------------------------------------------------------------------------
 
 litert_device_test(
