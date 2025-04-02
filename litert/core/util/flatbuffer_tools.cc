@@ -275,19 +275,19 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
   static constexpr size_t k2GiB = 2e+9;
   if (buffer.Size() < k2GiB &&
       !VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
-    return Error(kLiteRtStatusErrorInvalidFlatbuffer);
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
   }
 
   auto alloc = MakeAllocation(buffer);
 
   if (alloc == nullptr) {
-    return Error(kLiteRtStatusErrorFileIO);
+    return Error(kLiteRtStatusErrorFileIO, "Failed to make allocation");
   }
 
   auto fb_model = ::tflite::FlatBufferModel::BuildFromBuffer(
       reinterpret_cast<const char*>(alloc->base()), alloc->bytes());
   if (fb_model == nullptr) {
-    return Error(kLiteRtStatusErrorFileIO);
+    return Error(kLiteRtStatusErrorFileIO, "Failed to build flatbuffer model");
   }
 
   return FlatbufferWrapper::Ptr(new FlatbufferWrapper(
