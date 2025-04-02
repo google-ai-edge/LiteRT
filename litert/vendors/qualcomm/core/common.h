@@ -9,6 +9,12 @@
 extern "C" {
 #endif  // __cplusplus
 
+typedef enum LiteRtProfilingOptions {  // NOLINT(modernize-use-using)
+  kProfilingOff = 0,
+  kProfilnigBasic = 1,
+  kProfilingDetailed = 2
+} LiteRtProfilingOptions;
+
 typedef enum LiteRtQnnLogLevel {  // NOLINT(modernize-use-using)
   /// Disable delegate and QNN backend logging messages.
   kLogOff = 0,
