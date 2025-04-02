@@ -87,6 +87,7 @@ cc_library(
         "testdata/simple_model_test_vectors.h",
     ],
     data = [
+        "testdata/simple_add_uint16_qualcomm.bin",
         "testdata/simple_model_google_tensor.bin",
         "testdata/simple_model_mtk.bin",
         "testdata/simple_model_npu.tflite",
@@ -109,7 +110,6 @@ cc_library(
         "testdata/simple_cascade_model_npu.tflite",
         "testdata/simple_model_google_tensor.bin",
         "testdata/simple_model_mtk.bin",
-        "testdata/simple_model_qualcomm.bin",
     ],
     deps = [
         "//litert/c:litert_model",
