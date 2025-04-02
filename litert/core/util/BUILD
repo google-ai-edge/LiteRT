@@ -21,6 +21,11 @@ package(
 )
 
 cc_library(
+    name = "to_string",
+    hdrs = ["to_string.h"],
+)
+
+cc_library(
     name = "flatbuffer_tools",
     srcs = ["flatbuffer_tools.cc"],
     hdrs = [

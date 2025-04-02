@@ -246,6 +246,7 @@ cc_library(
         ":litert_tensor_buffer_types",
         "@com_google_absl//absl/types:span",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
         "@opencl_headers",
     ] + gles_deps(),
