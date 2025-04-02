@@ -1,4 +1,7 @@
 # LiteRT
+
+Test only
+
 GitHub repository for Google's open-source high-performance runtime for
 on-device AI which has been renamed from TensorFlow Lite to LiteRT.
 
