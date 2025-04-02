@@ -42,8 +42,8 @@ class QualcommBackend(types.Backend):
     return target_lib.Target(self.soc_model, self.soc_manufacturer)
 
   @property
-  def target_id_suffix(self) -> str:
-    return "_" + repr(self.target)
+  def target_id(self) -> str:
+    return repr(self.target)
 
   def specialize(self) -> Iterable["QualcommBackend"]:
     if self.soc_model != target_lib.SocModel.ALL:
