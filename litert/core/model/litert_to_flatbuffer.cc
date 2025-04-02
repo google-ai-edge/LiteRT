@@ -46,6 +46,8 @@ Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
       return tflite::TensorType_INT16;
     case kLiteRtElementTypeInt8:
       return tflite::TensorType_INT8;
+    case kLiteRtElementTypeInt4:
+      return tflite::TensorType_INT4;
     default:
       return Error(kLiteRtStatusErrorUnsupported);
   }

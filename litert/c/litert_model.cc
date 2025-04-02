@@ -24,6 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
@@ -42,11 +43,9 @@ LiteRtStatus LiteRtCreateModelFromFile(const char* filename,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto new_model = litert::internal::LoadModelFromFile(filename);
-  if (!new_model) {
-    return new_model.Error().Status();
-  }
-  *model = new_model->release();
+  LITERT_ASSIGN_OR_RETURN(LiteRtModelT::Ptr new_model,
+                          litert::internal::LoadModelFromFile(filename));
+  *model = new_model.release();
   return kLiteRtStatusOk;
 }
 
@@ -57,12 +56,11 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto new_model = litert::internal::LoadModelFromBuffer(
-      litert::BufferRef<uint8_t>(buffer_addr, buffer_size));
-  if (!new_model) {
-    return new_model.Error().Status();
-  }
-  *model = new_model->release();
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromBuffer(
+          litert::BufferRef<uint8_t>(buffer_addr, buffer_size)));
+  *model = new_model.release();
   return kLiteRtStatusOk;
 }
 

@@ -259,7 +259,6 @@ cc_library(
     srcs = ["model_graph.cc"],
     hdrs = [
         "model_graph.h",
-        "//litert/cc:litert_consts.h",
     ],
     deps = [
         ":model",
@@ -269,6 +268,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_consts",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
     ],
