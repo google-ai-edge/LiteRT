@@ -13,6 +13,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 namespace qnn {
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
+constexpr uint32_t kQuantBitWidth4 = 4;
+
 template <typename...>
 inline constexpr bool always_false = false;
 template <typename T>
@@ -34,5 +36,8 @@ void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
 
 void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
                                   std::vector<std::int16_t>& dst);
+
+void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
+                               size_t num_bytes);
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
