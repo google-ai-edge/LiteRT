@@ -294,6 +294,7 @@ cc_library(
         ":benchmark_litert_model",
         "@flatbuffers//:runtime_cc",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "@org_tensorflow//tensorflow/lite:model_builder",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",

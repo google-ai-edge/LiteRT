@@ -122,11 +122,11 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        ":qnn_tensor",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )
