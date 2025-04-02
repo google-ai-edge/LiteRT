@@ -84,6 +84,7 @@ copy_file(
     name = "copy_dispatch_api_so",
     src = "//litert/vendors/google_tensor/dispatch:dispatch_api_so",
     target = "libLiteRtDispatch_GoogleTensor.so",
+    visibility = ["//visibility:public"],
 )
 
 cc_test(
