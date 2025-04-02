@@ -36,7 +36,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@opencl_headers",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
     ],
 )
 
@@ -90,14 +90,14 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_utils",
         "//litert/core/util:tensor_type_util",
         "@opencl_headers",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:buffer",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_context",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
+        "//tflite/delegates/gpu/cl:buffer",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
     ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:gl_buffer",
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:gl_texture",
+            "//tflite/delegates/gpu/gl:gl_buffer",
+            "//tflite/delegates/gpu/gl:gl_texture",
         ],
         "//conditions:default": [],
     }),
@@ -123,10 +123,10 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "@opencl_headers",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_context",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_device",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:opencl_wrapper",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:cl_device",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
     ],
 )
 
@@ -167,10 +167,10 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
-        "@org_tensorflow//tensorflow/lite/c:c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
     ],
 )
 
@@ -190,10 +190,10 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer_requirements",
-        "@org_tensorflow//tensorflow/lite/c:c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
     ],
 )
 
@@ -234,14 +234,14 @@ cc_library(
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/lite:builtin_ops",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite:model_builder",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core:private_cc_api_stable",
-        "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite:model_builder",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -279,10 +279,10 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -319,8 +319,8 @@ cc_test(
         "//litert/test:matchers",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:gl_buffer",
+            "//tflite/delegates/gpu/gl:egl_environment",
+            "//tflite/delegates/gpu/gl:gl_buffer",
         ],
         "//conditions:default": [],
     }),
@@ -366,7 +366,7 @@ cc_test(
         "//litert/test:matchers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+            "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],
     }),
