@@ -6,6 +6,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
 #include <cmath>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <type_traits>
 #include <vector>
