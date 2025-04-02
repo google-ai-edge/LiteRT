@@ -129,6 +129,7 @@ cc_library(
         ":litert_op_code",
         "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_macros",
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
