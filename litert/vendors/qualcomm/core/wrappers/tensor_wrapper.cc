@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <numeric>
 #include <string>
@@ -269,6 +270,72 @@ void TensorWrapper::ConvertQint16ToQuint16() {
   QNN_LOG_DEBUG(
       "QNN does not fully support QInt16 now, converting to QUint16 for better "
       "compatibility.");
+}
+
+TensorWrapper::TensorWrapper(const Qnn_Tensor_t& qnn_tensor)
+    : qnn_tensor_{qnn_tensor} {
+  if (qnn_tensor_.version == QNN_TENSOR_VERSION_1) {
+    name_ = qnn_tensor_.v1.name;
+    qnn_tensor_.v1.name = name_.data();
+    dimentions_.reserve(qnn_tensor_.v1.rank);
+    std::copy(
+        qnn_tensor_.v1.dimensions,
+        qnn_tensor_.v1.dimensions + qnn_tensor_.v1.rank,
+        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
+    qnn_tensor_.v1.dimensions = dimentions_.data();
+    if (const auto& quant_params = qnn_tensor_.v1.quantizeParams;
+        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
+      if (quant_params.quantizationEncoding ==
+          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
+        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
+            quant_params.scaleOffsetEncoding);
+      } else if (quant_params.quantizationEncoding ==
+                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
+        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
+            quant_params.axisScaleOffsetEncoding);
+      } else {
+        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
+                      quant_params.quantizationEncoding);
+      }
+    }
+    std::visit(
+        [this](auto&& quantize_params) -> void {
+          quantize_params.CloneTo(qnn_tensor_.v1.quantizeParams);
+        },
+        quantize_params_);
+  } else if (qnn_tensor_.version == Qnn_TensorVersion_t::QNN_TENSOR_VERSION_2) {
+    // TODO: support v2 only
+    name_ = qnn_tensor_.v2.name;
+    qnn_tensor_.v2.name = name_.data();
+    dimentions_.reserve(qnn_tensor_.v2.rank);
+    std::copy(
+        qnn_tensor_.v2.dimensions,
+        qnn_tensor_.v2.dimensions + qnn_tensor_.v2.rank,
+        std::back_insert_iterator<std::vector<std::uint32_t>>(dimentions_));
+    qnn_tensor_.v2.dimensions = dimentions_.data();
+    if (const auto& quant_params = qnn_tensor_.v2.quantizeParams;
+        quant_params.encodingDefinition == QNN_DEFINITION_DEFINED) {
+      if (quant_params.quantizationEncoding ==
+          QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) {
+        quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(
+            quant_params.scaleOffsetEncoding);
+      } else if (quant_params.quantizationEncoding ==
+                 QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET) {
+        quantize_params_.emplace<AxisScaleOffsetQuantizeParamsWrapper>(
+            quant_params.axisScaleOffsetEncoding);
+      } else {
+        QNN_LOG_ERROR("Unsupported quantization encoding: %d",
+                      quant_params.quantizationEncoding);
+      }
+    }
+    std::visit(
+        [this](auto&& quantize_params) -> void {
+          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
+        },
+        quantize_params_);
+  } else {
+    // TODO: tensor.v3
+  }
 }
 
 }  // namespace qnn
