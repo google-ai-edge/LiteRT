@@ -337,6 +337,8 @@ TEST(DispatchDelegate, CompiledModel) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
+  ASSERT_TRUE(compiled_model.StartMetricsCollection(/*detail_level=*/100));
+
   // Execute compiled model.
   compiled_model.Run(signature_index, input_buffers, output_buffers);
 
@@ -350,6 +352,14 @@ TEST(DispatchDelegate, CompiledModel) {
                    << kTestOutputTensor[i];
   }
   EXPECT_THAT(output_span, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+
+  auto metrics = compiled_model.StopMetricsCollection();
+  ASSERT_TRUE(metrics);
+  for (int i = 0; i < metrics->metrics.size(); ++i) {
+    auto& metric = metrics->metrics[i];
+    ABSL_LOG(INFO) << "Metric[" << i << "]: " << metric.name << " = "
+                   << metric.value.int_value;
+  }
 }
 
 TEST(DispatchDelegate, CompiledModelSharedInput) {

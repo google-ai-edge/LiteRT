@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -32,6 +33,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerator_model_compilation_data.h"
+#include "litert/runtime/metrics.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -284,7 +286,10 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to modify graph with delegate");
     }
-    compiled_model->RegisterDelegate(std::move(delegate));
+
+    compiled_model->RegisterDelegate({std::move(delegate),
+                                      accelerator->StartMetricsCollection,
+                                      accelerator->StopMetricsCollection});
   }
 
   compiled_model->CheckCpuTensors();
@@ -448,7 +453,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||
-        buffer->buffer_type() == kLiteRtTensorBufferTypeOpenClBuffer;
+        buffer->is_opencl_memory();
 #if defined(__ANDROID__)
     if (buffer->buffer_type() == kLiteRtTensorBufferTypeAhwb) {
       if (__builtin_available(android 26, *)) {
@@ -636,4 +641,35 @@ litert::Expected<void> LiteRtCompiledModelT::RunCApi(
     *async = async_;
   }
   return result;
+}
+
+litert::Expected<void> LiteRtCompiledModelT::StartMetricsCollection(
+    int detail_level) {
+  if (detail_level < 0) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Detail level must be >= 0");
+  }
+  for (auto& delegate : delegates_) {
+    if (delegate.StartMetricsCollection) {
+      LITERT_RETURN_IF_ERROR(delegate.StartMetricsCollection(
+          delegate.delegate.get(), detail_level));
+    }
+  }
+  return {};
+}
+
+litert::Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() {
+  std::vector<LiteRtMetricsT::Metric> metrics;
+  for (auto& delegate : delegates_) {
+    if (delegate.StopMetricsCollection) {
+      LiteRtMetricsT accelerator_metrics;
+      LITERT_RETURN_IF_ERROR(delegate.StopMetricsCollection(
+          delegate.delegate.get(), &accelerator_metrics));
+      metrics.insert(
+          metrics.end(),
+          std::make_move_iterator(accelerator_metrics.metrics.begin()),
+          std::make_move_iterator(accelerator_metrics.metrics.end()));
+    }
+  }
+  return LiteRtMetricsT{.metrics = std::move(metrics)};
 }

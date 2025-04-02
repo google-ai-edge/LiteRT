@@ -41,6 +41,12 @@ cc_library(
 )
 
 cc_library(
+    name = "metrics",
+    hdrs = ["metrics.h"],
+    deps = ["//litert/c:litert_any"],
+)
+
+cc_library(
     name = "tensor_buffer",
     srcs = [
         "ahwb_buffer.cc",
@@ -206,6 +212,7 @@ cc_library(
         ":accelerator_model_compilation_data",
         ":compilation_options",
         ":external_litert_buffer_context",
+        ":metrics",
         ":tensor_buffer",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -217,6 +224,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_compilation_options",
         "//litert/c:litert_logging",
+        "//litert/c:litert_metrics",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -238,6 +246,7 @@ cc_library(
         "@org_tensorflow//tensorflow/lite:framework",
         "@org_tensorflow//tensorflow/lite:model_builder",
         "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
+        "@org_tensorflow//tensorflow/lite/c:c_api_types_opaque_delegate",
         "@org_tensorflow//tensorflow/lite/c:common",
         "@org_tensorflow//tensorflow/lite/core:private_cc_api_stable",
         "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
@@ -376,6 +385,7 @@ cc_library(
     name = "accelerator",
     hdrs = ["accelerator.h"],
     deps = [
+        ":metrics",
         "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
     ],
