@@ -19,6 +19,7 @@
 #include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_metrics.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -90,6 +91,19 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
         LiteRtAccelerator accelerator, bool* does_jit_compilation));
+
+// Sets the function used to start collection of HW-specific metrics at a
+// specific level of detail (>= 0).
+LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level));
+
+// Sets the function used to stop collection of HW-specific metrics and report
+// the collected metrics.
+LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+                                          LiteRtMetrics metrics));
 
 #ifdef __cplusplus
 }  // extern "C"

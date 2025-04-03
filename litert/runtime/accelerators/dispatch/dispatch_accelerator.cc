@@ -24,6 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
@@ -31,6 +32,7 @@
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerator_model_compilation_data.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
+#include "litert/runtime/metrics.h"
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 
 namespace litert {
@@ -113,6 +115,29 @@ class NpuAccelerator final
     return kLiteRtStatusOk;
   }
 
+  // Starts collection of HW-specific metrics at a specific level of detail.
+  static LiteRtStatus StartMetricsCollection(void* delegate, int detail_level) {
+    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
+                  "Delegate pointer is null.");
+    LITERT_ENSURE(detail_level >= 0, kLiteRtStatusErrorInvalidArgument,
+                  "Detail level must be >= 0.");
+    LITERT_LOG(LITERT_INFO,
+               "__dbg Dispatch delegate started metrics collection.");
+    return LiteRtDispatchDelegateStartMetricsCollection(
+        reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), detail_level);
+  }
+
+  // Stops collection of HW-specific metrics and report the collected metrics.
+  static LiteRtStatus StopMetricsCollection(void* delegate,
+                                            LiteRtMetricsT* metrics) {
+    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
+                  "Delegate pointer is null.");
+    LITERT_ENSURE(metrics != nullptr, kLiteRtStatusErrorInvalidArgument,
+                  "Metrics pointer is null.");
+    return LiteRtDispatchDelegateStopMetricsCollection(
+        reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), metrics);
+  }
+
   // Destroys a Dispatch delegate instance.
   static void DestroyDelegate(void* delegate) {
     LiteRtDestroyDispatchDelegate(
@@ -141,6 +166,10 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(
 
   LITERT_RETURN_IF_ERROR(litert::internal::SetAcceleratorBoilerplateFunctions<
                          litert::NpuAccelerator>(accelerator));
+  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStartMetricsCollection(
+      accelerator.get(), litert::NpuAccelerator::StartMetricsCollection));
+  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStopMetricsCollection(
+      accelerator.get(), litert::NpuAccelerator::StopMetricsCollection));
 
   std::string library_folder;
   if (options && options->library_folder) {

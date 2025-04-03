@@ -22,6 +22,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -58,11 +59,6 @@ typedef struct LiteRtDispatchOption {
   const char* name;
   LiteRtAny value;
 } LiteRtDispatchOption;
-
-typedef struct LiteRtMetric {
-  const char* name;
-  LiteRtAny value;
-} LiteRtMetric;
 
 typedef struct LiteRtMemBuffer {
   int fd;  // File descriptor for an mmapped buffer, -1 if unused.

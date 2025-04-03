@@ -22,9 +22,11 @@
 #include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 
 #ifdef __cplusplus
@@ -137,6 +139,24 @@ LiteRtStatus LiteRtRunCompiledModelAsync(LiteRtCompiledModel compiled_model,
 
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
   delete compiled_model;
+}
+
+LiteRtStatus LiteRtCompiledModelStartMetricsCollection(
+    LiteRtCompiledModel compiled_model, int detail_level) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(compiled_model->StartMetricsCollection(detail_level));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
+    LiteRtCompiledModel compiled_model, LiteRtMetrics metrics) {
+  if (!compiled_model || !metrics) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(*metrics, compiled_model->StopMetricsCollection());
+  return kLiteRtStatusOk;
 }
 
 #ifdef __cplusplus

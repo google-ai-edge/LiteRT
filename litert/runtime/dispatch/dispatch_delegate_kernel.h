@@ -21,7 +21,9 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -55,6 +57,10 @@ class DispatchDelegateKernel
 
   TfLiteStatus Eval(TfLiteOpaqueContext* context,
                     TfLiteOpaqueNode* node) override;
+
+  LiteRtStatus StartMetricsCollection(int detail_level);
+
+  Expected<LiteRtMetricsT> StopMetricsCollection();
 
  private:
   DispatchDelegateKernel(const LiteRtDispatchDelegateOptions& options,

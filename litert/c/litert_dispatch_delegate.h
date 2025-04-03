@@ -17,7 +17,9 @@
 
 #include <stddef.h>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
 #include "tensorflow/lite/c/common.h"  // from @org_tensorflow
@@ -57,5 +59,25 @@ TfLiteStatus LiteRtDispatchDelegateAddAllocBaseOption(
 // to find the start of npu byte code appended to the file.
 TfLiteStatus LiteRtDispatchDelegateAddAllocFdOption(
     LiteRtDispatchDelegateOptions* options, int alloc_fd);
+
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
+//
+// Metrics
+//
+
+// Start collection of HW-specific metrics at a specific level of detail (>= 0).
+LiteRtStatus LiteRtDispatchDelegateStartMetricsCollection(
+    TfLiteOpaqueDelegate* delegate, int detail_level);
+
+// Stop collection of HW-specific metrics and report the collected metrics.
+LiteRtStatus LiteRtDispatchDelegateStopMetricsCollection(
+    TfLiteOpaqueDelegate* delegate, LiteRtMetrics metrics);
+
+#ifdef __cplusplus
+}
+#endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_DISPATCH_DELEGATE_H_

@@ -42,6 +42,17 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_metrics",
+    srcs = ["litert_metrics.cc"],
+    hdrs = ["litert_metrics.h"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+        "//litert/runtime:metrics",
+    ],
+)
+
+cc_library(
     name = "litert_environment",
     srcs = ["litert_environment.cc"],
     hdrs = ["litert_environment.h"],
@@ -305,7 +316,9 @@ cc_library(
         "litert_dispatch_delegate.h",
     ],
     deps = [
+        ":litert_common",
         ":litert_environment_options",
+        ":litert_metrics",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@org_tensorflow//tensorflow/lite/c:c_api",
@@ -355,8 +368,10 @@ cc_library(
         ":litert_compilation_options",
         ":litert_environment",
         ":litert_logging",
+        ":litert_metrics",
         ":litert_model",
         ":litert_tensor_buffer",
+        "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "@org_tensorflow//tensorflow/lite/c:c_api_types",
     ],
@@ -462,6 +477,7 @@ cc_library(
         ":litert_accelerator",
         ":litert_accelerator_compilation_options",
         ":litert_common",
+        ":litert_metrics",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
@@ -507,6 +523,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_environment",
     ":litert_layout",
     ":litert_logging",
+    ":litert_metrics",
     ":litert_model",
     ":litert_op_code",
     ":litert_options",
@@ -549,6 +566,7 @@ cc_library(
         ":litert_event_type.h",
         ":litert_layout.h",
         ":litert_logging.h",
+        ":litert_metrics.h",
         ":litert_model.h",
         ":litert_op_code.h",
         ":litert_options.h",

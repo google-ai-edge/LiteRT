@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -34,7 +35,9 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/environment.h"
+#include "litert/runtime/accelerator.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
 #include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
@@ -110,7 +113,24 @@ class LiteRtCompiledModelT {
                                  LiteRtTensorBuffer* output_buffers,
                                  bool* async);
 
+  litert::Expected<void> StartMetricsCollection(int detail_level);
+
+  litert::Expected<LiteRtMetricsT> StopMetricsCollection();
+
  private:
+  // A opaque delegate and its metrics collection functions.
+  struct Delegate {
+    tflite::TfLiteOpaqueDelegateUniquePtr delegate;
+    // NOLINTBEGIN(*-readability-class-member-naming)
+    // Starts collection of HW-specific metrics at a specific level of detail.
+    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level);
+
+    // Stops collection of HW-specific metrics and report the collected metrics.
+    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+                                          LiteRtMetricsT* metrics);
+    // NOLINTEND(*-readability-class-member-naming)
+  };
+
   // Initializes the internal TFLite interpreter and related objects.
   // This is called in the public Create*() methods.
   // The flatbuffer_model_ must be set before calling this method.
@@ -184,7 +204,7 @@ class LiteRtCompiledModelT {
       const char* tensor_name, LiteRtTensorBuffer buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers);
 
-  void RegisterDelegate(tflite::TfLiteOpaqueDelegateUniquePtr&& delegate) {
+  void RegisterDelegate(Delegate&& delegate) {
     delegates_.push_back(std::move(delegate));
   }
 
@@ -216,7 +236,7 @@ class LiteRtCompiledModelT {
   std::unique_ptr<litert::internal::ExternalLiteRtBufferContext>
       buffer_context_;
 
-  std::vector<tflite::TfLiteOpaqueDelegateUniquePtr> delegates_;
+  std::vector<Delegate> delegates_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
