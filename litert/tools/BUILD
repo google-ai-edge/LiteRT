@@ -16,7 +16,7 @@ load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_bin_with_qn
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 cc_library(
@@ -169,6 +169,9 @@ cc_library(
     name = "dump",
     srcs = ["dump.cc"],
     hdrs = ["dump.h"],
+    # TODO: Either refactor this code to be in cc/ or setup to only build in debug mode.
+    # Then, we can remove this visibility.
+    visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",

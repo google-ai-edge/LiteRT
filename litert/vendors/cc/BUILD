@@ -14,7 +14,7 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_stable_abi_users"],
 )
 
 cc_library(
@@ -92,9 +92,9 @@ cc_test(
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_model",
-        "//litert/core/model",
-        "//litert/core/model:model_graph",
-        "//litert/core/util:flatbuffer_tools",
+        "//litert/core/model:model_graph_testonly",
+        "//litert/core/model:model_testonly",
+        "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/vendors/examples:example_conversion_impl",
         "//litert/vendors/examples:example_ir",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
@@ -115,9 +115,9 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
-        "//litert/core/model",
-        "//litert/core/model:model_graph",
-        "//litert/core/util:flatbuffer_tools",
+        "//litert/core/model:model_graph_testonly",
+        "//litert/core/model:model_testonly",
+        "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
         "//litert/vendors/examples:example_conversion_impl",
         "//litert/vendors/examples:example_ir",

@@ -17,10 +17,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        "//third_party/odml/infra/perf/mobile_tests/litert:__subpackages__",
-        "//litert:__subpackages__",
-    ],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 # Dispatch API implementation, it is used by the dispatch delegate to call the vendor's dispatch

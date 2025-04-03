@@ -12,21 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:special_rule.bzl", "lite_rt_friends")
+load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//litert:__subpackages__",
-    ] + lite_rt_friends(),
+        "//litert:litert_internal_users",
+    ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "model",
     srcs = ["model.cc"],
     hdrs = [
         "model.h",
         "//litert/c:litert_model_hdrs",
+    ],
+    vis = [
+        "//litert:litert_internal_users",
+        # TODO: This needs to be removed.
+        "//litert/vendors/qualcomm/compiler:__pkg__",
     ],
     deps = [
         ":buffer_manager",
@@ -254,7 +259,7 @@ cc_test(
     ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "model_graph",
     srcs = ["model_graph.cc"],
     hdrs = [

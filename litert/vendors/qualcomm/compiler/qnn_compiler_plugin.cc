@@ -41,6 +41,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
+
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
 using LiteRtContextHandleIdx = uint32_t;

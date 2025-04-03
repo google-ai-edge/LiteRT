@@ -319,3 +319,39 @@ def gtest_main_no_heapcheck_deps():
     # copybara:comment_begin(oss-only)
     return ["@com_google_googletest//:gtest_main"]
     # copybara:comment_end
+
+def cc_library_with_testonly_vis(
+        name,
+        vis = "//litert:litert_internal_users",
+        testonly_vis = "//litert:litert_stable_abi_users",
+        rule = native.cc_library,
+        **rule_kwargs):
+    """
+    Defines a cc_library with different visibilities for normal and testonly targets.
+
+    This macro defines two cc_library targets:
+    - `{name}`: A normal cc_library with the given `vis` visibility.
+    - `{name}_testonly`: A testonly cc_library with the given `testonly_vis` visibility.
+
+    Args:
+      name: The name of the library.
+      vis: The visibility for the normal cc_library target.
+      testonly_vis: The visibility for the testonly cc_library target.
+      rule: The underlying rule to use (e.g., cc_library).
+      **rule_kwargs: Keyword arguments to pass to the underlying rule.
+    """
+    if "append" not in dir(vis):
+        vis = [vis]
+    if "append" not in dir(testonly_vis):
+        testonly_vis = [testonly_vis]
+    rule(
+        name = name,
+        visibility = vis,
+        **rule_kwargs
+    )
+    rule(
+        name = name + "_testonly",
+        testonly = True,
+        visibility = testonly_vis,
+        **rule_kwargs
+    )

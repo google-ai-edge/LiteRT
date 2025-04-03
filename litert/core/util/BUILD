@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor:__subpackages__",
-        "//litert:__subpackages__",
+        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor:__subpackages__", TODO: check this
+        "//litert:litert_internal_users",
     ],
 )
 
@@ -25,7 +27,7 @@ cc_library(
     hdrs = ["to_string.h"],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "flatbuffer_tools",
     srcs = ["flatbuffer_tools.cc"],
     hdrs = [
@@ -72,6 +74,10 @@ cc_library(
     ],
     hdrs = [
         "tensor_type_util.h",
+    ],
+    # TODO: Either move this to cc/ or refactor users. Then, remove this visibility.
+    visibility = [
+        "//litert:litert_stable_abi_users",
     ],
     deps = [
         "@com_google_absl//absl/strings",

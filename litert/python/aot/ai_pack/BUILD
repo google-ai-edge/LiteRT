@@ -16,10 +16,7 @@ load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        "//litert:__subpackages__",
-        "//third_party/py/ai_edge_torch/aot:__subpackages__",
-    ],
+    default_visibility = ["//litert:litert_python_users"],
 )
 
 pytype_strict_library(

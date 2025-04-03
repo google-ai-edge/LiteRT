@@ -16,7 +16,7 @@ load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_dynamic
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 litert_dynamic_lib(
@@ -66,7 +66,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:dynamic_loading",
-        "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
@@ -102,6 +101,10 @@ cc_test(
         "nosan",
         "notap",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":dispatch_api",
         "@com_google_googletest//:gtest_main",
