@@ -39,9 +39,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "tensorflow/lite/model_builder.h"  // from @org_tensorflow
-#include "tensorflow/lite/schema/schema_generated.h"  // from @org_tensorflow
-#include "tensorflow/lite/stderr_reporter.h"  // from @org_tensorflow
+#include "tflite/model_builder.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/stderr_reporter.h"  // from @org_tensorflow
 
 namespace litert::internal {
 

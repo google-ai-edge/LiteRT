@@ -41,10 +41,10 @@
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/core/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/core/c/c_api_opaque.h"  // from @org_tensorflow
 
 namespace litert {
 namespace internal {

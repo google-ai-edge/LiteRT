@@ -30,7 +30,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "tensorflow/lite/profiling/time.h"  // from @org_tensorflow
+#include "tflite/profiling/time.h"  // from @org_tensorflow
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",

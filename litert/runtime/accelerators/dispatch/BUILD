@@ -36,6 +36,6 @@ cc_library(
         "//litert/runtime:accelerator_model_compilation_data",
         "//litert/runtime:metrics",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )

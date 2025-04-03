@@ -112,7 +112,7 @@ cc_library(
     ],
     deps = [
         ":litert_common",
-        "@org_tensorflow//tensorflow/lite:minimal_logging",
+        "//tflite:minimal_logging",
     ],
 )
 
@@ -137,7 +137,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
-        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
+        "//tflite/core/c:private_c_api_types",
     ],
 )
 
@@ -155,7 +155,7 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
-        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
+        "//tflite/core/c:private_c_api_types",
     ],
 )
 
@@ -179,7 +179,7 @@ cc_test(
 cc_library(
     name = "litert_op_code",
     hdrs = ["litert_op_code.h"],
-    deps = ["@org_tensorflow//tensorflow/lite:builtin_ops"],
+    deps = ["//tflite:builtin_ops"],
 )
 
 cc_library(
@@ -193,7 +193,7 @@ cc_library(
         ":litert_op_code",
         "//litert/core/model",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -321,11 +321,11 @@ cc_library(
         ":litert_metrics",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
     ],
 )
 
@@ -373,7 +373,7 @@ cc_library(
         ":litert_tensor_buffer",
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -582,10 +582,10 @@ cc_library(
         ":litert_tensor_buffer_types.h",
         ":litert_gl_types.h",
         # Needed for litert/c/litert_op_code.h
-        "@org_tensorflow//tensorflow/lite:builtin_ops.h",
+        "//tflite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h
-        "@org_tensorflow//tensorflow/lite/c:tensorflowlite_c_api_hdrs_filegroup",
-        "@org_tensorflow//tensorflow/lite/c:tensorflowlite_c_impl_hdrs_filegroup",
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+        "//tflite/c:tensorflowlite_c_impl_hdrs_filegroup",
     ],  # Export all header files (.h) in this directory
     deps = [
         "@opencl_headers",
@@ -604,10 +604,10 @@ cc_library(
     srcs = [":litert_runtime_c_api_so"],
     hdrs = glob(["litert_*.h"]) + [
         # Needed for litert/c/litert_op_code.h
-        "@org_tensorflow//tensorflow/lite:builtin_ops.h",
+        "//tflite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h
-        "@org_tensorflow//tensorflow/lite/c:tensorflowlite_c_api_hdrs_filegroup",
-        "@org_tensorflow//tensorflow/lite/core/c:headers_filegroup",
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+        "//tflite/core/c:headers_filegroup",
     ],
     linkstatic = 1,
     deps = [

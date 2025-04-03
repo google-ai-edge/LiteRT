@@ -22,7 +22,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tensorflow/lite/delegates/gpu/gl/gl_texture.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/gl_texture.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {

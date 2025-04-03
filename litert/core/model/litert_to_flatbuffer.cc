@@ -24,7 +24,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tensorflow/lite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
 
 namespace litert::internal {
 

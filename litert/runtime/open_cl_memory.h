@@ -25,7 +25,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include <CL/cl.h>
-#include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
 
 namespace litert::internal {
 

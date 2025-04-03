@@ -25,8 +25,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/xnnpack/xnnpack_delegate.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"  // from @org_tensorflow
 
 namespace litert {
 

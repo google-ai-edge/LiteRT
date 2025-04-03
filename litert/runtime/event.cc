@@ -33,7 +33,7 @@
 #include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
 #include <CL/cl_platform.h>
-#include "tensorflow/lite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 using litert::Error;

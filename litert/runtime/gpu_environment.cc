@@ -20,10 +20,10 @@
 #include "litert/c/litert_logging.h"
 #include "litert/core/environment.h"
 #include <CL/cl.h>
-#include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/cl_device.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_device.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
 
 namespace litert {
 namespace internal {

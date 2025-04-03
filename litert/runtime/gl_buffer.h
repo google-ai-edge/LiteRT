@@ -25,7 +25,7 @@
 #include "litert/cc/litert_expected.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tensorflow/lite/delegates/gpu/gl/gl_buffer.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/gl_buffer.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_AHWB_SUPPORT

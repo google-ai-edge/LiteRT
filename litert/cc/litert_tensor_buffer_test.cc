@@ -41,14 +41,14 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tensorflow/lite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
-#include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 namespace litert {

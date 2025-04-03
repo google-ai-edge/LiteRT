@@ -39,10 +39,10 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/interpreter.h"  // from @org_tensorflow
-#include "tensorflow/lite/signature_runner.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/interpreter.h"  // from @org_tensorflow
+#include "tflite/signature_runner.h"  // from @org_tensorflow
 
 namespace litert {
 namespace {

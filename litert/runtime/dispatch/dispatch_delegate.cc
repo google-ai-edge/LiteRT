@@ -35,10 +35,10 @@
 #include "litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
 
 namespace {
 

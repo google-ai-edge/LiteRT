@@ -30,7 +30,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime/accelerators:accelerator_implementation_helper",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/delegates/xnnpack:xnnpack_delegate",
+        "//tflite/c:c_api_types",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
 )

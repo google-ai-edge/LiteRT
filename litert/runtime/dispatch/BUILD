@@ -87,12 +87,12 @@ cc_library(
         "//litert/runtime:metrics",
         "//litert/runtime:tfl_utils",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_opaque_without_op_resolver",
-        "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core/c:private_c_api_opaque_without_op_resolver",
+        "//tflite/delegates/utils:simple_opaque_delegate",
     ],
 )
 
@@ -128,8 +128,8 @@ litert_device_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
     ],
 )
 
@@ -159,8 +159,8 @@ litert_device_test(
         "//litert/runtime:external_litert_buffer_context",
         "//litert/test:common",
         "//litert/test:simple_model_npu",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
     ],
 )
 
@@ -189,9 +189,9 @@ litert_device_test(
         "//litert/runtime:external_litert_buffer_context",
         "//litert/test:common",
         "//litert/test:simple_model_npu",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
     ],
 )

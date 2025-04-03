@@ -15,7 +15,7 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_OP_CODE_H_
 #define ODML_LITERT_LITERT_C_LITERT_OP_CODE_H_
 
-#include "tensorflow/lite/builtin_ops.h"  // from @org_tensorflow
+#include "tflite/builtin_ops.h"  // from @org_tensorflow
 
 #ifdef __cplusplus
 extern "C" {

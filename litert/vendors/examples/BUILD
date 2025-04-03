@@ -103,7 +103,7 @@ cc_test(
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
         "//litert/vendors/cc:conversion",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 

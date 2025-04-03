@@ -29,8 +29,8 @@
 #include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_expected.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
-#include "tensorflow/lite/model_builder.h"  // from @org_tensorflow
-#include "tensorflow/lite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/model_builder.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
 
 namespace litert::internal {
 

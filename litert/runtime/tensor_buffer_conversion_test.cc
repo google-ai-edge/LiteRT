@@ -30,7 +30,7 @@
 #include "litert/test/matchers.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tensorflow/lite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace {

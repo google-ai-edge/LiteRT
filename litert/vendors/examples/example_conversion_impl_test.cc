@@ -31,7 +31,7 @@
 #include "litert/test/matchers.h"
 #include "litert/vendors/cc/conversion.h"
 #include "litert/vendors/examples/example_ir.h"
-#include "tensorflow/lite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
 
 namespace litert::example {
 namespace {

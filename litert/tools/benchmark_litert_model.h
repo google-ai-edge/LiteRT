@@ -32,12 +32,12 @@ limitations under the License.
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/benchmark/benchmark_model.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/command_line_flags.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/utils.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/tools/benchmark/benchmark_model.h"  // from @org_tensorflow
+#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
+#include "tflite/tools/command_line_flags.h"  // from @org_tensorflow
+#include "tflite/tools/utils.h"  // from @org_tensorflow
 
 namespace litert {
 namespace benchmark {
