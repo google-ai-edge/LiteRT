@@ -16,8 +16,6 @@ limitations under the License.
 
 #include <stdint.h>
 
-#include <limits>
-
 #include "hexagon/hexagon_nn_ops.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/delegates/hexagon/hexagon_nn/hexagon_nn.h"
