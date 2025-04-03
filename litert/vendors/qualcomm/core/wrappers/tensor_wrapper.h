@@ -105,7 +105,7 @@ class TensorWrapper final {
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 
-  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
+  Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
 
   std::uint32_t GetRank() const;
 
@@ -317,7 +317,6 @@ class TensorWrapper final {
   std::vector<std::uint32_t> dimentions_{};
   QuantizeParamsWrapperVariant quantize_params_{};
   std::vector<std::byte> owned_data_{};
-  mutable int ref_cnt_ = 0;
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;

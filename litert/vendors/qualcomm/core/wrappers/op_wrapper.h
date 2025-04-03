@@ -38,20 +38,6 @@ class OpWrapper final {
 
   Qnn_OpConfig_t GetOpConfig();
 
-  const std::vector<std::reference_wrapper<const TensorWrapper>>&
-  GetInputTensors() const {
-    return input_tensors_;
-  }
-
-  const std::vector<std::reference_wrapper<const TensorWrapper>>&
-  GetOutputTensors() const {
-    return output_tensors_;
-  }
-
-  const std::vector<TensorParamWrapper>& GetTensorParams() const {
-    return tensor_params_;
-  }
-
  private:
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
