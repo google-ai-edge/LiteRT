@@ -33,7 +33,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -354,12 +353,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
-          auto buffer_id = input.Weights().Get()->GetBufferId();
+          auto buffer_id = input.Weights().BufferId();
           auto it = weight_sharing_map.find(buffer_id);
           if (it != weight_sharing_map.end()) {
-            if (input.Weights().Get()->Buffer().Size() >= largest_weight_size) {
+            if (input.Weights().Bytes().size() >= largest_weight_size) {
               context_handle_idx = it->second;
-              largest_weight_size = input.Weights().Get()->Buffer().Size();
+              largest_weight_size = input.Weights().Bytes().size();
             }
           }
         }
@@ -392,7 +391,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
-          auto buffer_id = input.Weights().Get()->GetBufferId();
+          auto buffer_id = input.Weights().BufferId();
           weight_sharing_map[buffer_id] = context_handle_idx;
         }
       }

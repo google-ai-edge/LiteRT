@@ -75,6 +75,12 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
   explicit Weights(LiteRtWeights weights)
       : internal::NonOwnedHandle<LiteRtWeights>(weights) {}
 
+  int32_t BufferId() const {
+    int32_t buffer_id;
+    internal::AssertOk(LiteRtGetWeightsBufferId, Get(), &buffer_id);
+    return buffer_id;
+  }
+
   absl::Span<const uint8_t> Bytes() const {
     size_t size;
     const void* addr;

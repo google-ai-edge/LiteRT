@@ -218,6 +218,10 @@ LiteRtStatus LiteRtGetTensorWeights(LiteRtTensor tensor,
 LiteRtStatus LiteRtGetWeightsBytes(LiteRtWeights weights, const void** addr,
                                    size_t* size);
 
+// Get the buffer id associated with the weights. Buffer id managed internally
+// by the buffer manager. Buffer id starts from 1.
+LiteRtStatus LiteRtGetWeightsBufferId(LiteRtWeights weights,
+                                      int32_t* buffer_id);
 //
 // LiteRtOp
 //

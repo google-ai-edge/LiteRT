@@ -369,6 +369,15 @@ LiteRtStatus LiteRtGetWeightsBytes(LiteRtWeights weights, const void** addr,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetWeightsBufferId(LiteRtWeights weights,
+                                      int32_t* buffer_id) {
+  if (!weights || !buffer_id) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *buffer_id = weights->GetBufferId();
+  return kLiteRtStatusOk;
+}
+
 //
 // Tensor
 //

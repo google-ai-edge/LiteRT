@@ -45,8 +45,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
-        # TODO: Remove this dependency.
-        "//litert/core/model",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
