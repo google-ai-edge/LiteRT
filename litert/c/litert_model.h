@@ -35,10 +35,10 @@ extern "C" {
 // Constant data behind a tensor stored in the model.
 LITERT_DEFINE_HANDLE(LiteRtWeights);
 
-// Values/edges of the models graph.
+// Values/edges of the model's graph.
 LITERT_DEFINE_HANDLE(LiteRtTensor);
 
-// Operations/nodes of the models graph.
+// Operations/nodes of the model's graph.
 LITERT_DEFINE_HANDLE(LiteRtOp);
 
 // Fundamental block of program, i.e. a function body.
@@ -93,7 +93,7 @@ typedef struct {
   LiteRtElementType element_type;
 } LiteRtUnrankedTensorType;
 
-// Tensor whose rank is static but dimenions may be dynamic.
+// Tensor whose rank is static but dimensions may be dynamic.
 typedef struct {
   // The primitive element type of the constituent data.
   LiteRtElementType element_type;
@@ -104,7 +104,7 @@ typedef struct {
 
 // The identifier for tensor type union.
 typedef enum {
-  // Type with fix ranked and possibly dynamic dimensions.
+  // Type with fixed rank and possibly dynamic dimensions.
   kLiteRtRankedTensorType = 0,
 
   // Type with dynamic rank.
@@ -153,7 +153,7 @@ typedef enum {
   // [NOT IMPLEMENTED YET] Q-params for each element accross a single dimension.
   kLiteRtQuantizationPerChannel = 2,
 
-  // [NOT IMPLEMENTED YET] Q-params accross blocks of fixed size (e.g. 2048).
+  // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
   kLiteRtQuantizationBlockWise = 3,
 } LiteRtQuantizationTypeId;
 
@@ -172,7 +172,7 @@ LiteRtStatus LiteRtGetPerChannelQuantization(
 
 // EDGES
 
-// Information about the about that defines a tensor.
+// Information about the graph node that defines a tensor.
 typedef struct LiteRtTensorDefiningOp {
   // The defining op itself.
   LiteRtOp op;

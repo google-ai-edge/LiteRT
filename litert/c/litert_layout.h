@@ -34,7 +34,7 @@ typedef struct {
   // less than 0. Everything from [rank, LITERT_MAX_RANK) is undefined.
   int32_t dimensions[LITERT_TENSOR_MAX_RANK];
 
-  // Strides for a nomimal NWHC layout. NULL if unused.
+  // Strides for a nominal NWHC layout. NULL if unused.
   const uint32_t* strides;
 } LiteRtLayout;
 
