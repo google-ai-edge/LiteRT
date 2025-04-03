@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/builders/op_builder.h"
 
+#include <cstdint>
+#include <vector>
+
 #include "hexagon/hexagon_nn_ops.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/c/common.h"

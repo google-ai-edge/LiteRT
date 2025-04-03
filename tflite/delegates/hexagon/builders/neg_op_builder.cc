@@ -14,7 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/builders/neg_op_builder.h"
 
-#include <limits>
+#include <cstdint>
 
 namespace tflite {
 namespace delegates {
