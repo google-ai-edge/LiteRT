@@ -101,9 +101,8 @@ litert_device_test(
     srcs = ["dispatch_delegate_google_tensor_test.cc"],
     backend_id = "google_tensor",
     data = [
-        "//litert/test:testdata/shared_input_cpu_npu.tflite",
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
+        "//litert/test:testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
+        "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
     ],
     linkopts = gles_linkopts(),
     deps = [

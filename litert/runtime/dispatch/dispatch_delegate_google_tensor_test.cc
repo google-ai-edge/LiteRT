@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -55,7 +56,7 @@
 #include "tensorflow/lite/interpreter.h"  // from @org_tensorflow
 #include "tensorflow/lite/signature_runner.h"  // from @org_tensorflow
 
-using litert::testing::MakeRuntimeFromTestFileWithNpuModel;
+using litert::testing::MakeRuntimeFromTestFile;
 using testing::FloatNear;
 using testing::Pointwise;
 using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
@@ -64,8 +65,8 @@ using ::testing::ElementsAre;
 namespace litert {
 namespace {
 
-constexpr absl::string_view kNpuFile = kGoogleTensorModelFileName;
-constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
+constexpr absl::string_view kPrecompiledTfliteFile =
+    "simple_model_npu_google_tensor_precompiled.tflite";
 constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 
 litert::Expected<Environment> CreateDefaultEnvironment() {
@@ -79,9 +80,8 @@ litert::Expected<Environment> CreateDefaultEnvironment() {
 }
 
 TEST(DispatchDelegate, GoogleTensorCpuBuffer) {
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      testing::TflRuntime::Ptr runtime,
-      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
+  LITERT_ASSERT_OK_AND_ASSIGN(testing::TflRuntime::Ptr runtime,
+                              MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
@@ -151,9 +151,8 @@ TEST(DispatchDelegate, GoogleTensorHwBuffer) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      testing::TflRuntime::Ptr runtime,
-      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
+  LITERT_ASSERT_OK_AND_ASSIGN(testing::TflRuntime::Ptr runtime,
+                              MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
   internal::ExternalLiteRtBufferContext buffer_context;
@@ -270,12 +269,10 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      OwningBufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
+  std::string model_file_path =
+      testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
+                              Model::CreateFromFile(model_file_path));
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
                               model.GetSignatures());
@@ -363,11 +360,9 @@ TEST(DispatchDelegate, CompiledModel) {
 }
 
 TEST(DispatchDelegate, CompiledModelSharedInput) {
-  auto model_with_byte_code = internal::GetModelBufWithByteCode(
-      testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
-      testing::GetTestFilePath(kNpuFile));
-  ASSERT_TRUE(model_with_byte_code);
-  auto model = Model::CreateFromBuffer(*model_with_byte_code);
+  std::string model_file_path = testing::GetTestFilePath(
+      "shared_input_cpu_npu_google_tensor_precompiled.tflite");
+  auto model = Model::CreateFromFile(model_file_path);
   ASSERT_TRUE(model);
 
 #if !defined(__ANDROID__)
@@ -448,13 +443,10 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   // Create Model and check signatures.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      OwningBufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile)));
-
+  std::string model_file_path =
+      testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
+                              Model::CreateFromFile(model_file_path));
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
                               model.GetSignatures());

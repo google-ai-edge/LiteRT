@@ -165,7 +165,9 @@ cc_library(
 
 exports_files(srcs = [
     "testdata/mobilenet_v2_1.0_224.tflite",
+    "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
     "testdata/simple_model_google_tensor.bin",
     "testdata/simple_model_mtk.bin",
+    "testdata/simple_model_npu_google_tensor_precompiled.tflite",
     "testdata/simple_model_qualcomm.bin",
 ])
