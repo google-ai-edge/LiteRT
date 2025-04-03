@@ -335,6 +335,7 @@ def litert_device_exec(
         # args = [
             # "--run_as=odml-device-lab",
         # ],
+        # test_options = exec_args,
         # dimensions = backend.default_mh_device,
         # tags = [
             # "android",

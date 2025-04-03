@@ -25,7 +25,7 @@ cc_test(
     name = "gen_device_test",
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = ["//litert/integration_test/models:single_op_models"],
+    data = ["//litert/integration_test/models:single_op"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -80,13 +80,13 @@ sh_binary(
 litert_integration_test(
     name = "single_op_device_tests_cpu",
     backend_id = "cpu",
-    models = "//litert/integration_test/models:single_op_models",
+    models = "//litert/integration_test/models:single_op",
 )
 
 litert_integration_test(
     name = "classic_ml_device_tests_cpu",
     backend_id = "cpu",
-    models = "//litert/integration_test/models:classic_ml_models",
+    models = "//litert/integration_test/models:classic_ml",
 )
 
 # QUALCOMM -----------------------------------------------------------------------------------------
@@ -106,7 +106,7 @@ litert_device_test(
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
     backend_id = "qualcomm",
-    models = "//litert/integration_test/models:single_op_models",
+    models = "//litert/integration_test/models:single_op",
     skips = [
         "greater_f32",  # TODO: lukeboyer - Investigate (segfault).
         "less_f32",  # TODO: lukeboyer - Investigate (segfault).
@@ -116,11 +116,11 @@ litert_integration_test(
 litert_integration_test(
     name = "classic_ml_device_tests_qualcomm_JIT",
     backend_id = "qualcomm",
-    models = "//litert/integration_test/models:classic_ml_models",
+    models = "//litert/integration_test/models:classic_ml",
 )
 
 litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
     backend_id = "qualcomm",
-    models = "//litert/integration_test/models:pre_compiled_models",
+    models = "//litert/integration_test/models:pre_compiled",
 )
