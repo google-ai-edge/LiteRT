@@ -185,12 +185,12 @@ QUALCOMM_SPEC = BackendSpec(
 MEDIATEK_SPEC = BackendSpec(
     id = "mediatek",
     libs = [
-        ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mtk.so", "LD_LIBRARY_PATH"),
+        ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mediatek.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
         "hardware": "mt6989",
     }],
-    dispatch = "libLiteRtDispatch_Mtk.so",
+    dispatch = "libLiteRtDispatch_Mediatek.so",
 )
 
 # GOOGLE TENSOR
