@@ -20,6 +20,10 @@
 namespace litert::test {
 namespace {
 
+static constexpr absl::string_view kDispatch = "libLiteRtDispatch_Qualcomm.so";
+static constexpr absl::string_view kPlugin =
+    "libLiteRtCompilerPlugin_Qualcomm.so";
+
 using ::litert::qnn::QnnManager;
 
 TEST(QnnSmokeTest, LoadLibsFromEnvPath) {
@@ -28,6 +32,12 @@ TEST(QnnSmokeTest, LoadLibsFromEnvPath) {
 
   auto lib_system = SharedLibrary::Load(kLibQnnSystemSo, RtldFlags::Default());
   ASSERT_TRUE(lib_system);
+
+  auto lib_dispatch = SharedLibrary::Load(kDispatch, RtldFlags::Default());
+  ASSERT_TRUE(lib_dispatch);
+
+  auto lib_plugin = SharedLibrary::Load(kPlugin, RtldFlags::Default());
+  ASSERT_TRUE(lib_plugin);
 }
 
 TEST(QnnSmokeTest, QnnManagerCreate) {

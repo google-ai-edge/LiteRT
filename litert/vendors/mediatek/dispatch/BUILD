@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -70,19 +70,6 @@ litert_dynamic_lib(
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],
-)
-
-# This is cc_library target for `libLiteRtDispatch_Mediatek.so`.
-cc_library(
-    name = "dispatch_api_shared_lib",
-    srcs = [":dispatch_api_so"],
-)
-
-# Copies the shared library so that it is available for use in test data as libLiteRtDispatch_Mediatek.so.
-copy_file(
-    name = "copy_dispatch_api_so",
-    src = "//litert/vendors/mediatek/dispatch:dispatch_api_so",
-    target = "libLiteRtDispatch_Mediatek.so",
 )
 
 cc_test(
