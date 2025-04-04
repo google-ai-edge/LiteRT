@@ -15,7 +15,10 @@ limitations under the License.
 
 #include "tflite/examples/label_image/label_image.h"
 
+#include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "tflite/c/c_api_types.h"
