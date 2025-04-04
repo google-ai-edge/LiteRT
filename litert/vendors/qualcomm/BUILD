@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_lib", "litert_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
 package(
@@ -114,6 +115,12 @@ litert_test(
         "//litert/test:matchers_oss",
         "//litert/vendors/qualcomm/tools:dump",
     ],
+)
+
+litert_device_exec(
+    name = "qnn_manager_device_test",
+    backend_id = "qualcomm",
+    target = ":qnn_manager_test",
 )
 
 cc_library(

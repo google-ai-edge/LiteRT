@@ -16,7 +16,7 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
+    default_visibility = ["//visibility:private"],
 )
 
 litert_dynamic_lib(
@@ -53,7 +53,7 @@ litert_dynamic_lib(
         # Don't build/test in OS until qnn is available.
         "nobuilder",
     ],
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
