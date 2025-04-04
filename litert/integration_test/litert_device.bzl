@@ -361,7 +361,8 @@ def litert_device_test(
         exec_args = [],
         exec_env_vars = [],
         tags = [],
-        linkopts = []):
+        linkopts = [],
+        copts = []):
     """
     Syntactic sugar for the litert_device_exec macro.
 
@@ -379,6 +380,7 @@ def litert_device_test(
         exec_env_vars: List of environment variables to set before executing the target.
         tags: List of tags to apply to the target to be generated.
         linkopts: List of linkopts to apply to the target to be generated.
+        copts: List of copts to apply to the target to be generated.
     """
 
     target = "_{}".format(name)
@@ -392,6 +394,7 @@ def litert_device_test(
             "@org_tensorflow//tensorflow:android": ["-landroid"],
             "//conditions:default": [],
         }) + linkopts,
+        copts = copts,
         tags = hidden_test_tags() + tags,
     )
 

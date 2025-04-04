@@ -12,11 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:litert_device.bzl", "litert_device_test", "litert_integration_test")
+load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
+)
+
+sh_binary(
+    name = "run_on_device_driver_OSS",
+    srcs = ["run_on_device_driver_OSS.sh"],
+)
+
+# Internal test to validate the macros and underlying shell scripts.
+litert_device_test(
+    name = "tools_test",
+    srcs = ["smoketests/tools_test.cc"],
+    backend_id = "cpu",
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    data = ["//litert/integration_test/models:single_op"],
+    exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+    ],
 )
 
 # C++ TEST SCAFFOLD ################################################################################
@@ -67,11 +87,6 @@ cc_library(
 )
 
 # ON DEVICE INTEGRATION TESTS ######################################################################
-
-sh_binary(
-    name = "run_on_device_driver_OSS",
-    srcs = ["run_on_device_driver_OSS.sh"],
-)
 
 # NOTE: Everything here should be built with -c opt --config=android_arm64.
 
