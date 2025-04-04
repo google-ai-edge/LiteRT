@@ -171,12 +171,12 @@ QUALCOMM_SPEC = BackendSpec(
         ("//third_party/qairt/latest:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
         ("//third_party/qairt/latest:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
         ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
-        ("//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so", "LD_LIBRARY_PATH"),
+        ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
         "model": "sm-s928b",
     }],
-    plugin = "qnn_compiler_plugin_so",
+    plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
     dispatch = "libLiteRtDispatch_Qualcomm.so",
 )
 

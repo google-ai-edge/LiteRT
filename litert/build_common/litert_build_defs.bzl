@@ -300,6 +300,14 @@ def litert_dynamic_lib(
         deps = [lib_target_ref],
     )
 
+    # Workaround needed because `xeno_mobile_test` conflates target names with target output
+    # files. Can be removed when we hand roll our own mobile_test wrapper.
+    native.filegroup(
+        name = so_name,
+        srcs = [":" + shared_lib_name],
+        visibility = vis,
+    )
+
 def copy_file(name, src, target, visibility = None):
     input_path = "$(location %s)" % src
     output_path = "$(@D)/" + target
