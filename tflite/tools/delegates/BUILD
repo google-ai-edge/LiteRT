@@ -127,7 +127,7 @@ cc_library(
         ":delegate_provider_hdr",
         "//tflite/tools/evaluation:utils",
     ] + select({
-        "@org_tensorflow//tensorflow:arm_any": [
+        "@org_tensorflow//tensorflow:linux_arm_any": [
             "//tflite/delegates/hexagon:hexagon_delegate",
         ],
         "//conditions:default": [],

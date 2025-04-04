@@ -104,7 +104,7 @@ cc_library(
 cc_library(
     name = "enable_hexagon_delegate",
     defines = select({
-        "@org_tensorflow//tensorflow:arm_any": ["TFLITE_ENABLE_HEXAGON"],
+        "@org_tensorflow//tensorflow:linux_arm_any": ["TFLITE_ENABLE_HEXAGON"],
         "//conditions:default": [],
     }),
 )
