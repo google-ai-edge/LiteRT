@@ -2,7 +2,7 @@ load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "transitive_hdrs")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("//tflite:build_def.bzl", "tflite_copts")
-load("//tflite:special_rules.bzl", "tflite_extra_arm_config_settings", "tflite_portable_test_suite_combined")
+load("//tflite:special_rules.bzl", "tflite_portable_test_suite_combined")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
 
 package(
@@ -134,7 +134,7 @@ selects.config_setting_group(
     match_any = [
         ":arm32_any",
         ":aarch64_any",
-    ] + tflite_extra_arm_config_settings(),
+    ],
 )
 
 selects.config_setting_group(
