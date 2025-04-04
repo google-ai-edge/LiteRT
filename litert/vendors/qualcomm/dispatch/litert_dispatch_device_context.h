@@ -60,6 +60,9 @@ class LiteRtDispatchDeviceContextT {
     Qnn_MemHandle_t qnn_mem_handle = nullptr;
     explicit TensorBufferRegistryEntry(LiteRtTensorBuffer tensor_buffer_)
         : tensor_buffer(tensor_buffer_) {}
+    bool operator==(const TensorBufferRegistryEntry& other) const {
+      return tensor_buffer == other.tensor_buffer;
+    }
   };
 
   using TensorBufferRegistry = litert::qnn::Registry<LiteRtTensorBufferHandle,
