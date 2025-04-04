@@ -75,41 +75,6 @@ EXCLUDED_TARGETS=(
         "-//tflite/delegates/gpu/..."
 )
 
-# TODO: b/398924022  remove these once litert is migrated to tflite/
-EXCLUDED_EXPERIMENTAL_TARGETS=(
-        "-//tflite/experimental/litert/c:litert_compiled_model_test"
-        "-//tflite/experimental/litert/c:litert_compiled_model_shared_lib_test"
-        "-//tflite/experimental/litert/cc:litert_compiled_model_test"
-        "-//tflite/experimental/litert/cc:litert_environment_test"
-        "-//tflite/experimental/litert/cc:litert_model_predicates_test"
-        "-//tflite/experimental/litert/cc:litert_model_test"
-        "-//tflite/experimental/litert/compiler/plugin:algo_test"
-        "-//tflite/experimental/litert/runtime:compiled_model_test"
-        "-//tflite/experimental/litert/runtime:gpu_environment_test"
-        "-//tflite/experimental/litert/runtime/compiler:jit_compilation_mediatek_test"
-        "-//tflite/experimental/litert/runtime/compiler:jit_compilation_qualcomm_test"
-        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_google_tensor_test"
-        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_mediatek_test"
-        "-//tflite/experimental/litert/runtime/dispatch:dispatch_delegate_qualcomm_test"
-        "-//tflite/experimental/litert/tools:apply_plugin_test"
-        "-//tflite/experimental/litert/tools:benchmark_litert_model_test"
-        "-//tflite/experimental/litert/tools:dump_test"
-        "-//tflite/experimental/litert/tools:tool_display_test"
-        "-//tflite/experimental/litert/vendors/cc:convert_graph_test"
-        "-//tflite/experimental/litert/vendors/cc:partition_with_capabilities_test"
-        "-//tflite/experimental/litert/vendors/examples:example_conversion_impl_test"
-        "-//tflite/experimental/litert/vendors/examples:example_plugin_with_conversions_test"
-        "-//tflite/experimental/litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
-        "-//tflite/experimental/litert/core/model:model_buffer_test"
-        "-//tflite/experimental/litert/core/model:model_file_test"
-        "-//tflite/experimental/litert/core/util:flatbuffer_tools_test"
-        "-//tflite/experimental/litert/vendors/examples:example_plugin_test"
-        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:op_wrapper_test"
-        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test"
-        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_test"
-        "-//tflite/experimental/litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test"
-)
-
 LITERT_EXCLUDED_TARGETS=(
         "-//litert/c:litert_compiled_model_test"
         "-//litert/c:litert_compiled_model_shared_lib_test"
@@ -144,9 +109,7 @@ LITERT_EXCLUDED_TARGETS=(
 )
 
 
-if [ "$EXPERIMENTAL_TARGETS_ONLY" == "true" ]; then
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/experimental/litert/... "${EXCLUDED_EXPERIMENTAL_TARGETS[@]}"
-elif [ "$LITERT_TARGETS_ONLY" == "true" ]; then
+if [ "$LITERT_TARGETS_ONLY" == "true" ]; then
     bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 else
     bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
