@@ -541,10 +541,10 @@ litert_device_test(
     }),
 )
 
-litert_device_test(
+# GPU test for Forge with nVidia GPU.
+cc_test(
     name = "litert_compiled_model_gpu_test",
     srcs = ["litert_compiled_model_gpu_test.cc"],
-    backend_id = "google_tensor",
     data = [
         "//litert/test:testdata/simple_model.tflite",
     ],
@@ -574,6 +574,33 @@ litert_device_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+    ],
+)
+
+# Android GPU test for litert_device_test().
+litert_device_test(
+    name = "litert_compiled_model_gpu_android_test",
+    srcs = ["litert_compiled_model_gpu_test.cc"],
+    backend_id = "gpu",
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_event",
+        ":litert_model",
+        ":litert_tensor_buffer",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
     ],
 )
 

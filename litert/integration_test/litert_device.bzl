@@ -217,6 +217,12 @@ CPU_SPEC = BackendSpec(
 
 GPU_SPEC = BackendSpec(
     id = "gpu",
+    libs = [
+        ("//third_party/odml/infra/ml_drift_delegate/litert:libLiteRtGpuAccelerator.so", "LD_LIBRARY_PATH"),
+    ],
+    mh_devices = [{
+        "model": "sm-s928b",
+    }],
 )
 
 # COMMON
