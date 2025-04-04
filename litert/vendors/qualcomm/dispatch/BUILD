@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "copy_file", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_internal_users"],
+    default_visibility = ["//visibility:private"],
 )
 
 litert_dynamic_lib(
@@ -53,7 +54,7 @@ litert_dynamic_lib(
         # Don't build/test in OS until qnn is available.
         "nobuilder",
     ],
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
@@ -73,33 +74,18 @@ litert_dynamic_lib(
     ],
 )
 
-# This is cc_library target for `libLiteRtDispatch_Qualcomm.so`.
-cc_library(
-    name = "dispatch_api_shared_lib",
-    srcs = [":dispatch_api_so"],
-)
-
-# Copies the shared library so that it is available for use in test data as libLiteRtDispatch_Qualcomm.so.
-copy_file(
-    name = "copy_dispatch_api_so",
-    src = "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
-    target = "libLiteRtDispatch_Qualcomm.so",
-)
-
-cc_test(
+litert_device_test(
     name = "dispatch_api_qualcomm_test",
     srcs = [
         "dispatch_api_qualcomm_test.cc",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    linkstatic = 1,
-    tags = [
-        "no-remote-exec",
-        "no_oss",
-        "notap",
+    backend_id = "qualcomm",
+    data = [
+        "//litert/test:testdata/simple_add_uint16_qualcomm.bin",
+        "//litert/test:testdata/simple_model_google_tensor.bin",
+        "//litert/test:testdata/simple_model_mtk.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
+        "//litert/test:testdata/simple_model_qualcomm.bin",
     ],
     deps = [
         ":dispatch_api",

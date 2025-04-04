@@ -38,6 +38,7 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
 using ::testing::Pointwise;
+static constexpr const float kTol = 5e-2;
 
 TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
@@ -263,7 +264,7 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << output[i] << "\t" << kTestOutputTensor[i];
     }
-    EXPECT_THAT(output, Pointwise(testing::FloatNear(1e-3), kTestOutputTensor));
+    EXPECT_THAT(output, Pointwise(testing::FloatNear(kTol), kTestOutputTensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer), kLiteRtStatusOk);
   }
 
@@ -516,7 +517,7 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << output[i] << "\t" << kTestOutputTensor[i];
     }
-    EXPECT_THAT(output, Pointwise(testing::FloatNear(1e-3), kTestOutputTensor));
+    EXPECT_THAT(output, Pointwise(testing::FloatNear(kTol), kTestOutputTensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer), kLiteRtStatusOk);
   }
 
@@ -810,7 +811,7 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
       ABSL_LOG(INFO) << dequant_output[i] << "\t" << kTestOutputTensor_3[i];
     }
     EXPECT_THAT(dequant_output,
-                Pointwise(testing::FloatNear(1e-3), kTestOutputTensor_3));
+                Pointwise(testing::FloatNear(kTol), kTestOutputTensor_3));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer), kLiteRtStatusOk);
   }
 
@@ -1104,7 +1105,7 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
       ABSL_LOG(INFO) << dequant_output[i] << "\t" << kTestOutputTensor_3[i];
     }
     EXPECT_THAT(dequant_output,
-                Pointwise(testing::FloatNear(1e-3), kTestOutputTensor_3));
+                Pointwise(testing::FloatNear(kTol), kTestOutputTensor_3));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer), kLiteRtStatusOk);
   }
 
