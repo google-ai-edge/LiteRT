@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,51 +26,56 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/core/model/model_buffer.h"
-#include "litert/core/util/flatbuffer_tools.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
 #include "tflite/c/common.h"  // from @org_tensorflow
 #include "tflite/interpreter.h"  // from @org_tensorflow
 #include "tflite/signature_runner.h"  // from @org_tensorflow
 
+using litert::testing::MakeRuntimeFromTestFileWithNpuModel;
+using testing::ElementsAre;
+using testing::FloatNear;
+using testing::Pointwise;
+
 namespace litert {
 namespace {
 
-using ::litert::testing::MakeRuntimeFromTestFileWithNpuModel;
-using ::testing::FloatNear;
-using ::testing::Pointwise;
+constexpr absl::string_view kNpuFile = kMediaTekModelFileName;
+constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
+constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
 
-static constexpr absl::string_view kNpuFile = kMediaTekModelFileName;
-static constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
-static constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
-
-TEST(DispatchDelegate, MediaTekCpuBuffer) {
-  auto runtime = MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile);
-  ASSERT_TRUE(runtime) << "Failed to initialize tflite interpreter";
-  auto& rt = **runtime;
-  auto& interpreter = rt.Interpreter();
+litert::Expected<Environment> CreateDefaultEnvironment() {
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
           kDispatchLibraryDir,
       },
   };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
-  ASSERT_TRUE(env);
+  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+}
+
+TEST(DispatchDelegate, CpuBuffer) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      testing::TflRuntime::Ptr runtime,
+      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
+  tflite::Interpreter& interpreter = runtime->Interpreter();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   litert::internal::ExternalLiteRtBufferContext buffer_context;
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
@@ -79,12 +86,11 @@ TEST(DispatchDelegate, MediaTekCpuBuffer) {
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
   LiteRtEnvironmentOptions env_options;
-  LiteRtGetEnvironmentOptions(env->Get(), &env_options);
-
+  LiteRtGetEnvironmentOptions(env.Get(), &env_options);
   auto dispatch_delegate_options =
       CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
-                                           rt.Flatbuffer().Buf().Data());
+                                           runtime->Flatbuffer().Buf().Data());
   auto dispatch_delegate = CreateDispatchDelegatePtr(
       env_options, std::move(dispatch_delegate_options));
 
@@ -108,13 +114,13 @@ TEST(DispatchDelegate, MediaTekCpuBuffer) {
 
   // Fill model inputs.
   ASSERT_STREQ(runner->input_names()[0], "arg0");
-  auto input_0_tensor = runner->input_tensor("arg0");
+  TfLiteTensor* input_0_tensor = runner->input_tensor("arg0");
   ASSERT_NE(input_0_tensor, nullptr);
-  auto* input_0 = input_0_tensor->data.f;
+  float* input_0 = input_0_tensor->data.f;
   std::memcpy(input_0, kTestInput0Tensor, sizeof(kTestInput0Tensor));
 
   ASSERT_STREQ(runner->input_names()[1], "arg1");
-  auto input_1_tensor = runner->input_tensor("arg1");
+  TfLiteTensor* input_1_tensor = runner->input_tensor("arg1");
   ASSERT_NE(input_1_tensor, nullptr);
   auto* input_1 = input_1_tensor->data.f;
   std::memcpy(input_1, kTestInput1Tensor, sizeof(kTestInput1Tensor));
@@ -132,20 +138,14 @@ TEST(DispatchDelegate, MediaTekCpuBuffer) {
   EXPECT_THAT(output, Pointwise(::testing::FloatNear(1e-5), kTestOutputTensor));
 }
 
-TEST(DispatchDelegate, MediaTekHwBuffer) {
-  auto runtime = MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile);
-  ASSERT_TRUE(runtime) << "Failed to initialize tflite interpreter";
-  auto& rt = **runtime;
-  auto& interpreter = rt.Interpreter();
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
-      },
-  };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
-  ASSERT_TRUE(env);
+TEST(DispatchDelegate, HwBuffer) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      testing::TflRuntime::Ptr runtime,
+      MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
+  tflite::Interpreter& interpreter = runtime->Interpreter();
 
   litert::internal::ExternalLiteRtBufferContext buffer_context;
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
@@ -156,12 +156,12 @@ TEST(DispatchDelegate, MediaTekHwBuffer) {
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
   LiteRtEnvironmentOptions env_options;
-  LiteRtGetEnvironmentOptions(env->Get(), &env_options);
+  LiteRtGetEnvironmentOptions(env.Get(), &env_options);
 
   auto dispatch_delegate_options =
       CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
-                                           rt.Flatbuffer().Buf().Data());
+                                           runtime->Flatbuffer().Buf().Data());
   auto dispatch_delegate = CreateDispatchDelegatePtr(
       env_options, std::move(dispatch_delegate_options));
 
@@ -174,45 +174,45 @@ TEST(DispatchDelegate, MediaTekHwBuffer) {
             kTfLiteOk);
 
   // Create and register tensor buffers for all inputs and outputs.
-
   std::vector<litert::TensorBuffer> input_buffers;
   for (int i = 0; i < interpreter.inputs().size(); ++i) {
-    auto input_buffer_requirements =
-        buffer_context.GetBufferRequirement(interpreter.input_tensor(i));
-    ASSERT_TRUE(input_buffer_requirements);
-    ASSERT_EQ((*input_buffer_requirements)->SupportedTypes().Value()[0],
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements * input_buffer_requirements,
+        buffer_context.GetBufferRequirement(interpreter.input_tensor(i)));
+    ASSERT_EQ(input_buffer_requirements->SupportedTypes()->at(0),
               kLiteRtTensorBufferTypeAhwb);
-    auto input_buffer =
-        buffer_context.CreateBufferForTensor(interpreter.input_tensor(i));
-    ASSERT_TRUE(input_buffer);
-    ASSERT_TRUE(input_buffer->IsOwned());
-    ASSERT_EQ(*input_buffer->BufferType(), kLiteRtTensorBufferTypeAhwb);
-    auto duplicate_buffer = (*input_buffer).Duplicate();
-    ASSERT_TRUE(duplicate_buffer);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer input_buffer,
+        buffer_context.CreateBufferForTensor(interpreter.input_tensor(i)));
+    ASSERT_TRUE(input_buffer.IsOwned());
+    ASSERT_EQ(*input_buffer.BufferType(), kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
+                                input_buffer.Duplicate());
     auto status = buffer_context.RegisterTensorBuffer(
-        interpreter.input_tensor(i), std::move(*duplicate_buffer));
+        interpreter.input_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
-    input_buffers.push_back(std::move(*input_buffer));
+    input_buffers.push_back(std::move(input_buffer));
   }
 
   std::vector<litert::TensorBuffer> output_buffers;
   for (int i = 0; i < interpreter.outputs().size(); ++i) {
-    auto output_buffer_requirements =
-        buffer_context.GetBufferRequirement(interpreter.output_tensor(i));
-    ASSERT_TRUE(output_buffer_requirements);
-    ASSERT_EQ((*output_buffer_requirements)->SupportedTypes().Value()[0],
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements * output_buffer_requirements,
+        buffer_context.GetBufferRequirement(interpreter.output_tensor(i)));
+    ASSERT_NE(output_buffer_requirements, nullptr);
+    ASSERT_EQ(output_buffer_requirements->SupportedTypes()->at(0),
               kLiteRtTensorBufferTypeAhwb);
-    auto output_buffer =
-        buffer_context.CreateBufferForTensor(interpreter.output_tensor(i));
-    ASSERT_TRUE(output_buffer.HasValue());
-    ASSERT_TRUE(output_buffer->IsOwned());
-    ASSERT_EQ(*output_buffer->BufferType(), kLiteRtTensorBufferTypeAhwb);
-    auto duplicate_buffer = (*output_buffer).Duplicate();
-    ASSERT_TRUE(duplicate_buffer);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer output_buffer,
+        buffer_context.CreateBufferForTensor(interpreter.output_tensor(i)));
+    ASSERT_TRUE(output_buffer.IsOwned());
+    ASSERT_EQ(*output_buffer.BufferType(), kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
+                                output_buffer.Duplicate());
     auto status = buffer_context.RegisterTensorBuffer(
-        interpreter.output_tensor(i), std::move(*duplicate_buffer));
+        interpreter.output_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
-    output_buffers.push_back(std::move(*output_buffer));
+    output_buffers.push_back(std::move(output_buffer));
   }
 
   // Get the list of signatures and check it.
@@ -240,165 +240,305 @@ TEST(DispatchDelegate, MediaTekHwBuffer) {
 
   // Check model output.
   ASSERT_STREQ(runner->output_names()[0], "tfl.custom");
-  auto& output_buffer = output_buffers[0];
-  float output_buffer_data[kTestOutputSize];
-  auto output_span = absl::MakeSpan(output_buffer_data, kTestOutputSize);
-  auto read_success = output_buffer.Read<float>(output_span);
-  ASSERT_TRUE(read_success);
-  for (auto i = 0; i < kTestOutputSize; ++i) {
-    ABSL_LOG(INFO) << "Result: " << output_span.at(i) << "\t"
-                   << kTestOutputTensor[i];
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
-  EXPECT_THAT(output_span, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
 TEST(DispatchDelegate, CompiledModel) {
-  auto model_with_byte_code =
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
       internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
-                                        testing::GetTestFilePath(kNpuFile));
-  ASSERT_TRUE(model_with_byte_code);
-  auto model = Model::CreateFromBuffer(*model_with_byte_code);
-  ASSERT_TRUE(model);
+                                        testing::GetTestFilePath(kNpuFile)));
+  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
+                              Model::CreateFromBuffer(model_with_byte_code));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  auto& signature = signatures.at(0);
+  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
+  size_t signature_index = 0;
+
+  auto input_names = signature.InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  auto output_names = signature.OutputNames();
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "MediaTek NPU";
 #endif
-  auto jit_compilation_options = CompilationOptions::Create();
-  ASSERT_TRUE(jit_compilation_options);
-  ASSERT_TRUE(jit_compilation_options->SetHardwareAccelerators(
-      kLiteRtHwAcceleratorCpu));
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
-      },
-  };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
-  ASSERT_TRUE(env);
-  auto res_compiled_model =
-      CompiledModel::Create(*env, *model, *jit_compilation_options);
-  ASSERT_TRUE(res_compiled_model) << "Failed to initialize CompiledModel";
-  auto& compiled_model = *res_compiled_model;
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  auto signatures = model->GetSignatures();
-  ASSERT_TRUE(signatures);
-  EXPECT_EQ(signatures->size(), 1);
-  auto& signature = signatures->at(0);
-  auto signature_key = signature.Key();
-  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
-  size_t signature_index = 0;
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(env, model));
 
-  auto input_buffers_res = compiled_model.CreateInputBuffers(signature_index);
-  EXPECT_TRUE(input_buffers_res);
-  auto& input_buffers = *input_buffers_res;
+  // Check CompiledModel buffer requirements. Input and output are supposed to
+  // be Ahwb and DmaBuf.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_buffer_requirements_arg0,
+      compiled_model.GetInputBufferRequirements(signature_index,
+                                                /*input_name=*/"arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypes());
+  EXPECT_THAT(
+      input_buffer_types_arg0,
+      ElementsAre(kLiteRtTensorBufferTypeAhwb, kLiteRtTensorBufferTypeDmaBuf));
 
-  auto output_buffers_res = compiled_model.CreateOutputBuffers(signature_index);
-  EXPECT_TRUE(output_buffers_res);
-  auto& output_buffers = *output_buffers_res;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_buffer_requirements_arg1,
+      compiled_model.GetInputBufferRequirements(signature_index,
+                                                /*input_name=*/"arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypes());
+  EXPECT_THAT(
+      input_buffer_types_arg1,
+      ElementsAre(kLiteRtTensorBufferTypeAhwb, kLiteRtTensorBufferTypeDmaBuf));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements output_buffer_requirements,
+      compiled_model.GetOutputBufferRequirements(signature_index,
+                                                 /*output_name=*/"tfl.custom"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBufferType> output_buffer_types,
+      output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeAhwb,
+                                               kLiteRtTensorBufferTypeDmaBuf));
+
+  // Create I/O tensor buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  auto input_names = signature.InputNames();
-  EXPECT_EQ(input_names.size(), 2);
-  EXPECT_EQ(input_names.at(0), "arg0");
-  EXPECT_EQ(input_names.at(1), "arg1");
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  // Execute compiled model.
+  ASSERT_TRUE(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
 
   // Check model output.
-  auto output_names = signature.OutputNames();
-  EXPECT_EQ(output_names.size(), 1);
-  EXPECT_EQ(output_names.at(0), "tfl.custom");
-  float output_buffer_data[kTestOutputSize];
-  auto output_span = absl::MakeSpan(output_buffer_data, kTestOutputSize);
-  ASSERT_TRUE(output_buffers[0].Read(output_span));
-  for (auto i = 0; i < kTestOutputSize; ++i) {
-    ABSL_LOG(INFO) << "Result: " << output_span.at(i) << "\t"
-                   << kTestOutputTensor[i];
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
-  EXPECT_THAT(output_span, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+}
+
+TEST(DispatchDelegate, CompiledModelMultiRun) {
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
+      internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
+                                        testing::GetTestFilePath(kNpuFile)));
+  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
+                              Model::CreateFromBuffer(model_with_byte_code));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  auto& signature = signatures.at(0);
+  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
+  size_t signature_index = 0;
+
+  auto input_names = signature.InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  auto output_names = signature.OutputNames();
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
+
+#if !defined(__ANDROID__)
+  GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
+                  "MediaTek NPU";
+#endif
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(env, model));
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // First inference.
+  // ///////////////////////////////////////////////////////////////////////////
+  ABSL_LOG(INFO) << "First inference";
+
+  // Create I/O tensor buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+
+  // Fill model inputs.
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Execute the model once and check the outputs.
+  ASSERT_TRUE(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // Second inference, reusing the same input tensor buffers.
+  // ///////////////////////////////////////////////////////////////////////////
+  ABSL_LOG(INFO) << "Second inference";
+
+  // Fill in new model inputs.
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor_2, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor_2, kTestInput1Size)));
+
+  // Execute model a second time by reusing the same I/O buffers, to verify if
+  // the buffer registration is working.
+  ASSERT_TRUE(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
+                     << kTestOutputTensor_2[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor_2));
+  }
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // Third inference, using new input and output tensor buffers.
+  // ///////////////////////////////////////////////////////////////////////////
+  ABSL_LOG(INFO) << "Third inference";
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      input_buffers, compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+
+  // Fill model inputs.
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor_3, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor_3, kTestInput1Size)));
+
+  // Execute model a third time by using new I/O buffers, to verify if buffer
+  // registration and attachment is working.
+  ASSERT_TRUE(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
+                     << kTestOutputTensor_3[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor_3));
+  }
 }
 
 TEST(DispatchDelegate, CompiledModelSharedInput) {
-  auto model_with_byte_code = internal::GetModelBufWithByteCode(
-      testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
-      testing::GetTestFilePath(kNpuFile));
-  ASSERT_TRUE(model_with_byte_code);
-  auto model = Model::CreateFromBuffer(*model_with_byte_code);
-  ASSERT_TRUE(model);
+  // Create Model and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OwningBufferRef<uint8_t> model_with_byte_code,
+      internal::GetModelBufWithByteCode(
+          testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
+          testing::GetTestFilePath(kNpuFile)));
+  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
+                              Model::CreateFromBuffer(model_with_byte_code));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  auto& signature = signatures.at(0);
+  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
+  size_t signature_index = 0;
+
+  auto input_names = signature.InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  auto output_names = signature.OutputNames();
+  EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
-                  "MediaTek NPU";
+                  "GoogleTensor eTPU";
 #endif
-  auto jit_compilation_options = CompilationOptions::Create();
-  ASSERT_TRUE(jit_compilation_options);
-  ASSERT_TRUE(jit_compilation_options->SetHardwareAccelerators(
-      kLiteRtHwAcceleratorCpu));
 
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
-      },
-  };
-  auto env =
-      litert::Environment::Create(absl::MakeConstSpan(environment_options));
-  ASSERT_TRUE(env);
-  auto res_compiled_model =
-      CompiledModel::Create(*env, *model, *jit_compilation_options);
-  ASSERT_TRUE(res_compiled_model) << "Failed to initialize CompiledModel";
-  auto& compiled_model = *res_compiled_model;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(env, model));
 
-  size_t signature_index = 0;
-  auto signature = *model->GetSignature(signature_index);
-  auto input_buffers = *compiled_model.CreateInputBuffers(signature_index);
-  auto output_buffers = *compiled_model.CreateOutputBuffers(signature_index);
+  // Create I/O tensor buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  auto input_names = signature.InputNames();
-  EXPECT_EQ(input_names.size(), 2);
-  EXPECT_EQ(input_names.at(0), "arg0");
-  EXPECT_EQ(input_names.at(1), "arg1");
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  ASSERT_TRUE(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
 
-  // Check model output.
-  auto output_names = signature.OutputNames();
-  EXPECT_EQ(output_names.size(), 2);
+  // Check model outputs.
   {
-    EXPECT_EQ(output_names.at(0), "tfl.add");
-    float output_buffer_data[kTestOutputSize];
-    auto output_span = absl::MakeSpan(output_buffer_data, kTestOutputSize);
-    ASSERT_TRUE(output_buffers[0].Read(output_span));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output_span.at(i) << "\t"
-                     << kTestOutputTensor[i];
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
-    EXPECT_THAT(output_span, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
   {
-    EXPECT_EQ(output_names.at(1), "tfl.custom");
-    float output_buffer_data[kTestOutputSize];
-    auto output_span = absl::MakeSpan(output_buffer_data, kTestOutputSize);
-    ASSERT_TRUE(output_buffers[1].Read(output_span));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[1]));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output_span.at(i) << "\t"
-                     << kTestOutputTensor[i];
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
-    EXPECT_THAT(output_span, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
 
