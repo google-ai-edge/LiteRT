@@ -150,6 +150,9 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 struct LiteRtCompiledResultT {
   std::vector<std::vector<char>> context_bin;
   std::vector<std::string> graph_names;
+  // byte_code_index[i] is the index of the byte code in context_bin that
+  // corresponds to the i-th call.
+  std::vector<size_t> byte_code_index;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
@@ -176,7 +179,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->graph_names.at(call_idx).data();
   *call_info_size = compiled_result->graph_names.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = compiled_result->byte_code_index[call_idx];
 
   return kLiteRtStatusOk;
 }
@@ -323,6 +326,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // separate subgraph that maps to a single Dispatch Op in the compiled the
   // model.
   result->context_bin.resize(num_partitions);
+  result->byte_code_index.resize(num_partitions);
 
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
@@ -400,7 +404,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // Compose graphs.
     LITERT_LOG(LITERT_INFO, "%s", "Composing graph");
     std::string& entry_point_name = result->graph_names.emplace_back();
+    result->byte_code_index[partition_idx] = context_handle_idx;
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
+    LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
     LiteRtSubgraph partition = model.Subgraph(partition_idx)->Get();
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         **qnn_manager, context_handles[context_handle_idx].get(), partition,
