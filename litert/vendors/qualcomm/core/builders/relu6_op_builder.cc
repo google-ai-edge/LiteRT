@@ -16,7 +16,12 @@ std::vector<OpWrapper> BuildRelu6Op(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  CreateSimpleActivationOp(res, QNN_OP_RELU6, inputs[0], outputs[0]);
+  // QNN_OP_RELU6 is deprecated, use QNN_OP_RELU_MIN_MAX instead.
+  auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
+  activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE, 0);
+  activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE, 6);
+  activation_op.AddInputTensor(inputs[0]);
+  activation_op.AddOutputTensor(outputs[0]);
 
   return res;
 }
