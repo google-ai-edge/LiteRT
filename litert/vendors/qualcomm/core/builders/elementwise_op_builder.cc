@@ -25,7 +25,6 @@ std::vector<OpWrapper> BuildElementwiseAddOp(
   }
   elementwise_op.AddOutputTensor(outputs[0]);
 
-  // TODO: fused activation
   return res;
 }
 
@@ -40,7 +39,6 @@ std::vector<OpWrapper> BuildElementwiseSubOp(
   }
   elementwise_op.AddOutputTensor(outputs[0]);
 
-  // TODO: fused activation
   return res;
 }
 
@@ -55,7 +53,6 @@ std::vector<OpWrapper> BuildElementwiseMulOp(
   }
   elementwise_op.AddOutputTensor(outputs[0]);
 
-  // TODO: fused activation
   return res;
 }
 
@@ -70,7 +67,6 @@ std::vector<OpWrapper> BuildElementwiseDivOp(
   }
   elementwise_op.AddOutputTensor(outputs[0]);
 
-  // TODO: fused activation
   return res;
 }
 

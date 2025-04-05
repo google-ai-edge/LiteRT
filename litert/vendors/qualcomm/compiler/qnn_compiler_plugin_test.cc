@@ -45,6 +45,7 @@ using ::testing::Values;
 // TODO: Add support and uncomment these models.
 const auto kSupportedOps =
                   Values(
+                    "simple_conv_2d_fused_relu_op.tflite",
                     "simple_transpose_conv_op.tflite",
                     "simple_cumsum.tflite",
                     "simple_floor_div.tflite",

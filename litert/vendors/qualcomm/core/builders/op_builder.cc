@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -65,13 +66,61 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
   return ret;
 }
 
+TensorWrapper& ReplaceOutputTensorForFusedActivation(
+    TensorPool& tensor_pool, const uint32_t fused_activation_function,
+    std::vector<TensorWrapperRef>& output_tensors) {
+  if (fused_activation_function == FusedActivationNone) {
+    return output_tensors[0];
+  }
+
+  if (output_tensors.size() != 1) {
+    QNN_LOG_WARNING(
+        "Fused activation function: %d is not None but the size of output "
+        "tensors is not 1.",
+        fused_activation_function);
+  }
+
+  TensorWrapper& activation_input =
+      tensor_pool.CloneNativeTensorFrom(output_tensors[0]);
+  TensorWrapper& activation_output = output_tensors[0].get();
+  output_tensors[0] = TensorWrapperRef(activation_input);
+  return activation_output;
+}
+
 void AddFusedActivationNode(std::vector<OpWrapper>& res,
                             const uint32_t fused_activation_function,
                             const TensorWrapper& input_tensor,
                             const TensorWrapper& output_tensor) {
   switch (fused_activation_function) {
+    case FusedActivationNone: {
+      break;
+    }
     case FusedActivationRelu: {
       CreateSimpleActivationOp(res, QNN_OP_RELU, input_tensor, output_tensor);
+      break;
+    }
+    case FusedActivationReluN1To1: {
+      auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
+      activation_op.AddInputTensor(input_tensor);
+      activation_op.AddOutputTensor(output_tensor);
+      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+                                          -1);
+      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
+                                          1);
+      break;
+    }
+    case FusedActivationRelu6: {
+      auto& activation_op = CreateOpWrapper(res, QNN_OP_RELU_MIN_MAX);
+      activation_op.AddInputTensor(input_tensor);
+      activation_op.AddOutputTensor(output_tensor);
+      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
+                                          0);
+      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
+                                          6);
+      break;
+    }
+    case FusedActivationTanh: {
+      CreateSimpleActivationOp(res, QNN_OP_TANH, input_tensor, output_tensor);
       break;
     }
     default: {
@@ -81,46 +130,5 @@ void AddFusedActivationNode(std::vector<OpWrapper>& res,
     }
   }
 }
-
-/*
-LiteRtStatus OpMapper::AddFusedActivationNode(
-    const tflite::ActivationFunctionType activation,
-    const TensorWrapper& input_tensor, const TensorWrapper& output_tensor) {
-  switch (activation) {
-    case tflite::ActivationFunctionType_RELU: {
-      OpWrapper& activation_op =
-          CreateSimpleActivationOp(QNN_OP_RELU, input_tensor, output_tensor);
-      break;
-    }
-    case tflite::ActivationFunctionType_RELU_N1_TO_1: {
-      OpWrapper& activation_op = CreateSimpleActivationOp(
-          QNN_OP_RELU_MIN_MAX, input_tensor, output_tensor);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
-                                          -1.f);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-                                          1.f);
-      break;
-    }
-    case tflite::ActivationFunctionType_RELU6: {
-      OpWrapper& activation_op = CreateSimpleActivationOp(
-          QNN_OP_RELU_MIN_MAX, input_tensor, output_tensor);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MIN_VALUE,
-                                          0.f);
-      activation_op.AddScalarParam<float>(QNN_OP_RELU_MIN_MAX_PARAM_MAX_VALUE,
-                                          6.f);
-      break;
-    }
-    case tflite::ActivationFunctionType_TANH: {
-      OpWrapper& activation_op =
-          CreateSimpleActivationOp(QNN_OP_TANH, input_tensor, output_tensor);
-      break;
-    }
-    default:
-      return kLiteRtStatusErrorUnsupported;
-  }
-
-  return kLiteRtStatusOk;
-}
-*/
 
 }  // namespace qnn
