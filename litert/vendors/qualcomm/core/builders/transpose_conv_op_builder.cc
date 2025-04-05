@@ -108,7 +108,6 @@ std::vector<OpWrapper> BuildTransposeConvOp(
 
   TensorWrapper& output_tensor = outputs[kOutputIndex];
   conv_op.AddOutputTensor(output_tensor);
-  // TODO: fused activation
 
   // stride param
   const std::array<std::uint32_t, 2> stride_data{stride_h, stride_w};

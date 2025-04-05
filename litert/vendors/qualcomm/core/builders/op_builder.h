@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
@@ -39,6 +40,10 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
                                     const char* op_type,
                                     const TensorWrapper& input_tensor,
                                     const TensorWrapper& output_tensor);
+
+TensorWrapper& ReplaceOutputTensorForFusedActivation(
+    TensorPool& tensor_pool, const uint32_t fused_activation_function,
+    std::vector<TensorWrapperRef>& output_tensors);
 
 void AddFusedActivationNode(std::vector<OpWrapper>& res,
                             const uint32_t fused_activation_function,
