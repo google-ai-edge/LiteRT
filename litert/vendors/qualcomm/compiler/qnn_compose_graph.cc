@@ -745,6 +745,17 @@ LiteRtStatus ConvertOp(
   return kLiteRtStatusOk;
 }
 
+void CreateGraphTensorIfNeeded(
+    const QnnApi* qnn_api, Qnn_GraphHandle_t& graph_handle,
+    const ::qnn::TensorWrapper& tensor,
+    std::unordered_set<const ::qnn::TensorWrapper*>& created_tensors) {
+  if (!created_tensors.count(&tensor)) {
+    qnn_api->tensorCreateGraphTensor(
+        graph_handle, const_cast<Qnn_Tensor_t*>(&(tensor.GetQnnTensor())));
+    created_tensors.emplace(&tensor);
+  }
+}
+
 LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                       LiteRtSubgraph subgraph,
                       absl::string_view qnn_graph_name) {
@@ -822,11 +833,23 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
         if constexpr (useQInt16AsQUint16) {
           tensor_wrapper.ConvertQint16ToQuint16();
         }
-        qnn.Api()->tensorCreateGraphTensor(graph_mapper.QnnGraph(),
-                                           &tensor_wrapper.GetQnnTensor());
       });
-  // Then op can be added into Qnn graph after the tensor ids are updated.
+  // Create ops and their corresponding tensors.
+  std::unordered_set<const ::qnn::TensorWrapper*> created_tensors;
   for (auto& op_wrapper : graph_op_wrappers) {
+    for (const auto& tensor_wrapper_ref : op_wrapper.GetInputTensors()) {
+      CreateGraphTensorIfNeeded(qnn.Api(), graph_mapper.QnnGraph(),
+                                tensor_wrapper_ref.get(), created_tensors);
+    }
+    for (const auto& tensor_wrapper_ref : op_wrapper.GetOutputTensors()) {
+      CreateGraphTensorIfNeeded(qnn.Api(), graph_mapper.QnnGraph(),
+                                tensor_wrapper_ref.get(), created_tensors);
+    }
+    for (const auto& tensor_param : op_wrapper.GetTensorParams()) {
+      CreateGraphTensorIfNeeded(qnn.Api(), graph_mapper.QnnGraph(),
+                                tensor_param.GetTensorWrapper(),
+                                created_tensors);
+    }
     qnn.Api()->graphAddNode(graph_mapper.QnnGraph(), op_wrapper.GetOpConfig());
   }
 
