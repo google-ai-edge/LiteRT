@@ -306,11 +306,15 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
     for (int execution_plan_index = 0;
          execution_plan_index < execution_plan.size(); execution_plan_index++) {
       int node_index = execution_plan[execution_plan_index];
-      auto& node = nodes_and_registration[node_index].first;
+      const TfLiteNode& node = nodes_and_registration[node_index].first;
       const TfLiteRegistration& registration =
           nodes_and_registration[node_index].second;
 
-      if (registration.builtin_code == kTfLiteBuiltinDelegate) {
+      // NPU and GPU delegates don't use CPU tensors. However XNNPack delegate
+      // nodes operator on CPU tensors so we don't skip them.
+      if (registration.builtin_code == kTfLiteBuiltinDelegate &&
+          registration.custom_name &&
+          registration.custom_name != absl::string_view("XNNPackDelegate")) {
         continue;
       }
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
