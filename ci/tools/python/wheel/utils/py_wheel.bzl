@@ -23,6 +23,7 @@ load(
     "@python_version_repo//:py_version.bzl",
     "HERMETIC_PYTHON_VERSION",
 )
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _get_full_wheel_name(wheel_name, version, platform_name):
     python_version = HERMETIC_PYTHON_VERSION.replace(".", "")
@@ -38,13 +39,22 @@ def _py_wheel_impl(ctx):
     executable = ctx.executable.wheel_binary
     filelist_lists = [src.files.to_list() for src in ctx.attr.srcs]
     filelist = [f for filelist in filelist_lists for f in filelist]
-    wheel_name = _get_full_wheel_name("ai_edge_litert", ctx.attr.version, ctx.attr.platform_name)
+
+    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
+        version = ctx.attr.version + ".dev" + ctx.attr.nightly_suffix[BuildSettingInfo].value
+        project_name = ctx.attr.project_name + "_nightly"
+    else:
+        version = ctx.attr.version
+        project_name = ctx.attr.project_name
+
+    wheel_name = _get_full_wheel_name(project_name, version, ctx.attr.platform_name)
     output_file = ctx.actions.declare_file("dist/{wheel_name}".format(wheel_name = wheel_name))
 
     args = ctx.actions.args()
+    args.add("--project_name", project_name)
     args.add("--setup_py", ctx.file.setup_py.path)
     args.add("--output", output_file.dirname)
-    args.add("--version", ctx.attr.version)
+    args.add("--version", version)
 
     for f in filelist:
         args.add("--src", f.path)
@@ -70,6 +80,7 @@ py_wheel = rule(
         "srcs": attr.label_list(
             allow_files = True,
         ),
+        "project_name": attr.string(mandatory = True),
         "pyproject": attr.label(
             allow_single_file = [".toml"],
         ),
@@ -80,9 +91,10 @@ py_wheel = rule(
         "platform_name": attr.string(),
         "version": attr.string(mandatory = True),
         "wheel_binary": attr.label(
-            default = Label("//tflite/tools/pip_package/utils:wheel_builder"),
+            default = Label("//ci/tools/python/wheel/utils:wheel_builder"),
             executable = True,
             cfg = "exec",
         ),
+        "nightly_suffix": attr.label(),
     },
 )
