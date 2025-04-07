@@ -48,4 +48,21 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
   }
 }
 
+int LiteRtCompareApiVersion(LiteRtApiVersion v1, LiteRtApiVersion v2) {
+  if (v1.major > v2.major) {
+    return 1;
+  } else if (v1.major == v2.major) {
+    if (v1.minor > v2.minor) {
+      return 1;
+    } else if (v1.minor == v2.minor) {
+      if (v1.patch > v2.patch) {
+        return 1;
+      } else if (v1.patch == v2.patch) {
+        return 0;
+      }
+    }
+  }
+  return -1;
+}
+
 }  // extern "C"
