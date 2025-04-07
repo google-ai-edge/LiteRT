@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -328,6 +329,12 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
+  if (input_index < 0 || input_index >= input_requirements_builders_.size()) {
+    return litert::Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Invalid input index: %d", input_index));
+  }
+
   if (!input_requirements_builders_[input_index]) {
     size_t buffer_size;
     if (neuron_adapter_api_.api().compilation_get_input_padded_size(
@@ -354,6 +361,13 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
+  if (output_index < 0 ||
+      output_index >= output_requirements_builders_.size()) {
+    return litert::Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Invalid output index: %d", output_index));
+  }
+
   if (!output_requirements_builders_[output_index]) {
     size_t buffer_size;
     if (neuron_adapter_api_.api().compilation_get_output_padded_size(

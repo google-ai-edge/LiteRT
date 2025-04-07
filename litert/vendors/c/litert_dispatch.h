@@ -206,6 +206,10 @@ LiteRtStatus LiteRtDispatchAttachInputEvent(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtEvent input_event);
 
+// Run an invocation context asynchronously. The user must pass a sufficiently
+// large output_events array, where this function will return newly created
+// LiteRtEvents, one for each invocation context output. The caller takes
+// ownership for the LiteRtEvents returned in output_events.
 LiteRtStatus LiteRtDispatchInvokeAsync(
     LiteRtDispatchInvocationContext invocation_context, int num_output_events,
     LiteRtEvent* output_events);
