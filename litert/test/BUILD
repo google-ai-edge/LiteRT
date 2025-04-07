@@ -102,7 +102,7 @@ cc_library(
     testonly = 1,
     srcs = [],
     hdrs = [
-        "testdata/simple_model_test_vectors.h",
+        "testdata/simple_cascade_model_test_vectors.h",
     ],
     data = [
         "testdata/simple_cascade_model_npu.tflite",
