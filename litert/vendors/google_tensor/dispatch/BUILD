@@ -59,7 +59,10 @@ litert_dynamic_lib(
         # Don't build/test in OSS until Southbound is available.
         "nobuilder",
     ],
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//litert:litert_internal_users",
+    ],
     deps = [
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_set",
