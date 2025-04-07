@@ -30,7 +30,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_element_type",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )
