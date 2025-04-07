@@ -16,8 +16,6 @@ limitations under the License.
 
 #include <stdint.h>
 
-#include <limits>
-
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/core/c/builtin_op_data.h"
