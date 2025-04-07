@@ -22,7 +22,9 @@ extern "C" {
 #endif  // __cplusplus
 
 // Declares canonical opaque type.
-#define LITERT_DEFINE_HANDLE(name) typedef struct name##T* name
+#define LITERT_DEFINE_HANDLE(name) \
+  typedef struct name##T* name;    \
+  typedef const struct name##T* name##Const
 
 #if __ANDROID_API__ >= 26
 #define LITERT_HAS_AHWB_SUPPORT 1
