@@ -26,6 +26,8 @@ BUILD_FLAGS=(
     "--config=disable_tf_lite_py"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
     "--keep_going"
+    "--define=xnn_log_level=debug"
+    "--define=tflite_with_xnnpack_logging=true"
   )
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
