@@ -22,7 +22,6 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -32,7 +31,6 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/google_tensor/adapter.h"
 
@@ -267,9 +265,11 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 namespace google_tensor {
 //  TODO(abhirs): update the function to use the darwinn inbuilt way of
 //  finding supportedops
-bool IsOpSupported(const litert::Op& op) {
+bool IsOpSupported(const LiteRtOp& op) {
   for (auto unsupported_op : kUnSupportedOps) {
-    if (unsupported_op == op.Code()) {
+    LiteRtOpCode code;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &code));
+    if (unsupported_op == code) {
       return false;
     }
   }
@@ -282,13 +282,16 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  ::litert::Subgraph graph(subgraph);
-  for (const auto& op : graph.Ops()) {
+  LiteRtParamIndex op_count = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetNumSubgraphOps(subgraph, &op_count));
+  for (LiteRtParamIndex i = 0; i < op_count; ++i) {
+    LiteRtOp op;
+    LITERT_RETURN_IF_ERROR(LiteRtGetSubgraphOp(subgraph, i, &op));
     if (!google_tensor::IsOpSupported(op)) {
       continue;
     }
 
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op, 0));
   }
 
   return kLiteRtStatusOk;
@@ -301,8 +304,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       partitions == nullptr || compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  LiteRtParamIndex num_partitions;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetNumModelSubgraphs(partitions, &num_partitions));
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
@@ -311,7 +315,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
   litert::OwningBufferRef buf;
   auto [data, size, offset] = buf.GetWeak();
-  const auto opts = litert::SerializationOptions::Defaults();
+  LiteRtModelSerializationOptions opts;
   LITERT_RETURN_IF_ERROR(
       LiteRtSerializeModel(partitions, &data, &size, &offset, false, opts));
   // TODO(abhirs): add support for serializing subgraphs
