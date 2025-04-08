@@ -14,4 +14,5 @@
 # ==============================================================================
 """Vendor backends for LiteRt."""
 
+from litert.python.aot.vendors.mediatek import mediatek_backend as _
 from litert.python.aot.vendors.qualcomm import qualcomm_backend as _
