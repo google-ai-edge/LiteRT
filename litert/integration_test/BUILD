@@ -129,6 +129,17 @@ litert_device_test(
     ],
 )
 
+litert_device_test(
+    name = "mediatek_smoketest",
+    srcs = ["smoketests/mediatek_smoketest.cc"],
+    backend_id = "mediatek",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
     backend_id = "qualcomm",
