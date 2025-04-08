@@ -1,0 +1,209 @@
+// Copyright (C) 2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include <stdio.h>
+#include <cstddef>
+#include <cstdlib>
+#include <string>
+#include <vector>
+
+#include <openvino/frontend/tensorflow_lite/frontend.hpp>
+#include "absl/strings/string_view.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
+#include "litert/core/model/model.h"
+#include "litert/vendors/c/litert_compiler_plugin.h"
+
+namespace {
+
+constexpr char kPluginManufacturer[] = "IntelOpenVINO";
+
+constexpr const char *kPluginSocModels[] = {
+    "NPU2700",
+};  // get the name for plugin soc model
+
+constexpr LiteRtOpCode kSupportedOps[] = {
+    kLiteRtOpCodeTflAdd,
+    kLiteRtOpCodeTflConv2d,
+};
+// clang format on
+
+constexpr auto kNumPluginSocModels = sizeof(kPluginSocModels) / sizeof(kPluginSocModels[0]);
+
+}  // namespace
+
+LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion *api_version) {
+    if (api_version == nullptr) {
+        return kLiteRtStatusErrorInvalidArgument;
+    }
+    api_version->major = LITERT_API_VERSION_MAJOR;
+    api_version->minor = LITERT_API_VERSION_MINOR;
+    api_version->patch = LITERT_API_VERSION_PATCH;
+    return kLiteRtStatusOk;
+}
+
+const char *LiteRtGetCompilerPluginSocManufacturer() { return kPluginManufacturer; }
+
+LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(LiteRtCompilerPlugin compiler_plugin,
+                                                      LiteRtHwAccelerators *supported_hardware) {
+    if (!compiler_plugin || !supported_hardware) {
+        return kLiteRtStatusErrorInvalidArgument;
+    }
+    *supported_hardware = kLiteRtHwAcceleratorNpu;
+    return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex *num_supported_soc_models) {
+    if (compiler_plugin == nullptr || num_supported_soc_models == nullptr) {
+        return kLiteRtStatusErrorInvalidArgument;
+    }
+    *num_supported_soc_models = kNumPluginSocModels;
+    return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(LiteRtCompilerPlugin compiler_plugin,
+                                                      LiteRtParamIndex soc_model_idx,
+                                                      const char **soc_model_name) {
+    if (compiler_plugin == nullptr || soc_model_idx >= kNumPluginSocModels ||
+        soc_model_name == nullptr) {
+        return kLiteRtStatusErrorInvalidArgument;
+    }
+    *soc_model_name = kPluginSocModels[soc_model_idx];
+    return kLiteRtStatusOk;
+}
+
+// Compiled Result Definition
+/// \brief Define storage of compiled result object for OV compiler plugin
+struct LiteRtCompiledResultT {
+    std::string byte_code;
+    // TODO: Revisit this to check if we need this or subgraph data
+    std::vector<std::string> per_op_data;
+};
+
+LiteRtStatus LiteRtGetCompiledResultByteCode(LiteRtCompiledResult compiled_result,
+                                             LiteRtParamIndex byte_code_idx, const void **byte_code,
+                                             size_t *byte_code_size) {
+    *byte_code = compiled_result->byte_code.data();
+    *byte_code_size = compiled_result->byte_code.size();
+    return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledResultCallInfo(LiteRtCompiledResult compiled_result,
+                                             LiteRtParamIndex call_idx, const void **call_info,
+                                             size_t *call_info_size,
+                                             LiteRtParamIndex *byte_code_idx) {
+    if (call_idx >= compiled_result->per_op_data.size()) {
+        return kLiteRtStatusErrorIndexOOB;
+    }
+
+    *call_info = compiled_result->per_op_data.at(call_idx).data();
+    *call_info_size = compiled_result->per_op_data.at(call_idx).size();
+
+    return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetNumCompiledResultCalls(LiteRtCompiledResult compiled_result,
+                                             LiteRtParamIndex *num_calls) {
+    *num_calls = compiled_result->per_op_data.size();
+    return kLiteRtStatusOk;
+}
+
+void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) { delete compiled_result; }
+
+LiteRtStatus LiteRtCompiledResultNumByteCodeModules(LiteRtCompiledResult compiled_result,
+                                                    LiteRtParamIndex *num_byte_code) {
+    if (!compiled_result || !num_byte_code) {
+        return kLiteRtStatusErrorInvalidArgument;
+    }
+    *num_byte_code = compiled_result->byte_code.size();
+    return kLiteRtStatusOk;
+}
+
+// Plugin Definition
+/// \brief Define Compiler plugin APIs
+struct LiteRtCompilerPluginT {};
+
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin *compiler_plugin) {
+    *compiler_plugin = new LiteRtCompilerPluginT;
+    return kLiteRtStatusOk;
+}
+
+void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) { delete compiler_plugin; }
+
+bool IsOpSupported(const ::litert::Op &op) {
+    for (const auto &supportedOp : kSupportedOps) {
+        if (op.Code() == supportedOp) return true;
+    }
+    return false;
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
+                                           const char *soc_model, LiteRtSubgraph subgraph,
+                                           LiteRtOpList selected_ops) {
+    ::litert::Subgraph graph(subgraph);
+
+    //TODO(rjasuja): Enhance implementation for Partition() call 
+    for (const auto &op : graph.Ops()) {
+        if (!IsOpSupported(op)) {
+            LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());
+            continue;
+        }
+        LITERT_LOG(LITERT_INFO, "op type %d is supported", op.Code());
+        LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    }
+
+    return kLiteRtStatusOk;
+}
+#ifdef __cplusplus
+} /* end extern "C" */
+#endif
+
+LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
+                                         const char *soc_model, LiteRtModel partitions,
+                                         LiteRtCompiledResult *compiled_result) {
+    // 1. Create TFlite FE related objects for managing graph generation
+    // 2. Create input/output tensor, list of inputs and outputs to the graph
+    // 3. Create op nodes
+    auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+    const auto num_partitions = model.NumSubgraphs();
+
+    // auto tflite_fe =
+    // std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
+    for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
+        /*    std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
+           graph_delegate = std::make_shared<GraphIteratorDelegate>(context,
+           params); auto input_model = tflite_fe->load(graph_delegate); auto model =
+           tflite_fe->convert(input_model);
+        */
+    }
+    auto result = std::make_unique<LiteRtCompiledResultT>();
+    result->byte_code.resize(num_partitions);
+    result->per_op_data.resize(num_partitions);
+    for (int i = 0; i < num_partitions; ++i) {
+        std::string byte_code_append = "Partition_" + i;
+        result->byte_code.append(byte_code_append.c_str());
+        result->per_op_data[i].append(byte_code_append.c_str());
+    }
+    *compiled_result = result.release();
+
+    /* for (auto input : graphs.Inputs()) {
+             //Call graph decoder FE to create inputs
+     }
+
+     for (auto output : graph.Outputs()) {
+             //Call graph decoder FE to create outputs
+     }*/
+
+    // 1. Compile the graph
+    // 2. Cache the model
+    // 3. Add support for loading the cached model
+    return kLiteRtStatusOk;
+}
