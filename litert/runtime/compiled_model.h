@@ -211,6 +211,9 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Returns true if a non delegated operation is found in the interpreter.
+  bool HasNonDelegatedOps();
+
   // Map from signature key to SignatureRunner. This is used to lazy calling
   // GetSignatureRunner() which is expensive.
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>

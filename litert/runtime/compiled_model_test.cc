@@ -51,6 +51,7 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
+using ::testing::litert::IsError;
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -277,6 +278,33 @@ TEST(CompiledModelTest, Basic) {
     LiteRtDestroyTensorBuffer(output_buffer);
   }
 
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+TEST(CompiledModelTest,
+     CompilationFailsWhenUnacceleratedOpsRemainWithoutCpuFallback) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtCompilationOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
+                jit_compilation_options, kLiteRtHwAcceleratorNpu),
+            kLiteRtStatusOk);
+  EXPECT_THAT(
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options),
+      IsError(kLiteRtStatusErrorCompilation));
+
+  LiteRtDestroyCompilationOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }
