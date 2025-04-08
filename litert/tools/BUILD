@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_bin_with_qnn")
 
 package(
@@ -216,6 +217,7 @@ cc_library(
         "//litert/cc:litert_compilation_options",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
         "//tflite/c:c_api_types",
@@ -308,5 +310,29 @@ cc_library(
         # copybara:uncomment_begin(google-only)
         # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
+    ],
+)
+
+litert_device_test(
+    name = "benchmark_litert_model_qualcomm_test",
+    srcs = ["benchmark_litert_model_qualcomm_test.cc"],
+    backend_id = "qualcomm",
+    data = [
+        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
+    ],
+    deps = [
+        ":benchmark_litert_model",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_compilation_options",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
     ],
 )

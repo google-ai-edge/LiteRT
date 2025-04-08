@@ -19,10 +19,13 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tflite/c/c_api_types.h"  // from @org_tensorflow
@@ -36,9 +39,21 @@ using ::litert::TensorBuffer;
 
 CompilationOptions CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
+  auto use_npu = params.Get<bool>("use_npu");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   CompilationOptions compilation_options =
       *litert::CompilationOptions::Create();
+  if (use_npu) {
+    if (require_full_delegation) {
+      compilation_options.SetHardwareAccelerators(
+          LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu);
+    } else {
+      compilation_options.SetHardwareAccelerators(
+          LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu |
+          LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu |
+          LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
+    }
+  }
   if (use_gpu) {
     if (require_full_delegation) {
       compilation_options.SetHardwareAccelerators(
@@ -50,6 +65,21 @@ CompilationOptions CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
   }
   return compilation_options;
+}
+litert::Expected<Environment> CreateDefaultEnvironment(
+    const BenchmarkParams& params) {
+  auto qnn_dispatch_library_path =
+      params.Get<std::string>("qnn_dispatch_library_path");
+  LITERT_LOG(LITERT_INFO, "qnn_dispatch_library_path: %s",
+             qnn_dispatch_library_path.c_str());
+
+  const std::vector<litert::Environment::Option> environment_options = {
+      litert::Environment::Option{
+          litert::Environment::OptionTag::DispatchLibraryDir,
+          qnn_dispatch_library_path.c_str(),
+      },
+  };
+  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
 }
 }  // namespace
 
@@ -68,9 +98,11 @@ TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
 
 TfLiteStatus BenchmarkLiteRtModel::Init() {
   TF_LITE_ENSURE_STATUS(LoadModel());
-  auto env = Environment::Create({});
+
+  auto env = CreateDefaultEnvironment(params_);
   if (!env) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create litert environment.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create litert environment. %s",
+               env.Error().Message().c_str());
     return kTfLiteError;
   }
 
@@ -86,8 +118,10 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
       std::move(*compiled_model_result));
   auto signature = params_.Get<std::string>("signature_to_run_for");
   if (signature.empty()) {
+    auto s = model_->GetSignature(0);
     signature = model_->GetSignature(0)->Key();
   }
+
   auto input_buffers_result = compiled_model_->CreateInputBuffers(signature);
   if (!input_buffers_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to create input buffers.");
@@ -95,7 +129,6 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   }
   input_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
       std::move(*input_buffers_result));
-
   auto output_buffers_result = compiled_model_->CreateOutputBuffers(signature);
   if (!output_buffers_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to create output buffers.");
