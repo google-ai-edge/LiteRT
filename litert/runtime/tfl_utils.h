@@ -27,6 +27,10 @@ Expected<ElementType> ConvertElementType(TfLiteType tfl_type);
 Expected<RankedTensorType> ConvertTensorType(
     const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
+// Return the size (in bytes) necessary to store a given TFL tensor's numeric
+// data.
+Expected<size_t> GetTensorSize(const TfLiteOpaqueTensor* tfl_opaque_tensor);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_TFL_UTILS_H_
