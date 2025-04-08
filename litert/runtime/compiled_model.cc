@@ -309,18 +309,19 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       const TfLiteNode& node = nodes_and_registration[node_index].first;
       const TfLiteRegistration& registration =
           nodes_and_registration[node_index].second;
-
-      // NPU and GPU delegates don't use CPU tensors. However XNNPack delegate
-      // nodes operator on CPU tensors so we don't skip them.
+      // Skip delegate nodes expect for XNNPack ones.
       if (registration.builtin_code == kTfLiteBuiltinDelegate &&
-          registration.custom_name &&
-          registration.custom_name != absl::string_view("XNNPackDelegate")) {
+          !(registration.custom_name &&
+            registration.custom_name == absl::string_view("XNNPackDelegate"))) {
         continue;
       }
+      // Skip AOT compiled NPU custom ops.
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
           litert::internal::kLiteRtDispatchOpCustomCode ==
-              registration.custom_name)
+              registration.custom_name) {
         continue;
+      }
+      // Mark input of node as CPU tensors.
       for (int i = 0; i < node.inputs->size; ++i) {
         int input_tensor_index = node.inputs->data[i];
         if (input_tensor_index == kTfLiteOptionalTensor) continue;
