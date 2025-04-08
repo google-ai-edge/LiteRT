@@ -214,3 +214,9 @@ google_tensor()
 load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
 
 litert_gpu()
+
+load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
+openvino_configure(
+    name = "intel_openvino",
+    build_file_template = "//third_party/intel_openvino:openvino.bazel",
+)
