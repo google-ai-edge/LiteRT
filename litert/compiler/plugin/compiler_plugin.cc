@@ -375,6 +375,7 @@ LiteRtStatus PartitionSubgraph(
 
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
+    absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
   // This algorithm decides the subgraphs to be partitioned by the plugin. This
   // is a trivial process with the exception of composite ops and their
@@ -438,7 +439,8 @@ Expected<PartitionResult> PartitionModel(
       continue;
     }
     auto* subgraph = model.Subgraphs()[i];
-    auto selected_ops = compiler_plugin.Partition(Subgraph(subgraph));
+    auto selected_ops =
+        compiler_plugin.Partition(Subgraph(subgraph), soc_model);
     // TODO ensure selected ops don't contain npu_calls.
     if (!selected_ops) {
       return selected_ops.Error();
@@ -575,7 +577,7 @@ Expected<void> ApplyPlugin(
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
   // Collect partitions to pass to compilation.
   auto partitions =
-      PartitionModel(compiler_plugin, model, subgraphs_to_partition);
+      PartitionModel(compiler_plugin, model, soc_model, subgraphs_to_partition);
   if (!partitions) {
     return partitions.Error();
   }

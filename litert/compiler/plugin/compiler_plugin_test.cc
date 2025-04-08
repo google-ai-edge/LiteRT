@@ -231,7 +231,7 @@ TEST(PartitionModelTest, MultiSubgraphWithSelectedSubgraphs) {
   ASSERT_EQ(plugins->size(), 1);
   auto& plugin = plugins->front();
 
-  auto partition_result = PartitionModel(plugin, model, {1});
+  auto partition_result = PartitionModel(plugin, model, kTestModels, {1});
   ASSERT_TRUE(partition_result);
   ASSERT_EQ(model.NumSubgraphs(), 2);
 
