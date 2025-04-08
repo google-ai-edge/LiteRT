@@ -52,6 +52,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_model_predicates",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
