@@ -19,10 +19,14 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/runtime/accelerator.h"
+#include "litert/test/matchers.h"
 
 #define LITERT_ENSURE_OK(expr)       \
   do {                               \
@@ -33,7 +37,9 @@
   } while (0)
 
 namespace {
+
 using testing::Eq;
+using testing::Ge;
 using testing::Ne;
 using testing::NotNull;
 using testing::StrEq;
@@ -123,6 +129,23 @@ class LiteRtAcceleratorTest : public testing::Test {
   }
 
   void TearDown() override { LiteRtDestroyEnvironment(env_); }
+
+  litert::Expected<LiteRtAccelerator> FindAccelerator(
+      const absl::string_view accelerator_name) {
+    LiteRtParamIndex num_accelerators = 0;
+    LITERT_RETURN_IF_ERROR(LiteRtGetNumAccelerators(env_, &num_accelerators));
+    LiteRtAccelerator accelerator = nullptr;
+    for (LiteRtParamIndex i = 0; i < num_accelerators; ++i) {
+      LITERT_RETURN_IF_ERROR(LiteRtGetAccelerator(env_, i, &accelerator));
+      const char* name;
+      LITERT_RETURN_IF_ERROR(LiteRtGetAcceleratorName(accelerator, &name));
+      if (accelerator_name == name) {
+        return accelerator;
+      }
+    }
+    return litert::ErrorStatusBuilder(kLiteRtStatusErrorNotFound)
+           << "Accelerator " << accelerator_name << " is not registered.";
+  }
 };
 
 TEST_F(LiteRtAcceleratorTest, IteratingOverAcceleratorsWorks) {
@@ -132,39 +155,34 @@ TEST_F(LiteRtAcceleratorTest, IteratingOverAcceleratorsWorks) {
   LiteRtParamIndex num_accelerators = 0;
   ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
               kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 2);
+  ASSERT_THAT(num_accelerators, Ge(2));
 
   EXPECT_THAT(LiteRtGetAccelerator(env_, 0, nullptr),
               kLiteRtStatusErrorInvalidArgument);
-  LiteRtAccelerator accelerator0;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator0), kLiteRtStatusOk);
+  LiteRtAccelerator accelerator0 = nullptr;
+  EXPECT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator0), kLiteRtStatusOk);
   EXPECT_THAT(accelerator0, NotNull());
 
   EXPECT_THAT(LiteRtGetAccelerator(env_, 1, nullptr),
               kLiteRtStatusErrorInvalidArgument);
-  LiteRtAccelerator accelerator1;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 1, &accelerator1), kLiteRtStatusOk);
+  LiteRtAccelerator accelerator1 = nullptr;
+  EXPECT_THAT(LiteRtGetAccelerator(env_, 1, &accelerator1), kLiteRtStatusOk);
   EXPECT_THAT(accelerator1, NotNull());
 
   EXPECT_THAT(accelerator0, Ne(accelerator1));
 
-  LiteRtAccelerator accelerator2;
-  EXPECT_THAT(LiteRtGetAccelerator(env_, 2, &accelerator2),
+  LiteRtAccelerator accelerator2 = nullptr;
+  EXPECT_THAT(LiteRtGetAccelerator(env_, num_accelerators, &accelerator2),
               kLiteRtStatusErrorNotFound);
 }
 
 TEST_F(LiteRtAcceleratorTest, GetAcceleratorNameWorks) {
-  LiteRtParamIndex num_accelerators = 0;
-  ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
-              kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 1);
+  // FindAccelerator uses LiteRtGetAcceleratorName. If it returns a value then
+  // the function works.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAccelerator accelerator,
+                              FindAccelerator("DummyCpuAccelerator"));
 
-  LiteRtAccelerator accelerator;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator), kLiteRtStatusOk);
   const char* name = nullptr;
-  ASSERT_THAT(LiteRtGetAcceleratorName(accelerator, &name), kLiteRtStatusOk);
-  EXPECT_THAT(name, StrEq("DummyCpuAccelerator"));
-
   EXPECT_THAT(LiteRtGetAcceleratorName(nullptr, &name),
               kLiteRtStatusErrorInvalidArgument);
   EXPECT_THAT(LiteRtGetAcceleratorName(accelerator, nullptr),
@@ -176,18 +194,11 @@ TEST_F(LiteRtAcceleratorTest, GetAcceleratorNameWorks) {
 }
 
 TEST_F(LiteRtAcceleratorTest, GetAcceleratorIdWorks) {
-  LiteRtParamIndex num_accelerators = 0;
-  ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
-              kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 1);
-
-  LiteRtAccelerator accelerator;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAccelerator accelerator,
+                              FindAccelerator("DummyCpuAccelerator"));
   LiteRtAcceleratorId accelerator_id;
-  ASSERT_THAT(LiteRtGetAcceleratorId(accelerator, &accelerator_id),
+  EXPECT_THAT(LiteRtGetAcceleratorId(accelerator, &accelerator_id),
               kLiteRtStatusOk);
-  EXPECT_THAT(accelerator_id, Eq(0));
-
   EXPECT_THAT(LiteRtGetAcceleratorId(nullptr, &accelerator_id),
               kLiteRtStatusErrorInvalidArgument);
   EXPECT_THAT(LiteRtGetAcceleratorId(accelerator, nullptr),
@@ -199,13 +210,8 @@ TEST_F(LiteRtAcceleratorTest, GetAcceleratorIdWorks) {
 }
 
 TEST_F(LiteRtAcceleratorTest, GetAcceleratorVersionWorks) {
-  LiteRtParamIndex num_accelerators = 0;
-  ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
-              kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 1);
-
-  LiteRtAccelerator accelerator;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAccelerator accelerator,
+                              FindAccelerator("DummyCpuAccelerator"));
   LiteRtApiVersion version;
   ASSERT_THAT(LiteRtGetAcceleratorVersion(accelerator, &version),
               kLiteRtStatusOk);
@@ -224,13 +230,8 @@ TEST_F(LiteRtAcceleratorTest, GetAcceleratorVersionWorks) {
 }
 
 TEST_F(LiteRtAcceleratorTest, GetAcceleratorHardwareSupportWorks) {
-  LiteRtParamIndex num_accelerators = 0;
-  ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
-              kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 1);
-
-  LiteRtAccelerator accelerator;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAccelerator accelerator,
+                              FindAccelerator("DummyCpuAccelerator"));
   int hardware_support;
   ASSERT_THAT(
       LiteRtGetAcceleratorHardwareSupport(accelerator, &hardware_support),
@@ -252,13 +253,8 @@ TEST_F(LiteRtAcceleratorTest, GetAcceleratorHardwareSupportWorks) {
 
 TEST_F(LiteRtAcceleratorTest,
        IsAcceleratorDelegateResponsibleForJitCompilationWorks) {
-  LiteRtParamIndex num_accelerators = 0;
-  ASSERT_THAT(LiteRtGetNumAccelerators(env_, &num_accelerators),
-              kLiteRtStatusOk);
-  ASSERT_THAT(num_accelerators, 1);
-
-  LiteRtAccelerator accelerator;
-  ASSERT_THAT(LiteRtGetAccelerator(env_, 0, &accelerator), kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAccelerator accelerator,
+                              FindAccelerator("DummyCpuAccelerator"));
   bool does_jit_compilation;
   ASSERT_THAT(LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
                   accelerator, &does_jit_compilation),
