@@ -77,6 +77,20 @@ cc_library(
     ],
 )
 
+_SIMPLE_MODEL_NPU_DATA = [
+    # TODO: Regenerate these as standalone models rather than stiching them together
+    # during test.
+    # TODO: We need to export these separately because of a quirk in how data dependencies are
+    # specified in `xeno_mobile_test`. This can be removed when we hand roll our own mobile_test
+    # wrapper.
+    "testdata/simple_add_uint16_qualcomm.bin",
+    "testdata/simple_model_google_tensor.bin",
+    "testdata/simple_model_mtk.bin",
+    "testdata/simple_model_qualcomm.bin",
+]
+
+exports_files(srcs = _SIMPLE_MODEL_NPU_DATA)
+
 cc_library(
     name = "simple_model_npu",
     testonly = 1,
@@ -84,13 +98,7 @@ cc_library(
     hdrs = [
         "testdata/simple_model_test_vectors.h",
     ],
-    data = [
-        "testdata/simple_add_uint16_qualcomm.bin",
-        "testdata/simple_model_google_tensor.bin",
-        "testdata/simple_model_mtk.bin",
-        "testdata/simple_model_npu.tflite",
-        "testdata/simple_model_qualcomm.bin",
-    ],
+    data = _SIMPLE_MODEL_NPU_DATA + ["testdata/simple_model_npu.tflite"],
     deps = [
         "//litert/c:litert_model",
         "//litert/cc:litert_layout",
