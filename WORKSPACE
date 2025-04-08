@@ -176,3 +176,14 @@ kt_register_toolchains()  # to use the default toolchain, otherwise see toolchai
 load("//third_party/qairt:workspace.bzl", "qairt")
 
 qairt()
+
+load("//litert/vendors/intel_openvino:openvino.bzl", "openvino_configure")
+openvino_configure(name = "intel_openvino")
+
+#load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+#http_archive(
+#    name = "intel_openvino",
+#    urls = ["https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.0/linux/openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64.tgz"],
+#    strip_prefix = "openvino_toolkit_ubuntu22_2025.0.0.17942.1f68be9f594_x86_64",
+#    build_file = "@//third_party:openvinio/openvino.BUILD",
+#)
