@@ -14,6 +14,7 @@
 
 #include "litert/runtime/external_litert_buffer_context.h"
 
+#include <cassert>
 #include <utility>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -31,9 +32,10 @@
 namespace litert {
 namespace internal {
 
-LiteRtStatus ExternalLiteRtBufferContext::RegisterBufferRequirement(
+LiteRtStatus ExternalLiteRtBufferContext::RegisterBufferRequirements(
     const TfLiteOpaqueTensor* tensor,
     TensorBufferRequirements&& buffer_requirements) {
+  assert(buffer_requirements.IsOwned());
   auto iter = buffer_requirements_.find(tensor);
   if (iter == buffer_requirements_.end()) {
     buffer_requirements_.insert(
@@ -48,8 +50,8 @@ LiteRtStatus ExternalLiteRtBufferContext::RegisterBufferRequirement(
   return kLiteRtStatusOk;
 }
 
-litert::Expected<TensorBufferRequirements*>
-ExternalLiteRtBufferContext::GetBufferRequirement(
+litert::Expected<const TensorBufferRequirements*>
+ExternalLiteRtBufferContext::GetBufferRequirements(
     const TfLiteOpaqueTensor* tensor) {
   auto it = buffer_requirements_.find(tensor);
   if (it == buffer_requirements_.end()) {
@@ -84,7 +86,7 @@ litert::Expected<TensorBuffer> ExternalLiteRtBufferContext::GetTensorBuffer(
 litert::Expected<TensorBuffer>
 ExternalLiteRtBufferContext::CreateBufferForTensor(
     const TfLiteOpaqueTensor* tensor) {
-  auto tensor_buffer_requirements = GetBufferRequirement(tensor);
+  auto tensor_buffer_requirements = GetBufferRequirements(tensor);
   if (!tensor_buffer_requirements) {
     return litert::Unexpected(tensor_buffer_requirements.Error());
   }

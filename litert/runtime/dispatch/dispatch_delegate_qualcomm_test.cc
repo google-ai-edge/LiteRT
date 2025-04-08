@@ -177,8 +177,8 @@ TEST(DispatchDelegate, HwBuffer) {
   std::vector<litert::TensorBuffer> input_buffers;
   for (int i = 0; i < interpreter.inputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBufferRequirements * input_buffer_requirements,
-        buffer_context.GetBufferRequirement(interpreter.input_tensor(i)));
+        auto* input_buffer_requirements,
+        buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
     ASSERT_EQ(input_buffer_requirements->SupportedTypes()->at(0),
               kLiteRtTensorBufferTypeFastRpc);
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -197,8 +197,8 @@ TEST(DispatchDelegate, HwBuffer) {
   std::vector<litert::TensorBuffer> output_buffers;
   for (int i = 0; i < interpreter.outputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBufferRequirements * output_buffer_requirements,
-        buffer_context.GetBufferRequirement(interpreter.output_tensor(i)));
+        auto* output_buffer_requirements,
+        buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
     ASSERT_NE(output_buffer_requirements, nullptr);
     ASSERT_EQ(output_buffer_requirements->SupportedTypes()->at(0),
               kLiteRtTensorBufferTypeFastRpc);

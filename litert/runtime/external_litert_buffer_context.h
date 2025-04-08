@@ -41,22 +41,22 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   // Note: Currently, the system pre-registers tensor buffer requirements before
   // they're actually used. A more efficient approach would be to query
   // DelegateKernel only when these requirements are needed.
-  LiteRtStatus RegisterBufferRequirement(
+  LiteRtStatus RegisterBufferRequirements(
       const TfLiteOpaqueTensor* tensor,
       TensorBufferRequirements&& buffer_requirements);
 
-  inline LiteRtStatus RegisterBufferRequirement(
+  inline LiteRtStatus RegisterBufferRequirements(
       const TfLiteTensor* tensor,
       TensorBufferRequirements&& buffer_requirements) {
-    return RegisterBufferRequirement(
+    return RegisterBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor),
         std::move(buffer_requirements));
   }
 
-  inline LiteRtStatus RegisterLiteRtBufferRequirement(
+  inline LiteRtStatus RegisterLiteRtBufferRequirements(
       const TfLiteTensor* tensor,
       LiteRtTensorBufferRequirements& litert_buffer_requirements) {
-    return RegisterBufferRequirement(
+    return RegisterBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor),
         TensorBufferRequirements(litert_buffer_requirements,
                                  /*owned=*/true));
@@ -65,12 +65,12 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   // Gets a registered tensor buffer requirements for the given tensor.
   // The returned TensorBufferRequirements object is still owned by
   // ExternalLiteRtBufferContext.
-  litert::Expected<TensorBufferRequirements*> GetBufferRequirement(
+  litert::Expected<const TensorBufferRequirements*> GetBufferRequirements(
       const TfLiteOpaqueTensor* tensor);
 
-  inline litert::Expected<TensorBufferRequirements*> GetBufferRequirement(
-      const TfLiteTensor* tensor) {
-    return GetBufferRequirement(
+  inline litert::Expected<const TensorBufferRequirements*>
+  GetBufferRequirements(const TfLiteTensor* tensor) {
+    return GetBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor));
   }
 

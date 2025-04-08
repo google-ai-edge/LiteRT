@@ -336,7 +336,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Use the buffer context to get the buffer requirements only if the tensor
   // is not a CPU tensor.
   if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
-    auto requirements = buffer_context_->GetBufferRequirement(tensor);
+    auto requirements = buffer_context_->GetBufferRequirements(tensor);
     if (requirements) {
       return (*requirements)->Get();
     }
@@ -421,7 +421,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     std::vector<LiteRtTensorBuffer>& locked_buffers) {
   bool backend_requires_cpu_buffer = false;
 
-  auto requirements = buffer_context_->GetBufferRequirement(tensor);
+  auto requirements = buffer_context_->GetBufferRequirements(tensor);
   if (requirements) {
     auto supported_types = (*requirements)->SupportedTypes();
     if (!supported_types) {
