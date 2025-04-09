@@ -14,8 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/task_internal.h"
 
-#include <string>
-
 #include <gtest/gtest.h>
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"

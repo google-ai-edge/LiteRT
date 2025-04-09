@@ -162,6 +162,17 @@ class SourceLocation {
 // The error message may be completed with extra info by using the << operator.
 class ErrorStatusBuilder {
  public:
+  static ErrorStatusBuilder InvalidArgument(
+      litert::SourceLocation loc = litert::SourceLocation::current()) {
+    return ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument,
+                              std::move(loc));
+  }
+
+  static ErrorStatusBuilder WrongVersion(
+      litert::SourceLocation loc = litert::SourceLocation::current()) {
+    return ErrorStatusBuilder(kLiteRtStatusErrorWrongVersion, std::move(loc));
+  }
+
   explicit ErrorStatusBuilder(
       bool expr_result,
       litert::SourceLocation loc = litert::SourceLocation::current())

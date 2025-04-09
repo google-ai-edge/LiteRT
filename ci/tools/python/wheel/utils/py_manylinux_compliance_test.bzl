@@ -1,6 +1,6 @@
 """ Macros for manylinux compliance verification test. """
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
+load("//litert/build_common:strict.default.bzl", "py_strict_test")
 
 def verify_manylinux_compliance_test(
         name,
@@ -11,7 +11,7 @@ def verify_manylinux_compliance_test(
         test_tags = []):
     py_strict_test(
         name = name,
-        srcs = [Label("//tflite/tools/pip_package/utils:manylinux_compliance_test")],
+        srcs = [Label("//ci/tools/python/wheel/utils:manylinux_compliance_test")],
         data = [
             wheel,
         ],

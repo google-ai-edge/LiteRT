@@ -42,8 +42,6 @@
 
 namespace {
 
-using ::litert::internal::kLiteRtDispatchOpCustomCode;
-
 // A TFL Delegate that can recognize subgraphs that run on Dispatch API capable
 // accelerators, e.g. TPU, DSP, ... It replaces such subgraphs and offloads
 // their work through the Dispatch API.
@@ -93,8 +91,8 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
 bool DispatchDelegate::IsNodeSupportedByDelegate(
     const TfLiteOperator* op, const TfLiteOpaqueNode* node,
     TfLiteOpaqueContext* context) const {
-  auto custom_code = absl::string_view(TfLiteOperatorGetCustomName(op));
-  return custom_code == kLiteRtDispatchOpCustomCode;
+  auto custom_name = absl::string_view(TfLiteOperatorGetCustomName(op));
+  return custom_name == ::litert::internal::kLiteRtDispatchOpCustomName;
 }
 
 TfLiteStatus DispatchDelegate::Initialize(TfLiteOpaqueContext* context) {

@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -77,20 +78,14 @@ litert_dynamic_lib(
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "dispatch_api_qualcomm_test",
     srcs = [
         "dispatch_api_qualcomm_test.cc",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    linkstatic = 1,
-    tags = [
-        "no-remote-exec",
-        "no_oss",
-        "notap",
+    backend_id = "qualcomm",
+    data = [
+        "//litert/test:testdata",
     ],
     deps = [
         ":dispatch_api",

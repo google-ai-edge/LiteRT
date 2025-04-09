@@ -267,7 +267,7 @@ TfLiteStatus DispatchDelegateKernel::Init(
     }
     auto input_buffer_requirements =
         GetBufferRequirements(*tensor_type, i, /*is_input=*/true);
-    if (auto res = buffer_context_->RegisterBufferRequirement(
+    if (auto res = buffer_context_->RegisterBufferRequirements(
             tfl_opaque_tensor, std::move(*input_buffer_requirements));
         res != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_ERROR, "Failed to register buffer requirement");
@@ -289,7 +289,7 @@ TfLiteStatus DispatchDelegateKernel::Init(
     }
     auto output_buffer_requirements =
         GetBufferRequirements(*tensor_type, i, /*is_input=*/false);
-    if (auto res = buffer_context_->RegisterBufferRequirement(
+    if (auto res = buffer_context_->RegisterBufferRequirements(
             tfl_opaque_tensor, std::move(*output_buffer_requirements));
         res != kLiteRtStatusOk) {
       LITERT_LOG(LITERT_ERROR, "Failed to register buffer requirement");

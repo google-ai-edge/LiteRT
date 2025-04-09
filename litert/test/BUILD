@@ -31,6 +31,14 @@ filegroup(
     srcs = glob(["testdata/*.tflite"]),
 )
 
+filegroup(
+    name = "testdata",
+    srcs = glob([
+        "testdata/*.tflite",
+        "testdata/*.bin",
+    ]) + [":mlir_test_data"],
+)
+
 cc_library(
     name = "common",
     testonly = 1,
@@ -102,7 +110,7 @@ cc_library(
     testonly = 1,
     srcs = [],
     hdrs = [
-        "testdata/simple_model_test_vectors.h",
+        "testdata/simple_cascade_model_test_vectors.h",
     ],
     data = [
         "testdata/simple_cascade_model_npu.tflite",
@@ -166,6 +174,8 @@ cc_library(
 exports_files(srcs = [
     "testdata/mobilenet_v2_1.0_224.tflite",
     "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
+    "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
+    "testdata/simple_add_op_qc_v75_precompiled.tflite",
     "testdata/simple_model_google_tensor.bin",
     "testdata/simple_model_mtk.bin",
     "testdata/simple_model_npu_google_tensor_precompiled.tflite",

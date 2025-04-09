@@ -34,6 +34,7 @@
   } else {                                                                \
     LITERT_LOG(LITERT_WARNING, "Failed to load symbol %s: %s", #S,        \
                dlib_.DlError());                                          \
+    H = nullptr;                                                          \
   }
 
 namespace litert {

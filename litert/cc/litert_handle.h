@@ -45,6 +45,13 @@ class Handle {
   // Return true if the underlying LiteRtTensorBuffer handle is valid.
   explicit operator bool() const noexcept { return static_cast<bool>(ptr_); }
 
+  bool operator==(const Handle& other) const noexcept {
+    return Get() == other.Get();
+  }
+  bool operator!=(const Handle& other) const noexcept {
+    return Get() != other.Get();
+  }
+
   // Return the underlying LiteRtTensorBuffer handle.
   H Get() const noexcept { return ptr_.get(); }
 

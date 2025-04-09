@@ -44,6 +44,7 @@ pytype_strict_library(
     srcs = ["__init__.py"],
     deps = [
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
+        "//litert/python/aot/vendors/mediatek:mediatek_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
     ],
 )

@@ -173,6 +173,10 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
     }
   }
 
+  if (graph_) {
+    device_context_->DestroyGraph(graph_);
+  }
+
   if (exec_handle_) {
     device_context_->UnloadExecutable(*exec_handle_);
   }

@@ -306,17 +306,22 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
     for (int execution_plan_index = 0;
          execution_plan_index < execution_plan.size(); execution_plan_index++) {
       int node_index = execution_plan[execution_plan_index];
-      auto& node = nodes_and_registration[node_index].first;
+      const TfLiteNode& node = nodes_and_registration[node_index].first;
       const TfLiteRegistration& registration =
           nodes_and_registration[node_index].second;
-
-      if (registration.builtin_code == kTfLiteBuiltinDelegate) {
+      // Skip delegate nodes expect for XNNPack ones.
+      if (registration.builtin_code == kTfLiteBuiltinDelegate &&
+          !(registration.custom_name &&
+            registration.custom_name == absl::string_view("XNNPackDelegate"))) {
         continue;
       }
+      // Skip AOT compiled NPU custom ops.
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
-          litert::internal::kLiteRtDispatchOpCustomCode ==
-              registration.custom_name)
+          litert::internal::kLiteRtDispatchOpCustomName ==
+              registration.custom_name) {
         continue;
+      }
+      // Mark input of node as CPU tensors.
       for (int i = 0; i < node.inputs->size; ++i) {
         int input_tensor_index = node.inputs->data[i];
         if (input_tensor_index == kTfLiteOptionalTensor) continue;
@@ -331,7 +336,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Use the buffer context to get the buffer requirements only if the tensor
   // is not a CPU tensor.
   if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
-    auto requirements = buffer_context_->GetBufferRequirement(tensor);
+    auto requirements = buffer_context_->GetBufferRequirements(tensor);
     if (requirements) {
       return (*requirements)->Get();
     }
@@ -416,7 +421,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     std::vector<LiteRtTensorBuffer>& locked_buffers) {
   bool backend_requires_cpu_buffer = false;
 
-  auto requirements = buffer_context_->GetBufferRequirement(tensor);
+  auto requirements = buffer_context_->GetBufferRequirements(tensor);
   if (requirements) {
     auto supported_types = (*requirements)->SupportedTypes();
     if (!supported_types) {

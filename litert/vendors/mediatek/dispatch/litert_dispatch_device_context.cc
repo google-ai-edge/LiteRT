@@ -20,6 +20,7 @@
 #include <memory>
 
 #include "neuron/api/NeuronAdapter.h"
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -48,7 +49,9 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
   if (tensor_buffer_type != kLiteRtTensorBufferTypeAhwb &&
       tensor_buffer_type != kLiteRtTensorBufferTypeDmaBuf) {
-    return Error(kLiteRtStatusErrorUnsupported, "Unsupported buffer type");
+    return Error(
+        kLiteRtStatusErrorUnsupported,
+        absl::StrFormat("Unsupported buffer type %d", tensor_buffer_type));
   }
 
   size_t tensor_buffer_size;

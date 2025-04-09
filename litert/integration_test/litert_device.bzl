@@ -17,7 +17,7 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 """
 
 # copybara:uncomment_begin(google-only)
-# load("//research/aimatter/testing:xeno_lab.bzl", "xeno_mobile_test")
+# load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
 # 
 # copybara:uncomment_end(google-only)
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
@@ -38,6 +38,7 @@ def hidden_test_tags():
         "notap",
         "nobuilder",
         "no_oss",
+        "local",
     ]
 
 # DEVICE PATHS #####################################################################################
@@ -252,7 +253,7 @@ def litert_device_exec(
 
     #copybara:comment_begin(google-only)
     Note: Allows running the target on a locally connected device through ADB or via Mobile Harness
-    (see xeno_mobile_test target below).
+    (see litert_mh_exec target).
     #copybara:comment_end(google-only)
 
     The output of this macro is an executable shell script that pushes all the necessary files to
@@ -329,24 +330,14 @@ def litert_device_exec(
     )
 
     # copybara:uncomment_begin(google-only)
-    # xeno_mobile_test(
+    # _litert_mh_exec(
         # name = name + remote_suffix,
-        # test_target = target,
-        # args = [
-            # "--run_as=odml-device-lab",
-        # ],
-        # test_options = exec_args,
+        # target = target,
+        # run_as = "odml-device-lab",
+        # data = data,
+        # exec_args = exec_args,
+        # exec_env_vars = exec_env_vars,
         # dimensions = backend.default_mh_device,
-        # tags = [
-            # "android",
-            # "external",
-            # "guitar",
-            # "manual",
-            # "notap",
-        # ],
-        # test_data = data,
-        # run_as_top_app = False,
-        # env_vars = exec_env_vars,
     # )
     # copybara:uncomment_end(google-only)
 

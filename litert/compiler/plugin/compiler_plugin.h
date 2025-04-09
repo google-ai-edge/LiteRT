@@ -160,6 +160,7 @@ using PartitionResult = std::pair<std::vector<LiteRtOp>, LiteRtModelT>;
 // corresponding dispatch ops in the input.
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
+    absl::string_view soc_model = "",
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
 
 // Same as "PartitionModel" choose partitions directly based on the selected

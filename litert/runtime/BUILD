@@ -171,6 +171,7 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",

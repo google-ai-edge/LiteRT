@@ -528,7 +528,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);
   tfl_op_codes.push_back(
-      MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomCode)));
+      MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomName)));
 
   SerializationContext builder(tfl_op_codes.size() - 1, model,
                                bytecode_alignment);

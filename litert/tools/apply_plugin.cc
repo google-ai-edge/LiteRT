@@ -311,7 +311,8 @@ LiteRtStatus Partition(Context& ctx) {
   auto& model = *model_wrap->Get();
 
   ctx.Dump().Start("Partitioning model");
-  auto partition_result = PartitionModel(*plugin, model, ctx.Run().subgraphs);
+  auto partition_result =
+      PartitionModel(*plugin, model, ctx.SocModelTarget(), ctx.Run().subgraphs);
   if (!partition_result) {
     return partition_result.Error().Status();
   }

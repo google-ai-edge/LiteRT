@@ -75,7 +75,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   }
 
   // Pass -1 for timeout_in_ms for indefinite wait.
-  Expected<void> Wait(int64_t timeout_in_ms) {
+  Expected<void> Wait(int64_t timeout_in_ms = -1) {
     LITERT_RETURN_IF_ERROR(LiteRtEventWait(Get(), timeout_in_ms));
     return {};
   }
