@@ -37,6 +37,7 @@
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/dynamic_loading.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/qnn_log.h"
 #include "third_party/qairt/latest/include/QNN/HTP/QnnHtpContext.h"
@@ -98,6 +99,7 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 }  // namespace
 
 QnnManager::~QnnManager() {
+  if (perf_control_) perf_control_->Terminate();
   (void)FreeDevice();
   (void)FreeBackend();
   (void)FreeLogging();
@@ -268,7 +270,8 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
 
 LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
                               std::optional<std::string> shared_library_dir,
-                              std::optional<::qnn::SocInfo> soc_info) {
+                              std::optional<::qnn::SocInfo> soc_info,
+                              const LiteRtQnnOptions* options) {
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.
@@ -291,11 +294,14 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  if (auto status = Api()->logCreate(GetDefaultStdOutLogger(),
-                                     QNN_LOG_LEVEL_INFO, &LogHandle());
-      status != QNN_SUCCESS) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
-    return kLiteRtStatusErrorRuntimeFailure;
+  if (options != nullptr && options->log_level != kLogOff) {
+    if (auto status = Api()->logCreate(
+            GetDefaultStdOutLogger(),
+            static_cast<QnnLog_Level_t>(options->log_level), &LogHandle());
+        status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
   }
 
   if (auto status =
@@ -343,7 +349,13 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
-
+  if (options != nullptr &&
+      options->htp_options.performance_mode != kHtpDefault) {
+    LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
+               options->htp_options.performance_mode);
+    perf_control_ = std::make_unique<PerfControl>(Api(), options->htp_options);
+    perf_control_->Init(&DeviceHandle());
+  }
   return kLiteRtStatusOk;
 }
 
@@ -393,9 +405,12 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::Ptr> QnnManager::Create(
     absl::Span<const QnnBackend_Config_t*> configs,
     std::optional<std::string> shared_library_dir,
-    std::optional<::qnn::SocInfo> soc_info) {
+    std::optional<::qnn::SocInfo> soc_info, const LiteRtQnnOptions* options) {
   Ptr qnn_manager(new QnnManager);
-  if (auto status = qnn_manager->Init(configs, shared_library_dir, soc_info);
+  LiteRtQnnOptions default_options = LITERT_QNN_OPTIONS_INIT;
+  if (auto status =
+          qnn_manager->Init(configs, shared_library_dir, soc_info,
+                            (options != nullptr) ? options : &default_options);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to set up QNN manager");
   }
