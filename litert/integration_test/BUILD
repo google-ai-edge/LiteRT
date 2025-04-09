@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:comment_begin(oss-only)
 load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
+# copybara:comment_end
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -130,17 +132,6 @@ litert_device_test(
     ],
 )
 
-litert_device_test(
-    name = "mediatek_smoketest",
-    srcs = ["smoketests/mediatek_smoketest.cc"],
-    backend_id = "mediatek",
-    deps = [
-        "@com_google_googletest//:gtest_main",
-        "//litert/cc:litert_shared_library",
-        "//litert/vendors/mediatek:neuron_adapter_api",
-    ],
-)
-
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
     backend_id = "qualcomm",
@@ -161,4 +152,17 @@ litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
     backend_id = "qualcomm",
     models = "//litert/integration_test/models:pre_compiled",
+)
+
+# MEDIATEK -----------------------------------------------------------------------------------------
+
+litert_device_test(
+    name = "mediatek_smoketest",
+    srcs = ["smoketests/mediatek_smoketest.cc"],
+    backend_id = "mediatek",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
 )

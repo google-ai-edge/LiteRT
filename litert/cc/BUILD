@@ -514,6 +514,7 @@ litert_device_test(
     name = "litert_compiled_model_npu_test",
     srcs = ["litert_compiled_model_npu_test.cc"],
     backend_id = "google_tensor",
+    data = ["//litert/test:testdata/simple_model_npu.tflite"],
     deps = [
         ":litert_buffer_ref",
         ":litert_compiled_model",
