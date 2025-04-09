@@ -73,7 +73,7 @@ function initialize_pip_wheel_environment {
 }
 
 function install_wheel {
-  local dist_pkg="$(ls ./dist/${pkg}*.whl)"
+  local dist_pkg="$(ls ./tflite/gen/litert_pip/python3/dist/${pkg}*.whl)"
   ${PYTHON_BIN} -m pip install ${dist_pkg?} --ignore-installed
 
   echo

@@ -68,11 +68,11 @@ jobs:
           ./ci/build_pip_package_with_bazel.sh
 
       - name: Verify the distribution
-        run: twine check ./dist/*.whl
+        run: twine check ./tflite/gen/litert_pip/python3/dist/*.whl
 
       - name: List the contents of the wheel
         run: |
-          wheels="./dist/*.whl"
+          wheels="./tflite/gen/litert_pip/python3/dist/*.whl"
           for wheel in $wheels
           do
             echo "Listing $wheel"
@@ -80,4 +80,4 @@ jobs:
           done
 
       - name: Upload to PyPI
-        run: twine upload ./dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}
+        run: twine upload ./tflite/gen/litert_pip/python3/dist/*.whl --non-interactive -p ${{ secrets.PYPI_UPLOAD_TOKEN }}
