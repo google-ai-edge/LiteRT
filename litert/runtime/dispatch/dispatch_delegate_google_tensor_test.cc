@@ -330,13 +330,13 @@ TEST(DispatchDelegate, CompiledModel) {
       auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute compiled model.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
 
   // Check model output.
@@ -393,13 +393,13 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute the model once and check the outputs.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -418,14 +418,14 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   ABSL_LOG(INFO) << "Second inference";
 
   // Fill in new model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor_2, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor_2, kTestInput1Size)));
 
   // Execute model a second time by reusing the same I/O buffers, to verify if
   // the buffer registration is working.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -450,14 +450,14 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor_3, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor_3, kTestInput1Size)));
 
   // Execute model a third time by using new I/O buffers, to verify if buffer
   // registration and attachment is working.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -507,13 +507,13 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
 
   // Check model outputs.
@@ -583,15 +583,15 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
       auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
 
   // Fill model inputs.
-  ASSERT_TRUE(input_buffers[0].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  ASSERT_TRUE(input_buffers[1].Write<float>(
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  ASSERT_TRUE(compiled_model.StartMetricsCollection(/*detail_level=*/100));
+  LITERT_ASSERT_OK(compiled_model.StartMetricsCollection(/*detail_level=*/100));
 
   // Execute compiled model.
-  ASSERT_TRUE(
+  LITERT_ASSERT_OK(
       compiled_model.Run(signature_index, input_buffers, output_buffers));
 
   // Check model output.
