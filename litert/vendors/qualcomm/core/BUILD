@@ -1,6 +1,8 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert/vendors/qualcomm:__subpackages__"],
@@ -40,6 +42,12 @@ cc_test(
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
+)
+
+litert_device_exec(
+    name = "tensor_pool_device_test",
+    backend_id = "qualcomm",
+    target = ":tensor_pool_test",
 )
 
 cc_library(
