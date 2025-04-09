@@ -54,7 +54,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "tensorflow/lite/schema/mutable/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/mutable/schema_generated.h"  // from @org_tensorflow
 
 namespace litert::internal {
 namespace {

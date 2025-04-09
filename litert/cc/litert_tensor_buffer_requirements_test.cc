@@ -103,3 +103,73 @@ TEST(TensorBufferRequirements, WithStrides) {
     ASSERT_EQ((*strides)[i], kStrides[i]);
   }
 }
+
+TEST(TensorBufferRequirements, JoinSuccess) {
+  constexpr const std::array kSupportedTensorBufferTypes1 = {
+      kLiteRtTensorBufferTypeHostMemory,
+      kLiteRtTensorBufferTypeAhwb,
+      kLiteRtTensorBufferTypeIon,
+      kLiteRtTensorBufferTypeFastRpc,
+  };
+  constexpr const size_t kBufferSize1 = 1234;
+
+  constexpr const std::array kSupportedTensorBufferTypes2 = {
+      kLiteRtTensorBufferTypeAhwb,
+      kLiteRtTensorBufferTypeFastRpc,
+  };
+  constexpr const size_t kBufferSize2 = 1238;
+
+  auto src_requirements_1 = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes1.data(),
+                     kSupportedTensorBufferTypes1.size()),
+      kBufferSize1);
+  ASSERT_TRUE(src_requirements_1);
+
+  auto src_requirements_2 = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes2.data(),
+                     kSupportedTensorBufferTypes2.size()),
+      kBufferSize2);
+  ASSERT_TRUE(src_requirements_2);
+
+  auto joint_requirements =
+      litert::Join(*src_requirements_1, *src_requirements_2);
+  ASSERT_TRUE(joint_requirements);
+
+  auto supported_types = joint_requirements->SupportedTypes();
+  ASSERT_TRUE(supported_types);
+  ASSERT_EQ(supported_types->size(), 2);
+  ASSERT_EQ((*supported_types)[0], kLiteRtTensorBufferTypeAhwb);
+  ASSERT_EQ((*supported_types)[1], kLiteRtTensorBufferTypeFastRpc);
+
+  auto size = joint_requirements->BufferSize();
+  ASSERT_TRUE(size);
+  ASSERT_EQ(*size, kBufferSize2);
+}
+
+TEST(TensorBufferRequirements, JoinFailure) {
+  constexpr const std::array kSupportedTensorBufferTypes1 = {
+      kLiteRtTensorBufferTypeHostMemory,
+  };
+  constexpr const size_t kBufferSize1 = 1234;
+
+  constexpr const std::array kSupportedTensorBufferTypes2 = {
+      kLiteRtTensorBufferTypeAhwb,
+  };
+  constexpr const size_t kBufferSize2 = 1238;
+
+  auto src_requirements_1 = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes1.data(),
+                     kSupportedTensorBufferTypes1.size()),
+      kBufferSize1);
+  ASSERT_TRUE(src_requirements_1);
+
+  auto src_requirements_2 = litert::TensorBufferRequirements::Create(
+      absl::MakeSpan(kSupportedTensorBufferTypes2.data(),
+                     kSupportedTensorBufferTypes2.size()),
+      kBufferSize2);
+  ASSERT_TRUE(src_requirements_2);
+
+  auto joint_requirements =
+      litert::Join(*src_requirements_1, *src_requirements_2);
+  ASSERT_FALSE(joint_requirements);
+}

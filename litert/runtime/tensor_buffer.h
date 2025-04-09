@@ -39,7 +39,7 @@
 #include "litert/runtime/gl_texture.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/open_cl_buffer.h"
+#include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -83,8 +83,9 @@ class LiteRtTensorBufferT {
       LiteRtFastRpcDeallocator deallocator = nullptr);
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  static litert::Expected<Ptr> CreateFromOpenClBuffer(
-      const LiteRtRankedTensorType& tensor_type, cl_mem buffer,
+  static litert::Expected<Ptr> CreateFromOpenClMemory(
+      const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, cl_mem buffer,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -103,6 +104,19 @@ class LiteRtTensorBufferT {
 
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
+  bool is_opencl_memory() const {
+    switch (buffer_type_) {
+      case kLiteRtTensorBufferTypeOpenClBuffer:
+      case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      case kLiteRtTensorBufferTypeOpenClTexture:
+      case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+        return true;
+      default:
+        return false;
+    }
+  }
   size_t buffer_size() const { return buffer_size_; }
   size_t buffer_offset() const { return buffer_offset_; }
 
@@ -128,7 +142,7 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetDmaBufBuffer();
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
 #if LITERT_HAS_OPENCL_SUPPORT
-  litert::Expected<litert::internal::OpenClBuffer*> GetOpenClBuffer();
+  litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
@@ -189,7 +203,7 @@ class LiteRtTensorBufferT {
       std::variant<HostBuffer, AhwbBuffer, IonBuffer, DmaBufBuffer,
                    FastRpcBuffer,
 #if LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::OpenClBuffer,
+                   litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::GlBuffer, litert::internal::GlTexture>;
 
@@ -212,8 +226,9 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateManagedFastRpcBuffer(
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
-  static litert::Expected<Ptr> CreateManagedOpenClBuffer(
-      const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+  static litert::Expected<Ptr> CreateManagedOpenClMemory(
+      const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedGlBuffer(
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);

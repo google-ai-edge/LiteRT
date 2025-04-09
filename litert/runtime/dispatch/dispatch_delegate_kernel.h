@@ -21,15 +21,17 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
 
 namespace litert::internal {
 
@@ -55,6 +57,10 @@ class DispatchDelegateKernel
 
   TfLiteStatus Eval(TfLiteOpaqueContext* context,
                     TfLiteOpaqueNode* node) override;
+
+  LiteRtStatus StartMetricsCollection(int detail_level);
+
+  Expected<LiteRtMetricsT> StopMetricsCollection();
 
  private:
   DispatchDelegateKernel(const LiteRtDispatchDelegateOptions& options,

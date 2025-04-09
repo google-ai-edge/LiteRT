@@ -12,21 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:special_rule.bzl", "lite_rt_friends")
+load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//litert:__subpackages__",
-    ] + lite_rt_friends(),
+        "//litert:litert_internal_users",
+    ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "model",
     srcs = ["model.cc"],
     hdrs = [
         "model.h",
         "//litert/c:litert_model_hdrs",
+    ],
+    vis = [
+        "//litert:litert_internal_users",
+        # TODO: This needs to be removed.
+        "//litert/vendors/qualcomm/compiler:__pkg__",
     ],
     deps = [
         ":buffer_manager",
@@ -43,7 +48,7 @@ cc_library(
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
+        "//tflite/core/c:private_c_api_types",
     ],
 )
 
@@ -64,7 +69,7 @@ cc_test(
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:matchers",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -87,7 +92,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -97,7 +102,7 @@ cc_test(
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
-        # copybara:uncomment "@org_tensorflow//tensorflow/lite/java/demo/app/src/main/assets:mobilenet_v1_1.0_224.tflite",
+        # copybara:uncomment "//tflite/java/demo/app/src/main/assets:mobilenet_v1_1.0_224.tflite",
     ],
     deps = [
         ":buffer_manager",
@@ -123,7 +128,7 @@ cc_test(
         "//litert/test:matchers",
         "//litert/test:test_models",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs_with_mutable",
+        "//tflite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -145,7 +150,7 @@ cc_library(
         "//litert/core:insert_order_map",
         "//litert/core/util:flatbuffer_tools",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs_with_mutable",
+        "//tflite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -160,7 +165,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -186,7 +191,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/core/util:flatbuffer_tools",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -254,12 +259,11 @@ cc_test(
     ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "model_graph",
     srcs = ["model_graph.cc"],
     hdrs = [
         "model_graph.h",
-        "//litert/cc:litert_consts.h",
     ],
     deps = [
         ":model",
@@ -269,6 +273,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_consts",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
     ],
@@ -328,12 +333,12 @@ cc_test(
         "//litert/test:simple_cascade_model_npu",
         "//litert/test:simple_model_npu",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite:model_builder",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core:private_cc_api_stable",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite:model_builder",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 

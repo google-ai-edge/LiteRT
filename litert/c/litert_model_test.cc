@@ -70,6 +70,20 @@ TEST(LiteRtWeightsTest, GetWeights) {
               ElementsAreArray(kData));
 }
 
+TEST(LiteRtWeightsTest, GetBufferId) {
+  static constexpr std::array kData = {1, 2, 3};
+  const uint8_t* kDataPtr = reinterpret_cast<const uint8_t*>(kData.data());
+  const auto kDataSize = kData.size() * sizeof(int32_t);
+
+  LiteRtWeightsT weights;
+  SetWeightsFromOwnedBuffer(weights,
+                            OwningBufferRef<uint8_t>(kDataPtr, kDataSize));
+
+  int32_t buffer_id;
+  LITERT_ASSERT_OK(LiteRtGetWeightsBufferId(&weights, &buffer_id));
+  EXPECT_EQ(buffer_id, 1);
+}
+
 TEST(LiteRtTensorTest, GetUnrankedType) {
   static constexpr auto kElementType = kLiteRtElementTypeFloat32;
   static constexpr auto kId = kLiteRtUnrankedTensorType;

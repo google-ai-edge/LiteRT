@@ -11,12 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
+# Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//visibility:private"],
+    default_visibility = [
+        "//visibility:private",
+    ],
 )
 
 litert_dynamic_lib(
@@ -45,7 +50,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
-        "//litert/core/model",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -92,7 +96,7 @@ litert_test(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
-        "//litert/core/model",
+        "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
@@ -128,15 +132,16 @@ litert_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
-        "//litert/core/model",
         "//litert/tools:dump",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:broadcast_to_op_builder",
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
+        "//litert/vendors/qualcomm/core/builders:cumsum_op_builder",
         "//litert/vendors/qualcomm/core/builders:depthwise_conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:dynamic_update_slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
@@ -144,13 +149,16 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder",
         "//litert/vendors/qualcomm/core/builders:fully_connected_op_builder_htp",
         "//litert/vendors/qualcomm/core/builders:gather_op_builder",
+        "//litert/vendors/qualcomm/core/builders:gathernd_op_builder",
         "//litert/vendors/qualcomm/core/builders:gelu_op_builder",
         "//litert/vendors/qualcomm/core/builders:hard_swish_op_builder",
         "//litert/vendors/qualcomm/core/builders:leaky_relu_op_builder",
+        "//litert/vendors/qualcomm/core/builders:logistic_op_builder",
         "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
         "//litert/vendors/qualcomm/core/builders:mean_op_builder",
         "//litert/vendors/qualcomm/core/builders:op_builder",
         "//litert/vendors/qualcomm/core/builders:pack_op_builder",
+        "//litert/vendors/qualcomm/core/builders:pad_op_builder",
         "//litert/vendors/qualcomm/core/builders:pool2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
         "//litert/vendors/qualcomm/core/builders:reduce_op_builder",
@@ -165,7 +173,9 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:spatial_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/builders:tanh_op_builder",
+        "//litert/vendors/qualcomm/core/builders:transpose_conv_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",

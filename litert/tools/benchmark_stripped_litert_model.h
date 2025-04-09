@@ -17,8 +17,8 @@ limitations under the License.
 
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/tools/benchmark_litert_model.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
 
 namespace litert {
 namespace benchmark {

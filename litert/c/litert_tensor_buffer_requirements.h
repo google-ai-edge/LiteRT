@@ -47,6 +47,13 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsStrides(
     LiteRtTensorBufferRequirements requirements, int* num_strides,
     const uint32_t** strides);
 
+// Join requirements from two sources and return an error if the join returns an
+// empty set of requirements.
+LiteRtStatus LiteRtJoinTensorBufferRequirements(
+    LiteRtTensorBufferRequirements src_requirements_1,
+    LiteRtTensorBufferRequirements src_requirements_2,
+    LiteRtTensorBufferRequirements* joined_requirements);
+
 void LiteRtDestroyTensorBufferRequirements(
     LiteRtTensorBufferRequirements requirements);
 

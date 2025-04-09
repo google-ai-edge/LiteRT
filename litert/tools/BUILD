@@ -16,7 +16,7 @@ load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_bin_with_qn
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 cc_library(
@@ -169,6 +169,9 @@ cc_library(
     name = "dump",
     srcs = ["dump.cc"],
     hdrs = ["dump.h"],
+    # TODO: Either refactor this code to be in cc/ or setup to only build in debug mode.
+    # Then, we can remove this visibility.
+    visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -215,12 +218,12 @@ cc_library(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/tools:command_line_flags",
-        "@org_tensorflow//tensorflow/lite/tools:utils",
-        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
-        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/tools:command_line_flags",
+        "//tflite/tools:utils",
+        "//tflite/tools/benchmark:benchmark_model_lib",
+        "//tflite/tools/benchmark:benchmark_params",
     ],
 )
 
@@ -240,9 +243,9 @@ cc_test(
             # copybara:uncomment_begin(google-only)
             # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end
-            "@org_tensorflow//tensorflow/lite/core/c:private_c_api_types",
-            "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_model_lib",
-            "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
+            "//tflite/core/c:private_c_api_types",
+            "//tflite/tools/benchmark:benchmark_model_lib",
+            "//tflite/tools/benchmark:benchmark_params",
         ],
 )
 
@@ -265,7 +268,7 @@ cc_binary(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "@org_tensorflow//tensorflow/lite/profiling:time",
+        "//tflite/profiling:time",
     ],
 )
 
@@ -280,8 +283,8 @@ cc_library(
     ],
     deps = [
         ":benchmark_litert_model",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/tools:logging",
+        "//tflite/c:c_api_types",
+        "//tflite/tools:logging",
     ],
 )
 
@@ -294,13 +297,14 @@ cc_library(
         ":benchmark_litert_model",
         "@flatbuffers//:runtime_cc",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
-        "@org_tensorflow//tensorflow/lite:model_builder",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/tools:logging",
-        "@org_tensorflow//tensorflow/lite/tools/benchmark:benchmark_params",
-        "@org_tensorflow//tensorflow/lite/tools/strip_buffers:stripping_lib",
+        "//tflite:model_builder",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/tools:logging",
+        "//tflite/tools/benchmark:benchmark_params",
+        "//tflite/tools/strip_buffers:stripping_lib",
         # copybara:uncomment_begin(google-only)
         # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end

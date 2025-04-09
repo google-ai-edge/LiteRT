@@ -16,10 +16,7 @@ load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_te
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = [
-        "//litert/python:__subpackages__",
-        "//third_party/py/ai_edge_torch/aot:__subpackages__",
-    ],
+    default_visibility = ["//litert:litert_python_internal_users"],
 )
 
 pytype_strict_contrib_test(
@@ -36,7 +33,10 @@ pytype_strict_contrib_test(
 pytype_strict_library(
     name = "import_vendor",
     srcs = ["import_vendor.py"],
-    deps = ["//litert/python/aot/core:types"],
+    deps = [
+        ":fallback_backend",
+        "//litert/python/aot/core:types",
+    ],
 )
 
 pytype_strict_library(
@@ -45,5 +45,14 @@ pytype_strict_library(
     deps = [
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
+    ],
+)
+
+pytype_strict_library(
+    name = "fallback_backend",
+    srcs = ["fallback_backend.py"],
+    deps = [
+        "//litert/python/aot/core:components",
+        "//litert/python/aot/core:types",
     ],
 )

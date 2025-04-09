@@ -38,8 +38,14 @@ inline constexpr Qnn_DataType_t GetQnnDataType(const bool is_quant) {
     return is_quant ? QNN_DATATYPE_UFIXED_POINT_32 : QNN_DATATYPE_UINT_32;
   } else if constexpr (std::is_same_v<T, std::int32_t>) {
     return is_quant ? QNN_DATATYPE_SFIXED_POINT_32 : QNN_DATATYPE_INT_32;
+  } else if constexpr (std::is_same_v<T, std::uint64_t>) {
+    return QNN_DATATYPE_UINT_64;
+  } else if constexpr (std::is_same_v<T, std::int64_t>) {
+    return QNN_DATATYPE_INT_64;
   } else if constexpr (std::is_same_v<T, float>) {
     return QNN_DATATYPE_FLOAT_32;
+  } else if constexpr (std::is_same_v<T, double>) {
+    return QNN_DATATYPE_FLOAT_64;
   } else {
     static_assert(always_false<T>, "Uknown C++ type");
   }
@@ -96,6 +102,8 @@ class TensorWrapper final {
                          const std::vector<std::uint32_t>& dimentions,
                          std::uint32_t bytes, const void* data);
 
+  TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
+
   TensorWrapper(const TensorWrapper& other);
 
   TensorWrapper(TensorWrapper&& other);
@@ -142,9 +150,14 @@ class TensorWrapper final {
            GetDataType() == QNN_DATATYPE_UFIXED_POINT_8;
   }
 
+  // TODO: rename IsQuant16 or IsQuantU16
   bool IsQuant16() const {
     return GetDataType() == QNN_DATATYPE_SFIXED_POINT_16 ||
            GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
+  }
+
+  bool IsQuantU16() const {
+    return GetDataType() == QNN_DATATYPE_UFIXED_POINT_16;
   }
 
   bool IsF32() const { return GetDataType() == QNN_DATATYPE_FLOAT_32; }
@@ -293,6 +306,10 @@ class TensorWrapper final {
 
  private:
   Qnn_TensorType_t GetTensorType() const;
+
+  void SetDataType(Qnn_DataType_t data_type) {
+    qnn_tensor_.v2.dataType = data_type;
+  }
 
   void SetDataBy(std::uint32_t bytes, const void* data);
 

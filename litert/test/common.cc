@@ -36,8 +36,8 @@
 #include "litert/cc/litert_model_predicates.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tensorflow/lite/interpreter.h"  // from @org_tensorflow
-#include "tensorflow/lite/kernels/register.h"  // from @org_tensorflow
+#include "tflite/interpreter.h"  // from @org_tensorflow
+#include "tflite/kernels/register.h"  // from @org_tensorflow
 #include "tsl/platform/platform.h"  // from @org_tensorflow
 
 namespace litert::testing {

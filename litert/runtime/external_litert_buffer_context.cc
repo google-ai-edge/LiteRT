@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -24,8 +25,8 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/tfl_utils.h"
-#include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
 
 namespace litert {
 namespace internal {
@@ -33,13 +34,17 @@ namespace internal {
 LiteRtStatus ExternalLiteRtBufferContext::RegisterBufferRequirement(
     const TfLiteOpaqueTensor* tensor,
     TensorBufferRequirements&& buffer_requirements) {
-  if (buffer_requirements_.find(tensor) != buffer_requirements_.end()) {
-    LITERT_LOG(LITERT_ERROR,
-               "RegisterBufferRequirement already exists for tensor: %p",
-               tensor);
-    return kLiteRtStatusErrorRuntimeFailure;
+  auto iter = buffer_requirements_.find(tensor);
+  if (iter == buffer_requirements_.end()) {
+    buffer_requirements_.insert(
+        iter, std::make_pair(tensor, std::move(buffer_requirements)));
+  } else {
+    auto joined_tensor = Join(iter->second, buffer_requirements);
+    if (!joined_tensor) {
+      return joined_tensor.Error().Status();
+    }
+    buffer_requirements_[tensor] = std::move(*joined_tensor);
   }
-  buffer_requirements_[tensor] = std::move(buffer_requirements);
   return kLiteRtStatusOk;
 }
 
@@ -48,8 +53,9 @@ ExternalLiteRtBufferContext::GetBufferRequirement(
     const TfLiteOpaqueTensor* tensor) {
   auto it = buffer_requirements_.find(tensor);
   if (it == buffer_requirements_.end()) {
-    return litert::Unexpected(kLiteRtStatusErrorNotFound,
-                              "Buffer requirement not found");
+    return litert::Unexpected(
+        kLiteRtStatusErrorNotFound,
+        absl::StrFormat("Buffer requirements not found for tensor %p", tensor));
   }
   return &(it->second);
 }

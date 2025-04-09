@@ -20,9 +20,9 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
-#include "tensorflow/lite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
-#include "tensorflow/lite/delegates/gpu/cl/cl_device.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/cl_device.h"  // from @org_tensorflow
 
 namespace litert::internal {
 

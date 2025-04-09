@@ -20,17 +20,17 @@ package(
 )
 
 filegroup(
-    name = "classic_ml_models",
+    name = "classic_ml",
     srcs = glob(["classic_ml/*.tflite"]),
 )
 
 tfl_model_gen(
-    name = "single_op_models",
+    name = "single_op",
     srcs = glob(["single_op/*.mlir"]),
     subdir = "single_op",
 )
 
 filegroup(
-    name = "pre_compiled_models",
+    name = "pre_compiled",
     srcs = glob(["pre_compiled/*.tflite"]),
 )

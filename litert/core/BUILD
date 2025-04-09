@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//third_party/odml/infra/ml_drift_delegate/litert:__subpackages__",
-        "//litert:__subpackages__",
+        "//litert:litert_internal_users",
     ],
 )
 
@@ -58,6 +59,9 @@ cc_library(
     srcs = ["dynamic_loading.cc"],
     hdrs = ["dynamic_loading.h"],
     linkopts = ["-ldl"],
+    # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
+    # Then, we can remove this visibility.
+    visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         ":filesystem",
         "@com_google_absl//absl/strings",
@@ -140,7 +144,7 @@ cc_test(
     ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "filesystem",
     srcs = ["filesystem.cc"],
     hdrs = ["filesystem.h"],

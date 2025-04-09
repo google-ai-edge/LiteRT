@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -30,12 +31,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "tensorflow/lite/profiling/time.h"  // from @org_tensorflow
+#include "tflite/profiling/time.h"  // from @org_tensorflow
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
 ABSL_FLAG(bool, use_gpu, false, "Use GPU Accelerator.");
+ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 
 namespace litert {
 namespace {
@@ -74,7 +76,8 @@ Expected<void> RunModel() {
                           CompiledModel::Create(env, model, accelerator));
 
   LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
-  size_t signature_index = 0;
+  size_t signature_index = absl::GetFlag(FLAGS_signature_index);
+  ABSL_LOG(INFO) << "Signature index: " << signature_index;
 
   ABSL_LOG(INFO) << "Prepare input buffers";
 

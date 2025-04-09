@@ -22,8 +22,8 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
-#include "tensorflow/lite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
 
 namespace litert {
 namespace internal {

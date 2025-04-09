@@ -12,11 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "litert_integration_test")
+load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_stable_abi_users"],
+)
+
+sh_binary(
+    name = "run_on_device_driver_OSS",
+    srcs = ["run_on_device_driver_OSS.sh"],
+)
+
+# Internal test to validate the macros and underlying shell scripts.
+litert_device_test(
+    name = "tools_test",
+    srcs = ["smoketests/tools_test.cc"],
+    backend_id = "cpu",
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    data = ["//litert/integration_test/models:single_op"],
+    exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+    ],
 )
 
 # C++ TEST SCAFFOLD ################################################################################
@@ -25,7 +45,7 @@ cc_test(
     name = "gen_device_test",
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = ["//litert/integration_test/models:single_op_models"],
+    data = ["//litert/integration_test/models:single_op"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -70,21 +90,38 @@ cc_library(
 
 # NOTE: Everything here should be built with -c opt --config=android_arm64.
 
-sh_binary(
-    name = "run_on_device_driver_OSS",
-    srcs = ["run_on_device_driver_OSS.sh"],
-)
+# CPU ----------------------------------------------------------------------------------------------
 
 litert_integration_test(
     name = "single_op_device_tests_cpu",
-    hw = "cpu",
-    models = "//litert/integration_test/models:single_op_models",
+    backend_id = "cpu",
+    models = "//litert/integration_test/models:single_op",
+)
+
+litert_integration_test(
+    name = "classic_ml_device_tests_cpu",
+    backend_id = "cpu",
+    models = "//litert/integration_test/models:classic_ml",
+)
+
+# QUALCOMM -----------------------------------------------------------------------------------------
+
+litert_device_test(
+    name = "qnn_smoketest",
+    srcs = ["smoketests/qnn_smoketest.cc"],
+    backend_id = "qualcomm",
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        "//litert/cc:litert_shared_library",
+        "//litert/vendors/qualcomm:common",
+        "//litert/vendors/qualcomm:qnn_manager",
+    ],
 )
 
 litert_integration_test(
     name = "single_op_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
-    models = "//litert/integration_test/models:single_op_models",
+    backend_id = "qualcomm",
+    models = "//litert/integration_test/models:single_op",
     skips = [
         "greater_f32",  # TODO: lukeboyer - Investigate (segfault).
         "less_f32",  # TODO: lukeboyer - Investigate (segfault).
@@ -92,19 +129,13 @@ litert_integration_test(
 )
 
 litert_integration_test(
-    name = "classic_ml_device_tests_cpu",
-    hw = "cpu",
-    models = "//litert/integration_test/models:classic_ml_models",
-)
-
-litert_integration_test(
     name = "classic_ml_device_tests_qualcomm_JIT",
-    hw = "qualcomm",
-    models = "//litert/integration_test/models:classic_ml_models",
+    backend_id = "qualcomm",
+    models = "//litert/integration_test/models:classic_ml",
 )
 
 litert_integration_test(
     name = "pre_compiled_device_tests_qualcomm",
-    hw = "qualcomm",
-    models = "//litert/integration_test/models:pre_compiled_models",
+    backend_id = "qualcomm",
+    models = "//litert/integration_test/models:pre_compiled",
 )

@@ -36,8 +36,13 @@ _RE_PARTITION_STATS = re.compile(
 class ApplyPlugin(components.ApplyPluginT):
   """Wrapper for calling the apply plugin tooling."""
 
-  def __init__(self, experimental_capture_stderr: bool = False):
+  def __init__(
+      self,
+      experimental_capture_stderr: bool = False,
+      subgraphs_to_compile: list[int] | None = None,
+  ):
     self._experimental_capture_stderr = experimental_capture_stderr
+    self._subgraphs_to_compile = subgraphs_to_compile
 
   @property
   def default_err(self) -> str:
@@ -85,6 +90,11 @@ class ApplyPlugin(components.ApplyPluginT):
         f"--soc_model={soc_model}",
         f"--err={self.default_err}",
     ]
+    if self._subgraphs_to_compile:
+      subgraphs_to_compile = ",".join(
+          str(s) for s in self._subgraphs_to_compile
+      )
+      args.append(f"--subgraphs={subgraphs_to_compile}")
     try:
       result = subprocess.run(
           args,
@@ -93,7 +103,7 @@ class ApplyPlugin(components.ApplyPluginT):
           text=True,
       )
     except subprocess.CalledProcessError as e:
-      tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False)
+      tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
       tmp_file.write(e.stderr)
       tmp_file.close()
       raise ValueError(

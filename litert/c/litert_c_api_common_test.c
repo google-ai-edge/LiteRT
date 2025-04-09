@@ -29,6 +29,7 @@
 #include "litert/c/litert_event.h"          // NOLINT
 #include "litert/c/litert_layout.h"         // NOLINT
 #include "litert/c/litert_logging.h"        // NOLINT
+#include "litert/c/litert_metrics.h"        // NOLINT
 #include "litert/c/litert_model.h"          // NOLINT
 #include "litert/c/litert_op_code.h"        // NOLINT
 #include "litert/c/litert_options.h"        // NOLINT

@@ -33,7 +33,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -41,6 +40,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
+
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
 using LiteRtContextHandleIdx = uint32_t;
@@ -150,6 +150,9 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 struct LiteRtCompiledResultT {
   std::vector<std::vector<char>> context_bin;
   std::vector<std::string> graph_names;
+  // byte_code_index[i] is the index of the byte code in context_bin that
+  // corresponds to the i-th call.
+  std::vector<size_t> byte_code_index;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
@@ -176,7 +179,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->graph_names.at(call_idx).data();
   *call_info_size = compiled_result->graph_names.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = compiled_result->byte_code_index[call_idx];
 
   return kLiteRtStatusOk;
 }
@@ -323,6 +326,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // separate subgraph that maps to a single Dispatch Op in the compiled the
   // model.
   result->context_bin.resize(num_partitions);
+  result->byte_code_index.resize(num_partitions);
 
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
@@ -353,12 +357,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
-          auto buffer_id = input.Weights().Get()->GetBufferId();
+          auto buffer_id = input.Weights().BufferId();
           auto it = weight_sharing_map.find(buffer_id);
           if (it != weight_sharing_map.end()) {
-            if (input.Weights().Get()->Buffer().Size() >= largest_weight_size) {
+            if (input.Weights().Bytes().size() >= largest_weight_size) {
               context_handle_idx = it->second;
-              largest_weight_size = input.Weights().Get()->Buffer().Size();
+              largest_weight_size = input.Weights().Bytes().size();
             }
           }
         }
@@ -391,7 +395,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
-          auto buffer_id = input.Weights().Get()->GetBufferId();
+          auto buffer_id = input.Weights().BufferId();
           weight_sharing_map[buffer_id] = context_handle_idx;
         }
       }
@@ -400,7 +404,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // Compose graphs.
     LITERT_LOG(LITERT_INFO, "%s", "Composing graph");
     std::string& entry_point_name = result->graph_names.emplace_back();
+    result->byte_code_index[partition_idx] = context_handle_idx;
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
+    LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
     LiteRtSubgraph partition = model.Subgraph(partition_idx)->Get();
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         **qnn_manager, context_handles[context_handle_idx].get(), partition,

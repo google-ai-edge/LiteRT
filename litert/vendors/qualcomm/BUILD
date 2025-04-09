@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_lib", "litert_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
 package(
@@ -116,17 +117,23 @@ litert_test(
     ],
 )
 
+litert_device_exec(
+    name = "qnn_manager_device_test",
+    backend_id = "qualcomm",
+    target = ":qnn_manager_test",
+)
+
 cc_library(
     name = "context_binary_info",
     srcs = ["context_binary_info.cc"],
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        ":qnn_tensor",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )

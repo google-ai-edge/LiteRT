@@ -60,23 +60,27 @@ class ExampleBackend(types.Backend):
   """Backend implementation for the example compiler plugin."""
 
   @classmethod
-  def target(cls) -> ExampleTarget:
+  def target_(cls) -> ExampleTarget:
     return ExampleTarget("ExampleSocManufacturer", "ExampleSocModel")
+
+  @property
+  def target(self) -> ExampleTarget:
+    return self.target_()
 
   @classmethod
   def soc_manufacturer(cls) -> str:
-    return cls.target().soc_manufacturer
+    return cls.target_().soc_manufacturer
 
   @classmethod
   def soc_model(cls) -> str:
-    return cls.target().soc_model
+    return cls.target_().soc_model
 
   @classmethod
   def id(cls) -> str:
     return "example"
 
   @property
-  def target_id_suffix(self) -> str:
+  def target_id(self) -> str:
     return ""
 
   @property

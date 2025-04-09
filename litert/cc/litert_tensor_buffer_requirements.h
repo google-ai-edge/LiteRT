@@ -85,7 +85,20 @@ class TensorBufferRequirements
         Get(), &num_strides, &strides));
     return absl::MakeSpan(strides, num_strides);
   }
+
+  friend Expected<TensorBufferRequirements> Join(
+      const TensorBufferRequirements& src1,
+      const TensorBufferRequirements& src2);
 };
+
+inline Expected<TensorBufferRequirements> Join(
+    const TensorBufferRequirements& src1,
+    const TensorBufferRequirements& src2) {
+  LiteRtTensorBufferRequirements joined_requirements;
+  LITERT_RETURN_IF_ERROR(LiteRtJoinTensorBufferRequirements(
+      src1.Get(), src2.Get(), &joined_requirements));
+  return TensorBufferRequirements(joined_requirements);
+}
 
 }  // namespace litert
 

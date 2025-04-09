@@ -16,8 +16,8 @@ limitations under the License.
 #include <cstdlib>
 
 #include "litert/tools/benchmark_litert_model.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/logging.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/tools/logging.h"  // from @org_tensorflow
 
 namespace litert::benchmark {
 

@@ -142,10 +142,10 @@ class TensorBuffer
 #endif
   }
 
-  Expected<cl_mem> GetOpenClBuffer() const {
+  Expected<cl_mem> GetOpenClMemory() const {
 #if LITERT_HAS_OPENCL_SUPPORT
     cl_mem cl_mem;
-    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClBuffer(Get(), &cl_mem));
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferOpenClMemory(Get(), &cl_mem));
     return cl_mem;
 #else
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -209,6 +209,28 @@ class TensorBuffer
     LITERT_RETURN_IF_ERROR(
         LiteRtGetTensorBufferType(Get(), &tensor_buffer_type));
     return tensor_buffer_type;
+  }
+
+  // Returns true if the tensor buffer is an OpenCL memory.
+  // Note: This function doesn't return Expected<bool> users can easily make
+  // mistakes when using it.
+  bool IsOpenClMemory() const {
+    LiteRtTensorBufferType tensor_buffer_type;
+    if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
+        status != kLiteRtStatusOk) {
+      return false;
+    }
+    switch (tensor_buffer_type) {
+      case kLiteRtTensorBufferTypeOpenClBuffer:
+      case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      case kLiteRtTensorBufferTypeOpenClTexture:
+      case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+        return true;
+      default:
+        return false;
+    }
   }
 
   Expected<RankedTensorType> TensorType() const {

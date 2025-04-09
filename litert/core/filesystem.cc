@@ -94,7 +94,11 @@ Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
   }
 
   OwningBufferRef<uint8_t> buf(StdSize(std_path));
-  LITERT_RETURN_IF_ERROR(StdIFRead(std_path, buf.StrData(), buf.Size()));
+  if (auto status = StdIFRead(std_path, buf.StrData(), buf.Size());
+      status != kLiteRtStatusOk) {
+    return Error(status,
+                 absl::StrFormat("Failed to read: %s", std_path.c_str()));
+  }
 
   return buf;
 }

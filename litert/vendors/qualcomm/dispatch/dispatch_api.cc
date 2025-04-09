@@ -189,8 +189,11 @@ LiteRtStatus InvocationContextCreate(
   auto context = LiteRtDispatchInvocationContextT::Create(
       Qnn(), *device_context, exec_bytecode_buffer, function_name);
   if (!context) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",
-               context.Error().Message().c_str());
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to create context from context binary: %s for function "
+               "%s, base address: %p, size: %zu",
+               context.Error().Message().c_str(), function_name,
+               exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size);
     return context.Error().Status();
   }
   *invocation_context = context->release();

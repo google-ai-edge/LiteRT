@@ -20,14 +20,15 @@ limitations under the License.
 #include <utility>
 
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/tools/benchmark_litert_model.h"
-#include "tensorflow/lite/c/c_api_types.h"  // from @org_tensorflow
-#include "tensorflow/lite/c/common.h"  // from @org_tensorflow
-#include "tensorflow/lite/model_builder.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/logging.h"  // from @org_tensorflow
-#include "tensorflow/lite/tools/strip_buffers/stripping_lib.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/model_builder.h"  // from @org_tensorflow
+#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
+#include "tflite/tools/logging.h"  // from @org_tensorflow
+#include "tflite/tools/strip_buffers/stripping_lib.h"  // from @org_tensorflow
 
 namespace litert {
 namespace benchmark {
@@ -49,6 +50,7 @@ TfLiteStatus InternalBenchmarkStrippedLitertModel::LoadModel() {
   }
   TFLITE_LOG(INFO) << "Loaded original model " << graph;
 
+  Expected<Model> model_result;
   if (tflite::FlatbufferHasStrippedWeights(input_model->GetModel())) {
     // Reconstitute flatbuffer with appropriate random constant tensors
     TF_LITE_ENSURE_STATUS(tflite::ReconstituteConstantTensorsIntoFlatbuffer(
@@ -58,19 +60,18 @@ TfLiteStatus InternalBenchmarkStrippedLitertModel::LoadModel() {
         reinterpret_cast<const char*>(
             reconstituted_model_builder_.GetBufferPointer()),
         reconstituted_model_builder_.GetSize());
-    auto model_result = litert::Model::CreateFromBuffer(buffer);
-    model_ = std::make_unique<litert::Model>(std::move(*model_result));
+    model_result = litert::Model::CreateFromBuffer(buffer);
   } else {
     TFLITE_LOG(INFO) << "Original model already has weights " << graph;
-    auto model_result = litert::Model::CreateFromFile(graph);
-    model_ = std::make_unique<litert::Model>(std::move(*model_result));
+    model_result = litert::Model::CreateFromFile(graph);
   }
-
-  if (!model_) {
-    TFLITE_LOG(ERROR) << "Failed to build model from buffer for model "
-                      << graph;
+  if (!model_result) {
+    TFLITE_LOG(ERROR) << "Failed to build model from buffer for model " << graph
+                      << " (" << model_result.Error().Message() << ")";
     return kTfLiteError;
   }
+  model_ = std::make_unique<litert::Model>(std::move(*model_result));
+
   TFLITE_LOG(INFO) << "Loaded model for " << graph;
   return kTfLiteOk;
 }

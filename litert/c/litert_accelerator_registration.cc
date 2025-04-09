@@ -21,6 +21,7 @@
 #include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_metrics.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerator.h"
@@ -118,5 +119,26 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
   }
   accelerator->IsTfLiteDelegateResponsibleForJitCompilation =
       IsTfLiteDelegateResponsibleForJitCompilation;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level)) {
+  if (!accelerator) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  accelerator->StartMetricsCollection = StartMetricsCollection;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
+    LiteRtAccelerator accelerator,
+    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+                                          LiteRtMetrics metrics)) {
+  if (!accelerator) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  accelerator->StopMetricsCollection = StopMetricsCollection;
   return kLiteRtStatusOk;
 }

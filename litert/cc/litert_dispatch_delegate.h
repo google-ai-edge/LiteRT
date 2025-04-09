@@ -19,7 +19,7 @@
 
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment_options.h"
-#include "tensorflow/lite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
+#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
 
 namespace litert {
 

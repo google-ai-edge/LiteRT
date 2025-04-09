@@ -33,6 +33,8 @@ def aot_compile(
         types.CompilationConfig | list[types.CompilationConfig] | None
     ) = None,
     quantizer: components.AieQuantizerT | None = None,
+    keep_going: bool = False,
+    subgraphs_to_compile: list[int] | None = None,
     **kwargs,
 ) -> types.CompiledModels:
   """Prepares a TFLite model for NPU execution.
@@ -48,6 +50,9 @@ def aot_compile(
       registered targets.
     config: The compilation config(s). Cannot be specified with target.
     quantizer: The quantizer to use for quantization.
+    keep_going: Whether to keep going if some backends fail.
+    subgraphs_to_compile: The subgraph index list to compile to NPU. If None,
+      compile all subgraphs.
     **kwargs: Additional arguments to pass to the backend.
 
   Returns:
@@ -106,7 +111,11 @@ def aot_compile(
         kw_config,
         transforms=mlir_transforms.MlirTransforms(),
         quantizer=quantizer,
-        plugin=apply_plugin.ApplyPlugin(experimental_capture_stderr=True),
+        plugin=apply_plugin.ApplyPlugin(
+            experimental_capture_stderr=True,
+            subgraphs_to_compile=subgraphs_to_compile,
+        ),
+        keep_going=keep_going,
     )
   elif isinstance(config, list):
     kw_configs = [c.to_dict() | kwargs for c in config]
@@ -122,7 +131,11 @@ def aot_compile(
         configs_with_backend,
         transforms=mlir_transforms.MlirTransforms(),
         quantizer=quantizer,
-        plugin=apply_plugin.ApplyPlugin(experimental_capture_stderr=True),
+        plugin=apply_plugin.ApplyPlugin(
+            experimental_capture_stderr=True,
+            subgraphs_to_compile=subgraphs_to_compile,
+        ),
+        keep_going=keep_going,
     )
   else:
     # Should not reach here.

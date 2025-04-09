@@ -23,7 +23,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tensorflow/lite/interpreter.h"  // from @org_tensorflow
+#include "tflite/interpreter.h"  // from @org_tensorflow
 
 namespace litert::testing {
 

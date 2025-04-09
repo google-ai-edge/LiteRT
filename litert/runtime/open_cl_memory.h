@@ -21,20 +21,22 @@
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include <CL/cl.h>
-#include "tensorflow/lite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
 
 namespace litert::internal {
 
 /**
- * The OpenCL buffer class that provides GPU memory allocation and two-way sync
+ * The OpenCL memory class that provides GPU memory allocation and two-way sync
  * between the CPU memory and the GPU OpenCL buffer.
  */
-class OpenClBuffer {
+class OpenClMemory {
  public:
-  OpenClBuffer(OpenClBuffer&& other) {
+  OpenClMemory(OpenClMemory&& other) {
+    buffer_type_ = other.buffer_type_;
     data_ = other.data_;
     buffer_ = std::move(other.buffer_);
     size_ = other.size_;
@@ -44,14 +46,17 @@ class OpenClBuffer {
     other.ahwb_ = nullptr;
   }
 
-  explicit OpenClBuffer(tflite::gpu::cl::Buffer buffer,
+  explicit OpenClMemory(LiteRtTensorBufferType buffer_type,
+                        tflite::gpu::cl::Buffer buffer,
                         AHardwareBuffer* ahwb = nullptr)
-      : buffer_(std::move(buffer)),
+      : buffer_type_(buffer_type),
+        buffer_(std::move(buffer)),
         size_(buffer_.GetMemorySizeInBytes()),
         ahwb_(ahwb) {}
 
-  OpenClBuffer(cl_mem buffer, size_t size, LiteRtOpenClDeallocator deallocator)
-      : deallocator_(deallocator), size_(size) {
+  OpenClMemory(LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
+               LiteRtOpenClDeallocator deallocator)
+      : buffer_type_(buffer_type), deallocator_(deallocator), size_(size) {
     if (deallocator_ != nullptr) {
       buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
     } else {  // The buffer will be deallocated automatically.
@@ -59,7 +64,7 @@ class OpenClBuffer {
     }
   }
 
-  ~OpenClBuffer() {
+  ~OpenClMemory() {
     if (deallocator_ != nullptr) {
       deallocator_(buffer_.GetMemoryPtr());
     }
@@ -79,11 +84,13 @@ class OpenClBuffer {
   Expected<void> Unlock();
 
   static bool IsSupported();
-  static Expected<OpenClBuffer> Alloc(size_t bytes_size);
-  static Expected<OpenClBuffer> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
+  static Expected<OpenClMemory> Alloc(LiteRtTensorBufferType buffer_type,
+                                      size_t bytes_size);
+  static Expected<OpenClMemory> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
   size_t size_bytes() const { return size_; }
 
  private:
+  LiteRtTensorBufferType buffer_type_;
   absl::Mutex mutex_;
   // The cpu memory buffer pointer.
   void* data_ = nullptr;

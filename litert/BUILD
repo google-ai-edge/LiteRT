@@ -18,3 +18,49 @@ package(
         "//litert:__subpackages__",
     ],
 )
+
+# VISIBILITY #######################################################################################
+
+package_group(
+    name = "litert_internal_users",
+    packages = [
+        # Self packages.
+        "//litert/c/...",
+        "//litert/cc/...",
+        "//litert/compiler/...",
+        "//litert/core/...",
+        "//litert/google/...",
+        "//litert/integration_test/...",
+        "//litert/kotlin/...",
+        "//litert/python/...",
+        "//litert/runtime/...",
+        "//litert/test/...",
+        "//litert/tools/...",
+        # Users with access to core internal apis.
+    ],
+)
+
+package_group(
+    name = "litert_stable_abi_users",
+    includes = [
+        ":litert_internal_users",
+    ],
+    packages = [
+        "//litert/vendors/...",
+    ],
+)
+
+package_group(
+    name = "litert_python_internal_users",
+    packages = [
+        "//litert/python/...",
+    ],
+)
+
+package_group(
+    name = "litert_python_users",
+    includes = [
+        ":litert_internal_users",
+    ],
+    packages = [],
+)

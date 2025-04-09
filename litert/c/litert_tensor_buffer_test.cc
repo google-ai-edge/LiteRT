@@ -29,7 +29,7 @@
 #include "litert/runtime/fastrpc_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/gl_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/ion_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/open_cl_buffer.h"
+#include "litert/runtime/open_cl_memory.h"
 
 namespace {
 constexpr const float kTensorData[] = {10, 20, 30, 40};
@@ -333,7 +333,7 @@ TEST(TensorBuffer, OpenCL) {
   GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
 #endif
 
-  if (!litert::internal::OpenClBuffer::IsSupported()) {
+  if (!litert::internal::OpenClMemory::IsSupported()) {
     GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
                     "skipping the test";
   }

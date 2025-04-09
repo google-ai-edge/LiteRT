@@ -21,7 +21,6 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/types/variant.h"
 #include "tflite/delegates/gpu/common/types.h"
 #include "tflite/delegates/gpu/gl/compiler/preprocessor.h"
 #include "tflite/delegates/gpu/gl/compiler/variable_accessor.h"

@@ -17,10 +17,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/litert_expected.h"
 
 class LiteRtTensorBufferRequirementsT {
  public:
@@ -38,12 +40,25 @@ class LiteRtTensorBufferRequirementsT {
   }
   size_t BufferSize() const { return buffer_size_; }
   const std::vector<uint32_t>& Strides() const { return strides_; }
+  std::string ToString() const;
 
  private:
+  friend litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>>
+  Join(const LiteRtTensorBufferRequirementsT& src1,
+       const LiteRtTensorBufferRequirementsT& src2);
+
   std::vector<LiteRtTensorBufferType> supported_buffer_types_;
   size_t buffer_size_;
   // Stride per each dimension.
   std::vector<uint32_t> strides_;
 };
+
+namespace litert::internal {
+
+litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>> Join(
+    const LiteRtTensorBufferRequirementsT& src1,
+    const LiteRtTensorBufferRequirementsT& src2);
+
+}  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_REQUIREMENTS_H_

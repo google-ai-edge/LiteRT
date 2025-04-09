@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/hexagon/builders/slice_builder.h"
 
+#include <cstdint>
 #include <vector>
 
 #include "tflite/kernels/internal/tensor.h"

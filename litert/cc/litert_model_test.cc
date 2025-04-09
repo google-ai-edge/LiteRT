@@ -218,6 +218,7 @@ TEST(CcTensorTest, SimpleModel) {
 
     auto input_weights = input_tensor.Weights();
     ASSERT_EQ(input_weights.Bytes().size(), 0);
+    ASSERT_EQ(input_weights.BufferId(), 1);
 
     ASSERT_EQ(input_tensor.DefiningOp(), std::nullopt);
 

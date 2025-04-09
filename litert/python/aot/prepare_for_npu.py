@@ -18,7 +18,7 @@
 import pathlib
 from typing import cast
 
-from tqdm.tqdm import autonotebook
+from tqdm.tqdm import auto as autotqdm
 
 from litert.python.aot.core import common
 from litert.python.aot.core import components
@@ -41,6 +41,7 @@ def prepare_for_npu_multiple_configs(
     plugin: components.ApplyPluginT,
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
+    keep_going: bool = False,
 ) -> types.CompiledModels:
   """Prepares a TFLite model for NPU execution."""
   backends = []
@@ -51,7 +52,7 @@ def prepare_for_npu_multiple_configs(
   pipeline: list[types.Component] = [
       c for c in [transforms, quantizer, plugin] if c is not None
   ]
-  return compile_model(flatbuffer, output_dir, backends, pipeline)
+  return compile_model(flatbuffer, output_dir, backends, pipeline, keep_going)
 
 
 def prepare_for_npu(
@@ -62,6 +63,7 @@ def prepare_for_npu(
     plugin: components.ApplyPluginT,
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
+    keep_going: bool = False,
 ) -> types.CompiledModels:
   """Prepares a TFLite model for NPU execution.
 
@@ -76,6 +78,7 @@ def prepare_for_npu(
       plugin: The plugin to apply to the model.
       transforms: The transforms to apply to the model.
       quantizer: The quantizer to apply to the model.
+      keep_going: Whether to keep going if some backends fail.
 
   Returns:
       List of the paths to the output flatbuffer file.
@@ -90,7 +93,7 @@ def prepare_for_npu(
       c for c in [transforms, quantizer, plugin] if c is not None
   ]
   backends = list(backend.specialize())
-  return compile_model(flatbuffer, output_dir, backends, pipeline)
+  return compile_model(flatbuffer, output_dir, backends, pipeline, keep_going)
 
 
 def compile_model(
@@ -98,6 +101,7 @@ def compile_model(
     output_dir: pathlib.Path,
     backends: list[types.Backend],
     pipeline: list[types.Component],
+    keep_going: bool = False,
 ) -> types.CompiledModels:
   """Compiles a TFLite model for NPU execution."""
   if flatbuffer.in_memory:
@@ -105,30 +109,39 @@ def compile_model(
   else:
     base_name = flatbuffer.path.name.removesuffix(common.DOT_TFLITE)
   compile_models = types.CompiledModels()
-  with autonotebook.tqdm(backends, desc="Backend") as t_backends:
+  with autotqdm.tqdm(backends, desc="Backend") as t_backends:
     for backend in t_backends:
       component_input = flatbuffer
       backend = cast(types.Backend, backend)
       input_name_pref = base_name + backend.target_id_suffix
       t_backends.set_description(f"Backend {backend.id()}")
-      with autonotebook.tqdm(
-          pipeline, desc="Component", leave=None
-      ) as t_pipeline:
-        for component in t_pipeline:
-          component = cast(types.Component, component)
-          t_pipeline.set_description(f"Component {component.component_name}")
-          component_output = types.Model.create_from_path(
-              output_dir
-              / f"{input_name_pref}_{component.component_name}{common.DOT_TFLITE}"
-          )
-          backend.call_component(component_input, component_output, component)
-          if not component_output.in_memory and not common.is_tflite(
-              component_output.path
-          ):
-            raise ValueError(
-                f"{component.component_name} failed to produce a TFLite model."
+      try:
+        with autotqdm.tqdm(
+            pipeline, desc="Component", leave=None
+        ) as t_pipeline:
+          for component in t_pipeline:
+            component = cast(types.Component, component)
+            t_pipeline.set_description(f"Component {component.component_name}")
+            component_output = types.Model.create_from_path(
+                output_dir
+                / f"{input_name_pref}_{component.component_name}{common.DOT_TFLITE}"
             )
-          component_input = component_output
-      compile_models.models_with_backend.append((backend, component_input))
+            backend.call_component(
+                component_input, component_output, component
+            )
+            if not component_output.in_memory and not common.is_tflite(
+                component_output.path
+            ):
+              raise ValueError(
+                  f"{component.component_name} failed to produce a TFLite"
+                  " model."
+              )
+            component_input = component_output
+        compile_models.models_with_backend.append((backend, component_input))
+      except ValueError as e:
+        if keep_going:
+          print(f"Failed to compile model for {backend.target}: {e}")
+        else:
+          raise
 
   return compile_models

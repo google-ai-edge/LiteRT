@@ -25,6 +25,12 @@ template <typename H, typename V>
 class Registry {
  public:
   Expected<H> Register(const V& value) {
+    // Check if the value is already registered.
+    for (auto i = 0; i < entries_.size(); ++i) {
+      if (entries_[i].used && (entries_[i].value == value)) {
+        return static_cast<H>(i);
+      }
+    }
     // TODO: improve this linear search by keeping an index to the first unused
     // element.
     for (auto i = 0; i < entries_.size(); ++i) {

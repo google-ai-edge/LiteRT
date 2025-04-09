@@ -20,7 +20,7 @@
 #include <gtest/gtest.h>
 #include "litert/runtime/gl_buffer.h"
 #include "litert/test/matchers.h"
-#include "tensorflow/lite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include "litert/runtime/ahwb_buffer.h"

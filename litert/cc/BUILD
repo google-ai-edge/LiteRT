@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/integration_test:run_on_device.bzl", "GOOGLE_TENSOR_ID", "run_on_device")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//visibility:public"],
+    default_visibility = ["//litert:litert_stable_abi_users"],
 )
 
 cc_library(
@@ -158,6 +158,9 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer",
+    srcs = [
+        "litert_tensor_buffer_requirements.cc",
+    ],
     hdrs = [
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
@@ -176,8 +179,9 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/runtime:tensor_buffer",
         "@opencl_headers",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -196,6 +200,7 @@ cc_test(
         ":litert_layout",
         ":litert_macros",
         ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/types:span",
@@ -207,11 +212,11 @@ cc_test(
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
         "@opencl_headers",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:buffer",
-        "@org_tensorflow//tensorflow/lite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:buffer",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+            "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],
     }),
@@ -230,7 +235,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_expected",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
+        "//tflite/c:c_api_types",
     ],
 )
 
@@ -327,11 +332,11 @@ cc_library(
     deps = [
         "//litert/c:litert_environment_options",
         "//litert/runtime/dispatch:dispatch_delegate",
-        "@org_tensorflow//tensorflow/lite/c:c_api",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/delegates/utils:simple_opaque_delegate",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
     ],
 )
 
@@ -427,19 +432,22 @@ cc_library(
         ":litert_macros",
         ":litert_model",
         ":litert_tensor_buffer",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_environment",
+        "//litert/c:litert_metrics",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core:private_cc_api_stable",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -463,12 +471,12 @@ cc_library(
         "//litert/c:litert_environment",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:c_api_types",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/core:private_cc_api_stable",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -495,22 +503,24 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "litert_compiled_model_npu_test",
     srcs = ["litert_compiled_model_npu_test.cc"],
+    backend_id = "google_tensor",
     deps = [
         ":litert_buffer_ref",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_event",
         ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
@@ -525,15 +535,16 @@ cc_test(
         "//litert/test:simple_model",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
-            "@org_tensorflow//tensorflow/lite/delegates/gpu/gl:egl_environment",
+            "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],
     }),
 )
 
-cc_test(
+litert_device_test(
     name = "litert_compiled_model_gpu_test",
     srcs = ["litert_compiled_model_gpu_test.cc"],
+    backend_id = "google_tensor",
     data = [
         "//litert/test:testdata/simple_model.tflite",
     ],
@@ -559,10 +570,10 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
-        "@org_tensorflow//tensorflow/lite:framework",
-        "@org_tensorflow//tensorflow/lite/c:c_api_opaque",
-        "@org_tensorflow//tensorflow/lite/c:common",
-        "@org_tensorflow//tensorflow/lite/kernels:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -601,7 +612,7 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
-        "@org_tensorflow//tensorflow/lite/schema:schema_fbs",
+        "//tflite/schema:schema_fbs",
     ],
 )
 
@@ -668,28 +679,13 @@ cc_library(
     ],
 )
 
-# === On-device tests ===
-run_on_device(
-    name = "litert_compiled_model_npu_test_on_google_tensor",
-    backend_id = GOOGLE_TENSOR_ID,
-    data = [
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
+cc_library(
+    name = "litert_platform_support",
+    srcs = [],
+    hdrs = ["litert_platform_support.h"],
+    deps = [
+        "//litert/c:litert_platform_support",
     ],
-    exec_args = [],
-    exec_env_vars = [],
-    target = ":litert_compiled_model_npu_test",
 )
 
-run_on_device(
-    name = "litert_compiled_model_gpu_test_on_google_tensor",
-    backend_id = GOOGLE_TENSOR_ID,
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
-    exec_args = [],
-    exec_env_vars = [],
-    target = ":litert_compiled_model_gpu_test",
-)
-
-exports_files(srcs = glob(["litert_*.h"]))
+exports_files(srcs = ["litert_dispatch_delegate.h"])
