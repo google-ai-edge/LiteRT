@@ -115,6 +115,7 @@ litert_device_test(
         "//litert/cc:litert_shared_library",
     ],
 )
+
 # QUALCOMM -----------------------------------------------------------------------------------------
 
 litert_device_test(

@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -64,6 +65,7 @@ litert_test(
     srcs = [
         "qnn_compiler_plugin_test.cc",
     ],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
@@ -88,6 +90,7 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
@@ -108,6 +111,13 @@ litert_test(
         "//litert/vendors/qualcomm/compiler/legalizations:quantize_op_legalization",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
+)
+
+litert_device_exec(
+    name = "qnn_compiler_plugin_device_test",
+    backend_id = "qualcomm",
+    data = ["//litert/test:testdata"],
+    target = ":qnn_compiler_plugin_test",
 )
 
 litert_lib(

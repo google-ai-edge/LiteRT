@@ -75,7 +75,11 @@ std::optional<::qnn::SocInfo> FindSocModel(absl::string_view soc_model_name) {
 }
 
 bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
+#ifdef __ANDROID__
+  return false;
+#else
   return dsp_arch >= ::qnn::DspArch::V73;
+#endif
 }
 
 }  // namespace

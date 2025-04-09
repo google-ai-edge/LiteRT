@@ -315,6 +315,12 @@ TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   auto soc_model = GetParam();
+  #ifdef __ANDROID__
+  if (soc_model != "V75") {
+    // TODO: Make this dynamic when device cloud testing has more devices.
+    GTEST_SKIP() << "On device tests only support V75s.";
+  }
+#endif
 
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), soc_model.c_str(),
