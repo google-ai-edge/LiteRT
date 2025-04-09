@@ -28,8 +28,8 @@ namespace litert::internal {
 
 // TODO update this library to use the flexbuffers api.
 
-// Shared "custom_code" for all dispatch ops.
-static constexpr absl::string_view kLiteRtDispatchOpCustomCode = "DISPATCH_OP";
+// Shared "custom_name" for all dispatch ops.
+static constexpr absl::string_view kLiteRtDispatchOpCustomName = "DISPATCH_OP";
 
 //
 // Build Stamp

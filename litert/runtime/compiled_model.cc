@@ -317,7 +317,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       }
       // Skip AOT compiled NPU custom ops.
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
-          litert::internal::kLiteRtDispatchOpCustomCode ==
+          litert::internal::kLiteRtDispatchOpCustomName ==
               registration.custom_name) {
         continue;
       }
