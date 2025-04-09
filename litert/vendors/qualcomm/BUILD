@@ -93,6 +93,8 @@ litert_cc_lib_with_qnn(
         "//litert/core:dynamic_loading",
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "//litert/vendors/qualcomm/core:common",
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )
