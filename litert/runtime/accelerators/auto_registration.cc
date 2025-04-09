@@ -38,42 +38,43 @@ namespace litert {
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
   // Register the NPU accelerator.
-
-  auto npu_registration =
-      LiteRtRegisterNpuAccelerator(&environment, /*options=*/nullptr);
-  if (npu_registration != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_WARNING,
-               "GPU accelerator could not be loaded and registered: %s.",
-               LiteRtGetStatusString(npu_registration));
-  } else {
+  if (auto npu_registration =
+          LiteRtRegisterNpuAccelerator(&environment, /*options=*/nullptr);
+      npu_registration == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
+  } else {
+    LITERT_LOG(LITERT_WARNING,
+               "NPU accelerator could not be loaded and registered: %s.",
+               LiteRtGetStatusString(npu_registration));
   }
 
   // Register the GPU accelerator.
-  if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
-      LiteRtRegisterStaticLinkedAcceleratorGpu(environment)) {
-    LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
-  }
-  auto gpu_registration = RegisterSharedObjectAccelerator(
-      environment, /*plugin_path=*/"libLiteRtGpuAccelerator.so",
-      /*registration_function_name=*/"LiteRtRegisterAcceleratorGpuOpenCl");
-  if (!gpu_registration) {
-    LITERT_LOG(LITERT_WARNING,
-               "GPU accelerator could not be loaded and registered: %s.",
-               gpu_registration.Error().Message().c_str());
+  if (auto gpu_registration = RegisterSharedObjectAccelerator(
+          environment, /*plugin_path=*/"libLiteRtGpuAccelerator.so",
+          /*registration_function_name=*/"LiteRtRegisterAcceleratorGpuOpenCl");
+      gpu_registration.HasValue()) {
+    LITERT_LOG(LITERT_INFO, "Dynamically loaded GPU accelerator registered.");
   } else {
-    LITERT_LOG(LITERT_INFO, "GPU accelerator registered.");
+    LITERT_LOG(
+        LITERT_WARNING,
+        "GPU accelerator could not be dynamically loaded and registered: %s.",
+        gpu_registration.Error().Message().c_str());
+    if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
+        LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
+            kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+    }
   }
 
   // Register the CPU accelerator.
   if (auto cpu_registration =
           LiteRtRegisterCpuAccelerator(&environment, /*options=*/nullptr);
-      cpu_registration != kLiteRtStatusOk) {
+      cpu_registration == kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
+  } else {
     LITERT_LOG(LITERT_WARNING,
                "CPU accelerator could not be loaded and registered: %s.",
                LiteRtGetStatusString(cpu_registration));
-  } else {
-    LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
   }
 
   return {};
