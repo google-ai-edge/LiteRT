@@ -109,7 +109,7 @@ class QualcommBackendTest(test_common.TestWithTfliteModels):
 
   def test_specialize_final(self):
     config = self.basic_config
-    config["soc_model"] = target_lib.SocModel.V75.value
+    config["soc_model"] = target_lib.SocModel.SM8750.value
     backend = qualcomm_backend.QualcommBackend.create(config)
     backends = list(backend.specialize())
     self.assertLen(backends, 1)

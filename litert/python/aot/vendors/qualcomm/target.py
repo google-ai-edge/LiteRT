@@ -15,11 +15,13 @@ class SocModel(enum.StrEnum):
 
   ALL = "ALL"
 
-  V68 = "V68"
-  V69 = "V69"
-  V73 = "V73"
-  V75 = "V75"
-  V79 = "V79"
+  SA8255 = "SA8255"
+  SA8295 = "SA8295"
+  SM8350 = "SM8350"
+  SM8450 = "SM8450"
+  SM8550 = "SM8550"
+  SM8650 = "SM8650"
+  SM8750 = "SM8750"
 
 
 class SocManufacturer(enum.StrEnum):

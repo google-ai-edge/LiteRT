@@ -124,35 +124,7 @@ def _process_qnn_target(target: qnn_target.Target) -> list[tuple[str, str]]:
   """Returns the list of (manufacturer, model) for the given QNN target."""
   # Play cannot distinguish between Qualcomm and QTI for now.
   manufacturer = ['Qualcomm', 'QTI']
-
-  match target.soc_model:
-    case qnn_target.SocModel.V79:
-      models = ['SM8750']
-    case qnn_target.SocModel.V75:
-      models = ['SM8650']
-    case qnn_target.SocModel.V73:
-      models = [
-          'SM8635',
-          'SM8550',
-          'SM7675',
-          'SM7550',
-          'SM7435',
-          'SM6450',
-          'QCM8550LA',
-          'QCM8550LE',
-      ]
-    case qnn_target.SocModel.V69:
-      models = [
-          'SM8475',
-          'SM8450',
-          'SM7475',
-          'SM7450',
-          'SM7425',
-          'SXR2230P',
-          'SXR2250P',
-      ]
-    case _:
-      models = []
+  models = [str(target.soc_model)]
   return list(itertools.product(manufacturer, models))
 
 
