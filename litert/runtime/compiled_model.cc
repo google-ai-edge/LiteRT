@@ -312,7 +312,8 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       // Skip delegate nodes expect for XNNPack ones.
       if (registration.builtin_code == kTfLiteBuiltinDelegate &&
           !(registration.custom_name &&
-            registration.custom_name == absl::string_view("XNNPackDelegate"))) {
+            registration.custom_name ==
+                absl::string_view("TfLiteXNNPackDelegate"))) {
         continue;
       }
       // Skip AOT compiled NPU custom ops.
