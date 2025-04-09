@@ -1081,10 +1081,10 @@ cc_library(
         "//tflite:schema_fbs_version",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/kernels:kernel_util",
         "//tflite/schema:schema_conversion_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 
