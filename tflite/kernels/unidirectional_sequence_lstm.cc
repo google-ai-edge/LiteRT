@@ -16,14 +16,20 @@ limitations under the License.
 #include <math.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/cpu_backend_context.h"
 #include "tflite/kernels/internal/compatibility.h"
-#include "tflite/kernels/internal/kernel_utils.h"
+#include "tflite/kernels/internal/portable_tensor_utils.h"
 #include "tflite/kernels/internal/quantization_util.h"
+#include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/tensor_utils.h"
 #include "tflite/kernels/kernel_util.h"
@@ -562,7 +568,7 @@ TfLiteStatus CheckInputTensorDimensions(TfLiteContext* context,
   const TfLiteTensor* input_gate_bias =
       GetOptionalInputTensor(context, node, lstm::full::kInputGateBiasTensor);
   if (use_cifg) {
-    TF_LITE_ENSURE_EQ(context, input_gate_bias, nullptr);
+    TF_LITE_ENSURE(context, input_gate_bias == nullptr);
   } else {
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->size, 1);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->data[0], n_cell);
@@ -642,7 +648,7 @@ TfLiteStatus CheckInputTensorDimensions(TfLiteContext* context,
     const TfLiteTensor* input_layer_norm_coefficients = GetOptionalInputTensor(
         context, node, lstm::full::kInputLayerNormCoefficientsTensor);
     if (use_cifg) {
-      TF_LITE_ENSURE_EQ(context, input_layer_norm_coefficients, nullptr);
+      TF_LITE_ENSURE(context, input_layer_norm_coefficients == nullptr);
     } else {
       TF_LITE_ENSURE(context, input_layer_norm_coefficients != nullptr);
       TF_LITE_ENSURE_EQ(context, input_layer_norm_coefficients->dims->size, 1);
