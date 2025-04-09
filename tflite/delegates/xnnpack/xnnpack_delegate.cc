@@ -4483,10 +4483,9 @@ class Subgraph {
         CheckTensorFloat32OrQUInt8Type(delegate, logging_context, output_tensor,
                                        node->outputs->data[0], node_index));
 
-    bool dynamically_quantized = (delegate.enable_latest_operators() &&
-                                  (input_tensor.type == kTfLiteFloat32 &&
-                                   (filter_tensor.type == kTfLiteInt4 ||
-                                    filter_tensor.type == kTfLiteInt8)));
+    bool dynamically_quantized = (input_tensor.type == kTfLiteFloat32 &&
+                                  (filter_tensor.type == kTfLiteInt4 ||
+                                   filter_tensor.type == kTfLiteInt8));
     if (input_tensor.type != output_tensor.type ||
         ((input_tensor.type != filter_tensor.type) && !dynamically_quantized)) {
       TF_LITE_MAYBE_KERNEL_LOG(
