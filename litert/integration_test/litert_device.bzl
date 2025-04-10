@@ -189,6 +189,7 @@ MEDIATEK_SPEC = BackendSpec(
     ],
     mh_devices = [{
         "hardware": "mt6989",
+        "label": "odml-test",
     }],
     dispatch = "libLiteRtDispatch_Mediatek.so",
 )
@@ -201,10 +202,10 @@ GOOGLE_TENSOR_SPEC = BackendSpec(
         ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
-        "pool": "shared",
+        "label": "odml-test",
         "model": "pixel 9",
-        "build_type": "userdebug",
     }],
+    mh_user = "odml-team",
     dispatch = "libLiteRtDispatch_GoogleTensor.so",
 )
 
