@@ -79,9 +79,9 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp -
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
 # Move the wheel file to the root directory since it is not accessible from the
-# bazel-out/k8-opt/bin directory to anyone other than the root user.
+# bazel output directory to anyone other than the root user.
 mkdir -p dist/
-cp bazel-out/k8-opt/bin/ci/tools/python/wheel/dist/*.whl dist/
+cp bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
 
 echo "Output can be found here:"
 find "./dist/"
