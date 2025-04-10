@@ -1,6 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//litert:litert.bzl", "MANYLINUX_AARCH64_TAG", "MANYLINUX_PPC64LE_TAG", "MANYLINUX_X86_64_TAG")
+load("//litert:litert.bzl", "MANYLINUX_LEVEL")
 load("//litert:version.bzl", "LITERT_FULL_VERSION")
+load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
 
@@ -54,7 +55,7 @@ py_wheel(
         "//tflite/python/metrics:metrics_interface",
     ],
     nightly_suffix = ":nightly_iso_date",
-    platform_name = MANYLINUX_X86_64_TAG,
+    platform_name = get_wheel_platform_name(),
     project_name = "ai_edge_litert",
     setup_py = ":setup_py",
     version = LITERT_FULL_VERSION,
@@ -62,8 +63,8 @@ py_wheel(
 
 verify_manylinux_compliance_test(
     name = "manylinux_compliance_test",
-    aarch64_compliance_tag = MANYLINUX_AARCH64_TAG,
-    ppc64le_compliance_tag = MANYLINUX_PPC64LE_TAG,
+    aarch64_compliance_tag = MANYLINUX_LEVEL + "_aarch64",
+    ppc64le_compliance_tag = MANYLINUX_LEVEL + "_ppc64le",
     wheel = ":litert_wheel",
-    x86_64_compliance_tag = MANYLINUX_X86_64_TAG,
+    x86_64_compliance_tag = MANYLINUX_LEVEL + "_x86_64",
 )
