@@ -16,10 +16,6 @@
 This module defines the `run_on_device` macro, which helps to execute a binary target on a device.
 """
 
-# copybara:uncomment_begin(google-only)
-# load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
-# 
-# copybara:uncomment_end(google-only)
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 
@@ -114,7 +110,7 @@ def make_path_args(spec):
 
 # QUALCOMM
 
-def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None):
+def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = "odml-device-lab"):
     """
     Defines a backend specification.
 
@@ -125,6 +121,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None):
         mh_devices: A list of mobile harness device specifications.
         dispatch: The dispatch library target name.
         plugin: The compiler plugin library target name.
+        mh_user: The "run_as" arg to use in device cloud if it is enabled.
 
     Returns:
         A struct representing the backend specification.
@@ -161,6 +158,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None):
         default_mh_device = mh_devices[0],
         dispatch = dispatch,
         plugin = plugin,
+        mh_user = mh_user,
     )
 
 QUALCOMM_SPEC = BackendSpec(
@@ -175,7 +173,8 @@ QUALCOMM_SPEC = BackendSpec(
         ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
-        "model": "sm-s928b",
+        "model": "regex:sm-s928b|sm-s928u1",
+        "pool": "shared",
     }],
     plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
     dispatch = "libLiteRtDispatch_Qualcomm.so",
@@ -202,8 +201,9 @@ GOOGLE_TENSOR_SPEC = BackendSpec(
         ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
-        "label": "odml-test",
+        "pool": "shared",
         "model": "pixel 9",
+        "build_type": "userdebug",
     }],
     dispatch = "libLiteRtDispatch_GoogleTensor.so",
 )
@@ -333,7 +333,7 @@ def litert_device_exec(
     # _litert_mh_exec(
         # name = name + remote_suffix,
         # target = target,
-        # run_as = "odml-device-lab",
+        # run_as = backend.mh_user,
         # data = data,
         # exec_args = exec_args,
         # exec_env_vars = exec_env_vars,
