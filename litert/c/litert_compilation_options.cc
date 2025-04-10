@@ -17,6 +17,8 @@
 #include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/cc/litert_accelerator_compilation_options.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compilation_options.h"
 
@@ -70,7 +72,7 @@ LiteRtStatus LiteRtAddAcceleratorCompilationOptions(
   LRT_CHECK_NON_NULL(accelerator_compilation_options);
   LITERT_RETURN_IF_ERROR(options->accelerator_compilation_options.Append(
       litert::AcceleratorCompilationOptions(accelerator_compilation_options,
-                                            /*owned=*/false)));
+                                            litert::OwnHandle::kNo)));
   return kLiteRtStatusOk;
 }
 

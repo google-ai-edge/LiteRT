@@ -58,8 +58,7 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
       LiteRtTensorBufferRequirements& litert_buffer_requirements) {
     return RegisterBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor),
-        TensorBufferRequirements(litert_buffer_requirements,
-                                 /*owned=*/true));
+        TensorBufferRequirements(litert_buffer_requirements, OwnHandle::kYes));
   }
 
   // Gets a registered tensor buffer requirements for the given tensor.

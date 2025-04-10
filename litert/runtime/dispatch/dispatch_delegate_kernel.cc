@@ -31,6 +31,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -331,8 +332,7 @@ DispatchDelegateKernel::GetBufferRequirements(
     }
   }
 
-  return TensorBufferRequirements(tensor_buffer_requirements,
-                                  /*owned=*/true);
+  return TensorBufferRequirements(tensor_buffer_requirements, OwnHandle::kYes);
 }
 
 TfLiteStatus DispatchDelegateKernel::CreateAndSetBuffer(
@@ -409,9 +409,9 @@ TfLiteStatus DispatchDelegateKernel::CreateAndSetBuffer(
     return kTfLiteError;
   }
 
-  return RegisterLiteRtTensorBuffer(TensorBuffer(litert_tensor_buffer),
-                                    *tensor_buffer_size, buffer_index,
-                                    is_input);
+  return RegisterLiteRtTensorBuffer(
+      TensorBuffer(litert_tensor_buffer, litert::OwnHandle::kYes),
+      *tensor_buffer_size, buffer_index, is_input);
 }
 
 TfLiteStatus DispatchDelegateKernel::RegisterLiteRtTensorBuffer(
@@ -618,7 +618,8 @@ TfLiteStatus DispatchDelegateKernel::Eval(TfLiteOpaqueContext* context,
       auto output_event = output_events[i];
       if (output_event) {
         auto& tensor_buffer = output_tensor_buffers_[i];
-        if (auto status = tensor_buffer.SetEvent(Event(output_event));
+        if (auto status = tensor_buffer.SetEvent(
+                Event(output_event, litert::OwnHandle::kYes));
             !status) {
           LITERT_LOG(LITERT_ERROR,
                      "Failed to set event on output tensor buffer: %s",

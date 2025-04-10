@@ -34,6 +34,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
@@ -240,13 +241,13 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -366,13 +367,13 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
   {
-    TensorBuffer ahwb_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer ahwb_buffer(input_0_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer ahwb_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer ahwb_buffer(input_1_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -500,13 +501,13 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenClBuffer);
   {
-    TensorBuffer opencl_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer opencl_buffer(input_0_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer opencl_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer opencl_buffer(input_1_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }

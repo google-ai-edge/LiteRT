@@ -339,6 +339,8 @@ cc_library(
         ":litert_accelerator_compilation_options",
         ":litert_common",
         ":litert_logging",
+        "//litert/cc:litert_accelerator_compilation_options",
+        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/runtime:compilation_options",
     ],

@@ -37,10 +37,8 @@ class AcceleratorCompilationOptions
   // Parameter `owned` indicates if the created AcceleratorCompilationOptions
   // object should take ownership of the provided `options` handle.
   explicit AcceleratorCompilationOptions(
-      LiteRtAcceleratorCompilationOptions options, bool owned = true)
-      : internal::Handle<LiteRtAcceleratorCompilationOptions,
-                         LiteRtDestroyAcceleratorCompilationOptions>(options,
-                                                                     owned) {}
+      LiteRtAcceleratorCompilationOptions options, OwnHandle owned)
+      : Handle(options, owned) {}
 
   static Expected<AcceleratorCompilationOptions> Create(
       const LiteRtApiVersion& payload_version,
@@ -50,7 +48,7 @@ class AcceleratorCompilationOptions
     LITERT_RETURN_IF_ERROR(LiteRtCreateAcceleratorCompilationOptions(
         &payload_version, payload_identifier.c_str(), payload_data,
         payload_destructor, &options));
-    return AcceleratorCompilationOptions(options);
+    return AcceleratorCompilationOptions(options, OwnHandle::kYes);
   }
 
   Expected<LiteRtApiVersion> GetVersion() const {
@@ -88,7 +86,7 @@ class AcceleratorCompilationOptions
   Expected<AcceleratorCompilationOptions> Next() {
     auto h = Get();
     LITERT_RETURN_IF_ERROR(LiteRtGetNextAcceleratorCompilationOptions(&h));
-    return AcceleratorCompilationOptions(h, /*owned=*/false);
+    return AcceleratorCompilationOptions(h, OwnHandle::kNo);
   }
 
   Expected<void> Append(AcceleratorCompilationOptions&& appended_options) {
@@ -100,7 +98,7 @@ class AcceleratorCompilationOptions
       // pointer, then we need to reflect that as the new handle. Note that
       // should happen only if the previous handle was null.
       assert(!Get());
-      *this = AcceleratorCompilationOptions(h);
+      *this = AcceleratorCompilationOptions(h, OwnHandle::kYes);
     }
     return {};
   }
@@ -113,7 +111,7 @@ class AcceleratorCompilationOptions
       // we release the current handle since it has been already destructed by
       // the pop call, and then use the new head pointer as the new handle.
       (void)Release();
-      *this = AcceleratorCompilationOptions(h);
+      *this = AcceleratorCompilationOptions(h, OwnHandle::kYes);
     }
     return {};
   }

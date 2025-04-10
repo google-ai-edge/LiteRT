@@ -28,6 +28,7 @@
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/cc/litert_event.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -355,8 +356,8 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create CPU buffer requirements");
   }
-  cpu_buffer_requirements_[tensor] =
-      litert::TensorBufferRequirements(litert_cpu_buffer_requirements);
+  cpu_buffer_requirements_[tensor] = litert::TensorBufferRequirements(
+      litert_cpu_buffer_requirements, litert::OwnHandle::kYes);
   return litert_cpu_buffer_requirements;
 }
 
@@ -433,7 +434,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       if (type == buffer->buffer_type()) {
         // Register tensor buffer if it can be used by the backend.
         buffer->Duplicate();
-        TensorBuffer duplicated_buffer(buffer);
+        TensorBuffer duplicated_buffer(buffer, litert::OwnHandle::kYes);
         if (auto status = buffer_context_->RegisterTensorBuffer(
                 tensor, std::move(duplicated_buffer));
             status != kLiteRtStatusOk) {
@@ -609,7 +610,7 @@ Expected<void> LiteRtCompiledModelT::Run(
     for (auto& tb : output_buffers) {
       if (tb->HasEvent()) {
         auto event = tb->GetEvent();
-        if (auto status = litert::Event(*event, /*owned=*/false)
+        if (auto status = litert::Event(*event, litert::OwnHandle::kNo)
                               .Wait(/*timeout_in_ms=*/-1);
             !status) {
           return status;

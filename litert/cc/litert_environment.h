@@ -29,9 +29,7 @@ namespace litert {
 class Environment
     : public internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment> {
  public:
-  explicit Environment(LiteRtEnvironment env)
-      : internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment>(env,
-                                                                      true) {}
+  explicit Environment(LiteRtEnvironment env) : Handle(env, OwnHandle::kYes) {}
 
   enum class OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,

@@ -41,7 +41,7 @@ class TensorBufferRequirements
   // Parameter `owned` indicates if the created TensorBufferRequirements object
   // should take ownership of the provided `requirements` handle.
   explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
-                                    bool owned = true)
+                                    OwnHandle owned)
       : internal::Handle<LiteRtTensorBufferRequirements,
                          LiteRtDestroyTensorBufferRequirements>(requirements,
                                                                 owned) {}
@@ -54,7 +54,8 @@ class TensorBufferRequirements
     LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
         buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
         strides.data(), &tensor_buffer_requirements));
-    return TensorBufferRequirements(tensor_buffer_requirements);
+    return TensorBufferRequirements(tensor_buffer_requirements,
+                                    OwnHandle::kYes);
   }
 
   Expected<std::vector<LiteRtTensorBufferType>> SupportedTypes() const {
@@ -97,7 +98,7 @@ inline Expected<TensorBufferRequirements> Join(
   LiteRtTensorBufferRequirements joined_requirements;
   LITERT_RETURN_IF_ERROR(LiteRtJoinTensorBufferRequirements(
       src1.Get(), src2.Get(), &joined_requirements));
-  return TensorBufferRequirements(joined_requirements);
+  return TensorBufferRequirements(joined_requirements, OwnHandle::kYes);
 }
 
 }  // namespace litert

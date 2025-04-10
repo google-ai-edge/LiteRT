@@ -76,7 +76,7 @@ class CompiledModel
   // If `owned` is `true`, then the created object takes ownership of the
   // `compiled_model` handle.
   explicit CompiledModel(LiteRtModel litert_model,
-                         LiteRtCompiledModel compiled_model, bool owned = true)
+                         LiteRtCompiledModel compiled_model, OwnHandle owned)
       : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
             compiled_model, owned),
         model_(Model::CreateFromNonOwnedHandle(litert_model)) {}
@@ -101,7 +101,7 @@ class CompiledModel
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
         env.Get(), litert_model, jit_compilation_options.Get(),
         &compiled_model));
-    return CompiledModel(litert_model, compiled_model);
+    return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
   }
 
   // Simpler version of Create() that uses the default compilation options.
@@ -135,7 +135,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelInputBufferRequirements(
         Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, /*owned=*/false);
+    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
   }
 
   // The same as above except this function takes input tensor name.
@@ -175,7 +175,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputBufferRequirements(
         Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, /*owned=*/false);
+    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
   }
 
   // The same as above except this function takes output tensor name.

@@ -156,6 +156,16 @@ cc_library(
     hdrs = ["litert_handle.h"],
 )
 
+cc_test(
+    name = "litert_handle_test",
+    srcs = ["litert_handle_test.cc"],
+    deps = [
+        ":litert_handle",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+    ],
+)
+
 cc_library(
     name = "litert_tensor_buffer",
     srcs = [
@@ -197,6 +207,7 @@ cc_test(
     deps = [
         ":litert_element_type",
         ":litert_event",
+        ":litert_handle",
         ":litert_layout",
         ":litert_macros",
         ":litert_model",
@@ -245,6 +256,7 @@ cc_test(
         "litert_tensor_buffer_requirements_test.cc",
     ],
     deps = [
+        ":litert_handle",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/types:span",

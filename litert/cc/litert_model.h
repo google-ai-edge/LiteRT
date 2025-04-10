@@ -92,8 +92,7 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 // Tensor. C++ equivalent of LiteRtTensor.
 class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
-  explicit Tensor(LiteRtTensor tensor)
-      : internal::NonOwnedHandle<LiteRtTensor>(tensor) {}
+  explicit Tensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
 
   enum ElementType ElementType() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
@@ -326,11 +325,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   Model() = default;
 
   static Model CreateFromOwnedHandle(LiteRtModel model) {
-    return Model(model, /*owned=*/true);
+    return Model(model, OwnHandle::kYes);
   }
 
   static Model CreateFromNonOwnedHandle(LiteRtModel model) {
-    return Model(model, /*owned=*/false);
+    return Model(model, OwnHandle::kNo);
   }
 
   static Expected<Model> CreateFromFile(const std::string& filename) {
@@ -464,8 +463,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
  private:
   // Parameter `owned` indicates if the created TensorBuffer object should take
   // ownership of the provided `tensor_buffer` handle.
-  Model(LiteRtModel model, bool owned)
-      : internal::Handle<LiteRtModel, LiteRtDestroyModel>(model, owned) {}
+  Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
 };
 
 struct SerializationOptions {

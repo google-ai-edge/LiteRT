@@ -23,6 +23,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/tfl_utils.h"
@@ -126,7 +127,7 @@ ExternalLiteRtBufferContext::CreateBufferForTensor(
                               "Failed to create managed tensor buffer");
   }
 
-  return TensorBuffer(litert_tensor_buffer, /*owned=*/true);
+  return TensorBuffer(litert_tensor_buffer, OwnHandle::kYes);
 }
 
 }  // namespace internal

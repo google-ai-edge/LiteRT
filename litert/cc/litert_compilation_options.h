@@ -34,7 +34,7 @@ class CompilationOptions
   // Parameter `owned` indicates if the created CompilationOptions object
   // should take ownership of the provided `compilation_options` handle.
   explicit CompilationOptions(LiteRtCompilationOptions compilation_options,
-                              bool owned = true)
+                              OwnHandle owned)
       : internal::Handle<LiteRtCompilationOptions,
                          LiteRtDestroyCompilationOptions>(compilation_options,
                                                           owned) {}
@@ -42,7 +42,7 @@ class CompilationOptions
   static Expected<CompilationOptions> Create() {
     LiteRtCompilationOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompilationOptions(&options));
-    return CompilationOptions(options);
+    return CompilationOptions(options, OwnHandle::kYes);
   }
 
   Expected<void> SetHardwareAccelerators(LiteRtHwAcceleratorSet accelerators) {
@@ -69,7 +69,7 @@ class CompilationOptions
     LiteRtAcceleratorCompilationOptions options;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetAcceleratorCompilationOptions(Get(), &options));
-    return AcceleratorCompilationOptions(options, /*owned=*/false);
+    return AcceleratorCompilationOptions(options, OwnHandle::kNo);
   }
 };
 
