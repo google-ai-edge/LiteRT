@@ -77,7 +77,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",

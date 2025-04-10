@@ -624,7 +624,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options",
     ],
 )
 

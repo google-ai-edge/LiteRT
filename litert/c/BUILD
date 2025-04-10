@@ -183,10 +183,10 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_options",
-    srcs = ["litert_options.cc"],
+    name = "litert_op_options",
+    srcs = ["litert_op_options.cc"],
     hdrs = [
-        "litert_options.h",
+        "litert_op_options.h",
     ],
     deps = [
         ":litert_common",
@@ -198,15 +198,15 @@ cc_library(
 )
 
 cc_test(
-    name = "litert_options_test",
-    srcs = ["litert_options_test.cc"],
+    name = "litert_op_options_test",
+    srcs = ["litert_op_options_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
     ],
     tags = ["no_oss"],
     deps = [
         ":litert_common",
-        ":litert_options",
+        ":litert_op_options",
         "@com_google_googletest//:gtest_main",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -538,7 +538,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_metrics",
     ":litert_model",
     ":litert_op_code",
-    ":litert_options",
+    ":litert_op_options",
     ":litert_tensor_buffer",
 ]
 
@@ -581,7 +581,7 @@ cc_library(
         ":litert_metrics.h",
         ":litert_model.h",
         ":litert_op_code.h",
-        ":litert_options.h",
+        ":litert_op_options.h",
         ":litert_platform_support.h",
         ":litert_tensor_buffer.h",
         ":litert_tensor_buffer_requirements.h",
