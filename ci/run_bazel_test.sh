@@ -71,7 +71,6 @@ EXCLUDED_TARGETS=(
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
-        "-//tflite/experimental/litert/..."
         "-//tflite/delegates/gpu/..."
 )
 
