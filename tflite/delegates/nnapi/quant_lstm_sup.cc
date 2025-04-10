@@ -15,6 +15,8 @@ limitations under the License.
 #include "tflite/delegates/nnapi/quant_lstm_sup.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <vector>
 
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
