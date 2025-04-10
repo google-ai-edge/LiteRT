@@ -82,6 +82,7 @@ TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
   absl::flat_hash_map<std::string, std::string> custom_code_to_npu_file = {
       {"DISPATCH_OP_1", testing::GetTestFilePath(kNpuFile)},
       {"DISPATCH_OP_2", testing::GetTestFilePath(kNpuFile)},
+      {"DISPATCH_OP_3", testing::GetTestFilePath(kNpuFile)},
   };
 
   auto model_with_byte_code = GetModelBufWithByteCode(
@@ -106,6 +107,7 @@ TEST(GetModelBufWithByteCode, CheckAppendedWithMultipleNpuOps) {
   absl::flat_hash_map<std::string, std::string> custom_code_to_npu_file = {
       {"DISPATCH_OP_1", testing::GetTestFilePath(kNpuFile)},
       {"DISPATCH_OP_2", testing::GetTestFilePath(kNpuFile)},
+      {"DISPATCH_OP_3", testing::GetTestFilePath(kNpuFile)},
   };
 
   auto model_with_byte_code = GetModelBufWithByteCode(
