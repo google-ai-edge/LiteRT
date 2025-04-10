@@ -26,19 +26,19 @@ bool CheckLoggoing(const std::string log_path, LiteRtQnnLogLevel log_level) {
   while (std::getline(fin, msg)) {
     // Log severity: DEBUG > VERBOSE > INFO > WARN > ERROR
     switch (log_level) {
-      case kLogOff:
+      case kQnnLogOff:
         if (IsPrefix("ERROR:", msg)) return false;
         [[fallthrough]];
-      case kLogLevelError:
+      case kQnnLogLevelError:
         if (IsPrefix("WARNING:", msg)) return false;
         [[fallthrough]];
-      case kLogLevelWarn:
+      case kQnnLogLevelWarn:
         if (IsPrefix("INFO:", msg)) return false;
         [[fallthrough]];
-      case kLogLevelInfo:
+      case kQnnLogLevelInfo:
         if (IsPrefix("VERBOSE:", msg)) return false;
         [[fallthrough]];
-      case kLogLevelVerbose:
+      case kQnnLogLevelVerbose:
         if (IsPrefix("DEBUG:", msg)) return false;
         [[fallthrough]];
       default:
@@ -52,9 +52,10 @@ bool CheckLoggoing(const std::string log_path, LiteRtQnnLogLevel log_level) {
 
 class LiteRtLog : public ::testing::TestWithParam<LiteRtQnnLogLevel> {};
 INSTANTIATE_TEST_SUITE_P(, LiteRtLog,
-                         ::testing::Values(kLogOff, kLogLevelError,
-                                           kLogLevelWarn, kLogLevelInfo,
-                                           kLogLevelVerbose, kLogLevelDebug));
+                         ::testing::Values(kQnnLogOff, kQnnLogLevelError,
+                                           kQnnLogLevelWarn, kQnnLogLevelInfo,
+                                           kQnnLogLevelVerbose,
+                                           kQnnLogLevelDebug));
 
 TEST_P(LiteRtLog, SanityTest) {
   // Create temp file for log

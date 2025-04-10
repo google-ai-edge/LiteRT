@@ -229,6 +229,7 @@ class QnnManager::ContextHandle {
           status != QNN_SUCCESS) {
         LITERT_LOG(LITERT_ERROR, "%s", "Failed to free context handle\n");
       }
+      context_handle_ = nullptr;
     }
   }
 

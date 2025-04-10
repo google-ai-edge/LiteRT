@@ -48,7 +48,7 @@ using litert::Expected;
 using litert::Unexpected;
 using litert::qnn::QnnManager;
 
-std::string inline GetEventUnit(QnnProfile_EventUnit_t unit) {
+std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
   switch (unit) {
     case QNN_PROFILE_EVENTUNIT_MICROSEC:
       return "us";
@@ -126,10 +126,10 @@ LiteRtDispatchInvocationContextT::Create(
 
   // TODO: Add profiling_level as an option & related test code with different
   // profiling level after having option interface
-  int profiling_level = LiteRtProfilingOptions::kProfilingOff;
+  int profiling_level = LiteRtProfilingOptions::kQnnProfilingOff;
 
   Qnn_ProfileHandle_t profile_handle = nullptr;
-  if (profiling_level != LiteRtProfilingOptions::kProfilingOff) {
+  if (profiling_level != LiteRtProfilingOptions::kQnnProfilingOff) {
     if (auto status = qnn.Api()->profileCreate(
             qnn.BackendHandle(), profiling_level, &profile_handle);
         status != QNN_SUCCESS) {
@@ -289,10 +289,7 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   }
 
   if (profile_handle_ != nullptr) {
-    if (auto status = Profile(); !status) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to profile the execution result");
-    }
+    LITERT_RETURN_IF_ERROR(Profile());
   }
 
   for (int i = 0; i < outputs_.size(); ++i) {
