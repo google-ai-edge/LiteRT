@@ -25,8 +25,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/util/tensor_type_util.h"
-#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"
+#include "tflite/c/c_api_types.h"
 
 namespace litert::internal {
 

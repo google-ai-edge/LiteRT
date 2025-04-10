@@ -21,8 +21,8 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
 
 typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
 typedef struct LiteRtEnvironmentT* LiteRtEnvironment;

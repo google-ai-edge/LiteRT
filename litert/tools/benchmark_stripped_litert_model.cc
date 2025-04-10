@@ -23,12 +23,12 @@ limitations under the License.
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/tools/benchmark_litert_model.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/model_builder.h"  // from @org_tensorflow
-#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
-#include "tflite/tools/logging.h"  // from @org_tensorflow
-#include "tflite/tools/strip_buffers/stripping_lib.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
+#include "tflite/model_builder.h"
+#include "tflite/tools/benchmark/benchmark_params.h"
+#include "tflite/tools/logging.h"
+#include "tflite/tools/strip_buffers/stripping_lib.h"
 
 namespace litert {
 namespace benchmark {

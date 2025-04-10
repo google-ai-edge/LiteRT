@@ -33,7 +33,7 @@
 #include "litert/runtime/accelerator_model_compilation_data.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "litert/runtime/metrics.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
 
 namespace litert {
 

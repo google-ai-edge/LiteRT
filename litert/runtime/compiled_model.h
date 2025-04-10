@@ -39,10 +39,10 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
-#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/model_builder.h"  // from @org_tensorflow
+#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "tflite/interpreter.h"
+#include "tflite/model_builder.h"
 
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {

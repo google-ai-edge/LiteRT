@@ -26,12 +26,12 @@
 #include "litert/core/model/model_load.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/interpreter_builder.h"  // from @org_tensorflow
-#include "tflite/kernels/register.h"  // from @org_tensorflow
-#include "tflite/model_builder.h"  // from @org_tensorflow
-#include "tflite/stderr_reporter.h"  // from @org_tensorflow
+#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/interpreter.h"
+#include "tflite/interpreter_builder.h"
+#include "tflite/kernels/register.h"
+#include "tflite/model_builder.h"
+#include "tflite/stderr_reporter.h"
 
 namespace litert::internal {
 namespace {

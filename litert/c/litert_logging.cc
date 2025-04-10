@@ -17,8 +17,8 @@
 #include <cstdarg>
 
 #include "litert/c/litert_common.h"
-#include "tflite/logger.h"  // from @org_tensorflow
-#include "tflite/minimal_logging.h"  // from @org_tensorflow
+#include "tflite/logger.h"
+#include "tflite/minimal_logging.h"
 
 class LiteRtLoggerT {
  public:

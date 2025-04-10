@@ -51,10 +51,10 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/signature_runner.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"
+#include "tflite/c/common.h"
+#include "tflite/interpreter.h"
+#include "tflite/signature_runner.h"
 
 using litert::testing::MakeRuntimeFromTestFile;
 using testing::FloatNear;

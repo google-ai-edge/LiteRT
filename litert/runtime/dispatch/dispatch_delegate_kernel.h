@@ -29,9 +29,9 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
+#include "tflite/delegates/utils/simple_opaque_delegate.h"
 
 namespace litert::internal {
 

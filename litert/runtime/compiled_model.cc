@@ -60,15 +60,15 @@
 #include "litert/runtime/compilation_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
-#include "tflite/builtin_ops.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/core/interpreter_builder.h"  // from @org_tensorflow
-#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/kernels/register.h"  // from @org_tensorflow
-#include "tflite/model_builder.h"  // from @org_tensorflow
-#include "tflite/stderr_reporter.h"  // from @org_tensorflow
+#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/builtin_ops.h"
+#include "tflite/c/common.h"
+#include "tflite/core/interpreter_builder.h"
+#include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "tflite/interpreter.h"
+#include "tflite/kernels/register.h"
+#include "tflite/model_builder.h"
+#include "tflite/stderr_reporter.h"
 
 using litert::Error;
 using litert::Expected;
