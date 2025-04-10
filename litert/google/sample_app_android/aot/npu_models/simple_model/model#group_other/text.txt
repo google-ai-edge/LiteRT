@@ -1,0 +1,1 @@
+This file is delivered to all devices that do not belong to any group :(
