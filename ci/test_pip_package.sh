@@ -68,7 +68,7 @@ function initialize_pip_wheel_environment {
   echo "------ build pip and install -----"
 
   # Clean up distributions.
-  rm -r -f tflite/gen/litert_pip/python3/dist
+  rm -r -f ./dist
 
 }
 
