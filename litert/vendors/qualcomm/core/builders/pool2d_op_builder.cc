@@ -77,7 +77,6 @@ std::vector<OpWrapper> BuildPool2dOp(
 
   TensorWrapper& output_tensor = outputs[kOutputIndex];
   pool_op.AddOutputTensor(output_tensor);
-  // TODO: fused activation
 
   return res;
 }

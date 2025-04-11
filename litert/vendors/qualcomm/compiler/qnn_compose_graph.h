@@ -32,11 +32,11 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            bool is_tensor_read_and_write = false);
 
-LiteRtStatus ConvertOp(
-    const litert::Op& litert_op, ::qnn::TensorPool& tensor_pool,
-    const std::vector<::qnn::TensorWrapperRef>& input_tensors,
-    const std::vector<::qnn::TensorWrapperRef>& output_tensors,
-    std::vector<::qnn::OpWrapper>& op_wrappers);
+LiteRtStatus ConvertOp(const litert::Op& litert_op,
+                       ::qnn::TensorPool& tensor_pool,
+                       std::vector<::qnn::TensorWrapperRef>& input_tensors,
+                       std::vector<::qnn::TensorWrapperRef>& output_tensors,
+                       std::vector<::qnn::OpWrapper>& op_wrappers);
 
 // Composes a new QNN Graph from given LiteRt Graph. Qnn Graph is written to
 // context behind "qnn". Uses given graph_name to name entry point.
