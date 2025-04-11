@@ -1,7 +1,12 @@
 #ifndef LITERT_KOTLIN_SRC_MAIN_JNI_LITERT_JNI_COMMON_H_
 #define LITERT_KOTLIN_SRC_MAIN_JNI_LITERT_JNI_COMMON_H_
 
+#include <jni.h>
+
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl  // IWYU pragma: keep
+#include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 
 namespace litert {
 namespace jni {
@@ -12,6 +17,33 @@ constexpr int kAccelatorNone = 0;
 constexpr int kAccelatorCpu = 1;
 constexpr int kAccelatorGpu = 2;
 constexpr int kAccelatorNpu = 3;
+
+// Throws a LiteRtException in Kotlin.
+inline void ThrowLiteRtException(JNIEnv* env, LiteRtStatus status,
+                                 absl::string_view message) {
+  auto ex_class = env->FindClass("com/google/ai/edge/litert/LiteRtException");
+  ABSL_CHECK(ex_class != nullptr) << "Failed to find LiteRtException class";
+
+  auto constructor =
+      env->GetMethodID(ex_class, "<init>", "(ILjava/lang/String;)V");
+  if (constructor == nullptr) {
+    env->DeleteLocalRef(ex_class);
+    ABSL_CHECK(false) << "Failed to get LiteRtException constructor";
+  }
+
+  auto message_jstr = env->NewStringUTF(message.data());
+  if (message_jstr == nullptr) {
+    env->DeleteLocalRef(ex_class);
+    ABSL_CHECK(false) << "Failed to create message string";
+  }
+
+  auto ex_obj = env->NewObject(ex_class, constructor, status, message_jstr);
+  env->DeleteLocalRef(message_jstr);
+  env->DeleteLocalRef(ex_class);
+
+  ABSL_CHECK(ex_obj != nullptr) << "Failed to create LiteRtException object";
+  env->Throw((jthrowable)ex_obj);
+}
 
 }  // namespace jni
 }  // namespace litert

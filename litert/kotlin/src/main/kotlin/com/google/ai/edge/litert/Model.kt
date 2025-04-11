@@ -2,8 +2,6 @@ package com.google.ai.edge.litert
 
 import android.content.res.AssetManager
 
-// TODO(niuchl): propagate errors from native code to Kotlin.
-
 /** Model represents a LiteRT model file. */
 class Model private constructor(handle: Long) : JniHandle(handle) {
 
@@ -16,11 +14,13 @@ class Model private constructor(handle: Long) : JniHandle(handle) {
       System.loadLibrary("litert_jni")
     }
 
+    @Throws(LiteRtException::class)
     @JvmStatic
     fun load(assetManager: AssetManager, assetName: String): Model {
       return Model(nativeLoadAsset(assetManager, assetName))
     }
 
+    @Throws(LiteRtException::class)
     @JvmStatic
     fun load(filePath: String): Model {
       return Model(nativeLoadFile(filePath))
@@ -53,6 +53,7 @@ private constructor(
     }
   }
 
+  @Throws(LiteRtException::class)
   fun createInputBuffer(inputName: String, signature: String? = null): TensorBuffer {
     assertNotDestroyed()
 
@@ -60,6 +61,7 @@ private constructor(
     return TensorBuffer(handle)
   }
 
+  @Throws(LiteRtException::class)
   fun createOutputBuffer(outputName: String, signature: String? = null): TensorBuffer {
     assertNotDestroyed()
 
@@ -67,6 +69,7 @@ private constructor(
     return TensorBuffer(handle)
   }
 
+  @Throws(LiteRtException::class)
   @JvmOverloads
   fun createInputBuffers(signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
@@ -75,6 +78,7 @@ private constructor(
     return handles.map { TensorBuffer(it) }
   }
 
+  @Throws(LiteRtException::class)
   fun createInputBuffers(signature: String): List<TensorBuffer> {
     assertNotDestroyed()
 
@@ -82,6 +86,7 @@ private constructor(
     return handles.map { TensorBuffer(it) }
   }
 
+  @Throws(LiteRtException::class)
   @JvmOverloads
   fun createOutputBuffers(signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
@@ -90,6 +95,7 @@ private constructor(
     return handles.map { TensorBuffer(it) }
   }
 
+  @Throws(LiteRtException::class)
   fun createOutputBuffers(signature: String): List<TensorBuffer> {
     assertNotDestroyed()
 
@@ -97,6 +103,7 @@ private constructor(
     return handles.map { TensorBuffer(it) }
   }
 
+  @Throws(LiteRtException::class)
   @JvmOverloads
   fun run(inputs: List<TensorBuffer>, signatureIndex: Int = 0): List<TensorBuffer> {
     assertNotDestroyed()
@@ -106,6 +113,7 @@ private constructor(
     return outputs
   }
 
+  @Throws(LiteRtException::class)
   fun run(inputs: List<TensorBuffer>, signature: String): List<TensorBuffer> {
     assertNotDestroyed()
 
@@ -114,6 +122,7 @@ private constructor(
     return outputs
   }
 
+  @Throws(LiteRtException::class)
   @JvmOverloads
   fun run(inputs: List<TensorBuffer>, outputs: List<TensorBuffer>, signatureIndex: Int = 0) {
     assertNotDestroyed()
@@ -127,6 +136,7 @@ private constructor(
     )
   }
 
+  @Throws(LiteRtException::class)
   fun run(inputs: List<TensorBuffer>, outputs: List<TensorBuffer>, signature: String) {
     assertNotDestroyed()
 
@@ -139,6 +149,7 @@ private constructor(
     )
   }
 
+  @Throws(LiteRtException::class)
   fun run(
     inputs: Map<String, TensorBuffer>,
     outputs: Map<String, TensorBuffer>,
@@ -189,6 +200,7 @@ private constructor(
       )
     }
 
+    @Throws(LiteRtException::class)
     @JvmOverloads
     @JvmStatic
     fun create(
@@ -199,6 +211,7 @@ private constructor(
       return create(model, options, optionalEnv, modelManaged = false)
     }
 
+    @Throws(LiteRtException::class)
     @JvmOverloads
     @JvmStatic
     fun create(
@@ -210,6 +223,7 @@ private constructor(
       return create(Model.load(assetManager, assetName), options, optionalEnv, modelManaged = true)
     }
 
+    @Throws(LiteRtException::class)
     @JvmOverloads
     @JvmStatic
     fun create(

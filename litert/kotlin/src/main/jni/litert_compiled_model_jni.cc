@@ -22,6 +22,8 @@
 
 namespace {
 
+using ::litert::jni::ThrowLiteRtException;
+
 // Creates a CompiledModel from the given handles.
 // The handles are not owned by the returned CompiledModel.
 litert::CompiledModel CreateCompileModel(jlong compiled_model_handle,
@@ -73,12 +75,14 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreate(JNIEnv* env,
   auto status = LiteRtCreateCompilationOptions(&compilation_options);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compilation options.");
+    ThrowLiteRtException(env, status, "Failed to create compilation options.");
     return 0;
   }
   status = LiteRtSetCompilationOptionsHardwareAccelerators(compilation_options,
                                                            accelerators);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to set hardware accelerators.");
+    ThrowLiteRtException(env, status, "Failed to set hardware accelerators.");
     return 0;
   }
 
@@ -91,6 +95,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreate(JNIEnv* env,
       litert_env, model, std::move(compilation_options), &compiled_model);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to create compiled model.");
+    ThrowLiteRtException(env, status, "Failed to create compiled model.");
     return 0;
   }
   return reinterpret_cast<jlong>(compiled_model);
@@ -109,7 +114,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
           ? compiled_model.CreateInputBuffer(input_name_str)
           : compiled_model.CreateInputBuffer(signature_str, input_name_str);
   if (!tensor_buffer) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create input buffer.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create input buffer: %s",
+               tensor_buffer.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffer.Error().Status(),
+                         tensor_buffer.Error().Message());
     return 0;
   }
   return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
@@ -128,7 +136,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
           ? compiled_model.CreateOutputBuffer(output_name_str)
           : compiled_model.CreateOutputBuffer(signature_str, output_name_str);
   if (!tensor_buffer) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create output buffer.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create output buffer: %s",
+               tensor_buffer.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffer.Error().Status(),
+                         tensor_buffer.Error().Message());
     return 0;
   }
   return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
@@ -142,7 +153,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffers(
 
   auto tensor_buffers = compiled_model.CreateInputBuffers(signature_index);
   if (!tensor_buffers) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create input buffers.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create input buffers: %s",
+               tensor_buffers.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffers.Error().Status(),
+                         tensor_buffers.Error().Message());
     return nullptr;
   }
   std::vector<jlong> input_tensor_buffers;
@@ -166,7 +180,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffersBySignature
   AUTO_CLEANUP_JNI_STRING(env, signature);
   auto tensor_buffers = compiled_model.CreateInputBuffers(signature_str);
   if (!tensor_buffers) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create input buffers.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create input buffers: %s",
+               tensor_buffers.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffers.Error().Status(),
+                         tensor_buffers.Error().Message());
     return nullptr;
   }
   std::vector<jlong> input_tensor_buffers;
@@ -189,7 +206,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffers(
 
   auto tensor_buffers = compiled_model.CreateOutputBuffers(signature_index);
   if (!tensor_buffers) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create output buffers.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create output buffers: %s",
+               tensor_buffers.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffers.Error().Status(),
+                         tensor_buffers.Error().Message());
     return nullptr;
   }
   std::vector<jlong> output_tensor_buffers;
@@ -213,7 +233,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffersBySignatur
   AUTO_CLEANUP_JNI_STRING(env, signature);
   auto tensor_buffers = compiled_model.CreateOutputBuffers(signature_str);
   if (!tensor_buffers) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create output buffers.");
+    LITERT_LOG(LITERT_ERROR, "Failed to create output buffers: %s",
+               tensor_buffers.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_buffers.Error().Status(),
+                         tensor_buffers.Error().Message());
     return nullptr;
   }
   std::vector<jlong> output_tensor_buffers;
@@ -257,7 +280,10 @@ JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_CompiledModel_nativeRun(
   auto result = compiled_model.Run(signature_index, input_buffer_vector,
                                    output_buffer_vector);
   if (!result) {
-    // TODO(niuchl): throw an exception.
+    LITERT_LOG(LITERT_ERROR, "Failed to run model: %s",
+               result.Error().Message().c_str());
+    ThrowLiteRtException(env, result.Error().Status(),
+                         result.Error().Message());
   }
 }
 
@@ -293,7 +319,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignature(
   auto result = compiled_model.Run(signature_str, input_buffer_vector,
                                    output_buffer_vector);
   if (!result) {
-    // TODO(niuchl): throw an exception.
+    LITERT_LOG(LITERT_ERROR, "Failed to run model: %s",
+               result.Error().Message().c_str());
+    ThrowLiteRtException(env, result.Error().Status(),
+                         result.Error().Message());
   }
 }
 
@@ -302,14 +331,12 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jobjectArray input_keys, jlongArray input_buffers,
     jobjectArray output_keys, jlongArray output_buffers) {
-  if (env->GetArrayLength(input_keys) != env->GetArrayLength(input_buffers)) {
-    LITERT_LOG(LITERT_ERROR, "Number of input keys and buffers do not match.");
-    return;
-  }
-  if (env->GetArrayLength(output_keys) != env->GetArrayLength(output_buffers)) {
-    LITERT_LOG(LITERT_ERROR, "Number of output keys and buffers do not match.");
-    return;
-  }
+  ABSL_CHECK_EQ(env->GetArrayLength(input_keys),
+                env->GetArrayLength(input_buffers))
+      << "Number of input keys and buffers do not match.";
+  ABSL_CHECK_EQ(env->GetArrayLength(output_keys),
+                env->GetArrayLength(output_buffers))
+      << "Number of output keys and buffers do not match.";
 
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, input_keys);
   absl::flat_hash_map<absl::string_view, litert::TensorBuffer> input_buffer_map;
@@ -341,7 +368,10 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeRunBySignatureWithMap(
                     : compiled_model.Run(signature_str, input_buffer_map,
                                          output_buffer_map);
   if (!result) {
-    // TODO(niuchl): throw an exception.
+    LITERT_LOG(LITERT_ERROR, "Failed to run model: %s",
+               result.Error().Message().c_str());
+    ThrowLiteRtException(env, result.Error().Status(),
+                         result.Error().Message());
   }
 }
 
