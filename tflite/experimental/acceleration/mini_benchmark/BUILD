@@ -294,8 +294,8 @@ cc_library(
     hdrs = ["decode_jpeg_register.h"],
     copts = tflite_copts(),
     deps = [
+        ":decode_jpeg_status",
         ":libjpeg_decoder",
-        "//tflite:string",
         "//tflite:string_util",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",

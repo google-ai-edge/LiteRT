@@ -14,17 +14,17 @@ limitations under the License.
 ==============================================================================*/
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <vector>
 
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
 #include "tflite/experimental/acceleration/mini_benchmark/decode_jpeg_register.h"
+#include "tflite/experimental/acceleration/mini_benchmark/decode_jpeg_status.h"
 #include "tflite/experimental/acceleration/mini_benchmark/libjpeg_decoder.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/kernel_util.h"
-#include "tflite/string_type.h"
 #include "tflite/string_util.h"
 
 namespace tflite {
@@ -124,7 +124,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   std::unique_ptr<LibjpegDecoder> decoder =
       LibjpegDecoder::Create(decoder_status);
   if (decoder_status.code != kTfLiteOk) {
-    TF_LITE_KERNEL_LOG(context, decoder_status.error_message.c_str());
+    TF_LITE_KERNEL_LOG(context, "%s", decoder_status.error_message.c_str());
     return kTfLiteError;
   }
 
@@ -166,7 +166,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
     output_array_offset += kOutputImageSize;
 
     if (decode_status.code != kTfLiteOk) {
-      TF_LITE_KERNEL_LOG(context, decode_status.error_message.c_str());
+      TF_LITE_KERNEL_LOG(context, "%s", decode_status.error_message.c_str());
       return kTfLiteError;
     }
   }
