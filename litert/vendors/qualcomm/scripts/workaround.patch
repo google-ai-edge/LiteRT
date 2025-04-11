@@ -1,0 +1,64 @@
+From f23f1085e902422672aec61908e9d4a38589cc35 Mon Sep 17 00:00:00 2001
+From: weilhuan-quic <quic_weilhuan@quicinc.com>
+Date: Wed, 16 Apr 2025 15:56:41 +0800
+Subject: [PATCH] workaround
+
+---
+ litert/c/litert_common.h | 4 ++--
+ litert/cc/BUILD          | 4 ++--
+ litert/test/common.cc    | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/litert/c/litert_common.h b/litert/c/litert_common.h
+index 8249bf33..da8c0be1 100644
+--- a/litert/c/litert_common.h
++++ b/litert/c/litert_common.h
+@@ -27,7 +27,7 @@ extern "C" {
+   typedef const struct name##T* name##Const
+ 
+ #if __ANDROID_API__ >= 26
+-#define LITERT_HAS_AHWB_SUPPORT 1
++#define LITERT_HAS_AHWB_SUPPORT 0
+ #else
+ #define LITERT_HAS_AHWB_SUPPORT 0
+ #endif  // __ANDROID_API__ >= 26
+@@ -42,7 +42,7 @@ extern "C" {
+ #define LITERT_HAS_ION_SUPPORT 1
+ #define LITERT_HAS_DMABUF_SUPPORT 1
+ #define LITERT_HAS_FASTRPC_SUPPORT 1
+-#define LITERT_HAS_OPENGL_SUPPORT 1
++#define LITERT_HAS_OPENGL_SUPPORT 0
+ #define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
+ // copybara:comment_begin(google-only)
+ #elif defined(GOOGLE_UNSUPPORTED_OS_LOONIX)
+diff --git a/litert/cc/BUILD b/litert/cc/BUILD
+index 103df1c6..d2eb4254 100644
+--- a/litert/cc/BUILD
++++ b/litert/cc/BUILD
+@@ -12,8 +12,8 @@
+ # See the License for the specific language governing permissions and
+ # limitations under the License.
+ 
+-load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+-load("//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
++# load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
++# load("//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
+ 
+ package(
+diff --git a/litert/test/common.cc b/litert/test/common.cc
+index d05be4c8..ef6fdb99 100644
+--- a/litert/test/common.cc
++++ b/litert/test/common.cc
+@@ -84,7 +84,7 @@ constexpr char kBaseDir[] = "";
+ 
+ std::string GetTestFilePath(absl::string_view filename) {
+   static constexpr absl::string_view kTestDataDir =
+-      "odml/litert/litert/"
++      "bazel-bin/litert/"
+       "test/testdata/";
+ 
+   if constexpr (!tsl::kIsOpenSource) {
+-- 
+2.34.1
+
