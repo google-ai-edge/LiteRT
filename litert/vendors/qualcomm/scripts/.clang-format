@@ -1,0 +1,5 @@
+BasedOnStyle: Google
+DerivePointerAlignment: false
+AlignTrailingComments: false
+SortIncludes: true
+IncludeBlocks: Preserve

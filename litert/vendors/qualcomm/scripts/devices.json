@@ -1,0 +1,8 @@
+{
+    "example": {
+        "hostname": "example.com",
+        "serial": "example",
+        "soc_arch": "V75",
+        "soc_model": "SM8650"
+    }
+}
