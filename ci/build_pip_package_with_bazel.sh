@@ -80,6 +80,7 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp -
 
 # Move the wheel file to the root directory since it is not accessible from the
 # bazel output directory to anyone other than the root user.
+rm -fr ./dist
 mkdir -p dist/
 cp bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
 
