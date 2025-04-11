@@ -16,6 +16,7 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include "Eigen/Core"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/optimized/optimized_ops.h"
@@ -182,6 +183,14 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
       break;
     case kTfLiteInt16:
       TFLiteOperation<kernel_type, int16_t, OpType>(context, node, op_context);
+      break;
+    case kTfLiteFloat16:
+      TFLiteOperation<kernel_type, Eigen::half, OpType>(context, node,
+                                                        op_context);
+      break;
+    case kTfLiteBFloat16:
+      TFLiteOperation<kernel_type, Eigen::bfloat16, OpType>(context, node,
+                                                            op_context);
       break;
     default:
       TF_LITE_KERNEL_LOG(context,
