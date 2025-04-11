@@ -211,6 +211,10 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // NOTE: Declare delegates before the TFL interpreter, so they are destroyed
+  // only after the interpreter is destroyed.
+  std::vector<Delegate> delegates_;
+
   // Map from signature key to SignatureRunner. This is used to lazy calling
   // GetSignatureRunner() which is expensive.
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>
@@ -235,8 +239,6 @@ class LiteRtCompiledModelT {
   // Interpreter.
   std::unique_ptr<litert::internal::ExternalLiteRtBufferContext>
       buffer_context_;
-
-  std::vector<Delegate> delegates_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
