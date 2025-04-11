@@ -7,9 +7,9 @@
 #include <numeric>
 #include <vector>
 
-#include "litert/c/litert_logging.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -61,16 +61,16 @@ std::vector<OpWrapper> BuildDynamicUpdateSliceOp(
   auto& output_tensor = outputs[kOutputIdx].get();
 
   if (input_tensor.GetRank() != update_tensor.GetRank()) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "QNN LiteRT Delegate only supports Dynamic Update Slice when "
-               "operand and updates have the same rank.");
+    QNN_LOG_ERROR("%s",
+                  "Only supports Dynamic Update Slice when operand and updates "
+                  "have the same rank.");
     return {};
   }
 
   if (indices_tensor.GetDataType() != QNN_DATATYPE_INT_32) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "Dynamic Update Slice only supports QNN_DATATYPE_INT_32 "
-               "start_indices.");
+    QNN_LOG_ERROR("%s",
+                  "Dynamic Update Slice only supports QNN_DATATYPE_INT_32 "
+                  "start_indices.");
     return {};
   }
 
@@ -92,8 +92,8 @@ std::vector<OpWrapper> BuildDynamicUpdateSliceOp(
   // ElementwiseNotEqual
   // get table dims from in[0]->Dims[1]
   if (input_tensor.GetRank() < 2) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "Dynamic Update Slice only supports operand tensor rank >= 2");
+    QNN_LOG_ERROR(
+        "%s", "Dynamic Update Slice only supports operand tensor rank >= 2");
     return {};
   }
   uint32_t table_size = input_tensor.GetDim(1);
