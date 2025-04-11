@@ -100,6 +100,14 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 
 QnnManager::~QnnManager() {
   if (perf_control_) perf_control_->Terminate();
+  if (device_platform_info_ != nullptr) {
+    if (auto status =
+            Api()->deviceFreePlatformInfo(nullptr, device_platform_info_);
+        status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to free HTP backend platform info: %d",
+                 status);
+    }
+  }
   (void)FreeDevice();
   (void)FreeBackend();
   (void)FreeLogging();
@@ -268,6 +276,18 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
   return kLiteRtStatusOk;
 }
 
+std::optional<::qnn::SocInfo> FindSocInfo(
+    const ::qnn::SnapdragonModel& soc_model) {
+  std::optional<::qnn::SocInfo> soc_info;
+  for (auto i = 0; i < ::qnn::kNumSocInfos; ++i) {
+    if (soc_model == ::qnn::kSocInfos[i].soc_model) {
+      soc_info = ::qnn::kSocInfos[i];
+      break;
+    }
+  }
+  return soc_info;
+}
+
 LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
                               std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
@@ -311,49 +331,65 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  std::vector<const QnnDevice_Config_t*> device_configs;
   if (soc_info.has_value()) {
     soc_info_ = *soc_info;
-    LITERT_LOG(LITERT_INFO,
-               "Initializing QNN backend for device architecture V%d",
-               soc_info_.dsp_arch);
-    htp_device_config_ = std::make_unique<::qnn::HtpDeviceConfig>();
-    const std::vector<QnnDevice_CustomConfig_t> device_custom_config =
-        htp_device_config_->CreateDeviceCustomConfig(&soc_info_);
-    const std::vector<QnnDevice_PlatformInfo_t*> device_platform_info =
-        htp_device_config_->CreateDevicePlatformInfo(&soc_info_);
-    uint32_t num_custom_configs =
-        device_platform_info.size() + device_custom_config.size();
-    device_configs_.resize(num_custom_configs);
-    // +1 for null terminated
-    std::vector<const QnnDevice_Config_t*> configs;
-    configs.reserve(num_custom_configs + 1);
-    for (std::size_t i = 0; i < device_custom_config.size(); ++i) {
-      device_configs_[i].option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
-      device_configs_[i].customConfig = device_custom_config[i];
-      configs.emplace_back(&device_configs_[i]);
-    }
-    for (std::size_t i = 0; i < device_platform_info.size(); ++i) {
-      device_configs_[device_custom_config.size() + i].option =
-          QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
-      device_configs_[device_custom_config.size() + i].hardwareInfo =
-          device_platform_info[i];
-      configs.emplace_back(&device_configs_[device_custom_config.size() + i]);
-    }
-    // null terminated
-    configs.emplace_back(nullptr);
-
+  } else {
+    LITERT_LOG(LITERT_INFO, "Apply deviceGetPlatformInfo for SoC info.");
     if (auto status =
-            Api()->deviceCreate(LogHandle(), configs.data(), &DeviceHandle());
+            Api()->deviceGetPlatformInfo(nullptr, &device_platform_info_);
         status != QNN_SUCCESS) {
-      LITERT_LOG(LITERT_ERROR, "Failed to create QNN device: %d", status);
+      LITERT_LOG(LITERT_ERROR, "Fail to get platforminfo: %d", status);
       return kLiteRtStatusErrorRuntimeFailure;
     }
+    auto soc_info_online = FindSocInfo(static_cast<::qnn::SnapdragonModel>(
+        device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
+            ->onChipDevice.socModel));
+    if (soc_info_online.has_value()) {
+      soc_info_ = *soc_info_online;
+    }
   }
+
+  LITERT_LOG(LITERT_INFO, "Initializing QNN backend for SoC model: %s",
+             soc_info_.soc_name);
+  htp_device_config_ = std::make_unique<::qnn::HtpDeviceConfig>();
+  const std::vector<QnnDevice_CustomConfig_t> device_custom_config =
+      htp_device_config_->CreateDeviceCustomConfig(&soc_info_);
+  const std::vector<QnnDevice_PlatformInfo_t*> device_platform_info =
+      htp_device_config_->CreateDevicePlatformInfo(&soc_info_);
+  uint32_t num_custom_configs =
+      device_platform_info.size() + device_custom_config.size();
+  device_configs_.resize(num_custom_configs);
+  // +1 for null terminated
+  device_configs.reserve(num_custom_configs + 1);
+  for (std::size_t i = 0; i < device_custom_config.size(); ++i) {
+    device_configs_[i].option = QNN_DEVICE_CONFIG_OPTION_CUSTOM;
+    device_configs_[i].customConfig = device_custom_config[i];
+    device_configs.emplace_back(&device_configs_[i]);
+  }
+  for (std::size_t i = 0; i < device_platform_info.size(); ++i) {
+    device_configs_[device_custom_config.size() + i].option =
+        QNN_DEVICE_CONFIG_OPTION_PLATFORM_INFO;
+    device_configs_[device_custom_config.size() + i].hardwareInfo =
+        device_platform_info[i];
+    device_configs.emplace_back(
+        &device_configs_[device_custom_config.size() + i]);
+  }
+  // null terminated
+  device_configs.emplace_back(nullptr);
+  if (auto status = Api()->deviceCreate(LogHandle(), device_configs.data(),
+                                        &DeviceHandle());
+      status != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create QNN device: %d", status);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // HTP Performance Settings
   if (options.htp_options.performance_mode != kHtpDefault) {
     LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
                options.htp_options.performance_mode);
     perf_control_ = std::make_unique<PerfControl>(Api(), options.htp_options);
-    perf_control_->Init(&DeviceHandle());
+    perf_control_->Init();
   }
   return kLiteRtStatusOk;
 }

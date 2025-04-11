@@ -358,15 +358,9 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
   return power_configs;
 }
 
-bool PerfControl::Init(Qnn_DeviceHandle_t* device_handle) {
+bool PerfControl::Init() {
   Qnn_ErrorHandle_t error = api_->deviceGetPlatformInfo(
       nullptr, &backend_config_->device_platform_info_);
-  // Create QNN Device
-  if (auto status = api_->deviceCreate(nullptr, nullptr, device_handle);
-      status != QNN_SUCCESS) {
-    QNN_LOG_ERROR("Failed to create QNN device: %d", status);
-    return false;
-  }
 
   // Get htp_perf_infra
   backend_config_->htp_perf_infra_ = &backend_config_->owned_htp_perf_infra_;

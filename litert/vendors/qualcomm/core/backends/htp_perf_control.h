@@ -36,7 +36,7 @@ class PerfControl {
   PerfControl& operator=(PerfControl&&) = delete;
   ~PerfControl();
 
-  bool Init(Qnn_DeviceHandle_t* device_handle);
+  bool Init();
   bool Terminate();
   // Direct vote is only supported in manual mode.
   void PerformanceVote();

@@ -208,6 +208,7 @@ class QnnManager {
   std::vector<QnnDevice_Config_t> device_configs_;
   // For dispatch options
   std::unique_ptr<PerfControl> perf_control_{nullptr};
+  const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
