@@ -240,11 +240,11 @@ cc_library(
         ":file_util",
         ":flexbuffers_util",
         ":quantization_util",
-        ":tflite_with_xnnpack_dynamic_fully_connected",
-        ":tflite_with_xnnpack_logging",
-        ":tflite_with_xnnpack_qs8",
-        ":tflite_with_xnnpack_qu8",
-        ":tflite_with_xnnpack_transient_indirection_buffer",
+        ":tflite_with_xnnpack_dynamic_fully_connected",  # buildcleaner: keep
+        ":tflite_with_xnnpack_logging",  # buildcleaner: keep
+        ":tflite_with_xnnpack_qs8",  # buildcleaner: keep
+        ":tflite_with_xnnpack_qu8",  # buildcleaner: keep
+        ":tflite_with_xnnpack_transient_indirection_buffer",  # buildcleaner: keep
         ":weight_cache",
         "//tflite:kernel_api",
         "//tflite:minimal_logging",
@@ -255,7 +255,6 @@ cc_library(
         "//tflite/kernels:cpu_backend_context",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels:padding",
-        "//tflite/kernels/internal:compatibility",
         "//tflite/kernels/internal:tensor",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
         "//tflite/schema:schema_fbs",
@@ -299,7 +298,6 @@ cc_library(
         "//tflite/kernels:cpu_backend_context",
         "//tflite/kernels:kernel_util",
         "//tflite/kernels:padding",
-        "//tflite/kernels/internal:compatibility",
         "//tflite/kernels/internal:tensor",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
         "//tflite/schema:schema_fbs",
