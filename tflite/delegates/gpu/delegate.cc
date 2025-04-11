@@ -20,13 +20,8 @@ limitations under the License.
 
 #include "tflite/delegates/gpu/delegate.h"
 
-#include "tflite/logger.h"
-
-#if defined(__ANDROID__)
-#include <android/hardware_buffer.h>
-#endif
-
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -40,28 +35,35 @@ limitations under the License.
 #include "absl/strings/numbers.h"
 #include "absl/types/span.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/core/c/common.h"
+#include "tflite/delegates/gpu/api.h"
+#include "tflite/delegates/gpu/cl/api.h"
+#include "tflite/delegates/gpu/cl/util.h"
+#include "tflite/delegates/gpu/common/data_type.h"
+#include "tflite/delegates/gpu/common/model.h"
+#include "tflite/delegates/gpu/common/model_builder.h"
+#include "tflite/delegates/gpu/common/model_builder_helper.h"
+#include "tflite/delegates/gpu/common/quantization_util.h"
+#include "tflite/delegates/gpu/common/status.h"
+#include "tflite/delegates/gpu/delegate_options.h"
+#include "tflite/delegates/gpu/tflite_profile.h"
+#include "tflite/delegates/serialization.h"
+#include "tflite/kernels/kernel_util.h"
+#include "tflite/logger.h"
+#include "tflite/minimal_logging.h"
+#include "tflite/profiling/telemetry/c/telemetry_setting.h"
+#include "tflite/profiling/telemetry/telemetry.h"
+#include "tflite/profiling/telemetry/telemetry_status.h"
 
 #if defined(__ANDROID__)
+#include <android/hardware_buffer.h>
+
 #include "tflite/async/backend_async_kernel_interface.h"
 #include "tflite/core/async/c/task.h"
 #include "tflite/core/async/interop/c/attribute_map.h"
 #include "tflite/core/async/interop/c/constants.h"
 #include "tflite/core/async/interop/c/types.h"
-#endif
-
-#include "tflite/core/c/common.h"
 #include "tflite/delegates/gpu/android_hardware_buffer.h"
-#include "tflite/delegates/gpu/api.h"
-#include "tflite/delegates/gpu/cl/api.h"
-#include "tflite/delegates/gpu/cl/util.h"
-#include "tflite/delegates/gpu/common/model_builder.h"
-#include "tflite/delegates/gpu/common/model_builder_helper.h"
-#include "tflite/delegates/gpu/common/quantization_util.h"
-#include "tflite/delegates/gpu/delegate_options.h"
-#include "tflite/delegates/gpu/tflite_profile.h"
-#include "tflite/delegates/serialization.h"
-
-#if defined(__ANDROID__)
 #include "tflite/delegates/gpu/async_buffers.h"
 #include "tflite/delegates/gpu/gl/android_sync.h"
 #include "tflite/delegates/gpu/gl/egl_environment.h"
@@ -70,12 +72,6 @@ limitations under the License.
 #include "tflite/delegates/utils/sync_fence.h"
 #include "tflite/delegates/utils/utils.h"
 #endif
-
-#include "tflite/kernels/kernel_util.h"
-#include "tflite/minimal_logging.h"
-#include "tflite/profiling/telemetry/c/telemetry_setting_internal.h"
-#include "tflite/profiling/telemetry/telemetry.h"
-#include "tflite/profiling/telemetry/telemetry_status.h"
 
 #ifndef CL_DELEGATE_NO_GL
 #include "tflite/delegates/gpu/gl/api2.h"
@@ -469,7 +465,7 @@ absl::Status DelegateKernelCore::Setup(
         InitializeOpenClApi(&graph, &builder, &graph_is_destroyed, context,
                             delegate_params, delegate_->serialization());
     if (!status.ok()) {
-      TF_LITE_KERNEL_LOG(context, std::string(status.message()).c_str());
+      TF_LITE_KERNEL_LOG(context, "%s", std::string(status.message()).c_str());
       TF_LITE_KERNEL_LOG(context, "Falling back to OpenGL");
 
       // Graph needs to be re-created because it is moved above.

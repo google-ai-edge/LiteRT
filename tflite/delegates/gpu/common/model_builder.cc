@@ -16,6 +16,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/model_builder.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -31,9 +32,13 @@ limitations under the License.
 #include "absl/strings/str_join.h"
 #include "absl/strings/string_view.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
+#include "tflite/core/interpreter.h"
+#include "tflite/core/interpreter_builder.h"
+#include "tflite/core/model_builder.h"
 #include "tflite/delegates/gpu/common/custom_parsers.h"
 #include "tflite/delegates/gpu/common/data_type.h"
 #include "tflite/delegates/gpu/common/lstm_parser.h"
@@ -3369,7 +3374,7 @@ TfLiteIntArray* GetOpsToReplace(
                       partition_helper.num_total_nodes());
     }
     absl::StrAppend(&error_message, " operations will run on the CPU.");
-    TF_LITE_KERNEL_LOG(context, error_message.c_str());
+    TF_LITE_KERNEL_LOG(context, "%s", error_message.c_str());
   }
   return ConvertVectorToTfLiteIntArray(ops_to_replace);
 }
