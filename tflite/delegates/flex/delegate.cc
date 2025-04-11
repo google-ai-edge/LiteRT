@@ -14,19 +14,24 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/flex/delegate.h"
 
+#include <cstddef>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <utility>
-#include <vector>
 
-#include "absl/strings/str_cat.h"
-#include "tensorflow/core/framework/variant.h"
-#include "tensorflow/core/lib/core/status.h"
-#include "tflite/context_util.h"
+#include "absl/status/status.h"
+#include "absl/strings/string_view.h"
+#include "tensorflow/core/framework/cancellation.h"
+#include "tensorflow/core/framework/tensor.h"
+#include "tensorflow/core/platform/tstring.h"
+#include "tensorflow/core/public/session_options.h"
 #include "tflite/core/c/common.h"
-#include "tflite/core/macros.h"
+#include "tflite/core/subgraph.h"
 #include "tflite/delegates/flex/buffer_map.h"
 #include "tflite/delegates/flex/kernel.h"
-#include "tflite/delegates/flex/util.h"
+#include "tflite/delegates/utils/simple_delegate.h"
+#include "tflite/logger.h"
 #include "tflite/minimal_logging.h"
 #include "tflite/string_util.h"
 #include "tflite/util.h"
@@ -158,11 +163,9 @@ TfLiteStatus FlexDelegate::CopyFromBufferHandle(
 
   if (output->bytes != t_data.size()) {
     TF_LITE_KERNEL_LOG(context,
-                       absl::StrCat("The given ", output->bytes,
-                                    " bytes are not enough to store "
-                                    "TensorFlow's aligned buffer of size ",
-                                    t_data.size(), " bytes.")
-                           .c_str());
+                       "The given %zu bytes are not enough to store "
+                       "TensorFlow's aligned buffer of size %zu bytes.",
+                       output->bytes, t_data.size());
     return kTfLiteError;
   }
 
