@@ -92,7 +92,7 @@ class QnnManager {
       absl::Span<const QnnBackend_Config_t*> configs,
       std::optional<std::string> shared_library_dir = std::nullopt,
       std::optional<::qnn::SocInfo> soc_info = std::nullopt,
-      const LiteRtQnnOptions* options = nullptr);
+      const LiteRtQnnOptions& options = LITERT_QNN_OPTIONS_INIT);
 
   static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
@@ -140,7 +140,7 @@ class QnnManager {
   LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
                     std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
-                    const LiteRtQnnOptions* options);
+                    const LiteRtQnnOptions& options);
 
   //
   // Manage libQnn*.so Loading

@@ -20,7 +20,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -43,37 +42,26 @@ char BuildId[256];
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-litert::Expected<std::any> FindDispatchOption(
-    const LiteRtDispatchOption* options, int num_options,
-    const char* option_name) {
+const char* GetSharedLibraryDir(const LiteRtDispatchOption* options,
+                                int num_options) {
   for (auto i = 0; i < num_options; ++i) {
     auto& option = options[i];
-    if (!strcmp(option.name, option_name)) {
-      return litert::ToStdAny(option.value);
+    if (!strcmp(option.name, kDispatchOptionSharedLibraryDir)) {
+      return option.value.str_value;
     }
   }
-  return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+  return nullptr;
 }
 
 LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
-  auto shared_library_dir =
-      FindDispatchOption(options, num_options, kDispatchOptionSharedLibraryDir);
-  std::optional<std::string> shared_library_dir_opt;
-  if (shared_library_dir.HasValue()) {
-    shared_library_dir_opt.emplace(
-        std::any_cast<const char*>(shared_library_dir.Value()));
-  }
-
-  auto qnn_dispatch_options =
-      FindDispatchOption(options, num_options, kDispatchOptionLiteRtQnnOptions);
-  const LiteRtQnnOptions* qnn_options = nullptr;
-  if (qnn_dispatch_options.HasValue()) {
-    qnn_options = reinterpret_cast<const LiteRtQnnOptions*>(
-        std::any_cast<const void*>(qnn_dispatch_options.Value()));
-  }
+  auto* shared_library_dir = GetSharedLibraryDir(options, num_options);
+  std::optional<std::string> shared_library_dir_opt =
+      shared_library_dir ? std::make_optional(std::string(shared_library_dir))
+                         : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
-
+  LiteRtQnnOptions qnn_options = LITERT_QNN_HTP_OPTION_INIT;
+  qnn_options.htp_options.performance_mode = kHtpBurst;
   if (auto qnn_manager = QnnManager::Create(
           /*configs=*/configs,
           /*shared_library_dir=*/shared_library_dir_opt,

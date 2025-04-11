@@ -9,7 +9,7 @@
 extern "C" {
 #endif  // __cplusplus
 
-typedef enum LiteRtQnnLogLevel {  // NOLINT(modernize-use-using)
+typedef enum LiteRtQnnLogLevel {
   /// Disable delegate and QNN backend logging messages.
   kLogOff = 0,
   kLogLevelError = 1,
@@ -19,7 +19,7 @@ typedef enum LiteRtQnnLogLevel {  // NOLINT(modernize-use-using)
   kLogLevelDebug = 5,
 } LiteRtQnnLogLevel;
 
-typedef enum LiteRtQnnHtpPerformanceMode {  // NOLINT(modernize-use-using)
+typedef enum LiteRtQnnHtpPerformanceMode {
   kHtpDefault = 0,
   kHtpSustainedHighPerformance = 1,
   kHtpBurst = 2,
@@ -32,12 +32,16 @@ typedef enum LiteRtQnnHtpPerformanceMode {  // NOLINT(modernize-use-using)
   kHtpExtremePowerSaver = 9,
 } LiteRtQnnHtpPerformanceMode;
 
-typedef struct {  // NOLINT
+typedef struct {
   /// The default performance mode sets no configurations on the HTP.
   LiteRtQnnHtpPerformanceMode performance_mode;
 } LiteRtQnnHtpBackendOptions;
 
-typedef struct {  // NOLINT(modernize-use-using)
+// clang-format off
+#define LITERT_QNN_HTP_OPTION_INIT {kHtpDefault /*performance_mode*/}
+// clang-format on
+
+typedef struct {
   /// Apply HTP-friendly op builder.
   bool use_htp_preferences;
   /// This option will treat quantized int16 tensor as quantized uint16 tensor
@@ -52,17 +56,15 @@ typedef struct {  // NOLINT(modernize-use-using)
 // This option can be used to specify QNN options.
 static const char* kDispatchOptionLiteRtQnnOptions = "litert_qnn_options";
 
-#define LITERT_QNN_HTP_OPTION_INIT \
-  { kHtpBurst /*performance_mode*/ }
-
-#define LITERT_QNN_OPTIONS_INIT                                    \
-  {                                                                \
-    false, /*use_htp_preferences*/                                 \
-        true, /*use_qint16_as_quint16*/                            \
-        LITERT_QNN_HTP_OPTION_INIT, /*LiteRtQnnHtpBackendOptions*/ \
-        kLogLevelInfo, /*log_level*/                               \
+// clang-format off
+#define LITERT_QNN_OPTIONS_INIT                                  \
+  {                                                              \
+      false,                      /*use_htp_preferences*/        \
+      true,                       /*use_qint16_as_quint16*/      \
+      LITERT_QNN_HTP_OPTION_INIT, /*LiteRtQnnHtpBackendOptions*/ \
+      kLogLevelInfo,              /*log_level*/                  \
   }
-
+// clang-format on
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
