@@ -336,7 +336,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       rpc_polling_time.option =
           QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME;
       rpc_polling_time.rpcPollingTimeConfig = kRpcPollingTimeHighPower;
-      power_configs.push_back(rpc_polling_time);
+      power_configs.emplace_back(rpc_polling_time);
       // intentionally no break here.
     case LiteRtQnnHtpPerformanceMode::kHtpPowerSaver:
     case LiteRtQnnHtpPerformanceMode::kHtpLowPowerSaver:
@@ -348,7 +348,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       rpc_control_latency.option =
           QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_CONTROL_LATENCY;
       rpc_control_latency.rpcControlLatencyConfig = kRpcControlLatency;
-      power_configs.push_back(rpc_control_latency);
+      power_configs.emplace_back(rpc_control_latency);
       break;
     default:
       QNN_LOG_ERROR("Invalid performance profile %d to set power configs",

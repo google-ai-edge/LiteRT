@@ -16,7 +16,7 @@ std::vector<std::add_pointer_t<std::add_const_t<T>>> ObtainNullTermPtrVector(
   for (int i = 0; i < vec.size(); ++i) {
     ret[i] = &(vec[i]);
   }
-  ret.push_back(nullptr);
+  ret.emplace_back(nullptr);
   return ret;
 }
 
