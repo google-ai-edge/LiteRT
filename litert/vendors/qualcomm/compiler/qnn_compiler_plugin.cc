@@ -17,6 +17,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -284,6 +285,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
           // Use default partition index if vendor doesn't support multiple
           // partitions.
           LiteRtPushOp(selected_ops, op.Get(), kDefaultPartitionIndex));
+    } else {
+      exit(1);
     }
   }
 

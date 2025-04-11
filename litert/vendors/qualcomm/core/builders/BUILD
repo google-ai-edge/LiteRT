@@ -228,6 +228,7 @@ cc_library(
     ],
     deps = [
         ":op_builder",
+        "//litert/c:litert_logging",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
