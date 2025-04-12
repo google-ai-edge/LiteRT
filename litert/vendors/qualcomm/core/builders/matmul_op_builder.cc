@@ -4,6 +4,7 @@
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 
 #include <vector>
+
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -20,7 +21,9 @@ std::vector<OpWrapper> BuildMatmulOp(
   std::vector<OpWrapper> res;
   // SA8295 workaournd
   if (inputs[0].get().GetRank() == 4 && inputs[1].get().GetRank() == 4 &&
-      adj_x == 0 && adj_y == 1) {
+      adj_x == 0 && adj_y == 1 && inputs[0].get().GetDim(0) == 1 &&
+      inputs[0].get().GetDim(1) == 1 && inputs[1].get().GetDim(0) == 1 &&
+      inputs[1].get().GetDim(1) == 1) {
     QNN_LOG_INFO("[MatMul SA8295 Workaournd]");
     // Reshape in[0]
     const std::vector<uint32_t> reshape_in0_dims = {
@@ -65,14 +68,6 @@ std::vector<OpWrapper> BuildMatmulOp(
     reshape_out0.AddInputTensor(reduce_sum_out);
     reshape_out0.AddOutputTensor(outputs[0]);
     return res;
-  }
-  QNN_LOG_INFO("[MatMul dims] In[0]");
-  for (std::uint32_t i = 0; i < inputs[0].get().GetRank(); ++i) {
-    QNN_LOG_INFO("Dim %u: %u", i, inputs[0].get().GetDim(i));
-  }
-  QNN_LOG_INFO("[MatMul dims] In[1]");
-  for (std::uint32_t i = 0; i < inputs[1].get().GetRank(); ++i) {
-    QNN_LOG_INFO("Dim %u: %u", i, inputs[1].get().GetDim(i));
   }
   auto& matmul_op = CreateOpWrapper(res, QNN_OP_MAT_MUL);
   for (const auto& input : inputs) {
