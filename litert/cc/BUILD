@@ -595,7 +595,7 @@ litert_device_test(
 # 
 # litert_device_exec(
 #     name = "litert_compiled_model_gpu_device_test",
-#     backend_id = "google_tensor",
+#     backend_id = "gpu",
 #     data = [
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
