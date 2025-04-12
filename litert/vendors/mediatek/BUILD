@@ -32,6 +32,7 @@ litert_cc_lib_with_mtk(
         "nobuilder",
         "notap",
     ],
+    ungrte = True,
     deps = [
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
