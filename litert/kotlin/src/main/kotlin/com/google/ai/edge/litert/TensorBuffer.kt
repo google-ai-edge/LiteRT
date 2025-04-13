@@ -5,48 +5,56 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
   // TODO(niuchl): Add support for different types of tensor buffers.
   // TODO(niuchl): Add tests for different element types.
 
+  @Throws(LiteRtException::class)
   fun writeInt(data: IntArray) {
     assertNotDestroyed()
 
     nativeWriteInt(handle, data)
   }
 
+  @Throws(LiteRtException::class)
   fun writeFloat(data: FloatArray) {
     assertNotDestroyed()
 
     nativeWriteFloat(handle, data)
   }
 
+  @Throws(LiteRtException::class)
   fun writeInt8(data: ByteArray) {
     assertNotDestroyed()
 
     nativeWriteInt8(handle, data)
   }
 
+  @Throws(LiteRtException::class)
   fun writeBoolean(data: BooleanArray) {
     assertNotDestroyed()
 
     nativeWriteBoolean(handle, data)
   }
 
+  @Throws(LiteRtException::class)
   fun readInt(): IntArray {
     assertNotDestroyed()
 
     return nativeReadInt(handle)
   }
 
+  @Throws(LiteRtException::class)
   fun readFloat(): FloatArray {
     assertNotDestroyed()
 
     return nativeReadFloat(handle)
   }
 
+  @Throws(LiteRtException::class)
   fun readInt8(): ByteArray {
     assertNotDestroyed()
 
     return nativeReadInt8(handle)
   }
 
+  @Throws(LiteRtException::class)
   fun readBoolean(): BooleanArray {
     assertNotDestroyed()
 

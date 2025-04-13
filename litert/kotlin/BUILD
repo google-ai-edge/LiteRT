@@ -33,7 +33,13 @@ cc_library(
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
-    ],
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": ["//third_party/java/jdk:jni"],
+    }),
 )
 
 cc_library(
@@ -42,6 +48,7 @@ cc_library(
     hdrs = ["src/main/jni/litert_environment_jni.h"],
     deps = [
         ":litert_jni_common",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment",
@@ -126,6 +133,7 @@ kt_android_library(
         "src/main/kotlin/com/google/ai/edge/litert/AcceleratorProvider.kt",
         "src/main/kotlin/com/google/ai/edge/litert/Common.kt",
         "src/main/kotlin/com/google/ai/edge/litert/Environment.kt",
+        "src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt",
         "src/main/kotlin/com/google/ai/edge/litert/Model.kt",
         "src/main/kotlin/com/google/ai/edge/litert/ModelProvider.kt",
         "src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt",

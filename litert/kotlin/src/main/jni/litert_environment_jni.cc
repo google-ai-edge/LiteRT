@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
@@ -17,6 +18,7 @@
 namespace {
 
 using litert::Environment;
+using litert::jni::ThrowLiteRtException;
 
 // Converts a LiteRtHwAccelerators to the value used in the Kotlin enum.
 int ToJniAccelerator(LiteRtHwAcceleratorSet accelerator) {
@@ -43,12 +45,10 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
     JNIEnv* env, jclass clazz, jintArray tags, jobjectArray values) {
-  auto num_tags = env->GetArrayLength(tags);
-  if (num_tags != env->GetArrayLength(values)) {
-    LITERT_LOG(LITERT_ERROR, "Number of tags and values do not match.");
-    return 0;
-  }
+  ABSL_CHECK_EQ(env->GetArrayLength(tags), env->GetArrayLength(values))
+      << "Number of tags and values do not match.";
 
+  auto num_tags = env->GetArrayLength(tags);
   AUTO_CLEANUP_JNI_STRING_ARRAY(env, values);
   std::vector<Environment::Option> options;
   if (num_tags > 0) {
@@ -67,6 +67,8 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Environment_nativeCreate(
   if (!litert_env) {
     LITERT_LOG(LITERT_ERROR, "Failed to create environment: %s.",
                litert_env.Error().Message().c_str());
+    ThrowLiteRtException(env, litert_env.Error().Status(),
+                         litert_env.Error().Message());
     return 0;
   }
   return reinterpret_cast<jlong>(litert_env->Release());
@@ -81,6 +83,7 @@ Java_com_google_ai_edge_litert_Environment_nativeGetAvailableAccelerators(
   auto status = LiteRtGetNumAccelerators(litert_env, &size);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to get number of accelerators.");
+    ThrowLiteRtException(env, status, "Failed to get number of accelerators.");
     return nullptr;
   }
 

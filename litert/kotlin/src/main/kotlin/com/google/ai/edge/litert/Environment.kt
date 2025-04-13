@@ -14,6 +14,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
   }
 
   /** Returns the set of accelerators available in the environment. */
+  @Throws(LiteRtException::class)
   fun getAvailableAccelerators(): Set<Accelerator> {
     assertNotDestroyed()
 
@@ -30,6 +31,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
       System.loadLibrary("litert_jni")
     }
 
+    @Throws(LiteRtException::class)
     @JvmOverloads
     @JvmStatic
     fun create(options: Map<Option, String> = mapOf()): Environment {
@@ -45,6 +47,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
      * @param npuAcceleratorProvider The NPU accelerator provider.
      * @param options The options to configure the environment.
      */
+    @Throws(LiteRtException::class)
     @JvmOverloads
     @JvmStatic
     fun create(

@@ -82,6 +82,7 @@ typedef struct LiteRtApiVersion {
 int LiteRtCompareApiVersion(LiteRtApiVersion version,
                             LiteRtApiVersion reference);
 
+// LINT.IfChange(status_codes)
 typedef enum {
   kLiteRtStatusOk = 0,
 
@@ -116,6 +117,7 @@ typedef enum {
   kLiteRtStatusLegalizeNoMatch = 2000,
   kLiteRtStatusErrorInvalidLegalization = 2001,
 } LiteRtStatus;
+// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes)
 
 // Returns a string describing the status value.
 const char* LiteRtGetStatusString(LiteRtStatus status);

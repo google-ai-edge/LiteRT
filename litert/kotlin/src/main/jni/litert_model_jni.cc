@@ -16,6 +16,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 
+namespace {
+using litert::jni::ThrowLiteRtException;
+}  // namespace
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
@@ -38,6 +42,7 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Model_nativeLoadAsset(
       LiteRtCreateModelFromBuffer(buffer.Data(), buffer.Size(), &model);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to create model from asset.");
+    ThrowLiteRtException(env, status, "Failed to create model from asset.");
     return 0;
   }
 
@@ -52,6 +57,7 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Model_nativeLoadFile(
   auto status = LiteRtCreateModelFromFile(file_path_str, &model);
   if (status != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_ERROR, "Failed to create model from file.");
+    ThrowLiteRtException(env, status, "Failed to create model from file.");
     return 0;
   }
   return reinterpret_cast<jlong>(model);
