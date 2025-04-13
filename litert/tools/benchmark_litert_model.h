@@ -158,7 +158,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "use_gpu", &params_, "Whether to use GPU accelerator."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_npu", &params_, "Whether to use NPU accelerator."));
-    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "qnn_dispatch_library_path", &params_, "QNN dispatch library path."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,
