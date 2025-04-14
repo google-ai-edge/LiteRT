@@ -12,19 +12,36 @@ litert_dynamic_lib(
     srcs = ["openvino_compiler_plugin.cc"],
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
-        "openvino_compiler_plugin.h",
     ],
     export_litert_only = True,
-    linkstatic = 1,
     shared_lib_name = "intel_openvino_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_IntelOpenvino.so",
     ungrte = True,
     visibility = ["//litert:__subpackages__"],
     deps = [
+        ":graph_iterator",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_lib(
+    name = "graph_iterator",
+    srcs = ["graph_iterator.cc"],
+    hdrs = ["graph_iterator.h"],
+    tags = [
+        "nobuilder",
+    ],
+    deps = [
+        ":decoder",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_model",
         "@intel_openvino//:openvino",
     ],
@@ -39,16 +56,11 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
-#    linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
         "no_oss",
-        # Sanitizer runtime doesn't work with anything that loads libQnnHtp.so.
-        "nosan",
     ],
     target_compatible_with = select({
         "@platforms//os:android": [],
