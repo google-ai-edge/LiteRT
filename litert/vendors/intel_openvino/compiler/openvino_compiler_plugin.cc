@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <openvino/frontend/tensorflow_lite/frontend.hpp>
+#include <openvino/openvino.hpp>
 #include "absl/strings/string_view.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -17,6 +18,8 @@
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+
+#include "graph_iterator.h"
 
 namespace {
 
@@ -80,9 +83,9 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(LiteRtCompilerPlugin compi
 // Compiled Result Definition
 /// \brief Define storage of compiled result object for OV compiler plugin
 struct LiteRtCompiledResultT {
-    std::string byte_code;
+    std::vector<std::stringstream> byte_code;
     // TODO: Revisit this to check if we need this or subgraph data
-    std::vector<std::string> per_op_data;
+    std::vector<std::string> graph_names;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(LiteRtCompiledResult compiled_result,
@@ -97,19 +100,20 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(LiteRtCompiledResult compiled_resul
                                              LiteRtParamIndex call_idx, const void **call_info,
                                              size_t *call_info_size,
                                              LiteRtParamIndex *byte_code_idx) {
-    if (call_idx >= compiled_result->per_op_data.size()) {
+    if (call_idx >= compiled_result->graph_names.size()) {
         return kLiteRtStatusErrorIndexOOB;
     }
 
-    *call_info = compiled_result->per_op_data.at(call_idx).data();
-    *call_info_size = compiled_result->per_op_data.at(call_idx).size();
+    auto &graph_name = compiled_result->graph_names[call_idx];
+    *call_info = graph_name.data();
+    *call_info_size = graph_name.size();
 
     return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetNumCompiledResultCalls(LiteRtCompiledResult compiled_result,
                                              LiteRtParamIndex *num_calls) {
-    *num_calls = compiled_result->per_op_data.size();
+    *num_calls = compiled_result->graph_names.size();
     return kLiteRtStatusOk;
 }
 
@@ -169,41 +173,37 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
                                          const char *soc_model, LiteRtModel partitions,
                                          LiteRtCompiledResult *compiled_result) {
-    // 1. Create TFlite FE related objects for managing graph generation
-    // 2. Create input/output tensor, list of inputs and outputs to the graph
-    // 3. Create op nodes
     auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
     const auto num_partitions = model.NumSubgraphs();
 
-    // auto tflite_fe =
-    // std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
-    for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
-        /*    std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
-           graph_delegate = std::make_shared<GraphIteratorDelegate>(context,
-           params); auto input_model = tflite_fe->load(graph_delegate); auto model =
-           tflite_fe->convert(input_model);
-        */
-    }
     auto result = std::make_unique<LiteRtCompiledResultT>();
     result->byte_code.resize(num_partitions);
-    result->per_op_data.resize(num_partitions);
-    for (int i = 0; i < num_partitions; ++i) {
-        std::string byte_code_append = "Partition_" + i;
-        result->byte_code.append(byte_code_append.c_str());
-        result->per_op_data[i].append(byte_code_append.c_str());
+    result->graph_names.resize(num_partitions);
+    auto tflite_fe = std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
+    // TODO: Update this hard coded path to an env option passed from LiteRT framework
+    ov::Core core;
+    for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
+        std::string subgraph_name = "Partition_" + partition_idx;
+        litert::Expected<litert::Subgraph> expected_subgraph = model.Subgraph(partition_idx);
+        if (expected_subgraph.HasValue()) {
+            std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator> graph_delegate =
+                std::make_shared<litert::openvino::GraphIteratorDelegate>(
+                    &expected_subgraph.Value());
+            auto input_model = tflite_fe->load(graph_delegate);
+            auto model = tflite_fe->convert(input_model);
+
+            // TODO: pass the device string from env options
+            std::string device = "NPU";
+            auto compiled_model = core.compile_model(model, device);
+
+            compiled_model.export_model(result->byte_code[partition_idx]);
+            result->graph_names[partition_idx].append(subgraph_name.c_str());
+        } else {
+            LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
+            return kLiteRtStatusErrorCompilation;
+        }
     }
     *compiled_result = result.release();
-
-    /* for (auto input : graphs.Inputs()) {
-             //Call graph decoder FE to create inputs
-     }
-
-     for (auto output : graph.Outputs()) {
-             //Call graph decoder FE to create outputs
-     }*/
-
-    // 1. Compile the graph
-    // 2. Cache the model
-    // 3. Add support for loading the cached model
+    // TODO: Add support for caching
     return kLiteRtStatusOk;
 }
