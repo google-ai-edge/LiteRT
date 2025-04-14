@@ -186,12 +186,14 @@ MEDIATEK_SPEC = BackendSpec(
     id = "mediatek",
     libs = [
         ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mediatek.so", "LD_LIBRARY_PATH"),
+        ("//litert/vendors/mediatek/compiler:libLiteRtCompilerPlugin_MediaTek.so", "LD_LIBRARY_PATH"),
     ],
     mh_devices = [{
         "hardware": "mt6989",
         "label": "odml-test",
     }],
     dispatch = "libLiteRtDispatch_Mediatek.so",
+    plugin = "libLiteRtCompilerPlugin_MediaTek.so",
 )
 
 # GOOGLE TENSOR

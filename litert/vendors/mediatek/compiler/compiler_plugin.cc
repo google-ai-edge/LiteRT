@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -310,10 +311,19 @@ Expected<std::vector<uint8_t>> CompilePartition(
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
+#if __ANDROID__
+  char dla_directory_template[] =
+      "/data/local/tmp/runfiles/tempdir_dla.XXXXXXX";
+#else
   char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
+#endif
+
   char* dla_directory_name = mkdtemp(dla_directory_template);
   if (dla_directory_name == nullptr) {
-    LITERT_LOG(LITERT_ERROR, "Failed to make DLA temporary directory")
+    int error_code = errno;
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to make DLA temporary directory, (errno=%d)",
+               error_code);
     return kLiteRtStatusErrorFileIO;
   }
   setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
