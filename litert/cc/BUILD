@@ -562,6 +562,7 @@ litert_device_test(
 #     name = "litert_compiled_model_gpu_test",
 #     srcs = ["litert_compiled_model_gpu_test.cc"],
 #     data = [
+#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
 #     tags = [
@@ -572,6 +573,7 @@ litert_device_test(
 #         ":litert_environment",
 #         ":litert_event",
 #         ":litert_model",
+#         ":litert_options",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/debugging:leak_check",
@@ -582,7 +584,6 @@ litert_device_test(
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
-#         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
@@ -597,6 +598,7 @@ litert_device_test(
 #     name = "litert_compiled_model_gpu_device_test",
 #     backend_id = "gpu",
 #     data = [
+#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
 #     target = ":litert_compiled_model_gpu_test",
