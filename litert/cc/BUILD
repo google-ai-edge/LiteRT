@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
 package(
@@ -24,11 +25,14 @@ cc_library(
     hdrs = ["litert_environment.h"],
     deps = [
         ":litert_any",
+        ":litert_environment_options",
         ":litert_expected",
         ":litert_handle",
+        ":litert_macros",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
     ],
 )
 
@@ -467,22 +471,13 @@ cc_library(
     name = "litert_options",
     hdrs = ["litert_options.h"],
     deps = [
-        ":litert_environment",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        ":litert_model",
         ":litert_opaque_options",
-        ":litert_tensor_buffer",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_model",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
-        "//litert/c:litert_tensor_buffer",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",
@@ -713,6 +708,32 @@ cc_library(
     hdrs = ["litert_platform_support.h"],
     deps = [
         "//litert/c:litert_platform_support",
+    ],
+)
+
+cc_library(
+    name = "litert_environment_options",
+    hdrs = ["litert_environment_options.h"],
+    deps = [
+        ":litert_any",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+    ],
+)
+
+cc_test(
+    name = "litert_environment_options_test",
+    srcs = ["litert_environment_options_test.cc"],
+    deps = [
+        ":litert_environment",
+        ":litert_environment_options",
+        ":litert_expected",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_environment_options",
     ],
 )
 

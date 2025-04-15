@@ -21,9 +21,13 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_macros.h"
+
 namespace litert {
 
 class Environment
@@ -40,6 +44,12 @@ class Environment
     OptionTag tag;
     std::any value;
   };
+
+  Expected<EnvironmentOptions> GetOptions() const {
+    LiteRtEnvironmentOptions options;
+    LITERT_RETURN_IF_ERROR(LiteRtGetEnvironmentOptions(Get(), &options));
+    return EnvironmentOptions(options);
+  }
 
   static Expected<Environment> Create(absl::Span<const Option> options) {
     auto c_options = ConvertOptions(options);
