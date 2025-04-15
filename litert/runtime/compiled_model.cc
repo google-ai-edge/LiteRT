@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_event.h"
@@ -314,8 +315,9 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       }
       // Skip AOT compiled NPU custom ops.
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
-          litert::internal::kLiteRtDispatchOpCustomName ==
-              registration.custom_name) {
+          registration.custom_name &&
+          absl::StrContains(registration.custom_name,
+                            litert::internal::kLiteRtDispatchOpCustomName)) {
         continue;
       }
       // Mark input of node as CPU tensors.

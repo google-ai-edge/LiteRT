@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -42,11 +43,19 @@
 
 namespace {
 
+using ::litert::Unexpected;
+
 // A TFL Delegate that can recognize subgraphs that run on Dispatch API capable
 // accelerators, e.g. TPU, DSP, ... It replaces such subgraphs and offloads
 // their work through the Dispatch API.
 class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
  public:
+  ~DispatchDelegate() override {
+    if (device_context_) {
+      (void)LiteRtDispatchDeviceContextDestroy(device_context_);
+    }
+  }
+
   static TfLiteOpaqueDelegate* Create(LiteRtDispatchDelegateOptions* options_) {
     litert::DispatchDelegateOptionsPtr options(
         options_, LiteRtDestroyDispatchDelegateOptions);
@@ -55,10 +64,10 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
       return nullptr;
     }
 
-    std::unique_ptr<DispatchDelegate> managed_sb_delegate(
+    std::unique_ptr<DispatchDelegate> managed_dispatch_delegate(
         new DispatchDelegate(std::move(options)));
     return tflite::TfLiteOpaqueDelegateFactory::CreateSimpleDelegate(
-        std::move(managed_sb_delegate),
+        std::move(managed_dispatch_delegate),
         kTfLiteDelegateFlagsAllowDynamicTensors);
   }
 
@@ -83,19 +92,32 @@ class DispatchDelegate : public tflite::SimpleOpaqueDelegateInterface {
   explicit DispatchDelegate(litert::DispatchDelegateOptionsPtr&& options)
       : options_(std::move(options)) {}
 
+  litert::Expected<void> InitializeDispatchApi();
+
   litert::DispatchDelegateOptionsPtr options_;
+  bool has_dispatch_runtime_ = false;
   int dispatch_graph_name_id_ = 0;
   std::vector<litert::internal::DispatchDelegateKernel*> kernels_;
+  LiteRtDispatchDeviceContext device_context_ = nullptr;
 };
 
 bool DispatchDelegate::IsNodeSupportedByDelegate(
     const TfLiteOperator* op, const TfLiteOpaqueNode* node,
     TfLiteOpaqueContext* context) const {
-  auto custom_name = absl::string_view(TfLiteOperatorGetCustomName(op));
-  return custom_name == ::litert::internal::kLiteRtDispatchOpCustomName;
+  const char* custom_name = TfLiteOperatorGetCustomName(op);
+  return custom_name &&
+         absl::StrContains(custom_name,
+                           ::litert::internal::kLiteRtDispatchOpCustomName);
 }
 
 TfLiteStatus DispatchDelegate::Initialize(TfLiteOpaqueContext* context) {
+  if (auto status = InitializeDispatchApi(); !status) {
+    LITERT_LOG(LITERT_ERROR, "Failed to initialize Dispatch API: %s",
+               status.Error().Message().c_str());
+    has_dispatch_runtime_ = false;
+  } else {
+    has_dispatch_runtime_ = true;
+  }
   return kTfLiteOk;
 }
 
@@ -103,11 +125,18 @@ const char* DispatchDelegate::Name() const { return kDelegateName.data(); }
 
 std::unique_ptr<tflite::SimpleOpaqueDelegateKernelInterface>
 DispatchDelegate::CreateDelegateKernelInterface() {
+  if (!has_dispatch_runtime_) {
+    LITERT_FATAL(
+        "Failed to create a dispatch delegate kernel: No usable Dispatch "
+        "runtime found");
+    return nullptr;
+  }
+
   std::string dispatch_graph_name =
       absl::StrFormat("DispatchGraph_%d", dispatch_graph_name_id_++);
 
   auto kernel = litert::internal::DispatchDelegateKernel::Create(
-      std::move(dispatch_graph_name), *options_);
+      std::move(dispatch_graph_name), *options_, device_context_);
   if (kernel) {
     auto* kernel_ptr =
         dynamic_cast<typename litert::internal::DispatchDelegateKernel*>(
@@ -140,6 +169,79 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
                    std::make_move_iterator(kernel_metrics.metrics.end()));
   }
   return LiteRtMetricsT{.metrics = std::move(metrics)};
+}
+
+litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
+  auto dispatch_options = options_->GetDispatchOptions();
+  if (auto status = LiteRtDispatchInitialize(dispatch_options.data(),
+                                             dispatch_options.size());
+      status != kLiteRtStatusOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to initialize Dispatch API: %d", status));
+  }
+
+  const char* vendor_id;
+  if (auto status = LiteRtDispatchGetVendorId(&vendor_id);
+      status != kLiteRtStatusOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get Dispatch API vendor ID: %d", status));
+  }
+  LITERT_LOG(LITERT_INFO, "Dispatch API vendor ID: %s", vendor_id);
+
+  const char* build_id;
+  if (auto status = LiteRtDispatchGetBuildId(&build_id);
+      status != kLiteRtStatusOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get Dispatch API build ID: %d", status));
+  }
+  LITERT_LOG(LITERT_INFO, "Dispatch API build ID: %s", build_id);
+
+  LiteRtApiVersion api_version;
+  if (auto status = LiteRtDispatchGetApiVersion(&api_version);
+      status != kLiteRtStatusOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get LiteRT Dispatch API version: %d",
+                        status));
+  }
+  LITERT_LOG(LITERT_INFO, "Dispatch API version: %d.%d.%d", api_version.major,
+             api_version.minor, api_version.patch);
+
+  // Check if the versions mach.
+  if (api_version.major != LITERT_API_VERSION_MAJOR ||
+      api_version.minor < LITERT_API_VERSION_MINOR) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Found Dispatch API with an unsupported version");
+  }
+
+  int capabilities;
+  if (auto status = LiteRtDispatchGetCapabilities(&capabilities);
+      status != kLiteRtStatusOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get Dispatch API capabilities: %d", status));
+  }
+  LITERT_LOG(LITERT_INFO, "Dispatch API capabilities: %d", capabilities);
+
+  if (!(capabilities & kLiteRtDispatchCapabilitiesBasic)) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Dispatch API has insufficient capabilities: %d",
+                        capabilities));
+  }
+
+  if (auto status = LiteRtDispatchDeviceContextCreate(&device_context_);
+      status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get Dispatch API device context: %d",
+               status);
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to create Dispatch API device context");
+  }
+
+  return {};
 }
 
 }  // namespace
