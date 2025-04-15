@@ -12,15 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_compilation_options.h"
+#include "litert/c/litert_options.h"
 
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_accelerator_compilation_options.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/runtime/compilation_options.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/core/options.h"
 
 #define LRT_CHECK_NON_NULL(handle)                          \
   if (!(handle)) {                                          \
@@ -30,19 +30,16 @@
 
 extern "C" {
 
-LiteRtStatus LiteRtCreateCompilationOptions(LiteRtCompilationOptions* options) {
+LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options) {
   LRT_CHECK_NON_NULL(options);
-  *options = new LiteRtCompilationOptionsT;
+  *options = new LiteRtOptionsT;
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyCompilationOptions(LiteRtCompilationOptions options) {
-  delete options;
-}
+void LiteRtDestroyOptions(LiteRtOptions options) { delete options; }
 
-LiteRtStatus LiteRtSetCompilationOptionsHardwareAccelerators(
-    LiteRtCompilationOptions options,
-    LiteRtHwAcceleratorSet hardware_accelerators) {
+LiteRtStatus LiteRtSetOptionsHardwareAccelerators(
+    LiteRtOptions options, LiteRtHwAcceleratorSet hardware_accelerators) {
   LRT_CHECK_NON_NULL(options);
   if ((hardware_accelerators &
        (kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
@@ -56,23 +53,20 @@ LiteRtStatus LiteRtSetCompilationOptionsHardwareAccelerators(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCompilationOptionsHardwareAccelerators(
-    LiteRtCompilationOptions options,
-    LiteRtHwAcceleratorSet* hardware_accelerators) {
+LiteRtStatus LiteRtGetOptionsHardwareAccelerators(
+    LiteRtOptions options, LiteRtHwAcceleratorSet* hardware_accelerators) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(hardware_accelerators);
   *hardware_accelerators = options->hardware_accelerators;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtAddAcceleratorCompilationOptions(
-    LiteRtCompilationOptions options,
-    LiteRtAcceleratorCompilationOptions accelerator_compilation_options) {
+LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
+                                    LiteRtOpaqueOptions opaque_options) {
   LRT_CHECK_NON_NULL(options);
-  LRT_CHECK_NON_NULL(accelerator_compilation_options);
-  LITERT_RETURN_IF_ERROR(options->accelerator_compilation_options.Append(
-      litert::AcceleratorCompilationOptions(accelerator_compilation_options,
-                                            litert::OwnHandle::kNo)));
+  LRT_CHECK_NON_NULL(opaque_options);
+  LITERT_RETURN_IF_ERROR(options->options.Append(
+      litert::OpaqueOptions(opaque_options, litert::OwnHandle::kNo)));
   return kLiteRtStatusOk;
 }
 
@@ -80,13 +74,11 @@ LiteRtStatus LiteRtAddAcceleratorCompilationOptions(
 //
 // Note: The following elements may be retrieved with
 // `LiteRtGetNextAcceleratorCompilationOptions`.
-LiteRtStatus LiteRtGetAcceleratorCompilationOptions(
-    LiteRtCompilationOptions options,
-    LiteRtAcceleratorCompilationOptions* accelerator_compilation_options) {
+LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
+                                    LiteRtOpaqueOptions* opaque_options) {
   LRT_CHECK_NON_NULL(options);
-  LRT_CHECK_NON_NULL(accelerator_compilation_options);
-  *accelerator_compilation_options =
-      options->accelerator_compilation_options.Get();
+  LRT_CHECK_NON_NULL(opaque_options);
+  *opaque_options = options->options.Get();
   return kLiteRtStatusOk;
 }
 

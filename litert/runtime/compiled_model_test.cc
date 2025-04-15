@@ -27,9 +27,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -187,16 +187,15 @@ TEST(CompiledModelTest, Basic) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -308,16 +307,15 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check input and output buffer requirements expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -440,16 +438,15 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check ComiledModel buffer requirements.
   // input and output expect host memory.

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_accelerator_compilation_options.h"
+#include "litert/c/litert_opaque_options.h"
 
 #include <cstring>
 #include <memory>
@@ -21,47 +21,45 @@
 
 #include "litert/c/litert_common.h"
 
-struct LiteRtAcceleratorCompilationOptionsT {
+struct LiteRtOpaqueOptionsT {
   LiteRtApiVersion payload_version;
   std::string payload_identifier;
   std::unique_ptr<void, void (*)(void*)> payload_data;
-  LiteRtAcceleratorCompilationOptionsT* next = nullptr;
+  LiteRtOpaqueOptionsT* next = nullptr;
 
-  LiteRtAcceleratorCompilationOptionsT(const LiteRtApiVersion& payload_version_,
-                                       std::string payload_identifier_,
-                                       void* payload_data_,
-                                       void (*payload_destructor_)(void*))
+  LiteRtOpaqueOptionsT(const LiteRtApiVersion& payload_version_,
+                       std::string payload_identifier_, void* payload_data_,
+                       void (*payload_destructor_)(void*))
       : payload_version(payload_version_),
         payload_identifier(std::move(payload_identifier_)),
         payload_data(payload_data_, payload_destructor_) {}
 };
 
-LiteRtStatus LiteRtCreateAcceleratorCompilationOptions(
-    const LiteRtApiVersion* payload_version, const char* payload_identifier,
-    void* payload_data, void (*payload_destructor)(void*),
-    LiteRtAcceleratorCompilationOptions* options) {
+LiteRtStatus LiteRtCreateOpaqueOptions(const LiteRtApiVersion* payload_version,
+                                       const char* payload_identifier,
+                                       void* payload_data,
+                                       void (*payload_destructor)(void*),
+                                       LiteRtOpaqueOptions* options) {
   if (!payload_version || !payload_identifier || !payload_data ||
       !payload_destructor || !options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *options = new LiteRtAcceleratorCompilationOptionsT(
-      *payload_version, std::string(payload_identifier), payload_data,
-      payload_destructor);
+  *options = new LiteRtOpaqueOptionsT(*payload_version,
+                                      std::string(payload_identifier),
+                                      payload_data, payload_destructor);
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyAcceleratorCompilationOptions(
-    LiteRtAcceleratorCompilationOptions options) {
+void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options) {
   while (options) {
-    LiteRtAcceleratorCompilationOptions next = options->next;
+    LiteRtOpaqueOptions next = options->next;
     delete options;
     options = next;
   }
 }
 
-LiteRtStatus LiteRtGetAcceleratorCompilationOptionsVersion(
-    LiteRtAcceleratorCompilationOptions options,
-    LiteRtApiVersion* payload_version) {
+LiteRtStatus LiteRtGetOpaqueOptionsVersion(LiteRtOpaqueOptions options,
+                                           LiteRtApiVersion* payload_version) {
   if (!options || !payload_version) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -69,9 +67,8 @@ LiteRtStatus LiteRtGetAcceleratorCompilationOptionsVersion(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetAcceleratorCompilationOptionsIdentifier(
-    LiteRtAcceleratorCompilationOptions options,
-    const char** payload_identifier) {
+LiteRtStatus LiteRtGetOpaqueOptionsIdentifier(LiteRtOpaqueOptions options,
+                                              const char** payload_identifier) {
   if (!options || !payload_identifier) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -79,8 +76,8 @@ LiteRtStatus LiteRtGetAcceleratorCompilationOptionsIdentifier(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetAcceleratorCompilationOptionsData(
-    LiteRtAcceleratorCompilationOptions options, void** payload_data) {
+LiteRtStatus LiteRtGetOpaqueOptionsData(LiteRtOpaqueOptions options,
+                                        void** payload_data) {
   if (!options || !payload_data) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -88,9 +85,10 @@ LiteRtStatus LiteRtGetAcceleratorCompilationOptionsData(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtFindAcceleratorCompilationOptionsData(
-    LiteRtAcceleratorCompilationOptions options, const char* payload_identifier,
-    LiteRtApiVersion* payload_version, void** payload_data) {
+LiteRtStatus LiteRtFindOpaqueOptionsData(LiteRtOpaqueOptions options,
+                                         const char* payload_identifier,
+                                         LiteRtApiVersion* payload_version,
+                                         void** payload_data) {
   if (!options || !payload_identifier || !payload_version || !payload_data) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -106,8 +104,7 @@ LiteRtStatus LiteRtFindAcceleratorCompilationOptionsData(
   return kLiteRtStatusErrorNotFound;
 }
 
-LiteRtStatus LiteRtGetNextAcceleratorCompilationOptions(
-    LiteRtAcceleratorCompilationOptions* options) {
+LiteRtStatus LiteRtGetNextOpaqueOptions(LiteRtOpaqueOptions* options) {
   if (!options || !*options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -115,9 +112,8 @@ LiteRtStatus LiteRtGetNextAcceleratorCompilationOptions(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtAppendAcceleratorCompilationOptions(
-    LiteRtAcceleratorCompilationOptions* options,
-    LiteRtAcceleratorCompilationOptions appended_options) {
+LiteRtStatus LiteRtAppendOpaqueOptions(LiteRtOpaqueOptions* options,
+                                       LiteRtOpaqueOptions appended_options) {
   if (!options || !appended_options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -128,17 +124,16 @@ LiteRtStatus LiteRtAppendAcceleratorCompilationOptions(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtPopAcceleratorCompilationOptions(
-    LiteRtAcceleratorCompilationOptions* options) {
+LiteRtStatus LiteRtPopOpaqueOptions(LiteRtOpaqueOptions* options) {
   if (!options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LiteRtAcceleratorCompilationOptions* last = options;
+  LiteRtOpaqueOptions* last = options;
   while ((*last)->next) {
     last = &(*last)->next;
   }
   if (*last) {
-    LiteRtDestroyAcceleratorCompilationOptions(*last);
+    LiteRtDestroyOpaqueOptions(*last);
     *last = nullptr;
   }
   return kLiteRtStatusOk;

@@ -26,8 +26,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -57,7 +57,7 @@ class LiteRtCompiledModelT {
   // returned object.
   static litert::Expected<Ptr> Create(
       LiteRtEnvironmentT* env, LiteRtModel model,
-      LiteRtCompilationOptions jit_compilation_options = nullptr);
+      LiteRtOptions jit_compilation_options = nullptr);
 
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor

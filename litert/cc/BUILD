@@ -437,12 +437,12 @@ cc_library(
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
     deps = [
-        ":litert_compilation_options",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         ":litert_model",
+        ":litert_options",
         ":litert_tensor_buffer",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -464,24 +464,24 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_compilation_options",
-    hdrs = ["litert_compilation_options.h"],
+    name = "litert_options",
+    hdrs = ["litert_options.h"],
     deps = [
-        ":litert_accelerator_compilation_options",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         ":litert_model",
+        ":litert_opaque_options",
         ":litert_tensor_buffer",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
-        "//litert/c:litert_compilation_options",
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_environment",
         "//litert/c:litert_model",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
@@ -691,17 +691,17 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_accelerator_compilation_options",
+    name = "litert_opaque_options",
     hdrs = [
-        "litert_accelerator_compilation_options.h",
+        "litert_opaque_options.h",
     ],
     deps = [
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
     ],
 )
 

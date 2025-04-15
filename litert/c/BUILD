@@ -330,29 +330,29 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_compilation_options",
-    srcs = ["litert_compilation_options.cc"],
+    name = "litert_options",
+    srcs = ["litert_options.cc"],
     hdrs = [
-        "litert_compilation_options.h",
+        "litert_options.h",
     ],
     deps = [
-        ":litert_accelerator_compilation_options",
         ":litert_common",
         ":litert_logging",
-        "//litert/cc:litert_accelerator_compilation_options",
+        ":litert_opaque_options",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/runtime:compilation_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/core:options",
     ],
 )
 
 cc_test(
-    name = "litert_compilation_options_test",
-    srcs = ["litert_compilation_options_test.cc"],
+    name = "litert_options_test",
+    srcs = ["litert_options_test.cc"],
     deps = [
-        ":litert_accelerator_compilation_options",
         ":litert_common",
-        ":litert_compilation_options",
+        ":litert_opaque_options",
+        ":litert_options",
         "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -367,11 +367,11 @@ cc_library(
     ],
     deps = [
         ":litert_common",
-        ":litert_compilation_options",
         ":litert_environment",
         ":litert_logging",
         ":litert_metrics",
         ":litert_model",
+        ":litert_options",
         ":litert_tensor_buffer",
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
@@ -389,10 +389,10 @@ cc_test(
     ],
     deps = [
         ":litert_common",
-        ":litert_compilation_options",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_model",
+        ":litert_options",
         ":litert_tensor_buffer",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
@@ -453,20 +453,20 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_accelerator_compilation_options",
-    srcs = ["litert_accelerator_compilation_options.cc"],
-    hdrs = ["litert_accelerator_compilation_options.h"],
+    name = "litert_opaque_options",
+    srcs = ["litert_opaque_options.cc"],
+    hdrs = ["litert_opaque_options.h"],
     deps = [
         ":litert_common",
     ],
 )
 
 cc_test(
-    name = "litert_accelerator_compilation_options_test",
-    srcs = ["litert_accelerator_compilation_options_test.cc"],
+    name = "litert_opaque_options_test",
+    srcs = ["litert_opaque_options_test.cc"],
     deps = [
-        ":litert_accelerator_compilation_options",
         ":litert_common",
+        ":litert_opaque_options",
         "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -481,9 +481,9 @@ cc_library(
     hdrs = ["litert_accelerator_registration.h"],
     deps = [
         ":litert_accelerator",
-        ":litert_accelerator_compilation_options",
         ":litert_common",
         ":litert_metrics",
+        ":litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/core:environment",
         "//litert/runtime:accelerator",
@@ -501,10 +501,10 @@ cc_test(
     srcs = ["litert_accelerator_registration_test.cc"],
     deps = [
         ":litert_accelerator",
-        ":litert_accelerator_compilation_options",
         ":litert_accelerator_registration",
         ":litert_common",
         ":litert_environment",
+        ":litert_opaque_options",
         "@com_google_googletest//:gtest_main",
         "//litert/runtime:accelerator",
     ],
@@ -529,7 +529,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_any",
     ":litert_common",
     ":litert_compiled_model",
-    ":litert_compilation_options",
+    ":litert_options",
     ":litert_dispatch_delegate",
     ":litert_event",
     ":litert_environment",
@@ -569,11 +569,11 @@ cc_library(
         ":litert_environment.h",
         ":litert_environment_options.h",
         ":litert_accelerator.h",
-        ":litert_accelerator_compilation_options.h",
+        ":litert_opaque_options.h",
         ":litert_any.h",
         ":litert_common.h",
         ":litert_compiled_model.h",
-        ":litert_compilation_options.h",
+        ":litert_options.h",
         ":litert_event.h",
         ":litert_event_type.h",
         ":litert_layout.h",

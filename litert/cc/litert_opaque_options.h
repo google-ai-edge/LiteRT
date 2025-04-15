@@ -12,64 +12,61 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_LITERT_ACCELERATOR_COMPILATION_OPTIONS_H_
-#define ODML_LITERT_LITERT_CC_LITERT_ACCELERATOR_COMPILATION_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
+#define ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
 
 #include <cassert>
 #include <string>
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
 
-class AcceleratorCompilationOptions
-    : public internal::Handle<LiteRtAcceleratorCompilationOptions,
-                              LiteRtDestroyAcceleratorCompilationOptions> {
+class OpaqueOptions
+    : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
  public:
-  AcceleratorCompilationOptions() = default;
+  OpaqueOptions() = default;
 
   // Parameter `owned` indicates if the created AcceleratorCompilationOptions
   // object should take ownership of the provided `options` handle.
-  explicit AcceleratorCompilationOptions(
-      LiteRtAcceleratorCompilationOptions options, OwnHandle owned)
+  explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
       : Handle(options, owned) {}
 
-  static Expected<AcceleratorCompilationOptions> Create(
+  static Expected<OpaqueOptions> Create(
       const LiteRtApiVersion& payload_version,
       const std::string& payload_identifier, void* payload_data,
       void (*payload_destructor)(void* payload_data)) {
-    LiteRtAcceleratorCompilationOptions options;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateAcceleratorCompilationOptions(
-        &payload_version, payload_identifier.c_str(), payload_data,
-        payload_destructor, &options));
-    return AcceleratorCompilationOptions(options, OwnHandle::kYes);
+    LiteRtOpaqueOptions options;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCreateOpaqueOptions(&payload_version, payload_identifier.c_str(),
+                                  payload_data, payload_destructor, &options));
+    return OpaqueOptions(options, OwnHandle::kYes);
   }
 
   Expected<LiteRtApiVersion> GetVersion() const {
     LiteRtApiVersion payload_version;
     LITERT_RETURN_IF_ERROR(
-        LiteRtGetAcceleratorCompilationOptionsVersion(Get(), &payload_version));
+        LiteRtGetOpaqueOptionsVersion(Get(), &payload_version));
     return payload_version;
   }
 
   Expected<absl::string_view> GetIdentifier() const {
     const char* payload_identifier;
-    LITERT_RETURN_IF_ERROR(LiteRtGetAcceleratorCompilationOptionsIdentifier(
-        Get(), &payload_identifier));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetOpaqueOptionsIdentifier(Get(), &payload_identifier));
     return absl::string_view(payload_identifier);
   }
 
   template <typename T>
   Expected<T*> GetData() const {
     void* payload_data;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetAcceleratorCompilationOptionsData(Get(), &payload_data));
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &payload_data));
     return reinterpret_cast<T*>(payload_data);
   }
 
@@ -78,40 +75,40 @@ class AcceleratorCompilationOptions
       const std::string& payload_identifier) {
     LiteRtApiVersion payload_version;
     void* payload_data;
-    LITERT_RETURN_IF_ERROR(LiteRtFindAcceleratorCompilationOptionsData(
+    LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
         Get(), payload_identifier.c_str(), &payload_version, &payload_data));
     return std::make_pair(payload_version, reinterpret_cast<T*>(payload_data));
   }
 
-  Expected<AcceleratorCompilationOptions> Next() {
+  Expected<OpaqueOptions> Next() {
     auto h = Get();
-    LITERT_RETURN_IF_ERROR(LiteRtGetNextAcceleratorCompilationOptions(&h));
-    return AcceleratorCompilationOptions(h, OwnHandle::kNo);
+    LITERT_RETURN_IF_ERROR(LiteRtGetNextOpaqueOptions(&h));
+    return OpaqueOptions(h, OwnHandle::kNo);
   }
 
-  Expected<void> Append(AcceleratorCompilationOptions&& appended_options) {
+  Expected<void> Append(OpaqueOptions&& appended_options) {
     auto h = Get();
-    LITERT_RETURN_IF_ERROR(LiteRtAppendAcceleratorCompilationOptions(
-        &h, appended_options.Release()));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtAppendOpaqueOptions(&h, appended_options.Release()));
     if (h != Get()) {
       // If appending a new linked list item has changed the linked list head
       // pointer, then we need to reflect that as the new handle. Note that
       // should happen only if the previous handle was null.
       assert(!Get());
-      *this = AcceleratorCompilationOptions(h, OwnHandle::kYes);
+      *this = OpaqueOptions(h, OwnHandle::kYes);
     }
     return {};
   }
 
   Expected<void> Pop() {
     auto h = Get();
-    LITERT_RETURN_IF_ERROR(LiteRtPopAcceleratorCompilationOptions(&h));
+    LITERT_RETURN_IF_ERROR(LiteRtPopOpaqueOptions(&h));
     if (h != Get()) {
       // If popping the last item has changed the linked list head pointer, then
       // we release the current handle since it has been already destructed by
       // the pop call, and then use the new head pointer as the new handle.
       (void)Release();
-      *this = AcceleratorCompilationOptions(h, OwnHandle::kYes);
+      *this = OpaqueOptions(h, OwnHandle::kYes);
     }
     return {};
   }
@@ -119,4 +116,4 @@ class AcceleratorCompilationOptions
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_ACCELERATOR_COMPILATION_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_

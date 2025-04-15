@@ -19,11 +19,11 @@
 #include <memory>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_macros.h"
@@ -33,10 +33,10 @@
 extern "C" {
 #endif
 
-LiteRtStatus LiteRtCreateCompiledModel(
-    LiteRtEnvironment environment, LiteRtModel model,
-    LiteRtCompilationOptions jit_compilation_options,
-    LiteRtCompiledModel* compiled_model) {
+LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
+                                       LiteRtModel model,
+                                       LiteRtOptions jit_compilation_options,
+                                       LiteRtCompiledModel* compiled_model) {
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }

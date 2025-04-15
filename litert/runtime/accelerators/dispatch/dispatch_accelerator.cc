@@ -19,12 +19,12 @@
 #include <utility>
 
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
@@ -64,9 +64,9 @@ class NpuAccelerator final
   }
 
   // Creates a Dispatch delegate instance.
-  static LiteRtStatus CreateDelegate(
-      LiteRtAccelerator accelerator,
-      LiteRtAcceleratorCompilationOptions options, void** delegate) {
+  static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
+                                     LiteRtOpaqueOptions options,
+                                     void** delegate) {
     LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
                   "Delegate pointer is null.");
     LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,

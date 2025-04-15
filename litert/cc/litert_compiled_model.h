@@ -30,12 +30,12 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -95,7 +95,7 @@ class CompiledModel
   // meaningless.
   static Expected<CompiledModel> Create(
       litert::Environment& env, litert::Model& model,
-      const CompilationOptions& jit_compilation_options) {
+      const Options& jit_compilation_options) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
@@ -113,8 +113,7 @@ class CompiledModel
   static Expected<CompiledModel> Create(
       litert::Environment& env, litert::Model& model,
       LiteRtHwAccelerators hardware_accelerator = kLiteRtHwAcceleratorCpu) {
-    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options,
-                            CompilationOptions::Create());
+    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
     jit_compilation_options.SetHardwareAccelerators(hardware_accelerator);
     return Create(env, model, jit_compilation_options);
   }

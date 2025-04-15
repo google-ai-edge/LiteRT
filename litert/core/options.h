@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
-#define ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
+#define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_accelerator_compilation_options.h"
+#include "litert/cc/litert_opaque_options.h"
 
-struct LiteRtCompilationOptionsT {
+struct LiteRtOptionsT {
   // This should be updated every time a field is added/edited.
   //
   // - Renaming a field: increment patch;
@@ -28,7 +28,7 @@ struct LiteRtCompilationOptionsT {
   // Note: Changing a default value does not impact the version.
   LiteRtApiVersion version = {.major = 0, .minor = 0, .patch = 1};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
-  litert::AcceleratorCompilationOptions accelerator_compilation_options;
+  litert::OpaqueOptions options;
 };
 
-#endif  // ODML_LITERT_LITERT_RUNTIME_COMPILATION_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

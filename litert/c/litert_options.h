@@ -12,34 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_C_LITERT_COMPILATION_OPTIONS_H_
-#define ODML_LITERT_LITERT_C_LITERT_COMPILATION_OPTIONS_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_OPTIONS_H_
+#define ODML_LITERT_LITERT_C_LITERT_OPTIONS_H_
 
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
 // The compilation options for the LiteRtCompiledModel.
-LITERT_DEFINE_HANDLE(LiteRtCompilationOptions);
+LITERT_DEFINE_HANDLE(LiteRtOptions);
 
 // Creates a compilation option object.
-LiteRtStatus LiteRtCreateCompilationOptions(LiteRtCompilationOptions* options);
+LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options);
 
 // Destroys a compilation option object.
-void LiteRtDestroyCompilationOptions(LiteRtCompilationOptions options);
+void LiteRtDestroyOptions(LiteRtOptions options);
 
 // Sets the requested hardware accelerators to apply during model compilation.
-LiteRtStatus LiteRtSetCompilationOptionsHardwareAccelerators(
-    LiteRtCompilationOptions options,
-    LiteRtHwAcceleratorSet hardware_accelerators);
+LiteRtStatus LiteRtSetOptionsHardwareAccelerators(
+    LiteRtOptions options, LiteRtHwAcceleratorSet hardware_accelerators);
 
 // Gets the hardware accelerators to apply during model compilation.
-LiteRtStatus LiteRtGetCompilationOptionsHardwareAccelerators(
-    LiteRtCompilationOptions options,
-    LiteRtHwAcceleratorSet* hardware_accelerators);
+LiteRtStatus LiteRtGetOptionsHardwareAccelerators(
+    LiteRtOptions options, LiteRtHwAcceleratorSet* hardware_accelerators);
 
 // Adds compilation options for a specific accelerator to the accelerator
 // compilation option list.
@@ -48,20 +46,18 @@ LiteRtStatus LiteRtGetCompilationOptionsHardwareAccelerators(
 //
 // Note: `accelerator_compilation_options`'s ownership is transferred to
 // `options`.
-LiteRtStatus LiteRtAddAcceleratorCompilationOptions(
-    LiteRtCompilationOptions options,
-    LiteRtAcceleratorCompilationOptions accelerator_compilation_options);
+LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
+                                    LiteRtOpaqueOptions opaque_options);
 
 // Retrieves the head of the accelerator compilation option list.
 //
 // Note: The following elements may be retrieved with
 // `LiteRtGetNextAcceleratorCompilationOptions`.
-LiteRtStatus LiteRtGetAcceleratorCompilationOptions(
-    LiteRtCompilationOptions options,
-    LiteRtAcceleratorCompilationOptions* accelerator_compilation_options);
+LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
+                                    LiteRtOpaqueOptions* opaque_options);
 
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
 
-#endif  // ODML_LITERT_LITERT_C_LITERT_COMPILATION_OPTIONS_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_OPTIONS_H_

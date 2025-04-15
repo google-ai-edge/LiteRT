@@ -22,6 +22,21 @@ package(
 )
 
 cc_library(
+    name = "options",
+    hdrs = [
+        "options.h",
+        "//litert/c:litert_options.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_library(
     name = "build_stamp",
     srcs = ["build_stamp.cc"],
     hdrs = ["build_stamp.h"],

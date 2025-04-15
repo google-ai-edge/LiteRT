@@ -16,8 +16,8 @@
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_MODEL_COMPILATION_DATA_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_accelerator_compilation_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
 
@@ -30,13 +30,13 @@ struct ModelCompilationData {
   static constexpr LiteRtApiVersion kVersion = {1, 0, 0};
   static constexpr auto kIdentifier = "environment-compilation-options";
 
-  static Expected<AcceleratorCompilationOptions> CreateOptions() {
+  static Expected<OpaqueOptions> CreateOptions() {
     auto* payload_data = new ModelCompilationData;
     auto payload_destructor = [](void* payload_data) {
       delete reinterpret_cast<ModelCompilationData*>(payload_data);
     };
-    return AcceleratorCompilationOptions::Create(
-        kVersion, kIdentifier, payload_data, payload_destructor);
+    return OpaqueOptions::Create(kVersion, kIdentifier, payload_data,
+                                 payload_destructor);
   }
 
   // Pointer to the start of the model file memory allocation.

@@ -26,7 +26,7 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_compilation_options.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
@@ -43,9 +43,9 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -57,7 +57,7 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
-#include "litert/runtime/compilation_options.h"
+#include "litert/core/options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
@@ -161,10 +161,8 @@ namespace {
 // only for the duration of a scope.
 class ScopedCompilationOptionsModifier {
  public:
-  explicit ScopedCompilationOptionsModifier(
-      LiteRtCompilationOptions compilation_options)
-      : accelerator_options_(
-            compilation_options->accelerator_compilation_options) {}
+  explicit ScopedCompilationOptionsModifier(LiteRtOptions compilation_options)
+      : accelerator_options_(compilation_options->options) {}
 
   ~ScopedCompilationOptionsModifier() {
     // Remove any option that was appended during the lifetime of this object.
@@ -173,8 +171,7 @@ class ScopedCompilationOptionsModifier {
     }
   }
 
-  Expected<void> Append(
-      litert::AcceleratorCompilationOptions&& accelerator_options) {
+  Expected<void> Append(litert::OpaqueOptions&& accelerator_options) {
     auto status = accelerator_options_.Append(std::move(accelerator_options));
     if (status) {
       ++num_appended_options_;
@@ -183,7 +180,7 @@ class ScopedCompilationOptionsModifier {
   }
 
  private:
-  litert::AcceleratorCompilationOptions& accelerator_options_;
+  litert::OpaqueOptions& accelerator_options_;
   int num_appended_options_ = 0;
 };
 
@@ -201,14 +198,12 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
 
 Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
     LiteRtEnvironmentT* env, LiteRtModel model,
-    LiteRtCompilationOptions jit_compilation_options) {
+    LiteRtOptions jit_compilation_options) {
   // If no compilation options were passed, we use default object. This allows
   // us to add (for instance) accelerator compilation options.
-  std::unique_ptr<LiteRtCompilationOptionsT>
-      placeholder_jit_compilation_options;
+  std::unique_ptr<LiteRtOptionsT> placeholder_jit_compilation_options;
   if (!jit_compilation_options) {
-    placeholder_jit_compilation_options =
-        std::make_unique<LiteRtCompilationOptionsT>();
+    placeholder_jit_compilation_options = std::make_unique<LiteRtOptionsT>();
     jit_compilation_options = placeholder_jit_compilation_options.get();
   }
 
@@ -216,8 +211,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   if (jit_compilation_options) {
-    LiteRtGetCompilationOptionsHardwareAccelerators(jit_compilation_options,
-                                                    &hardware_accelerators);
+    LiteRtGetOptionsHardwareAccelerators(jit_compilation_options,
+                                         &hardware_accelerators);
   }
 
   LITERT_RETURN_IF_ERROR(
@@ -251,9 +246,9 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
       scoped_modifier.Append(std::move(model_compilation_data_options)));
 
   // Retrieve the accelerator options list.
-  LiteRtAcceleratorCompilationOptions accelerator_options = nullptr;
-  LITERT_RETURN_IF_ERROR(LiteRtGetAcceleratorCompilationOptions(
-      jit_compilation_options, &accelerator_options));
+  LiteRtOpaqueOptions accelerator_options = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetOpaqueOptions(jit_compilation_options, &accelerator_options));
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
