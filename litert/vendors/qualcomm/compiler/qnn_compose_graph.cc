@@ -885,7 +885,7 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   tensor_pool.ForEach(
       [&qnn, &graph_mapper](::qnn::TensorWrapper& tensor_wrapper) {
         // TODO(chunhsue): Use compile interface to get use_qint16_as_quint16.
-        constexpr bool use_qint16_as_quint16 = true;
+        constexpr bool use_qint16_as_quint16 = false;
         if constexpr (use_qint16_as_quint16) {
           tensor_wrapper.ConvertQint16ToQuint16();
         }
