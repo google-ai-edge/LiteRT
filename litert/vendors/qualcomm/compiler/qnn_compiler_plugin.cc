@@ -265,7 +265,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
         op, tensor_pool, input_tensors, output_tensors, op_wrappers));
     tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
       // TODO(chunhsue): Use compile interface to get useQInt16AsQUint16.
-      constexpr bool useQInt16AsQUint16 = true;
+      constexpr bool useQInt16AsQUint16 = false;
       if constexpr (useQInt16AsQUint16) {
         tensor_wrapper.ConvertQint16ToQuint16();
       }
