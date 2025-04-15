@@ -35,7 +35,6 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
