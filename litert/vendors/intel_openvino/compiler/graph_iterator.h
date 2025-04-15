@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <unordered_set>
+#include <vector>
+#include <memory>
 
 #include <openvino/frontend/tensorflow_lite/decoder.hpp>
 #include <openvino/frontend/tensorflow_lite/graph_iterator.hpp>
