@@ -35,9 +35,11 @@ def _litert_with_mtk_base(
     # defined in litert/BUILD.
     append_rule_kwargs(
         litert_rule_kwargs,
+        # TODO: lukeboyer - Figure out why "latest" (which is symlink) works but the v8
+        # path does not.
         data = select({
             "//litert:mtk_sdk_v8_host": [
-                "//third_party/neuro_pilot:v8_20241223/host/lib/libneuron_adapter.so",
+                "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
             ],
             "//litert:mtk_sdk_v7_host": [
                 "//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so",
@@ -46,7 +48,7 @@ def _litert_with_mtk_base(
         }),
         linkopts = select({
             "//litert:mtk_sdk_v8_host": [
-                make_rpaths(["//third_party/neuro_pilot:v8_20241223/host/lib/libneuron_adapter.so"]),
+                make_rpaths(["//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so"]),
             ],
             "//litert:mtk_sdk_v7_host": [
                 make_rpaths(["//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so"]),
