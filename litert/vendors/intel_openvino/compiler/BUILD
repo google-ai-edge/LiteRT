@@ -47,6 +47,40 @@ litert_lib(
     ],
 )
 
+litert_lib(
+    name = "decoder",
+    srcs = ["decoder.cc"],
+    hdrs = ["decoder.h"],
+    deps = [
+        "//litert/c:litert_logging",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_model",
+        "//litert/tools:dump",
+        "@intel_openvino//:openvino",
+    ],
+)
+
+litert_test(
+    name = "decoder_test",
+    srcs = [
+        "decoder_test.cc",
+    ],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    deps = [
+        ":decoder",
+        "//litert/test:common",
+        "//litert/test:matchers_oss",
+        "//litert/test:test_models",
+        "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@intel_openvino//:openvino",
+    ],
+)
+
 litert_test(
     name = "openvino_compiler_plugin_test",
     srcs = [
