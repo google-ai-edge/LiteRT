@@ -28,7 +28,6 @@ using testing::StrEq;
 using testing::litert::IsError;
 
 struct DummyOpaqueOptions {
-  static constexpr const LiteRtApiVersion kVersion = {0, 1, 0};
   static constexpr const char* const kIdentifier = "dummy-accelerator";
 
   int dummy_option = 3;
@@ -39,15 +38,15 @@ struct DummyOpaqueOptions {
     auto payload_destructor = [](void* payload) {
       delete reinterpret_cast<DummyOpaqueOptions*>(payload);
     };
-    return CreateOptions(kVersion, kIdentifier, payload, payload_destructor);
+    return CreateOptions(kIdentifier, payload, payload_destructor);
   }
 
   static litert::Expected<LiteRtOpaqueOptions> CreateOptions(
-      LiteRtApiVersion version, const char* identifier, void* payload,
+      const char* identifier, void* payload,
       void (*payload_destructor)(void*)) {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        &version, identifier, payload, payload_destructor, &options));
+        identifier, payload, payload_destructor, &options));
     return options;
   }
 };
@@ -80,17 +79,6 @@ TEST_F(LiteRtOpaqueOptionsTest, GetIdentifier) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
-TEST_F(LiteRtOpaqueOptionsTest, GetVersion) {
-  LiteRtApiVersion version;
-  EXPECT_EQ(LiteRtGetOpaqueOptionsVersion(options_, &version), kLiteRtStatusOk);
-  EXPECT_TRUE(
-      litert::internal::IsSameVersion(version, DummyOpaqueOptions::kVersion));
-  EXPECT_EQ(LiteRtGetOpaqueOptionsVersion(nullptr, &version),
-            kLiteRtStatusErrorInvalidArgument);
-  EXPECT_EQ(LiteRtGetOpaqueOptionsVersion(options_, nullptr),
-            kLiteRtStatusErrorInvalidArgument);
-}
-
 TEST_F(LiteRtOpaqueOptionsTest, CreatingAndDestroyingAListWorks) {
   auto appended_options1 = DummyOpaqueOptions::CreateOptions();
   ASSERT_TRUE(appended_options1);
@@ -115,56 +103,47 @@ TEST_F(LiteRtOpaqueOptionsTest, CreatingAndDestroyingAListWorks) {
 }
 
 TEST_F(LiteRtOpaqueOptionsTest, FindData) {
-  constexpr LiteRtApiVersion appended_options_version = {1, 2, 3};
   constexpr auto* appended_options_id = "appended_options_id";
   void* appended_options_data = reinterpret_cast<void*>(12345);
   constexpr auto appended_options_destructor = [](void*) {};
 
   auto appended_options = DummyOpaqueOptions::CreateOptions(
-      appended_options_version, appended_options_id, appended_options_data,
-      appended_options_destructor);
+      appended_options_id, appended_options_data, appended_options_destructor);
 
   EXPECT_EQ(LiteRtAppendOpaqueOptions(&options_, *appended_options),
             kLiteRtStatusOk);
 
-  LiteRtApiVersion payload_version;
   void* payload_data;
-  EXPECT_EQ(LiteRtFindOpaqueOptionsData(options_, appended_options_id,
-                                        &payload_version, &payload_data),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtFindOpaqueOptionsData(options_, appended_options_id, &payload_data),
+      kLiteRtStatusOk);
 
-  EXPECT_EQ(payload_version.major, appended_options_version.major);
-  EXPECT_EQ(payload_version.minor, appended_options_version.minor);
-  EXPECT_EQ(payload_version.patch, appended_options_version.patch);
   EXPECT_EQ(payload_data, appended_options_data);
 
   // The list is destroyed in the `TearDown()` function.
 }
 
 TEST_F(LiteRtOpaqueOptionsTest, Pop) {
-  constexpr LiteRtApiVersion appended_options_version = {1, 2, 3};
   constexpr auto* appended_options_id = "appended_options_id";
   void* appended_options_data = reinterpret_cast<void*>(12345);
   constexpr auto appended_options_destructor = [](void*) {};
 
   auto appended_options = DummyOpaqueOptions::CreateOptions(
-      appended_options_version, appended_options_id, appended_options_data,
-      appended_options_destructor);
+      appended_options_id, appended_options_data, appended_options_destructor);
 
   EXPECT_EQ(LiteRtAppendOpaqueOptions(&options_, *appended_options),
             kLiteRtStatusOk);
 
-  LiteRtApiVersion payload_version;
   void* payload_data;
-  EXPECT_EQ(LiteRtFindOpaqueOptionsData(options_, appended_options_id,
-                                        &payload_version, &payload_data),
-            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtFindOpaqueOptionsData(options_, appended_options_id, &payload_data),
+      kLiteRtStatusOk);
 
   // After poping the last item, we shouldn't be able to find it any longer.
   EXPECT_EQ(LiteRtPopOpaqueOptions(&options_), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtFindOpaqueOptionsData(options_, appended_options_id,
-                                        &payload_version, &payload_data),
-            kLiteRtStatusOk);
+  EXPECT_NE(
+      LiteRtFindOpaqueOptionsData(options_, appended_options_id, &payload_data),
+      kLiteRtStatusOk);
 
   // The list is destroyed in the `TearDown()` function.
 }

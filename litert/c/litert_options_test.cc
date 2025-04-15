@@ -83,7 +83,6 @@ TEST(LiteRtCompiledModelOptionsTest, SetAndGetHardwareAcceleratorsWorks) {
 }
 
 struct DummyAcceleratorCompilationOptions {
-  static constexpr const LiteRtApiVersion kVersion = {1, 0, 0};
   static constexpr const char* const kIdentifier = "dummy-accelerator";
 
   // Allocates and sets the basic structure for the accelerator options.
@@ -94,7 +93,7 @@ struct DummyAcceleratorCompilationOptions {
       delete reinterpret_cast<DummyAcceleratorCompilationOptions*>(payload);
     };
     LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-        &kVersion, kIdentifier, payload, payload_destructor, &options));
+        kIdentifier, payload, payload_destructor, &options));
     return options;
   }
 };

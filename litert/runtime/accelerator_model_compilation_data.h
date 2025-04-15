@@ -27,7 +27,6 @@ namespace litert::internal {
 // These options are automatically added to the compilation options list
 // during the creation of the compiled model.
 struct ModelCompilationData {
-  static constexpr LiteRtApiVersion kVersion = {1, 0, 0};
   static constexpr auto kIdentifier = "environment-compilation-options";
 
   static Expected<OpaqueOptions> CreateOptions() {
@@ -35,8 +34,7 @@ struct ModelCompilationData {
     auto payload_destructor = [](void* payload_data) {
       delete reinterpret_cast<ModelCompilationData*>(payload_data);
     };
-    return OpaqueOptions::Create(kVersion, kIdentifier, payload_data,
-                                 payload_destructor);
+    return OpaqueOptions::Create(kIdentifier, payload_data, payload_destructor);
   }
 
   // Pointer to the start of the model file memory allocation.

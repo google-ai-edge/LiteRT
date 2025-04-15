@@ -35,12 +35,10 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  // TODO remove the version from options API.
-  const LiteRtApiVersion version = {0, 0, 1};
   auto options_data = std::make_unique<LiteRtQualcommOptionsT>();
 
   LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
-      &version, LiteRtQualcommOptionsGetIdentifier(), options_data.get(),
+      LiteRtQualcommOptionsGetIdentifier(), options_data.get(),
       [](void* payload) {
         delete reinterpret_cast<LiteRtQualcommOptions>(payload);
       },

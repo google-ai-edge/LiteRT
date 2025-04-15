@@ -14,7 +14,6 @@
 
 #include "litert/c/litert_opaque_options.h"
 
-#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -22,30 +21,24 @@
 #include "litert/c/litert_common.h"
 
 struct LiteRtOpaqueOptionsT {
-  LiteRtApiVersion payload_version;
   std::string payload_identifier;
   std::unique_ptr<void, void (*)(void*)> payload_data;
   LiteRtOpaqueOptionsT* next = nullptr;
 
-  LiteRtOpaqueOptionsT(const LiteRtApiVersion& payload_version_,
-                       std::string payload_identifier_, void* payload_data_,
+  LiteRtOpaqueOptionsT(std::string payload_identifier_, void* payload_data_,
                        void (*payload_destructor_)(void*))
-      : payload_version(payload_version_),
-        payload_identifier(std::move(payload_identifier_)),
+      : payload_identifier(std::move(payload_identifier_)),
         payload_data(payload_data_, payload_destructor_) {}
 };
 
-LiteRtStatus LiteRtCreateOpaqueOptions(const LiteRtApiVersion* payload_version,
-                                       const char* payload_identifier,
+LiteRtStatus LiteRtCreateOpaqueOptions(const char* payload_identifier,
                                        void* payload_data,
                                        void (*payload_destructor)(void*),
                                        LiteRtOpaqueOptions* options) {
-  if (!payload_version || !payload_identifier || !payload_data ||
-      !payload_destructor || !options) {
+  if (!payload_identifier || !payload_data || !payload_destructor || !options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *options = new LiteRtOpaqueOptionsT(*payload_version,
-                                      std::string(payload_identifier),
+  *options = new LiteRtOpaqueOptionsT(std::string(payload_identifier),
                                       payload_data, payload_destructor);
   return kLiteRtStatusOk;
 }
@@ -56,15 +49,6 @@ void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options) {
     delete options;
     options = next;
   }
-}
-
-LiteRtStatus LiteRtGetOpaqueOptionsVersion(LiteRtOpaqueOptions options,
-                                           LiteRtApiVersion* payload_version) {
-  if (!options || !payload_version) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *payload_version = options->payload_version;
-  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetOpaqueOptionsIdentifier(LiteRtOpaqueOptions options,
@@ -87,14 +71,12 @@ LiteRtStatus LiteRtGetOpaqueOptionsData(LiteRtOpaqueOptions options,
 
 LiteRtStatus LiteRtFindOpaqueOptionsData(LiteRtOpaqueOptions options,
                                          const char* payload_identifier,
-                                         LiteRtApiVersion* payload_version,
                                          void** payload_data) {
-  if (!options || !payload_identifier || !payload_version || !payload_data) {
+  if (!options || !payload_identifier || !payload_data) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   while (options) {
-    if (!strcmp(options->payload_identifier.c_str(), payload_identifier)) {
-      *payload_version = options->payload_version;
+    if (options->payload_identifier == payload_identifier) {
       *payload_data = options->payload_data.get();
       return kLiteRtStatusOk;
     } else {

@@ -21,21 +21,18 @@
 extern "C" {
 #endif
 
-// A linked list of versioned accelerator compilation options. List items
+// A linked list of type erased opaque options. List items
 // include:
 //
 // - a unique payload identifier field (string), used to distinguish payloads of
 //   different types;
 //
 // - a payload field and associated payload destructor callback;
-//
-// - a payload version field, used by the consumer code to know the structure of
-//   the payload.
 LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);
 
 LiteRtStatus LiteRtCreateOpaqueOptions(
-    const LiteRtApiVersion* payload_version, const char* payload_identifier,
-    void* payload_data, void (*payload_destructor)(void* payload_data),
+    const char* payload_identifier, void* payload_data,
+    void (*payload_destructor)(void* payload_data),
     LiteRtOpaqueOptions* options);
 
 // Releases an entire options list starting from `options`.
@@ -44,10 +41,6 @@ LiteRtStatus LiteRtCreateOpaqueOptions(
 // the user will no longer need to destoy the former `options` item manually
 // with this function.
 void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options);
-
-// Gets the payload version field of the first item in the given `options` list.
-LiteRtStatus LiteRtGetOpaqueOptionsVersion(LiteRtOpaqueOptions options,
-                                           LiteRtApiVersion* payload_version);
 
 // Gets the patload identifier field of the first item in the given `options`
 // list.
@@ -58,12 +51,11 @@ LiteRtStatus LiteRtGetOpaqueOptionsIdentifier(LiteRtOpaqueOptions options,
 LiteRtStatus LiteRtGetOpaqueOptionsData(LiteRtOpaqueOptions options,
                                         void** payload_data);
 
-// Gets the payload version and data for the `options` list item with a given
+// Gets the payload data for the `options` list item with a given
 // payload identifier. Return kLiteRtStatusErrorNotFound if not such item is
 // found.
 LiteRtStatus LiteRtFindOpaqueOptionsData(LiteRtOpaqueOptions options,
                                          const char* payload_identifier,
-                                         LiteRtApiVersion* payload_version,
                                          void** payload_data);
 
 // Iterate through the next item in the option list pointed by `options` and

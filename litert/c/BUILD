@@ -458,6 +458,7 @@ cc_library(
     hdrs = ["litert_opaque_options.h"],
     deps = [
         ":litert_common",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

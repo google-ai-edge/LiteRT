@@ -60,11 +60,10 @@ Expected<void> SetAcceleratorBoilerplateFunctions(
 // compilation data if it exists.
 inline static Expected<const litert::internal::ModelCompilationData*>
 GetModelCompilationData(LiteRtOpaqueOptions options) {
-  LiteRtApiVersion payload_version;
   void* payload_data;
   LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
       options, litert::internal::ModelCompilationData::kIdentifier,
-      &payload_version, &payload_data));
+      &payload_data));
   return reinterpret_cast<litert::internal::ModelCompilationData*>(
       payload_data);
 }

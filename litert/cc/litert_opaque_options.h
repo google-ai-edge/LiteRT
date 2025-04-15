@@ -40,21 +40,13 @@ class OpaqueOptions
       : Handle(options, owned) {}
 
   static Expected<OpaqueOptions> Create(
-      const LiteRtApiVersion& payload_version,
       const std::string& payload_identifier, void* payload_data,
       void (*payload_destructor)(void* payload_data)) {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(
-        LiteRtCreateOpaqueOptions(&payload_version, payload_identifier.c_str(),
-                                  payload_data, payload_destructor, &options));
+        LiteRtCreateOpaqueOptions(payload_identifier.c_str(), payload_data,
+                                  payload_destructor, &options));
     return OpaqueOptions(options, OwnHandle::kYes);
-  }
-
-  Expected<LiteRtApiVersion> GetVersion() const {
-    LiteRtApiVersion payload_version;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetOpaqueOptionsVersion(Get(), &payload_version));
-    return payload_version;
   }
 
   Expected<absl::string_view> GetIdentifier() const {
@@ -72,13 +64,11 @@ class OpaqueOptions
   }
 
   template <typename T>
-  Expected<std::pair<LiteRtApiVersion, T*>> FindData(
-      const std::string& payload_identifier) {
-    LiteRtApiVersion payload_version;
+  Expected<T*> FindData(const std::string& payload_identifier) {
     void* payload_data;
     LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
-        Get(), payload_identifier.c_str(), &payload_version, &payload_data));
-    return std::make_pair(payload_version, reinterpret_cast<T*>(payload_data));
+        Get(), payload_identifier.c_str(), &payload_data));
+    return reinterpret_cast<T*>(payload_data);
   }
 
   Expected<OpaqueOptions> Next() {
