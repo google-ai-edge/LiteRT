@@ -5,7 +5,8 @@ def _openvino_native_impl(repository_ctx):
 cc_library(
     name = "openvino",
     hdrs = glob(["openvino/runtime/include", "openvino/runtime/include/ie/cpp", "openvino/runtime/include/ie"]),
-    srcs = ["openvino/runtime/lib/intel64/libopenvino.so"],
+    srcs = ["openvino/runtime/lib/intel64/libopenvino.so",
+            "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so"],
     includes = ["openvino/runtime/include/ie/cpp",
                 "openvino/runtime/include/ie",
                 "openvino/runtime/include"],

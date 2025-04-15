@@ -135,10 +135,17 @@ LiteRtStatus LiteRtCompiledResultNumByteCodeModules(LiteRtCompiledResult compile
 //
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {};
+struct LiteRtCompilerPluginT {
+    LiteRtEnvironmentOptions env;
+    LiteRtOptions options;
+};
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin *compiler_plugin) {
-    *compiler_plugin = new LiteRtCompilerPluginT;
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin *compiler_plugin,
+                                        LiteRtEnvironmentOptions env, LiteRtOptions options) {
+    auto *plugin = new LiteRtCompilerPluginT;
+    plugin->env = env;
+    plugin->options = options;
+    *compiler_plugin = plugin;
     return kLiteRtStatusOk;
 }
 
