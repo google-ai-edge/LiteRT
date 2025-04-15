@@ -30,6 +30,7 @@ namespace litert {
 
 class OpaqueOptions
     : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
+  // TODO: lukeboyer - Work logging into this api (and derived classes).
  public:
   OpaqueOptions() = default;
 
