@@ -1,4 +1,9 @@
-# INTEL OpenVINO™ DELEGATE FOR LiteRT FRAMEWORK
+# INTEL OpenVINO™ vendor implementation FOR LiteRT FRAMEWORK
+
+# Before commiting any changes, run the following command to make sure proper coding style is followed
+	```
+	find . -regex '.*\.\(cpp\|hpp\|cc\|cxx\|h\)' -exec clang-format -style=file -i {} \;
+	```
 
 ## System Requirement<br>
 
