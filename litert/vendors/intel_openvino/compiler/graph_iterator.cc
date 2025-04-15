@@ -1,10 +1,13 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <string>
+
 #include "graph_iterator.h"
 
 namespace litert {
 namespace openvino {
+
 size_t GraphIteratorDelegate::size() const {
     return iterator_indices_.input_index_ + iterator_indices_.output_index_ +
            iterator_indices_.op_index_;
@@ -46,7 +49,7 @@ std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase> GraphIteratorDelegat
         int64_t output_index = -1;
         fill_tensor_meta(tensor_meta_info, shape_vec, ov_element_type, std::string(input.Name()));
 
-        return std::make_shared<DecoderTensor>(tensor_meta_info, input_index, output_index);
+        return std::make_shared<litert::openvino::DecoderTensor>(tensor_meta_info, input_index, output_index);
     } else if (node_index_ >= iterator_indices_.input_index_ &&
                node_index_ < iterator_indices_.input_index_ + iterator_indices_.output_index_) {
         const auto& output_vec = subgraph_ptr_->Outputs();
@@ -59,7 +62,7 @@ std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase> GraphIteratorDelegat
             LITERT_LOG(LITERT_INFO, "Unsupported tensor element shape");
         }
         fill_tensor_meta(tensor_meta_info, shape_vec, ov_element_type, std::string(output.Name()));
-        return std::make_shared<DecoderTensor>(tensor_meta_info, input_index, output_index);
+        return std::make_shared<litert::openvino::DecoderTensor>(tensor_meta_info, input_index, output_index);
     } else {
         const auto& op_vec = subgraph_ptr_->Ops();
         const auto& op =
@@ -69,13 +72,14 @@ std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase> GraphIteratorDelegat
         for (const auto& input : op.Inputs()) {
             const ElementType type = input.ElementType();
             ov::element::Type ov_element_type = MapLiteTypeToOV(type);
+            shape_vec.clear();
             if (GetOVTensorShape(input, shape_vec) != kLiteRtStatusOk) {
                 LITERT_LOG(LITERT_INFO, "Unsupported tensor element shape for op creation");
             }
             fill_tensor_meta(tensor_meta_info, shape_vec, ov_element_type,
                              std::string(input.Name()));
             if (input.HasWeights()) {
-                LITERT_LOG(LITERT_INFO, "Data is static or constant");
+                LITERT_LOG(LITERT_VERBOSE, "Data is static or constant");
                 tensor_meta_info.m_tensor_data = input.Weights().Bytes().data();
             }
             input_meta_info.push_back(tensor_meta_info);
@@ -83,6 +87,7 @@ std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase> GraphIteratorDelegat
         for (const auto& output : op.Outputs()) {
             const ElementType type = output.ElementType();
             ov::element::Type ov_element_type = MapLiteTypeToOV(type);
+            shape_vec.clear();
             if (GetOVTensorShape(output, shape_vec) != kLiteRtStatusOk) {
                 LITERT_LOG(LITERT_INFO, "Unsupported tensor element shape for op creation");
             }
@@ -90,7 +95,7 @@ std::shared_ptr<ov::frontend::tensorflow_lite::DecoderBase> GraphIteratorDelegat
                              std::string(output.Name()));
             output_meta_info.push_back(tensor_meta_info);
         }
-        return std::make_shared<DecoderOperation>(input_meta_info, output_meta_info, op,
+        return std::make_shared<litert::openvino::DecoderOperation>(input_meta_info, output_meta_info, op,
                                                   node_index_);
     }
 }
