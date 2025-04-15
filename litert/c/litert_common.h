@@ -129,6 +129,12 @@ typedef enum : int {
   kLiteRtHwAcceleratorNpu = 1 << 2,
 } LiteRtHwAccelerators;
 
+typedef enum {
+  kLiteRtDelegatePrecisionDefault = 0,
+  kLiteRtDelegatePrecisionFp16 = 1,
+  kLiteRtDelegatePrecisionFp32 = 2,
+} LiteRtDelegatePrecision;
+
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;
 
