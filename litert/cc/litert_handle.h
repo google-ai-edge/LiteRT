@@ -20,7 +20,7 @@
 
 namespace litert {
 
-enum OwnHandle { kNo, kYes };
+enum class OwnHandle { kNo, kYes };
 
 namespace internal {
 
