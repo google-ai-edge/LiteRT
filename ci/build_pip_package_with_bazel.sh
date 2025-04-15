@@ -82,7 +82,7 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp -
 # bazel output directory to anyone other than the root user.
 rm -fr ./dist
 mkdir -p dist/
-cp bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
+mv bazel-bin/ci/tools/python/wheel/dist/*.whl dist/
 
 echo "Output can be found here:"
 find "./dist/"
