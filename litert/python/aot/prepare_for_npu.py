@@ -114,33 +114,30 @@ def compile_model(
       component_input = flatbuffer
       backend = cast(types.Backend, backend)
       input_name_pref = base_name + backend.target_id_suffix
-      t_backends.set_description(f"Backend {backend.id()}")
+      t_backends.set_description(f"Compiling {backend.target_id}")
       try:
-        with autotqdm.tqdm(
-            pipeline, desc="Component", leave=None
-        ) as t_pipeline:
-          for component in t_pipeline:
-            component = cast(types.Component, component)
-            t_pipeline.set_description(f"Component {component.component_name}")
-            component_output = types.Model.create_from_path(
-                output_dir
-                / f"{input_name_pref}_{component.component_name}{common.DOT_TFLITE}"
+        for component in pipeline:
+          component = cast(types.Component, component)
+          t_backends.set_description(
+              f"Compiling {backend.target_id}: {component.component_name}"
+          )
+          component_output = types.Model.create_from_path(
+              output_dir
+              / f"{input_name_pref}_{component.component_name}{common.DOT_TFLITE}"
+          )
+          backend.call_component(component_input, component_output, component)
+          if not component_output.in_memory and not common.is_tflite(
+              component_output.path
+          ):
+            raise ValueError(
+                f"{component.component_name} failed to produce a TFLite model."
             )
-            backend.call_component(
-                component_input, component_output, component
-            )
-            if not component_output.in_memory and not common.is_tflite(
-                component_output.path
-            ):
-              raise ValueError(
-                  f"{component.component_name} failed to produce a TFLite"
-                  " model."
-              )
-            component_input = component_output
+          component_input = component_output
         compile_models.models_with_backend.append((backend, component_input))
       except ValueError as e:
         if keep_going:
-          print(f"Failed to compile model for {backend.target}: {e}")
+          print(f"Skipping failed compilation for {backend.target}. Error: {e}")
+          compile_models.failed_backends.append((backend, str(e)))
         else:
           raise
 
