@@ -600,7 +600,7 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
       litert_tensor_buffer = new_tensor_buffer.Get();
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
           tfl_tensor, std::move(new_tensor_buffer)));
-      LITERT_ASSIGN_OR_RETURN(auto tfl_tensor_size, GetTensorSize(tfl_tensor));
+      size_t tfl_tensor_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
       tensor_buffer_info.MarkAsMaybeSyncWithCpu(tfl_tensor_size);
     }
 

@@ -17,16 +17,21 @@
 #include <cstddef>
 #include <utility>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
 
 namespace litert::internal {
 
@@ -78,27 +83,60 @@ Expected<ElementType> ConvertElementType(TfLiteType tfl_type) {
   }
 }
 
-Expected<RankedTensorType> ConvertTensorType(
+Expected<Layout> ConvertTensorLayout(
     const TfLiteOpaqueTensor* tfl_opaque_tensor) {
-  auto tfl_type = TfLiteOpaqueTensorType(tfl_opaque_tensor);
-  auto element_type = ConvertElementType(tfl_type);
-  if (!element_type) {
-    return Unexpected(element_type.Error());
-  }
-
   size_t rank = TfLiteOpaqueTensorNumDims(tfl_opaque_tensor);
   Dimensions dimensions(rank);
   for (size_t i = 0; i < rank; ++i) {
     dimensions[i] = TfLiteOpaqueTensorDim(tfl_opaque_tensor, i);
   }
-
-  return RankedTensorType(*element_type, Layout(std::move(dimensions)));
+  return Layout(std::move(dimensions));
 }
 
-Expected<size_t> GetTensorSize(const TfLiteOpaqueTensor* tfl_opaque_tensor) {
+Expected<RankedTensorType> ConvertTensorType(
+    const TfLiteOpaqueTensor* tfl_opaque_tensor) {
+  auto tfl_type = TfLiteOpaqueTensorType(tfl_opaque_tensor);
+  LITERT_ASSIGN_OR_RETURN(auto element_type, ConvertElementType(tfl_type));
+  LITERT_ASSIGN_OR_RETURN(auto layout, ConvertTensorLayout(tfl_opaque_tensor));
+  return RankedTensorType(element_type, std::move(layout));
+}
+
+Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
+    TfLiteOpaqueContext* tfl_context,
+    const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto tensor_type,
                           ConvertTensorType(tfl_opaque_tensor));
-  return GetNumPackedBytes(static_cast<LiteRtRankedTensorType>(tensor_type));
+  void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
+  size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
+  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
+                          TensorBuffer::CreateFromHostMemory(
+                              tensor_type, host_mem_addr, buffer_size));
+  return tensor_buffer;
+}
+
+Expected<void> ResizeTensor(const LiteRtLayout& layout,
+                            TfLiteOpaqueContext* tfl_context,
+                            TfLiteOpaqueTensor* tfl_opaque_tensor) {
+  // TFL tensors don't support strides.
+  if (layout.strides) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Unexpected layout with strides");
+  }
+
+  TfLiteIntArray* output_size = TfLiteIntArrayCreate(layout.rank);
+  for (auto i = 0; i < layout.rank; ++i) {
+    output_size->data[i] = layout.dimensions[i];
+  }
+  if (auto status = TfLiteOpaqueContextResizeTensor(
+          tfl_context, tfl_opaque_tensor, output_size);
+      status != kTfLiteOk) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to resize TFL tensor %s: %d",
+                        TfLiteOpaqueTensorName(tfl_opaque_tensor), status));
+  }
+
+  return {};
 }
 
 }  // namespace litert::internal
