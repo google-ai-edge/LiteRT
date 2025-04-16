@@ -10,6 +10,7 @@
 #include <list>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -24,12 +25,14 @@ class TensorPool {
   TensorWrapper& CreateInputTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions,
+      absl::string_view tensor_name);
 
   TensorWrapper& CreateOutpuTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions,
+      absl::string_view tensor_name);
 
   TensorWrapper& CreateNativeTensor(
       Qnn_DataType_t data_type,

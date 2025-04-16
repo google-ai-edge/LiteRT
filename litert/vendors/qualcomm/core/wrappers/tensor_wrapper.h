@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -94,13 +95,15 @@ class TensorWrapper final {
   explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions);
+                         const std::vector<std::uint32_t>& dimentions,
+                         absl::string_view tensor_name = "");
 
   explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions,
-                         std::uint32_t bytes, const void* data);
+                         std::uint32_t bytes, const void* data,
+                         absl::string_view tensor_name = "");
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
 
@@ -164,6 +167,8 @@ class TensorWrapper final {
   bool IsF16() const { return GetDataType() == QNN_DATATYPE_FLOAT_16; }
 
   Qnn_DataType_t GetDataType() const;
+
+  const char* GetName() const;
 
   bool IsSubgraphInput() const {
     return GetTensorType() == QNN_TENSOR_TYPE_APP_WRITE;
