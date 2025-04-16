@@ -30,7 +30,7 @@ def get_wheel_platform_name():
 
     return select({
         ":linux_x86_64": MANYLINUX_LEVEL + "_x86_64",
-        ":linux_arm64": MANYLINUX_LEVEL + "_arm64",
+        ":linux_arm64": MANYLINUX_LEVEL + "_aarch64",
         ":macos_arm64": "macosx_12_0_arm64",
         "//conditions:default": "none",
     })
