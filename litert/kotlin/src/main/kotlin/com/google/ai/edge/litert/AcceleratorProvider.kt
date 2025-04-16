@@ -32,6 +32,7 @@ internal class DefaultNpuCompatibilityChecker : NpuCompatibilityChecker {
       setOf(
         // Pair("Google", "Tensor G3"), // Pixel 8
         // Pair("Google", "Tensor G4"), // Pixel 9
+        Pair("QTI", "SM8750"), // Samsung S25
         Pair("QTI", "SM8650"), // Samsung S24
         Pair("QTI", "SM8550"), // Samsung S23
       )
