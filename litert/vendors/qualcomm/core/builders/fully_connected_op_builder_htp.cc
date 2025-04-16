@@ -58,10 +58,11 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
   conv_op.AddInputTensor(conv_input_tensor);
   auto& quant_params = weight_tensor.GetQuantParams();
   if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
-          quant_params)) {
-    auto& axis_quant_param =
-        std::get<AxisScaleOffsetQuantizeParamsWrapper>(quant_params);
-    axis_quant_param.SetAxis(3);
+          quant_params))
+    std::get<AxisScaleOffsetQuantizeParamsWrapper>(quant_params).SetAxis(3);
+  else if (std::holds_alternative<BwAxisScaleOffsetQuantizeParamsWrapper>(
+               quant_params)) {
+    std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(quant_params).SetAxis(3);
   }
   std::vector<uint32_t> weight_dims{1, 1, weight_tensor.GetDim(1),
                                     weight_tensor.GetDim(0)};
