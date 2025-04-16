@@ -17,6 +17,8 @@ package(
     default_visibility = ["//litert:litert_stable_abi_users"],
 )
 
+# QUALCOMM #########################################################################################
+
 cc_library(
     name = "litert_qualcomm_options",
     srcs = ["litert_qualcomm_options.cc"],
@@ -42,6 +44,35 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+    ],
+)
+
+# GOOGLE TENSOR ####################################################################################
+
+cc_library(
+    name = "litert_google_tensor_options",
+    srcs = ["litert_google_tensor_options.cc"],
+    hdrs = ["litert_google_tensor_options.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "litert_google_tensor_options_test",
+    srcs = ["litert_google_tensor_options_test.cc"],
+    deps = [
+        ":litert_google_tensor_options",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
     ],
 )
