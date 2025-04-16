@@ -642,6 +642,7 @@ cc_library(
     deps = [
         ":litert_expected",
         ":litert_macros",
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",

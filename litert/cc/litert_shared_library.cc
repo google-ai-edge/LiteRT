@@ -27,6 +27,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -137,8 +138,11 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
                      "Cannot not load shared library: empty path.");
       }
       lib.path_ = path;
-      lib.handle_ =
-          dlopen(lib.Path().c_str(), SanitizeFlagsInCaseOfAsan(flags));
+      {
+        absl::LeakCheckDisabler disabler;
+        lib.handle_ =
+            dlopen(lib.Path().c_str(), SanitizeFlagsInCaseOfAsan(flags));
+      }
       if (!lib.handle_) {
         return Error(kLiteRtStatusErrorDynamicLoading,
                      absl::StrFormat("Could not load shared library %s: %s.",
