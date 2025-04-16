@@ -31,6 +31,16 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "google_tensor_flags",
+    srcs = ["google_tensor_flags.cc"],
+    hdrs = ["google_tensor_flags.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c/options:litert_google_tensor_options",
+    ],
+)
+
 cc_test(
     name = "qualcomm_flags_test",
     srcs = ["qualcomm_flags_test.cc"],
@@ -38,5 +48,15 @@ cc_test(
         ":qualcomm_flags",
         "@com_google_googletest//:gtest_main",
         "//litert/c/options:litert_qualcomm_options",
+    ],
+)
+
+cc_test(
+    name = "google_tensor_flags_test",
+    srcs = ["google_tensor_flags_test.cc"],
+    deps = [
+        ":google_tensor_flags",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c/options:litert_google_tensor_options",
     ],
 )
