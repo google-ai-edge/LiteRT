@@ -34,8 +34,9 @@ float Dequantize(const T val, const float scale, const int32_t zero_point) {
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst);
 
-void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
-                                  std::vector<std::int16_t>& dst);
+void ConvertDataFromInt16toUInt16(absl::Span<std::int16_t> src);
+
+void ConvertDataFromUInt16toInt16(absl::Span<std::uint16_t> src);
 
 void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
                                size_t num_bytes);
