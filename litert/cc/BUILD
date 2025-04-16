@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
 package(
@@ -46,7 +47,6 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
-        ":litert_any",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_expected",
@@ -54,7 +54,6 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/c:litert_tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -504,7 +503,6 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/test:common",
@@ -689,6 +687,7 @@ cc_test(
 
 cc_library(
     name = "litert_opaque_options",
+    srcs = ["litert_opaque_options.cc"],
     hdrs = [
         "litert_opaque_options.h",
     ],
@@ -734,6 +733,21 @@ cc_test(
         ":litert_expected",
         "@com_google_googletest//:gtest_main",
         "//litert/c:litert_environment_options",
+    ],
+)
+
+cc_test(
+    name = "litert_opaque_options_test",
+    srcs = ["litert_opaque_options_test.cc"],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        ":litert_opaque_options",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
     ],
 )
 

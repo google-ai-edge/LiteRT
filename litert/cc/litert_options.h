@@ -54,12 +54,12 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return accelerators;
   }
 
-  Expected<void> AddAcceleratorCompilationOptions(OpaqueOptions&& options) {
+  Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
     LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(Get(), options.Release()));
     return {};
   }
 
-  Expected<OpaqueOptions> GetAcceleratorCompilationOptions() {
+  Expected<OpaqueOptions> GetOpaqueOptions() {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
     return OpaqueOptions(options, OwnHandle::kNo);

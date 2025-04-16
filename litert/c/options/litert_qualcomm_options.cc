@@ -23,6 +23,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 
 struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsLogLevel log_level = kLiteRtQualcommLogLevelInfo;
@@ -165,10 +166,6 @@ Expected<QualcommOptions> QualcommOptions::Create() {
   return QualcommOptions(options, litert::OwnHandle::kYes);
 }
 
-absl::string_view QualcommOptions::GetIdentifier() {
-  return LiteRtQualcommOptionsGetIdentifier();
-}
-
 void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
   internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(), log_level);
 }
@@ -199,6 +196,14 @@ bool QualcommOptions::GetEnableWeightSharing() {
   internal::AssertOk(LiteRtQualcommOptionsGetEnableWeightSharing, Data(),
                      &enable_weight_sharing);
   return enable_weight_sharing;
+}
+
+Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
+  const auto id = options.GetIdentifier();
+  if (!id || *id != Discriminator()) {
+    return Error(kLiteRtStatusErrorInvalidArgument);
+  }
+  return QualcommOptions(options.Get(), OwnHandle::kNo);
 }
 
 namespace {}  // namespace

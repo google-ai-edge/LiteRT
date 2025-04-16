@@ -115,8 +115,13 @@ class QualcommOptions : public OpaqueOptions {
 
   using OpaqueOptions::OpaqueOptions;
 
+  static const char* Discriminator() {
+    return LiteRtQualcommOptionsGetIdentifier();
+  }
+
+  static Expected<QualcommOptions> Create(OpaqueOptions& options);
+
   static Expected<QualcommOptions> Create();
-  static absl::string_view GetIdentifier();
 
   void SetLogLevel(LogLevel log_level);
   LogLevel GetLogLevel();

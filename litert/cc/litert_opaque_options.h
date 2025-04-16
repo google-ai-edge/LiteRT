@@ -16,11 +16,11 @@
 #define ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
 
 #include <cassert>
+#include <functional>
 #include <string>
-#include <utility>
+#include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
@@ -32,6 +32,8 @@ class OpaqueOptions
     : public internal::Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
   // TODO: lukeboyer - Work logging into this api (and derived classes).
  public:
+  using Ref = std::reference_wrapper<OpaqueOptions>;
+
   OpaqueOptions() = default;
 
   // Parameter `owned` indicates if the created AcceleratorCompilationOptions
@@ -60,14 +62,6 @@ class OpaqueOptions
   Expected<T*> GetData() const {
     void* payload_data;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &payload_data));
-    return reinterpret_cast<T*>(payload_data);
-  }
-
-  template <typename T>
-  Expected<T*> FindData(const std::string& payload_identifier) {
-    void* payload_data;
-    LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
-        Get(), payload_identifier.c_str(), &payload_data));
     return reinterpret_cast<T*>(payload_data);
   }
 
@@ -104,6 +98,36 @@ class OpaqueOptions
     return {};
   }
 };
+
+// Find the opaque option in the chain that matches the provided identifier.
+Expected<OpaqueOptions> Find(OpaqueOptions& options,
+                             const std::string& payload_identifier);
+
+// Convience wrapper on top of Find. Resolves the matching opaque options
+// as an instance of the type derived from OpaqueOptions, provided it implements
+// the required hooks. This is analogous to FindData, except that it returns
+// the C++ wrapper associated with an opaque options type, rather than the raw
+// payload data.
+template <typename Discriminated,
+          std::enable_if_t<std::is_base_of<OpaqueOptions, Discriminated>::value,
+                           bool> = true>
+Expected<Discriminated> Find(OpaqueOptions& options) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto opq, Find(options, std::string(Discriminated::Discriminator())));
+  return Discriminated::Create(opq);
+}
+
+// Find the raw data payload of given type from the opaque option in the chain
+// with matching identifier. This is analogous to Discriminate, except that
+// it returns the payload used to interopt with the C API.
+template <typename T>
+Expected<T*> FindData(OpaqueOptions& options,
+                      const std::string& payload_identifier) {
+  void* payload_data;
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
+      options.Get(), payload_identifier.c_str(), &payload_data));
+  return reinterpret_cast<T*>(payload_data);
+}
 
 }  // namespace litert
 

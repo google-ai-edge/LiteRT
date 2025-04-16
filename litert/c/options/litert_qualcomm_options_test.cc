@@ -14,9 +14,13 @@
 
 #include "litert/c/options/litert_qualcomm_options.h"
 
+#include <cstdlib>
+#include <utility>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert::qualcomm {
@@ -107,6 +111,19 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetPowerMode(), kQualcommPowerModePerformance);
   options->SetPowerMode(kQualcommPowerModePowerSaver);
   EXPECT_EQ(options->GetPowerMode(), kQualcommPowerModePowerSaver);
+}
+
+TEST(QualcommOptionsTest, FindFromChain) {
+  void* payload = malloc(8);
+  auto options =
+      OpaqueOptions::Create("not-qualcomm", payload, [](void* d) { free(d); });
+  ASSERT_TRUE(options);
+  auto qnn_options = QualcommOptions::Create();
+  ASSERT_TRUE(qnn_options);
+  options->Append(std::move(*qnn_options));
+
+  auto qnn_opts_d = Find<QualcommOptions>(*options);
+  EXPECT_TRUE(qnn_opts_d);
 }
 
 }  // namespace

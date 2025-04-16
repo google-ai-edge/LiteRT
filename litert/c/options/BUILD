@@ -41,6 +41,7 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_opaque_options",
         "//litert/test:matchers",
     ],
 )
