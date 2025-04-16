@@ -81,6 +81,7 @@ litert_device_test(
     ],
     backend_id = "qualcomm",
     data = [
+        ":dispatch_api_so",
         "//litert/test:testdata",
     ],
     deps = [
