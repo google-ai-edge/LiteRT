@@ -111,7 +111,6 @@ litert_cc_bin_with_qnn(
         ":outstream",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "//litert/compiler/plugin:compiler_flags",
@@ -119,6 +118,7 @@ litert_cc_bin_with_qnn(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:qualcomm_flags",
     ],
 )
 
@@ -147,6 +147,7 @@ cc_binary(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:qualcomm_flags",
     ],
 )
 

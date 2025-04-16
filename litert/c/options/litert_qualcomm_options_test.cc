@@ -86,12 +86,12 @@ TEST(LiteRtQualcommOptionsTest, PowerMode) {
   LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
 
   LITERT_ASSERT_OK(LiteRtQualcommOptionsSetPowerMode(
-      qualcomm_options, kQualcommPowerModePowerSaver));
+      qualcomm_options, kLiteRtQualcommPowerModePowerSaver));
 
   LiteRtQualcommOptionsPowerMode power_mode;
   LITERT_ASSERT_OK(
       LiteRtQualcommOptionsGetPowerMode(qualcomm_options, &power_mode));
-  EXPECT_EQ(power_mode, kQualcommPowerModePowerSaver);
+  EXPECT_EQ(power_mode, kLiteRtQualcommPowerModePowerSaver);
 
   LiteRtDestroyOpaqueOptions(options);
 }
@@ -108,9 +108,9 @@ TEST(QualcommOptionsTest, CppApi) {
   options->SetEnableWeightSharing(false);
   EXPECT_FALSE(options->GetEnableWeightSharing());
 
-  EXPECT_EQ(options->GetPowerMode(), kQualcommPowerModePerformance);
-  options->SetPowerMode(kQualcommPowerModePowerSaver);
-  EXPECT_EQ(options->GetPowerMode(), kQualcommPowerModePowerSaver);
+  EXPECT_EQ(options->GetPowerMode(), kLiteRtQualcommPowerModePerformance);
+  options->SetPowerMode(kLiteRtQualcommPowerModePowerSaver);
+  EXPECT_EQ(options->GetPowerMode(), kLiteRtQualcommPowerModePowerSaver);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

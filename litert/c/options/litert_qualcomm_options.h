@@ -89,9 +89,9 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
 // be decided by the backend (unknown).
 
 typedef enum LiteRtQualcommOptionsPowerMode {
-  kQualcommPowerModeUknown = 0,
-  kQualcommPowerModePerformance = 1,
-  kQualcommPowerModePowerSaver = 2,
+  kLiteRtQualcommPowerModeUnknown = 0,
+  kLiteRtQualcommPowerModePerformance = 1,
+  kLiteRtQualcommPowerModePowerSaver = 2,
 } LiteRtQualcommOptionsPowerMode;
 
 LiteRtStatus LiteRtQualcommOptionsSetPowerMode(

@@ -28,7 +28,8 @@
 struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsLogLevel log_level = kLiteRtQualcommLogLevelInfo;
   bool enable_weight_sharing = true;
-  LiteRtQualcommOptionsPowerMode power_mode = kQualcommPowerModePerformance;
+  LiteRtQualcommOptionsPowerMode power_mode =
+      kLiteRtQualcommPowerModePerformance;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
