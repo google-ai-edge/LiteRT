@@ -25,6 +25,8 @@ cc_library(
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
     ],
     alwayslink = 1,
 )

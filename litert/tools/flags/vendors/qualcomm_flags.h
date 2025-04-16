@@ -20,6 +20,7 @@
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/litert_expected.h"
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
@@ -44,5 +45,13 @@ bool AbslParseFlag(absl::string_view text,
                    LiteRtQualcommOptionsPowerMode* options, std::string* error);
 
 std::string AbslUnparseFlag(LiteRtQualcommOptionsPowerMode options);
+
+// TO OBJECT (internal) ////////////////////////////////////////////////////////
+
+namespace litert::qualcomm {
+
+Expected<QualcommOptions> QualcommOptionsFromFlags();
+
+}  // namespace litert::qualcomm
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_

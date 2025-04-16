@@ -19,6 +19,8 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -112,3 +114,22 @@ ABSL_FLAG(LiteRtQualcommOptionsPowerMode, qualcomm_power_mode,
           kLiteRtQualcommPowerModeUnknown, "Power preference for HTP device.");
 
 // NOLINTEND(*alien-types*)
+
+namespace litert::qualcomm {
+
+Expected<QualcommOptions> QualcommOptionsFromFlags() {
+  LITERT_ASSIGN_OR_RETURN(auto opts, QualcommOptions::Create());
+
+  const auto weight_share = absl::GetFlag(FLAGS_enable_weight_sharing);
+  opts.SetEnableWeightSharing(weight_share);
+
+  const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
+  opts.SetLogLevel(log_level);
+
+  const auto power_mode = absl::GetFlag(FLAGS_qualcomm_power_mode);
+  opts.SetPowerMode(power_mode);
+
+  return opts;
+}
+
+}  // namespace litert::qualcomm
