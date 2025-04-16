@@ -35,6 +35,18 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   ExternalLiteRtBufferContext() = default;
   ~ExternalLiteRtBufferContext() = default;
 
+  static Expected<ExternalLiteRtBufferContext*> GetInstance(
+      TfLiteOpaqueContext* context) {
+    void* external_context;
+    TfLiteOpaqueContextGetExternalContext(context, &external_context,
+                                          kTfLiteLiteRtBufferContext);
+    if (!external_context) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "External context not found");
+    }
+    return reinterpret_cast<ExternalLiteRtBufferContext*>(external_context);
+  }
+
   // Registers a tensor buffer requirements for the given tensor.
   // The registered TensorBufferRequirements object is owned by
   // ExternalLiteRtBufferContext.

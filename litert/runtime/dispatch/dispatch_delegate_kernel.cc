@@ -185,7 +185,8 @@ Expected<LiteRtMetricsT> DispatchDelegateKernel::StopMetricsCollection() {
 
 Expected<void> DispatchDelegateKernel::InitHelper(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params) {
-  LITERT_ASSIGN_OR_RETURN(auto buffer_context, GetBufferContext(context));
+  LITERT_ASSIGN_OR_RETURN(auto buffer_context,
+                          ExternalLiteRtBufferContext::GetInstance(context));
   std::swap(buffer_context_, buffer_context);
 
   // Build the graph.
@@ -278,18 +279,6 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
 }
 
 // /////////////////////////////////////////////////////////////////////////////
-
-Expected<ExternalLiteRtBufferContext*> DispatchDelegateKernel::GetBufferContext(
-    TfLiteOpaqueContext* context) {
-  void* external_context;
-  TfLiteOpaqueContextGetExternalContext(context, &external_context,
-                                        kTfLiteLiteRtBufferContext);
-  if (!external_context) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "External context not found");
-  }
-  return reinterpret_cast<ExternalLiteRtBufferContext*>(external_context);
-}
 
 Expected<std::vector<TfLiteOpaqueNode*>> DispatchDelegateKernel::GetNodes(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params) {

@@ -76,8 +76,6 @@ class DispatchDelegateKernel
         device_context_(std::move(device_context)),
         async_dispatch_(async_dispatch) {}
 
-  static Expected<ExternalLiteRtBufferContext*> GetBufferContext(
-      TfLiteOpaqueContext* context);
   static Expected<std::vector<TfLiteOpaqueNode*>> GetNodes(
       TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params);
   static Expected<std::vector<TfLiteOpaqueTensor*>> GetTensors(
