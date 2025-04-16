@@ -70,9 +70,8 @@ class Context {
 
   ApplyPluginRun::Cmd Cmd() const { return run_->cmd; }
 
-  absl::Span<const absl::string_view> LibSearchPaths() const {
-    return absl::MakeConstSpan(run_->lib_search_paths.data(),
-                               run_->lib_search_paths.size());
+  const std::vector<std::string>& LibSearchPaths() const {
+    return run_->lib_search_paths;
   }
 
   absl::string_view SocModelTarget() const {
@@ -176,7 +175,8 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
   }
   ctx.Dump().Display() << "\n";
 
-  auto plugins = CompilerPlugin::LoadPlugins(ctx.LibSearchPaths());
+  std::vector<absl::string_view> paths_vec(paths.begin(), paths.end());
+  auto plugins = CompilerPlugin::LoadPlugins(paths_vec);
   if (!plugins.HasValue()) {
     ctx.Dump().Fail();
     return plugins;

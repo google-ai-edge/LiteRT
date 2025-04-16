@@ -18,6 +18,25 @@ package(
 )
 
 cc_library(
+    name = "common_flags",
+    srcs = ["common_flags.cc"],
+    hdrs = ["common_flags.h"],
+    deps = ["@com_google_absl//absl/flags:flag"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "apply_plugin_flags",
+    srcs = ["apply_plugin_flags.cc"],
+    hdrs = ["apply_plugin_flags.h"],
+    deps = [
+        ":flag_types",
+        "@com_google_absl//absl/flags:flag",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
     name = "flag_types",
     srcs = ["flag_types.cc"],
     hdrs = ["flag_types.h"],

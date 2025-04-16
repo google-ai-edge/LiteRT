@@ -12,104 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/flags/flag.h"  // from @com_google_absl
+#include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "llvm/include/llvm/ADT/ArrayRef.h"
-#include "llvm/include/llvm/Support/CommandLine.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/apply_plugin.h"
+#include "litert/tools/flags/apply_plugin_flags.h"
+#include "litert/tools/flags/common_flags.h"
+#include "litert/tools/flags/flag_types.h"
 #include "litert/tools/outstream.h"
 
 using ::litert::tools::ApplyPlugin;
 using ::litert::tools::ApplyPluginRun;
+using ::litert::tools::IntList;
 using ::litert::tools::UserStream;
-
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> cmd(
-    llvm::cl::Positional,
-    llvm::cl::desc("Routine to run (apply, partition, compile, info, noop)."),
-    llvm::cl::init("partition"));
-
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> model(
-    "model", llvm::cl::desc("Path to flatbuffer file."), llvm::cl::init(""));
-
-// TODO: b/366821557 - Support path to pre-compiled plugin in flags.
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> soc_manufacturer(
-    "soc_man",
-    llvm::cl::desc("String identifier of SoC manufacturer (e.g., GoogleTensor, "
-                   "Qualcomm)."),
-    llvm::cl::init("ExampleSocManufacturer"));
-
-// TODO: Support multi target compilation.
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> soc_model("soc_model",
-                                            llvm::cl::desc("Target SoC model."),
-                                            llvm::cl::init("ExampleSocModel"));
-
-// NOLINTNEXTLINE
-static llvm::cl::list<std::string> libs(
-    "libs",
-    llvm::cl::desc("List of directories in which to search for suitable "
-                   "compiler plugin shared libraries."),
-    llvm::cl::list_init(llvm::ArrayRef<std::string>{
-        "litert/vendors/examples",
-        "litert/vendors/qualcomm/"
-        "compiler",
-        "litert/vendors/mediatek/"
-        "compiler",
-        "litert/vendors/"
-        "google_tensor/compiler"}));
-
-// NOLINTNEXTLINE
-static llvm::cl::list<std::string> outs(
-    "o",
-    llvm::cl::desc("Path to files for output, \"-\" indicates standard out, "
-                   "\"--\" for standard err, \"none\" for null stream."),
-    llvm::cl::list_init(llvm::ArrayRef<std::string>{"-"}));
-
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> err(
-    "err",
-    llvm::cl::desc("Path to file for err output, \"-\" indicates standard out, "
-                   "\"--\" for standard err, \"none\" for null stream."),
-    llvm::cl::init("--"));
-
-// NOLINTNEXTLINE
-static llvm::cl::opt<std::string> compiler_flags(
-    "compiler-flags",
-    llvm::cl::desc("List of comma separated (no space) compiler flags. Flags "
-                   "may be key-value pairs "
-                   "in the format of \"key=value\", or just \"key\". E.g. "
-                   "\"--compiler-flags=key1=value1,key2\""));
-
-// NOLINTNEXTLINE
-static llvm::cl::list<uint32_t> subgraphs(
-    "subgraphs",
-    llvm::cl::desc("If provides, only the subgraphs with the given indices "
-                   "are applied with the plugin."),
-    llvm::cl::list_init(llvm::ArrayRef<uint32_t>{}));
 
 ApplyPluginRun::Ptr ParseFlags() {
   auto res = std::make_unique<ApplyPluginRun>();
 
+  const auto model = absl::GetFlag(FLAGS_model);
   if (!model.empty()) {
     res->model = model;
   }
 
-  res->compiler_flags = *litert::internal::ParseCompilerFlags(compiler_flags);
+  res->compiler_flags = *litert::internal::ParseCompilerFlags(
+      absl::GetFlag(FLAGS_compiler_flags));
 
-  res->soc_manufacturer = soc_manufacturer;
-  res->soc_models.push_back(soc_model);
+  const auto soc_manufacturer_absl = absl::GetFlag(FLAGS_soc_manufacturer);
+  res->soc_manufacturer = soc_manufacturer_absl;
+  const auto soc_model_absl = absl::GetFlag(FLAGS_soc_model);
+  res->soc_models.push_back(soc_model_absl);
 
+  const auto libs = absl::GetFlag(FLAGS_libs);
   res->lib_search_paths.assign(libs.begin(), libs.end());
 
+  const auto cmd = absl::GetFlag(FLAGS_cmd);
   if (cmd == "apply") {
     res->cmd = ApplyPluginRun::Cmd::APPLY;
   } else if (cmd == "partition") {
@@ -124,7 +66,8 @@ ApplyPluginRun::Ptr ParseFlags() {
     return nullptr;
   }
 
-  for (auto subgraph_idx : subgraphs) {
+  const auto subgraphs = absl::GetFlag(FLAGS_subgraphs);
+  for (auto subgraph_idx : subgraphs.elements) {
     res->subgraphs.insert(subgraph_idx);
   }
 
@@ -132,7 +75,7 @@ ApplyPluginRun::Ptr ParseFlags() {
 }
 
 int main(int argc, char* argv[]) {
-  llvm::cl::ParseCommandLineOptions(argc, argv);
+  absl::ParseCommandLine(argc, argv);
 
   auto run = ParseFlags();
   if (run == nullptr) {
@@ -141,17 +84,19 @@ int main(int argc, char* argv[]) {
 
   run->outs.clear();
   std::vector<std::unique_ptr<litert::tools::UserStream>> oss;
+  const auto outs = absl::GetFlag(FLAGS_o);
   for (const auto& out : outs) {
     oss.push_back(std::make_unique<litert::tools::UserStream>(
         UserStream::MakeFromFlag(out)));
     run->outs.push_back(oss.back()->Get());
   }
 
-  run->dump_out = UserStream::MakeFromFlag(err);
+  run->dump_out = UserStream::MakeFromFlag(absl::GetFlag(FLAGS_err));
 
   run->dump_out.Get() << absl::StreamFormat(
-      "CMD: %s\nMODEL: %s\nSOC_MANUFACTURER: %s\nSOC_MODEL: %s\n", cmd, model,
-      soc_manufacturer, soc_model);
+      "CMD: %s\nMODEL: %s\nSOC_MANUFACTURER: %s\nSOC_MODEL: %s\n",
+      absl::GetFlag(FLAGS_cmd), absl::GetFlag(FLAGS_model),
+      absl::GetFlag(FLAGS_soc_manufacturer), absl::GetFlag(FLAGS_soc_model));
 
   return ApplyPlugin(std::move(run));
 }

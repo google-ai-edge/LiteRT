@@ -109,12 +109,16 @@ litert_cc_bin_with_qnn(
     deps = [
         ":apply_plugin",
         ":outstream",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
         "//litert/core:build_stamp",
+        "//litert/tools/flags:apply_plugin_flags",
+        "//litert/tools/flags:common_flags",
+        "//litert/tools/flags:flag_types",
     ],
 )
 
@@ -136,10 +140,13 @@ cc_binary(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings:str_format",
-        "@llvm-project//llvm:Support",
         "//litert/compiler/plugin:compiler_flags",
+        "//litert/tools/flags:apply_plugin_flags",
+        "//litert/tools/flags:common_flags",
+        "//litert/tools/flags:flag_types",
     ],
 )
 
