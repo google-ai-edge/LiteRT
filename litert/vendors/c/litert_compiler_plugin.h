@@ -18,7 +18,9 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,7 +41,14 @@ LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version);
 // GoogleTensor, Qualcomm).
 const char* LiteRtGetCompilerPluginSocManufacturer();
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin);
+// Initialize a compiler plugin with options provided by ther caller. The caller
+// retains ownership of `env` and `options` and guarantees pointers are valid
+// while the plugin is alive. These are read-only (TODO: update api for const
+// correctness). It is OK for these to be null, in which case the plugin should
+// use default values.
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+                                        LiteRtEnvironmentOptions env,
+                                        LiteRtOptions options);
 
 void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin);
 
@@ -78,6 +87,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
 // released or reused after this function returns. Flags are string key ->
 // optional string value pairs. A non-existent value is represented by an empty
 // string. Calling this function will unset any previously set flags.
+//
+// WARNING: This will be deprecated and removed shortly in favor of the option
+// parameters passed at creation.
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
                                           LiteRtParamIndex num_flags,
                                           const char** keys,

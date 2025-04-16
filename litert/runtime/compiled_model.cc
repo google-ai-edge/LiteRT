@@ -109,8 +109,11 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
     LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
-    auto jit_result = litert::internal::ApplyPlugins(
-        &env, &model, hw_accelerators, &need_reserialization);
+    // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the
+    // vendor code (nullptr are safe for now).
+    auto jit_result =
+        litert::internal::ApplyPlugins(&env, /*options=*/nullptr, &model,
+                                       hw_accelerators, &need_reserialization);
     if (!jit_result) {
       LITERT_LOG(LITERT_WARNING, "Failed to apply compiler plugins: %s",
                  jit_result.Error().Message().c_str());

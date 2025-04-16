@@ -17,6 +17,8 @@
 
 #include <memory>
 
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
@@ -36,9 +38,10 @@ using PluginPtr =
     std::unique_ptr<LiteRtCompilerPluginT, LiteRtCompilerPluginDeleter>;
 
 // Initialize a plugin via c-api and wrap result in smart pointer.
-inline PluginPtr CreatePlugin() {
+inline PluginPtr CreatePlugin(LiteRtEnvironmentOptions env = nullptr,
+                              LiteRtOptions options = nullptr) {
   LiteRtCompilerPlugin plugin;
-  LITERT_CHECK_STATUS_OK(LiteRtCreateCompilerPlugin(&plugin));
+  LITERT_CHECK_STATUS_OK(LiteRtCreateCompilerPlugin(&plugin, env, options));
   return PluginPtr(plugin);
 }
 

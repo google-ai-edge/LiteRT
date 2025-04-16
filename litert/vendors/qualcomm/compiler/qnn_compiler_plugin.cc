@@ -34,16 +34,17 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -195,28 +196,28 @@ LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
 //
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {
-  // A "key-only" flag will have an empty string as the value.
-  using Flag = std::pair<std::string, std::string>;
-  std::vector<Flag> flags;
+class LiteRtCompilerPluginT {
+ public:
+  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : options_({env, options}) {}
+
+ private:
+  litert::OptionsHelper options_;
 };
 
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
                                           LiteRtParamIndex num_flags,
                                           const char** keys,
                                           const char** values) {
-  auto& flags = compiler_plugin->flags;
-  flags.resize(num_flags);
-  for (int i = 0; i < num_flags; ++i) {
-    auto& flag = flags[i];
-    flag.first = std::string(keys[i]);
-    flag.second = std::string(values[i]);
-  }
+  // This is in the process of deprecation.
+  LITERT_LOG(LITERT_WARNING, "LiteRtCompilerPluginSetFlags is deprecated");
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin) {
-  auto* plugin = new LiteRtCompilerPluginT;
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+                                        LiteRtEnvironmentOptions env,
+                                        LiteRtOptions options) {
+  auto* plugin = new LiteRtCompilerPluginT(env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
 }
