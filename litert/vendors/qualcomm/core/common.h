@@ -9,14 +9,20 @@
 extern "C" {
 #endif  // __cplusplus
 
+typedef enum LiteRtQnnProfilingOptions {  // NOLINT(modernize-use-using)
+  kQnnProfilingOff = 0,
+  kQnnProfilingBasic = 1,
+  kQnnProfilingDetailed = 2
+} LiteRtQnnProfilingOptions;
+
 typedef enum LiteRtQnnLogLevel {  // NOLINT(modernize-use-using)
   /// Disable delegate and QNN backend logging messages.
-  kLogOff = 0,
-  kLogLevelError = 1,
-  kLogLevelWarn = 2,
-  kLogLevelInfo = 3,
-  kLogLevelVerbose = 4,
-  kLogLevelDebug = 5,
+  kQnnLogOff = 0,
+  kQnnLogLevelError = 1,
+  kQnnLogLevelWarn = 2,
+  kQnnLogLevelInfo = 3,
+  kQnnLogLevelVerbose = 4,
+  kQnnLogLevelDebug = 5,
 } LiteRtQnnLogLevel;
 
 typedef struct {  // NOLINT(modernize-use-using)

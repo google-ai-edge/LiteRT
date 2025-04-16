@@ -30,6 +30,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 #include "litert/cc/litert_shared_library.h"
@@ -131,6 +132,10 @@ class QnnManager {
 
   bool IsLegacySocModel() { return soc_info_.dsp_arch == ::qnn::DspArch::V68; }
 
+  // Get qnn backend handle. Nullptr if backendCreate has not been successfully
+  // called.
+  Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
+
  private:
   QnnManager() = default;
 
@@ -164,10 +169,6 @@ class QnnManager {
 
   // Get qnn log handle. Nullptr if logCreate has not been successfully called.
   Qnn_LogHandle_t& LogHandle() { return log_handle_; }
-
-  // Get qnn backend handle. Nullptr if backendCreate has not been successfully
-  // called.
-  Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
 
   // Get qnn device handle. Nullptr if deviceCreate has not been successfully
   // called.
@@ -209,12 +210,26 @@ class QnnManager {
 class QnnManager::ContextHandle {
  public:
   ContextHandle(Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile,
-                QnnContext_FreeFn_t free_fn)
-      : context_handle_(context_handle), profile_(profile), free_fn_(free_fn) {}
+                QnnContext_FreeFn_t free_fn,
+                QnnProfile_FreeFn_t profile_free_fn)
+      : context_handle_(context_handle),
+        profile_(profile),
+        free_fn_(free_fn),
+        profile_free_fn_(profile_free_fn) {}
 
   ~ContextHandle() {
+    if (profile_ && profile_free_fn_) {
+      if (auto status = profile_free_fn_(profile_); status != QNN_SUCCESS) {
+        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free profile handle\n");
+      }
+      profile_ = nullptr;
+    }
     if (context_handle_ && free_fn_) {
-      free_fn_(context_handle_, profile_);
+      if (auto status = free_fn_(context_handle_, profile_);
+          status != QNN_SUCCESS) {
+        LITERT_LOG(LITERT_ERROR, "%s", "Failed to free context handle\n");
+      }
+      context_handle_ = nullptr;
     }
   }
 
@@ -226,6 +241,7 @@ class QnnManager::ContextHandle {
     std::swap(context_handle_, other.context_handle_);
     std::swap(profile_, other.profile_);
     std::swap(free_fn_, other.free_fn_);
+    std::swap(profile_free_fn_, other.profile_free_fn_);
     return *this;
   }
 
@@ -238,6 +254,7 @@ class QnnManager::ContextHandle {
   Qnn_ContextHandle_t context_handle_ = nullptr;
   Qnn_ProfileHandle_t profile_ = nullptr;
   QnnContext_FreeFn_t free_fn_ = nullptr;
+  QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
 };
 
 }  // namespace litert::qnn

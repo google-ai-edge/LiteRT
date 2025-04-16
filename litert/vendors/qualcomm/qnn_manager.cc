@@ -371,7 +371,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
                       "Failed to create QNN context");
   }
   auto deleter = Api()->contextFree;
-  return ContextHandle{context_handle, /*profile=*/nullptr, deleter};
+  return ContextHandle{context_handle, /*profile=*/nullptr, deleter, nullptr};
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
@@ -386,8 +386,10 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
-  auto deleter = Api()->contextFree;
-  return ContextHandle{context_handle, profile_handle, deleter};
+  auto context_deleter = Api()->contextFree;
+  auto profile_deleter = Api()->profileFree;
+  return ContextHandle{context_handle, profile_handle, context_deleter,
+                       profile_deleter};
 }
 
 Expected<QnnManager::Ptr> QnnManager::Create(
