@@ -220,8 +220,8 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
-  auto accelerator_flags =
-      LiteRtHwAcceleratorSet(kLiteRtHwAcceleratorGpu);
+  LiteRtHwAcceleratorSet accelerator_flags =
+      kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorCpu;
   auto compilation_options = Options::Create();
   compilation_options->SetHardwareAccelerators(accelerator_flags);
   LITERT_ASSERT_OK_AND_ASSIGN(

@@ -289,8 +289,40 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                                       accelerator->StopMetricsCollection});
   }
 
+  if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+      compiled_model->HasNonDelegatedOps()) {
+    return litert::Error(
+        kLiteRtStatusErrorCompilation,
+        "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
+        "compilation accelerator set to allow using the CPU to run those.");
+  }
   compiled_model->CheckCpuTensors();
   return compiled_model;
+}
+
+bool LiteRtCompiledModelT::HasNonDelegatedOps() {
+  for (int subgraph_no = 0; subgraph_no < interp_->subgraphs_size();
+       ++subgraph_no) {
+    const auto* const subgraph = interp_->subgraph(subgraph_no);
+    if (subgraph->IsDelegationSkippable()) {
+      continue;
+    }
+    const auto& execution_plan = subgraph->execution_plan();
+    const auto& nodes_and_registration = subgraph->nodes_and_registration();
+    for (int execution_plan_index = 0;
+         execution_plan_index < execution_plan.size(); execution_plan_index++) {
+      const int node_index = execution_plan[execution_plan_index];
+      const TfLiteRegistration& registration =
+          nodes_and_registration[node_index].second;
+      if (registration.builtin_code != kTfLiteBuiltinDelegate &&
+          (registration.builtin_code != kTfLiteBuiltinCustom ||
+           litert::internal::kLiteRtDispatchOpCustomName !=
+               registration.custom_name)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 void LiteRtCompiledModelT::CheckCpuTensors() {

@@ -211,6 +211,9 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Returns true if a non delegated operation is found in the interpreter.
+  bool HasNonDelegatedOps();
+
   // NOTE: Declare delegates before the TFL interpreter, so they are destroyed
   // only after the interpreter is destroyed.
   std::vector<Delegate> delegates_;
