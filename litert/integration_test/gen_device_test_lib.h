@@ -22,6 +22,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/model/model.h"
 #include "litert/test/matchers.h"
@@ -43,8 +44,11 @@ class CmInvoker {
   // Setup the compiled model api and initialize the input and output buffers.
   // Assumes default signature.
   void Setup() {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto jit_compilation_options,
+                                Options::Create(Accelerator()));
     LITERT_ASSERT_OK_AND_ASSIGN(
-        compiled_model_, CompiledModel::Create(env_, model_, Accelerator()));
+        compiled_model_,
+        CompiledModel::Create(env_, model_, jit_compilation_options));
     const auto sig = model_.DefaultSignatureKey();
     LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_,
                                 compiled_model_.CreateInputBuffers(sig));

@@ -61,9 +61,11 @@ TEST(JitCompilation, MediaTek) {
                   "MediaTek NPU";
 #endif
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto jit_compilation_options,
+                              litert::Options::Create(kLiteRtHwAcceleratorNpu));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               litert::CompiledModel::Create(
-                                  environment, model, kLiteRtHwAcceleratorNpu));
+                                  environment, model, jit_compilation_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,

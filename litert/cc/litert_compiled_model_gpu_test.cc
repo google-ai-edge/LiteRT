@@ -49,9 +49,12 @@ void BasicTest() {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto jit_compilation_options,
+                              Options::Create(kLiteRtHwAcceleratorGpu));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
+      CompiledModel::Create(*env, model, jit_compilation_options));
 
   auto signatures = model.GetSignatures().Value();
   EXPECT_EQ(signatures.size(), 1);
@@ -137,9 +140,12 @@ TEST(CompiledModelGpuTest, Async) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto jit_compilation_options,
+                              Options::Create(kLiteRtHwAcceleratorGpu));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
+      CompiledModel::Create(*env, model, jit_compilation_options));
 
   auto signatures = model.GetSignatures().Value();
   EXPECT_EQ(signatures.size(), 1);

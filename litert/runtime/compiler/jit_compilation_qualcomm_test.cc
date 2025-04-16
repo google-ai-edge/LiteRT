@@ -26,6 +26,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -63,9 +64,11 @@ TEST(JitCompilation, Qualcomm) {
                   "Qualcomm HTP";
 #endif
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto jit_compilation_options,
+                              litert::Options::Create(kLiteRtHwAcceleratorNpu));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               litert::CompiledModel::Create(
-                                  environment, model, kLiteRtHwAcceleratorNpu));
+                                  environment, model, jit_compilation_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,

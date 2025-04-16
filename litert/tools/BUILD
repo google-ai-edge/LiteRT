@@ -283,6 +283,7 @@ cc_binary(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//tflite/profiling:time",
     ],
