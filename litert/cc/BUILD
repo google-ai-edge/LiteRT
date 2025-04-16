@@ -170,6 +170,7 @@ cc_test(
 cc_library(
     name = "litert_tensor_buffer",
     srcs = [
+        "litert_tensor_buffer.cc",
         "litert_tensor_buffer_requirements.cc",
     ],
     hdrs = [
