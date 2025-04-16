@@ -136,9 +136,9 @@ class CompilerPlugin {
   ~CompilerPlugin();
 
  private:
-  static Expected<CompilerPlugin> LoadPlugin(
-      absl::string_view lib_path, LiteRtEnvironmentOptions env = nullptr,
-      LiteRtOptions options = nullptr);
+  static Expected<CompilerPlugin> LoadPlugin(absl::string_view lib_path,
+                                             LiteRtEnvironmentOptions env,
+                                             LiteRtOptions options);
   CompilerPlugin() = default;
 
   std::vector<std::string> soc_models_;

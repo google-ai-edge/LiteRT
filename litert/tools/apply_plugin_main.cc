@@ -20,6 +20,7 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
@@ -98,6 +99,25 @@ int main(int argc, char* argv[]) {
       "CMD: %s\nMODEL: %s\nSOC_MANUFACTURER: %s\nSOC_MODEL: %s\n",
       absl::GetFlag(FLAGS_cmd), absl::GetFlag(FLAGS_model),
       absl::GetFlag(FLAGS_soc_manufacturer), absl::GetFlag(FLAGS_soc_model));
+
+  auto opts = litert::Options::Create();
+  if (!opts) {
+    run->dump_out.Get().get() << "Failed to create Litert options\n";
+    return 1;
+  }
+
+  auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
+  if (!qnn_opts) {
+    run->dump_out.Get().get() << "Failed to create Qualcomm options\n";
+    return 1;
+  }
+
+  if (!opts->AddOpaqueOptions(std::move(*qnn_opts))) {
+    run->dump_out.Get().get() << "Failed to add Qualcomm options to list\n";
+    return 1;
+  }
+
+  run->options = std::move(*opts);
 
   return ApplyPlugin(std::move(run));
 }

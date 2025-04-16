@@ -268,7 +268,8 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
 
 LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
                               std::optional<std::string> shared_library_dir,
-                              std::optional<::qnn::SocInfo> soc_info) {
+                              std::optional<::qnn::SocInfo> soc_info,
+                              QnnLog_Level_t log_level) {
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.
@@ -291,8 +292,10 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  if (auto status = Api()->logCreate(GetDefaultStdOutLogger(),
-                                     QNN_LOG_LEVEL_INFO, &LogHandle());
+  LITERT_LOG(LITERT_INFO, "Initializing QNN logger with log level %d",
+             log_level);
+  if (auto status =
+          Api()->logCreate(GetDefaultStdOutLogger(), log_level, &LogHandle());
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
@@ -395,9 +398,10 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::Ptr> QnnManager::Create(
     absl::Span<const QnnBackend_Config_t*> configs,
     std::optional<std::string> shared_library_dir,
-    std::optional<::qnn::SocInfo> soc_info) {
+    std::optional<::qnn::SocInfo> soc_info, QnnLog_Level_t log_level) {
   Ptr qnn_manager(new QnnManager);
-  if (auto status = qnn_manager->Init(configs, shared_library_dir, soc_info);
+  if (auto status =
+          qnn_manager->Init(configs, shared_library_dir, soc_info, log_level);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to set up QNN manager");
   }

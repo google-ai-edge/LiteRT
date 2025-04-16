@@ -42,6 +42,7 @@
 #include "third_party/qairt/latest/include/QNN/QnnContext.h"
 #include "third_party/qairt/latest/include/QNN/QnnDevice.h"
 #include "third_party/qairt/latest/include/QNN/QnnInterface.h"
+#include "third_party/qairt/latest/include/QNN/QnnLog.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 #include "third_party/qairt/latest/include/QNN/System/QnnSystemContext.h"
 #include "third_party/qairt/latest/include/QNN/System/QnnSystemInterface.h"
@@ -90,7 +91,8 @@ class QnnManager {
   static Expected<Ptr> Create(
       absl::Span<const QnnBackend_Config_t*> configs,
       std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
+      std::optional<::qnn::SocInfo> soc_info = std::nullopt,
+      QnnLog_Level_t log_level = QNN_LOG_LEVEL_INFO);
 
   static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
@@ -141,7 +143,8 @@ class QnnManager {
 
   LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
                     std::optional<std::string> shared_library_dir,
-                    std::optional<::qnn::SocInfo> soc_info);
+                    std::optional<::qnn::SocInfo> soc_info,
+                    QnnLog_Level_t log_level);
 
   //
   // Manage libQnn*.so Loading

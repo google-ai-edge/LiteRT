@@ -45,6 +45,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "third_party/qairt/latest/include/QNN/QnnLog.h"
 
 using ::litert::qnn::QnnManager;
 using LiteRtBufferId = uint32_t;
@@ -75,13 +76,6 @@ std::optional<::qnn::SocInfo> FindSocModel(absl::string_view soc_model_name) {
   return soc_model;
 }
 
-bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
-#ifdef __ANDROID__
-  return false;
-#else
-  return dsp_arch >= ::qnn::DspArch::V73;
-#endif
-}
 
 }  // namespace
 
@@ -201,6 +195,43 @@ class LiteRtCompilerPluginT {
   LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options)
       : options_({env, options}) {}
 
+  litert::OptionsHelper& Options() { return options_; }
+
+  QnnLog_Level_t LogLevel() {
+    auto qnn_opts = options_.FindOptions<::litert::qualcomm::QualcommOptions>();
+    if (!qnn_opts) {
+      return QNN_LOG_LEVEL_INFO;
+    }
+    auto log_level_opt = qnn_opts->GetLogLevel();
+    switch (log_level_opt) {
+      case kLiteRtQualcommLogOff:
+        return QNN_LOG_LEVEL_ERROR;
+      case kLiteRtQualcommLogLevelError:
+        return QNN_LOG_LEVEL_ERROR;
+      case kLiteRtQualcommLogLevelWarn:
+        return QNN_LOG_LEVEL_WARN;
+      case kLiteRtQualcommLogLevelInfo:
+        return QNN_LOG_LEVEL_INFO;
+      case kLiteRtQualcommLogLevelVerbose:
+        return QNN_LOG_LEVEL_VERBOSE;
+      case kLiteRtQualcommLogLevelDebug:
+        return QNN_LOG_LEVEL_DEBUG;
+    }
+  }
+
+  bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
+#ifdef __ANDROID__
+    return false;
+#else
+    auto qnn_opts = options_.FindOptions<::litert::qualcomm::QualcommOptions>();
+    if (!qnn_opts) {
+      return true;
+    }
+    return qnn_opts->GetEnableWeightSharing() &&
+           dsp_arch >= ::qnn::DspArch::V73;
+#endif
+  }
+
  private:
   litert::OptionsHelper options_;
 };
@@ -217,6 +248,11 @@ LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
+  if (options == nullptr || env == nullptr) {
+    LITERT_LOG(LITERT_WARNING,
+               "QNN compiler plugin created with null options, these will be "
+               "defaulted.");
+  }
   auto* plugin = new LiteRtCompilerPluginT(env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
@@ -235,7 +271,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   auto backend_configs = QnnManager::DefaultBackendConfigs();
   auto qnn_manager =
       QnnManager::Create(backend_configs, std::nullopt,
-                         soc_model ? FindSocModel(soc_model) : std::nullopt);
+                         soc_model ? FindSocModel(soc_model) : std::nullopt,
+                         compiler_plugin->LogLevel());
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
     return qnn_manager.Error().Status();
@@ -319,8 +356,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
   auto backend_configs = QnnManager::DefaultBackendConfigs();
-  auto qnn_manager = QnnManager::Create(
-      backend_configs, /*shared_library_dir=*/std::nullopt, opt_soc_model);
+  auto qnn_manager =
+      QnnManager::Create(backend_configs, /*shared_library_dir=*/std::nullopt,
+                         opt_soc_model, compiler_plugin->LogLevel());
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
@@ -368,7 +406,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       // Disable weight sharing if we have only one partition or SoC doesn't
       // support weight sharing.
       if (num_partitions == kDefaultPartitionNum ||
-          !IsWeightSharingSupported(opt_soc_model.value().dsp_arch)) {
+          !compiler_plugin->IsWeightSharingSupported(
+              opt_soc_model.value().dsp_arch)) {
         context_configs = QnnManager::DefaultContextConfigs();
       }
       auto context_handle =

@@ -24,6 +24,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/outstream.h"
 
@@ -151,6 +153,14 @@ struct ApplyPluginRun {
   // If provided, only the subgraphs with the given indices are applied with the
   // plugin.
   absl::flat_hash_set<uint32_t> subgraphs = {};
+
+  // Options structure (containing opaque chain).
+  // TODO: lukeboyer - Consolidate as much as possible from this class
+  // into the official options api.
+  Options options;
+
+  // Environment options.
+  Environment environment = *Environment::Create({});
 };
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run);

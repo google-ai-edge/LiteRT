@@ -226,7 +226,7 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   LITERT_LOG(LITERT_INFO, "Resolved plugin api at: %s", lib_path.data());
 
   LITERT_RETURN_IF_ERROR(plugin.plugin_api_.create_compiler_plugin(
-      &plugin.plugin_handle_, /*env=*/nullptr, /*options=*/nullptr));
+      &plugin.plugin_handle_, env, options));
   LITERT_LOG(LITERT_INFO, "Initialize plugin at: %s", lib_path.data());
 
   auto api_version = plugin.ApiVersion();
@@ -266,7 +266,7 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
 
   for (const auto& lib_path : plugin_lib_paths) {
     LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.c_str());
-    auto plugin = LoadPlugin(lib_path, /*env=*/nullptr, /*options=*/nullptr);
+    auto plugin = LoadPlugin(lib_path, env, options);
     if (!plugin.HasValue()) {
       continue;
     }
