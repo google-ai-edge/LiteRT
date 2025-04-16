@@ -46,7 +46,7 @@ namespace google_tensor {
 constexpr char kPluginManufacturer[] = "GoogleTensor";
 
 constexpr const char* kPluginSocModels[] = {
-    "P25",
+    "G5",
 };  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kUnSupportedOps[] = {
@@ -313,6 +313,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
+  if (num_partitions > 1) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Compiler plugin does not support multiple subgraphs or multisignature "
+        "models");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
 
   // Serialize model.
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
