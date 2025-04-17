@@ -311,8 +311,9 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,

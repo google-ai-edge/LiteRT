@@ -283,8 +283,9 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be FastRpc and DmaBuf.
@@ -377,8 +378,9 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -500,8 +502,9 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(

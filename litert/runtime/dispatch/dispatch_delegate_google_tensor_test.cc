@@ -289,8 +289,9 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb.
@@ -378,8 +379,9 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -497,8 +499,9 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
 #endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -574,7 +577,8 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model));
+                              CompiledModel::Create(env, model,
+                                                    kLiteRtHwAcceleratorCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -648,8 +652,9 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create and fill input and output tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(

@@ -53,8 +53,9 @@ TEST(CompiledModelTest, Basic) {
   ASSERT_TRUE(model);
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -135,8 +136,9 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -222,8 +224,9 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -308,8 +311,9 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
   ASSERT_TRUE(model);
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
