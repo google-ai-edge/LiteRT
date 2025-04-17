@@ -210,7 +210,7 @@ void GoogleTensorOptions::SetFloatTruncationType(
 }
 
 LiteRtGoogleTensorOptionsTruncationType
-GoogleTensorOptions::GetFloatTruncationType() {
+GoogleTensorOptions::GetFloatTruncationType() const {
   LiteRtGoogleTensorOptions options_data = Data();
   LiteRtGoogleTensorOptionsTruncationType truncation_type;
   internal::AssertOk(LiteRtGoogleTensorOptionsGetFloatTruncationType,
@@ -224,7 +224,7 @@ void GoogleTensorOptions::SetInt64ToInt32Truncation(
                      int64_to_int32_truncation);
 }
 
-bool GoogleTensorOptions::GetInt64ToInt32Truncation() {
+bool GoogleTensorOptions::GetInt64ToInt32Truncation() const {
   LiteRtGoogleTensorOptions options_data = Data();
   bool int64_to_int32_truncation;
   internal::AssertOk(LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation,
@@ -237,7 +237,7 @@ void GoogleTensorOptions::SetOutputDir(absl::string_view output_dir) {
                      output_dir.data());
 }
 
-absl::string_view GoogleTensorOptions::GetOutputDir() {
+absl::string_view GoogleTensorOptions::GetOutputDir() const {
   LiteRtGoogleTensorOptions options_data = Data();
   const char* output_dir;
   internal::AssertOk(LiteRtGoogleTensorOptionsGetOutputDir, options_data,
@@ -250,7 +250,7 @@ void GoogleTensorOptions::SetDumpOpTimings(bool dump_op_timings) {
                      dump_op_timings);
 }
 
-bool GoogleTensorOptions::GetDumpOpTimings() {
+bool GoogleTensorOptions::GetDumpOpTimings() const {
   LiteRtGoogleTensorOptions options_data = Data();
   bool dump_op_timings;
   LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data, &dump_op_timings);
@@ -261,7 +261,7 @@ void GoogleTensorOptions::SetEnableReference(bool enable_reference) {
                      enable_reference);
 }
 
-bool GoogleTensorOptions::GetEnableReference() {
+bool GoogleTensorOptions::GetEnableReference() const {
   LiteRtGoogleTensorOptions options_data = Data();
   bool enable_reference;
   internal::AssertOk(LiteRtGoogleTensorOptionsGetEnableReference, options_data,

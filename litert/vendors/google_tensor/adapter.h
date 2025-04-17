@@ -21,6 +21,7 @@
 
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
@@ -29,7 +30,8 @@ namespace litert::google_tensor {
 // the flag value. eg. {{"enable_reference", "true"}}
 using Flags = std::vector<std::pair<std::string, std::string>>;
 typedef absl::Status (*Compile)(absl::string_view serialized_tfl_buffer,
-                                absl::string_view soc_model, const Flags& flags,
+                                absl::string_view soc_model,
+                                LiteRtOpaqueOptions options,
                                 std::string* compiled_code);
 
 // This class adapts the google tensor compiler API for dynamic loading.

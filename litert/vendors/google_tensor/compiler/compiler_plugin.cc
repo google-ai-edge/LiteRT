@@ -31,10 +31,12 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
 
 //
@@ -228,39 +230,29 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 //
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {
-  using Flag = std::pair<std::string, std::string>;
-  std::vector<Flag> flags;
-  LiteRtEnvironmentOptions env;
-  LiteRtOptions options;
+class LiteRtCompilerPluginT {
+ public:
+  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options)
+      : options_({env, options}) {}
+
+  ::litert::OptionsHelper& Options() { return options_; }
+
+ private:
+  ::litert::OptionsHelper options_;
 };
 
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
                                           LiteRtParamIndex num_flags,
                                           const char** keys,
                                           const char** values) {
-  auto& flags = compiler_plugin->flags;
-  if (flags.size() != 0) {
-    LITERT_LOG(LITERT_INFO, "Overwriting existing flags");
-    flags.clear();
-  }
-  flags.resize(num_flags);
-  for (int i = 0; i < num_flags; ++i) {
-    auto& flag = flags[i];
-    flag.first = std::string(keys[i]);
-    flag.second = std::string(values[i]);
-    LITERT_LOG(LITERT_INFO, "Setting Flag: %s = %s", flag.first.c_str(),
-               flag.second.c_str());
-  }
+  LITERT_LOG(LITERT_WARNING, "Setting compiler flags is being deprecated.");
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
-  *compiler_plugin = new LiteRtCompilerPluginT;
-  (*compiler_plugin)->env = env;
-  (*compiler_plugin)->options = options;
+  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
   return kLiteRtStatusOk;
 }
 
@@ -339,11 +331,29 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
+
+  // Resolve custom google tensor options.
+  LiteRtOpaqueOptions opaque_options = {};
+  auto opq = compiler_plugin->Options().OpaqueOptions();
+  if (!opq) {
+    LITERT_LOG(
+        LITERT_INFO,
+        "No custom google tensor options found, creating default options");
+    LITERT_ASSIGN_OR_RETURN(
+        auto google_tensor_opts,
+        ::litert::google_tensor::GoogleTensorOptions::Create());
+    opaque_options = google_tensor_opts.Release();
+  } else {
+    LITERT_LOG(LITERT_INFO, "Using custom google tensor options");
+    opaque_options = opq->Get();
+  }
+
   // TODO(b/398984678): add support for multiple bytecodes
   absl::string_view soc_model_view(soc_model);
   std::string compiled;
+
   auto compile_status = adapter_result.Value()->api().compile(
-      buffer_str, soc_model_view, compiler_plugin->flags, &compiled);
+      buffer_str, soc_model_view, opaque_options, &compiled);
 
   if (!compile_status.ok()) {
     LITERT_LOG(

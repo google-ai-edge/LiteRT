@@ -20,6 +20,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -63,6 +64,7 @@ litert::Expected<void> Adapter::LoadSymbols(
     if (dlib_handle_) {
       void* init_func = dlsym(dlib_handle_, "Initialize");
       if (init_func) {
+        absl::LeakCheckDisabler disabler;
         (*reinterpret_cast<void (*)()>(init_func))();
       }
       break;  // Found the library

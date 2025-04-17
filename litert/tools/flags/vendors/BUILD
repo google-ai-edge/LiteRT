@@ -17,6 +17,8 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
+# QUALCOMM #########################################################################################
+
 cc_library(
     name = "qualcomm_flags",
     srcs = ["qualcomm_flags.cc"],
@@ -31,17 +33,6 @@ cc_library(
     alwayslink = 1,
 )
 
-cc_library(
-    name = "google_tensor_flags",
-    srcs = ["google_tensor_flags.cc"],
-    hdrs = ["google_tensor_flags.h"],
-    deps = [
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
-        "//litert/c/options:litert_google_tensor_options",
-    ],
-)
-
 cc_test(
     name = "qualcomm_flags_test",
     srcs = ["qualcomm_flags_test.cc"],
@@ -50,6 +41,22 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "//litert/c/options:litert_qualcomm_options",
     ],
+)
+
+# GOOGLE TENSOR ####################################################################################
+
+cc_library(
+    name = "google_tensor_flags",
+    srcs = ["google_tensor_flags.cc"],
+    hdrs = ["google_tensor_flags.h"],
+    deps = [
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c/options:litert_google_tensor_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+    alwayslink = 1,
 )
 
 cc_test(

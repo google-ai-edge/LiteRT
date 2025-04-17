@@ -101,6 +101,8 @@ class GoogleTensorOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
 
+  GoogleTensorOptions() = delete;
+
   static const char* Discriminator();
 
   static Expected<GoogleTensorOptions> Create(OpaqueOptions& options);
@@ -109,23 +111,23 @@ class GoogleTensorOptions : public OpaqueOptions {
   void SetFloatTruncationType(
       LiteRtGoogleTensorOptionsTruncationType truncation_type);
 
-  LiteRtGoogleTensorOptionsTruncationType GetFloatTruncationType();
+  LiteRtGoogleTensorOptionsTruncationType GetFloatTruncationType() const;
 
   void SetInt64ToInt32Truncation(bool int64_to_int32_truncation);
 
-  bool GetInt64ToInt32Truncation();
+  bool GetInt64ToInt32Truncation() const;
 
   void SetOutputDir(absl::string_view output_dir);
 
-  absl::string_view GetOutputDir();
+  absl::string_view GetOutputDir() const;
 
   void SetDumpOpTimings(bool dump_op_timings);
 
-  bool GetDumpOpTimings();
+  bool GetDumpOpTimings() const;
 
   void SetEnableReference(bool enable_reference);
 
-  bool GetEnableReference();
+  bool GetEnableReference() const;
 
  private:
   LiteRtGoogleTensorOptions Data() const;

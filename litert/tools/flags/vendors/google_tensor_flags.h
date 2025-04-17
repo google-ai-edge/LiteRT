@@ -20,6 +20,7 @@
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/cc/litert_expected.h"
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
@@ -42,6 +43,10 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options);
 
-namespace litert::google_tensor {}  // namespace litert::google_tensor
+namespace litert::google_tensor {
+
+Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags();
+
+}  // namespace litert::google_tensor
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_GOOGLE_TENSOR_FLAGS_H_
