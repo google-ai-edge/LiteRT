@@ -130,6 +130,7 @@ cc_test(
 
 cc_library(
     name = "litert_layout",
+    srcs = ["litert_layout.cc"],
     hdrs = ["litert_layout.h"],
     deps = [
         ":litert_common",

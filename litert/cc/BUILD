@@ -400,6 +400,8 @@ cc_library(
     hdrs = ["litert_layout.h"],
     deps = [
         ":litert_consts",
+        ":litert_expected",
+        ":litert_macros",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_layout",

@@ -82,7 +82,7 @@ TensorType MakeRankedTensorType(LiteRtElementType element_type,
   ranked.layout.rank = dims.size();
   std::copy(dims.begin(), dims.end(), ranked.layout.dimensions);
   // Strides not yet supported.
-  ranked.layout.strides = nullptr;
+  ranked.layout.has_strides = false;
   return tensor_type;
 }
 

@@ -196,20 +196,20 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     const absl::Span<const uint8_t> weights = Weights().Bytes();
 
     auto num_elements = ranked_tensor_type->Layout().NumElements();
-    if (!num_elements.has_value()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+    if (!num_elements) {
+      return num_elements.Error();
     }
     auto byte_width = GetByteWidth(ty);
     if (!byte_width.has_value()) {
       return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
-    if (byte_width.value() * num_elements.value() != weights.size()) {
+    if (byte_width.value() * *num_elements != weights.size()) {
       return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
     return absl::MakeConstSpan(reinterpret_cast<const T*>(weights.data()),
-                               num_elements.value());
+                               *num_elements);
   }
 
   std::optional<LiteRtTensorDefiningOp> DefiningOp() const {

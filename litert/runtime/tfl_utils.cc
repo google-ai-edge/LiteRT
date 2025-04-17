@@ -118,7 +118,7 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
                             TfLiteOpaqueContext* tfl_context,
                             TfLiteOpaqueTensor* tfl_opaque_tensor) {
   // TFL tensors don't support strides.
-  if (layout.strides) {
+  if (layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Unexpected layout with strides");
   }
