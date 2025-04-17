@@ -19,6 +19,7 @@
 #include <cstring>
 #include <utility>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
@@ -240,10 +241,19 @@ class TensorBuffer
   Expected<void> Write(absl::Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
     LITERT_ASSIGN_OR_RETURN(size_t size, Size());
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
+    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
+      // When fp16 buffer is locked, the provided host memory buffer is 2 times
+      // of the size of the tensor buffer.
+      size *= 2;
+    }
     if (size < data.size() * sizeof(T)) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "TensorBuffer size is smaller than the given data size");
+          absl::StrFormat(
+              "TensorBuffer host memory buffer size is smaller than the "
+              "given data size, %zu vs %zu",
+              size, data.size() * sizeof(T)));
     }
     std::memcpy(host_mem_addr, data.data(), data.size() * sizeof(T));
     Unlock();
@@ -259,11 +269,20 @@ class TensorBuffer
   Expected<void> Read(absl::Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
     LITERT_ASSIGN_OR_RETURN(size_t size, Size());
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
+    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
+      // When fp16 tensor buffer is locked, the provided host memory buffer is 2
+      // times of the size of the tensor buffer.
+      size *= 2;
+    }
     size_t total_read_size = data.size() * sizeof(T);
     if (size < total_read_size) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "TensorBuffer size is smaller than the given data size");
+          absl::StrFormat(
+              "TensorBuffer host memory buffer size is smaller than the "
+              "given data size, %zu vs %zu",
+              size, total_read_size));
     }
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     Unlock();
