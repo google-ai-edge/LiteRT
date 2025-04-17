@@ -77,6 +77,7 @@ limitations under the License.
 #include "tflite/kernels/internal/reference/select.h"
 #include "tflite/kernels/internal/reference/slice.h"
 #include "tflite/kernels/internal/reference/softmax.h"
+#include "tflite/kernels/internal/reference/softsign.h"
 #include "tflite/kernels/internal/reference/space_to_batch_nd.h"
 #include "tflite/kernels/internal/reference/space_to_depth.h"
 #include "tflite/kernels/internal/reference/strided_slice.h"
