@@ -42,7 +42,7 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   const char* soc_model_name;
   LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0,
                                                             &soc_model_name));
-  ASSERT_STREQ(soc_model_name, "P25");
+  ASSERT_STREQ(soc_model_name, "G5");
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
@@ -66,7 +66,7 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
 
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "P25", model.Get(), &compiled));
+      LiteRtCompilerPluginCompile(plugin.get(), "G5", model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
