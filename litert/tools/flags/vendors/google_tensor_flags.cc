@@ -16,6 +16,7 @@
 
 #include <string>
 
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_google_tensor_options.h"
 
@@ -58,6 +59,23 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
       return "half";
   }
 }
+
+ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
+          google_tensor_truncation_type,
+          kLiteRtGoogleTensorFloatTruncationTypeUnspecified,
+          "Float truncation type for Google Tensor.");
+
+ABSL_FLAG(bool, google_tensor_int64_to_int32, false,
+          "Whether to truncate int64 to int32.");
+
+ABSL_FLAG(std::string, google_tensor_output_dir, "",
+          "Output directory for Google Tensor.");
+
+ABSL_FLAG(bool, google_tensor_dump_op_timings, false,
+          "Whether to dump op timings.");
+
+ABSL_FLAG(bool, google_tensor_enable_reference, false,
+          "Whether to enable reference.");
 
 // NOLINTEND(*alien-types*)
 

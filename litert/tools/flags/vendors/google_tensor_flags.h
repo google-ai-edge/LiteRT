@@ -17,8 +17,22 @@
 
 #include <string>
 
+#include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_google_tensor_options.h"
+
+// COMPILATION OPTIONS /////////////////////////////////////////////////////////
+
+ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsTruncationType,
+                  google_tensor_truncation_type);
+
+ABSL_DECLARE_FLAG(bool, google_tensor_int64_to_int32);
+
+ABSL_DECLARE_FLAG(std::string, google_tensor_output_dir);
+
+ABSL_DECLARE_FLAG(bool, google_tensor_dump_op_timings);
+
+ABSL_DECLARE_FLAG(bool, google_tensor_enable_reference);
 
 // PARSERS (internal) //////////////////////////////////////////////////////////
 
