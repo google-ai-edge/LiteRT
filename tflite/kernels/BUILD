@@ -816,6 +816,7 @@ cc_library(
     ],
     deps = BUILTIN_KERNEL_DEPS + [
         ":variable_op_kernels",
+        "@FP16",
         "@fft2d",
         "@ruy//ruy/profiler:instrumentation",
         "//tflite/c:c_api_types",
