@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
@@ -30,11 +32,11 @@
 extern "C" {
 #endif  // __cplusplus
 
+LITERT_DEFINE_HANDLE(LiteRtQualcommOptions);
+
 // Create a qualcomm options object that is type erased. The actual option
 // data can be accessed from the payload.
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options);
-
-LITERT_DEFINE_HANDLE(LiteRtQualcommOptions);
 
 // The a string identifier that discriminates qualcomm options within
 // type erased options.
@@ -88,6 +90,7 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
 // See QnnHtpPerfInfrastructure_PowerMode_t in qnn_sdk. By default, it will
 // be decided by the backend (unknown).
 
+// TODO(Alen): remove LiteRtQualcommOptionsPowerMode.
 typedef enum LiteRtQualcommOptionsPowerMode {
   kLiteRtQualcommPowerModeUnknown = 0,
   kLiteRtQualcommPowerModePerformance = 1,
@@ -100,6 +103,40 @@ LiteRtStatus LiteRtQualcommOptionsSetPowerMode(
 LiteRtStatus LiteRtQualcommOptionsGetPowerMode(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsPowerMode* power_mode);
 
+typedef enum LiteRtQualcommOptionsHtpPerformanceMode {
+  kLiteRtQualcommHtpPerformanceModeDefault = 0,
+  kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance = 1,
+  kLiteRtQualcommHtpPerformanceModeBurst = 2,
+  kLiteRtQualcommHtpPerformanceModeHighPerformance = 3,
+  kLiteRtQualcommHtpPerformanceModePowerSaver = 4,
+  kLiteRtQualcommHtpPerformanceModeLowPowerSaver = 5,
+  kLiteRtQualcommHtpPerformanceModeHighPowerSaver = 6,
+  kLiteRtQualcommHtpPerformanceModeLowBalanced = 7,
+  kLiteRtQualcommHtpPerformanceModeBalanced = 8,
+  kLiteRtQualcommHtpPerformanceModeExtremePowerSaver = 9,
+} LiteRtQualcommOptionsHtpPerformanceMode;
+
+LiteRtStatus LiteRtQualcommOptionsSetHtpPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsHtpPerformanceMode power_mode);
+
+LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsHtpPerformanceMode* power_mode);
+
+typedef enum LiteRtQualcommOptionsProfiling {
+  kLiteRtQualcommProfilingOff = 0,
+  kLiteRtQualcommProfilingBasic,
+  kLiteRtQualcommProfilingDetailed,
+  kLiteRtQualcommProfilingLinting,
+} LiteRtQualcommOptionsProfiling;
+
+LiteRtStatus LiteRtQualcommOptionsSetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling);
+
+LiteRtStatus LiteRtQualcommOptionsGetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
+
 #ifdef __cplusplus
 }  // extern "C"
 
@@ -107,6 +144,7 @@ LiteRtStatus LiteRtQualcommOptionsGetPowerMode(
 
 namespace litert::qualcomm {
 
+// TODO (Alen): try to use and see whether we need this.
 // Wraps a LiteRtQualcommOptions object for convenience.
 class QualcommOptions : public OpaqueOptions {
  public:
