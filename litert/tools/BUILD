@@ -121,6 +121,7 @@ litert_cc_bin_with_qnn(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ],
 )
@@ -151,6 +152,7 @@ cc_binary(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
     ],
 )

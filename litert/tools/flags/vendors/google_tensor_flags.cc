@@ -20,6 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 // NOLINTBEGIN(*alien-types*)
 // TODO: Move absl parse/unparse function to same file as enum types if
@@ -83,7 +84,7 @@ ABSL_FLAG(bool, google_tensor_enable_reference, false,
 namespace litert::google_tensor {
 
 Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
-  GoogleTensorOptions options;
+  LITERT_ASSIGN_OR_RETURN(auto options, GoogleTensorOptions::Create());
   options.SetFloatTruncationType(
       absl::GetFlag(FLAGS_google_tensor_truncation_type));
   options.SetInt64ToInt32Truncation(

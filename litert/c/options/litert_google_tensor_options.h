@@ -101,6 +101,8 @@ class GoogleTensorOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
 
+  GoogleTensorOptions() = delete;
+
   static const char* Discriminator();
 
   static Expected<GoogleTensorOptions> Create(OpaqueOptions& options);
