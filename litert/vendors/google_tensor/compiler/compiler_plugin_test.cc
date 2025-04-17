@@ -20,7 +20,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -28,6 +31,8 @@
 
 namespace litert {
 namespace {
+
+using ::litert::google_tensor::GoogleTensorOptions;
 
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
   ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "GoogleTensor");
@@ -62,6 +67,42 @@ TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
 
 TEST(TestCallGoogleTensorPlugin, CompileMulSubgraph) {
   auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("mul_simple.tflite");
+
+  LiteRtCompiledResult compiled;
+  LITERT_ASSERT_OK(
+      LiteRtCompilerPluginCompile(plugin.get(), "P25", model.Get(), &compiled));
+
+  const void* byte_code;
+  size_t byte_code_size;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultByteCode(compiled, 0, &byte_code,
+                                                   &byte_code_size));
+  absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
+                                     byte_code_size);
+  ASSERT_FALSE(byte_code_string.empty());
+
+  const void* op_data;
+  size_t op_data_size;
+  LiteRtParamIndex byte_code_idx;
+  LITERT_ASSERT_OK(LiteRtGetCompiledResultCallInfo(
+      compiled, 0, &op_data, &op_data_size, &byte_code_idx));
+  absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
+                                   op_data_size);
+  ASSERT_EQ("Partition_0", op_data_string);
+
+  LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto google_tensor_options,
+                              GoogleTensorOptions::Create());
+  google_tensor_options.SetFloatTruncationType(
+      kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
+  LITERT_ASSERT_OK(options.AddOpaqueOptions(std::move(google_tensor_options)));
+
+  auto plugin = CreatePlugin(env.GetOptions()->Get(), options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;

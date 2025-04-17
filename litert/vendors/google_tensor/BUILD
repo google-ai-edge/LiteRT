@@ -40,11 +40,13 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
     ],
