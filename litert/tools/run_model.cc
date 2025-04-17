@@ -32,6 +32,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tflite/profiling/time.h"
 
@@ -169,8 +170,12 @@ Expected<void> RunModel() {
   if (accelerator == kLiteRtHwAcceleratorGpu) {
     ABSL_LOG(INFO) << "Using GPU Accelerator";
   }
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model,
-                          CompiledModel::Create(env, model, accelerator));
+  LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options,
+                          Options::Create(accelerator));
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, jit_compilation_options));
 
   LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);

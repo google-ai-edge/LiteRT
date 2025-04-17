@@ -35,10 +35,15 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
       : internal::Handle<LiteRtOptions, LiteRtDestroyOptions>(
             compilation_options, owned) {}
 
-  static Expected<Options> Create() {
-    LiteRtOptions options;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&options));
-    return Options(options, OwnHandle::kYes);
+  static Expected<Options> Create(
+      LiteRtHwAcceleratorSet accelerators = kLiteRtHwAcceleratorNone) {
+    LiteRtOptions lrt_options;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&lrt_options));
+    Options options(lrt_options, OwnHandle::kYes);
+    if (accelerators != kLiteRtHwAcceleratorNone) {
+      LITERT_RETURN_IF_ERROR(options.SetHardwareAccelerators(accelerators));
+    }
+    return options;
   }
 
   Expected<void> SetHardwareAccelerators(LiteRtHwAcceleratorSet accelerators) {

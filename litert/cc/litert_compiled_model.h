@@ -81,7 +81,8 @@ class CompiledModel
             compiled_model, owned),
         model_(Model::CreateFromNonOwnedHandle(litert_model)) {}
 
-  // Creates a CompiledModel from a TFLite file.
+  // Creates a CompiledModel from a TFLite file. By default we request only CPU
+  // acceleration.
   //
   // The model is loaded into memory and the caller takes ownership of the
   // returned CompiledModel object. The caller should keep the model alive
@@ -95,27 +96,14 @@ class CompiledModel
   // meaningless.
   static Expected<CompiledModel> Create(
       litert::Environment& env, litert::Model& model,
-      const Options& jit_compilation_options) {
+      const Options& jit_compilation_options =
+          *Options::Create(kLiteRtHwAcceleratorCpu)) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
         env.Get(), litert_model, jit_compilation_options.Get(),
         &compiled_model));
     return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
-  }
-
-  // Simpler version of Create() that uses the default compilation options.
-  // The provided hardware accelerator is used for JIT compilation of the model.
-  //
-  // Note: If the model is fully AOT compiled for NPU, NPU accelerator
-  // is used automatically which means the provided `hardware_accelerator` is
-  // meaningless.
-  static Expected<CompiledModel> Create(
-      litert::Environment& env, litert::Model& model,
-      LiteRtHwAccelerators hardware_accelerator = kLiteRtHwAcceleratorCpu) {
-    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
-    jit_compilation_options.SetHardwareAccelerators(hardware_accelerator);
-    return Create(env, model, jit_compilation_options);
   }
 
   // Get input buffer requirements for the given signature and input name.
