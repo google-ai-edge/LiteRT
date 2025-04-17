@@ -40,9 +40,9 @@ cc_library(
     deps = [
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator",
-        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_model_compilation_data",

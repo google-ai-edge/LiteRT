@@ -32,12 +32,12 @@ limitations under the License.
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/tools/benchmark/benchmark_model.h"  // from @org_tensorflow
-#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
-#include "tflite/tools/command_line_flags.h"  // from @org_tensorflow
-#include "tflite/tools/utils.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
+#include "tflite/tools/benchmark/benchmark_model.h"
+#include "tflite/tools/benchmark/benchmark_params.h"
+#include "tflite/tools/command_line_flags.h"
+#include "tflite/tools/utils.h"
 
 namespace litert {
 namespace benchmark {
@@ -158,7 +158,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "use_gpu", &params_, "Whether to use GPU accelerator."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_npu", &params_, "Whether to use NPU accelerator."));
-    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "qnn_dispatch_library_path", &params_, "QNN dispatch library path."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,

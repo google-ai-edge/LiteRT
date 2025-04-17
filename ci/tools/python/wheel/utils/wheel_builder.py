@@ -36,7 +36,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tomllib
 from typing import Optional
 
 
@@ -64,18 +63,6 @@ def parse_args() -> argparse.Namespace:
       help="Platform name to be passed to build module",
   )
   return parser.parse_args()
-
-
-def get_project_name(pyproject_path: str) -> str:
-  with open(pyproject_path, "rb") as f:
-    pyproject = tomllib.load(f)
-    try:
-      return pyproject["project"]["name"]
-    except KeyError as e:
-      raise ValueError(
-          "Invalid pyproject.toml file. Please check the project name."
-          " Dynamically generated project names are not supported."
-      ) from e
 
 
 def create_empty_init_files(dst_dir: str) -> None:

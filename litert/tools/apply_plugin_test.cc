@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <utility>
 
 #include <gmock/gmock.h>
@@ -61,10 +62,10 @@ ApplyPluginRun::Ptr MakeBaseRun(
     ApplyPluginRun::Cmd cmd, absl::string_view model_path = "one_mul.tflite") {
   auto run = std::make_unique<ApplyPluginRun>();
   run->cmd = cmd;
-  run->lib_search_paths.push_back(kPluginSearchPath);
+  run->lib_search_paths.push_back(std::string(kPluginSearchPath));
   run->model.emplace(TestModelPath(model_path));
-  run->soc_manufacturer.emplace(kSocManufacturer);
-  run->soc_models.push_back(kSocModel);
+  run->soc_manufacturer.emplace(std::string(kSocManufacturer));
+  run->soc_models.push_back(std::string(kSocModel));
   run->outs.clear();
   return run;
 }

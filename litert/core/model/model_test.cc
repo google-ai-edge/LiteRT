@@ -32,7 +32,7 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
-#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {

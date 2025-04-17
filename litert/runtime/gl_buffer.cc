@@ -36,7 +36,7 @@
 #include <GLES3/gl31.h>
 #include <GLES3/gl32.h>
 
-#include "tflite/delegates/gpu/gl/gl_buffer.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/gl_buffer.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {

@@ -26,8 +26,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -39,10 +39,10 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"  // from @org_tensorflow
-#include "tflite/delegates/utils/simple_opaque_delegate.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/model_builder.h"  // from @org_tensorflow
+#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/delegates/utils/simple_opaque_delegate.h"
+#include "tflite/interpreter.h"
+#include "tflite/model_builder.h"
 
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
@@ -57,7 +57,7 @@ class LiteRtCompiledModelT {
   // returned object.
   static litert::Expected<Ptr> Create(
       LiteRtEnvironmentT* env, LiteRtModel model,
-      LiteRtCompilationOptions jit_compilation_options = nullptr);
+      LiteRtOptions jit_compilation_options = nullptr);
 
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor
@@ -211,6 +211,13 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Returns true if a non delegated operation is found in the interpreter.
+  bool HasNonDelegatedOps();
+
+  // NOTE: Declare delegates before the TFL interpreter, so they are destroyed
+  // only after the interpreter is destroyed.
+  std::vector<Delegate> delegates_;
+
   // Map from signature key to SignatureRunner. This is used to lazy calling
   // GetSignatureRunner() which is expensive.
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>
@@ -235,8 +242,6 @@ class LiteRtCompiledModelT {
   // Interpreter.
   std::unique_ptr<litert::internal::ExternalLiteRtBufferContext>
       buffer_context_;
-
-  std::vector<Delegate> delegates_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.

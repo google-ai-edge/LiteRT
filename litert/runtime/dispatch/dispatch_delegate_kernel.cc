@@ -14,23 +14,32 @@
 
 #include "litert/runtime/dispatch/dispatch_delegate_kernel.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/container/node_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -38,122 +47,68 @@
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
-#include "litert/runtime/metrics.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/core/c/c_api_opaque.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
+#include "tflite/core/c/c_api_opaque.h"
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 DispatchDelegateKernel::~DispatchDelegateKernel() {
-  for (size_t i = 0; i < input_tensor_buffer_handles_.size(); ++i) {
-    (void)LiteRtDispatchDetachInput(invocation_context_, i,
-                                    input_tensor_buffer_handles_[i]);
+  // Detach all buffer handles from invocation contexts.
+  {
+    absl::flat_hash_set<TfLiteOpaqueTensor*> all_tfl_tensors;
+    all_tfl_tensors.insert(input_tensors_.begin(), input_tensors_.end());
+    all_tfl_tensors.insert(output_tensors_.begin(), output_tensors_.end());
+    all_tfl_tensors.insert(internal_tensors_.begin(), internal_tensors_.end());
+
+    for (auto& tfl_tensor : all_tfl_tensors) {
+      const auto& port_connections =
+          io_tensors_port_connections_.find(tfl_tensor)->second;
+      const auto& tensor_buffer_info =
+          tensor_buffer_infos_.find(tfl_tensor)->second;
+      for (auto& pc : port_connections) {
+        auto* invocation_context = node_invocation_contexts_[pc.node_idx];
+        if (pc.is_input_port) {
+          (void)LiteRtDispatchDetachInput(invocation_context, pc.port_idx,
+                                          tensor_buffer_info.buffer_handle);
+        } else {
+          (void)LiteRtDispatchDetachOutput(invocation_context, pc.port_idx,
+                                           tensor_buffer_info.buffer_handle);
+        }
+      }
+    }
   }
 
-  for (size_t i = 0; i < output_tensor_buffer_handles_.size(); ++i) {
-    (void)LiteRtDispatchDetachOutput(invocation_context_, i,
-                                     output_tensor_buffer_handles_[i]);
+  // Unregister all buffer handles.
+  for (const auto& p : tensor_buffer_infos_) {
+    auto& tensor_buffer_info = p.second;
+    (void)LiteRtDispatchUnregisterTensorBuffer(
+        device_context_, tensor_buffer_info.buffer_handle);
   }
 
-  if (invocation_context_) {
-    (void)LiteRtDispatchInvocationContextDestroy(invocation_context_);
+  // Destroy all invocation contexts.
+  for (auto invocation_context : node_invocation_contexts_) {
+    (void)LiteRtDispatchInvocationContextDestroy(invocation_context);
   }
-
-  for (auto& buffer_handle : input_tensor_buffer_handles_) {
-    (void)LiteRtDispatchUnregisterTensorBuffer(device_context_, buffer_handle);
-  }
-
-  for (auto& buffer_handle : output_tensor_buffer_handles_) {
-    (void)LiteRtDispatchUnregisterTensorBuffer(device_context_, buffer_handle);
-  }
-
-  if (device_context_) {
-    (void)LiteRtDispatchDeviceContextDestroy(device_context_);
-  }
-
-  input_tensor_buffers_.clear();
-  output_tensor_buffers_.clear();
 }
 
 Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
-    std::string&& graph_name, const LiteRtDispatchDelegateOptions& options) {
-  auto dispatch_options = options.GetDispatchOptions();
-  if (auto status = LiteRtDispatchInitialize(dispatch_options.data(),
-                                             dispatch_options.size());
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to initialize Dispatch API: %d", status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to initialize Dispatch API");
-  }
-
-  const char* vendor_id;
-  if (auto status = LiteRtDispatchGetVendorId(&vendor_id);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get Dispatch API vendor ID: %d",
-               status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to get Dispatch API vendor ID");
-  }
-  LITERT_LOG(LITERT_INFO, "Dispatch API vendor ID: %s", vendor_id);
-
-  const char* build_id;
-  if (auto status = LiteRtDispatchGetBuildId(&build_id);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get Dispatch API build ID: %d", status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to get Dispatch API build ID");
-  }
-  LITERT_LOG(LITERT_INFO, "Dispatch API build ID: %s", build_id);
-
-  LiteRtApiVersion api_version;
-  if (auto status = LiteRtDispatchGetApiVersion(&api_version);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get LiteRT Dispatch API version: %d",
-               status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to get LiteRT Dispatch API version");
-  }
-  LITERT_LOG(LITERT_INFO, "Dispatch API version: %d.%d.%d", api_version.major,
-             api_version.minor, api_version.patch);
-  // Check if the versions mach.
-  if (api_version.major != LITERT_API_VERSION_MAJOR ||
-      api_version.minor < LITERT_API_VERSION_MINOR) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Found Dispatch API with an unsupported version");
-  }
-
+    std::string&& graph_name, const LiteRtDispatchDelegateOptions& options,
+    LiteRtDispatchDeviceContext device_context) {
   int capabilities;
   if (auto status = LiteRtDispatchGetCapabilities(&capabilities);
       status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get Dispatch API capabilities: %d",
-               status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to get Dispatch API capabilities");
-  }
-  LITERT_LOG(LITERT_INFO, "Dispatch API capabilities: %d", capabilities);
-
-  if (!(capabilities & kLiteRtDispatchCapabilitiesBasic)) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Dispatch API has insufficient capabilities");
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get Dispatch API capabilities: %d", status));
   }
 
   bool async_dispatch = (capabilities & kLiteRtDispatchCapabilitiesAsync);
   if (async_dispatch) {
     LITERT_LOG(LITERT_INFO, "Found async dispatch capabilities");
-  }
-
-  LiteRtDispatchDeviceContext device_context;
-  if (auto status = LiteRtDispatchDeviceContextCreate(&device_context);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get Dispatch API device context: %d",
-               status);
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to create Dispatch API device context");
   }
 
   return Ptr(new DispatchDelegateKernel(options, std::move(graph_name),
@@ -162,33 +117,269 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
 
 TfLiteStatus DispatchDelegateKernel::Init(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams* params) {
-  if (params->nodes_to_replace->size != 1) {
-    LITERT_LOG(LITERT_ERROR,
-               "Models with more than one dispatch node are not yet supported");
+  if (auto status = InitHelper(context, *params); !status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return kTfLiteError;
   }
+  return kTfLiteOk;
+}
 
-  auto node_id = params->nodes_to_replace->data[0];
-  TfLiteOpaqueNode* node;
-  TfLiteOperator* op;
-  if (auto status = TfLiteOpaqueContextGetNodeAndRegistration(context, node_id,
-                                                              &node, &op);
-      status != kTfLiteOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get node and registration: %d", status);
-    return status;
+TfLiteStatus DispatchDelegateKernel::Prepare(TfLiteOpaqueContext* context,
+                                             TfLiteOpaqueNode* node) {
+  if (auto status = PrepareHelper(context, node); !status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+    return kTfLiteError;
+  }
+  return kTfLiteOk;
+}
+
+TfLiteStatus DispatchDelegateKernel::Eval(TfLiteOpaqueContext* context,
+                                          TfLiteOpaqueNode* node) {
+  if (auto status = EvalHelper(context, node); !status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+    return kTfLiteError;
+  }
+  return kTfLiteOk;
+}
+
+litert::Expected<void> DispatchDelegateKernel::StartMetricsCollection(
+    int detail_level) {
+  for (auto invocation_context : node_invocation_contexts_) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchStartMetricsCollection(invocation_context, detail_level));
+  }
+  return {};
+}
+
+Expected<LiteRtMetricsT> DispatchDelegateKernel::StopMetricsCollection() {
+  std::vector<LiteRtMetricsT::Metric> metrics;
+
+  for (auto invocation_context : node_invocation_contexts_) {
+    LiteRtDispatchMetrics dispatch_metrics;
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchStopMetricsCollection(
+        invocation_context, &dispatch_metrics));
+
+    absl::Cleanup metrics_cleanup = [&dispatch_metrics] {
+      if (auto status = LiteRtDispatchDestroyMetrics(dispatch_metrics);
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR, "Failed to destroy metrics: %d", status);
+      }
+    };
+
+    int num_metrics = 0;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchGetNumMetrics(dispatch_metrics, &num_metrics));
+
+    for (int i = 0; i < num_metrics; ++i) {
+      LiteRtMetric metric;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtDispatchGetMetric(dispatch_metrics, i, &metric));
+      metrics.push_back({/*.name=*/metric.name, /*.value=*/metric.value});
+    }
   }
 
+  return LiteRtMetricsT{/*.metrics=*/std::move(metrics)};
+}
+
+// /////////////////////////////////////////////////////////////////////////////
+
+Expected<void> DispatchDelegateKernel::InitHelper(
+    TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params) {
+  LITERT_ASSIGN_OR_RETURN(auto buffer_context,
+                          ExternalLiteRtBufferContext::GetInstance(context));
+  std::swap(buffer_context_, buffer_context);
+
+  // Build the graph.
+
+  LITERT_ASSIGN_OR_RETURN(auto nodes, GetNodes(context, params));
+  std::swap(nodes_, nodes);
+
+  for (auto& node : nodes_) {
+    LITERT_ASSIGN_OR_RETURN(auto node_invocation_contexts,
+                            CreateNodeInvocationContext(context, node));
+    node_invocation_contexts_.push_back(node_invocation_contexts);
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto input_tensors,
+                          GetTensors(context, *params.input_tensors));
+  std::swap(input_tensors_, input_tensors);
+
+  LITERT_ASSIGN_OR_RETURN(auto output_tensors,
+                          GetTensors(context, *params.output_tensors));
+  std::swap(output_tensors_, output_tensors);
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto internal_tensors,
+      GetInternalTensors(context, nodes_, input_tensors_, output_tensors_));
+  std::swap(internal_tensors_, internal_tensors);
+
+  LITERT_RETURN_IF_ERROR(ComputeTensorPortConnections(context));
+
+  // Compute requirements across the graph.
+  LITERT_RETURN_IF_ERROR(ComputeRequirements(context));
+
+  return {};
+}
+
+Expected<void> DispatchDelegateKernel::PrepareHelper(
+    TfLiteOpaqueContext* context, TfLiteOpaqueNode* node) {
+  return {};
+}
+
+Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
+                                                  TfLiteOpaqueNode* node) {
+  LITERT_RETURN_IF_ERROR(AllocateTensorBuffersIfNeeded());
+  LITERT_RETURN_IF_ERROR(AttachBuffersToInvocationContextsIfNeeded(context));
+
+  // Copy input buffers from CPU, if needed.  invocation contexts, if available.
+  for (auto* tfl_tensor : input_tensors_) {
+    if (auto& tensor_buffer_info =
+            tensor_buffer_infos_.find(tfl_tensor)->second;
+        tensor_buffer_info.maybe_sync_with_cpu) {
+      void* tensor_data = TfLiteOpaqueTensorData(tfl_tensor);
+      // Note that tensor_data may be null if the TFL allocated decided to not
+      // allocate heap memory for the tensor and, instead, just use the attached
+      // tensor buffer. No memcpy is necessary in that case.
+      if (tensor_data) {
+        size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
+        LITERT_ASSIGN_OR_RETURN(
+            auto lock_and_addr,
+            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer));
+        std::memcpy(lock_and_addr.second, tensor_data, buffer_size);
+      }
+    }
+  }
+
+  if (async_dispatch_ && buffer_context_->IsAsyncExecutionMode()) {
+    LITERT_RETURN_IF_ERROR(ScheduleAsyncExecution(context));
+  } else {
+    LITERT_RETURN_IF_ERROR(ScheduleSyncExecution(context));
+  }
+
+  // Copy output buffers to CPU, if needed.
+  for (auto* tfl_tensor : output_tensors_) {
+    if (auto& tensor_buffer_info =
+            tensor_buffer_infos_.find(tfl_tensor)->second;
+        tensor_buffer_info.maybe_sync_with_cpu) {
+      void* tensor_data = TfLiteOpaqueTensorData(tfl_tensor);
+      // Note that tensor_data may be null if the TFL allocated decided to not
+      // allocate heap memory for the tensor and, instead, just use the attached
+      // tensor buffer. No memcpy is necessary in that case.
+      if (tensor_data) {
+        size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
+        LITERT_ASSIGN_OR_RETURN(
+            auto lock_and_addr,
+            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer));
+        std::memcpy(tensor_data, lock_and_addr.second, buffer_size);
+      }
+    }
+  }
+
+  return {};
+}
+
+// /////////////////////////////////////////////////////////////////////////////
+
+Expected<std::vector<TfLiteOpaqueNode*>> DispatchDelegateKernel::GetNodes(
+    TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams& params) {
+  auto num_nodes = params.nodes_to_replace->size;
+
+  std::vector<TfLiteOpaqueNode*> nodes;
+  nodes.reserve(num_nodes);
+
+  for (auto i = 0; i < num_nodes; ++i) {
+    auto node_id = params.nodes_to_replace->data[i];
+    TfLiteOpaqueNode* node;
+    TfLiteOperator* op;
+    if (auto status = TfLiteOpaqueContextGetNodeAndRegistration(
+            context, node_id, &node, &op);
+        status != kTfLiteOk) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("Failed to get node and registration: %d", status));
+    }
+    nodes.push_back(node);
+  }
+
+  return nodes;
+}
+
+Expected<std::vector<TfLiteOpaqueTensor*>> DispatchDelegateKernel::GetTensors(
+    const TfLiteOpaqueContext* context, const TfLiteIntArray& tensor_ids) {
+  auto num_tensors = tensor_ids.size;
+
+  std::vector<TfLiteOpaqueTensor*> tensors;
+  tensors.reserve(num_tensors);
+
+  for (auto i = 0; i < num_tensors; ++i) {
+    auto tensor_id = tensor_ids.data[i];
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+    }
+    tensors.push_back(tfl_tensor);
+  }
+
+  return tensors;
+}
+
+Expected<std::vector<TfLiteOpaqueTensor*>>
+DispatchDelegateKernel::GetInternalTensors(
+    TfLiteOpaqueContext* context, const std::vector<TfLiteOpaqueNode*>& nodes,
+    const std::vector<TfLiteOpaqueTensor*>& input_tensors,
+    const std::vector<TfLiteOpaqueTensor*>& output_tensors) {
+  absl::flat_hash_set<TfLiteOpaqueTensor*> io_tensors;
+  io_tensors.insert(input_tensors.begin(), input_tensors.end());
+  io_tensors.insert(output_tensors.begin(), output_tensors.end());
+
+  absl::flat_hash_set<TfLiteOpaqueTensor*> tensors;
+
+  for (auto& node : nodes) {
+    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    for (auto i = 0; i < num_node_inputs; ++i) {
+      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
+          TfLiteOpaqueNodeGetInput(context, node, i));
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      if (io_tensors.find(tfl_tensor) == io_tensors.end()) {
+        tensors.insert(tfl_tensor);
+      }
+    }
+    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    for (auto i = 0; i < num_node_outputs; ++i) {
+      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      if (io_tensors.find(tfl_tensor) == io_tensors.end()) {
+        tensors.insert(tfl_tensor);
+      }
+    }
+  }
+
+  std::vector<TfLiteOpaqueTensor*> tensors_vec;
+  tensors_vec.reserve(tensors.size());
+  std::copy(tensors.begin(), tensors.end(), std::back_inserter(tensors_vec));
+
+  return tensors_vec;
+}
+
+Expected<LiteRtDispatchInvocationContext>
+DispatchDelegateKernel::CreateNodeInvocationContext(
+    TfLiteOpaqueContext* context, TfLiteOpaqueNode* node) {
   const void* init_data;
   int init_data_size;
   if (auto status = TfLiteOpaqueNodeGetCustomInitialData(node, &init_data,
                                                          &init_data_size);
       status != kTfLiteOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get custom initial data: %d", status);
-    return status;
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to get custom initial data: %d", status));
   }
   if (!init_data || !init_data_size) {
-    LITERT_LOG(LITERT_ERROR, "Found custom op with missing initial data");
-    return kTfLiteError;
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Found custom op with missing initial data");
   }
 
   BufferRef<uint8_t> custom_opts(init_data, init_data_size);
@@ -197,16 +388,16 @@ TfLiteStatus DispatchDelegateKernel::Init(
   // name).
   const auto dispatch_opts = GetDispatchOpOptions(custom_opts);
   if (dispatch_opts.bytecode_offset == 0) {
-    LITERT_LOG(LITERT_ERROR, "Found dispatch op with missing bytecode offset");
-    return kTfLiteError;
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Found dispatch op with missing bytecode offset");
   }
 
   // Find pointer to the start of the loaded model buffer.
   const auto alloc_base = FindAllocBase(options_);
   if (!alloc_base) {
-    LITERT_LOG(LITERT_ERROR,
-               "Could not find requried delegate options \"alloc_base\"");
-    return kTfLiteError;
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Could not find requried delegate options \"alloc_base\"");
   }
 
   const auto alloc_fd = FindAllocFd(options_);
@@ -218,476 +409,408 @@ TfLiteStatus DispatchDelegateKernel::Init(
       /*.offset=*/dispatch_opts.bytecode_offset,
       /*.size=*/dispatch_opts.bytecode_size};
   const auto& function_name = dispatch_opts.name;
-  const int num_inputs = params->input_tensors->size;
-  const int num_outputs = params->output_tensors->size;
 
+  auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+  auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+
+  LiteRtDispatchInvocationContext invocation_context;
   if (auto status = LiteRtDispatchInvocationContextCreate(
           device_context_, kLiteRtDispatchExecutableTypeMlModel,
-          &exec_bytecode_buffer, function_name.data(), num_inputs, num_outputs,
-          &invocation_context_);
+          &exec_bytecode_buffer, function_name.data(), num_node_inputs,
+          num_node_outputs, &invocation_context);
       status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %d", status);
-    return kTfLiteError;
+    return Unexpected(status, "Failed to create invocation context");
   }
 
-  input_tensor_buffers_require_cpu_sync_.resize(num_inputs);
-  input_tensor_buffers_.resize(num_inputs);
-  input_tensor_buffer_handles_.resize(num_inputs);
-  input_tensor_buffer_used_size_.resize(num_inputs);
+  return invocation_context;
+}
 
-  output_tensor_buffers_require_cpu_sync_.resize(num_outputs);
-  output_tensor_buffers_.resize(num_outputs);
-  output_tensor_buffer_handles_.resize(num_outputs);
-  output_tensor_buffer_used_size_.resize(num_outputs);
+Expected<void> DispatchDelegateKernel::ComputeTensorPortConnections(
+    TfLiteOpaqueContext* context) {
+  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
+    auto& node = nodes_[node_idx];
 
-  void* external_context;
-  TfLiteOpaqueContextGetExternalContext(context, &external_context,
-                                        kTfLiteLiteRtBufferContext);
-  if (!external_context) {
-    LITERT_LOG(LITERT_ERROR, "External context not found");
-    return kTfLiteError;
-  }
-
-  buffer_context_ =
-      reinterpret_cast<litert::internal::ExternalLiteRtBufferContext*>(
-          external_context);
-
-  // Register input and output buffer requirements.
-  size_t num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-  for (size_t i = 0; i < num_node_inputs; ++i) {
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
-    if (!tfl_opaque_tensor) {
-      LITERT_LOG(LITERT_ERROR, "Failed to get TFL node input %d", i);
-      return kTfLiteError;
+    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    for (auto i = 0; i < num_node_inputs; ++i) {
+      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
+          TfLiteOpaqueNodeGetInput(context, node, i));
+      io_tensors_port_connections_[tfl_tensor].push_back(
+          {/*.node_idx=*/node_idx, /*port_idx*/ i, /*is_input_port=*/true});
     }
-    auto tensor_type = ConvertTensorType(tfl_opaque_tensor);
-    if (!tensor_type) {
-      LITERT_LOG(LITERT_ERROR, "%s", tensor_type.Error().Message().c_str());
-      return kTfLiteError;
-    }
-    auto input_buffer_requirements =
-        GetBufferRequirements(*tensor_type, i, /*is_input=*/true);
-    if (auto res = buffer_context_->RegisterBufferRequirements(
-            tfl_opaque_tensor, std::move(*input_buffer_requirements));
-        res != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to register buffer requirement");
-      return kTfLiteError;
+
+    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    for (auto i = 0; i < num_node_outputs; ++i) {
+      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
+      io_tensors_port_connections_[tfl_tensor].push_back(
+          {/*.node_idx=*/node_idx, /*port_idx*/ i, /*is_input_port=*/false});
     }
   }
 
-  size_t num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
-  for (size_t i = 0; i < num_node_outputs; ++i) {
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-    if (!tfl_opaque_tensor) {
-      LITERT_LOG(LITERT_ERROR, "Failed to get TFL node output %d", i);
-      return kTfLiteError;
-    }
-    auto tensor_type = ConvertTensorType(tfl_opaque_tensor);
-    if (!tensor_type) {
-      LITERT_LOG(LITERT_ERROR, "%s", tensor_type.Error().Message().c_str());
-      return kTfLiteError;
-    }
-    auto output_buffer_requirements =
-        GetBufferRequirements(*tensor_type, i, /*is_input=*/false);
-    if (auto res = buffer_context_->RegisterBufferRequirements(
-            tfl_opaque_tensor, std::move(*output_buffer_requirements));
-        res != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to register buffer requirement");
-      return kTfLiteError;
-    }
-  }
-
-  return kTfLiteOk;
+  return {};
 }
 
 Expected<TensorBufferRequirements>
-DispatchDelegateKernel::GetBufferRequirements(
-    const RankedTensorType& tensor_type, int io_tensor_index,
-    bool is_input) const {
+DispatchDelegateKernel::GetBufferRequirements(int node_idx,
+                                              TfLiteOpaqueTensor* io_tfl_tensor,
+                                              int io_tensor_index,
+                                              bool is_input) const {
+  auto* invocation_context = node_invocation_contexts_[node_idx];
+
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type, ConvertTensorType(io_tfl_tensor));
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+
   LiteRtTensorBufferRequirements tensor_buffer_requirements;
   if (is_input) {
-    if (auto status = LiteRtDispatchGetInputRequirements(
-            invocation_context_, /*input_index=*/io_tensor_index,
-            &litert_tensor_type, &tensor_buffer_requirements);
-        status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to get tensor buffer requirements for input %d: %d",
-                 io_tensor_index, status);
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to get tensor buffer requirements for input");
-    }
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchGetInputRequirements(
+            invocation_context, /*input_index=*/io_tensor_index,
+            &litert_tensor_type, &tensor_buffer_requirements),
+        Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to get tensor buffer requirements for input"));
 
   } else {
-    if (auto status = LiteRtDispatchGetOutputRequirements(
-            invocation_context_, /*output_index=*/io_tensor_index,
-            &litert_tensor_type, &tensor_buffer_requirements);
-        status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to get tensor buffer requirements for output %d: %d",
-                 io_tensor_index, status);
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to get tensor buffer requirements for output");
-    }
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchGetOutputRequirements(
+            invocation_context, /*output_index=*/io_tensor_index,
+            &litert_tensor_type, &tensor_buffer_requirements),
+        Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to get tensor buffer requirements for output"));
   }
 
-  return TensorBufferRequirements(tensor_buffer_requirements,
-                                  /*owned=*/true);
+  return TensorBufferRequirements(tensor_buffer_requirements, OwnHandle::kYes);
 }
 
-TfLiteStatus DispatchDelegateKernel::CreateAndSetBuffer(
-    const TfLiteOpaqueTensor* tfl_opaque_tensor, int buffer_index,
-    bool is_input) {
-  auto& cached_tensor_buffer = is_input ? input_tensor_buffers_[buffer_index]
-                                        : output_tensor_buffers_[buffer_index];
-
-  auto tensor_type = ConvertTensorType(tfl_opaque_tensor);
-  if (!tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "%s", tensor_type.Error().Message().c_str());
-    return kTfLiteError;
-  }
-
-  // Check if we can reuse a cached tensor buffer or we need to create a new
-  // one.
-  if (static_cast<bool>(cached_tensor_buffer)) {
-    if (auto cached_tensor_type = cached_tensor_buffer.TensorType();
-        !cached_tensor_type) {
-      LITERT_LOG(LITERT_ERROR, "%s",
-                 cached_tensor_type.Error().Message().c_str());
-      return kTfLiteError;
+Expected<void> DispatchDelegateKernel::ComputeRequirements(
+    TfLiteOpaqueContext* context) {
+  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
+    auto& node = nodes_[node_idx];
+    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    for (auto i = 0; i < num_node_inputs; ++i) {
+      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
+          TfLiteOpaqueNodeGetInput(context, node, i));
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          auto buffer_requirements,
+          GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/true));
+      LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
+          tfl_tensor, std::move(buffer_requirements)));
     }
 
-    if (tensor_type->Layout() == cached_tensor_buffer.TensorType()->Layout()) {
-      // We can reuse the cached tensor buffer.
-      return kTfLiteOk;
+    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    for (auto i = 0; i < num_node_outputs; ++i) {
+      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      LITERT_ASSIGN_OR_RETURN(
+          auto buffer_requirements,
+          GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/false));
+      LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
+          tfl_tensor, std::move(buffer_requirements)));
     }
-
-    // We cannot reuse the cached tensor buffer; proceed below.
   }
 
-  auto tensor_buffer_requirements =
-      GetBufferRequirements(*tensor_type, buffer_index, is_input);
-  if (!tensor_buffer_requirements) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               tensor_buffer_requirements.Error().Message().c_str());
-    return kTfLiteError;
-  }
-
-  auto supported_tensor_buffer_types =
-      tensor_buffer_requirements->SupportedTypes();
-  if (!supported_tensor_buffer_types) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               supported_tensor_buffer_types.Error().Message().c_str());
-    return kTfLiteError;
-  }
-
-  if (supported_tensor_buffer_types->empty()) {
-    LITERT_LOG(LITERT_ERROR,
-               "Insufficient number of supported tensor buffer types");
-    return kTfLiteError;
-  }
-
-  // For now we simply pick the first buffer type that's supported.
-  LiteRtTensorBufferType tensor_buffer_type =
-      (*supported_tensor_buffer_types)[0];
-
-  auto tensor_buffer_size = tensor_buffer_requirements->BufferSize();
-  if (!tensor_buffer_size) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               tensor_buffer_size.Error().Message().c_str());
-    return kTfLiteError;
-  }
-
-  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(*tensor_type);
-  LiteRtTensorBuffer litert_tensor_buffer;
-  if (auto status = LiteRtCreateManagedTensorBuffer(
-          tensor_buffer_type, &litert_tensor_type, *tensor_buffer_size,
-          &litert_tensor_buffer);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create managed tensor buffer: %d",
-               status);
-    return kTfLiteError;
-  }
-
-  return RegisterLiteRtTensorBuffer(TensorBuffer(litert_tensor_buffer),
-                                    *tensor_buffer_size, buffer_index,
-                                    is_input);
+  return {};
 }
 
-TfLiteStatus DispatchDelegateKernel::RegisterLiteRtTensorBuffer(
-    TensorBuffer&& tensor_buffer, size_t buffer_used_size, int buffer_index,
-    bool is_input) {
-  LiteRtTensorBufferHandle buffer_handle;
-  if (auto status = LiteRtDispatchRegisterTensorBuffer(
-          device_context_, tensor_buffer.Get(), &buffer_handle);
-      status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to register tensor buffer: %d", status);
-    return kTfLiteError;
-  }
+Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
+  absl::flat_hash_set<TfLiteOpaqueTensor*> io_tensors;
+  io_tensors.insert(input_tensors_.begin(), input_tensors_.end());
+  io_tensors.insert(output_tensors_.begin(), output_tensors_.end());
 
-  if (is_input) {
-    if (auto status = LiteRtDispatchAttachInput(invocation_context_,
-                                                buffer_index, buffer_handle);
-        status != kLiteRtStatusOk) {
-      (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
-                                                 buffer_handle);
-      LITERT_LOG(LITERT_ERROR, "Failed to attach tensor buffer to input %d: %d",
-                 buffer_index, status);
-      return kTfLiteError;
-    }
+  // First allocate I/O tensor buffers. However, note that if a tensor buffer is
+  // already associated with a given I/O, we use that one; otherwise allocate a
+  // new tensor buffer.
+  //
+  // NOTE: Any allocated I/O tensor buffer is stored in and owned by
+  // buffer_context_, so that the tensor buffer can may be retrieved by a
+  // downstream delegate kernel or by the upper-level runtime. This class will
+  // also keep a non-owned alias of I/O tensor buffers in tensor_buffer_infos_,
+  // for internal processing.
 
-    if (tensor_buffer.HasEvent()) {
-      auto event = tensor_buffer.GetEvent();
-      if (!event) {
-        LITERT_LOG(LITERT_ERROR,
-                   "Failed to get event from tensor buffer %d: %s",
-                   buffer_index, event.Error().Message().c_str());
-        return kTfLiteError;
+  std::set<LiteRtTensorBufferHandle> unused_buffer_handles;
+
+  auto allocate_and_register = [this, &unused_buffer_handles, &io_tensors](
+                                   auto* tfl_tensor) -> Expected<void> {
+    auto iter = tensor_buffer_infos_.find(tfl_tensor);
+    if (iter != tensor_buffer_infos_.end()) {
+      auto& tensor_buffer_info = iter->second;
+
+      // If a new tensor buffer was attached to an I/O TFL tensor (e.g., user
+      // has supplied new inputs/outputs to the model, then we need to use that
+      // one.
+      if (io_tensors.find(tfl_tensor) == io_tensors.end()) {
+        return {};
       }
 
-      if (!async_dispatch_) {
-        // If the Dispatch API runtime doesn't support async execution, then
-        // wait for the event on the CPU.
-        LITERT_LOG(LITERT_WARNING, "Waiting on an input event on the CPU...");
-        if (auto status = event->Wait(/*timeout_in_ms=*/-1); !status) {
-          LITERT_LOG(LITERT_ERROR, "Failed to wait on event: %s",
-                     status.Error().Message().c_str());
-          return kTfLiteError;
+      LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
+                              buffer_context_->GetTensorBuffer(tfl_tensor));
+      if (tensor_buffer == tensor_buffer_info.tensor_buffer) {
+        return {};
+      }
+
+      // The tensor buffer associated with tfl_tensor has changed. Consequently,
+      // we must detach the old tensor buffer from the model and attach the new
+      // one.
+
+      const auto& port_connections =
+          io_tensors_port_connections_.find(tfl_tensor)->second;
+      for (auto& pc : port_connections) {
+        auto* invocation_context = node_invocation_contexts_[pc.node_idx];
+        if (pc.is_input_port) {
+          LITERT_RETURN_IF_ERROR(
+              LiteRtDispatchDetachInput(invocation_context, pc.port_idx,
+                                        tensor_buffer_info.buffer_handle));
+        } else {
+          LITERT_RETURN_IF_ERROR(
+              LiteRtDispatchDetachOutput(invocation_context, pc.port_idx,
+                                         tensor_buffer_info.buffer_handle));
+        }
+      }
+
+      tensor_buffer_info.attached = false;
+
+      // Unregister the old tensor buffer with the Dispatch API. We do that at
+      // the end after collecting all tensor buffer handles to unregister
+      // because a tensor buffer may be connected to multiple TFL tensors
+      // (once we implement a proper tensor buffer allocation algorithm).
+      unused_buffer_handles.insert(tensor_buffer_info.buffer_handle);
+
+      // Register the tensor buffer with the dispatch API.
+      auto litert_tensor_buffer = tensor_buffer.Get();
+      LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+          tfl_tensor, TensorBuffer(litert_tensor_buffer, OwnHandle::kNo)));
+
+      return {};
+    }
+
+    // Allocate a tensor_buffer_info record for tfl_tensor. It will be used by
+    // the calls below.
+    auto& tensor_buffer_info = tensor_buffer_infos_[tfl_tensor];
+
+    LiteRtTensorBuffer litert_tensor_buffer = nullptr;
+    if (auto tensor_buffer = buffer_context_->GetTensorBuffer(tfl_tensor);
+        tensor_buffer) {
+      litert_tensor_buffer = tensor_buffer->Get();
+    } else {
+      LITERT_ASSIGN_OR_RETURN(auto new_tensor_buffer,
+                              AllocateTensorBuffer(tfl_tensor));
+      litert_tensor_buffer = new_tensor_buffer.Get();
+      LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
+          tfl_tensor, std::move(new_tensor_buffer)));
+      size_t tfl_tensor_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
+      tensor_buffer_info.MarkAsMaybeSyncWithCpu(tfl_tensor_size);
+    }
+
+    // Register the tensor buffer with the dispatch API.
+    LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+        tfl_tensor, TensorBuffer(litert_tensor_buffer, OwnHandle::kNo)));
+    return {};
+  };
+
+  for (auto* tfl_tensor : input_tensors_) {
+    LITERT_RETURN_IF_ERROR(allocate_and_register(tfl_tensor));
+  }
+  for (auto* tfl_tensor : output_tensors_) {
+    LITERT_RETURN_IF_ERROR(allocate_and_register(tfl_tensor));
+  }
+
+  // Then allocate intermediate tensor buffers. They are allways allocated,
+  // without attempt to share them when possible.
+  //
+  // NOTE: Internal tensor buffers are be stored in and owned by
+  // tensor_buffer_infos_. There is no need to store them in buffer_context_
+  // since they will not need to be accessed outside of the scope of this class
+  // instance.
+  //
+  // TODO: implement logic to share tensor buffers across intermediate tensors,
+  // whenever possible.
+  for (auto* tfl_tensor : internal_tensors_) {
+    if (auto iter = tensor_buffer_infos_.find(tfl_tensor);
+        iter != tensor_buffer_infos_.end()) {
+      // A tensor buffer was already allocated for tfl_tensor.
+      continue;
+    }
+
+    // Allocate a tensor_buffer_info record for tfl_tensor. It will be used
+    // (internally) by the calls below.
+    auto& tensor_buffer_info = tensor_buffer_infos_[tfl_tensor];
+    (void)tensor_buffer_info;
+
+    // For now we just allocate tensor buffers as needed, without attempting to
+    // reuse them.
+    LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
+                            AllocateTensorBuffer(tfl_tensor));
+    // Register an allocated tensor buffer with the dispatch API.
+    LITERT_RETURN_IF_ERROR(
+        RegisterBufferWithDispatchApi(tfl_tensor, std::move(tensor_buffer)));
+  }
+
+  for (auto buffer_handle : unused_buffer_handles) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtDispatchUnregisterTensorBuffer(device_context_, buffer_handle));
+  }
+
+  return {};
+}
+
+Expected<TensorBuffer> DispatchDelegateKernel::AllocateTensorBuffer(
+    TfLiteOpaqueTensor* tfl_tensor) {
+  LITERT_ASSIGN_OR_RETURN(auto requirements_ptr,
+                          buffer_context_->GetBufferRequirements(tfl_tensor));
+  LITERT_ASSIGN_OR_RETURN(auto supported_types,
+                          requirements_ptr->SupportedTypes());
+  if (supported_types.empty()) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Found tensor buffer requirements with no supported types");
+  }
+
+  LiteRtTensorBufferType buffer_type = supported_types[0];
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type, ConvertTensorType(tfl_tensor));
+  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, requirements_ptr->BufferSize());
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(buffer_type, tensor_type, buffer_size));
+  return tensor_buffer;
+}
+
+Expected<void> DispatchDelegateKernel::RegisterBufferWithDispatchApi(
+    TfLiteOpaqueTensor* tfl_tensor, TensorBuffer&& tensor_buffer) {
+  LiteRtTensorBufferHandle buffer_handle;
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterTensorBuffer(
+      device_context_, tensor_buffer.Get(), &buffer_handle));
+  auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+  tensor_buffer_info.tensor_buffer = std::move(tensor_buffer);
+  tensor_buffer_info.buffer_handle = buffer_handle;
+  return {};
+}
+
+Expected<void>
+DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
+    TfLiteOpaqueContext* context) {
+  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
+    auto* node = nodes_[node_idx];
+    auto invocation_context = node_invocation_contexts_[node_idx];
+
+    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    for (auto i = 0; i < num_node_inputs; ++i) {
+      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
+          TfLiteOpaqueNodeGetInput(context, node, i));
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+      if (!tensor_buffer_info.attached) {
+        LITERT_RETURN_IF_ERROR(LiteRtDispatchAttachInput(
+            invocation_context, i, tensor_buffer_info.buffer_handle));
+      }
+    }
+
+    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    for (auto i = 0; i < num_node_outputs; ++i) {
+      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      }
+      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+      if (!tensor_buffer_info.attached) {
+        LITERT_RETURN_IF_ERROR(LiteRtDispatchAttachOutput(
+            invocation_context, i, tensor_buffer_info.buffer_handle));
+      }
+    }
+  }
+
+  // Mark buffers as attached only at the end since a given buffer may be
+  // attached to multiple invocation context I/Os.
+  for (auto& item : tensor_buffer_infos_) {
+    item.second.attached = true;
+  }
+
+  return {};
+}
+
+Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
+    TfLiteOpaqueContext* context) {
+  std::vector<LiteRtEvent> output_events;
+
+  // Run NPU bytecodes asynchronously and in topological order.
+  for (auto node_idx = 0; node_idx < nodes_.size(); ++node_idx) {
+    auto* node = nodes_[node_idx];
+    auto invocation_context = node_invocation_contexts_[node_idx];
+
+    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    for (auto i = 0; i < num_node_inputs; ++i) {
+      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
+          TfLiteOpaqueNodeGetInput(context, node, i));
+      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+      if (tensor_buffer_info.tensor_buffer.HasEvent()) {
+        LITERT_ASSIGN_OR_RETURN(auto event,
+                                tensor_buffer_info.tensor_buffer.GetEvent());
+        LITERT_RETURN_IF_ERROR(
+            LiteRtDispatchAttachInputEvent(invocation_context, i, event.Get()));
+      }
+    }
+
+    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    output_events.resize(num_node_outputs);
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchInvokeAsync(
+        invocation_context, output_events.size(), output_events.data()));
+
+    for (auto i = 0; i < num_node_outputs; ++i) {
+      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
+      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+      tensor_buffer_info.tensor_buffer.SetEvent(
+          Event(output_events[i], OwnHandle::kYes));
+    }
+  }
+
+  return {};
+}
+
+Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
+    TfLiteOpaqueContext* context) {
+  // Deal with any events attached to inputs.
+  for (auto* tfl_tensor : input_tensors_) {
+    auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+    if (tensor_buffer_info.tensor_buffer.HasEvent()) {
+      LITERT_ASSIGN_OR_RETURN(auto event,
+                              tensor_buffer_info.tensor_buffer.GetEvent());
+
+      // If the HW supports async dispatch, then we can simply pass those events
+      // to the HW. Otherwise, we'll need to wait on those events here, on the
+      // main CPU, before we can dispatch the HW, which may lead to deadlocks,
+      // based on how the user code is written.
+      if (async_dispatch_) {
+        const auto& port_connections =
+            io_tensors_port_connections_.find(tfl_tensor)->second;
+        for (const auto& [node_idx, port_idx, is_input_port] :
+             port_connections) {
+          if (is_input_port) {
+            auto* invocation_context = node_invocation_contexts_[node_idx];
+            (void)LiteRtDispatchAttachInputEvent(invocation_context, port_idx,
+                                                 event.Get());
+          }
         }
 
       } else {
-        if (auto status = LiteRtDispatchAttachInputEvent(
-                invocation_context_, buffer_index, event->Get());
-            status != kLiteRtStatusOk) {
-          LITERT_LOG(LITERT_ERROR, "Failed to attach event to input %d: %d",
-                     buffer_index, status);
-          return kTfLiteError;
-        }
+        LITERT_LOG(LITERT_WARNING,
+                   "CPU wait for an input tensor buffer event; this could "
+                   "lead to deadlock");
+        event.Wait();
       }
     }
-
-  } else {
-    if (auto status = LiteRtDispatchAttachOutput(invocation_context_,
-                                                 buffer_index, buffer_handle);
-        status != kLiteRtStatusOk) {
-      (void)LiteRtDispatchUnregisterTensorBuffer(device_context_,
-                                                 buffer_handle);
-      LITERT_LOG(LITERT_ERROR,
-                 "Failed to attach tensor buffer to output %d: %d",
-                 buffer_index, status);
-      return kTfLiteError;
-    }
   }
 
-  if (is_input) {
-    input_tensor_buffers_[buffer_index] = std::move(tensor_buffer);
-    input_tensor_buffer_handles_[buffer_index] = buffer_handle;
-    input_tensor_buffer_used_size_[buffer_index] = buffer_used_size;
-  } else {
-    output_tensor_buffers_[buffer_index] = std::move(tensor_buffer);
-    output_tensor_buffer_handles_[buffer_index] = buffer_handle;
-    output_tensor_buffer_used_size_[buffer_index] = buffer_used_size;
+  // Run NPU bytecodes synchronously and in topological order.
+  for (auto* invocation_context : node_invocation_contexts_) {
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchInvoke(invocation_context));
   }
-  return kTfLiteOk;
+
+  return {};
 }
 
-TfLiteStatus DispatchDelegateKernel::Prepare(TfLiteOpaqueContext* context,
-                                             TfLiteOpaqueNode* node) {
-  return kTfLiteOk;
-}
-
-TfLiteStatus DispatchDelegateKernel::RegisterLiteRtTensorBuffers(
-    TfLiteOpaqueContext* context, TfLiteOpaqueNode* node) {
-  size_t num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-  for (size_t i = 0; i < num_node_inputs; ++i) {
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
-    auto tensor_buffer = buffer_context_->GetTensorBuffer(tfl_opaque_tensor);
-    if (tensor_buffer.HasValue()) {
-      // TODO - b/379176766: If the provided TensorBuffer is not supported
-      // types, we need to create a new one and convert the data from the
-      // provided TensorBuffer.
-      auto buffer_size = tensor_buffer->Size();
-      if (!buffer_size) {
-        LITERT_LOG(LITERT_ERROR, "%s", buffer_size.Error().Message().c_str());
-        return kTfLiteError;
-      }
-      if (auto status = RegisterLiteRtTensorBuffer(std::move(*tensor_buffer),
-                                                   *buffer_size, i,
-                                                   /*is_input=*/true);
-          status != kTfLiteOk) {
-        return status;
-      }
-      input_tensor_buffers_require_cpu_sync_[i] = false;
-    } else {
-      LITERT_LOG(LITERT_VERBOSE,
-                 "Input#%d TensorBuffer is not registered. Create a new one",
-                 i);
-      if (auto status =
-              CreateAndSetBuffer(tfl_opaque_tensor, i, /*is_input=*/true);
-          status != kTfLiteOk) {
-        return status;
-      }
-      input_tensor_buffers_require_cpu_sync_[i] = true;
-    }
-  }
-
-  size_t num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
-  for (size_t i = 0; i < num_node_outputs; ++i) {
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-    auto tensor_buffer = buffer_context_->GetTensorBuffer(tfl_opaque_tensor);
-    if (tensor_buffer.HasValue()) {
-      // TODO - b/379176766: If the provided TensorBuffer is not supported
-      // types, we need to create a new one and convert the data back to the
-      // provided TensorBuffer.
-      auto buffer_size = tensor_buffer->Size();
-      if (!buffer_size) {
-        LITERT_LOG(LITERT_ERROR, "%s", buffer_size.Error().Message().c_str());
-        return kTfLiteError;
-      }
-      if (auto status = RegisterLiteRtTensorBuffer(std::move(*tensor_buffer),
-                                                   *buffer_size, i,
-                                                   /*is_input=*/false);
-          status != kTfLiteOk) {
-        return status;
-      }
-      output_tensor_buffers_require_cpu_sync_[i] = false;
-    } else {
-      LITERT_LOG(LITERT_VERBOSE,
-                 "Output#%d TensorBuffer is not registered. Create a new one",
-                 i);
-      if (auto status =
-              CreateAndSetBuffer(tfl_opaque_tensor, i, /*is_input=*/false);
-          status != kTfLiteOk) {
-        return status;
-      }
-      output_tensor_buffers_require_cpu_sync_[i] = true;
-    }
-  }
-
-  return kTfLiteOk;
-}
-
-TfLiteStatus DispatchDelegateKernel::Eval(TfLiteOpaqueContext* context,
-                                          TfLiteOpaqueNode* node) {
-  if (auto status = RegisterLiteRtTensorBuffers(context, node);
-      status != kTfLiteOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to register tensor buffers: %d", status);
-    return kTfLiteError;
-  }
-
-  size_t num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-  if (num_node_inputs != input_tensor_buffers_.size()) {
-    LITERT_LOG(LITERT_ERROR, "Invalid number of inputs");
-    return kTfLiteError;
-  }
-
-  for (size_t i = 0; i < num_node_inputs; ++i) {
-    if (!input_tensor_buffers_require_cpu_sync_[i]) {
-      continue;
-    }
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
-    void* tensor_data = TfLiteOpaqueTensorData(tfl_opaque_tensor);
-    auto& tensor_buffer = input_tensor_buffers_[i];
-
-    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
-    if (!lock_and_addr) {
-      LITERT_LOG(LITERT_ERROR, "%s", lock_and_addr.Error().Message().c_str());
-      return kTfLiteError;
-    }
-
-    size_t buffer_size = input_tensor_buffer_used_size_[i];
-    std::memcpy(lock_and_addr->second, tensor_data, buffer_size);
-  }
-
-  size_t num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
-  if (num_node_outputs != output_tensor_buffers_.size()) {
-    LITERT_LOG(LITERT_ERROR, "Invalid number of outputs");
-    return kTfLiteError;
-  }
-
-  if (async_dispatch_ && buffer_context_->IsAsyncExecutionMode()) {
-    std::vector<LiteRtEvent> output_events(num_node_outputs);
-    if (auto status = LiteRtDispatchInvokeAsync(
-            invocation_context_, output_events.size(), output_events.data());
-        status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to invoke context asynchronously: %d",
-                 status);
-      return kTfLiteError;
-    }
-    for (size_t i = 0; i < output_events.size(); ++i) {
-      auto output_event = output_events[i];
-      if (output_event) {
-        auto& tensor_buffer = output_tensor_buffers_[i];
-        if (auto status = tensor_buffer.SetEvent(Event(output_event));
-            !status) {
-          LITERT_LOG(LITERT_ERROR,
-                     "Failed to set event on output tensor buffer: %s",
-                     status.Error().Message().c_str());
-          return kTfLiteError;
-        }
-      }
-    }
-
-  } else {
-    if (auto status = LiteRtDispatchInvoke(invocation_context_);
-        status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to invoke context: %d", status);
-      return kTfLiteError;
-    }
-  }
-
-  for (size_t i = 0; i < num_node_outputs; ++i) {
-    if (!output_tensor_buffers_require_cpu_sync_[i]) {
-      continue;
-    }
-    auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-    void* tensor_data = TfLiteOpaqueTensorData(tfl_opaque_tensor);
-    auto& tensor_buffer = output_tensor_buffers_[i];
-
-    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
-    if (!lock_and_addr) {
-      LITERT_LOG(LITERT_ERROR, "%s", lock_and_addr.Error().Message().c_str());
-      return kTfLiteError;
-    }
-
-    size_t buffer_size = output_tensor_buffer_used_size_[i];
-    std::memcpy(tensor_data, lock_and_addr->second, buffer_size);
-  }
-
-  return kTfLiteOk;
-}
-
-LiteRtStatus DispatchDelegateKernel::StartMetricsCollection(int detail_level) {
-  return LiteRtDispatchStartMetricsCollection(invocation_context_,
-                                              detail_level);
-}
-
-Expected<LiteRtMetricsT> DispatchDelegateKernel::StopMetricsCollection() {
-  LiteRtDispatchMetrics dispatch_metrics;
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchStopMetricsCollection(
-      invocation_context_, &dispatch_metrics));
-
-  absl::Cleanup metrics_cleanup = [&dispatch_metrics] {
-    if (auto status = LiteRtDispatchDestroyMetrics(dispatch_metrics);
-        status != kLiteRtStatusOk) {
-      LITERT_LOG(LITERT_ERROR, "Failed to destroy metrics: %d", status);
-    }
-  };
-
-  int num_metrics = 0;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtDispatchGetNumMetrics(dispatch_metrics, &num_metrics));
-
-  std::vector<LiteRtMetricsT::Metric> metrics;
-  metrics.reserve(num_metrics);
-  for (int i = 0; i < num_metrics; ++i) {
-    LiteRtMetric metric;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtDispatchGetMetric(dispatch_metrics, i, &metric));
-    metrics.push_back({metric.name, metric.value});
-  }
-  return LiteRtMetricsT{.metrics = std::move(metrics)};
-}
-
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal

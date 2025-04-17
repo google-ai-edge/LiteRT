@@ -31,9 +31,11 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/model/model_serialize.h"
@@ -70,10 +72,13 @@ class Context {
 
   ApplyPluginRun::Cmd Cmd() const { return run_->cmd; }
 
-  absl::Span<const absl::string_view> LibSearchPaths() const {
-    return absl::MakeConstSpan(run_->lib_search_paths.data(),
-                               run_->lib_search_paths.size());
+  const std::vector<std::string>& LibSearchPaths() const {
+    return run_->lib_search_paths;
   }
+
+  Environment& Environment() { return run_->environment; }
+
+  ::litert::Options& Options() { return run_->options; }
 
   absl::string_view SocModelTarget() const {
     ABSL_CHECK_EQ(run_->soc_models.size(), 1);
@@ -176,7 +181,9 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
   }
   ctx.Dump().Display() << "\n";
 
-  auto plugins = CompilerPlugin::LoadPlugins(ctx.LibSearchPaths());
+  std::vector<absl::string_view> paths_vec(paths.begin(), paths.end());
+  auto plugins = CompilerPlugin::LoadPlugins(
+      paths_vec, ctx.Environment().GetOptions()->Get(), ctx.Options().Get());
   if (!plugins.HasValue()) {
     ctx.Dump().Fail();
     return plugins;

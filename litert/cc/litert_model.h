@@ -92,8 +92,7 @@ class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
 // Tensor. C++ equivalent of LiteRtTensor.
 class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
-  explicit Tensor(LiteRtTensor tensor)
-      : internal::NonOwnedHandle<LiteRtTensor>(tensor) {}
+  explicit Tensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
 
   enum ElementType ElementType() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
@@ -197,20 +196,20 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     const absl::Span<const uint8_t> weights = Weights().Bytes();
 
     auto num_elements = ranked_tensor_type->Layout().NumElements();
-    if (!num_elements.has_value()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+    if (!num_elements) {
+      return num_elements.Error();
     }
     auto byte_width = GetByteWidth(ty);
     if (!byte_width.has_value()) {
       return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
-    if (byte_width.value() * num_elements.value() != weights.size()) {
+    if (byte_width.value() * *num_elements != weights.size()) {
       return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
     return absl::MakeConstSpan(reinterpret_cast<const T*>(weights.data()),
-                               num_elements.value());
+                               *num_elements);
   }
 
   std::optional<LiteRtTensorDefiningOp> DefiningOp() const {
@@ -326,11 +325,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   Model() = default;
 
   static Model CreateFromOwnedHandle(LiteRtModel model) {
-    return Model(model, /*owned=*/true);
+    return Model(model, OwnHandle::kYes);
   }
 
   static Model CreateFromNonOwnedHandle(LiteRtModel model) {
-    return Model(model, /*owned=*/false);
+    return Model(model, OwnHandle::kNo);
   }
 
   static Expected<Model> CreateFromFile(const std::string& filename) {
@@ -464,8 +463,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
  private:
   // Parameter `owned` indicates if the created TensorBuffer object should take
   // ownership of the provided `tensor_buffer` handle.
-  Model(LiteRtModel model, bool owned)
-      : internal::Handle<LiteRtModel, LiteRtDestroyModel>(model, owned) {}
+  Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
 };
 
 struct SerializationOptions {

@@ -22,7 +22,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_op_code.h"
-#include "tflite/core/c/c_api_types.h"  // from @org_tensorflow
+#include "tflite/core/c/c_api_types.h"
 
 #ifdef __cplusplus
 extern "C" {

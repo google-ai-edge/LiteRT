@@ -19,8 +19,8 @@
 #include <memory>
 #include <vector>
 
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.
@@ -56,9 +56,9 @@ struct LiteRtAcceleratorT {
 
   // Creates a delegate for the accelerator.
   // Used void** instead of TfLiteOpaqueDelegate** to avoid TFLite dependency.
-  LiteRtStatus (*CreateDelegate)(
-      LiteRtAcceleratorT* accelerator,
-      LiteRtAcceleratorCompilationOptions compilation_options, void** delegate);
+  LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorT* accelerator,
+                                 LiteRtOpaqueOptions compilation_options,
+                                 void** delegate);
 
   // Destroys created delegate for the accelerator.
   // The function signature is matched with existing TfLiteOpaqueDelegate

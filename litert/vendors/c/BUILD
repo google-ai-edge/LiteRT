@@ -22,7 +22,9 @@ cc_library(
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
+        "//litert/c:litert_options",
     ],
 )
 
@@ -33,7 +35,10 @@ cc_library(
         ":litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
+        "//litert/c:litert_options",
     ],
 )
 

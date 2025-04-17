@@ -17,8 +17,8 @@
 namespace qnn {
 
 namespace {
-constexpr int kSplitIndexRank = 1;
-constexpr int kinputAxisIndex = 0;
+constexpr size_t kInputIndex = 1;
+constexpr size_t kAxisIndex = 0;
 }  // namespace
 
 std::vector<OpWrapper> BuildSplitOp(
@@ -27,12 +27,12 @@ std::vector<OpWrapper> BuildSplitOp(
     const std::uint32_t num_splits) {
   std::vector<OpWrapper> res;
 
-  const TensorWrapper& axis_tensor = inputs[0];
+  const TensorWrapper& axis_tensor = inputs[kAxisIndex];
   if (!axis_tensor.IsTensorStatic()) {
     return res;
   }
 
-  const TensorWrapper& input_tensor = inputs[1];
+  const TensorWrapper& input_tensor = inputs[kInputIndex];
   auto axis_data = axis_tensor.GetStaticTensorData<int32_t>();
   if (!axis_data.has_value()) {
     QNN_LOG_ERROR("Get axis_data failed.");

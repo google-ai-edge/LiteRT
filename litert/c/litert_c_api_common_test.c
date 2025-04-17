@@ -23,7 +23,7 @@
 #include "litert/c/litert_accelerator_registration.h"  // NOLINT
 #include "litert/c/litert_any.h"     // NOLINT
 #include "litert/c/litert_common.h"  // NOLINT
-#include "litert/c/litert_compilation_options.h"  // NOLINT
+#include "litert/c/litert_options.h"  // NOLINT
 #include "litert/c/litert_compiled_model.h"  // NOLINT
 #include "litert/c/litert_dispatch_delegate.h"  // NOLINT
 #include "litert/c/litert_event.h"          // NOLINT
@@ -32,7 +32,7 @@
 #include "litert/c/litert_metrics.h"        // NOLINT
 #include "litert/c/litert_model.h"          // NOLINT
 #include "litert/c/litert_op_code.h"        // NOLINT
-#include "litert/c/litert_options.h"        // NOLINT
+#include "litert/c/litert_op_options.h"        // NOLINT
 #include "litert/c/litert_tensor_buffer.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
 

@@ -36,10 +36,10 @@
 #include <CL/cl.h>
 #include <CL/cl_ext.h>
 #include <CL/cl_platform.h>
-#include "tflite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
-#include "tflite/delegates/gpu/cl/cl_context.h"  // from @org_tensorflow
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/buffer.h"
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"
+#include "tflite/delegates/gpu/cl/cl_context.h"
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 
 #if defined(__EMSCRIPTEN__) || defined(WIN32) || defined(_WIN32) || \
     defined(__WIN32__) || defined(__NT__) || defined(_WIN64)

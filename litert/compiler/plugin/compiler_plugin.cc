@@ -36,8 +36,10 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -210,7 +212,8 @@ void SortPlugins(std::vector<CompilerPlugin>& compiler_plugins) {
 }  // namespace
 
 Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
-    const absl::string_view lib_path) {
+    const absl::string_view lib_path, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
   CompilerPlugin plugin;
   LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.data());
 
@@ -222,8 +225,8 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   LITERT_RETURN_IF_ERROR(ResolvePluginApi(plugin.lib_, plugin.plugin_api_));
   LITERT_LOG(LITERT_INFO, "Resolved plugin api at: %s", lib_path.data());
 
-  LITERT_RETURN_IF_ERROR(
-      plugin.plugin_api_.create_compiler_plugin(&plugin.plugin_handle_));
+  LITERT_RETURN_IF_ERROR(plugin.plugin_api_.create_compiler_plugin(
+      &plugin.plugin_handle_, env, options));
   LITERT_LOG(LITERT_INFO, "Initialize plugin at: %s", lib_path.data());
 
   auto api_version = plugin.ApiVersion();
@@ -247,7 +250,8 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
 }
 
 Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
-    absl::Span<const absl::string_view> lib_search_paths) {
+    absl::Span<const absl::string_view> lib_search_paths,
+    LiteRtEnvironmentOptions env, LiteRtOptions options) {
   std::vector<std::string> plugin_lib_paths;
   for (auto search_path : lib_search_paths) {
     // Skip paths that are not valid.
@@ -262,7 +266,7 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
 
   for (const auto& lib_path : plugin_lib_paths) {
     LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.c_str());
-    auto plugin = LoadPlugin(lib_path);
+    auto plugin = LoadPlugin(lib_path, env, options);
     if (!plugin.HasValue()) {
       continue;
     }
@@ -586,7 +590,7 @@ Expected<void> ApplyPlugin(
 }
 
 Expected<ApplyPluginsResult> ApplyPlugins(
-    LiteRtEnvironment environment, LiteRtModel model,
+    LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
     LiteRtHwAcceleratorSet selected_hw_accelerators, bool* mutated) {
   auto option =
       environment->GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
@@ -600,7 +604,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
       compiler_plugin_lib_search_paths = {compiler_plugin_lib_path};
 
   auto compiler_plugins = litert::internal::CompilerPlugin::LoadPlugins(
-      compiler_plugin_lib_search_paths);
+      compiler_plugin_lib_search_paths, &environment->GetOptions(), options);
   if (!compiler_plugins) {
     return compiler_plugins.Error();
   }

@@ -30,12 +30,12 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
-#include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -76,7 +76,7 @@ class CompiledModel
   // If `owned` is `true`, then the created object takes ownership of the
   // `compiled_model` handle.
   explicit CompiledModel(LiteRtModel litert_model,
-                         LiteRtCompiledModel compiled_model, bool owned = true)
+                         LiteRtCompiledModel compiled_model, OwnHandle owned)
       : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
             compiled_model, owned),
         model_(Model::CreateFromNonOwnedHandle(litert_model)) {}
@@ -95,13 +95,13 @@ class CompiledModel
   // meaningless.
   static Expected<CompiledModel> Create(
       litert::Environment& env, litert::Model& model,
-      const CompilationOptions& jit_compilation_options) {
+      const Options& jit_compilation_options) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
         env.Get(), litert_model, jit_compilation_options.Get(),
         &compiled_model));
-    return CompiledModel(litert_model, compiled_model);
+    return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
   }
 
   // Simpler version of Create() that uses the default compilation options.
@@ -112,9 +112,8 @@ class CompiledModel
   // meaningless.
   static Expected<CompiledModel> Create(
       litert::Environment& env, litert::Model& model,
-      LiteRtHwAccelerators hardware_accelerator = kLiteRtHwAcceleratorCpu) {
-    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options,
-                            CompilationOptions::Create());
+      LiteRtHwAccelerators hardware_accelerator) {
+    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
     jit_compilation_options.SetHardwareAccelerators(hardware_accelerator);
     return Create(env, model, jit_compilation_options);
   }
@@ -135,7 +134,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelInputBufferRequirements(
         Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, /*owned=*/false);
+    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
   }
 
   // The same as above except this function takes input tensor name.
@@ -175,7 +174,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputBufferRequirements(
         Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, /*owned=*/false);
+    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
   }
 
   // The same as above except this function takes output tensor name.

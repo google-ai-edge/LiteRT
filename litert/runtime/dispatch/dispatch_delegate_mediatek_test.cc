@@ -30,22 +30,22 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "tflite/c/c_api_opaque.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
-#include "tflite/interpreter.h"  // from @org_tensorflow
-#include "tflite/signature_runner.h"  // from @org_tensorflow
+#include "tflite/c/c_api_opaque.h"
+#include "tflite/c/common.h"
+#include "tflite/interpreter.h"
+#include "tflite/signature_runner.h"
 
 using litert::testing::MakeRuntimeFromTestFileWithNpuModel;
 using testing::ElementsAre;

@@ -23,9 +23,9 @@ cc_library(
     hdrs = ["xnnpack_accelerator.h"],
     deps = [
         "//litert/c:litert_accelerator",
-        "//litert/c:litert_accelerator_compilation_options",
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",

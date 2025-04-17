@@ -27,7 +27,7 @@
 // through flatbuffer_tools.h via model.h) have the same #ifdef, thus this line
 // need to be put at the top to ensure we get the "mutable" version.
 #if 1
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"  // from @org_tensorflow
+#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
 #endif
 
 #include <gmock/gmock.h>  // IWYU pragma: keep
@@ -54,7 +54,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "tflite/schema/mutable/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::internal {
 namespace {

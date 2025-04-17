@@ -10,13 +10,13 @@ namespace {
 
 int GetPlatformSeverity(LiteRtQnnLogLevel severity) {
   switch (severity) {
-    case kLogLevelError:
+    case kQnnLogLevelError:
       return ANDROID_LOG_ERROR;
-    case kLogLevelWarn:
+    case kQnnLogLevelWarn:
       return ANDROID_LOG_WARN;
-    case kLogLevelInfo:
+    case kQnnLogLevelInfo:
       return ANDROID_LOG_INFO;
-    case kLogLevelVerbose:
+    case kQnnLogLevelVerbose:
       return ANDROID_LOG_VERBOSE;
     default:
       return ANDROID_LOG_DEBUG;
@@ -27,7 +27,7 @@ int GetPlatformSeverity(LiteRtQnnLogLevel severity) {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 FILE* QNNLogger::log_file_pointer_ = stderr;
-LiteRtQnnLogLevel QNNLogger::log_level_ = kLogLevelInfo;
+LiteRtQnnLogLevel QNNLogger::log_level_ = kQnnLogLevelInfo;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 void QNNLogger::SetLogFilePointer(FILE* fp) { log_file_pointer_ = fp; }
 void QNNLogger::SetLogLevel(LiteRtQnnLogLevel log_level) {

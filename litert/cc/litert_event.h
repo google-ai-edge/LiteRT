@@ -34,7 +34,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
  public:
   // Parameter `owned` indicates if the created TensorBufferRequirements object
   // should take ownership of the provided `requirements` handle.
-  explicit Event(LiteRtEvent event, bool owned = true)
+  explicit Event(LiteRtEvent event, OwnHandle owned)
       : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
 
   // Creates an Event object with the given `sync_fence_fd`.
@@ -43,14 +43,14 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(
         LiteRtCreateEventFromSyncFenceFd(sync_fence_fd, owns_fd, &event));
-    return Event(event);
+    return Event(event, OwnHandle::kYes);
   }
 
   // Creates an Event object with the given `cl_event`.
   static Expected<Event> CreateFromOpenClEvent(cl_event cl_event) {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromOpenClEvent(cl_event, &event));
-    return Event(event);
+    return Event(event, OwnHandle::kYes);
   }
 
   // Creates a managed event of the given `type`. Currently only
@@ -58,7 +58,7 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   static Expected<Event> CreateManaged(LiteRtEventType type) {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(type, &event));
-    return Event(event);
+    return Event(event, OwnHandle::kYes);
   }
 
   Expected<int> GetSyncFenceFd() {

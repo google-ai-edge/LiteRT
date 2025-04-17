@@ -24,6 +24,8 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/outstream.h"
 
@@ -120,18 +122,18 @@ struct ApplyPluginRun {
   // select the first ".so" file found with prefix "libLiteRtPlugin" that has
   // the "soc_manufacturer" tag passed. Providing more than one plugin shared
   // library for the same manufacturer results in an error.
-  std::vector<absl::string_view> lib_search_paths = {};
+  std::vector<std::string> lib_search_paths = {};
 
   // Path to ".tflite" model the tool should operated on.
-  std::optional<absl::string_view> model = {};
+  std::optional<std::string> model = {};
 
   // A tag representing a manufacturer the tool should target for compilation.
   // This is used to select the appropriate plugin if multiple plugins are found
   // in "lib_search_paths".
-  std::optional<absl::string_view> soc_manufacturer = {};
+  std::optional<std::string> soc_manufacturer = {};
 
   // Collection of soc models tags the tool should target for compilation.
-  std::vector<absl::string_view> soc_models = {};
+  std::vector<std::string> soc_models = {};
 
   // Where the tool should write its result file(s) to. If the command runs
   // compilation, an "out" stream should be passed for each "soc_model" target
@@ -151,6 +153,14 @@ struct ApplyPluginRun {
   // If provided, only the subgraphs with the given indices are applied with the
   // plugin.
   absl::flat_hash_set<uint32_t> subgraphs = {};
+
+  // Options structure (containing opaque chain).
+  // TODO: lukeboyer - Consolidate as much as possible from this class
+  // into the official options api.
+  Options options;
+
+  // Environment options.
+  Environment environment = *Environment::Create({});
 };
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run);
