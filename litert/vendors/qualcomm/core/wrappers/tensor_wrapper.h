@@ -112,7 +112,7 @@ class TensorWrapper final {
 
   void CloneTo(Qnn_Tensor_t& dst) const;
 
-  Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
+  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
 
   std::uint32_t GetRank() const;
 
