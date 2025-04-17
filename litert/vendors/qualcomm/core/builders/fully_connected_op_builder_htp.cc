@@ -41,7 +41,7 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
   }
 
   // TFLite FC -> QNN CONV2D:
-  // Reshape -> Conv2D -> Reshpae
+  // Reshape -> Conv2D -> Reshape
   TensorWrapper& input_tensor = inputs[0];
   TensorWrapper& weight_tensor = inputs[1];
   TensorWrapper& output_tensor = outputs[0];
@@ -59,9 +59,10 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
   auto& quant_params = weight_tensor.GetQuantParams();
   if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
           quant_params)) {
-    auto& axis_quant_param =
-        std::get<AxisScaleOffsetQuantizeParamsWrapper>(quant_params);
-    axis_quant_param.SetAxis(3);
+    std::get<AxisScaleOffsetQuantizeParamsWrapper>(quant_params).SetAxis(3);
+  } else if (std::holds_alternative<BwAxisScaleOffsetQuantizeParamsWrapper>(
+                 quant_params)) {
+    std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(quant_params).SetAxis(3);
   }
   std::vector<uint32_t> weight_dims{1, 1, weight_tensor.GetDim(1),
                                     weight_tensor.GetDim(0)};

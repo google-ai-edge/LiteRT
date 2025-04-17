@@ -40,7 +40,7 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/egl_environment.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
@@ -90,7 +90,7 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
@@ -161,7 +161,7 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
@@ -311,8 +311,9 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,

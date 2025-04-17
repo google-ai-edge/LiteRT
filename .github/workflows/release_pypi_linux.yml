@@ -22,6 +22,7 @@ on:
 
 env:
   CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
+  TEST_MANYLINUX_COMPLIANCE: "true"
 
 jobs:
   build_release:
@@ -76,7 +77,7 @@ jobs:
 
           ./ci/build_pip_package_with_docker.sh
 
-          cp ./tflite/gen/litert_pip/python3/dist/*.whl ./ci/litert_pip/
+          cp ./dist/*.whl ./ci/litert_pip/
 
       - name: Verify the distribution
         run: twine check ./ci/litert_pip/*.whl

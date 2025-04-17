@@ -27,13 +27,14 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
@@ -51,6 +52,7 @@ namespace {
 using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
+using ::testing::litert::IsError;
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -186,16 +188,15 @@ TEST(CompiledModelTest, Basic) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -240,13 +241,13 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -280,6 +281,32 @@ TEST(CompiledModelTest, Basic) {
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }
+TEST(CompiledModelTest,
+     CompilationFailsWhenUnacceleratedOpsRemainWithoutCpuFallback) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorNpu),
+            kLiteRtStatusOk);
+  EXPECT_THAT(
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options),
+      IsError(kLiteRtStatusErrorCompilation));
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
 
 TEST(CompiledModelTest, UseAhwbBuffer) {
 #if !defined(__ANDROID__)
@@ -307,16 +334,15 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check input and output buffer requirements expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -366,13 +392,13 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
   {
-    TensorBuffer ahwb_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer ahwb_buffer(input_0_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer ahwb_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer ahwb_buffer(input_1_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -439,16 +465,15 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel with options.
-  LiteRtCompilationOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateCompilationOptions(&jit_compilation_options),
-            kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetCompilationOptionsHardwareAccelerators(
-                jit_compilation_options, kLiteRtHwAcceleratorCpu),
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-  LiteRtDestroyCompilationOptions(jit_compilation_options);
+  LiteRtDestroyOptions(jit_compilation_options);
 
   // Check ComiledModel buffer requirements.
   // input and output expect host memory.
@@ -500,13 +525,13 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenClBuffer);
   {
-    TensorBuffer opencl_buffer(input_0_buffer, /*owned=*/false);
+    TensorBuffer opencl_buffer(input_0_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer opencl_buffer(input_1_buffer, /*owned=*/false);
+    TensorBuffer opencl_buffer(input_1_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }

@@ -21,9 +21,8 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_compiler_plugin",
     ],
@@ -80,6 +79,19 @@ cc_library(
         ":backend_ir",
         ":conversion",
         "//litert/cc:litert_expected",
+    ],
+)
+
+cc_library(
+    name = "options_helper",
+    hdrs = ["options_helper.h"],
+    deps = [
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
     ],
 )
 

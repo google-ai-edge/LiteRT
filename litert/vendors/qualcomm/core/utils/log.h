@@ -30,27 +30,28 @@ class QNNLogger {
 }  // namespace qnn
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define QNN_LOG_VERBOSE(format, ...)                                  \
-  ::qnn::QNNLogger::Log(kLogLevelVerbose, ("VERBOSE: [Qnn] " format), \
+#define QNN_LOG_VERBOSE(format, ...)                                     \
+  ::qnn::QNNLogger::Log(kQnnLogLevelVerbose, ("VERBOSE: [Qnn] " format), \
                         ##__VA_ARGS__);
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define QNN_LOG_INFO(format, ...) \
-  ::qnn::QNNLogger::Log(kLogLevelInfo, ("INFO: [Qnn] " format), ##__VA_ARGS__);
-
-// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define QNN_LOG_WARNING(format, ...)                               \
-  ::qnn::QNNLogger::Log(kLogLevelWarn, ("WARNING: [Qnn] " format), \
+#define QNN_LOG_INFO(format, ...)                                  \
+  ::qnn::QNNLogger::Log(kQnnLogLevelInfo, ("INFO: [Qnn] " format), \
                         ##__VA_ARGS__);
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define QNN_LOG_ERROR(format, ...)                                \
-  ::qnn::QNNLogger::Log(kLogLevelError, ("ERROR: [Qnn] " format), \
+#define QNN_LOG_WARNING(format, ...)                                  \
+  ::qnn::QNNLogger::Log(kQnnLogLevelWarn, ("WARNING: [Qnn] " format), \
                         ##__VA_ARGS__);
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
-#define QNN_LOG_DEBUG(format, ...)                                \
-  ::qnn::QNNLogger::Log(kLogLevelDebug, ("DEBUG: [Qnn] " format), \
+#define QNN_LOG_ERROR(format, ...)                                   \
+  ::qnn::QNNLogger::Log(kQnnLogLevelError, ("ERROR: [Qnn] " format), \
+                        ##__VA_ARGS__);
+
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
+#define QNN_LOG_DEBUG(format, ...)                                   \
+  ::qnn::QNNLogger::Log(kQnnLogLevelDebug, ("DEBUG: [Qnn] " format), \
                         ##__VA_ARGS__);
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_LOG_H_

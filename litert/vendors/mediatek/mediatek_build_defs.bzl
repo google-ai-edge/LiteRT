@@ -23,19 +23,6 @@ _MTK_STD_LIBS_HOST = [
     # copybara:uncomment_end
 ]  # @unused
 
-_MTK_NEURON_ADAPTER_SO = [
-    # copybara:uncomment_begin(google-only)
-    # "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
-    # copybara:uncomment_end
-]
-
-# TODO: Make rpaths dynamic with "$(location {})".
-_MTK_HOST_RPATHS = [
-    # copybara:uncomment_begin(google-only)
-    # "third_party/neuro_pilot/latest/host/lib",
-    # copybara:uncomment_end
-]
-
 def _litert_with_mtk_base(
         litert_rule,
         use_custom_libcc,
@@ -44,16 +31,28 @@ def _litert_with_mtk_base(
         # TODO: Figure out strategy for custom libcc.
         fail("Custom libcc not yet supported")
 
-    data_x86_64 = []
-    data_x86_64.extend(_MTK_NEURON_ADAPTER_SO)
+    # v7 vs v8 sdks can be toggled in linux builds via the ":mtk_sdk_version" flag
+    # defined in litert/BUILD.
     append_rule_kwargs(
         litert_rule_kwargs,
+        # TODO: lukeboyer - Figure out why "latest" (which is symlink) works but the v8
+        # path does not.
         data = select({
-            "@org_tensorflow//tensorflow:linux_x86_64": data_x86_64,
+            "//litert:mtk_sdk_v8_host": [
+                "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
+            ],
+            "//litert:mtk_sdk_v7_host": [
+                "//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so",
+            ],
             "//conditions:default": [],
         }),
         linkopts = select({
-            "@org_tensorflow//tensorflow:linux_x86_64": [make_rpaths(_MTK_HOST_RPATHS)],
+            "//litert:mtk_sdk_v8_host": [
+                make_rpaths(["//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so"]),
+            ],
+            "//litert:mtk_sdk_v7_host": [
+                make_rpaths(["//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so"]),
+            ],
             "//conditions:default": [],
         }),
     )

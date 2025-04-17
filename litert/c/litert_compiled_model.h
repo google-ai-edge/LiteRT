@@ -18,10 +18,10 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compilation_options.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 
@@ -51,10 +51,10 @@ LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
 // `jit_compilation_options` is optional and can be null, and is owned by the
 // caller.  The model is loaded into memory and the caller takes ownership of
 // the returned object.
-LiteRtStatus LiteRtCreateCompiledModel(
-    LiteRtEnvironment environment, LiteRtModel model,
-    LiteRtCompilationOptions compilation_options,
-    LiteRtCompiledModel* compiled_model);
+LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
+                                       LiteRtModel model,
+                                       LiteRtOptions compilation_options,
+                                       LiteRtCompiledModel* compiled_model);
 
 // Returns the buffer requirements for the given n-th input tensor. The returned
 // LiteRtTensorBufferRequirements is used to create the input tensor

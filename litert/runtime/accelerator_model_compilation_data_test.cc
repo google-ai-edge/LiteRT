@@ -16,13 +16,10 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/c/litert_common.h"
-#include "litert/core/version.h"
 #include "litert/test/matchers.h"
 
 namespace {
 
-using testing::Eq;
 using testing::StrEq;
 
 TEST(ModelCompilationDataTest, CreateSetsUpAllNecessaryFields) {
@@ -32,10 +29,6 @@ TEST(ModelCompilationDataTest, CreateSetsUpAllNecessaryFields) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto identifier, options.GetIdentifier());
   EXPECT_THAT(identifier,
               StrEq(litert::internal::ModelCompilationData::kIdentifier));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto version, options.GetVersion());
-  EXPECT_TRUE(litert::internal::IsSameVersion(
-      version, litert::internal::ModelCompilationData::kVersion));
 }
 
 }  // namespace

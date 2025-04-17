@@ -15,8 +15,11 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_LAYOUT_H_
 #define ODML_LITERT_LITERT_C_LITERT_LAYOUT_H_
 
+#include <stdbool.h>  // NOLINT: To use bool type in C
 #include <stddef.h>
 #include <stdint.h>
+
+#include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,16 +30,24 @@ extern "C" {
 
 // The shape information for tensor types of fixed rank.
 typedef struct {
-  // The number of dimensions.
-  uint32_t rank;
+  unsigned int rank : 7;  // The number of dimensions.
+  bool has_strides : 1;   // Whether the layout has strides.
 
   // Dimension sizes, array of length `rank`. Dynamic dimensions are anything
   // less than 0. Everything from [rank, LITERT_MAX_RANK) is undefined.
   int32_t dimensions[LITERT_TENSOR_MAX_RANK];
 
-  // Strides for a nominal NWHC layout. NULL if unused.
-  const uint32_t* strides;
+  // Strides. Used only if has_strides is true.
+  uint32_t strides[LITERT_TENSOR_MAX_RANK];
 } LiteRtLayout;
+
+// Return the number of scalar elements in the provided tensor layout. Return an
+// error if the layout includes dynamic dimensions.
+LiteRtStatus LiteRtGetNumLayoutElements(const LiteRtLayout* layout,
+                                        size_t* num_elements);
+
+LiteRtStatus LiteRtIsSameLayout(const LiteRtLayout* layout1,
+                                const LiteRtLayout* layout2, bool* result);
 
 #ifdef __cplusplus
 }

@@ -22,9 +22,9 @@ limitations under the License.
 #include <utility>
 
 #include <gtest/gtest.h>
-#include "tflite/core/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/tools/benchmark/benchmark_model.h"  // from @org_tensorflow
-#include "tflite/tools/benchmark/benchmark_params.h"  // from @org_tensorflow
+#include "tflite/core/c/c_api_types.h"
+#include "tflite/tools/benchmark/benchmark_model.h"
+#include "tflite/tools/benchmark/benchmark_params.h"
 
 namespace litert {
 namespace benchmark {

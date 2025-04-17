@@ -3,6 +3,7 @@
 
 #include "litert/vendors/qualcomm/core/builders/pad_op_builder.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <variant>
@@ -88,7 +89,9 @@ std::vector<OpWrapper> BuildPadOp(
         QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
       }
-      pad_const_value = pad_const_data.value()[0];
+      // TODO(jiunkaiy): Remove this magic number (-65472) after HTP resolves
+      // accuracy issues.
+      pad_const_value = std::max(pad_const_data.value()[0], -65472.f);
     }
     pad_op.AddScalarParam<float>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
                                  pad_const_value);

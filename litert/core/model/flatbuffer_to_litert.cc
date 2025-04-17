@@ -23,7 +23,7 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tflite/schema/schema_generated.h"  // from @org_tensorflow
+#include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
 

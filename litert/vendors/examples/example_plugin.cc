@@ -16,8 +16,10 @@
 #include <memory>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_op_options.h"
@@ -31,7 +33,9 @@
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {};
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin) {
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+                                        LiteRtEnvironmentOptions env,
+                                        LiteRtOptions options) {
   *compiler_plugin = new LiteRtCompilerPluginT;
   return kLiteRtStatusOk;
 }

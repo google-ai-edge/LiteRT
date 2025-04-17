@@ -21,7 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_options.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/IR/qnn_op.h"

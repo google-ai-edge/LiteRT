@@ -1,0 +1,51 @@
+{
+  "device_groups": [
+    {
+      "name": "qti_v79",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8750"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qti_v75",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8650"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "qti_v73",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8550"
+            },
+            {
+              "manufacturer": "QTI",
+              "model": "SM8635"
+            },
+            {
+              "manufacturer": "QTI",
+              "model": "SM7675"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

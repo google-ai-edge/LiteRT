@@ -24,38 +24,36 @@ namespace {
 
 using ::testing::ElementsAreArray;
 
-static constexpr int32_t kStaticDims[] = {2, 2};
-static constexpr int32_t kDynDims[] = {-1, 2};
-static constexpr uint32_t kStrides[] = {1, 1};
+const Dimensions kStaticDims = {2, 2};  // NOLINT
+const Dimensions kDynDims = {-1, 2};    // NOLINT
+const Strides kStrides = {1, 1};        // NOLINT
 
 TEST(LayoutTest, BuildFromDims) {
-  auto layout = BuildLayout(kStaticDims);
-  EXPECT_EQ(layout.rank, 2);
-  EXPECT_THAT(DimsSpan(layout), ElementsAreArray(kStaticDims));
-  EXPECT_EQ(layout.strides, nullptr);
-  EXPECT_FALSE(StridesSpan(layout).has_value());
+  Layout layout(kStaticDims);
+  EXPECT_EQ(layout.Rank(), 2);
+  EXPECT_THAT(layout.Dimensions(), ElementsAreArray(kStaticDims));
+  EXPECT_EQ(layout.HasStrides(), false);
 }
 
 TEST(LayoutTest, BuildFromDimsWithStrides) {
-  auto layout = BuildLayout(kStaticDims, kStrides);
-  EXPECT_EQ(layout.rank, 2);
-  EXPECT_THAT(DimsSpan(layout), ElementsAreArray(kStaticDims));
-  auto strides = StridesSpan(layout);
-  ASSERT_TRUE(strides.has_value());
-  EXPECT_THAT(*strides, ElementsAreArray(kStrides));
+  Layout layout(kStaticDims, kStrides);
+  EXPECT_EQ(layout.Rank(), 2);
+  EXPECT_THAT(layout.Dimensions(), ElementsAreArray(kStaticDims));
+  EXPECT_EQ(layout.HasStrides(), true);
+  EXPECT_THAT(layout.Strides(), ElementsAreArray(kStrides));
 }
 
-TEST(LayoutTest, NumElements) {
-  auto layout = BuildLayout(kStaticDims);
-  auto num_elements = NumElements(layout);
-  ASSERT_TRUE(num_elements.has_value());
+TEST(LayoutTest, NumElementsStatic) {
+  Layout layout(kStaticDims);
+  auto num_elements = layout.NumElements();
+  ASSERT_TRUE(num_elements);
   EXPECT_EQ(*num_elements, 4);
 }
 
 TEST(LayoutTest, NumElementsDynamic) {
-  auto layout = BuildLayout(kDynDims);
-  auto num_elements = NumElements(layout);
-  ASSERT_FALSE(num_elements.has_value());
+  Layout layout(kDynDims);
+  auto num_elements = layout.NumElements();
+  ASSERT_FALSE(num_elements);
 }
 
 }  // namespace

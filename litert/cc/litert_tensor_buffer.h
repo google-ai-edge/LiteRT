@@ -19,6 +19,7 @@
 #include <cstring>
 #include <utility>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
@@ -49,46 +50,19 @@ class TensorBuffer
 
   // Parameter `owned` indicates if the created TensorBuffer object should take
   // ownership of the provided `tensor_buffer` handle.
-  explicit TensorBuffer(LiteRtTensorBuffer tensor_buffer, bool owned = true)
-      : internal::Handle<LiteRtTensorBuffer, LiteRtDestroyTensorBuffer>(
-            tensor_buffer, owned) {}
-
-  // Creates a duplicate of the current TensorBuffer object. The returned
-  // object is reference counted so the underlying LiteRtTensorBuffer handle is
-  // not released with the destructor until the last reference is removed.
-  Expected<TensorBuffer> Duplicate() const {
-    if (!IsOwned()) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Cannot duplicate a non-owned tensor buffer");
-    }
-    LITERT_RETURN_IF_ERROR(LiteRtDuplicateTensorBuffer(Get()));
-    return TensorBuffer(Get());
-  }
+  explicit TensorBuffer(LiteRtTensorBuffer tensor_buffer, OwnHandle owned)
+      : Handle(tensor_buffer, owned) {}
 
   static Expected<TensorBuffer> CreateManaged(
       LiteRtTensorBufferType buffer_type, const RankedTensorType& tensor_type,
-      size_t buffer_size) {
-    LiteRtTensorBuffer tensor_buffer;
-    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-    LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-        buffer_type, &litert_tensor_type, buffer_size, &tensor_buffer));
-    return TensorBuffer(tensor_buffer);
-  }
+      size_t buffer_size);
 
   // Creates a TensorBuffer object that wraps the provided host memory.
   // The provided host memory is not owned by the TensorBuffer object and must
   // outlive the TensorBuffer object.
   static Expected<TensorBuffer> CreateFromHostMemory(
       const RankedTensorType& tensor_type, void* host_mem_addr,
-      size_t buffer_size) {
-    LiteRtTensorBuffer tensor_buffer;
-    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-
-    LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
-        &litert_tensor_type, host_mem_addr, buffer_size,
-        /*deallocator=*/nullptr, &tensor_buffer));
-    return TensorBuffer(tensor_buffer);
-  }
+      size_t buffer_size);
 
   // Creates a TensorBuffer object that wraps an Android Hardware Buffer. Note
   // that the provided AHardwareBuffer is not owned by the TensorBuffer object
@@ -97,21 +71,20 @@ class TensorBuffer
   // the tensor data starts.
   static Expected<TensorBuffer> CreateFromAhwb(
       const RankedTensorType& tensor_type, AHardwareBuffer* ahwb,
-      size_t ahwb_offset) {
-#if LITERT_HAS_AHWB_SUPPORT
-    LiteRtTensorBuffer tensor_buffer;
-    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+      size_t ahwb_offset);
 
-    LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromAhwb(
-        &litert_tensor_type, ahwb, ahwb_offset,
-        /*deallocator=*/nullptr, &tensor_buffer));
-    return TensorBuffer(tensor_buffer);
-#else
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        "AHardwareBuffer is not supported on this platform");
-#endif
-  }
+  static Expected<TensorBuffer> CreateFromGlBuffer(
+      const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
+      size_t size_bytes, size_t offset);
+
+  static Expected<TensorBuffer> CreateFromGlTexture(
+      const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
+      LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer);
+
+  // Creates a duplicate of the current TensorBuffer object. The returned
+  // object is reference counted so the underlying LiteRtTensorBuffer handle is
+  // not released with the destructor until the last reference is removed.
+  Expected<TensorBuffer> Duplicate() const;
 
   litert::Expected<AHardwareBuffer*> GetAhwb() const {
 #if LITERT_HAS_AHWB_SUPPORT
@@ -160,17 +133,6 @@ class TensorBuffer
     size_t offset;
   };
 
-  static Expected<TensorBuffer> CreateFromGlBuffer(
-      const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
-      size_t size_bytes, size_t offset) {
-    LiteRtTensorBuffer tensor_buffer;
-    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-    LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlBuffer(
-        &litert_tensor_type, target, id, size_bytes, offset,
-        /*deallocator=*/nullptr, &tensor_buffer));
-    return TensorBuffer(tensor_buffer);
-  }
-
   Expected<GlBuffer> GetGlBuffer() const {
     GlBuffer gl_buffer;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferGlBuffer(
@@ -178,6 +140,7 @@ class TensorBuffer
         &gl_buffer.offset));
     return gl_buffer;
   }
+
   struct GlTexture {
     LiteRtGLenum target;
     LiteRtGLuint id;
@@ -185,16 +148,6 @@ class TensorBuffer
     size_t size_bytes;
     LiteRtGLint layer;
   };
-  static Expected<TensorBuffer> CreateFromGlTexture(
-      const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
-      LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer) {
-    LiteRtTensorBuffer tensor_buffer;
-    auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
-    LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlTexture(
-        &litert_tensor_type, target, id, format, size_bytes, layer,
-        /*deallocator=*/nullptr, &tensor_buffer));
-    return TensorBuffer(tensor_buffer);
-  }
 
   Expected<GlTexture> GetGlTexture() const {
     GlTexture gl_texture;
@@ -214,31 +167,12 @@ class TensorBuffer
   // Returns true if the tensor buffer is an OpenCL memory.
   // Note: This function doesn't return Expected<bool> users can easily make
   // mistakes when using it.
-  bool IsOpenClMemory() const {
-    LiteRtTensorBufferType tensor_buffer_type;
-    if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
-        status != kLiteRtStatusOk) {
-      return false;
-    }
-    switch (tensor_buffer_type) {
-      case kLiteRtTensorBufferTypeOpenClBuffer:
-      case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      case kLiteRtTensorBufferTypeOpenClTexture:
-      case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      case kLiteRtTensorBufferTypeOpenClImageBuffer:
-      case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-        return true;
-      default:
-        return false;
-    }
-  }
+  bool IsOpenClMemory() const;
 
   Expected<RankedTensorType> TensorType() const {
     LiteRtRankedTensorType tensor_type;
-    if (auto status = LiteRtGetTensorBufferTensorType(Get(), &tensor_type);
-        status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to get tensor type");
-    }
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferTensorType(Get(), &tensor_type));
     return RankedTensorType(tensor_type);
   }
 
@@ -263,7 +197,7 @@ class TensorBuffer
   Expected<Event> GetEvent() const {
     LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferEvent(Get(), &event));
-    return Event(event, /*owned=*/false);
+    return Event(event, OwnHandle::kNo);
   }
 
   // Set the C++ Event object for the tensor buffer.
@@ -307,10 +241,19 @@ class TensorBuffer
   Expected<void> Write(absl::Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
     LITERT_ASSIGN_OR_RETURN(size_t size, Size());
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
+    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
+      // When fp16 buffer is locked, the provided host memory buffer is 2 times
+      // of the size of the tensor buffer.
+      size *= 2;
+    }
     if (size < data.size() * sizeof(T)) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "TensorBuffer size is smaller than the given data size");
+          absl::StrFormat(
+              "TensorBuffer host memory buffer size is smaller than the "
+              "given data size, %zu vs %zu",
+              size, data.size() * sizeof(T)));
     }
     std::memcpy(host_mem_addr, data.data(), data.size() * sizeof(T));
     Unlock();
@@ -326,11 +269,20 @@ class TensorBuffer
   Expected<void> Read(absl::Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
     LITERT_ASSIGN_OR_RETURN(size_t size, Size());
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
+    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
+      // When fp16 tensor buffer is locked, the provided host memory buffer is 2
+      // times of the size of the tensor buffer.
+      size *= 2;
+    }
     size_t total_read_size = data.size() * sizeof(T);
     if (size < total_read_size) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
-          "TensorBuffer size is smaller than the given data size");
+          absl::StrFormat(
+              "TensorBuffer host memory buffer size is smaller than the "
+              "given data size, %zu vs %zu",
+              size, total_read_size));
     }
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     Unlock();
@@ -348,6 +300,12 @@ class TensorBufferScopedLock {
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
       TensorBuffer& tensor_buffer) {
     return Create<T>(tensor_buffer.Get());
+  }
+
+  template <typename T = void>
+  static Expected<std::pair<TensorBufferScopedLock, const T*>> Create(
+      const TensorBuffer& tensor_buffer) {
+    return Create<const T>(tensor_buffer.Get());
   }
 
   template <typename T = void>

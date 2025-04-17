@@ -29,6 +29,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_event.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_platform_support.h"
@@ -41,14 +42,14 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/gl/egl_environment.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/buffer.h"  // from @org_tensorflow
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // from @org_tensorflow
+#include "tflite/delegates/gpu/cl/buffer.h"
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 namespace litert {
@@ -323,7 +324,7 @@ TEST(TensorBuffer, NotOwned) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer(litert_tensor_buffer, /*owned=*/false);
+  TensorBuffer tensor_buffer(litert_tensor_buffer, litert::OwnHandle::kNo);
   ASSERT_EQ(tensor_buffer.Get(), litert_tensor_buffer);
 
   LiteRtDestroyTensorBuffer(litert_tensor_buffer);
@@ -415,7 +416,7 @@ TEST(TensorBuffer, Duplicate) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer(litert_tensor_buffer, /*owned=*/true);
+  TensorBuffer tensor_buffer(litert_tensor_buffer, litert::OwnHandle::kYes);
   ASSERT_EQ(GetReferenceCount(tensor_buffer), 1);
   {
     auto duplicated_tensor_buffer = tensor_buffer.Duplicate();
@@ -453,7 +454,7 @@ TEST(TensorBuffer, ReadWriteBasic) {
                 sizeof(kTensorData), &litert_tensor_buffer),
             kLiteRtStatusOk);
 
-  TensorBuffer tensor_buffer(litert_tensor_buffer, /*owned=*/true);
+  TensorBuffer tensor_buffer(litert_tensor_buffer, litert::OwnHandle::kYes);
   auto write_success = tensor_buffer.Write<float>(absl::MakeSpan(
       kTensorData, sizeof(kTensorData) / sizeof(kTensorData[0])));
   ASSERT_TRUE(write_success);

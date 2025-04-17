@@ -27,6 +27,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
@@ -230,6 +231,8 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 struct LiteRtCompilerPluginT {
   using Flag = std::pair<std::string, std::string>;
   std::vector<Flag> flags;
+  LiteRtEnvironmentOptions env;
+  LiteRtOptions options;
 };
 
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
@@ -252,8 +255,12 @@ LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin) {
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+                                        LiteRtEnvironmentOptions env,
+                                        LiteRtOptions options) {
   *compiler_plugin = new LiteRtCompilerPluginT;
+  (*compiler_plugin)->env = env;
+  (*compiler_plugin)->options = options;
   return kLiteRtStatusOk;
 }
 

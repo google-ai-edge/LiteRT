@@ -68,12 +68,12 @@ function initialize_pip_wheel_environment {
   echo "------ build pip and install -----"
 
   # Clean up distributions.
-  rm -r -f tflite/gen/litert_pip/python3/dist
+  rm -r -f ./dist
 
 }
 
 function install_wheel {
-  local dist_pkg="$(ls ./tflite/gen/litert_pip/python3/dist/${pkg}*.whl)"
+  local dist_pkg="$(ls ./dist/${pkg}*.whl)"
   ${PYTHON_BIN} -m pip install ${dist_pkg?} --ignore-installed
 
   echo

@@ -22,6 +22,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
 namespace {
@@ -69,7 +70,7 @@ TEST(TensorBufferRequirements, NotOwned) {
             kLiteRtStatusOk);
 
   litert::TensorBufferRequirements requirements(litert_requirements,
-                                                /*owned=*/false);
+                                                litert::OwnHandle::kNo);
 
   auto supported_types = requirements.SupportedTypes();
   ASSERT_TRUE(supported_types);

@@ -149,23 +149,22 @@ TEST(CcLayoutTest, WithStrides) {
 }
 
 TEST(CcLayoutTest, Equal) {
-  auto&& dims = {2, 2};
-  Layout layout1(BuildLayout(dims));
-  Layout layout2(BuildLayout({2, 2}));
+  Layout layout1(litert::Dimensions({2, 2}));
+  Layout layout2(litert::Dimensions({2, 2}));
   ASSERT_TRUE(layout1 == layout2);
 }
 
 TEST(CcLayoutTest, NotEqual) {
-  Layout layout1(BuildLayout({2, 2}, nullptr));
-  Layout layout2(BuildLayout({2, 2}, kTensorStrides));
+  Layout layout1(litert::Dimensions({2, 2}));
+  Layout layout2(litert::Dimensions({2, 2}), litert::Strides({6, 3, 1}));
   ASSERT_FALSE(layout1 == layout2);
 }
 
 TEST(CcLayoutTest, NumElements) {
-  Layout layout(BuildLayout({2, 2, 3}));
+  Layout layout(litert::Dimensions({2, 2, 3}));
   auto num_elements = layout.NumElements();
-  ASSERT_TRUE(num_elements.has_value());
-  EXPECT_EQ(num_elements.value(), 12);
+  ASSERT_TRUE(num_elements);
+  EXPECT_EQ(*num_elements, 12);
 }
 
 //===----------------------------------------------------------------------===//

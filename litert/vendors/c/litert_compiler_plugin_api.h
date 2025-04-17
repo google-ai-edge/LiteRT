@@ -18,7 +18,9 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 // Wrapper for dynamically loaded LiteRtCompilerPlugin library. See
@@ -36,7 +38,9 @@ typedef LiteRtStatus (*LiteRtGetCompilerPluginVersionT)(LiteRtApiVersion*);
 
 typedef const char* (*LiteRtGetCompilerPluginSocManufacturerT)();
 
-typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(LiteRtCompilerPlugin*);
+typedef LiteRtStatus (*LiteRtCreateCompilerPluginT)(LiteRtCompilerPlugin*,
+                                                    LiteRtEnvironmentOptions,
+                                                    LiteRtOptions);
 
 typedef void (*LiteRtDestroyCompilerPluginT)(LiteRtCompilerPlugin);
 

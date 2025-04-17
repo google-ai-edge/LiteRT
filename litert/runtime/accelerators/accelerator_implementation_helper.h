@@ -20,9 +20,9 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
-#include "litert/c/litert_accelerator_compilation_options.h"
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/accelerator_model_compilation_data.h"
@@ -59,12 +59,11 @@ Expected<void> SetAcceleratorBoilerplateFunctions(
 // Goes through the options in the linked list and returns the model
 // compilation data if it exists.
 inline static Expected<const litert::internal::ModelCompilationData*>
-GetModelCompilationData(LiteRtAcceleratorCompilationOptions options) {
-  LiteRtApiVersion payload_version;
+GetModelCompilationData(LiteRtOpaqueOptions options) {
   void* payload_data;
-  LITERT_RETURN_IF_ERROR(LiteRtFindAcceleratorCompilationOptionsData(
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
       options, litert::internal::ModelCompilationData::kIdentifier,
-      &payload_version, &payload_data));
+      &payload_data));
   return reinterpret_cast<litert::internal::ModelCompilationData*>(
       payload_data);
 }

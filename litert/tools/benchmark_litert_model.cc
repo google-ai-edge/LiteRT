@@ -22,27 +22,26 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_compilation_options.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "tflite/c/c_api_types.h"  // from @org_tensorflow
-#include "tflite/c/common.h"  // from @org_tensorflow
+#include "tflite/c/c_api_types.h"
+#include "tflite/c/common.h"
 
 namespace litert::benchmark {
 namespace {
-using ::litert::CompilationOptions;
 using ::litert::CompiledModel;
+using ::litert::Options;
 using ::litert::TensorBuffer;
 
-CompilationOptions CreateCompiledModelOptions(const BenchmarkParams& params) {
+Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
-  CompilationOptions compilation_options =
-      *litert::CompilationOptions::Create();
+  Options compilation_options = *litert::Options::Create();
   if (use_npu) {
     if (require_full_delegation) {
       compilation_options.SetHardwareAccelerators(
