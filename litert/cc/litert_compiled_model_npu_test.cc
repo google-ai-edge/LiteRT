@@ -90,7 +90,7 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
@@ -161,7 +161,7 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNone));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
