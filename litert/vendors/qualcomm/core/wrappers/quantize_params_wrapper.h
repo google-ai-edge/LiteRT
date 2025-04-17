@@ -118,6 +118,8 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
+  void SetAxis(const std::int32_t axis);
+
  private:
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
   std::vector<float> scales_;
