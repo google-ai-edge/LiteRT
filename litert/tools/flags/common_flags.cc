@@ -29,12 +29,12 @@ ABSL_FLAG(std::string, soc_model, "ExampleSocModel", "Target SoC model.");
 
 ABSL_FLAG(
     std::vector<std::string>, libs,
-    std::vector<std::string>({"litert/vendors/examples",
-                              "litert/vendors/qualcomm/"
+    std::vector<std::string>({"third_party/odml/litert/litert/vendors/examples",
+                              "third_party/odml/litert/litert/vendors/qualcomm/"
                               "compiler",
-                              "litert/vendors/mediatek/"
+                              "third_party/odml/litert/litert/vendors/mediatek/"
                               "compiler",
-                              "litert/vendors/"
+                              "third_party/odml/litert/litert/vendors/"
                               "google_tensor/compiler"}),
     "List of directories in which to search for suitable "
     "shared libraries.");
