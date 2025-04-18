@@ -70,6 +70,13 @@ litert::Expected<Environment> CreateDefaultEnvironment() {
 }
 
 TEST(DispatchDelegate, CpuBuffer) {
+  // The dispatch delegate must be declared before the TFL interpreter so that
+  // it gets destroyed only after the interpreter and the dispatch delegate
+  // kernels are destroyed. While this order is guaranteed when using
+  // litert::CompiledModel, we must handle it manually when using the TFL
+  // interpreter directly.
+  DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       testing::TflRuntime::Ptr runtime,
       MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
@@ -91,7 +98,7 @@ TEST(DispatchDelegate, CpuBuffer) {
       CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            runtime->Flatbuffer().Buf().Data());
-  auto dispatch_delegate = CreateDispatchDelegatePtr(
+  dispatch_delegate = CreateDispatchDelegatePtr(
       env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)
@@ -139,6 +146,13 @@ TEST(DispatchDelegate, CpuBuffer) {
 }
 
 TEST(DispatchDelegate, HwBuffer) {
+  // The dispatch delegate must be declared before the TFL interpreter so that
+  // it gets destroyed only after the interpreter and the dispatch delegate
+  // kernels are destroyed. While this order is guaranteed when using
+  // litert::CompiledModel, we must handle it manually when using the TFL
+  // interpreter directly.
+  DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
+
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
@@ -162,7 +176,7 @@ TEST(DispatchDelegate, HwBuffer) {
       CreateDispatchDelegateOptionsPtr(env_options);
   LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
                                            runtime->Flatbuffer().Buf().Data());
-  auto dispatch_delegate = CreateDispatchDelegatePtr(
+  dispatch_delegate = CreateDispatchDelegatePtr(
       env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)

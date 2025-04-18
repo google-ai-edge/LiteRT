@@ -38,7 +38,9 @@ void LiteRtDestroyDispatchDelegateOptions(
     LiteRtDispatchDelegateOptions* options);
 
 // Create a delegate that uses the Dispatch API for execution. Takes ownership
-// of the passed `options`. Must outlive the TFL interpreter.
+// of the passed `options`.
+//
+// NOTE: The returned delegate instance must outlive the TFL interpreter.
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
     LiteRtEnvironmentOptions environment_options,
     LiteRtDispatchDelegateOptions* options);
