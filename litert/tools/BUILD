@@ -28,11 +28,6 @@ cc_library(
         ":dump",
         ":outstream",
         ":tool_display",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -46,6 +41,11 @@ cc_library(
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -64,9 +64,6 @@ cc_test(
     ],
     deps = [
         ":apply_plugin",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
@@ -77,6 +74,9 @@ cc_test(
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -111,10 +111,6 @@ litert_cc_bin_with_qnn(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_options",
         "//litert/compiler/plugin:compiler_flags",
         "//litert/core:build_stamp",
@@ -123,6 +119,10 @@ litert_cc_bin_with_qnn(
         "//litert/tools/flags:flag_types",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -144,9 +144,6 @@ cc_binary(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings:str_format",
         "//litert/cc:litert_options",
         "//litert/compiler/plugin:compiler_flags",
         "//litert/tools/flags:apply_plugin_flags",
@@ -154,6 +151,9 @@ cc_binary(
         "//litert/tools/flags:flag_types",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -174,9 +174,9 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":tool_display",
-        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -188,12 +188,12 @@ cc_library(
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_stable_abi_users"],
     deps = [
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -203,10 +203,10 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":dump",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/core/model",
         "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -214,8 +214,8 @@ cc_library(
     name = "outstream",
     hdrs = ["outstream.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_logging",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -224,8 +224,6 @@ cc_library(
     srcs = ["benchmark_litert_model.cc"],
     hdrs = ["benchmark_litert_model.h"],
     deps = [
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_compiled_model",
@@ -240,6 +238,8 @@ cc_library(
         "//tflite/tools:utils",
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -338,11 +338,6 @@ litert_device_test(
     ],
     deps = [
         ":benchmark_litert_model",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -350,5 +345,10 @@ litert_device_test(
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/test:common",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )

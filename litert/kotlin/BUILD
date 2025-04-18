@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load(
     "//tflite:build_def.bzl",
     "tflite_jni_binary",
@@ -19,7 +20,6 @@ load(
     "tflite_linkopts_no_undefined",
 )
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
-load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -32,10 +32,10 @@ cc_library(
     name = "litert_jni_common",
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/c:litert_runtime_c_api_shared_lib",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": ["//third_party/java/jdk:jni"],
@@ -48,10 +48,10 @@ cc_library(
     hdrs = ["src/main/jni/litert_environment_jni.h"],
     deps = [
         ":litert_jni_common",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": ["//third_party/java/jdk:jni"],
@@ -78,13 +78,13 @@ cc_library(
     hdrs = ["src/main/jni/litert_compiled_model_jni.h"],
     deps = [
         ":litert_jni_common",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": ["//third_party/java/jdk:jni"],
@@ -97,10 +97,10 @@ cc_library(
     hdrs = ["src/main/jni/litert_tensor_buffer_jni.h"],
     deps = [
         ":litert_jni_common",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": ["//third_party/java/jdk:jni"],

@@ -40,13 +40,13 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -77,13 +77,13 @@ cc_test(
     }),
     deps = [
         ":adapter",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
         "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )

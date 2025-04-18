@@ -335,7 +335,7 @@ def copy_file(name, src, target, visibility = None):
 
 def gtest_main_no_heapcheck_deps():
     # copybara:uncomment_begin(google-only)
-    # return ["@com_google_googletest//:gtest_main"]
+    # return ["@com_google_googletest//:gtest_main_no_heapcheck"]
     # copybara:uncomment_end
     # copybara:comment_begin(oss-only)
     return ["@com_google_googletest//:gtest_main"]
