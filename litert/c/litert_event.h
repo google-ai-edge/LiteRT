@@ -45,10 +45,16 @@ LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd);
 LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event);
 
 // Pass -1 for timeout_in_ms for indefinite wait.
-LiteRtStatus LiteRtEventWait(LiteRtEvent event, int64_t timeout_in_ms);
+LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms);
 
 // Signal the event to notify the waiters.
-LiteRtStatus LiteRtEventSignal(LiteRtEvent event);
+LiteRtStatus LiteRtSignalEvent(LiteRtEvent event);
+
+// Return true if the event is signaled.
+LiteRtStatus LiteRtIsEventSignaled(LiteRtEvent event, bool* is_signaled);
+
+// Returns a dup of the event's sync fence fd.
+LiteRtStatus LiteRtDupFdEvent(LiteRtEvent event, int* dup_fd);
 
 void LiteRtDestroyEvent(LiteRtEvent event);
 

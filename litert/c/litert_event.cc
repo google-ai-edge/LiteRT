@@ -88,13 +88,31 @@ LiteRtStatus LiteRtCreateManagedEvent(LiteRtEventType type,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtEventWait(LiteRtEvent event, int64_t timeout_in_ms) {
+LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms) {
   LITERT_RETURN_IF_ERROR(event->Wait(timeout_in_ms));
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtEventSignal(LiteRtEvent event) {
+LiteRtStatus LiteRtSignalEvent(LiteRtEvent event) {
   LITERT_RETURN_IF_ERROR(event->Signal());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtIsEventSignaled(LiteRtEvent event, bool* is_signaled) {
+  auto is_signaled_res = event->IsSignaled();
+  if (!is_signaled_res) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  *is_signaled = *is_signaled_res;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDupFdEvent(LiteRtEvent event, int* dup_fd) {
+  auto dup_fd_res = event->DupFd();
+  if (!dup_fd_res) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  *dup_fd = *dup_fd_res;
   return kLiteRtStatusOk;
 }
 

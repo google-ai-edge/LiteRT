@@ -32,5 +32,17 @@ TEST(Event, NoEvent) {
   EXPECT_THAT(fd, Eq(kFakeSyncFenceFd));
 }
 
+TEST(Event, DupFdOnNegativeFd) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Event event,
+                              Event::CreateFromSyncFenceFd(-1, true));
+  EXPECT_FALSE(event.DupFd());
+}
+
+TEST(Event, IsSignaledOnNegativeFd) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Event event,
+                              Event::CreateFromSyncFenceFd(-1, true));
+  EXPECT_FALSE(event.IsSignaled());
+}
+
 }  // namespace
 }  // namespace litert

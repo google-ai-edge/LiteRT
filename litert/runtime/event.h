@@ -47,6 +47,8 @@ struct LiteRtEventT {
 #endif
   }
   litert::Expected<void> Signal();
+  litert::Expected<bool> IsSignaled() const;
+  litert::Expected<int> DupFd() const;
   static litert::Expected<LiteRtEventT*> CreateManaged(LiteRtEventType type);
 };
 

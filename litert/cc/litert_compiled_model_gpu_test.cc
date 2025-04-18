@@ -184,7 +184,7 @@ TEST(CompiledModelGpuTest, Async) {
                           async_execution_mode);
 
   // Signal the input event to resume the async execution.
-  LiteRtEventSignal(litert_input_event);
+  LiteRtSignalEvent(litert_input_event);
 
   // Check model output.
   auto output_names = signatures[0].OutputNames();

@@ -76,15 +76,31 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
 
   // Pass -1 for timeout_in_ms for indefinite wait.
   Expected<void> Wait(int64_t timeout_in_ms = -1) {
-    LITERT_RETURN_IF_ERROR(LiteRtEventWait(Get(), timeout_in_ms));
+    LITERT_RETURN_IF_ERROR(LiteRtWaitEvent(Get(), timeout_in_ms));
     return {};
   }
 
-  // Singal the event.
+  // Signals the event.
   // Note: This is only supported for OpenCL events.
   Expected<void> Signal() {
-    LITERT_RETURN_IF_ERROR(LiteRtEventSignal(Get()));
+    LITERT_RETURN_IF_ERROR(LiteRtSignalEvent(Get()));
     return {};
+  }
+
+  // Returns true if the event is signaled.
+  // Note: This is only supported for sync fence events.
+  Expected<bool> IsSignaled() {
+    bool is_signaled;
+    LITERT_RETURN_IF_ERROR(LiteRtIsEventSignaled(Get(), &is_signaled));
+    return is_signaled;
+  }
+
+  // Returns a dup of the event's sync fence fd.
+  // Note: This is only supported for sync fence events.
+  Expected<int> DupFd() {
+    int dup_fd;
+    LITERT_RETURN_IF_ERROR(LiteRtDupFdEvent(Get(), &dup_fd));
+    return dup_fd;
   }
 
   // Returns the underlying event type.

@@ -138,3 +138,52 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEventType type) {
   return Error(kLiteRtStatusErrorInvalidArgument,
                absl::StrFormat("CreateManaged doesn't support type %d", type));
 }
+
+Expected<bool> LiteRtEventT::IsSignaled() const {
+  if (type != LiteRtEventTypeSyncFenceFd) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "IsSignaled is not supported for this event type");
+  }
+#if LITERT_HAS_SYNC_FENCE_SUPPORT
+  LITERT_RETURN_IF_ERROR(fd >= 0) << "Invalid fd";
+
+  struct pollfd fds = {
+      .fd = fd,
+      .events = POLLIN,
+  };
+
+  int ret;
+  do {
+    ret = ::poll(&fds, 1, /*timeout_in_ms=*/0);
+    if (ret == 1) {
+      LITERT_RETURN_IF_ERROR((fds.revents & POLLERR) == 0) << "POLLERR error";
+      LITERT_RETURN_IF_ERROR((fds.revents & POLLNVAL) == 0) << "POLLNVAL error";
+      return true;
+    } else if (ret == 0) {
+      return false;
+    }
+  } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+
+  return Error(kLiteRtStatusErrorRuntimeFailure,
+               absl::StrFormat("Failed to check if fd %d is signaled", fd));
+#else
+  return Error(kLiteRtStatusErrorUnsupported,
+               "LiteRT does not have sync fence support enabled.");
+#endif
+}
+
+Expected<int> LiteRtEventT::DupFd() const {
+  if (type != LiteRtEventTypeSyncFenceFd) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "DupFd is not supported for this event type");
+  }
+#if LITERT_HAS_SYNC_FENCE_SUPPORT
+  int dup_fd = dup(fd);
+  LITERT_RETURN_IF_ERROR(dup_fd >= 0) << "Failed to dup fd " << fd;
+  return dup_fd;
+#else
+  return Error(kLiteRtStatusErrorUnsupported,
+               "LiteRT does not have sync fence support enabled.");
+
+#endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
+}
