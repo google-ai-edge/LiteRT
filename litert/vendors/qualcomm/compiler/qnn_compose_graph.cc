@@ -395,9 +395,9 @@ LiteRtStatus ConvertOp(
       bool keep_num_dims{};
       LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedKeepNumDimsOption(
           litert_op.Get(), &keep_num_dims));
-      // TODO(jiunkaiy): Use compile interface to get useHtpPreferencs.
+      // TODO(jiunkaiy): Use compile interface to get use_htp_preferences.
       constexpr LiteRtQnnOptions qnn_options = LITERT_QNN_OPTIONS_INIT;
-      if (qnn_options.useHtpPreferencs) {
+      if (qnn_options.use_htp_preferences) {
         op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
             tensor_pool, input_tensors, output_tensors, keep_num_dims);
       }
@@ -817,9 +817,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   // Insert all tensors into Qnn graph and update the id of Qnn_Tensor_t inside.
   tensor_pool.ForEach(
       [&qnn, &graph_mapper](::qnn::TensorWrapper& tensor_wrapper) {
-        // TODO(chunhsue): Use compile interface to get useQInt16AsQUint16.
-        constexpr bool useQInt16AsQUint16 = true;
-        if constexpr (useQInt16AsQUint16) {
+        // TODO(chunhsue): Use compile interface to get use_qint16_as_quint16.
+        constexpr bool use_qint16_as_quint16 = true;
+        if constexpr (use_qint16_as_quint16) {
           tensor_wrapper.ConvertQint16ToQuint16();
         }
         qnn.Api()->tensorCreateGraphTensor(graph_mapper.QnnGraph(),
