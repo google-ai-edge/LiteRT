@@ -19,3 +19,19 @@ cc_library(
         # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
     ],
 )
+
+cc_library(
+    name = "htp_perf_control",
+    srcs = ["htp_perf_control.cc"],
+    hdrs = ["htp_perf_control.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        "@com_google_absl//absl/base:core_headers",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+    ],
+)

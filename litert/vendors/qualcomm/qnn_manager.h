@@ -36,6 +36,8 @@
 #include "litert/cc/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
+#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "third_party/qairt/latest/include/QNN/QnnBackend.h"
 #include "third_party/qairt/latest/include/QNN/QnnCommon.h"
@@ -92,7 +94,7 @@ class QnnManager {
       absl::Span<const QnnBackend_Config_t*> configs,
       std::optional<std::string> shared_library_dir = std::nullopt,
       std::optional<::qnn::SocInfo> soc_info = std::nullopt,
-      QnnLog_Level_t log_level = QNN_LOG_LEVEL_INFO);
+      const LiteRtQnnOptions& options = LITERT_QNN_OPTIONS_INIT);
 
   static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
@@ -144,7 +146,7 @@ class QnnManager {
   LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
                     std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
-                    QnnLog_Level_t log_level);
+                    const LiteRtQnnOptions& options);
 
   //
   // Manage libQnn*.so Loading
@@ -206,6 +208,9 @@ class QnnManager {
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
   std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
   std::vector<QnnDevice_Config_t> device_configs_;
+  // For dispatch options
+  std::unique_ptr<PerfControl> perf_control_{nullptr};
+  const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because

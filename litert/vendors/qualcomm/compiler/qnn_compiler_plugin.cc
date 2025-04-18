@@ -32,14 +32,17 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -75,7 +78,6 @@ std::optional<::qnn::SocInfo> FindSocModel(absl::string_view soc_model_name) {
   }
   return soc_model;
 }
-
 
 }  // namespace
 
@@ -269,10 +271,13 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   ::litert::Subgraph graph(subgraph);
 
   auto backend_configs = QnnManager::DefaultBackendConfigs();
-  auto qnn_manager =
-      QnnManager::Create(backend_configs, std::nullopt,
-                         soc_model ? FindSocModel(soc_model) : std::nullopt,
-                         compiler_plugin->LogLevel());
+  // TODO(jiunkaiy): Convert options to LiteRtQnnOptions.
+  LiteRtQnnOptions options = LITERT_QNN_OPTIONS_INIT;
+  options.log_level =
+      static_cast<LiteRtQnnLogLevel>(compiler_plugin->LogLevel());
+  auto qnn_manager = QnnManager::Create(
+      backend_configs, std::nullopt,
+      soc_model ? FindSocModel(soc_model) : std::nullopt, options);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
     return qnn_manager.Error().Status();
@@ -302,9 +307,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
         op, tensor_pool, input_tensors, output_tensors, op_wrappers));
     tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
-      // TODO(chunhsue): Use compile interface to get useQInt16AsQUint16.
-      constexpr bool useQInt16AsQUint16 = true;
-      if constexpr (useQInt16AsQUint16) {
+      // TODO(chunhsue): Use compile interface to get use_qint16_as_quint16.
+      constexpr bool use_qint16_as_quint16 = true;
+      if constexpr (use_qint16_as_quint16) {
         tensor_wrapper.ConvertQint16ToQuint16();
       }
     });
@@ -356,9 +361,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
   auto backend_configs = QnnManager::DefaultBackendConfigs();
+  // TODO(jiunkaiy): Convert options to LiteRtQnnOptions.
+  LiteRtQnnOptions options = LITERT_QNN_OPTIONS_INIT;
+  options.log_level =
+      static_cast<LiteRtQnnLogLevel>(compiler_plugin->LogLevel());
   auto qnn_manager =
       QnnManager::Create(backend_configs, /*shared_library_dir=*/std::nullopt,
-                         opt_soc_model, compiler_plugin->LogLevel());
+                         opt_soc_model, options);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
