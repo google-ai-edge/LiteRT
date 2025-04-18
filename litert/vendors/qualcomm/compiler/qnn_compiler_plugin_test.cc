@@ -45,6 +45,17 @@ using ::testing::Values;
 // TODO: Add support and uncomment these models.
 const auto kSupportedOps =
                   Values(
+                    "simple_add_fused_relu_n1_1_op.tflite",
+                    "simple_sub_fused_relu_N1_1_op.tflite",
+                    "simple_mul_fused_relu.tflite",
+                    "simple_div_fused_tanh.tflite",
+                    "simple_average_pool_2d_fused_relu.tflite",
+                    "simple_max_pool_2d_fused_relu.tflite",
+                    "simple_concatenation_fused_relu6_op.tflite",
+                    "simple_fully_connected_fused_relu6_op.tflite",
+                    "simple_transpose_conv_fused_tanh.tflite",
+                    "simple_depthwise_conv_2d_fused_relu.tflite",
+                    "simple_conv_2d_fused_relu_op.tflite",
                     "simple_transpose_conv_op.tflite",
                     "simple_cumsum.tflite",
                     "simple_floor_div.tflite",
