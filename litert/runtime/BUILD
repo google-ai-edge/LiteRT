@@ -135,7 +135,12 @@ cc_library(
         "//tflite/delegates/gpu/cl:cl_context",
         "//tflite/delegates/gpu/cl:cl_device",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(

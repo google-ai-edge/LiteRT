@@ -42,7 +42,7 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"
+#include "litert/cc/litert_environment.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -503,6 +503,7 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
 
 #if LITERT_HAS_OPENGL_SUPPORT
 TEST(TensorBuffer, CreateFromGlTexture) {
+  // User provides EGL environment.
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
   ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
 
@@ -529,11 +530,14 @@ tflite::gpu::gl::GlBuffer CreateTestGlBuffer(size_t size_bytes) {
 }
 
 TEST(TensorBuffer, CreateFromGlBuffer) {
+  // User provides EGL environment.
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
   ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
 
   // Create GL buffer.
   tflite::gpu::gl::GlBuffer gl_buffer = CreateTestGlBuffer(sizeof(kTensorData));
+  EXPECT_TRUE(gl_buffer.is_valid());
+  EXPECT_EQ(gl_buffer.target(), GL_SHADER_STORAGE_BUFFER);
 
   // Create tensor buffer from existing GL buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -541,13 +545,35 @@ TEST(TensorBuffer, CreateFromGlBuffer) {
       TensorBuffer::CreateFromGlBuffer(
           RankedTensorType(kTestTensorType), gl_buffer.target(), gl_buffer.id(),
           gl_buffer.bytes_size(), gl_buffer.offset()));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer::GlBuffer gl_buffer_from_tensor_buffer,
+      tensor_buffer.GetGlBuffer());
+  EXPECT_THAT(gl_buffer_from_tensor_buffer.target, Eq(gl_buffer.target()));
+  EXPECT_THAT(gl_buffer_from_tensor_buffer.id, Eq(gl_buffer.id()));
+  EXPECT_THAT(gl_buffer_from_tensor_buffer.size_bytes,
+              Eq(gl_buffer.bytes_size()));
+  EXPECT_THAT(gl_buffer_from_tensor_buffer.offset, Eq(gl_buffer.offset()));
+}
+
+TEST(TensorBuffer, CreateManagedGlBuffer) {
+  // EGL environment is provided by LiteRT if one is not provided by the user.
+  // This allows creation of managed GL buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                  RankedTensorType(kTestTensorType),
+                                  sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer::GlBuffer gl_buffer,
+                              tensor_buffer.GetGlBuffer());
+  EXPECT_THAT(gl_buffer.target, Eq(GL_SHADER_STORAGE_BUFFER));
+  EXPECT_THAT(gl_buffer.id, Ne(0));
+  EXPECT_THAT(gl_buffer.size_bytes, Eq(sizeof(kTensorData)));
+  EXPECT_THAT(gl_buffer.offset, Eq(0));
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
 TEST(TensorBuffer, GetGlBufferFromAhwb) {
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
-
   // Create AHWB Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer ahwb_tensor_buffer,
