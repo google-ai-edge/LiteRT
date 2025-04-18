@@ -223,6 +223,7 @@ cc_test(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_environment",
         "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
@@ -235,6 +236,13 @@ cc_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+litert_device_exec(
+    name = "litert_tensor_buffer_device_test",
+    backend_id = "cpu",
+    data = [],
+    target = ":litert_tensor_buffer_test",
 )
 
 cc_library(

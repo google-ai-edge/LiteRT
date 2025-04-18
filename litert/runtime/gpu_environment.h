@@ -24,6 +24,10 @@
 #include "tflite/delegates/gpu/cl/cl_context.h"
 #include "tflite/delegates/gpu/cl/cl_device.h"
 
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "tflite/delegates/gpu/gl/egl_environment.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 namespace litert::internal {
 
 // Inner singleton class that is for storing the MLD global environment.
@@ -36,6 +40,11 @@ class GpuEnvironmentSingleton {
   tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
   tflite::gpu::cl::CLContext* getContext() { return &context_; }
   tflite::gpu::cl::CLCommandQueue* getCommandQueue() { return &command_queue_; }
+#if LITERT_HAS_OPENGL_SUPPORT
+  tflite::gpu::gl::EglEnvironment* getEglEnvironment() {
+    return egl_env_.get();
+  }
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
   static GpuEnvironmentSingleton& GetInstance() {
     if (instance_ == nullptr) {
@@ -63,10 +72,13 @@ class GpuEnvironmentSingleton {
   // available. Otherwise, create the default device, context and command queue.
   explicit GpuEnvironmentSingleton(LiteRtEnvironmentT* environment);
 
+  static GpuEnvironmentSingleton* instance_;
   tflite::gpu::cl::CLDevice device_;
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;
-  static GpuEnvironmentSingleton* instance_;
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 };
 
 }  // namespace litert::internal

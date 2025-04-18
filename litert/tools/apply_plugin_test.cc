@@ -44,7 +44,7 @@ using ::testing::HasSubstr;
 using ::testing::litert::IsError;
 
 static constexpr absl::string_view kPluginSearchPath =
-    "litert/vendors/examples";
+    "third_party/odml/litert/litert/vendors/examples";
 
 static constexpr absl::string_view kSocManufacturer = "ExampleSocManufacturer";
 

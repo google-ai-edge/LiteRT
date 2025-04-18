@@ -112,8 +112,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   uint32_t tensor_rank = tensor_type.layout.rank;
   uint32_t* tensor_dimensions = reinterpret_cast<uint32_t*>(
       const_cast<int32_t*>(tensor_type.layout.dimensions));
-  auto* tensor_strides = tensor_type.layout.strides;
-  if (tensor_strides != nullptr) {
+  if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }

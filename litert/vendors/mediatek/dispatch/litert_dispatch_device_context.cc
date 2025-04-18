@@ -74,8 +74,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   LITERT_RETURN_IF_ERROR(
       LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type));
 
-  auto* tensor_strides = tensor_type.layout.strides;
-  if (tensor_strides != nullptr) {
+  if (tensor_type.layout.has_strides) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Tensor strides are not supported");
   }

@@ -36,6 +36,8 @@
 #include <GLES3/gl31.h>
 #include <GLES3/gl32.h>
 
+#include "litert/runtime/gpu_environment.h"
+#include "tflite/delegates/gpu/gl/egl_environment.h"
 #include "tflite/delegates/gpu/gl/gl_buffer.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
@@ -79,6 +81,11 @@ bool IsAhwbToGlInteropSupported() {
 }
 
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
+  tflite::gpu::gl::EglEnvironment* egl_env =
+      GpuEnvironmentSingleton::GetInstance().getEglEnvironment();
+  LITERT_RETURN_IF_ERROR(egl_env != nullptr,
+                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Failed to get EGL environment"));
   LITERT_RETURN_IF_ERROR(
       IsAhwbToGlInteropSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -219,6 +226,11 @@ size_t GlBuffer::offset() const {
 
 Expected<GlBuffer> GlBuffer::Alloc(size_t size_bytes) {
 #if LITERT_HAS_OPENGL_SUPPORT
+  tflite::gpu::gl::EglEnvironment* egl_env =
+      GpuEnvironmentSingleton::GetInstance().getEglEnvironment();
+  LITERT_RETURN_IF_ERROR(egl_env != nullptr,
+                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Failed to get EGL environment"));
   tflite::gpu::gl::GlBuffer tflite_gl_buffer;
 
   if (!tflite::gpu::gl::CreateReadWriteShaderStorageBuffer<std::byte>(

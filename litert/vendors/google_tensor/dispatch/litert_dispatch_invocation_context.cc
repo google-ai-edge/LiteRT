@@ -186,8 +186,7 @@ namespace {
 
 Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
-  auto* tensor_strides = tensor_type.layout.strides;
-  if (tensor_strides != nullptr) {
+  if (tensor_type.layout.has_strides) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported on GoogleTensor");
   }
