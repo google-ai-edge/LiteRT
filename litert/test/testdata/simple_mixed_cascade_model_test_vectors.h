@@ -21,7 +21,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_layout.h"
 
-constexpr const char* kModelFileName = "simple_cascade_model_2_npu.tflite";
+constexpr const char* kModelFileName = "simple_mixed_cascade_model_npu.tflite";
 constexpr const char* kQualcommNpuBytecodeFileName =
     "simple_model_qualcomm.bin";
 constexpr const char* kGoogleTensorNpuBytecodeFileName =
