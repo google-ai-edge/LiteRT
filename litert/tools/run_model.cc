@@ -165,7 +165,7 @@ Expected<void> RunModel() {
 
   ABSL_LOG(INFO) << "Create CompiledModel";
   auto accelerator = absl::GetFlag(FLAGS_use_gpu) ? kLiteRtHwAcceleratorGpu
-                                                  : kLiteRtHwAcceleratorNone;
+                                                  : kLiteRtHwAcceleratorCpu;
   if (accelerator == kLiteRtHwAcceleratorGpu) {
     ABSL_LOG(INFO) << "Using GPU Accelerator";
   }
