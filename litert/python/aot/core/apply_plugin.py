@@ -83,10 +83,10 @@ class ApplyPlugin(components.ApplyPluginT):
     binary = common.get_resource(_BINARY)
     args = [
         str(binary),
-        "apply",
+        "--cmd=apply",
         f"--model={str(input_model.path)}",
         f"--o={str(output_model.path)}",
-        f"--soc_man={soc_manufacturer}",
+        f"--soc_manufacturer={soc_manufacturer}",
         f"--soc_model={soc_model}",
         f"--err={self.default_err}",
     ]

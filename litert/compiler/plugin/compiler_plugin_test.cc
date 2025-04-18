@@ -40,7 +40,7 @@ namespace {
 using testing::UniqueTestDirectory;
 
 constexpr absl::string_view kTestPluginSearchPath =
-    "litert/vendors/examples";
+    "third_party/odml/litert/litert/vendors/examples";
 
 constexpr absl::string_view kTestManufacturer = "ExampleSocManufacturer";
 constexpr absl::string_view kTestModels = "ExampleSocModel";
