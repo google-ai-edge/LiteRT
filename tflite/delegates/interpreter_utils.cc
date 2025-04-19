@@ -16,6 +16,8 @@ limitations under the License.
 #include "tflite/delegates/interpreter_utils.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <vector>
 
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
