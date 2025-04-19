@@ -45,9 +45,9 @@ pytype_strict_contrib_test(
     deps = [
         ":mediatek_backend",
         ":target",
-        "@absl_py//absl/testing:absltest",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:test_common",
         "//litert/python/aot/core:types",
+        "@absl_py//absl/testing:absltest",
     ],
 )

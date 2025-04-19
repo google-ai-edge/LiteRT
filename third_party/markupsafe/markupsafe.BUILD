@@ -11,6 +11,6 @@ licenses(["notice"])
 
 py_library(
     name = "markupsafe",
+    srcs = glob(["*.py"]),
     visibility = ["//visibility:public"],
-    srcs = glob(["*.py"])
 )

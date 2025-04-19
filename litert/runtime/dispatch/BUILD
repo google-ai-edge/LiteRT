@@ -62,14 +62,6 @@ cc_library(
     ],
     deps = [
         ":dispatch",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/container:node_hash_map",
-        "@com_google_absl//absl/container:node_hash_set",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
@@ -99,6 +91,14 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:private_c_api_opaque_without_op_resolver",
         "//tflite/delegates/utils:simple_opaque_delegate",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/container:node_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -224,11 +224,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_dispatch_delegate",
@@ -243,6 +238,11 @@ litert_device_test(
         "//litert/test:simple_model_npu",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -256,11 +256,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_dispatch_delegate",
@@ -274,6 +269,11 @@ litert_device_test(
         "//litert/test:simple_cascade_model_npu",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -287,11 +287,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_dispatch_delegate",
@@ -305,6 +300,11 @@ litert_device_test(
         "//litert/test:simple_mixed_cascade_model_npu",
         "//tflite:framework",
         "//tflite/c:c_api_opaque",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -319,11 +319,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -340,6 +335,11 @@ litert_device_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -353,11 +353,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -374,6 +369,11 @@ litert_device_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -387,11 +387,6 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -408,5 +403,10 @@ litert_device_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )

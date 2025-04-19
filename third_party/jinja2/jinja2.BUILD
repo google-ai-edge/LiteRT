@@ -11,7 +11,7 @@ licenses(["notice"])
 
 py_library(
     name = "jinja2",
-    visibility = ["//visibility:public"],
     srcs = glob(["jinja2/*.py"]),
-    deps = ["@markupsafe//:markupsafe"],
+    visibility = ["//visibility:public"],
+    deps = ["@markupsafe"],
 )
