@@ -1,6 +1,6 @@
 package com.google.ai.edge.litert.deployment
 
-import android.app.Activity
+import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litert.Accelerator
 import com.google.ai.edge.litert.ModelProvider
@@ -24,13 +24,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
  * NOTE: For install-time AiPack, use [ModelProvider.staticModel] instead.
  */
 class AiPackModelProvider(
-  private val activity: Activity,
+  private val context: Context,
   private val aiPackName: String,
   private val modelPath: String,
   private val accelerator: Accelerator,
   private vararg val moreAccelerators: Accelerator,
 ) : ModelProvider {
-  private val aiPackManager = AiPackManagerFactory.getInstance(activity)
+  private val aiPackManager = AiPackManagerFactory.getInstance(context)
 
   /** It's always a file, for on-demand AiPack. */
   override fun getType() = ModelProvider.Type.FILE
