@@ -14,7 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/tokenize.h"
 
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

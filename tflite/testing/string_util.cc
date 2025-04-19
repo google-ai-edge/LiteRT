@@ -15,7 +15,10 @@ limitations under the License.
 
 #include "tflite/testing/string_util.h"
 
-#include <memory>
+#include <Python.h>
+
+#include <cstddef>
+#include <cstdlib>
 
 #include "absl/strings/escaping.h"
 #include "tflite/python/interpreter_wrapper/numpy.h"
