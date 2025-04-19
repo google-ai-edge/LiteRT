@@ -1,0 +1,8 @@
+BasedOnStyle: Google
+DerivePointerAlignment: false
+AlignTrailingComments: false
+SortIncludes: true
+IncludeBlocks: Preserve
+# IncludeCategories:
+  # - Regex: '<(?!gmock/|gtest/[A-Za-z0-9-_].+)>'
+  #   Priority: 1
