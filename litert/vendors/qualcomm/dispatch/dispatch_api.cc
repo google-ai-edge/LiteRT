@@ -12,8 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <optional>
+#include <string>
+#include <utility>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -23,9 +27,12 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
+#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
 
 namespace {
 
@@ -59,7 +66,13 @@ LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
                          : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
-  if (auto qnn_manager = QnnManager::Create(configs, shared_library_dir_opt);
+  LiteRtQnnOptions qnn_options = LITERT_QNN_HTP_OPTION_INIT;
+  qnn_options.htp_options.performance_mode = kHtpBurst;
+  if (auto qnn_manager = QnnManager::Create(
+          /*configs=*/configs,
+          /*shared_library_dir=*/shared_library_dir_opt,
+          /*soc_model*/ std::nullopt,
+          /*options=*/qnn_options);
       !qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
