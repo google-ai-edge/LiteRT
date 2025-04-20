@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/async_subgraph.h"
 
+#include <cstdlib>
 #include <memory>
 #include <vector>
 
