@@ -69,13 +69,12 @@ TensorWrapper::TensorWrapper() = default;
 TensorWrapper::TensorWrapper(
     std::uint32_t id, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions,
-    absl::string_view tensor_name)
+    const std::vector<std::uint32_t>& dimentions, absl::string_view tensor_name)
     : dimentions_{dimentions}, quantize_params_{quantize_params} {
   if (tensor_name.empty()) {
     name_ = std::to_string(id);
   } else {
-    name_ = tensor_name;
+    name_ = std::string(tensor_name) + "_id_" + std::to_string(id);
   }
   qnn_tensor_.v2.name = name_.c_str();
   qnn_tensor_.v2.type = tensor_type;
@@ -245,11 +244,8 @@ void TensorWrapper::ConvertQint16ToQuint16() {
       return;
     }
     QNN_LOG_DEBUG("Converting static tensor data from QInt16 to QUint16...");
-    std::vector<std::uint16_t> uint16_data;
-    ConvertDataFromInt16toUInt16((*int16_data), uint16_data);
-    std::memcpy(owned_data_.data(),
-                reinterpret_cast<const char*>(uint16_data.data()),
-                GetTensorBytes());
+    ToggleMsb(const_cast<std::int16_t*>((*int16_data).data()),
+              (*int16_data).size());
     qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }

@@ -1,14 +1,16 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+#include <gtest/gtest.h>
+
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -121,24 +123,22 @@ TEST(MiscTests, Dequantize) {
 }
 
 TEST(MiscTests, ConvertDataFromInt16toUInt16) {
-  constexpr std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
-  std::vector<std::uint16_t> uint16_data;
-  ConvertDataFromInt16toUInt16(int16_data, uint16_data);
-  EXPECT_EQ(uint16_data[0], 32768);
-  EXPECT_EQ(uint16_data[1], 32769);
-  EXPECT_EQ(uint16_data[2], 32770);
-  EXPECT_EQ(uint16_data[3], 32771);
+  std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
+  constexpr std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770,
+                                                        32771};
+  ToggleMsb(int16_data.data(), int16_data.size());
+  EXPECT_EQ(std::memcmp(int16_data.data(), uint16_data.data(),
+                        int16_data.size() * sizeof(std::int16_t)),
+            0);
 }
 
 TEST(MiscTests, ConvertDataFromUInt16toInt16) {
-  constexpr std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770,
-                                                        32771};
-  std::vector<std::int16_t> int16_data;
-  ConvertDataFromUInt16toInt16(uint16_data, int16_data);
-  EXPECT_EQ(int16_data[0], 0);
-  EXPECT_EQ(int16_data[1], 1);
-  EXPECT_EQ(int16_data[2], 2);
-  EXPECT_EQ(int16_data[3], 3);
+  constexpr std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
+  std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770, 32771};
+  ToggleMsb(uint16_data.data(), uint16_data.size());
+  EXPECT_EQ(std::memcmp(int16_data.data(), uint16_data.data(),
+                        int16_data.size() * sizeof(std::int16_t)),
+            0);
 }
 
 }  // namespace qnn
