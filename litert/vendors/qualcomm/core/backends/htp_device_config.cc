@@ -20,6 +20,9 @@ std::vector<QnnDevice_CustomConfig_t> HtpDeviceConfig::CreateDeviceCustomConfig(
 
 std::vector<QnnDevice_PlatformInfo_t*>
 HtpDeviceConfig::CreateDevicePlatformInfo(const SocInfo* soc_info) {
+#ifdef __ANDROID__
+  return {};
+#else
   std::vector<QnnDevice_PlatformInfo_t*> ret;
   QnnDevice_PlatformInfo_t* p_platform_info = nullptr;
   QnnDevice_HardwareDeviceInfo_t* p_hw_device_info = nullptr;
@@ -60,5 +63,6 @@ HtpDeviceConfig::CreateDevicePlatformInfo(const SocInfo* soc_info) {
   ret.emplace_back(p_platform_info);
 
   return ret;
+#endif
 }
 }  // namespace qnn
