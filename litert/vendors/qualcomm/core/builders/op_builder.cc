@@ -41,8 +41,9 @@ std::pair<std::uint32_t, std::uint32_t> ComputePaddingBeforeAfter(
       return result;
   }
 
-  std::uint32_t total_padding =
+  std::int32_t total_padding =
       (output_size - 1) * stride + effective_filter_size - input_size;
+  total_padding = total_padding > 0 ? total_padding : 0;
   result.first = total_padding / 2;
   result.second = result.first + total_padding % 2;
   return result;
