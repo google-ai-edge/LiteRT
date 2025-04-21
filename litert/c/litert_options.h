@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_C_LITERT_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
@@ -55,6 +56,12 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
 // `LiteRtGetNextAcceleratorCompilationOptions`.
 LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options);
+
+// Adds a custom op kernel to the given options.
+LiteRtStatus LiteRtAddCustomOpKernelOption(
+    LiteRtOptions options, const char* custom_op_name, int custom_op_version,
+    const LiteRtCustomOpKernel* custom_op_kernel,
+    void* custom_op_kernel_user_data);
 
 #ifdef __cplusplus
 }

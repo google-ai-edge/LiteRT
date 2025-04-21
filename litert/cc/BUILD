@@ -451,6 +451,7 @@ cc_library(
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
     deps = [
+        ":litert_custom_op_kernel",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
@@ -481,11 +482,13 @@ cc_library(
     name = "litert_options",
     hdrs = ["litert_options.h"],
     deps = [
+        ":litert_custom_op_kernel",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         ":litert_opaque_options",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//tflite:framework",
@@ -760,6 +763,58 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
+    ],
+)
+
+cc_library(
+    name = "litert_custom_op_kernel",
+    srcs = ["litert_custom_op_kernel.cc"],
+    hdrs = ["litert_custom_op_kernel.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_layout",
+        ":litert_tensor_buffer",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_tensor_buffer",
+    ],
+)
+
+cc_test(
+    name = "litert_custom_op_test",
+    srcs = ["litert_custom_op_test.cc"],
+    data = [
+        "//litert/test:testdata/simple_model_custom_op.tflite",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_custom_op_kernel",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_layout",
+        ":litert_macros",
+        ":litert_model",
+        ":litert_options",
+        ":litert_tensor_buffer",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model_custom_op",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 

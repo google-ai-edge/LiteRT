@@ -223,6 +223,7 @@ cc_library(
     deps = [
         ":accelerator",
         ":accelerator_model_compilation_data",
+        ":custom_op_dispatcher",
         ":external_litert_buffer_context",
         ":metrics",
         ":tensor_buffer",
@@ -423,5 +424,32 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/core:version",
         "//litert/test:matchers",
+    ],
+)
+
+cc_library(
+    name = "custom_op_dispatcher",
+    srcs = ["custom_op_dispatcher.cc"],
+    hdrs = ["custom_op_dispatcher.h"],
+    deps = [
+        ":external_litert_buffer_context",
+        ":tfl_utils",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/core:options",
+        "//tflite:builtin_ops",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
     ],
 )

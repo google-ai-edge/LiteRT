@@ -15,10 +15,21 @@
 #ifndef ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
+#include <string>
+#include <vector>
+
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/litert_opaque_options.h"
 
 struct LiteRtOptionsT {
+  struct CustomOpOption {
+    std::string op_name;
+    int op_version;
+    void* user_data;
+    LiteRtCustomOpKernel op_kernel;
+  };
+
   // This should be updated every time a field is added/edited.
   //
   // - Renaming a field: increment patch;
@@ -29,6 +40,7 @@ struct LiteRtOptionsT {
   LiteRtApiVersion version = {.major = 0, .minor = 0, .patch = 1};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   litert::OpaqueOptions options;
+  std::vector<CustomOpOption> custom_op_options;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

@@ -15,6 +15,7 @@
 #include "litert/c/litert_options.h"
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_handle.h"
@@ -79,6 +80,23 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
   *opaque_options = options->options.Get();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddCustomOpKernelOption(
+    LiteRtOptions options, const char* custom_op_name, int custom_op_version,
+    const LiteRtCustomOpKernel* custom_op_kernel,
+    void* custom_op_kernel_user_data) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(custom_op_name);
+  LRT_CHECK_NON_NULL(custom_op_kernel);
+  // TODO(b/330649488): Check if the custom op kernel already exists.
+  options->custom_op_options.push_back({
+      /*.op_name=*/custom_op_name,
+      /*.op_version=*/custom_op_version,
+      /*.user_data=*/custom_op_kernel_user_data,
+      /*.op_kernel=*/*custom_op_kernel,
+  });
   return kLiteRtStatusOk;
 }
 

@@ -86,6 +86,22 @@ cc_library(
 )
 
 cc_library(
+    name = "simple_model_custom_op",
+    testonly = 1,
+    srcs = [],
+    hdrs = [
+        "testdata/simple_model_custom_op_test_vectors.h",
+    ],
+    data = [
+        "testdata/simple_model_custom_op.tflite",
+    ],
+    deps = [
+        "//litert/c:litert_model",
+        "//litert/cc:litert_layout",
+    ],
+)
+
+cc_library(
     name = "simple_model_npu",
     testonly = 1,
     srcs = [],

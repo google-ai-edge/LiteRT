@@ -37,6 +37,46 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_custom_op_kernel",
+    srcs = [],
+    hdrs = ["litert_custom_op_kernel.h"],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        ":litert_tensor_buffer",
+    ],
+)
+
+cc_test(
+    name = "litert_custom_op_test",
+    srcs = [
+        "litert_custom_op_test.cc",
+    ],
+    data = [
+        "//litert/test:testdata/simple_model_custom_op.tflite",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_compiled_model",
+        ":litert_custom_op_kernel",
+        ":litert_environment",
+        ":litert_environment_options",
+        ":litert_layout",
+        ":litert_model",
+        ":litert_options",
+        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_macros",
+        "//litert/test:common",
+        "//litert/test:simple_model_custom_op",
+    ],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
 )
@@ -338,6 +378,7 @@ cc_library(
     ],
     deps = [
         ":litert_common",
+        ":litert_custom_op_kernel",
         ":litert_logging",
         ":litert_opaque_options",
         "//litert/cc:litert_handle",
@@ -568,6 +609,7 @@ cc_shared_library(
 cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
+        ":litert_custom_op_kernel.h",
         ":litert_environment.h",
         ":litert_environment_options.h",
         ":litert_accelerator.h",

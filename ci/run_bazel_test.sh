@@ -89,9 +89,11 @@ EXCLUDED_TARGETS=(
 )
 
 LITERT_EXCLUDED_TARGETS=(
-        "-//litert/c:litert_compiled_model_test"
         "-//litert/c:litert_compiled_model_shared_lib_test"
+        "-//litert/c:litert_compiled_model_test"
+        "-//litert/c:litert_custom_op_test"
         "-//litert/cc:litert_compiled_model_test"
+        "-//litert/cc:litert_custom_op_test"
         # Requires mGPU environment.
         "-//litert/cc:litert_environment_test"
         "-//litert/compiler/plugin:algo_test"

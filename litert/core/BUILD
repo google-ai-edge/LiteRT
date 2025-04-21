@@ -25,6 +25,7 @@ cc_library(
     name = "options",
     hdrs = [
         "options.h",
+        "//litert/c:litert_custom_op_kernel.h",
         "//litert/c:litert_options.h",
     ],
     deps = [

@@ -15,9 +15,13 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
+#include <string>
+
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
@@ -63,6 +67,23 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
     return OpaqueOptions(options, OwnHandle::kNo);
+  }
+
+  Expected<void> AddCustomOpKernel(const std::string& custom_op_name,
+                                   int custom_op_version,
+                                   const LiteRtCustomOpKernel& custom_op_kernel,
+                                   void* custom_op_kernel_user_data = nullptr) {
+    LITERT_RETURN_IF_ERROR(LiteRtAddCustomOpKernelOption(
+        Get(), custom_op_name.c_str(), custom_op_version, &custom_op_kernel,
+        custom_op_kernel_user_data));
+    return {};
+  }
+
+  Expected<void> AddCustomOpKernel(CustomOpKernel& custom_op_kernel) {
+    return AddCustomOpKernel(custom_op_kernel.OpName(),
+                             custom_op_kernel.OpVersion(),
+                             custom_op_kernel.GetLiteRtCustomOpKernel(),
+                             static_cast<void*>(&custom_op_kernel));
   }
 };
 
