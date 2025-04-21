@@ -13,8 +13,6 @@
 // limitations under the License.
 
 #include <array>
-#include <utility>
-#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

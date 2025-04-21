@@ -99,8 +99,6 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/compiler/plugin:algo_test"
         "-//litert/runtime:compiled_model_test"
         "-//litert/runtime:gpu_environment_test"
-        "-//litert/runtime/compiler:jit_compilation_mediatek_test"
-        "-//litert/runtime/compiler:jit_compilation_qualcomm_test"
         "-//litert/tools:apply_plugin_test"
         # TODO: b/407376374 - Mobilenet is larger than copybara size limit.
         "-//litert/tools:benchmark_litert_model_test"

@@ -334,7 +334,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                error_code);
     return kLiteRtStatusErrorFileIO;
   }
-  setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
+
+  // A null soc_model is passed when performing JIT compilation.
+  if (soc_model) {
+    setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
+  }
   setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, 1);
 
   auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
