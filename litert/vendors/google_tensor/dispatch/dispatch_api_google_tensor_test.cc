@@ -224,12 +224,16 @@ TEST(DispatchApi, GoogleTensor) {
     ABSL_LOG(INFO) << "Filling inputs with data";
     void* host_mem_addr;
 
-    ASSERT_EQ(LiteRtLockTensorBuffer(input_0_tensor_buffer, &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_0_tensor_buffer,
+                                     LiteRtLockMode::kLiteRtLockWriteMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(input_0_tensor_buffer), kLiteRtStatusOk);
 
-    ASSERT_EQ(LiteRtLockTensorBuffer(input_1_tensor_buffer, &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_1_tensor_buffer,
+                                     LiteRtLockMode::kLiteRtLockWriteMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(input_1_tensor_buffer), kLiteRtStatusOk);
@@ -249,7 +253,9 @@ TEST(DispatchApi, GoogleTensor) {
   {
     ABSL_LOG(INFO) << "Checking output...";
     void* host_mem_addr;
-    ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffer, &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffer,
+                                     LiteRtLockMode::kLiteRtLockReadMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     auto output = absl::MakeSpan(static_cast<const float*>(host_mem_addr),
                                  kTestOutputSize);

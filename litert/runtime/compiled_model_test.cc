@@ -259,7 +259,8 @@ TEST(CompiledModelTest, Basic) {
   // Check model output.
   {
     void* host_mem_addr;
-    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], kLiteRtLockReadMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     absl::Span<const float> output = absl::MakeSpan(
         static_cast<const float*>(host_mem_addr), kTestOutputSize);
@@ -410,7 +411,8 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   // Check model output.
   {
     void* host_mem_addr;
-    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], kLiteRtLockReadMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     absl::Span<const float> output = absl::MakeSpan(
         static_cast<const float*>(host_mem_addr), kTestOutputSize);
@@ -543,7 +545,8 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   // Check model output.
   {
     void* host_mem_addr;
-    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], kLiteRtLockReadMode,
+                                     &host_mem_addr),
               kLiteRtStatusOk);
     absl::Span<const float> output = absl::MakeSpan(
         static_cast<const float*>(host_mem_addr), kTestOutputSize);

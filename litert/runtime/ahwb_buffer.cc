@@ -17,6 +17,7 @@
 #include <cstddef>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/event.h"
 #if LITERT_HAS_AHWB_SUPPORT
@@ -25,6 +26,30 @@
 
 namespace litert {
 namespace internal {
+namespace {
+#if LITERT_HAS_AHWB_SUPPORT
+Expected<uint64_t> GetAhwbUsageFlags(LiteRtLockMode lock_mode) {
+  switch (lock_mode) {
+    case kLiteRtLockReadMode:
+      // Map read-only mode to CPU read flag.
+      return AHARDWAREBUFFER_USAGE_CPU_READ_RARELY;
+
+    case kLiteRtLockWriteMode:
+      // Map write-only mode to CPU write flag.
+      return AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY;
+
+    case kLiteRtLockReadWriteMode:
+      // Map read-write mode to both CPU read and write flags combined.
+      return AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
+             AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY;
+
+    default:
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Unsupported lock mode");
+  }
+}
+#endif  // LITERT_HAS_AHWB_SUPPORT
+}  // namespace
 
 bool AhwbBuffer::IsSupported() {
 #if LITERT_HAS_AHWB_SUPPORT
@@ -74,17 +99,18 @@ Expected<size_t> AhwbBuffer::GetSize(AHardwareBuffer* ahwb) {
 #endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
-Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
+Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtLockMode mode,
+                                 LiteRtEventT* event) {
 #if LITERT_HAS_AHWB_SUPPORT
   int fence = -1;
   if (event != nullptr) {
     LITERT_ASSIGN_OR_RETURN(fence, event->GetSyncFenceFd());
   }
   void* host_addr;
+  auto usage = GetAhwbUsageFlags(mode);
   LITERT_RETURN_IF_ERROR(
       AHardwareBuffer_lock(ahwb,
-                           AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
-                               AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY,
+                           *usage,
                            fence, /*rect=*/nullptr, &host_addr) == 0,
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to lock AHWB"));
   return host_addr;

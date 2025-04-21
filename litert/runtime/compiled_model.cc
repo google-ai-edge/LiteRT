@@ -522,21 +522,28 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 #endif
     if (buffer_is_cpu_compatible) {
       void* host_mem_addr;
-      if (auto status = LiteRtLockTensorBuffer(buffer, &host_mem_addr);
-          status != kLiteRtStatusOk) {
-        return Unexpected(status, "Failed to lock the tensor buffer");
-      }
-      locked_buffers.push_back(buffer);
-      TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
       if (is_input) {
+        if (auto status = LiteRtLockTensorBuffer(
+                buffer, LiteRtLockMode::kLiteRtLockWriteMode, &host_mem_addr);
+            status != kLiteRtStatusOk) {
+          return Unexpected(status, "Failed to lock the tensor buffer");
+        }
+        TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
         runner->SetCustomAllocationForInputTensor(tensor_name,
                                                   custom_allocation,
                                                   /*flags=*/0);
       } else {
+        if (auto status = LiteRtLockTensorBuffer(
+                buffer, LiteRtLockMode::kLiteRtLockReadMode, &host_mem_addr);
+            status != kLiteRtStatusOk) {
+          return Unexpected(status, "Failed to lock the tensor buffer");
+        }
+        TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
         runner->SetCustomAllocationForOutputTensor(tensor_name,
                                                    custom_allocation,
                                                    /*flags=*/0);
       }
+      locked_buffers.push_back(buffer);
       return {};
     }
   }
@@ -545,20 +552,28 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   // accelerator handle the conversion.
   if (cpu_tensors_.find(tensor) != cpu_tensors_.end()) {
     void* host_mem_addr;
-    if (auto status = LiteRtLockTensorBuffer(buffer, &host_mem_addr);
-        status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to lock the tensor buffer");
-    }
-    locked_buffers.push_back(buffer);
-    TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
     if (is_input) {
+      if (auto status = LiteRtLockTensorBuffer(buffer, kLiteRtLockWriteMode,
+                                               &host_mem_addr);
+          status != kLiteRtStatusOk) {
+        return Unexpected(status, "Failed to lock the tensor buffer");
+      }
+      TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
       runner->SetCustomAllocationForInputTensor(tensor_name, custom_allocation,
                                                 /*flags=*/0);
     } else {
-      runner->SetCustomAllocationForOutputTensor(tensor_name, custom_allocation,
-                                                 /*flags=*/0);
-    }
-    return {};
+        if (auto status = LiteRtLockTensorBuffer(buffer, kLiteRtLockReadMode,
+                                                 &host_mem_addr);
+            status != kLiteRtStatusOk) {
+          return Unexpected(status, "Failed to lock the tensor buffer");
+        }
+        TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
+        runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                   custom_allocation,
+                                                   /*flags=*/0);
+      }
+      locked_buffers.push_back(buffer);
+      return {};
   }
   // TODO: b/382330322 - Add buffer conversion logic instead of returning error.
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -568,7 +583,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 Expected<void> LiteRtCompiledModelT::Run(
     absl::string_view signature_key,
     const std::vector<LiteRtTensorBuffer>& input_buffers,
-    const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async) {
+    const std ::vector<LiteRtTensorBuffer>& output_buffers, bool& async) {
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorNotFound,

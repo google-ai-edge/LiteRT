@@ -443,12 +443,12 @@ LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer) {
 }
 
 LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
-                                    void** host_mem_addr) {
+                                    LiteRtLockMode mode, void** host_mem_addr) {
   if (!tensor_buffer || !host_mem_addr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto mapped_addr = tensor_buffer->Lock();
+  auto mapped_addr = tensor_buffer->Lock(mode);
   if (!mapped_addr) {
     LITERT_LOG(LITERT_ERROR, "%s", mapped_addr.Error().Message().c_str());
     return mapped_addr.Error().Status();

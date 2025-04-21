@@ -223,9 +223,9 @@ class TensorBuffer
     return {};
   }
 
-  Expected<void*> Lock() {
+  Expected<void*> Lock(LiteRtLockMode mode = kLiteRtLockReadWriteMode) {
     void* host_mem_addr;
-    LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(Get(), &host_mem_addr));
+    LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(Get(), mode, &host_mem_addr));
     return host_mem_addr;
   }
 
@@ -312,8 +312,9 @@ class TensorBufferScopedLock {
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
       LiteRtTensorBuffer tensor_buffer) {
     void* host_mem_addr;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr));
+    LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(
+        tensor_buffer, LiteRtLockMode::kLiteRtLockReadWriteMode,
+        &host_mem_addr));
     return std::make_pair(TensorBufferScopedLock(tensor_buffer),
                           static_cast<T*>(host_mem_addr));
   }

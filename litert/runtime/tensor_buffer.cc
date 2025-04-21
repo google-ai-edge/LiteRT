@@ -327,7 +327,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
-      buffer_type, buffer, buffer_size, deallocator);
+      tensor_type, buffer_type, buffer, buffer_size, deallocator);
   return tensor_buffer;
 }
 
@@ -337,8 +337,8 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
   if (buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
       buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-    auto buffer =
-        litert::internal::OpenClMemory::Alloc(buffer_type, buffer_size);
+    auto buffer = litert::internal::OpenClMemory::Alloc(
+        tensor_type, buffer_type, buffer_size);
     if (!buffer) {
       return Unexpected(buffer.Error());
     }
@@ -559,9 +559,9 @@ LiteRtTensorBufferT::GetOpenClMemory() {
     litert::internal::AhwbBuffer ahwb_buffer = {
         .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
 
-    LITERT_ASSIGN_OR_RETURN(
-        litert::internal::OpenClMemory cl_buffer_from_ahwb,
-        litert::internal::OpenClMemory::AllocFromAhwbBuffer(ahwb_buffer));
+    LITERT_ASSIGN_OR_RETURN(litert::internal::OpenClMemory cl_buffer_from_ahwb,
+                            litert::internal::OpenClMemory::AllocFromAhwbBuffer(
+                                tensor_type_, ahwb_buffer));
 
     auto [it, inserted] = memory_backed_buffers_.insert(
         {kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer_from_ahwb)});
@@ -618,7 +618,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
                       BufferTypeToString(buffer_type_)));
 }
 
-Expected<void*> LiteRtTensorBufferT::Lock() {
+Expected<void*> LiteRtTensorBufferT::Lock(LiteRtLockMode mode) {
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types we wait here.
@@ -632,7 +632,7 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
       return *GetHostBuffer();
     case kLiteRtTensorBufferTypeAhwb:
       return litert::internal::AhwbBuffer::Lock(
-          *GetAhwbBuffer(), event_ != nullptr ? event_.get() : nullptr);
+          *GetAhwbBuffer(), mode, event_ != nullptr ? event_.get() : nullptr);
     case kLiteRtTensorBufferTypeIon:
       return GetIonBuffer()->first;
     case kLiteRtTensorBufferTypeDmaBuf:
@@ -647,7 +647,7 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
     case kLiteRtTensorBufferTypeOpenClImageBufferFp16: {
 #if LITERT_HAS_OPENCL_SUPPORT
       auto opencl_memory = *GetOpenClMemory();
-      auto host_memory_ptr = opencl_memory->Lock<float>();
+      auto host_memory_ptr = opencl_memory->Lock<float>(mode);
       if (host_memory_ptr.HasValue()) {
         return Expected<void*>(host_memory_ptr.Value());
       } else {

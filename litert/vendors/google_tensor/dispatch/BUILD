@@ -134,6 +134,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_event",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_any",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",

@@ -436,6 +436,7 @@ cc_test(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
