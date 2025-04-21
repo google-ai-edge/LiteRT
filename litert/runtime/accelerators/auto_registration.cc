@@ -30,7 +30,7 @@
 // Define a function pointer to allow the accelerator registration to be
 // overridden by the LiteRT environment. This is to use the GPU accelerator
 // statically linked.
-extern "C" bool (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
+extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
     LiteRtEnvironmentT& environment) = nullptr;
 
 namespace litert {
@@ -56,7 +56,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_INFO, "Dynamically loaded GPU accelerator registered.");
   } else {
     LITERT_LOG(
-        LITERT_WARNING,
+        LITERT_INFO,
         "GPU accelerator could not be dynamically loaded and registered: %s.",
         gpu_registration.Error().Message().c_str());
     if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
