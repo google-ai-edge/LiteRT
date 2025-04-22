@@ -335,6 +335,23 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_tensor_buffer_registry",
+    srcs = [
+        "litert_tensor_buffer_registry.cc",
+    ],
+    hdrs = [
+        "litert_tensor_buffer_registry.h",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_logging",
+        ":litert_model",
+        ":litert_tensor_buffer_types",
+        "//litert/runtime:tensor_buffer_registry",
+    ],
+)
+
 cc_test(
     name = "litert_tensor_buffer_requirements_test",
     srcs = [
@@ -583,6 +600,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_code",
     ":litert_op_options",
     ":litert_tensor_buffer",
+    ":litert_tensor_buffer_registry",
 ]
 
 # This test verifies that the C API header files can build via C compiler.

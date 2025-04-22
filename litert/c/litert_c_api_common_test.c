@@ -35,5 +35,6 @@
 #include "litert/c/litert_op_options.h"        // NOLINT
 #include "litert/c/litert_tensor_buffer.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
+#include "litert/c/litert_tensor_buffer_registry.h"  // NOLINT
 
 int main(void) { return 0; }

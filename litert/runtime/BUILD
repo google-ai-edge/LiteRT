@@ -143,6 +143,37 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "tensor_buffer_registry",
+    srcs = [
+        "tensor_buffer_registry.cc",
+    ],
+    hdrs = [
+        "tensor_buffer_registry.h",
+    ],
+    visibility = [
+        "//litert/c:__subpackages__",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_test(
+    name = "tensor_buffer_registry_test",
+    srcs = ["tensor_buffer_registry_test.cc"],
+    deps = [
+        ":tensor_buffer_registry",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
 cc_test(
     name = "gpu_environment_test",
     srcs = ["gpu_environment_test.cc"],
