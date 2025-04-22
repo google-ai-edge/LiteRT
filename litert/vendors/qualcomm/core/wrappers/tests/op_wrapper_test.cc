@@ -42,7 +42,8 @@ void EXPECT_TENSOR_EQ(Qnn_Tensor_t actual, Qnn_Tensor_t expected) {
 }
 
 TEST(OpWrapperTest, SanityTest) {
-  OpWrapper op_wrapper{"name", "OP_TYPE"};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  EXPECT_EQ(op_wrapper.IsOpCode(QnnOpCode::kUnknown), true);
   const Qnn_OpConfig_t& op_config = op_wrapper.GetOpConfig();
   EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
 
@@ -59,8 +60,9 @@ TEST(OpWrapperTest, SanityTest) {
 }
 
 TEST(OpWrapperTest, MoveCtorSanityTest) {
-  OpWrapper op_wrapper{"name", "OP_TYPE"};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   OpWrapper moved{std::move(op_wrapper)};
+  EXPECT_EQ(moved.IsOpCode(QnnOpCode::kUnknown), true);
   const Qnn_OpConfig_t& op_config = moved.GetOpConfig();
   EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
 
@@ -96,7 +98,7 @@ TEST(OpWrapperTest, OpConfigTest) {
   tensor_wrapper.CloneTo(golden_qnn_tensor);
 
   std::uint8_t value = 255;
-  OpWrapper op_wrapper{"name", "OP_TYPE"};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   op_wrapper.AddInputTensor(tensor_wrapper);
   op_wrapper.AddOutputTensor(tensor_wrapper);
   op_wrapper.AddScalarParam("uint8_param", value, false);
@@ -138,12 +140,13 @@ TEST(OpWrapperTest, MoveConstructorTest) {
   Qnn_Tensor_t golden_qnn_tensor;
   tensor_wrapper.CloneTo(golden_qnn_tensor);
   std::uint8_t value = 255;
-  OpWrapper op_wrapper{"name", "OP_TYPE"};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
   op_wrapper.AddInputTensor(tensor_wrapper);
   op_wrapper.AddOutputTensor(tensor_wrapper);
   op_wrapper.AddScalarParam("uint8_param", value, false);
   op_wrapper.AddTensorParam("tensor_param", tensor_wrapper);
   OpWrapper op_wrapper_move(std::move(op_wrapper));
+  EXPECT_EQ(op_wrapper_move.IsOpCode(QnnOpCode::kUnknown), true);
   Qnn_OpConfig_t op_config = op_wrapper_move.GetOpConfig();
   EXPECT_EQ(op_config.version, QNN_OPCONFIG_VERSION_1);
   EXPECT_STREQ(op_config.v1.typeName, "OP_TYPE");
@@ -162,6 +165,34 @@ TEST(OpWrapperTest, MoveConstructorTest) {
   EXPECT_EQ(op_config_v1.params[1].paramType, QNN_PARAMTYPE_TENSOR);
   EXPECT_EQ(op_config_v1.params[1].name, "tensor_param");
   EXPECT_TENSOR_EQ(op_config_v1.params[1].tensorParam, golden_qnn_tensor);
+}
+
+TEST(OpWrapperTest, GetInputOutputTensorTest) {
+  TensorWrapper tensor_wrapper_input{};
+  TensorWrapper tensor_wrapper_output{};
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper.AddInputTensor(tensor_wrapper_input);
+  op_wrapper.AddOutputTensor(tensor_wrapper_output);
+  EXPECT_EQ(op_wrapper.GetInputTensor(0), tensor_wrapper_input);
+  EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
+}
+
+TEST(OpWrapperTest, StealOutputsTest) {
+  TensorWrapper input_1{};
+  TensorWrapper output_1{};
+  OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper_1.AddInputTensor(input_1);
+  op_wrapper_1.AddOutputTensor(output_1);
+
+  TensorWrapper input_2{};
+  TensorWrapper output_2{};
+  OpWrapper op_wrapper_2{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  op_wrapper_2.AddInputTensor(input_2);
+  op_wrapper_2.AddOutputTensor(output_2);
+
+  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
+  op_wrapper_1.StealOutputs(op_wrapper_2);
+  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_2);
 }
 
 }  // namespace

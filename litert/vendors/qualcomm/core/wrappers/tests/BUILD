@@ -14,6 +14,7 @@ cc_test(
         "op_wrapper_test.cc",
     ],
     deps = [
+        "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",

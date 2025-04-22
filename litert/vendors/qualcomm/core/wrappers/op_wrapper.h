@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnTypes.h"  // from @qairt
@@ -16,9 +17,11 @@ namespace qnn {
 
 class OpWrapper final {
  public:
-  explicit OpWrapper(std::string name, const char* op_type);
+  explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code);
 
-  OpWrapper(const OpWrapper& other) = delete;
+  OpWrapper(const OpWrapper& other);
+
+  OpWrapper& operator=(const OpWrapper& other);
 
   OpWrapper(OpWrapper&& other);
 
@@ -38,6 +41,14 @@ class OpWrapper final {
 
   Qnn_OpConfig_t GetOpConfig();
 
+  bool IsOpCode(QnnOpCode op_code) const;
+
+  const qnn::TensorWrapper& GetInputTensor(size_t i) const;
+
+  const qnn::TensorWrapper& GetOutputTensor(size_t i) const;
+
+  void StealOutputs(const OpWrapper& other);
+
  private:
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
@@ -48,6 +59,7 @@ class OpWrapper final {
   std::vector<Qnn_Tensor_t> qnn_input_tensors_{};
   std::vector<Qnn_Tensor_t> qnn_output_tensors_{};
   std::vector<Qnn_Param_t> qnn_params_{};
+  QnnOpCode op_code_{QnnOpCode::kUnknown};
 };
 
 }  // namespace qnn

@@ -11,6 +11,7 @@ cc_library(
     srcs = ["op_builder.cc"],
     hdrs = ["op_builder.h"],
     deps = [
+        "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",

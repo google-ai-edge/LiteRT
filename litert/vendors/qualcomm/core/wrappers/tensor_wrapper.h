@@ -110,6 +110,8 @@ class TensorWrapper final {
 
   ~TensorWrapper();
 
+  bool operator==(const TensorWrapper& other) const { return this == &other; }
+
   void CloneTo(Qnn_Tensor_t& dst) const;
 
   Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }

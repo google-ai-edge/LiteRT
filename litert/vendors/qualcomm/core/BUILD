@@ -9,6 +9,11 @@ package(
 )
 
 cc_library(
+    name = "op_code",
+    hdrs = ["op_code.h"],
+)
+
+cc_library(
     name = "tensor_pool",
     srcs = ["tensor_pool.cc"],
     hdrs = ["tensor_pool.h"],
