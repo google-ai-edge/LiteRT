@@ -22,6 +22,7 @@ limitations under the License.
 
 #include "Eigen/Core"  // from @eigen_archive
 #include "tflite/builtin_ops.h"
+#include "tflite/c/c_api_types.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/subgraph.h"
@@ -314,6 +315,8 @@ TfLiteStatus EvalWithIndexType(TfLiteContext* context, TfLiteNode* node,
       return EvalWithTypes<IndexType, uint32_t>(context, node);
     case kTfLiteUInt64:
       return EvalWithTypes<IndexType, uint64_t>(context, node);
+    case kTfLiteBool:
+      return EvalWithTypes<IndexType, bool>(context, node);
     default:
       TF_LITE_KERNEL_LOG(
           context, "(Index Type: %s, Data Type: %s) currently not supported.\n",
