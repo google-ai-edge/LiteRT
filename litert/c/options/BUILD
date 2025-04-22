@@ -76,3 +76,33 @@ cc_test(
         "//litert/test:matchers",
     ],
 )
+
+# MEDIATEK ####################################################################################
+
+cc_library(
+    name = "litert_mediatek_options",
+    srcs = ["litert_mediatek_options.cc"],
+    hdrs = ["litert_mediatek_options.h"],
+    deps = [
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "litert_mediatek_options_test",
+    srcs = ["litert_mediatek_options_test.cc"],
+    deps = [
+        ":litert_mediatek_options",
+        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+    ],
+)
