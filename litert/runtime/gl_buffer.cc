@@ -27,6 +27,7 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -247,19 +248,20 @@ Expected<GlBuffer> GlBuffer::Alloc(size_t size_bytes) {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
-template Expected<float*> GlBuffer::Lock<float>();
-template Expected<char*> GlBuffer::Lock<char>();
+template Expected<float*> GlBuffer::Lock<float>(LiteRtLockMode mode);
+template Expected<char*> GlBuffer::Lock<char>(LiteRtLockMode mode);
 template Expected<void> GlBuffer::Unlock<float>();
 template Expected<void> GlBuffer::Unlock<char>();
 
 template <typename T>
-Expected<T*> GlBuffer::Lock() {
+Expected<T*> GlBuffer::Lock(LiteRtLockMode mode) {
 #if LITERT_HAS_OPENGL_SUPPORT
   absl::MutexLock lock(&mutex_);
+  lock_mode_ = mode;
 #if LITERT_HAS_AHWB_SUPPORT
   if (ahwb_ != nullptr) {
     LITERT_ASSIGN_OR_RETURN(void* data,
-                            litert::internal::AhwbBuffer::Lock(ahwb_));
+                            litert::internal::AhwbBuffer::Lock(ahwb_, mode));
     return static_cast<T*>(data);
   }
 #endif  // LITERT_HAS_AHWB_SUPPORT
@@ -271,6 +273,11 @@ Expected<T*> GlBuffer::Lock() {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to allocate aligned memory");
     }
+    // For read-only mode, we don't need to read the data from the GL buffer.
+    if (mode == kLiteRtLockWriteMode) {
+      return Expected<T*>(static_cast<T*>(data_));
+    }
+
     if (auto status = tflite_gl_buffer_.Read(
             absl::MakeSpan(static_cast<T*>(data_), size_bytes_ / sizeof(T)));
         !status.ok()) {
@@ -299,6 +306,10 @@ Expected<void> GlBuffer::Unlock() {
     return Error(
         kLiteRtStatusErrorRuntimeFailure,
         "Cannot unlock a buffer that wasn't locked in the first place");
+  }
+  // For read-only mode, we don't need to write the data to the GL buffer.
+  if (lock_mode_ == kLiteRtLockReadMode) {
+    return Expected<void>();
   }
   if (auto status = tflite_gl_buffer_.Write(absl::MakeSpan(
           static_cast<const T*>(data_), size_bytes_ / sizeof(T)));

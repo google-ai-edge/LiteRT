@@ -22,6 +22,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -73,7 +74,7 @@ class GlBuffer {
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
   template <typename T>
-  Expected<T*> Lock();
+  Expected<T*> Lock(LiteRtLockMode mode = kLiteRtLockReadWriteMode);
 
   template <typename T>
   Expected<void> Unlock();
@@ -98,6 +99,7 @@ class GlBuffer {
   void* data_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_bytes_ = 0;
+  LiteRtLockMode lock_mode_ = kLiteRtLockReadWriteMode;
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_AHWB_SUPPORT
   AHardwareBuffer* ahwb_ = nullptr;

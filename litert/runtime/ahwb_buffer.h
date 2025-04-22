@@ -18,6 +18,7 @@
 #include <cstddef>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/event.h"
 
@@ -44,6 +45,7 @@ struct AhwbBuffer {
   static void Free(AHardwareBuffer* ahwb);
   static Expected<size_t> GetSize(AHardwareBuffer* ahwb);
   static Expected<void*> Lock(AHardwareBuffer* ahwb,
+                              LiteRtLockMode mode = kLiteRtLockReadMode,
                               LiteRtEventT* event = nullptr);
   static Expected<void> Unlock(AHardwareBuffer* ahwb);
 };

@@ -75,12 +75,14 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -125,12 +127,14 @@ TEST(TensorBuffer, Ahwb) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -175,12 +179,14 @@ TEST(TensorBuffer, Ion) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -226,12 +232,14 @@ TEST(TensorBuffer, DmaBuf) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -277,12 +285,14 @@ TEST(TensorBuffer, FastRpc) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -369,12 +379,14 @@ TEST(TensorBuffer, OpenCL) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
@@ -425,12 +437,14 @@ TEST(TensorBuffer, GlBuffer) {
   ASSERT_EQ(offset, 0);
 
   void* host_mem_addr;
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   std::memcpy(host_mem_addr, kTensorData, sizeof(kTensorData));
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
-  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr),
+  ASSERT_EQ(LiteRtLockTensorBuffer(tensor_buffer, kLiteRtLockWriteMode,
+                                   &host_mem_addr),
             kLiteRtStatusOk);
   ASSERT_EQ(std::memcmp(host_mem_addr, kTensorData, sizeof(kTensorData)), 0);
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);

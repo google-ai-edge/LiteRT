@@ -80,13 +80,16 @@ LiteRtStatus Run(void* user_data, size_t num_inputs,
       LiteRtGetNumLayoutElements(&tensor_type.layout, &num_elements));
 
   void* input0_addr;
-  LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(inputs[0], &input0_addr));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtLockTensorBuffer(inputs[0], kLiteRtLockWriteMode, &input0_addr));
 
   void* input1_addr;
-  LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(inputs[1], &input1_addr));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtLockTensorBuffer(inputs[1], kLiteRtLockWriteMode, &input1_addr));
 
   void* output_addr;
-  LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(outputs[0], &output_addr));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtLockTensorBuffer(outputs[0], kLiteRtLockReadMode, &output_addr));
 
   auto* input0 = static_cast<const float*>(input0_addr);
   auto* input1 = static_cast<const float*>(input1_addr);
@@ -210,13 +213,15 @@ TEST(CompiledModelTest, CustomOp) {
     ABSL_LOG(INFO) << "Filling inputs with data";
     void* host_mem_addr;
 
-    ASSERT_EQ(LiteRtLockTensorBuffer(input_tensor_buffers[0], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_tensor_buffers[0],
+                                     kLiteRtLockWriteMode, &host_mem_addr),
               kLiteRtStatusOk);
     std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(input_tensor_buffers[0]),
               kLiteRtStatusOk);
 
-    ASSERT_EQ(LiteRtLockTensorBuffer(input_tensor_buffers[1], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_tensor_buffers[1],
+                                     kLiteRtLockWriteMode, &host_mem_addr),
               kLiteRtStatusOk);
     std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
     ASSERT_EQ(LiteRtUnlockTensorBuffer(input_tensor_buffers[1]),
@@ -232,7 +237,8 @@ TEST(CompiledModelTest, CustomOp) {
   {
     ABSL_LOG(INFO) << "Checking output...";
     void* host_mem_addr;
-    ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffers[0], &host_mem_addr),
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffers[0],
+                                     kLiteRtLockReadMode, &host_mem_addr),
               kLiteRtStatusOk);
     auto output = absl::MakeSpan(static_cast<const float*>(host_mem_addr),
                                  kTestOutputSize);

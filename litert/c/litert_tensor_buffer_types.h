@@ -34,4 +34,10 @@ typedef enum {
   kLiteRtTensorBufferTypeOpenClImageBufferFp16 = 15,
 } LiteRtTensorBufferType;
 
+typedef enum {
+  kLiteRtLockReadMode = 0,
+  kLiteRtLockWriteMode = 1,
+  kLiteRtLockReadWriteMode = 2,
+} LiteRtLockMode;
+
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

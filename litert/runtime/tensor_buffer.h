@@ -147,7 +147,7 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
 
-  litert::Expected<void*> Lock();
+  litert::Expected<void*> Lock(LiteRtLockMode mode = kLiteRtLockReadWriteMode);
   litert::Expected<void> Unlock();
 
   // Used to duplicate the current tensor buffer. Internally it increases

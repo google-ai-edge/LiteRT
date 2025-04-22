@@ -27,6 +27,8 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -41,69 +43,79 @@
 #include "tflite/delegates/gpu/cl/cl_context.h"
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 
-#if defined(__EMSCRIPTEN__) || defined(WIN32) || defined(_WIN32) || \
-    defined(__WIN32__) || defined(__NT__) || defined(_WIN64)
-#define LITERT_NATIVE_FP16_NOT_SUPPORTED
-#endif
+// GPU memory access functions defined in GPU Accelerator.
+extern "C" bool (*LiteRtGpuMemoryUpload)(
+    void* cl_mem, size_t bytes, const void* ptr,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type) = nullptr;
+extern "C" bool (*LiteRtGpuMemoryDownload)(
+    void* cl_mem, size_t bytes, void* ptr,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type) = nullptr;
+
 
 namespace litert {
 namespace internal {
 
-template Expected<float*> OpenClMemory::Lock<float>();
-template Expected<char*> OpenClMemory::Lock<char>();
+template Expected<float*> OpenClMemory::Lock<float>(LiteRtLockMode mode);
+template Expected<char*> OpenClMemory::Lock<char>(LiteRtLockMode mode);
 template Expected<void> OpenClMemory::Unlock<float>();
 template Expected<void> OpenClMemory::Unlock<char>();
 
 template <typename T>
-Expected<T*> OpenClMemory::Lock() {
+Expected<T*> OpenClMemory::Lock(LiteRtLockMode mode) {
   absl::MutexLock lock(&mutex_);
+  lock_mode_ = mode;
   // The buffer has not been locked, so we need to read from the OpenCL
   // buffer.
   if (data_ == nullptr) {
-    tflite::gpu::cl::CLCommandQueue* queue =
-        GpuEnvironmentSingleton::GetInstance().getCommandQueue();
-    if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-#ifdef LITERT_NATIVE_FP16_NOT_SUPPORTED
+    cpu_buffer_size_ =
+        (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+         buffer_type_ == kLiteRtTensorBufferTypeOpenClImageBufferFp16)
+            ? size_ * 2
+            : size_;
+    LITERT_LOG(LITERT_INFO, "cpu_buffer_size_: %zu data: %p", cpu_buffer_size_,
+               data_);
+    // Ensure the data is aligned.
+    if (auto rc = posix_memalign(&data_, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                                 cpu_buffer_size_);
+        rc) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "fp16 is not supported");
-#else   // LITERT_NATIVE_FP16_NOT_SUPPORTED
-      std::vector<_Float16> result;
-      auto status = buffer_.ReadData(queue, &result);
-      if (!status.ok()) {
+                        "Failed to allocate aligned memory");
+    }
+    // For write-only mode, we don't need to download the data from the
+    // OpenCL buffer.
+    if (lock_mode_ == kLiteRtLockWriteMode) {
+      return Expected<T*>(static_cast<T*>(data_));
+    }
+
+    if (LiteRtGpuMemoryDownload) {
+      // Use the GPU Accelerator API to download the data from the OpenCL buffer
+      // to the aligned memory.
+      bool res = LiteRtGpuMemoryDownload(GetMemoryPtr(), cpu_buffer_size_,
+                                         data_, &tensor_type_, buffer_type_);
+      if (!res) {
         return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to read OpenCL buffer");
+                          "Failed to download data from GPU memory");
       }
-      // Ensure the data is aligned.
-      if (auto rc = posix_memalign(&data_, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
-                                   size_ * 2);
-          rc) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to allocate aligned memory");
-      }
-      // TODO b/407551791 - Vectorize the conversion.
-      float* data_fp32 = static_cast<float*>(data_);
-      for (int i = 0; i < result.size(); ++i) {
-        data_fp32[i] = result[i];  // fp16 to fp32
-      }
-#endif  // LITERT_NATIVE_FP16_NOT_SUPPORTED
-    } else {
+    } else if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBuffer) {
+      // When the GPU Accelerator API is not available, we can use the OpenCL
+      // API to download the data from the OpenCL buffer to the aligned memory.
+      tflite::gpu::cl::CLCommandQueue* queue =
+          GpuEnvironmentSingleton::GetInstance().getCommandQueue();
       std::vector<T> result;
       auto status = buffer_.ReadData(queue, &result);
       if (!status.ok()) {
         return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                           "Failed to read OpenCL buffer");
       }
-      // Ensure the data is aligned.
-      if (auto rc = posix_memalign(&data_, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
-                                   size_);
-          rc) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to allocate aligned memory");
-      }
       // Copy the data from the OpenCL buffer to the aligned memory.
       // TODO(piyu): Consider adding support in MLD OpenCL buffer to directly
       // write to the aligned memory.
       std::copy(result.begin(), result.end(), static_cast<T*>(data_));
+    } else {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "LiteRtGpuMemoryDownload is not supported");
     }
   }
   return Expected<T*>(static_cast<T*>(data_));
@@ -112,36 +124,31 @@ Expected<T*> OpenClMemory::Lock() {
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
-  tflite::gpu::cl::CLCommandQueue* queue =
-      GpuEnvironmentSingleton::GetInstance().getCommandQueue();
+  // For read-only mode, we don't need to write the data to the OpenCL buffer.
+  if (lock_mode_ == kLiteRtLockReadMode) {
+    return Expected<void>();
+  }
+
   // The buffer has not been locked, so we don't need to write back.
   if (data_ == nullptr) {
     return Error(
         kLiteRtStatusErrorRuntimeFailure,
         "Cannot unlock a buffer that wasn't locked in the first place");
   }
-  if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-#ifdef LITERT_NATIVE_FP16_NOT_SUPPORTED
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "fp16 is not supported");
-#else   // LITERT_NATIVE_FP16_NOT_SUPPORTED
-    float* data_fp32 = static_cast<float*>(data_);
-    size_t num_elements = size_ / sizeof(_Float16);
-    // TODO b/407551791 - Vectorize the conversion.
-    auto data_fp16 = std::make_unique<_Float16[]>(num_elements);
-    for (int i = 0; i < num_elements; ++i) {
-      data_fp16[i] = static_cast<_Float16>(data_fp32[i]);
-    }
-    auto status = buffer_.WriteData(
-        queue, absl::MakeSpan(reinterpret_cast<_Float16*>(data_fp16.get()),
-                              num_elements));
-    if (status.ok()) {
+
+  if (LiteRtGpuMemoryUpload) {
+    // Use the GPU Accelerator API to upload the data from the OpenCL buffer
+    // to the aligned memory.
+    bool res = LiteRtGpuMemoryUpload(GetMemoryPtr(), cpu_buffer_size_, data_,
+                                     &tensor_type_, buffer_type_);
+    if (res) {
       return Expected<void>();
     }
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      std::string(status.message()));
-#endif  // LITERT_NATIVE_FP16_NOT_SUPPORTED
-  } else {
+  } else if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBuffer) {
+    // When the GPU Accelerator API is not available, we can use the OpenCL //
+    // API to upload the data from the aligned memory to the OpenCL buffer.
+    tflite::gpu::cl::CLCommandQueue* queue =
+        GpuEnvironmentSingleton::GetInstance().getCommandQueue();
     size_t write_size = (size_ + sizeof(T) - 1) / sizeof(T);
     auto status = buffer_.WriteData(
         queue, absl::MakeSpan(static_cast<T*>(data_), write_size));
@@ -160,8 +167,9 @@ bool OpenClMemory::IsSupported() {
   return is_supported;
 }
 
-Expected<OpenClMemory> OpenClMemory::Alloc(LiteRtTensorBufferType buffer_type,
-                                           size_t bytes_size) {
+Expected<OpenClMemory> OpenClMemory::Alloc(
+    const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes_size) {
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
@@ -177,7 +185,7 @@ Expected<OpenClMemory> OpenClMemory::Alloc(LiteRtTensorBufferType buffer_type,
                       "Failed to create OpenCL buffer");
   }
 
-  return Expected<OpenClMemory>(buffer_type, std::move(buffer));
+  return Expected<OpenClMemory>(tensor_type, buffer_type, std::move(buffer));
 }
 
 bool IsAhwbToClInteropSupported() {
@@ -185,7 +193,7 @@ bool IsAhwbToClInteropSupported() {
 }
 
 Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
-    AhwbBuffer& ahwb_buffer) {
+    const LiteRtRankedTensorType& tensor_type, AhwbBuffer& ahwb_buffer) {
   cl_int error = CL_SUCCESS;
   const cl_import_properties_arm properties[] = {
       CL_IMPORT_TYPE_ARM,
@@ -212,8 +220,8 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 
   tflite::gpu::cl::Buffer cl_buffer(buffer, size_bytes);
 
-  return OpenClMemory(kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer),
-                      ahwb_buffer.ahwb);
+  return OpenClMemory(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
+                      std::move(cl_buffer), ahwb_buffer.ahwb);
 }
 
 }  // namespace internal
