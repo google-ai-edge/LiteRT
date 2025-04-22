@@ -21,7 +21,6 @@ namespace {
 constexpr int kSleepMinLatency = 40;
 constexpr int kSleepLowLatency = 100;
 constexpr int kSleepMediumLatency = 1000;
-constexpr int kSleepHighLatency = 2000;
 constexpr int kSleepMaxLatency = 65535;
 constexpr int kDcvsDisable = 0;
 constexpr int kDcvsEnable = 1;
