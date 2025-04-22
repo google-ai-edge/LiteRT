@@ -14,7 +14,6 @@ limitations under the License.
 ==============================================================================*/
 #include <cstdlib>
 
-#include "absl/types/optional.h"
 #include "tflite/tools/evaluation/tasks/task_executor.h"
 #include "tflite/tools/logging.h"
 
