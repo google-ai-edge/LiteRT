@@ -377,6 +377,15 @@ LiteRtStatus LiteRtGetTensorBufferSize(LiteRtTensorBuffer tensor_buffer,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetTensorBufferPackedSize(LiteRtTensorBuffer tensor_buffer,
+                                             size_t* packed_buffer_size) {
+  if (!tensor_buffer || !packed_buffer_size) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *packed_buffer_size = tensor_buffer->packed_buffer_size();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetTensorBufferOffset(LiteRtTensorBuffer tensor_buffer,
                                          size_t* buffer_offset) {
   if (!tensor_buffer || !buffer_offset) {

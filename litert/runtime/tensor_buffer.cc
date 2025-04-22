@@ -29,6 +29,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -77,6 +78,13 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
   Copy(tensor_type_.layout.rank, tensor_type_.layout.dimensions, dimensions_);
   if (tensor_type_.layout.has_strides) {
     Copy(tensor_type_.layout.rank, tensor_type_.layout.strides, strides_);
+  }
+  auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
+  if (!packed_size) {
+    packed_buffer_size_ = 0;
+    LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+  } else {
+    packed_buffer_size_ = *packed_size;
   }
 }
 

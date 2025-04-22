@@ -196,8 +196,15 @@ LiteRtStatus LiteRtGetTensorBufferType(LiteRtTensorBuffer tensor_buffer,
 LiteRtStatus LiteRtGetTensorBufferTensorType(
     LiteRtTensorBuffer tensor_buffer, LiteRtRankedTensorType* tensor_type);
 
+// Returns the size of the underlying H/W tensor buffer. This size can be
+// different to the PackedSize() if there is stride and padding exists.
 LiteRtStatus LiteRtGetTensorBufferSize(LiteRtTensorBuffer tensor_buffer,
                                        size_t* size);
+
+// Returns the size of the tensor buffer in packed bytes. This size is used to
+// read / write data on locked tensor buffer.
+LiteRtStatus LiteRtGetTensorBufferPackedSize(LiteRtTensorBuffer tensor_buffer,
+                                             size_t* size);
 
 LiteRtStatus LiteRtGetTensorBufferOffset(LiteRtTensorBuffer tensor_buffer,
                                          size_t* offset);
