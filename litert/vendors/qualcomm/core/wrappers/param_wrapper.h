@@ -68,6 +68,8 @@ class TensorParamWrapper {
 
   void CloneTo(Qnn_Param_t& dst) const;
 
+  const TensorWrapper& GetTensor() const; 
+
  private:
   const char* name_ = nullptr;
   const TensorWrapper& tensor_;
