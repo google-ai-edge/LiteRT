@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -74,12 +73,12 @@ class QnnManager;
 
 namespace internal {
 
-void Dump(const QnnManager& qnn, std::ostream& out);
+  std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
 
 class QnnManager {
-  friend void internal::Dump(const QnnManager& qnn, std::ostream& out);
+  friend std::string internal::Dump(const QnnManager& qnn);
 
  public:
   using Ptr = std::unique_ptr<QnnManager>;

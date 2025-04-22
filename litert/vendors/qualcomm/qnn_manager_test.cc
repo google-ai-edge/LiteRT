@@ -13,11 +13,9 @@
 
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
-#include <sstream>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/test/common.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
 namespace {
@@ -40,11 +38,10 @@ TEST(QnnManagerTest, Dump) {
   auto qnn = QnnManager::Create(configs);
   ASSERT_TRUE(qnn);
 
-  std::ostringstream dump;
-  Dump(**qnn, dump);
+  auto dump = Dump(**qnn);
 
-  EXPECT_THAT(dump.str(), HasSubstr("< QnnInterface_t >"));
-  EXPECT_THAT(dump.str(), HasSubstr("< QnnSystemInterface_t >"));
+  EXPECT_THAT(dump, HasSubstr("< QnnInterface_t >"));
+  EXPECT_THAT(dump, HasSubstr("< QnnSystemInterface_t >"));
 }
 
 }  // namespace

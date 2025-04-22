@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/vendors/qualcomm/tools/dump.h"
+#include "litert/vendors/qualcomm/tools/dump.h"  // Include the header with the new signature
 
-#include <ostream>
+#include <string>  // Include for std::string
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl  // For concatenating strings efficiently
+#include "absl/strings/str_format.h"  // from @com_google_absl  // Use StrFormat to return strings
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/vendors/qualcomm/qnn_manager.h"
+#include "litert/vendors/qualcomm/qnn_manager.h"  // For QnnManager definition
 #include "third_party/qairt/latest/include/QNN/QnnInterface.h"
 #include "third_party/qairt/latest/include/QNN/System/QnnSystemInterface.h"
 
@@ -27,7 +28,8 @@ namespace {
 
 static constexpr absl::string_view kNullDumpTpl = "%s : nullptr\n";
 
-void Dump(const QnnInterface_t* interface, std::ostream& out) {
+// Changed signature: Returns std::string
+std::string Dump(const QnnInterface_t* interface) {
   static constexpr absl::string_view kQnnInterfaceHeader = "< QnnInterface_t >";
   // NOLINTBEGIN
   static constexpr absl::string_view kQnnInterfaceDumpTpl =
@@ -40,21 +42,23 @@ void Dump(const QnnInterface_t* interface, std::ostream& out) {
   // NOLINTEND
 
   if (interface == nullptr) {
-    out << absl::StreamFormat(kNullDumpTpl, kQnnInterfaceHeader);
-    return;
+    // Return the formatted string directly
+    return absl::StrFormat(kNullDumpTpl, kQnnInterfaceHeader);
   }
 
   const auto core_version = interface->apiVersion.coreApiVersion;
   const auto backend_version = interface->apiVersion.backendApiVersion;
 
-  out << absl::StreamFormat(kQnnInterfaceDumpTpl, kQnnInterfaceHeader,
-                            interface->providerName, interface->backendId,
-                            core_version.major, core_version.minor,
-                            core_version.patch, backend_version.major,
-                            backend_version.minor, backend_version.patch);
+  // Return the formatted string directly
+  return absl::StrFormat(kQnnInterfaceDumpTpl, kQnnInterfaceHeader,
+                         interface->providerName, interface->backendId,
+                         core_version.major, core_version.minor,
+                         core_version.patch, backend_version.major,
+                         backend_version.minor, backend_version.patch);
 }
 
-void Dump(const QnnSystemInterface_t* interface, std::ostream& out) {
+// Changed signature: Returns std::string
+std::string Dump(const QnnSystemInterface_t* interface) {
   static constexpr absl::string_view kQnnSystemInterfaceHeader =
       "< QnnSystemInterface_t >";
   // NOLINTBEGIN
@@ -67,22 +71,25 @@ void Dump(const QnnSystemInterface_t* interface, std::ostream& out) {
   // NOLINTEND
 
   if (interface == nullptr) {
-    out << absl::StreamFormat(kNullDumpTpl, kQnnSystemInterfaceHeader);
-    return;
+    // Return the formatted string directly
+    return absl::StrFormat(kNullDumpTpl, kQnnSystemInterfaceHeader);
   }
 
   const auto system_version = interface->systemApiVersion;
 
-  out << absl::StreamFormat(kQnnSystemInterfaceDumpTpl,
-                            kQnnSystemInterfaceHeader, interface->providerName,
-                            interface->backendId, system_version.major,
-                            system_version.minor, system_version.patch);
+  // Return the formatted string directly
+  return absl::StrFormat(kQnnSystemInterfaceDumpTpl, kQnnSystemInterfaceHeader,
+                         interface->providerName, interface->backendId,
+                         system_version.major, system_version.minor,
+                         system_version.patch);
 }
 
 }  // namespace
 
-void Dump(const QnnManager& qnn, std::ostream& out) {
-  Dump(qnn.interface_, out);
-  Dump(qnn.system_interface_, out);
+// Changed signature: Returns std::string
+std::string Dump(const QnnManager& qnn) {
+  // Call the internal Dump functions, get their strings, and concatenate them.
+  // absl::StrCat is generally preferred over repeated string operator+=
+  return absl::StrCat(Dump(qnn.interface_), Dump(qnn.system_interface_));
 }
 }  // namespace litert::qnn::internal
