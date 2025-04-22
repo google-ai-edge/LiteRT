@@ -62,11 +62,11 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:private_cc_api_stable",
         "//tflite/kernels:builtin_ops",
-        "@local_tsl//tsl/platform",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+        "@local_tsl//tsl/platform",
     ],
 )
 

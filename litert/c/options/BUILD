@@ -24,7 +24,6 @@ cc_library(
     srcs = ["litert_qualcomm_options.cc"],
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_detail",
@@ -32,6 +31,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -40,11 +40,11 @@ cc_test(
     srcs = ["litert_qualcomm_options_test.cc"],
     deps = [
         ":litert_qualcomm_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_opaque_options",
         "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -55,7 +55,6 @@ cc_library(
     srcs = ["litert_google_tensor_options.cc"],
     hdrs = ["litert_google_tensor_options.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_detail",
@@ -63,6 +62,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -71,8 +71,8 @@ cc_test(
     srcs = ["litert_google_tensor_options_test.cc"],
     deps = [
         ":litert_google_tensor_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
