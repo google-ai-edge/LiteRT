@@ -178,7 +178,7 @@ TEST(OpWrapperTest, GetInputOutputTensorTest) {
   EXPECT_EQ(op_wrapper.GetOutputTensor(0), tensor_wrapper_output);
 }
 
-TEST(OpWrapperTest, StealOutputsTest) {
+TEST(OpWrapperTest, SwapOutputsTest) {
   TensorWrapper input_1{};
   TensorWrapper output_1{};
   OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
@@ -192,8 +192,10 @@ TEST(OpWrapperTest, StealOutputsTest) {
   op_wrapper_2.AddOutputTensor(output_2);
 
   EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
-  op_wrapper_1.StealOutputs(op_wrapper_2);
+  op_wrapper_1.SwapOutputs(op_wrapper_2);
   EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_2);
+  op_wrapper_1.SwapOutputs(op_wrapper_2);
+  EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
 }
 
 }  // namespace
