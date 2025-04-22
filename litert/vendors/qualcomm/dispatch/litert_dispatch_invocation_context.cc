@@ -316,8 +316,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
-  qnn::ToggleMsb(static_cast<std::int16_t*>(mem_addr),
-                 bytes / sizeof(std::int16_t));
+  qnn::ToggleMostSignificantBit(static_cast<std::int16_t*>(mem_addr),
+                                bytes / sizeof(std::int16_t));
   if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock the tensor buffer");
@@ -336,8 +336,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
-  qnn::ToggleMsb(static_cast<std::uint16_t*>(mem_addr),
-                 bytes / sizeof(std::uint16_t));
+  qnn::ToggleMostSignificantBit(static_cast<std::uint16_t*>(mem_addr),
+                                bytes / sizeof(std::uint16_t));
   if (auto status = LiteRtUnlockTensorBuffer(*tensor_buffer);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock the tensor buffer");

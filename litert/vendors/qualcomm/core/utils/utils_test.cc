@@ -126,7 +126,7 @@ TEST(MiscTests, ConvertDataFromInt16toUInt16) {
   std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
   constexpr std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770,
                                                         32771};
-  ToggleMsb(int16_data.data(), int16_data.size());
+  ToggleMostSignificantBit(int16_data.data(), int16_data.size());
   EXPECT_EQ(std::memcmp(int16_data.data(), uint16_data.data(),
                         int16_data.size() * sizeof(std::int16_t)),
             0);
@@ -135,7 +135,7 @@ TEST(MiscTests, ConvertDataFromInt16toUInt16) {
 TEST(MiscTests, ConvertDataFromUInt16toInt16) {
   constexpr std::array<std::int16_t, 4> int16_data = {0, 1, 2, 3};
   std::array<std::uint16_t, 4> uint16_data = {32768, 32769, 32770, 32771};
-  ToggleMsb(uint16_data.data(), uint16_data.size());
+  ToggleMostSignificantBit(uint16_data.data(), uint16_data.size());
   EXPECT_EQ(std::memcmp(int16_data.data(), uint16_data.data(),
                         int16_data.size() * sizeof(std::int16_t)),
             0);

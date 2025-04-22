@@ -20,7 +20,7 @@ TensorWrapper& TensorPool::CreateInputTensor(
     const std::vector<std::uint32_t>& dimentions,
     absl::string_view tensor_name) {
   const auto id = tensor_wrappers_.size();
-  // Record tensor_name to skip ToggleMSB for KV caches during dispatch.
+  // Record tensor_name to skip data conversion for KV caches during dispatch.
   auto& back =
       tensor_wrappers_.emplace_back(id, QNN_TENSOR_TYPE_APP_WRITE, data_type,
                                     quant_params, dimentions, tensor_name);
@@ -32,7 +32,7 @@ TensorWrapper& TensorPool::CreateOutpuTensor(
     const std::vector<std::uint32_t>& dimentions,
     absl::string_view tensor_name) {
   const auto id = tensor_wrappers_.size();
-  // Record tensor_name to skip ToggleMSB for KV slices during dispatch.
+  // Record tensor_name to skip data conversion for KV slices during dispatch.
   auto& back =
       tensor_wrappers_.emplace_back(id, QNN_TENSOR_TYPE_APP_READ, data_type,
                                     quant_params, dimentions, tensor_name);

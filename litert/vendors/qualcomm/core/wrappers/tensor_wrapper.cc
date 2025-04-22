@@ -244,8 +244,8 @@ void TensorWrapper::ConvertQint16ToQuint16() {
       return;
     }
     QNN_LOG_DEBUG("Converting static tensor data from QInt16 to QUint16...");
-    ToggleMsb(const_cast<std::int16_t*>((*int16_data).data()),
-              (*int16_data).size());
+    ToggleMostSignificantBit(const_cast<std::int16_t*>((*int16_data).data()),
+                             (*int16_data).size());
     qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }

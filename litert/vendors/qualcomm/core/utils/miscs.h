@@ -39,21 +39,21 @@ using EnableIfInt16OrUint16Ptr = std::enable_if_t<
     std::is_same_v<T, int16_t*> || std::is_same_v<T, uint16_t*>, bool>;
 // Converts data between quantized UINT16 and INT16 formats.
 template <typename T, EnableIfInt16OrUint16Ptr<T> = true>
-void ToggleMsb(T src, size_t tensor_size) {
+void ToggleMostSignificantBit(T src, size_t size) {
   std::uint16_t* data = reinterpret_cast<std::uint16_t*>(src);
 #ifdef __ANDROID__
   const uint16x8_t mask = vdupq_n_u16(0x8000);
   size_t i = 0;
-  for (; i + 8 < tensor_size; i += 8) {
+  for (; i + 8 < size; i += 8) {
     uint16x8_t uin = vld1q_u16(data + i);
     uint16x8_t out = veorq_u16(uin, mask);
     vst1q_u16(data + i, out);
   }
-  for (; i < tensor_size; ++i) {
+  for (; i < size; ++i) {
     data[i] ^= 0x8000;
   }
 #else
-  for (size_t i = 0; i < tensor_size; ++i) {
+  for (size_t i = 0; i < size; ++i) {
     data[i] ^= 0x8000;
   }
 #endif
