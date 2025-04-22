@@ -16,9 +16,9 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <vector>
 
-#include "neuron/api/NeuronAdapter.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
@@ -29,16 +29,22 @@
 #include "litert/vendors/mediatek/compiler/legalizations/concat_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/fully_connected_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/gelu_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mean_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mul_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/compiler/legalizations/reshape_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/resize_bilinear_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/resize_nearest_neighbor_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/rsqrt_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/softmax_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/squared_difference_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/sub_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/transpose_conv_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/transpose_op_legalization.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
+#include "neuron/api/NeuronAdapter.h"
 
 namespace litert::mediatek {
 
@@ -144,6 +150,60 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
       case kLiteRtOpCodeTflGelu:
         status =
             LegalizeGeluOp(neuron_adapter_api, model->get(), operand_map, op);
+        break;
+      case kLiteRtOpCodeTflPad:
+        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
+                                  op, NEURON_PAD);
+        break;
+      case kLiteRtOpCodeTflLogistic:
+        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
+                                  op, NEURON_LOGISTIC);
+        break;
+      case kLiteRtOpCodeTflSum:
+        status = LegalizeOp(neuron_adapter_api, model->get(), operand_map, op,
+                            NEURON_REDUCE_SUM,
+                            std::make_tuple(AddSumKeepDimsOption));
+        break;
+      case kLiteRtOpCodeTflConv2d:
+        status = LegalizeOp(
+            neuron_adapter_api, model->get(), operand_map, op, NEURON_CONV_2D,
+            std::make_tuple(AddConv2dPaddingOption,         // padding
+                            AddConv2dStrideWOption,         // stride_w
+                            AddConv2dStrideHOption,         // stride_h
+                            AddConv2dFuseActivationOption,  // activation
+                            AddConv2dDataOption,            // data format
+                            AddConv2dDilationWOption,       // dilation_w
+                            AddConv2dDilationHOption));     // dilation_h
+        break;
+      case kLiteRtOpCodeTflDepthwiseConv2d:
+        status = LegalizeOp(
+            neuron_adapter_api, model->get(), operand_map, op,
+            NEURON_DEPTHWISE_CONV_2D,
+            std::make_tuple(
+                AddDepthwiseConv2dPaddingOption,  // padding
+                AddDepthwiseConv2dStrideWOption,  // stride_w
+                AddDepthwiseConv2dStrideHOption,  // stride_h
+                AddDepthwiseConv2dDepthMultiplierOption,
+                AddDepthwiseConv2dFuseActivationOption,  // activation
+                AddDepthwiseConv2dDataOption,            // data format
+                AddDepthwiseConv2dDilationWOption,       // dilation_w
+                AddDepthwiseConv2dDilationHOption));     // dilation_h
+        break;
+      case kLiteRtOpCodeTflSquaredDifference:
+        status = LegalizeSquaredDifferenceOp(neuron_adapter_api, model->get(),
+                                             operand_map, op);
+        break;
+      case kLiteRtOpCodeTflResizeBilinear:
+        status = LegalizeResizeBilinearOp(neuron_adapter_api, model->get(),
+                                          operand_map, op);
+        break;
+      case kLiteRtOpCodeTflResizeNearestNeighbor:
+        status = LegalizeResizeNearestNeighborOp(neuron_adapter_api,
+                                                 model->get(), operand_map, op);
+        break;
+      case kLiteRtOpCodeTflTransposeConv:
+        status = LegalizeTransposeConvOp(neuron_adapter_api, model->get(),
+                                         operand_map, op);
         break;
       default:
         return Error(kLiteRtStatusErrorRuntimeFailure, "Unsupported op");

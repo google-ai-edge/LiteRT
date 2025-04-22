@@ -23,11 +23,27 @@
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
+#define MAX_OEM_OP_STRING_LEN 100
+
 namespace litert::mediatek {
+
+// Bit mask for tensor flags.
+enum {
+  NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED = 1U << 2,
+};
+
 using NeuronTensorType = int32_t;
 using NeuronReturnCode = int32_t;
 
-Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t);
+struct OemOperandValue {
+  uint8_t* type;
+  uint8_t typeLen;
+  uint8_t* data;
+  uint32_t dataLen;
+};
+
+Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
+                                               int32_t tensor_flags = 0);
 
 Expected<uint32_t> GetNeuronDataSize(NeuronTensorType type);
 
@@ -37,6 +53,8 @@ NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
                                    NeuronModel* model, NeuronOperationType type,
                                    std::vector<uint32_t> input,
                                    std::vector<uint32_t> output);
+
+size_t PackOemScalarString(const char* str, uint8_t** out_buffer);
 
 }  // namespace litert::mediatek
 

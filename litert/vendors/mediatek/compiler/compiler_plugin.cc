@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"   // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -87,6 +87,15 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSoftmax,
     kLiteRtOpCodeTflMean,
     kLiteRtOpCodeTflGelu,
+    kLiteRtOpCodeTflPad,
+    kLiteRtOpCodeTflLogistic,
+    kLiteRtOpCodeTflSum,
+    kLiteRtOpCodeTflConv2d,
+    kLiteRtOpCodeTflDepthwiseConv2d,
+    kLiteRtOpCodeTflSquaredDifference,
+    kLiteRtOpCodeTflResizeBilinear,
+    kLiteRtOpCodeTflResizeNearestNeighbor,
+    kLiteRtOpCodeTflTransposeConv,
 };
 // clang-format on
 

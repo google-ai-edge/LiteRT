@@ -30,6 +30,62 @@ Expected<void> LegalizeCommonOp(const NeuronAdapterApi& neuron_adapter_api,
                                 const litert::Op& op,
                                 NeuronOperationType mtk_operation_type);
 
+template <typename... AdditionalOperands>
+Expected<void> LegalizeOp(
+    const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
+    OperandMap& operand_map, const litert::Op& op,
+    NeuronOperationType operation_type,
+    std::tuple<AdditionalOperands...> additional_operands) {
+  LITERT_LOG(LITERT_INFO, "Legalize Operation %d", op.Code());
+
+  std::vector<uint32_t> input_indices;
+  for (auto& input : op.Inputs()) {
+    auto id = operand_map.GetOperandIndex(input);
+    if (!id) {
+      return id.Error();
+    }
+    input_indices.push_back(*id);
+  }
+
+  // Add additional operands to input_indices
+  auto add_operand = [&](auto& operand) -> Expected<void> {
+    auto additional_operand = operand(op, operand_map);
+    if (!additional_operand) {
+      return additional_operand.Error();
+    }
+    input_indices.push_back(*additional_operand);
+    return {};
+  };
+
+  auto result = std::apply(
+      [&](auto&... operands) -> Expected<void> {
+        Expected<void> res = {};
+        ((res = add_operand(operands), res) && ...);
+        return res;
+      },
+      additional_operands);
+
+  if (!result) {
+    return result.Error();
+  }
+
+  std::vector<uint32_t> output_indices;
+  for (auto& output : op.Outputs()) {
+    auto id = operand_map.GetOperandIndex(output);
+    if (!id) {
+      return id.Error();
+    }
+    output_indices.push_back(*id);
+  }
+
+  if (ModelAddOperation(neuron_adapter_api, model, operation_type,
+                        input_indices, output_indices) != NEURON_NO_ERROR) {
+    return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to add operation");
+  }
+
+  return {};
+}
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_COMMON_OP_LEGALIZATION_H_

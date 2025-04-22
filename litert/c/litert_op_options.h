@@ -246,6 +246,7 @@ LiteRtStatus LiteRtGetConv2dDilationHOption(LiteRtOp op,
 // - padding : uint32_t
 // - stride_w : int32_t
 // - stride_h : int32_t
+// - depth_multiplier : int32_t
 // - fused_activation_function : uint32_t
 // - dilation_w_factor : int32_t
 // - dilation_h_factor : int32_t
@@ -257,6 +258,8 @@ LiteRtStatus LiteRtGetDepthwiseConv2dStrideWOption(LiteRtOp op,
                                                    int32_t* stride_w);
 LiteRtStatus LiteRtGetDepthwiseConv2dStrideHOption(LiteRtOp op,
                                                    int32_t* stride_h);
+LiteRtStatus LiteRtGetDepthwiseConv2dDepthMultiplierOption(
+    LiteRtOp op, int32_t* depth_multiplier);
 LiteRtStatus LiteRtGetDepthwiseConv2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function);
 LiteRtStatus LiteRtGetDepthwiseConv2dDilationWOption(

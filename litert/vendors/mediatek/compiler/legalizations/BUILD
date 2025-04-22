@@ -41,7 +41,8 @@ cc_library(
 cc_library(
     name = "neuron_utils",
     srcs = ["neuron_utils.cc"],
-    hdrs = ["neuron_utils.h"],
+    hdrs = ["neuron_utils.h",
+            "legalize_helper.h"],
     tags = [
         # Don't build/test in OS until MediaTek SDK is available.
         "nobuilder",
@@ -331,6 +332,86 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "squared_difference_op_legalization",
+    srcs = ["squared_difference_op_legalization.cc"],
+    hdrs = ["squared_difference_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        "operand_map",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "resize_bilinear_op_legalization",
+    srcs = ["resize_bilinear_op_legalization.cc"],
+    hdrs = ["resize_bilinear_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        "operand_map",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "resize_nearest_neighbor_op_legalization",
+    srcs = ["resize_nearest_neighbor_op_legalization.cc"],
+    hdrs = ["resize_nearest_neighbor_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        "operand_map",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "transpose_conv_op_legalization",
+    srcs = ["transpose_conv_op_legalization.cc"],
+    hdrs = ["transpose_conv_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        "operand_map",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",

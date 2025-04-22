@@ -41,8 +41,8 @@ Expected<uint32_t> OperandMap::Register(const NeuronOperandType& operand_type) {
   return AllocateOperandIndex();
 }
 
-Expected<uint32_t> OperandMap::Register(const Tensor& t) {
-  auto operand_type = OperandType::Create(t);
+Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
+  auto operand_type = OperandType::Create(t, tensor_flags);
   if (!operand_type) {
     return operand_type.Error();
   }
