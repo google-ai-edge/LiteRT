@@ -68,3 +68,33 @@ cc_test(
         "//litert/c/options:litert_google_tensor_options",
     ],
 )
+
+# MEDIATEK ####################################################################################
+
+cc_library(
+    name = "mediatek_flags",
+    srcs = ["mediatek_flags.cc"],
+    hdrs = ["mediatek_flags.h"],
+    deps = [
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "mediatek_flags_test",
+    srcs = ["mediatek_flags_test.cc"],
+    deps = [
+        ":mediatek_flags",
+        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:marshalling",
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c/options:litert_mediatek_options",
+        "//litert/cc:litert_expected",
+    ],
+)
