@@ -17,7 +17,7 @@ load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vi
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor:__subpackages__", TODO: check this
+        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor:__subpackages__",
         "//litert:litert_internal_users",
     ],
 )
