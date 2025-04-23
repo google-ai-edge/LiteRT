@@ -259,7 +259,7 @@ cc_test(
             ":benchmark_litert_model",
             "@com_google_googletest//:gtest_main",
             # copybara:uncomment_begin(google-only)
-            # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
             # copybara:uncomment_end
             "//tflite/core/c:private_c_api_types",
             "//tflite/tools/benchmark:benchmark_model_lib",
@@ -277,7 +277,7 @@ cc_binary(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         # copybara:uncomment_begin(google-only)
-        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -326,7 +326,7 @@ cc_library(
         "//tflite/tools/benchmark:benchmark_params",
         "//tflite/tools/strip_buffers:stripping_lib",
         # copybara:uncomment_begin(google-only)
-        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )

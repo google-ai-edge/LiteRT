@@ -151,7 +151,7 @@ kt_android_library(
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_guava",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
         # copybara:uncomment_begin(google-only)
-        # "//third_party/odml/infra/ml_drift_delegate/litert:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
         # copybara:uncomment_end
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
     ],
