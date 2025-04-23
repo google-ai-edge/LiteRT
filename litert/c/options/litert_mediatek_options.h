@@ -59,6 +59,7 @@ namespace litert::mediatek {
 class MediatekOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
+  MediatekOptions() = delete;
   static const char* Discriminator();
   static Expected<MediatekOptions> Create(OpaqueOptions& options);
   static Expected<MediatekOptions> Create();
