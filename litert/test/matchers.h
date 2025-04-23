@@ -144,10 +144,28 @@ class IsOkMatcher {
 // Expected<Something> BuildSomething();
 //
 // // Will fail the test if BuildSomething()'s returned value holds an error.
-// // Note that the returned value is unused.
+// // Note that the returned value is discarded.
 // EXPECT_THAT(BuildSomething(), IsOk());
 // ```
 inline IsOkMatcher IsOk() { return IsOkMatcher(); }
+
+// Matches `litert::Expected` values that hold a value and which value matches
+// `matcher`.
+//
+// ```cpp
+// Expected<Something> BuildSomething();
+//
+// // Will fail the test if BuildSomething()'s returned value holds an error or
+// // if the value doesn't match `Eq(expected_something)`.
+// //
+// // Note that the returned value is discarded.
+// EXPECT_THAT(BuildSomething(), IsOkAndHolds(Eq(expected_something)));
+// ```
+MATCHER_P(IsOkAndHolds, matcher, "") {
+  return testing::ExplainMatchResult(testing::litert::IsOk(), arg,
+                                     result_listener) &&
+         testing::ExplainMatchResult(matcher, arg.Value(), result_listener);
+}
 
 // Matches `litert::Expected` values that hold an error and
 // `LiteRtStatusError*` values.
