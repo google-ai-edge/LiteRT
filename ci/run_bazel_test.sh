@@ -108,7 +108,6 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/vendors/cc:partition_with_capabilities_test"
         "-//litert/vendors/examples:example_conversion_impl_test"
         "-//litert/vendors/examples:example_plugin_with_conversions_test"
-        "-//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test"
         "-//litert/cc:litert_model_predicates_test"
         "-//litert/cc:litert_model_test"
         "-//litert/core/model:model_buffer_test"

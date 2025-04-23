@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -73,26 +74,14 @@ litert_dynamic_lib(
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "dispatch_api_mediatek_test",
-    srcs = [
-        "dispatch_api_mediatek_test.cc",
+    srcs = ["dispatch_api_mediatek_test.cc"],
+    backend_id = "mediatek",
+    data = [
+        "//litert/test:testdata/simple_model_mtk.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    tags = [
-        "no-remote-exec",
-        "no_oss",
-        "nobuilder",
-        "nosan",
-        "notap",
-    ],
-    target_compatible_with = select({
-        "@platforms//os:android": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     deps = [
         ":dispatch_api",
         "@com_google_googletest//:gtest_main",
@@ -103,7 +92,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
-        "//litert/core:filesystem",
+        "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
