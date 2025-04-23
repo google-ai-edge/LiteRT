@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #include "litert/cc/options/litert_qualcomm_options.h"
 
@@ -42,24 +44,28 @@ Expected<QualcommOptions> QualcommOptions::Create() {
   return QualcommOptions(options, litert::OwnHandle::kYes);
 }
 
-void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
+void QualcommOptions::SetLogLevel(LiteRtQualcommOptionsLogLevel log_level) {
   internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(), log_level);
 }
 
-QualcommOptions::LogLevel QualcommOptions::GetLogLevel() {
-  QualcommOptions::LogLevel log_level;
+LiteRtQualcommOptionsLogLevel QualcommOptions::GetLogLevel() {
+  LiteRtQualcommOptionsLogLevel log_level;
   internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
   return log_level;
 }
 
-void QualcommOptions::SetPowerMode(QualcommOptions::PowerMode power_mode) {
-  internal::AssertOk(LiteRtQualcommOptionsSetPowerMode, Data(), power_mode);
+void QualcommOptions::SetHtpPerformanceMode(
+    LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode) {
+  internal::AssertOk(LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
+                     htp_performance_mode);
 }
 
-QualcommOptions::PowerMode QualcommOptions::GetPowerMode() {
-  QualcommOptions::PowerMode power_mode;
-  internal::AssertOk(LiteRtQualcommOptionsGetPowerMode, Data(), &power_mode);
-  return power_mode;
+LiteRtQualcommOptionsHtpPerformanceMode
+QualcommOptions::GetHtpPerformanceMode() {
+  LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode;
+  internal::AssertOk(LiteRtQualcommOptionsGetHtpPerformanceMode, Data(),
+                     &htp_performance_mode);
+  return htp_performance_mode;
 }
 
 void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
@@ -74,6 +80,40 @@ bool QualcommOptions::GetEnableWeightSharing() {
   return enable_weight_sharing;
 }
 
+void QualcommOptions::SetUseHtpPreference(bool use_htp_preference) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseHtpPreference, Data(),
+                     use_htp_preference);
+}
+
+bool QualcommOptions::GetUseHtpPreference() {
+  bool use_htp_preference;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseHtpPreference, Data(),
+                     &use_htp_preference);
+  return use_htp_preference;
+}
+
+void QualcommOptions::SetUseQint16AsQuint16(bool use_qin16_as_quint16) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseQint16AsQuint16, Data(),
+                     use_qin16_as_quint16);
+}
+
+bool QualcommOptions::GetUseQint16AsQuint16() {
+  bool use_qin16_as_quint16;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseQint16AsQuint16, Data(),
+                     &use_qin16_as_quint16);
+  return use_qin16_as_quint16;
+}
+
+void QualcommOptions::SetProfiling(LiteRtQualcommOptionsProfiling profiling) {
+  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(), profiling);
+}
+
+LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
+  LiteRtQualcommOptionsProfiling profiling;
+  internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
+  return profiling;
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
@@ -81,7 +121,5 @@ Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   }
   return QualcommOptions(options.Get(), OwnHandle::kNo);
 }
-
-namespace {}  // namespace
 
 }  // namespace litert::qualcomm

@@ -268,7 +268,8 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus ConvertOp(const litert::Op& litert_op,
+LiteRtStatus ConvertOp(const bool use_htp_preferences,
+                       const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -427,9 +428,7 @@ LiteRtStatus ConvertOp(const litert::Op& litert_op,
 
       auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
           tensor_pool, fused_activation, output_tensors);
-      // TODO(jiunkaiy): Use compile interface to get useHtpPreferencs.
-      constexpr LiteRtQnnOptions qnn_options = LITERT_QNN_OPTIONS_INIT;
-      if (qnn_options.use_htp_preferences) {
+      if (use_htp_preferences) {
         op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
             tensor_pool, input_tensors, output_tensors, keep_num_dims);
       }
@@ -814,8 +813,8 @@ LiteRtStatus ConvertOp(const litert::Op& litert_op,
 }
 
 LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
-                      LiteRtSubgraph subgraph,
-                      absl::string_view qnn_graph_name) {
+                      LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
+                      const ::qnn::Options& options) {
   GraphMapper graph_mapper(subgraph, qnn, context_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name));
@@ -877,21 +876,25 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
-    LITERT_RETURN_IF_ERROR(
-        ConvertOp(op, tensor_pool, input_tensors, output_tensors, op_wrappers));
+    LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
+                                     tensor_pool, input_tensors, output_tensors,
+                                     op_wrappers));
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   GraphToGraphTransform(graph_op_wrappers);
+
+  if (options.GetUseQint16AsQuint16()) {
+    tensor_pool.ForEach(
+        [&qnn, &graph_mapper](::qnn::TensorWrapper& tensor_wrapper) {
+          tensor_wrapper.ConvertQint16ToQuint16();
+        });
+  }
+
   // Insert all tensors into Qnn graph and update the id of Qnn_Tensor_t inside.
   tensor_pool.ForEach(
       [&qnn, &graph_mapper](::qnn::TensorWrapper& tensor_wrapper) {
-        // TODO(chunhsue): Use compile interface to get use_qint16_as_quint16.
-        constexpr bool use_qint16_as_quint16 = false;
-        if constexpr (use_qint16_as_quint16) {
-          tensor_wrapper.ConvertQint16ToQuint16();
-        }
         qnn.Api()->tensorCreateGraphTensor(graph_mapper.QnnGraph(),
                                            &tensor_wrapper.GetQnnTensor());
       });
@@ -933,9 +936,10 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                           LiteRtSubgraph subgraph,
-                          absl::string_view qnn_graph_name) {
+                          absl::string_view qnn_graph_name,
+                          const ::qnn::Options& options) {
   LITERT_RETURN_IF_ERROR(
-      MapGraph(qnn, context_handle, subgraph, qnn_graph_name));
+      MapGraph(qnn, context_handle, subgraph, qnn_graph_name, options));
   return kLiteRtStatusOk;
 }
 

@@ -33,7 +33,8 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            bool is_tensor_read_and_write = false);
 
-LiteRtStatus ConvertOp(const litert::Op& litert_op,
+LiteRtStatus ConvertOp(const bool use_htp_preferences,
+                       const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -43,7 +44,8 @@ LiteRtStatus ConvertOp(const litert::Op& litert_op,
 // context behind "qnn". Uses given graph_name to name entry point.
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                           LiteRtSubgraph subgraph,
-                          absl::string_view qnn_graph_name);
+                          absl::string_view qnn_graph_name,
+                          const ::qnn::Options& options);
 
 }  // namespace litert::qnn
 

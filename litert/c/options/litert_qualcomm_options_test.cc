@@ -61,7 +61,43 @@ TEST(LiteRtQualcommOptionsTest, LogLevel) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtQualcommOptionsTest, WeightSharing) {
+TEST(LiteRtQualcommOptionsTest, UseHtpPreference) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetUseHtpPreference(qualcomm_options, true));
+
+  bool use_htp_preference;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetUseHtpPreference(
+      qualcomm_options, &use_htp_preference));
+  EXPECT_TRUE(use_htp_preference);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, UseQint16AsQuint16) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetUseQint16AsQuint16(qualcomm_options, false));
+
+  bool use_qint16_as_quint16;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetUseQint16AsQuint16(
+      qualcomm_options, &use_qint16_as_quint16));
+  EXPECT_FALSE(use_qint16_as_quint16);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, EnableWeightSharing) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
 
@@ -79,20 +115,38 @@ TEST(LiteRtQualcommOptionsTest, WeightSharing) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtQualcommOptionsTest, PowerMode) {
+TEST(LiteRtQualcommOptionsTest, HtpPerformanceMode) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
 
   LiteRtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
 
-  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetPowerMode(
-      qualcomm_options, kLiteRtQualcommPowerModePowerSaver));
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetHtpPerformanceMode(
+      qualcomm_options, kLiteRtQualcommHtpPerformanceModeBurst));
 
-  LiteRtQualcommOptionsPowerMode power_mode;
+  LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetHtpPerformanceMode(
+      qualcomm_options, &htp_performance_mode));
+  EXPECT_EQ(htp_performance_mode, kLiteRtQualcommHtpPerformanceModeBurst);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, Profiling) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetProfiling(
+      qualcomm_options, kLiteRtQualcommProfilingDetailed));
+
+  LiteRtQualcommOptionsProfiling profiling;
   LITERT_ASSERT_OK(
-      LiteRtQualcommOptionsGetPowerMode(qualcomm_options, &power_mode));
-  EXPECT_EQ(power_mode, kLiteRtQualcommPowerModePowerSaver);
+      LiteRtQualcommOptionsGetProfiling(qualcomm_options, &profiling));
+  EXPECT_EQ(profiling, kLiteRtQualcommProfilingDetailed);
 
   LiteRtDestroyOpaqueOptions(options);
 }
@@ -105,13 +159,27 @@ TEST(QualcommOptionsTest, CppApi) {
   options->SetLogLevel(kLiteRtQualcommLogLevelWarn);
   EXPECT_EQ(options->GetLogLevel(), kLiteRtQualcommLogLevelWarn);
 
-  EXPECT_TRUE(options->GetEnableWeightSharing());
-  options->SetEnableWeightSharing(false);
   EXPECT_FALSE(options->GetEnableWeightSharing());
+  options->SetEnableWeightSharing(true);
+  EXPECT_TRUE(options->GetEnableWeightSharing());
 
-  EXPECT_EQ(options->GetPowerMode(), kLiteRtQualcommPowerModePerformance);
-  options->SetPowerMode(kLiteRtQualcommPowerModePowerSaver);
-  EXPECT_EQ(options->GetPowerMode(), kLiteRtQualcommPowerModePowerSaver);
+  EXPECT_FALSE(options->GetUseHtpPreference());
+  options->SetUseHtpPreference(true);
+  EXPECT_TRUE(options->GetUseHtpPreference());
+
+  EXPECT_FALSE(options->GetUseQint16AsQuint16());
+  options->SetUseQint16AsQuint16(true);
+  EXPECT_TRUE(options->GetUseQint16AsQuint16());
+
+  EXPECT_EQ(options->GetHtpPerformanceMode(),
+            kLiteRtQualcommHtpPerformanceModeDefault);
+  options->SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+  EXPECT_EQ(options->GetHtpPerformanceMode(),
+            kLiteRtQualcommHtpPerformanceModeBurst);
+
+  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingOff);
+  options->SetProfiling(kLiteRtQualcommProfilingDetailed);
+  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingDetailed);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {
