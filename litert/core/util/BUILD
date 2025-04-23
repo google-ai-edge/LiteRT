@@ -34,19 +34,19 @@ cc_library_with_testonly_vis(
         "flatbuffer_tools.h",
     ],
     deps = [
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@flatbuffers//:runtime_cc",
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_consts",
         "//litert/cc:litert_expected",
         "//litert/core:filesystem",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
     ],
 )
 
@@ -59,11 +59,11 @@ cc_test(
     ],
     deps = [
         ":flatbuffer_tools",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -80,11 +80,11 @@ cc_library(
         "//litert:litert_stable_abi_users",
     ],
     deps = [
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/cc:litert_expected",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -93,8 +93,8 @@ cc_test(
     srcs = ["tensor_type_util_test.cc"],
     deps = [
         ":tensor_type_util",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_model",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )

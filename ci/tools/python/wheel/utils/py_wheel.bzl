@@ -19,11 +19,11 @@ wheel_builder.py, to generate the wheel file. The wheel builder binary is respon
 the build environment and calling the setuptools command to generate the wheel file.
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@python_version_repo//:py_version.bzl",
     "HERMETIC_PYTHON_VERSION",
 )
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _get_full_wheel_name(wheel_name, version, platform_name):
     python_version = HERMETIC_PYTHON_VERSION.replace(".", "")

@@ -66,13 +66,13 @@ cc_test(
         ":litert_options",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/cc:litert_macros",
         "//litert/test:common",
         "//litert/test:simple_model_custom_op",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -99,11 +99,11 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_environment_options",
-        "@com_google_absl//absl/types:span",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/runtime:gpu_environment",
         "//litert/runtime/accelerators:auto_registration",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -136,9 +136,9 @@ cc_test(
         ":litert_any",
         ":litert_common",
         ":litert_environment_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/core:environment_options",
         "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -175,10 +175,10 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_op_code",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//tflite/core/c:private_c_api_types",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -190,13 +190,13 @@ cc_library(
         ":litert_common",
         ":litert_layout",
         ":litert_op_code",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//tflite/core/c:private_c_api_types",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -207,13 +207,13 @@ cc_test(
         ":litert_common",
         ":litert_model",
         ":litert_op_code",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -233,8 +233,8 @@ cc_library(
         ":litert_common",
         ":litert_op_code",
         "//litert/core/model",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
         "//tflite/c:c_api_types",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -248,9 +248,9 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_op_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -307,10 +307,10 @@ cc_library(
         ":litert_logging",
         ":litert_model",
         ":litert_tensor_buffer_types",
-        "@com_google_absl//absl/types:span",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
+        "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps(),
 )
@@ -329,9 +329,9 @@ cc_test(
         ":litert_model",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_layout",
         "//litert/runtime:tensor_buffer",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -395,9 +395,9 @@ cc_test(
         ":litert_common",
         ":litert_opaque_options",
         ":litert_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -436,12 +436,12 @@ cc_test(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
-        "@com_google_googletest//:gtest_main",
+        "//litert/test:common",
+        "//litert/test:simple_model",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/test:common",
-        "//litert/test:simple_model",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -456,12 +456,12 @@ cc_test(
     ],
     deps = [
         ":litert_runtime_c_api_shared_lib",
-        "@com_google_googletest//:gtest_main",
+        "//litert/test:common",
+        "//litert/test:simple_model",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/test:common",
-        "//litert/test:simple_model",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -485,12 +485,12 @@ cc_test(
         ":litert_accelerator_registration",
         ":litert_common",
         ":litert_environment",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -510,11 +510,11 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_opaque_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:version",
         "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -548,8 +548,8 @@ cc_test(
         ":litert_common",
         ":litert_environment",
         ":litert_opaque_options",
-        "@com_google_googletest//:gtest_main",
         "//litert/runtime:accelerator",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

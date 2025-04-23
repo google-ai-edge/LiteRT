@@ -16,8 +16,8 @@
 This module defines the `run_on_device` macro, which helps to execute a binary target on a device.
 """
 
-load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
+load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
 # MISCELLANEOUS ####################################################################################
 
@@ -334,13 +334,13 @@ def litert_device_exec(
 
     # copybara:uncomment_begin(google-only)
     # _litert_mh_exec(
-        # name = name + remote_suffix,
-        # target = target,
-        # run_as = backend.mh_user,
-        # data = data,
-        # exec_args = exec_args,
-        # exec_env_vars = exec_env_vars,
-        # dimensions = backend.default_mh_device,
+    # name = name + remote_suffix,
+    # target = target,
+    # run_as = backend.mh_user,
+    # data = data,
+    # exec_args = exec_args,
+    # exec_env_vars = exec_env_vars,
+    # dimensions = backend.default_mh_device,
     # )
     # copybara:uncomment_end(google-only)
 

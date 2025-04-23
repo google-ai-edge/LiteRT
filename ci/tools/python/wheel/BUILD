@@ -1,9 +1,9 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
-load("//litert:litert.bzl", "MANYLINUX_LEVEL")
-load("//litert:version.bzl", "LITERT_FULL_VERSION")
 load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
+load("//litert:litert.bzl", "MANYLINUX_LEVEL")
+load("//litert:version.bzl", "LITERT_FULL_VERSION")
 
 package(
     default_visibility = ["//visibility:private"],

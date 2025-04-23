@@ -35,9 +35,9 @@ litert_device_test(
     data = ["//litert/integration_test/models:single_op"],
     exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
     deps = [
-        "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -55,19 +55,19 @@ cc_test(
     tags = ["manual"],
     deps = [
         ":gen_device_test_lib",
-        "@com_google_googletest//:gtest",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_logging",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/tools:dump",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest",
     ],
 )
 
@@ -76,8 +76,6 @@ cc_library(
     testonly = True,
     hdrs = ["gen_device_test_lib.h"],
     deps = [
-        "//testing/base/public:gunit_for_library_testonly",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -85,6 +83,8 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:matchers",
+        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -113,8 +113,8 @@ litert_device_test(
     srcs = ["smoketests/google_tensor_smoketest.cc"],
     backend_id = "google_tensor",
     deps = [
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_shared_library",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -125,10 +125,10 @@ litert_device_test(
     srcs = ["smoketests/qnn_smoketest.cc"],
     backend_id = "qualcomm",
     deps = [
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_shared_library",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -161,8 +161,8 @@ litert_device_test(
     srcs = ["smoketests/mediatek_smoketest.cc"],
     backend_id = "mediatek",
     deps = [
-        "@com_google_googletest//:gtest_main",
         "//litert/cc:litert_shared_library",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_googletest//:gtest_main",
     ],
 )

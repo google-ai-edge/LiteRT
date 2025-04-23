@@ -35,10 +35,6 @@ litert_dynamic_lib(
     ],
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_environment_options",
@@ -51,6 +47,10 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/google_tensor:adapter",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -83,8 +83,6 @@ cc_test(
     }),
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
@@ -92,5 +90,7 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
