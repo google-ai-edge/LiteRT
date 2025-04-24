@@ -100,8 +100,8 @@ class OpaqueOptions
 };
 
 // Find the opaque option in the chain that matches the provided identifier.
-Expected<OpaqueOptions> Find(OpaqueOptions& options,
-                             const std::string& payload_identifier);
+Expected<OpaqueOptions> FindOpaqueOptions(
+    OpaqueOptions& options, const std::string& payload_identifier);
 
 // Convience wrapper on top of Find. Resolves the matching opaque options
 // as an instance of the type derived from OpaqueOptions, provided it implements
@@ -111,9 +111,10 @@ Expected<OpaqueOptions> Find(OpaqueOptions& options,
 template <typename Discriminated,
           std::enable_if_t<std::is_base_of<OpaqueOptions, Discriminated>::value,
                            bool> = true>
-Expected<Discriminated> Find(OpaqueOptions& options) {
+Expected<Discriminated> FindOpaqueOptions(OpaqueOptions& options) {
   LITERT_ASSIGN_OR_RETURN(
-      auto opq, Find(options, std::string(Discriminated::Discriminator())));
+      auto opq,
+      FindOpaqueOptions(options, std::string(Discriminated::Discriminator())));
   return Discriminated::Create(opq);
 }
 
@@ -121,8 +122,8 @@ Expected<Discriminated> Find(OpaqueOptions& options) {
 // with matching identifier. This is analogous to Discriminate, except that
 // it returns the payload used to interopt with the C API.
 template <typename T>
-Expected<T*> FindData(OpaqueOptions& options,
-                      const std::string& payload_identifier) {
+Expected<T*> FindOpaqueData(OpaqueOptions& options,
+                            const std::string& payload_identifier) {
   void* payload_data;
   LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
       options.Get(), payload_identifier.c_str(), &payload_data));

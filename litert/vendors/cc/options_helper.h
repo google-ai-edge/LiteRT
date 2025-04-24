@@ -65,7 +65,7 @@ class OptionsHelper {
     if (!opq) {
       return std::nullopt;
     }
-    auto disc = Find<Discriminated>(*opq);
+    auto disc = FindOpaqueOptions<Discriminated>(*opq);
     if (!disc) {
       return std::nullopt;
     }
