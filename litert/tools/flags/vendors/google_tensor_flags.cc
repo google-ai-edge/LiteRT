@@ -91,8 +91,6 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
       absl::GetFlag(FLAGS_google_tensor_int64_to_int32));
   options.SetOutputDir(absl::GetFlag(FLAGS_google_tensor_output_dir));
   options.SetDumpOpTimings(absl::GetFlag(FLAGS_google_tensor_dump_op_timings));
-  options.SetEnableReference(
-      absl::GetFlag(FLAGS_google_tensor_enable_reference));
   return options;
 }
 

@@ -33,8 +33,6 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_output_dir);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_dump_op_timings);
 
-ABSL_DECLARE_FLAG(bool, google_tensor_enable_reference);
-
 // PARSERS (internal) //////////////////////////////////////////////////////////
 
 bool AbslParseFlag(absl::string_view text,
