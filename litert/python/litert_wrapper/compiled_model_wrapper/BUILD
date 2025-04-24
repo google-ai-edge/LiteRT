@@ -56,6 +56,7 @@ pybind_extension(
         "compiled_model_wrapper_pybind11.cc",
     ],
     hdrs = ["compiled_model_wrapper.h"],
+    common_lib_packages = ["litert/python"],
     link_in_framework = True,
     pytype_srcs = [
         "_pywrap_litert_compiled_model_wrapper.pyi",

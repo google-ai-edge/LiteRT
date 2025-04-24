@@ -53,6 +53,7 @@ pybind_extension(
         "tensor_buffer_wrapper_pybind11.cc",
     ],
     hdrs = ["tensor_buffer_wrapper.h"],
+    common_lib_packages = ["litert/python"],
     link_in_framework = True,
     pytype_srcs = [
         "_pywrap_litert_tensor_buffer_wrapper.pyi",
