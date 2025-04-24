@@ -19,7 +19,6 @@
 #include <cstring>
 #include <iterator>
 #include <memory>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -68,11 +67,9 @@
 #include "tflite/interpreter.h"
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
-#include "tflite/stderr_reporter.h"
 
 using litert::Error;
 using litert::Expected;
-using litert::OwningBufferRef;
 using litert::TensorBuffer;
 using litert::Unexpected;
 using litert::internal::ExternalLiteRtBufferContext;
@@ -80,7 +77,7 @@ using litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtOptions jit_compilation_options) {
-  tflite::ops::builtin::BuiltinOpResolver resolver;
+  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
 
   // Apply custom ops.
   if (jit_compilation_options) {
