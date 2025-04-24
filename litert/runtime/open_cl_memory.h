@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -35,28 +36,35 @@ namespace litert::internal {
  */
 class OpenClMemory {
  public:
-  OpenClMemory(OpenClMemory&& other) {
-    buffer_type_ = other.buffer_type_;
-    data_ = other.data_;
-    buffer_ = std::move(other.buffer_);
-    size_ = other.size_;
+  OpenClMemory(OpenClMemory&& other)
+      : tensor_type_(other.tensor_type_),
+        buffer_type_(other.buffer_type_),
+        data_(other.data_),
+        buffer_(std::move(other.buffer_)),
+        size_(other.size_),
+        ahwb_(other.ahwb_) {
     other.data_ = nullptr;
     other.size_ = 0;
-    ahwb_ = other.ahwb_;
     other.ahwb_ = nullptr;
   }
 
-  explicit OpenClMemory(LiteRtTensorBufferType buffer_type,
+  explicit OpenClMemory(const LiteRtRankedTensorType& tensor_type,
+                        LiteRtTensorBufferType buffer_type,
                         tflite::gpu::cl::Buffer buffer,
                         AHardwareBuffer* ahwb = nullptr)
-      : buffer_type_(buffer_type),
+      : tensor_type_(tensor_type),
+        buffer_type_(buffer_type),
         buffer_(std::move(buffer)),
         size_(buffer_.GetMemorySizeInBytes()),
         ahwb_(ahwb) {}
 
-  OpenClMemory(LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
+  OpenClMemory(const LiteRtRankedTensorType& tensor_type,
+               LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
                LiteRtOpenClDeallocator deallocator)
-      : buffer_type_(buffer_type), deallocator_(deallocator), size_(size) {
+      : tensor_type_(tensor_type),
+        buffer_type_(buffer_type),
+        deallocator_(deallocator),
+        size_(size) {
     if (deallocator_ != nullptr) {
       buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
     } else {  // The buffer will be deallocated automatically.
@@ -84,12 +92,15 @@ class OpenClMemory {
   Expected<void> Unlock();
 
   static bool IsSupported();
-  static Expected<OpenClMemory> Alloc(LiteRtTensorBufferType buffer_type,
+  static Expected<OpenClMemory> Alloc(const LiteRtRankedTensorType& tensor_type,
+                                      LiteRtTensorBufferType buffer_type,
                                       size_t bytes_size);
-  static Expected<OpenClMemory> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
+  static Expected<OpenClMemory> AllocFromAhwbBuffer(
+      const LiteRtRankedTensorType& tensor_type, AhwbBuffer& ahwb_buffer);
   size_t size_bytes() const { return size_; }
 
  private:
+  const LiteRtRankedTensorType tensor_type_;
   LiteRtTensorBufferType buffer_type_;
   absl::Mutex mutex_;
   // The cpu memory buffer pointer.
@@ -98,6 +109,8 @@ class OpenClMemory {
   LiteRtOpenClDeallocator deallocator_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_ = 0;
+  // The size of the CPU memory buffer in bytes. It's doubled for fp16 buffers.
+  size_t cpu_buffer_size_ = 0;
   AHardwareBuffer* ahwb_ = nullptr;
 };
 
