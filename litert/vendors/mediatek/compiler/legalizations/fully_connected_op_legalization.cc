@@ -21,6 +21,7 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -106,7 +107,9 @@ Expected<void> LegalizeFullyConnectedOp(
       return output_operand.Error();
     }
 
-    auto dimension = op.Outputs()[0].RankedTensorType()->Layout().Dimensions();
+    LITERT_ASSIGN_OR_RETURN(auto tensor_type,
+                            op.Outputs()[0].RankedTensorType());
+    auto dimension = tensor_type.Layout().Dimensions();
     std::vector<uint32_t> new_shape(dimension.begin(), dimension.end());
     std::vector<uint32_t> tensor_shape = {(uint32_t)new_shape.size()};
     auto new_shape_operand_index = operand_map.AddTensorInt32(
