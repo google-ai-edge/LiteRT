@@ -271,7 +271,9 @@ xnn_datatype GetXNNPackDatatype(TfLiteContext* context,
                               quantization_zero_point)) {
             return xnn_datatype_invalid;
           }
-          if (quantization_scale->size == 1) {
+          if (quantization_scale->size == 1 &&
+              SizeOfDimension(&tensor,
+                              quantization_params->quantized_dimension) != 1) {
             return CheckPerTensorQuantization(context, tensor, t,
                                               quantization_scale,
                                               quantization_zero_point);
