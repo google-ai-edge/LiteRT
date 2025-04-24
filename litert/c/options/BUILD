@@ -17,6 +17,33 @@ package(
     default_visibility = ["//litert:litert_stable_abi_users"],
 )
 
+cc_library(
+    name = "litert_cpu_options",
+    srcs = ["litert_cpu_options.cc"],
+    hdrs = ["litert_cpu_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//tflite/delegates/xnnpack:xnnpack_delegate",
+    ],
+)
+
+cc_test(
+    name = "litert_cpu_options_test",
+    srcs = ["litert_cpu_options_test.cc"],
+    deps = [
+        ":litert_cpu_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # QUALCOMM #########################################################################################
 
 cc_library(
