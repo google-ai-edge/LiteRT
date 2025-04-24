@@ -706,6 +706,7 @@ pybind_extension(
         "@org_tensorflow//third_party/py/numpy:numpy",
     ],
     common_lib_packages = [
+        "litert/python",
         "tflite/python",
     ],
     enable_stub_generation = True,

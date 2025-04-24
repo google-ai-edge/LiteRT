@@ -86,6 +86,10 @@ pybind_extension(
     additional_stubgen_deps = [
         "@org_tensorflow//third_party/py/numpy:numpy",
     ],
+    common_lib_packages = [
+        "litert/python",
+        "tflite/python",
+    ],
     compatible_with = get_compatible_with_portable(),
     enable_stub_generation = True,
     link_in_framework = True,

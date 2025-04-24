@@ -31,6 +31,10 @@ pybind_extension(
     name = "_pywrap_tensorflow_lite_metrics_wrapper",
     srcs = ["wrapper/metrics_wrapper_pybind11.cc"],
     hdrs = ["wrapper/metrics_wrapper.h"],
+    common_lib_packages = [
+        "litert/python",
+        "tflite/python",
+    ],
     compatible_with = get_compatible_with_portable(),
     enable_stub_generation = True,
     pytype_srcs = [
