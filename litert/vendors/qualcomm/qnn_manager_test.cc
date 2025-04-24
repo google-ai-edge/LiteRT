@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 
 #include "litert/vendors/qualcomm/qnn_manager.h"
-
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -29,13 +29,25 @@ using ::testing::HasSubstr;
 
 TEST(QnnManagerTest, SetupQnnManager) {
   auto configs = QnnManager::DefaultBackendConfigs();
+#ifdef __ANDROID__
+  // Query SoC info from device.
   auto qnn = QnnManager::Create(configs);
+#else
+  std::optional< ::qnn::SocInfo> soc_info = ::qnn::kSocInfos[6];
+  auto qnn = QnnManager::Create(configs, std::nullopt, soc_info);
+#endif  // __ANDROID__
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
   auto configs = QnnManager::DefaultBackendConfigs();
+#ifdef __ANDROID__
+  // Query SoC info from device.
   auto qnn = QnnManager::Create(configs);
+#else
+  std::optional< ::qnn::SocInfo> soc_info = ::qnn::kSocInfos[6];
+  auto qnn = QnnManager::Create(configs, std::nullopt, soc_info);
+#endif  // __ANDROID__
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
