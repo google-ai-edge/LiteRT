@@ -122,7 +122,7 @@ TEST(QualcommOptionsTest, FindFromChain) {
   ASSERT_TRUE(qnn_options);
   options->Append(std::move(*qnn_options));
 
-  auto qnn_opts_d = Find<QualcommOptions>(*options);
+  auto qnn_opts_d = FindOpaqueOptions<QualcommOptions>(*options);
   EXPECT_TRUE(qnn_opts_d);
 }
 

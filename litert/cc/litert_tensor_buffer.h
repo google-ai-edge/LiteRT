@@ -176,9 +176,19 @@ class TensorBuffer
     return RankedTensorType(tensor_type);
   }
 
+  // Returns the size of the underlying H/W tensor buffer. This size can be
+  // different to the PackedSize() if there is stride and padding exists.
   Expected<size_t> Size() const {
     size_t size;
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferSize(Get(), &size));
+    return size;
+  }
+
+  // Returns the size of the tensor buffer in packed bytes. This size is used to
+  // read / write data on locked tensor buffer.
+  Expected<size_t> PackedSize() const {
+    size_t size;
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferPackedSize(Get(), &size));
     return size;
   }
 
@@ -240,13 +250,7 @@ class TensorBuffer
   template <typename T>
   Expected<void> Write(absl::Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
-    LITERT_ASSIGN_OR_RETURN(size_t size, Size());
-    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
-    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-      // When fp16 buffer is locked, the provided host memory buffer is 2 times
-      // of the size of the tensor buffer.
-      size *= 2;
-    }
+    LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     if (size < data.size() * sizeof(T)) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
@@ -268,13 +272,7 @@ class TensorBuffer
   template <typename T>
   Expected<void> Read(absl::Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
-    LITERT_ASSIGN_OR_RETURN(size_t size, Size());
-    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferType buffer_type, BufferType());
-    if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-      // When fp16 tensor buffer is locked, the provided host memory buffer is 2
-      // times of the size of the tensor buffer.
-      size *= 2;
-    }
+    LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     size_t total_read_size = data.size() * sizeof(T);
     if (size < total_read_size) {
       return Unexpected(

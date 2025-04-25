@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -105,6 +106,18 @@
   LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD((DECL, __VA_ARGS__,                  \
                                            LITERT_ASSIGN_OR_RETURN_HELPER_3,   \
                                            LITERT_ASSIGN_OR_RETURN_HELPER_2))( \
+      _CONCAT_NAME(expected_value_or_error_, __LINE__), DECL, __VA_ARGS__)
+
+// Works as `LITERT_RETURN_IF_ERROR` but aborts the process in case of error.
+#define LITERT_ABORT_IF_ERROR(EXPR)                                        \
+  if (auto status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status)) \
+  ::litert::LogBeforeAbort(::litert::ErrorStatusBuilder(status))
+
+// Works as `LITERT_ASSIGN_OR` but aborts the process in case of error.
+#define LITERT_ASSIGN_OR_ABORT(DECL, ...)                                    \
+  LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD((DECL, __VA_ARGS__,                 \
+                                          LITERT_ASSIGN_OR_ABORT_HELPER_3,   \
+                                          LITERT_ASSIGN_OR_ABORT_HELPER_2))( \
       _CONCAT_NAME(expected_value_or_error_, __LINE__), DECL, __VA_ARGS__)
 
 namespace litert {
@@ -321,6 +334,27 @@ class ErrorStatusBuilder {
   LiteRtLogSeverity log_level_ = kLiteRtLogSeverityError;
 };
 
+class LogBeforeAbort {
+ public:
+  explicit LogBeforeAbort(ErrorStatusBuilder builder)
+      : builder_(std::move(builder)) {}
+
+  ~LogBeforeAbort() {
+    // Cast to a LiteRtStatus to trigger the logging mechanism.
+    [[maybe_unused]] LiteRtStatus s = static_cast<LiteRtStatus>(builder_);
+    std::abort();
+  }
+
+  template <class T>
+  LogBeforeAbort& operator<<(T&& val) {
+    builder_ << val;
+    return *this;
+  }
+
+ private:
+  ErrorStatusBuilder builder_;
+};
+
 }  // namespace litert
 
 //////////// Implementation details start here. ///////////////////////
@@ -355,6 +389,25 @@ class ErrorStatusBuilder {
     [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));    \
     return RETURN_VALUE;                                                    \
   }                                                                         \
+  DECL = std::move(TMP_VAR.Value());
+
+#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
+                                                      ...)                  \
+  OVERLOAD
+
+#define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD(args) \
+  LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER args
+
+#define LITERT_ASSIGN_OR_ABORT_HELPER_2(TMP_VAR, DECL, EXPR) \
+  LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, (void)_)
+
+#define LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, LOG_EXPRESSION) \
+  auto&& TMP_VAR = (EXPR);                                                   \
+  if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                      \
+    ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                      \
+    LOG_EXPRESSION;                                                          \
+    LogBeforeAbort(std::move(_));                                            \
+  }                                                                          \
   DECL = std::move(TMP_VAR.Value());
 
 #endif  // ODML_LITERT_LITERT_CC_LITERT_MACROS_H_

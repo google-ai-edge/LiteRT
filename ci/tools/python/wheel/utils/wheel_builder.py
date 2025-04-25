@@ -62,6 +62,13 @@ def parse_args() -> argparse.Namespace:
       required=True,
       help="Platform name to be passed to build module",
   )
+  parser.add_argument(
+      "--nightly_suffix",
+      help=(
+          "Suffix to be added to the name of the wheel for nightly builds. Does"
+          " not affect the name of the module."
+      ),
+  )
   return parser.parse_args()
 
 
@@ -150,6 +157,7 @@ def build_setup_py_wheel(
     output_dir: str,
     version: str,
     platform_name: Optional[str] = None,
+    nightly_suffix: Optional[str] = None,
 ):
   """Builds a python wheel from a setup.py file.
 
@@ -159,10 +167,14 @@ def build_setup_py_wheel(
     output_dir: Output directory for the wheel.
     version: Version of the wheel.
     platform_name: Platform name to be passed to build module.
+    nightly_suffix: Suffix to be added to the name of the wheel for nightly
+      builds. Does not affect the name of the module.
   """
   env = os.environ.copy()
 
-  env["PROJECT_NAME"] = project_name
+  env["PROJECT_NAME"] = (
+      project_name + nightly_suffix if nightly_suffix else project_name
+  )
   env["PACKAGE_VERSION"] = version
 
   command = [
@@ -194,4 +206,5 @@ if __name__ == "__main__":
       arg_data.output,
       arg_data.version,
       arg_data.platform,
+      arg_data.nightly_suffix if arg_data.nightly_suffix else None,
   )

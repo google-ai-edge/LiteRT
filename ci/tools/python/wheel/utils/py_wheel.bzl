@@ -19,11 +19,11 @@ wheel_builder.py, to generate the wheel file. The wheel builder binary is respon
 the build environment and calling the setuptools command to generate the wheel file.
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load(
     "@python_version_repo//:py_version.bzl",
     "HERMETIC_PYTHON_VERSION",
 )
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 
 def _get_full_wheel_name(wheel_name, version, platform_name):
     python_version = HERMETIC_PYTHON_VERSION.replace(".", "")
@@ -39,15 +39,15 @@ def _py_wheel_impl(ctx):
     executable = ctx.executable.wheel_binary
     filelist_lists = [src.files.to_list() for src in ctx.attr.srcs]
     filelist = [f for filelist in filelist_lists for f in filelist]
+    version = ctx.attr.version
+    project_name = ctx.attr.project_name
 
     if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
-        version = ctx.attr.version + ".dev" + ctx.attr.nightly_suffix[BuildSettingInfo].value
-        project_name = ctx.attr.project_name + "_nightly"
+        version = version + ".dev" + ctx.attr.nightly_suffix[BuildSettingInfo].value
+        wheel_name = _get_full_wheel_name(project_name + "_nightly", version, ctx.attr.platform_name)
     else:
-        version = ctx.attr.version
-        project_name = ctx.attr.project_name
+        wheel_name = _get_full_wheel_name(project_name, version, ctx.attr.platform_name)
 
-    wheel_name = _get_full_wheel_name(project_name, version, ctx.attr.platform_name)
     output_file = ctx.actions.declare_file("dist/{wheel_name}".format(wheel_name = wheel_name))
 
     args = ctx.actions.args()
@@ -55,6 +55,9 @@ def _py_wheel_impl(ctx):
     args.add("--setup_py", ctx.file.setup_py.path)
     args.add("--output", output_file.dirname)
     args.add("--version", version)
+
+    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
+        args.add("--nightly_suffix", "_nightly")
 
     for f in filelist:
         args.add("--src", f.path)

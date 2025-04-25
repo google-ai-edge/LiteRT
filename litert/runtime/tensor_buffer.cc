@@ -29,6 +29,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -77,6 +78,13 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
   Copy(tensor_type_.layout.rank, tensor_type_.layout.dimensions, dimensions_);
   if (tensor_type_.layout.has_strides) {
     Copy(tensor_type_.layout.rank, tensor_type_.layout.strides, strides_);
+  }
+  auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
+  if (!packed_size) {
+    packed_buffer_size_ = 0;
+    LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
+  } else {
+    packed_buffer_size_ = *packed_size;
   }
 }
 
@@ -327,7 +335,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
-      buffer_type, buffer, buffer_size, deallocator);
+      tensor_type, buffer_type, buffer, buffer_size, deallocator);
   return tensor_buffer;
 }
 
@@ -335,22 +343,14 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOpenClMemory(
     const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  if (buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
-      buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16) {
-    auto buffer =
-        litert::internal::OpenClMemory::Alloc(buffer_type, buffer_size);
-    if (!buffer) {
-      return Unexpected(buffer.Error());
-    }
-    Ptr tensor_buffer(
-        new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
-    tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
-        std::move(*buffer));
-    return tensor_buffer;
-  } else {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      "Unsupported OpenCL memory type");
-  }
+  LITERT_ASSIGN_OR_RETURN(auto buffer,
+                          litert::internal::OpenClMemory::Alloc(
+                              tensor_type, buffer_type, buffer_size));
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
+  tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
+      std::move(buffer));
+  return tensor_buffer;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
@@ -559,9 +559,9 @@ LiteRtTensorBufferT::GetOpenClMemory() {
     litert::internal::AhwbBuffer ahwb_buffer = {
         .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
 
-    LITERT_ASSIGN_OR_RETURN(
-        litert::internal::OpenClMemory cl_buffer_from_ahwb,
-        litert::internal::OpenClMemory::AllocFromAhwbBuffer(ahwb_buffer));
+    LITERT_ASSIGN_OR_RETURN(litert::internal::OpenClMemory cl_buffer_from_ahwb,
+                            litert::internal::OpenClMemory::AllocFromAhwbBuffer(
+                                tensor_type_, ahwb_buffer));
 
     auto [it, inserted] = memory_backed_buffers_.insert(
         {kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer_from_ahwb)});
@@ -685,7 +685,11 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return litert::internal::AhwbBuffer::Unlock(ahwb);
     }
     case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16: {
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClTexture:
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16: {
 #if LITERT_HAS_OPENCL_SUPPORT
       auto opencl_buffer = *GetOpenClMemory();
       return opencl_buffer->Unlock<float>();

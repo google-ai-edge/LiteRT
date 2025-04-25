@@ -22,12 +22,6 @@
 ABSL_FLAG(std::string, cmd, "partition",
           "Routine to run (apply, partition, compile, info, noop).");
 
-ABSL_FLAG(std::string, compiler_flags, "",
-          "List of comma separated (no space) compiler flags. Flags "
-          "may be key-value pairs "
-          "in the format of \"key=value\", or just \"key\". E.g. "
-          "\"--compiler-flags=key1=value1,key2\"");
-
 ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
           "If provides, only the subgraphs with the given indices "
           "are applied with the plugin.");

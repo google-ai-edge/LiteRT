@@ -85,15 +85,12 @@ litert_device_test(
     ],
     backend_id = "qualcomm",
     data = [
-        ":dispatch_api_so",
-        "//litert/test:testdata",
+        "//litert/test:testdata/simple_add_uint16_qualcomm.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
+        "//litert/test:testdata/simple_model_qualcomm.bin",
     ],
     deps = [
         ":dispatch_api",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c:litert_tensor_buffer",
@@ -104,5 +101,9 @@ litert_device_test(
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )

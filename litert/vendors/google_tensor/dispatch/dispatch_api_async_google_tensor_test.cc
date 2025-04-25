@@ -276,7 +276,8 @@ TEST(DispatchApiAsync, GoogleTensor) {
             kLiteRtStatusOk);
   ASSERT_NE(output_event, nullptr);
 
-  // Attach output event to output tensor buffer.
+  // Attach output event to output tensor buffer. The tensor buffer takes
+  // ownership of the event.
   ASSERT_EQ(LiteRtSetTensorBufferEvent(output_tensor_buffer, output_event),
             kLiteRtStatusOk);
 
@@ -309,9 +310,10 @@ TEST(DispatchApiAsync, GoogleTensor) {
   // Clean up resources.
   // ///////////////////////////////////////////////////////////////////////////
 
+  // Note that we don't destroy the event on the output tensor buffer event
+  // since that is owned by the output tensor buffer.
   LiteRtDestroyEvent(input_event_0);
   LiteRtDestroyEvent(input_event_1);
-  LiteRtDestroyEvent(output_event);
 
   EXPECT_EQ(LiteRtDispatchDetachInput(invocation_context,
                                       /*graph_input_index=*/0, input_0_handle),

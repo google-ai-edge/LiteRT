@@ -28,13 +28,13 @@ cc_library(
     ],
     deps = [
         "neuron_utils",
-        "@com_google_absl//absl/container:flat_hash_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
@@ -133,6 +133,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],

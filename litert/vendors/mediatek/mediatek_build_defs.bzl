@@ -38,19 +38,19 @@ def _litert_with_mtk_base(
         # TODO: lukeboyer - Figure out why "latest" (which is symlink) works but the v8
         # path does not.
         data = select({
-            "//litert:mtk_sdk_v8_host": [
+            "//litert/sdk_util:mtk_sdk_v8_host": [
                 "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
             ],
-            "//litert:mtk_sdk_v7_host": [
+            "//litert/sdk_util:mtk_sdk_v7_host": [
                 "//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so",
             ],
             "//conditions:default": [],
         }),
         linkopts = select({
-            "//litert:mtk_sdk_v8_host": [
+            "//litert/sdk_util:mtk_sdk_v8_host": [
                 make_rpaths(["//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so"]),
             ],
-            "//litert:mtk_sdk_v7_host": [
+            "//litert/sdk_util:mtk_sdk_v7_host": [
                 make_rpaths(["//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so"]),
             ],
             "//conditions:default": [],

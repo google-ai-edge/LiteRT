@@ -40,13 +40,15 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/core:dynamic_loading",
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/core:dynamic_loading",
     ],
 )
 
@@ -77,13 +79,15 @@ cc_test(
     }),
     deps = [
         ":adapter",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
         "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )

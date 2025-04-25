@@ -16,8 +16,14 @@
 This module defines the `run_on_device` macro, which helps to execute a binary target on a device.
 """
 
-load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
+
+# copybara:uncomment_begin(google-only)
+# load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
+# load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar")
+#
+# copybara:uncomment_end
+load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
 # MISCELLANEOUS ####################################################################################
 
@@ -233,6 +239,76 @@ _SPECS = {
     GPU_SPEC.id: GPU_SPEC,
 }
 
+# copybara:uncomment_begin(google-only)
+# # MOBILE HARNESS WRAPPER ###########################################################################
+#
+# def _litert_mh_exec(
+#         name,
+#         target,
+#         run_as = "odml-device-lab",
+#         data = [],
+#         exec_args = [],
+#         exec_env_vars = [],
+#         dimensions = {}):
+#     """Wraps the mobile harness "mobile_test" macro"""
+#
+#     files = {
+#         "bin": [target],
+#     }
+#
+#     push_files_list = []
+#
+#     for data_target in data:
+#         data_target_split = data_target.split(":")
+#         if len(data_target_split) != 2:
+#             # This is required by `mobile_test` for value in `files`.
+#             fail("Data inputs must include a colon even if relative label")
+#         data_id = data_target_split[-1]
+#         files[data_id] = [data_target]
+#
+#         # NOTE: Any non raw file data targets must output a directory with the same name as the
+#         # target (e.g. filegroup "foo" that globs "foo/*"). This may need to be updated later
+#         # but it works for everything in LiteRt for now.
+#         push_files_list.append("{id}:{loc}".format(
+#             id = data_id,
+#             loc = device_rlocation(data_target, get_parent = False),
+#         ))
+#
+#     params = {
+#         "run_dir": device_rlocation(),
+#         "options": " ".join(exec_args),
+#         "prepare_des_dir_when_src_is_file": "true",  # Allows dest to be a dir (parent) when src is a file.
+#         "run_env": " ".join(exec_env_vars),
+#         "remove_files_before_push": "true",
+#     }
+#
+#     if push_files_list:
+#         params["push_files"] = ",".join(push_files_list)
+#
+#     args = [
+#         "--run_as={}".format(run_as),
+#     ]
+#
+#     mobile_test(
+#         tags = hidden_test_tags(),
+#         name = name,
+#         dimensions = dimensions,
+#         files = files,
+#         params = params,
+#         args = args,
+#         device = "AndroidRealDevice",
+#         driver = "AndroidNativeBin",
+#         decorators = [
+#             "AndroidFilePusherDecorator",
+#         ],
+#         visibility = [
+#             "//litert/integration_test:__subpackages__",
+#             "//litert/google:__subpackages__",
+#         ],
+#     )
+#
+# copybara:uncomment_end
+
 # RUN ON DEVICE MACRO ##############################################################################
 
 def get_driver():
@@ -334,13 +410,13 @@ def litert_device_exec(
 
     # copybara:uncomment_begin(google-only)
     # _litert_mh_exec(
-        # name = name + remote_suffix,
-        # target = target,
-        # run_as = backend.mh_user,
-        # data = data,
-        # exec_args = exec_args,
-        # exec_env_vars = exec_env_vars,
-        # dimensions = backend.default_mh_device,
+    # name = name + remote_suffix,
+    # target = target,
+    # run_as = backend.mh_user,
+    # data = data,
+    # exec_args = exec_args,
+    # exec_env_vars = exec_env_vars,
+    # dimensions = backend.default_mh_device,
     # )
     # copybara:uncomment_end(google-only)
 
@@ -449,3 +525,75 @@ def litert_integration_test(
         data = data,
         exec_args = cli_args,
     )
+
+# copybara:uncomment_begin(google-only)
+# # GUITAR UTIL ######################################################################################
+#
+# def litert_pixel_9_mh_guitar_test(targets):
+#     return guitar.Tests(
+#         args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--dimension_model=\"pixel 9\"",
+#             "--dimension_label=odml-test",
+#             "--run_as=xeno-mh-guitar",
+#         ],
+#         bazel_flags = [
+#             "--config=android_arm64",
+#             "--copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+#             "--android_ndk_min_sdk_version=26",
+#         ],
+#         execution_method = "DISTRIBUTED_ON_BORG",
+#         targets = targets,
+#     )
+#
+# def litert_qualcomm_mh_guitar_test(targets):
+#     return guitar.Tests(
+#         args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--dimension_pool=shared",
+#             "--dimension_model=\"sm-s928u1\"",
+#             "--run_as=xeno-mh-guitar",
+#         ],
+#         bazel_flags = [
+#             "--config=android_arm64",
+#             "--copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+#             "--android_ndk_min_sdk_version=26",
+#         ],
+#         execution_method = "DISTRIBUTED_ON_BORG",
+#         targets = targets,
+#     )
+#
+# def litert_mediatek_mh_guitar_test(targets):
+#     return guitar.Tests(
+#         args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--dimension_label=odml-test",
+#             "--dimension_hardware=\"mt6989\"",
+#             "--run_as=xeno-mh-guitar",
+#         ],
+#         bazel_flags = [
+#             "--config=android_arm64",
+#             "--copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+#             "--android_ndk_min_sdk_version=26",
+#         ],
+#         execution_method = "DISTRIBUTED_ON_BORG",
+#         targets = targets,
+#     )
+#
+# def litert_cpu_mh_guitar_test(targets):
+#     return guitar.Tests(
+#         args = [
+#             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
+#             "--dimension_label=odml-test",
+#             "--run_as=xeno-mh-guitar",
+#         ],
+#         bazel_flags = [
+#             "--config=android_arm64",
+#             "--copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1",
+#             "--android_ndk_min_sdk_version=26",
+#         ],
+#         execution_method = "DISTRIBUTED_ON_BORG",
+#         targets = targets,
+#     )
+#
+# copybara:uncomment_end

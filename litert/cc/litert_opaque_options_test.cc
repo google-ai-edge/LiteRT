@@ -65,8 +65,8 @@ TEST(OpaqueOptionsTest, FindData) {
   auto opts = SimpleOptions::Create();
   ASSERT_TRUE(opts);
 
-  auto data =
-      FindData<SimpleOptions::Payload>(*opts, SimpleOptions::Discriminator());
+  auto data = FindOpaqueData<SimpleOptions::Payload>(
+      *opts, SimpleOptions::Discriminator());
   ASSERT_TRUE(data);
   EXPECT_EQ(**data, 1);
 }
@@ -82,7 +82,8 @@ TEST(OpaqueOptionsTest, Find) {
 
   LITERT_ASSERT_OK(options->Append(std::move(*simple_options)));
 
-  auto found = Find(*options, std::string(SimpleOptions::Discriminator()));
+  auto found =
+      FindOpaqueOptions(*options, std::string(SimpleOptions::Discriminator()));
   ASSERT_TRUE(found);
   EXPECT_EQ(**found->GetData<SimpleOptions::Payload>(), 1);
 }
@@ -98,7 +99,7 @@ TEST(OpaqueOptionsTest, FindType) {
 
   LITERT_ASSERT_OK(options->Append(std::move(*simple_options)));
 
-  auto found = Find<SimpleOptions>(*options);
+  auto found = FindOpaqueOptions<SimpleOptions>(*options);
   ASSERT_TRUE(found);
   EXPECT_EQ(found->Data(), 1);
 }

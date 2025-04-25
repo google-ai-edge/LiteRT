@@ -82,19 +82,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
                                          const char* soc_model,
                                          LiteRtModel partitions,
                                          LiteRtCompiledResult* compiled_result);
-
-// Set any flags for the compiler do use during compilation. Flag data may be
-// released or reused after this function returns. Flags are string key ->
-// optional string value pairs. A non-existent value is represented by an empty
-// string. Calling this function will unset any previously set flags.
-//
-// WARNING: This will be deprecated and removed shortly in favor of the option
-// parameters passed at creation.
-LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
-                                          LiteRtParamIndex num_flags,
-                                          const char** keys,
-                                          const char** values);
-
 //
 // Compiled Partition
 //

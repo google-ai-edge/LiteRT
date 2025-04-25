@@ -117,6 +117,7 @@ class LiteRtTensorBufferT {
         return false;
     }
   }
+  size_t packed_buffer_size() const { return packed_buffer_size_; }
   size_t buffer_size() const { return buffer_size_; }
   size_t buffer_offset() const { return buffer_offset_; }
 
@@ -241,6 +242,7 @@ class LiteRtTensorBufferT {
   LiteRtTensorBufferType buffer_type_;
   size_t buffer_size_;
   size_t buffer_offset_;
+  size_t packed_buffer_size_;
   BufferVariant buffer_;
   std::unique_ptr<LiteRtEventT> event_;
   mutable std::atomic_int_fast32_t ref_;

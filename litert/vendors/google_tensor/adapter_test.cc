@@ -25,9 +25,11 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace google_tensor {
@@ -49,6 +51,8 @@ TEST(AdapterTest, CreateFailure) {
 }
 
 TEST(AdapterTest, CompileSuccess) {
+  static constexpr absl::string_view kSocModel = "P25";
+
   auto adapter_result = Adapter::Create(/*shared_library_dir=*/
                                         std::nullopt);
   if (!adapter_result.HasValue()) {
@@ -72,18 +76,20 @@ TEST(AdapterTest, CompileSuccess) {
     LITERT_LOG(LITERT_ERROR, "Failed to serialize model");
   }
 
-  absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
-                               buf.Size());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, ::litert::google_tensor::GoogleTensorOptions::Create());
+  options.SetFloatTruncationType(kLiteRtGoogleTensorFloatTruncationTypeHalf);
+  options.SetInt64ToInt32Truncation(true);
+  options.SetOutputDir("/tmp/");
+  options.SetDumpOpTimings(true);
 
-  ASSERT_FALSE(buffer_str.empty());
-  LITERT_LOG(LITERT_INFO, "buffer_str size: %d", buffer_str.size());
+  ASSERT_GT(buf.Size(), 0);
+  LITERT_LOG(LITERT_INFO, "buffer_str size: %d", buf.Size());
   LITERT_LOG(LITERT_INFO, "Compling model...");
-  absl::string_view soc_model = "P25";
-  litert::google_tensor::Flags flags;
-  flags.clear();
+
   std::string compiled_code;
   auto compile_status = adapter_result.Value()->api().compile(
-      buffer_str, soc_model, flags, &compiled_code);
+      buf.StrView(), kSocModel, options.Get(), &compiled_code);
   ASSERT_OK(compile_status);
   ASSERT_FALSE(compiled_code.empty());
 }

@@ -196,8 +196,15 @@ LiteRtStatus LiteRtGetTensorBufferType(LiteRtTensorBuffer tensor_buffer,
 LiteRtStatus LiteRtGetTensorBufferTensorType(
     LiteRtTensorBuffer tensor_buffer, LiteRtRankedTensorType* tensor_type);
 
+// Returns the size of the underlying H/W tensor buffer. This size can be
+// different to the PackedSize() if there is stride and padding exists.
 LiteRtStatus LiteRtGetTensorBufferSize(LiteRtTensorBuffer tensor_buffer,
                                        size_t* size);
+
+// Returns the size of the tensor buffer in packed bytes. This size is used to
+// read / write data on locked tensor buffer.
+LiteRtStatus LiteRtGetTensorBufferPackedSize(LiteRtTensorBuffer tensor_buffer,
+                                             size_t* size);
 
 LiteRtStatus LiteRtGetTensorBufferOffset(LiteRtTensorBuffer tensor_buffer,
                                          size_t* offset);
@@ -222,10 +229,18 @@ LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
 // Lock a tensor buffer and map it to host memory, potentially synchronizing on
 // an event that was previously attached to the tensor buffer with
 // `LiteRtSetTensorBufferEvent`.
+//
+// NOTE: If the underlying H/W buffer has a stride the data will be converted to
+// the packed buffer.
+// TODO b/413449050 - Update behavior to return raw H/W buffer as it is.
 LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
                                     void** host_mem_addr);
 
 // Unlock a tensor buffer and (potentially) unmap it from host memory.
+//
+// NOTE: If the underlying H/W buffer has a stride the data will be converted to
+// the strided buffer.
+// TODO b/413449050 - Update behavior to upload contents without conversion.
 LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 
 // Destroy a tensor buffer. If the tensor buffer is managed, the number of

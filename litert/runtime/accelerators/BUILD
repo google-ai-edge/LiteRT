@@ -22,7 +22,6 @@ cc_library(
     srcs = ["auto_registration.cc"],
     hdrs = ["auto_registration.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
@@ -31,6 +30,7 @@ cc_library(
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
         "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -38,7 +38,6 @@ cc_library(
     name = "accelerator_implementation_helper",
     hdrs = ["accelerator_implementation_helper.h"],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_accelerator",
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
@@ -46,5 +45,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_model_compilation_data",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )

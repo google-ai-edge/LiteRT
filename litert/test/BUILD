@@ -62,11 +62,11 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core:private_cc_api_stable",
         "//tflite/kernels:builtin_ops",
-        "@local_tsl//tsl/platform",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+        "@local_tsl//tsl/platform",
     ],
 )
 
@@ -210,6 +210,7 @@ exports_files(srcs = [
     "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
     "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
     "testdata/simple_add_op_qc_v75_precompiled.tflite",
+    "testdata/simple_add_uint16_qualcomm.bin",
     "testdata/simple_model_google_tensor.bin",
     "testdata/simple_model_mtk.bin",
     "testdata/simple_model_npu_google_tensor_precompiled.tflite",

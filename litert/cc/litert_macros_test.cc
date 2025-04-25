@@ -23,6 +23,7 @@ namespace litert {
 namespace {
 
 using testing::AllOf;
+using testing::HasSubstr;
 using testing::Property;
 
 TEST(LiteRtReturnIfErrorTest, ConvertsResultToLiteRtStatus) {
@@ -201,6 +202,56 @@ TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
   EXPECT_EQ(expected_return.Error().Status(),
             kLiteRtStatusErrorInvalidArgument);
   EXPECT_EQ(canary_value, 0);
+}
+
+TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
+  LITERT_ABORT_IF_ERROR(kLiteRtStatusOk);
+  LITERT_ABORT_IF_ERROR(true);
+}
+
+TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
+  const Expected<int> InvalidArgumentError = Expected<int>(
+      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+  EXPECT_DEATH(
+      LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
+#ifndef NDEBUG
+      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message"))
+#else
+      ""
+#endif
+  );
+}
+
+TEST(LiteRtAssignOrAbortTest, WorksWithValidExpected) {
+  LITERT_ASSIGN_OR_ABORT(int v, Expected<int>(3));
+  EXPECT_EQ(v, 3);
+}
+
+TEST(LiteRtAssignOrAbortTest, DiesWithError) {
+  const Expected<int> InvalidArgumentError = Expected<int>(
+      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+  EXPECT_DEATH(
+      LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
+#ifndef NDEBUG
+      "Unexpected message"
+#else
+      ""
+#endif
+  );
+}
+
+TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
+  const Expected<int> InvalidArgumentError = Expected<int>(
+      Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
+  EXPECT_DEATH(
+      LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
+                             _ << "Error abort log"),
+#ifndef NDEBUG
+      AllOf(HasSubstr("Error abort log"), HasSubstr("Unexpected message"))
+#else
+      ""
+#endif
+  );
 }
 
 }  // namespace

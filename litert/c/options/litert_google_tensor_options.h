@@ -81,14 +81,6 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetDumpOpTimings(
 LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
     LiteRtGoogleTensorOptions options, bool* dump_op_timings);
 
-// enable_reference ------------------------------------------------------------
-
-LiteRtStatus LiteRtGoogleTensorOptionsSetEnableReference(
-    LiteRtGoogleTensorOptions options, bool enable_reference);
-
-LiteRtStatus LiteRtGoogleTensorOptionsGetEnableReference(
-    LiteRtGoogleTensorOptions options, bool* enable_reference);
-
 #ifdef __cplusplus
 }  // extern "C"
 
@@ -111,23 +103,19 @@ class GoogleTensorOptions : public OpaqueOptions {
   void SetFloatTruncationType(
       LiteRtGoogleTensorOptionsTruncationType truncation_type);
 
-  LiteRtGoogleTensorOptionsTruncationType GetFloatTruncationType();
+  LiteRtGoogleTensorOptionsTruncationType GetFloatTruncationType() const;
 
   void SetInt64ToInt32Truncation(bool int64_to_int32_truncation);
 
-  bool GetInt64ToInt32Truncation();
+  bool GetInt64ToInt32Truncation() const;
 
   void SetOutputDir(absl::string_view output_dir);
 
-  absl::string_view GetOutputDir();
+  absl::string_view GetOutputDir() const;
 
   void SetDumpOpTimings(bool dump_op_timings);
 
-  bool GetDumpOpTimings();
-
-  void SetEnableReference(bool enable_reference);
-
-  bool GetEnableReference();
+  bool GetDumpOpTimings() const;
 
  private:
   LiteRtGoogleTensorOptions Data() const;

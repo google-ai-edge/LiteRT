@@ -55,8 +55,6 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":example_plugin",  # buildcleaner: keep
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
@@ -65,6 +63,8 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -75,8 +75,6 @@ cc_library(
     visibility = ["//litert/vendors/cc:__pkg__"],
     deps = [
         ":example_ir",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
@@ -86,6 +84,8 @@ cc_library(
         "//litert/vendors/cc:backend_ir",
         "//litert/vendors/cc:conversion",
         "//litert/vendors/cc:ir_types",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -95,9 +95,6 @@ cc_test(
     deps = [
         ":example_conversion_impl",
         ":example_ir",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_model",
         "//litert/core/model:model_graph_testonly",
@@ -106,6 +103,9 @@ cc_test(
         "//litert/test:matchers",
         "//litert/vendors/cc:conversion",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
@@ -131,7 +131,6 @@ cc_library(
     deps = [
         ":example_conversion_impl",
         ":example_ir",
-        "@com_google_absl//absl/strings:str_format",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
@@ -141,6 +140,7 @@ cc_library(
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/cc:convert_graph",
         "//litert/vendors/cc:partition_with_capabilities",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -150,8 +150,6 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":example_plugin_with_conversions",  # buildcleaner: keep
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_model",
@@ -160,5 +158,7 @@ cc_test(
         "//litert/test:matchers",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )

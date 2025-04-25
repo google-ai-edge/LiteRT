@@ -42,7 +42,7 @@ using litert::mediatek::NeuronModelPtr;
 namespace {
 
 // FIXME (b/409133962): This is used as a workaround to b/409133962.
-constexpr int kExtraDimensionsForB409133962War = 10;
+constexpr int kExpectedRankForB409133962War = 4;
 
 Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromCachedNetwork(
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
@@ -346,25 +346,26 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
                            "Failed to get input padded size");
     }
 
-    // FIXME (b/409133962): NeuronCompilation_getInputPaddedDimensions and
-    // NeuronCompilation_getOutputPaddedDimensions return more data than
-    // tensor_type.layout.rank. Perhaps that's because of the specific MTK
-    // bytecode we are using in the
-    // runtime/dispatch/dispatch_delegate_mediatek_test.cc test case, which may
-    // assume a model with deeper I/O dimensions than what LiteRT assumes. As a
-    // temporary workaround, we pass a bigger padded_dimensions vector and then
-    // we crop it to what LiteRT needs.
-    constexpr int kExtraDimensionsForB409133962War = 10;
-    std::vector<uint32_t> padded_dimensions(tensor_type.layout.rank +
-                                            kExtraDimensionsForB409133962War);
+    // According to MediaTek, NeuronCompilation_getInputPaddedDimensions and
+    // NeuronCompilation_getOutputPaddedDimensions support only NHWC tensors and
+    // expect 4 elements in the provided padded_dimensions array. As a temporary
+    // workaround, we pass a bigger padded_dimensions vector and then we crop it
+    // to what LiteRT needs. See b/409133962.
+    if (tensor_type.layout.rank > kExpectedRankForB409133962War) {
+      return litert::Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("NeuronCompilation_getInputPaddedDimensions "
+                          "supports only %dD tensors",
+                          kExpectedRankForB409133962War));
+    }
+    std::vector<uint32_t> padded_dimensions(kExpectedRankForB409133962War);
     if (neuron_adapter_api_.api().compilation_get_input_padded_dimensions(
             compilation_, input_index, padded_dimensions.data()) !=
         NEURON_NO_ERROR) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Failed to get input padded dimensions");
     }
-    // Crop padded dimensions as part of the workaround described above.
-    // FIXME (b/409133962): remove this code.
+    // Crop padded_dimensions as part of the workaround described above.
     padded_dimensions.resize(tensor_type.layout.rank);
 
     input_requirements_builders_[input_index] =
@@ -392,24 +393,26 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
                            "Failed to get output padded size");
     }
 
-    // FIXME (b/409133962): NeuronCompilation_getInputPaddedDimensions and
-    // NeuronCompilation_getOutputPaddedDimensions return more data than
-    // tensor_type.layout.rank. Perhaps that's because of the specific MTK
-    // bytecode we are using in the
-    // runtime/dispatch/dispatch_delegate_mediatek_test.cc test case, which may
-    // assume a model with deeper I/O dimensions than what LiteRT assumes. As a
-    // temporary workaround, we pass a bigger padded_dimensions vector and then
-    // we crop it to what LiteRT needs.
-    std::vector<uint32_t> padded_dimensions(tensor_type.layout.rank +
-                                            kExtraDimensionsForB409133962War);
+    // According to MediaTek, NeuronCompilation_getInputPaddedDimensions and
+    // NeuronCompilation_getOutputPaddedDimensions support only NHWC tensors and
+    // expect 4 elements in the provided padded_dimensions array. As a temporary
+    // workaround, we pass a bigger padded_dimensions vector and then we crop it
+    // to what LiteRT needs. See b/409133962.
+    if (tensor_type.layout.rank > kExpectedRankForB409133962War) {
+      return litert::Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("NeuronCompilation_getOutputPaddedDimensions "
+                          "supports only %dD tensors",
+                          kExpectedRankForB409133962War));
+    }
+    std::vector<uint32_t> padded_dimensions(kExpectedRankForB409133962War);
     if (neuron_adapter_api_.api().compilation_get_output_padded_dimensions(
             compilation_, output_index, padded_dimensions.data()) !=
         NEURON_NO_ERROR) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Failed to get output padded dimensions");
     }
-    // Crop padded dimensions as part of the workaround described above.
-    // FIXME (b/409133962): remove this code.
+    // Crop padded_dimensions as part of the workaround described above.
     padded_dimensions.resize(tensor_type.layout.rank);
 
     output_requirements_builders_[output_index] =

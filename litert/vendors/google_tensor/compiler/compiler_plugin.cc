@@ -31,10 +31,12 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/adapter.h"
 
 //
@@ -228,39 +230,37 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 //
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {
-  using Flag = std::pair<std::string, std::string>;
-  std::vector<Flag> flags;
-  LiteRtEnvironmentOptions env;
-  LiteRtOptions options;
-};
+class LiteRtCompilerPluginT {
+ public:
+  using GoogleTensorOptions = ::litert::google_tensor::GoogleTensorOptions;
 
-LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
-                                          LiteRtParamIndex num_flags,
-                                          const char** keys,
-                                          const char** values) {
-  auto& flags = compiler_plugin->flags;
-  if (flags.size() != 0) {
-    LITERT_LOG(LITERT_INFO, "Overwriting existing flags");
-    flags.clear();
+  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+    std::tie(env_, opts_, opq_, google_tensor_opts_) =
+        litert::ParseOptions<GoogleTensorOptions>(env, options);
   }
-  flags.resize(num_flags);
-  for (int i = 0; i < num_flags; ++i) {
-    auto& flag = flags[i];
-    flag.first = std::string(keys[i]);
-    flag.second = std::string(values[i]);
-    LITERT_LOG(LITERT_INFO, "Setting Flag: %s = %s", flag.first.c_str(),
-               flag.second.c_str());
+
+  ::litert::Expected<GoogleTensorOptions>& GetGoogleTensorOptions() {
+    return google_tensor_opts_;
   }
-  return kLiteRtStatusOk;
-}
+
+  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
+
+ private:
+  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
+      kLiteRtStatusErrorInvalidArgument, "Null environment options");
+  litert::Expected<litert::Options> opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
+  litert::Expected<litert::OpaqueOptions> opq_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
+  litert::Expected<litert::google_tensor::GoogleTensorOptions>
+      google_tensor_opts_ = litert::Error(kLiteRtStatusErrorInvalidArgument,
+                                          "Null google tensor options");
+};
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
-  *compiler_plugin = new LiteRtCompilerPluginT;
-  (*compiler_plugin)->env = env;
-  (*compiler_plugin)->options = options;
+  *compiler_plugin = new LiteRtCompilerPluginT(env, options);
   return kLiteRtStatusOk;
 }
 
@@ -339,11 +339,28 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
+
+  // Resolve custom google tensor options.
+  LiteRtOpaqueOptions opaque_options = {};
+  if (!compiler_plugin->GetOpaqueOptions()) {
+    LITERT_LOG(
+        LITERT_INFO,
+        "No custom google tensor options found, creating default options");
+    LITERT_ASSIGN_OR_RETURN(
+        auto google_tensor_opts,
+        ::litert::google_tensor::GoogleTensorOptions::Create());
+    opaque_options = google_tensor_opts.Release();
+  } else {
+    LITERT_LOG(LITERT_INFO, "Using custom google tensor options");
+    opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
+  }
+
   // TODO(b/398984678): add support for multiple bytecodes
   absl::string_view soc_model_view(soc_model);
   std::string compiled;
+
   auto compile_status = adapter_result.Value()->api().compile(
-      buffer_str, soc_model_view, compiler_plugin->flags, &compiled);
+      buffer_str, soc_model_view, opaque_options, &compiled);
 
   if (!compile_status.ok()) {
     LITERT_LOG(

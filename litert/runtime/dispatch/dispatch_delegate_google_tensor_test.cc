@@ -556,11 +556,6 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   }
 }
 
-// This test is disabled until the necessary DeviceGraph change
-// (thr_invocation_context_start_metrics_collection and
-// thr_invocation_context_stop_metrics_collection) is rolled out in the weekly
-// dogfood.
-#if 0
 TEST(DispatchDelegate, CompiledModelWithMetrics) {
   // Create Model and check signatures.
   std::string model_file_path =
@@ -606,7 +601,8 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   LITERT_ASSERT_OK(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
-  LITERT_ASSERT_OK(compiled_model.StartMetricsCollection(/*detail_level=*/100));
+  bool metrics_supported =
+      compiled_model.StartMetricsCollection(/*detail_level=*/100).HasValue();
 
   // Execute compiled model.
   LITERT_ASSERT_OK(
@@ -625,7 +621,7 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   }
 
   // Check collected metrics.
-  {
+  if (metrics_supported) {
     auto metrics = compiled_model.StopMetricsCollection();
     ASSERT_TRUE(metrics);
     for (int i = 0; i < metrics->metrics.size(); ++i) {
@@ -635,7 +631,6 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
     }
   }
 }
-#endif
 
 TEST(DispatchDelegate, CompiledModelAsync) {
 #if !defined(__ANDROID__)

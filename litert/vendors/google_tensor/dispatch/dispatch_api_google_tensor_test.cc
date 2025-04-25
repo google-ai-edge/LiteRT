@@ -263,7 +263,6 @@ TEST(DispatchApi, GoogleTensor) {
   // ///////////////////////////////////////////////////////////////////////////
   // Clean up resources.
   // ///////////////////////////////////////////////////////////////////////////
-
   EXPECT_EQ(LiteRtDispatchDetachInput(invocation_context,
                                       /*graph_input_index=*/0, input_0_handle),
             kLiteRtStatusOk);

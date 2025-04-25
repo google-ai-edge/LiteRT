@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -76,28 +77,16 @@ litert_dynamic_lib(
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "dispatch_api_google_tensor_test",
-    srcs = [
-        "dispatch_api_google_tensor_test.cc",
-    ],
+    srcs = ["dispatch_api_google_tensor_test.cc"],
+    backend_id = "google_tensor",
     data = [
-        ":dispatch_api_so",
-    ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    tags = [
-        # Don't build/test in OSS until Southbound is available.
-        "nobuilder",
-        "no_oss",
+        "//litert/test:testdata/simple_model_google_tensor.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
     ],
     deps = [
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/types:span",
+        ":dispatch_api",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
@@ -105,27 +94,23 @@ cc_test(
         "//litert/test:common",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
-cc_test(
+litert_device_test(
     name = "dispatch_api_async_google_tensor_test",
-    srcs = [
-        "dispatch_api_async_google_tensor_test.cc",
-    ],
+    srcs = ["dispatch_api_async_google_tensor_test.cc"],
+    backend_id = "google_tensor",
     data = [
-        ":dispatch_api_so",
-    ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    tags = [
-        # Don't build/test in OSS until Southbound is available.
-        "nobuilder",
-        "no_oss",
+        "//litert/test:testdata/simple_model_google_tensor.bin",
+        "//litert/test:testdata/simple_model_npu.tflite",
     ],
     deps = [
+        ":dispatch_api",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",

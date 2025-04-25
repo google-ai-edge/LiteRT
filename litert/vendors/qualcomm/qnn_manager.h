@@ -21,7 +21,6 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -74,12 +73,12 @@ class QnnManager;
 
 namespace internal {
 
-void Dump(const QnnManager& qnn, std::ostream& out);
+  std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
 
 class QnnManager {
-  friend void internal::Dump(const QnnManager& qnn, std::ostream& out);
+  friend std::string internal::Dump(const QnnManager& qnn);
 
  public:
   using Ptr = std::unique_ptr<QnnManager>;
@@ -205,7 +204,7 @@ class QnnManager {
   Qnn_LogHandle_t log_handle_ = nullptr;
   Qnn_BackendHandle_t backend_handle_ = nullptr;
   Qnn_DeviceHandle_t device_handle_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[0];
+  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[6];  // V75
   std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
   std::vector<QnnDevice_Config_t> device_configs_;
   // For dispatch options

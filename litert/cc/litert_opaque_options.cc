@@ -23,8 +23,8 @@
 namespace litert {
 namespace {}  // namespace
 
-Expected<OpaqueOptions> Find(OpaqueOptions& options,
-                             const std::string& payload_identifier) {
+Expected<OpaqueOptions> FindOpaqueOptions(
+    OpaqueOptions& options, const std::string& payload_identifier) {
   Expected<OpaqueOptions> chain(OpaqueOptions(options.Get(), OwnHandle::kNo));
   while (chain) {
     // TODO: lukeboyer - Error out in all the cases where there isn't

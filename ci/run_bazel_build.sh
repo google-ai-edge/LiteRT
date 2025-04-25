@@ -39,8 +39,6 @@ IOS_BUILD_FLAGS=(
   "--config=ios_x86_64"
   "--compilation_mode=opt"
   "--swiftcopt=-enable-testing"
-  # TODO: (b/287670077) - remove once code has been updated to handle newer versions of xcode
-  "--xcode_version=15.4.0"
   "--show_timestamps"
   )
 

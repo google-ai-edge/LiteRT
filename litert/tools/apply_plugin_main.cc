@@ -21,12 +21,12 @@
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/cc/litert_options.h"
-#include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/outstream.h"
 
@@ -42,9 +42,6 @@ ApplyPluginRun::Ptr ParseFlags() {
   if (!model.empty()) {
     res->model = model;
   }
-
-  res->compiler_flags = *litert::internal::ParseCompilerFlags(
-      absl::GetFlag(FLAGS_compiler_flags));
 
   const auto soc_manufacturer_absl = absl::GetFlag(FLAGS_soc_manufacturer);
   res->soc_manufacturer = soc_manufacturer_absl;
@@ -131,6 +128,21 @@ int main(int argc, char* argv[]) {
     if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
       run->dump_out.Get().get()
           << "Failed to add google tensor options to list\n";
+      return 1;
+    }
+  }
+
+  {
+    auto mediatek_opts =
+        litert::mediatek::MediatekOptionsFromFlags();
+    if (!mediatek_opts) {
+      run->dump_out.Get().get() << "Failed to create Mediatek options\n";
+      return 1;
+    }
+
+    if (!opts->AddOpaqueOptions(std::move(*mediatek_opts))) {
+      run->dump_out.Get().get()
+          << "Failed to add Mediatek options to list\n";
       return 1;
     }
   }

@@ -23,6 +23,7 @@ cc_library(
     hdrs = ["dump.h"],
     tags = ["nobuilder"],
     deps = [
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "//litert/vendors/qualcomm:qnn_manager_hdr",
