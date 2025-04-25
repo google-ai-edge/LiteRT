@@ -335,20 +335,24 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
 
   std::vector<const QnnDevice_Config_t*> device_configs;
   if (soc_info.has_value()) {
+    LITERT_LOG(LITERT_INFO, "Using provided SoC info.");
     soc_info_ = *soc_info;
   } else {
     LITERT_LOG(LITERT_INFO, "Apply deviceGetPlatformInfo for SoC info.");
     if (auto status =
             Api()->deviceGetPlatformInfo(nullptr, &device_platform_info_);
-        status != QNN_SUCCESS) {
-      LITERT_LOG(LITERT_ERROR, "Fail to get platforminfo: %d", status);
-      return kLiteRtStatusErrorRuntimeFailure;
-    }
-    auto soc_info_online = FindSocInfo(static_cast<::qnn::SnapdragonModel>(
-        device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
-            ->onChipDevice.socModel));
-    if (soc_info_online.has_value()) {
-      soc_info_ = *soc_info_online;
+        status == QNN_SUCCESS) {
+      auto soc_info_online = FindSocInfo(static_cast<::qnn::SnapdragonModel>(
+          device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
+              ->onChipDevice.socModel));
+
+      if (soc_info_online.has_value()) {
+        soc_info_ = *soc_info_online;
+      }
+
+    } else {
+      LITERT_LOG(LITERT_WARNING, "Fail to get platforminfo: %d, using default.",
+                 status);
     }
   }
 
