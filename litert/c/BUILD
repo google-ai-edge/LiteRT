@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
-load("//litert/build_common:litert_build_defs.bzl", "copy_file", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
+load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts")
 
 package(
@@ -595,6 +595,12 @@ cc_shared_library(
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
+# Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
+filegroup(
+    name = "libLiteRtRuntimeCApi.so",
+    srcs = [":litert_runtime_c_api_so"],
+)
+
 cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
@@ -629,12 +635,6 @@ cc_library(
     deps = [
         "@opencl_headers",
     ],
-)
-
-copy_file(
-    name = "copy_litert_runtime_c_api_so",
-    src = "//litert/c:litert_runtime_c_api_so",
-    target = "libLiteRtRuntimeCApi.so",
 )
 
 # This is cc_library target based on `libLiteRtRuntimeCApi.so`.
