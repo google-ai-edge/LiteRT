@@ -71,6 +71,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/compiler/legalizations:legalize_helper",
         "//litert/vendors/mediatek/compiler/legalizations:add_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:batch_matmul_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",

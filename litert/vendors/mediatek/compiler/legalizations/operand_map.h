@@ -232,7 +232,7 @@ class OperandMap {
     free(oem_scalar);
 
     // Get oem op type
-    int32_t operation_type = NEURON_OEM_OPERATION;
+    int32_t operation_type = -1;
     if (neuron_adapter_api_.api().model_get_extension_operation_type(
             model_, kExtensionGeneralOpration,
             ADAPTER_EXTENSION_GENERAL_OPERATION_TYPE,

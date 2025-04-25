@@ -39,10 +39,27 @@ cc_library(
 )
 
 cc_library(
+    name = "legalize_helper",
+    hdrs = ["legalize_helper.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_op_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
     name = "neuron_utils",
     srcs = ["neuron_utils.cc"],
-    hdrs = ["neuron_utils.h",
-            "legalize_helper.h"],
+    hdrs = ["neuron_utils.h"],
     tags = [
         # Don't build/test in OS until MediaTek SDK is available.
         "nobuilder",
@@ -129,6 +146,7 @@ cc_library(
     ],
     deps = [
         "operand_map",
+        "legalize_helper",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -410,6 +428,7 @@ cc_library(
     ],
     deps = [
         "operand_map",
+        "legalize_helper",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_options",
