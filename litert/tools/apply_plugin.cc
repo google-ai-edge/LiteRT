@@ -177,8 +177,9 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
   ctx.Dump().Display() << "\n";
 
   std::vector<absl::string_view> paths_vec(paths.begin(), paths.end());
-  auto plugins = CompilerPlugin::LoadPlugins(
-      paths_vec, ctx.Environment().GetOptions()->Get(), ctx.Options().Get());
+  LITERT_ASSIGN_OR_RETURN(auto env_options, ctx.Environment().GetOptions());
+  auto plugins = CompilerPlugin::LoadPlugins(paths_vec, env_options.Get(),
+                                             ctx.Options().Get());
   if (!plugins.HasValue()) {
     ctx.Dump().Fail();
     return plugins;

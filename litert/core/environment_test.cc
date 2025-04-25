@@ -22,15 +22,18 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_environment.h"
 #include "litert/cc/litert_any.h"
+#include "litert/test/matchers.h"
 
 namespace litert::internal {
 namespace {
 
 TEST(LiteRtEnvironmentT, CreateWithOptions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny any_path,
+                              ToLiteRtAny(std::any("sample path")));
   const std::array<LiteRtEnvOption, 1> environment_options = {
       LiteRtEnvOption{
           kLiteRtEnvOptionTagCompilerPluginLibraryDir,
-          *ToLiteRtAny(std::any("sample path")),
+          any_path,
       },
   };
   auto env = LiteRtEnvironmentT::CreateWithOptions(environment_options);
@@ -47,10 +50,12 @@ TEST(LiteRtEnvironmentT, CheckStringCopy) {
 
   // The passed string becomes obsolete after the scope.
   {
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny any_path,
+                                ToLiteRtAny(std::any("sample path")));
     const std::array<LiteRtEnvOption, 1> environment_options = {
         LiteRtEnvOption{
             kLiteRtEnvOptionTagCompilerPluginLibraryDir,
-            *ToLiteRtAny(std::any("sample path")),
+            any_path,
         },
     };
     auto res = LiteRtEnvironmentT::CreateWithOptions(environment_options);

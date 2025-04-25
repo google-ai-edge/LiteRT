@@ -54,7 +54,7 @@ void BasicTest() {
       auto compiled_model,
       CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
 
-  auto signatures = model.GetSignatures().Value();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
 
   auto signature_key = signatures[0].Key();
@@ -142,7 +142,7 @@ TEST(CompiledModelGpuTest, Async) {
       auto compiled_model,
       CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
 
-  auto signatures = model.GetSignatures().Value();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
 
   auto signature_key = signatures[0].Key();
@@ -212,11 +212,10 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  constexpr const char *kModelPartilaFileName =
-      "simple_cast_and_add_op.tflite";
+  constexpr const char* kModelPartilaFileName = "simple_cast_and_add_op.tflite";
   LITERT_ASSERT_OK_AND_ASSIGN(
-          auto model, Model::CreateFromFile(
-                          testing::GetTestFilePath(kModelPartilaFileName)));
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelPartilaFileName)));
 
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
@@ -229,7 +228,7 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
       auto compiled_model,
       CompiledModel::Create(*env, model, *compilation_options));
 
-  auto signatures = model.GetSignatures().Value();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
 
   auto signature_key = signatures[0].Key();
@@ -255,8 +254,8 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
   int64_t arg2_data[1] = {1};
-  ASSERT_TRUE(input_buffers[2].Write<int64_t>(
-      absl::MakeConstSpan(arg2_data, 1)));
+  ASSERT_TRUE(
+      input_buffers[2].Write<int64_t>(absl::MakeConstSpan(arg2_data, 1)));
 
   // Execute model.
   compiled_model.Run(signature_index, input_buffers, output_buffers);
@@ -302,7 +301,7 @@ TEST(CompiledModelGpuTest, BasicAdd3dCstInt32) {
       auto compiled_model,
       CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
 
-  auto signatures = model.GetSignatures().Value();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
 
   auto signature_key = signatures[0].Key();

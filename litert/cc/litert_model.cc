@@ -21,15 +21,17 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
 
 bool Tensor::IsSubgraphOutput() const { return Uses().empty(); }
 
 bool Tensor::IsSubgraphInput() const {
+  LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType())
   // A special case for zero-sized tensors.
-  if (RankedTensorType()->Layout().Rank() == 1 &&
-      RankedTensorType()->Layout().Dimensions()[0] == 0) {
+  if (ranked_tensor_type.Layout().Rank() == 1 &&
+      ranked_tensor_type.Layout().Dimensions()[0] == 0) {
     return false;
   }
   return !HasWeights() && !DefiningOp().has_value();

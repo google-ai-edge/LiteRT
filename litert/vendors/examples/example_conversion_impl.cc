@@ -17,6 +17,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/cc/backend_ir.h"
 #include "litert/vendors/cc/conversion.h"
@@ -30,16 +31,12 @@ TensorConverter<ExampleTensor> MakeTensorConverter(
     auto& tensor = *alloc();
     tensor.name = litert_tensor.Name();
 
-    auto litert_type = litert_tensor.RankedTensorType();
-    if (!litert_type) {
-      return Error(litert_type.Error().Status());
-    }
+    LITERT_ASSIGN_OR_RETURN(auto litert_type, litert_tensor.RankedTensorType())
 
-    const auto litert_dims = litert_type->Layout().Dimensions();
-
+    const auto litert_dims = litert_type.Layout().Dimensions();
     tensor.dims.assign(litert_dims.cbegin(), litert_dims.cend());
 
-    switch (litert_tensor.RankedTensorType()->ElementType()) {
+    switch (litert_type.ElementType()) {
       case ElementType::Float32:
         tensor.type = ExampleTensorType::FLOAT;
         break;

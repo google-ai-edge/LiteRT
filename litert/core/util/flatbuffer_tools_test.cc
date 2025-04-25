@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -33,7 +34,9 @@ using ::testing::Lt;
 FlatbufferWrapper::Ptr TestFlatbuffer(
     absl::string_view filename = "one_mul.tflite") {
   const auto tfl_path = testing::GetTestFilePath(filename);
-  return *FlatbufferWrapper::CreateFromTflFile(tfl_path);
+  LITERT_ASSIGN_OR_ABORT(auto ptr,
+                         FlatbufferWrapper::CreateFromTflFile(tfl_path));
+  return ptr;
 }
 
 static const absl::string_view kKey = "MyKey";

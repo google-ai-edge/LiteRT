@@ -18,6 +18,7 @@
 #include <string>
 #include <utility>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -28,6 +29,8 @@
 
 namespace litert {
 namespace {
+using testing::Pointee;
+using testing::litert::IsOkAndHolds;
 
 class SimpleOptions : public OpaqueOptions {
  public:
@@ -62,46 +65,46 @@ class SimpleOptions : public OpaqueOptions {
 };
 
 TEST(OpaqueOptionsTest, FindData) {
-  auto opts = SimpleOptions::Create();
-  ASSERT_TRUE(opts);
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts, SimpleOptions::Create());
 
-  auto data = FindOpaqueData<SimpleOptions::Payload>(
-      *opts, SimpleOptions::Discriminator());
-  ASSERT_TRUE(data);
-  EXPECT_EQ(**data, 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions::Payload * data,
+                              FindOpaqueData<SimpleOptions::Payload>(
+                                  opts, SimpleOptions::Discriminator()));
+  EXPECT_EQ(*data, 1);
 }
 
 TEST(OpaqueOptionsTest, Find) {
   void* payload = malloc(8);
-  auto options =
-      OpaqueOptions::Create("not-simple", payload, [](void* d) { free(d); });
-  ASSERT_TRUE(options);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      OpaqueOptions::Create("not-simple", payload, [](void* d) { free(d); }));
 
-  auto simple_options = SimpleOptions::Create();
-  ASSERT_TRUE(simple_options);
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions simple_options,
+                              SimpleOptions::Create());
 
-  LITERT_ASSERT_OK(options->Append(std::move(*simple_options)));
+  LITERT_ASSERT_OK(options.Append(std::move(simple_options)));
 
-  auto found =
-      FindOpaqueOptions(*options, std::string(SimpleOptions::Discriminator()));
-  ASSERT_TRUE(found);
-  EXPECT_EQ(**found->GetData<SimpleOptions::Payload>(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      OpaqueOptions found,
+      FindOpaqueOptions(options, std::string(SimpleOptions::Discriminator())));
+  EXPECT_THAT(found.GetData<SimpleOptions::Payload>(),
+              IsOkAndHolds(Pointee(1)));
 }
 
 TEST(OpaqueOptionsTest, FindType) {
   void* payload = malloc(8);
-  auto options =
-      OpaqueOptions::Create("not-simple", payload, [](void* d) { free(d); });
-  ASSERT_TRUE(options);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options,
+      OpaqueOptions::Create("not-simple", payload, [](void* d) { free(d); }));
 
-  auto simple_options = SimpleOptions::Create();
-  ASSERT_TRUE(simple_options);
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions simple_options,
+                              SimpleOptions::Create());
 
-  LITERT_ASSERT_OK(options->Append(std::move(*simple_options)));
+  LITERT_ASSERT_OK(options.Append(std::move(simple_options)));
 
-  auto found = FindOpaqueOptions<SimpleOptions>(*options);
-  ASSERT_TRUE(found);
-  EXPECT_EQ(found->Data(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions found,
+                              FindOpaqueOptions<SimpleOptions>(options));
+  EXPECT_EQ(found.Data(), 1);
 }
 
 }  // namespace

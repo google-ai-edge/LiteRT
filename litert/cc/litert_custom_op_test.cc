@@ -66,8 +66,8 @@ class MyCustomOpKernel : public CustomOpKernel {
   Expected<void> Run(const std::vector<TensorBuffer>& inputs,
                      std::vector<TensorBuffer>& outputs) override {
     LITERT_ASSIGN_OR_RETURN(auto tensor_type, outputs[0].TensorType());
-    auto num_elements = *tensor_type.Layout().NumElements();
-
+    LITERT_ASSIGN_OR_RETURN(size_t num_elements,
+                            tensor_type.Layout().NumElements());
     LITERT_ASSIGN_OR_RETURN(auto input0_lock_and_addr,
                             TensorBufferScopedLock::Create<float>(inputs[0]));
     LITERT_ASSIGN_OR_RETURN(auto input1_lock_and_addr,
