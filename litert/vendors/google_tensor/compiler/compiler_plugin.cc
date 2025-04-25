@@ -257,14 +257,6 @@ class LiteRtCompilerPluginT {
                                           "Null google tensor options");
 };
 
-LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
-                                          LiteRtParamIndex num_flags,
-                                          const char** keys,
-                                          const char** values) {
-  LITERT_LOG(LITERT_WARNING, "Setting compiler flags is being deprecated.");
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {

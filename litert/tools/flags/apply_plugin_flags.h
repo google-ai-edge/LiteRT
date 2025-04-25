@@ -22,8 +22,6 @@
 
 ABSL_DECLARE_FLAG(std::string, cmd);
 
-ABSL_DECLARE_FLAG(std::string, compiler_flags);
-
 ABSL_DECLARE_FLAG(::litert::tools::IntList, subgraphs);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_

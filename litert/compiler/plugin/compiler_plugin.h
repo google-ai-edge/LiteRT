@@ -32,7 +32,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_shared_library.h"
-#include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
@@ -120,11 +119,6 @@ class CompilerPlugin {
   static Expected<std::vector<CompilerPlugin>> LoadPlugins(
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
-
-  // Set compiler flags within the plugin.
-  LiteRtStatus SetFlags(const CompilerFlags& flags) {
-    return flags.SetPluginFlags(plugin_handle_, plugin_api_.set_flags);
-  }
 
   CompilerPlugin(CompilerPlugin&& other);
   CompilerPlugin& operator=(CompilerPlugin&& other);

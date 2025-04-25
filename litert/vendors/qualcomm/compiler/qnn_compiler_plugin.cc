@@ -245,15 +245,6 @@ class LiteRtCompilerPluginT {
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
 };
 
-LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
-                                          LiteRtParamIndex num_flags,
-                                          const char** keys,
-                                          const char** values) {
-  // This is in the process of deprecation.
-  LITERT_LOG(LITERT_WARNING, "LiteRtCompilerPluginSetFlags is deprecated");
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {

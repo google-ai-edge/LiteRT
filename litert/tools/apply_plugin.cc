@@ -36,7 +36,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
-#include "litert/compiler/plugin/compiler_flags.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -46,7 +45,6 @@
 namespace litert::tools {
 
 using ::litert::BufferRef;
-using ::litert::internal::CompilerFlags;
 using ::litert::internal::CompilerPlugin;
 using ::litert::internal::Dump;
 using ::litert::internal::PartitionResult;
@@ -94,8 +92,6 @@ class Context {
     return run_->outs.at(out_ind);
   }
 
-  const CompilerFlags& Flags() const { return run_->compiler_flags; }
-
   OutStream SwapOut(OutStream out) {
     ABSL_CHECK_EQ(run_->outs.size(), 1);
     auto res = run_->outs.front();
@@ -127,12 +123,11 @@ void DumpSubgraphs(ToolDisplay& display, absl::string_view label,
 }
 
 void DumpCompilationRequest(ToolDisplay& display, absl::string_view soc_model,
-                            size_t num_subgraphs, const CompilerFlags& flags) {
+                            size_t num_subgraphs) {
   display.Labeled() << absl::StreamFormat(
-                           "Requesting compilation for target `%s` on %lu "
-                           "partitions with flags: ",
+                           "Requesting compilation for target `%s` on %lu",
                            soc_model, num_subgraphs)
-                    << flags << "\n";
+                    << "\n";
 }
 
 void DumpCompilationResult(ToolDisplay& display, size_t byte_code_size,
@@ -379,9 +374,8 @@ LiteRtStatus Compile(Context& ctx) {
   }
 
   ctx.Dump().Start("Compiling");
-  DumpCompilationRequest(ctx.Dump(), ctx.SocModelTarget(), model.NumSubgraphs(),
-                         ctx.Flags());
-  plugin->SetFlags(ctx.Flags());
+  DumpCompilationRequest(ctx.Dump(), ctx.SocModelTarget(),
+                         model.NumSubgraphs());
   auto compilation_result = plugin->Compile(&model, ctx.SocModelTarget());
   if (!compilation_result) {
     ctx.Dump().Fail();
@@ -445,7 +439,6 @@ LiteRtStatus Apply(Context& ctx) {
   }
 
   ctx.Dump().Start("Applying plugin");
-  plugin->SetFlags(ctx.Flags());
   if (auto status = litert::internal::ApplyPlugin(
           *plugin, model, ctx.SocModelTarget(), ctx.Run().subgraphs);
       !status) {

@@ -226,14 +226,6 @@ struct LiteRtCompilerPluginT {
   LiteRtOptions options;
 };
 
-LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
-                                          LiteRtParamIndex num_flags,
-                                          const char** keys,
-                                          const char** values) {
-  // IMPLEMENT ME
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {

@@ -23,7 +23,6 @@ cc_library(
     hdrs = ["compiler_plugin.h"],
     deps = [
         ":algo",
-        ":compiler_flags",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
@@ -122,32 +121,6 @@ cc_test(
         "//litert/core/model:graph_validation",
         "//litert/test:common",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "compiler_flags",
-    srcs = ["compiler_flags.cc"],
-    hdrs = ["compiler_flags.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_expected",
-        "//litert/vendors/c:litert_compiler_plugin",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "compiler_flags_test",
-    srcs = ["compiler_flags_test.cc"],
-    deps = [
-        ":compiler_flags",
-        "//litert/c:litert_common",
-        "//litert/test:matchers",
-        "//litert/vendors/c:litert_compiler_plugin",
-        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],
 )

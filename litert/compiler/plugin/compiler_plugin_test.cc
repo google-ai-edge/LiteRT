@@ -104,12 +104,6 @@ TEST(CompilerPluginTest, SocModels) {
               ::testing::ElementsAreArray({kTestModels}));
 }
 
-TEST(CompilerPluginTest, SetFlags) {
-  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
-  ASSERT_EQ(plugins->size(), 1);
-  LITERT_ASSERT_OK(plugins->front().SetFlags(CompilerFlags()));
-}
-
 TEST(CompilerPluginTest, Partition) {
   auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
   ASSERT_EQ(plugins->size(), 1);
