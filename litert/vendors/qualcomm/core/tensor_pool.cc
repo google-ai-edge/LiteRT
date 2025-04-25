@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "third_party/qairt/latest/include/QNN/QnnTypes.h"
@@ -16,19 +17,25 @@ TensorPool::TensorPool() = default;
 
 TensorWrapper& TensorPool::CreateInputTensor(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions) {
+    const std::vector<std::uint32_t>& dimentions,
+    absl::string_view tensor_name) {
   const auto id = tensor_wrappers_.size();
-  auto& back = tensor_wrappers_.emplace_back(
-      id, QNN_TENSOR_TYPE_APP_WRITE, data_type, quant_params, dimentions);
+  // Record tensor_name to skip data conversion for KV caches during dispatch.
+  auto& back =
+      tensor_wrappers_.emplace_back(id, QNN_TENSOR_TYPE_APP_WRITE, data_type,
+                                    quant_params, dimentions, tensor_name);
   return back;
 }
 
 TensorWrapper& TensorPool::CreateOutpuTensor(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
-    const std::vector<std::uint32_t>& dimentions) {
+    const std::vector<std::uint32_t>& dimentions,
+    absl::string_view tensor_name) {
   const auto id = tensor_wrappers_.size();
-  auto& back = tensor_wrappers_.emplace_back(
-      id, QNN_TENSOR_TYPE_APP_READ, data_type, quant_params, dimentions);
+  // Record tensor_name to skip data conversion for KV slices during dispatch.
+  auto& back =
+      tensor_wrappers_.emplace_back(id, QNN_TENSOR_TYPE_APP_READ, data_type,
+                                    quant_params, dimentions, tensor_name);
   return back;
 }
 

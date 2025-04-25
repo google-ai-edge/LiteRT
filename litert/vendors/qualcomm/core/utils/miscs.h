@@ -3,6 +3,9 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
+#ifdef __ANDROID__
+#include <arm_neon.h>
+#endif
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -31,11 +34,30 @@ float Dequantize(const T val, const float scale, const int32_t zero_point) {
   return scale * (val - zero_point);
 }
 
-void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
-                                  std::vector<std::uint16_t>& dst);
-
-void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
-                                  std::vector<std::int16_t>& dst);
+template <typename T>
+using EnableIfInt16OrUint16Ptr = std::enable_if_t<
+    std::is_same_v<T, int16_t*> || std::is_same_v<T, uint16_t*>, bool>;
+// Converts data between quantized UINT16 and INT16 formats.
+template <typename T, EnableIfInt16OrUint16Ptr<T> = true>
+void ToggleMostSignificantBit(T src, size_t size) {
+  std::uint16_t* data = reinterpret_cast<std::uint16_t*>(src);
+#ifdef __ANDROID__
+  const uint16x8_t mask = vdupq_n_u16(0x8000);
+  size_t i = 0;
+  for (; i + 8 < size; i += 8) {
+    uint16x8_t uin = vld1q_u16(data + i);
+    uint16x8_t out = veorq_u16(uin, mask);
+    vst1q_u16(data + i, out);
+  }
+  for (; i < size; ++i) {
+    data[i] ^= 0x8000;
+  }
+#else
+  for (size_t i = 0; i < size; ++i) {
+    data[i] ^= 0x8000;
+  }
+#endif
+}
 
 void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
                                size_t num_bytes);

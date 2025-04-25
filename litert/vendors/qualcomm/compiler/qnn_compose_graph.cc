@@ -244,11 +244,11 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
 
   if (litert_tensor.IsSubgraphInput()) {
     auto& res = tensor_pool.CreateInputTensor(qnn_data_type, quantize_params,
-                                              dimentions);
+                                              dimentions, litert_tensor.Name());
     tensor_wrapper = &res;
   } else if (litert_tensor.IsSubgraphOutput() || is_tensor_read_and_write) {
     auto& res = tensor_pool.CreateOutpuTensor(qnn_data_type, quantize_params,
-                                              dimentions);
+                                              dimentions, litert_tensor.Name());
     tensor_wrapper = &res;
   } else if (litert_tensor.IsConstant()) {
     LITERT_ENSURE(litert_tensor.HasWeights(),
