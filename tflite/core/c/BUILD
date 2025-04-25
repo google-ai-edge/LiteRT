@@ -53,6 +53,10 @@ filegroup(
         "//tflite/core/async/c:types.h",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:lite_headers_filegroup",
     ],
+    visibility = [
+        # Temporary workaround to make visible to litert in OSS (default vis is not transformed correctly.)
+        "//visibility:public",
+    ],
 )
 
 filegroup(
