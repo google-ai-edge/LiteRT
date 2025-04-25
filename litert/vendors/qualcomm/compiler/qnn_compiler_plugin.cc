@@ -25,6 +25,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -193,17 +194,18 @@ LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
 // Plugins can hold state.
 class LiteRtCompilerPluginT {
  public:
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options)
-      : options_({env, options}) {}
+  using QnnOptions = ::litert::qualcomm::QualcommOptions;
 
-  litert::OptionsHelper& Options() { return options_; }
+  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+    std::tie(env_, opts_, opq_, qnn_opts_) =
+        litert::ParseOptions<QnnOptions>(env, options);
+  }
 
   QnnLog_Level_t LogLevel() {
-    auto qnn_opts = options_.FindOptions<::litert::qualcomm::QualcommOptions>();
-    if (!qnn_opts) {
+    if (!qnn_opts_) {
       return QNN_LOG_LEVEL_INFO;
     }
-    auto log_level_opt = qnn_opts->GetLogLevel();
+    auto log_level_opt = qnn_opts_->GetLogLevel();
     switch (log_level_opt) {
       case kLiteRtQualcommLogOff:
         return QNN_LOG_LEVEL_ERROR;
@@ -224,17 +226,23 @@ class LiteRtCompilerPluginT {
 #ifdef __ANDROID__
     return false;
 #else
-    auto qnn_opts = options_.FindOptions<::litert::qualcomm::QualcommOptions>();
-    if (!qnn_opts) {
+    if (!qnn_opts_) {
       return true;
     }
-    return qnn_opts->GetEnableWeightSharing() &&
+    return qnn_opts_->GetEnableWeightSharing() &&
            dsp_arch >= ::qnn::DspArch::V73;
 #endif
   }
 
  private:
-  litert::OptionsHelper options_;
+  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
+      kLiteRtStatusErrorInvalidArgument, "Null environment options");
+  litert::Expected<litert::Options> opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
+  litert::Expected<litert::OpaqueOptions> opq_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
+  litert::Expected<QnnOptions> qnn_opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
 };
 
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,

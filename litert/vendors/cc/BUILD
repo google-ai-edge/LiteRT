@@ -86,9 +86,11 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_options",
         "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options",
@@ -134,5 +136,21 @@ cc_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
+    ],
+)
+
+cc_test(
+    name = "options_helper_test",
+    srcs = ["options_helper_test.cc"],
+    deps = [
+        ":options_helper",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "@com_google_googletest//:gtest_main",
     ],
 )

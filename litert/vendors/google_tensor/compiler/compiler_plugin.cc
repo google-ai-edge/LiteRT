@@ -232,13 +232,29 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 // Plugins can hold state.
 class LiteRtCompilerPluginT {
  public:
-  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options)
-      : options_({env, options}) {}
+  using GoogleTensorOptions = ::litert::google_tensor::GoogleTensorOptions;
 
-  ::litert::OptionsHelper& Options() { return options_; }
+  LiteRtCompilerPluginT(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+    std::tie(env_, opts_, opq_, google_tensor_opts_) =
+        litert::ParseOptions<GoogleTensorOptions>(env, options);
+  }
+
+  ::litert::Expected<GoogleTensorOptions>& GetGoogleTensorOptions() {
+    return google_tensor_opts_;
+  }
+
+  ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
 
  private:
-  ::litert::OptionsHelper options_;
+  litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
+      kLiteRtStatusErrorInvalidArgument, "Null environment options");
+  litert::Expected<litert::Options> opts_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null options");
+  litert::Expected<litert::OpaqueOptions> opq_ =
+      litert::Error(kLiteRtStatusErrorInvalidArgument, "Null opaque options");
+  litert::Expected<litert::google_tensor::GoogleTensorOptions>
+      google_tensor_opts_ = litert::Error(kLiteRtStatusErrorInvalidArgument,
+                                          "Null google tensor options");
 };
 
 LiteRtStatus LiteRtCompilerPluginSetFlags(LiteRtCompilerPlugin compiler_plugin,
@@ -334,8 +350,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Resolve custom google tensor options.
   LiteRtOpaqueOptions opaque_options = {};
-  auto opq = compiler_plugin->Options().OpaqueOptions();
-  if (!opq) {
+  if (!compiler_plugin->GetOpaqueOptions()) {
     LITERT_LOG(
         LITERT_INFO,
         "No custom google tensor options found, creating default options");
@@ -345,7 +360,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     opaque_options = google_tensor_opts.Release();
   } else {
     LITERT_LOG(LITERT_INFO, "Using custom google tensor options");
-    opaque_options = opq->Get();
+    opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
   }
 
   // TODO(b/398984678): add support for multiple bytecodes

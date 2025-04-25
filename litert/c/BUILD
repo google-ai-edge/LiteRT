@@ -172,14 +172,7 @@ cc_library(
     name = "litert_layout",
     srcs = ["litert_layout.cc"],
     hdrs = ["litert_layout.h"],
-    deps = [
-        ":litert_common",
-        ":litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_macros",
-        "//tflite/core/c:private_c_api_types",
-        "@com_google_absl//absl/strings:string_view",
-    ],
+    deps = [":litert_common"],
 )
 
 cc_library(
@@ -378,7 +371,6 @@ cc_library(
     ],
     deps = [
         ":litert_common",
-        ":litert_custom_op_kernel",
         ":litert_logging",
         ":litert_opaque_options",
         "//litert/cc:litert_handle",
@@ -498,10 +490,7 @@ cc_library(
     name = "litert_opaque_options",
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
-    deps = [
-        ":litert_common",
-        "@com_google_absl//absl/strings:string_view",
-    ],
+    deps = [":litert_common"],
 )
 
 cc_test(

@@ -15,67 +15,43 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_CC_OPTIONS_HELPER_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_CC_OPTIONS_HELPER_H_
 
-#include <optional>
+#include <type_traits>
 #include <utility>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 
 namespace litert {
 
-// Null check wrapper around options arguments for vendor code.
-class OptionsHelper {
- public:
-  OptionsHelper(LiteRtEnvironmentOptions env, LiteRtOptions options)
-      : env_(env), options_(options) {}
+// Idea "parse" all the options in a tuple with a variable length
+// template param
 
-  std::optional<EnvironmentOptions> Environment() {
-    if (env_) {
-      return EnvironmentOptions(env_);
-    }
-    return std::nullopt;
-  }
+template <class... Discriminated>
+auto ParseOptions(LiteRtEnvironmentOptions env, LiteRtOptions options) {
+  static constexpr auto kErr = kLiteRtStatusErrorInvalidArgument;
 
-  std::optional<litert::Options> Options() {
-    if (options_) {
-      return litert::Options(options_, OwnHandle::kNo);
-    }
-    return std::nullopt;
-  }
+  auto opts = options ? Expected<litert::Options>(options, OwnHandle::kNo)
+                      : Error(kErr, "Null litert options");
+  auto opq =
+      opts ? opts->GetOpaqueOptions() : Error(kErr, "Null opaque options");
 
-  std::optional<litert::OpaqueOptions> OpaqueOptions() {
-    auto opts = this->Options();
-    if (!opts) {
-      return std::nullopt;
-    }
-    auto opq = opts->GetOpaqueOptions();
-    if (!opq) {
-      return std::nullopt;
-    }
-    return std::move(*opq);
-  }
-
-  template <class Discriminated>
-  std::optional<Discriminated> FindOptions() {
-    auto opq = this->OpaqueOptions();
-    if (!opq) {
-      return std::nullopt;
-    }
-    auto disc = FindOpaqueOptions<Discriminated>(*opq);
-    if (!disc) {
-      return std::nullopt;
-    }
-    return std::move(*disc);
-  }
-
- private:
-  LiteRtEnvironmentOptions env_;
-  LiteRtOptions options_;
-};
+  return std::make_tuple(
+      env ? Expected<EnvironmentOptions>(env)
+          : Error(kErr, "Null environment options"),
+      std::move(opts), std::move(opq), [&]() -> Expected<Discriminated> {
+        static_assert(std::is_base_of<OpaqueOptions, Discriminated>::value);
+        if (opq) {
+          return FindOpaqueOptions<Discriminated>(*opq);
+        }
+        return opq.Error();
+      }()...);
+}
 
 }  // namespace litert
 
