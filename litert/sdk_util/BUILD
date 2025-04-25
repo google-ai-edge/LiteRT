@@ -12,8 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+BUILD file for LiteRt SDK release artifacts.
+"""
+
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+
+# copybara:uncomment_begin(google-only)
+# load("//litert/sdk_util:sdk_release.bzl", "sdk_release_tar")
+# copybara:uncomment_end
 
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
@@ -98,3 +106,33 @@ selects.config_setting_group(
         ":mtk_sdk_v7",
     ],
 )
+
+# SDK ARTIFACT PREPERATION #########################################################################
+
+# copybara:uncomment_begin(google-only)
+#
+# # QUALCOMM SDK RELEASE -----------------------------------------------------------------------------
+#
+# # Build the tar, copy to /tmp, check sizes, etc.
+# # buildifier: disable=no-effect
+# """
+# bzl build -c opt //litert/sdk_util:litert_qualcomm_sdk_release && \
+#    cp -f $(bzl info -c opt bzl-genfiles)/third_party/odml/litert/litert/sdk_util/litert_qualcomm_sdk_release.tar.gz /tmp && \
+#    tar -xzvf /tmp/litert_qualcomm_sdk_release.tar.gz -C /tmp/ --one-top-level && \
+#    echo "---------- Total Size ----------" && \
+#    du -h /tmp/litert_qualcomm_sdk_release -d 0 && \
+#    du -h /tmp/litert_qualcomm_sdk_release.tar.gz && \
+#    echo "---------- Breakdown ----------" && \
+#    du -h $(find /tmp/litert_qualcomm_sdk_release -type d -links 2) && \
+#    rm -rf /tmp/litert_qualcomm_sdk_release/
+# """
+#
+# sdk_release_tar(
+#     name = "litert_qualcomm_sdk_release",
+#     srcs = [
+#         "//third_party/qairt/latest:qnn_htp_latest_files",
+#     ],
+#     strip_prefix = "third_party/qairt",
+# )
+#
+# copybara:uncomment_end
