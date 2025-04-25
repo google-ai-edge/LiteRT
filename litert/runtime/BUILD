@@ -98,6 +98,7 @@ cc_library(
         "//tflite/delegates/gpu/cl:cl_memory",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "//tflite/delegates/gpu/cl:tensor",
+        "//tflite/delegates/gpu/cl:util",
         "//tflite/delegates/gpu/common:data_type",
         "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:tensor",

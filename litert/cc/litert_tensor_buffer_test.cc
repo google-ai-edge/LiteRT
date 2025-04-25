@@ -572,6 +572,24 @@ TEST(TensorBuffer, CreateManagedGlBuffer) {
   EXPECT_THAT(gl_buffer.offset, Eq(0));
 }
 
+TEST(TensorBuffer, ClBufferFromGlBuffer) {
+  // TODO(b/383176413) Add check for GLSharing.
+  if (!HasOpenClSupport() || !HasOpenGlSupport()) {
+    GTEST_SKIP() << "OpenCL and/or GL are not supported on this platform; "
+                    "skipping the test";
+  }
+  // Create GL Tensor buffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer gl_tensor_buffer,
+      TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                  RankedTensorType(kTestTensorType),
+                                  sizeof(kTensorData)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(cl_mem cl_buffer,
+                              gl_tensor_buffer.GetOpenClMemory());
+  EXPECT_THAT(cl_buffer, Ne(nullptr));
+}
+
 #if LITERT_HAS_AHWB_SUPPORT
 TEST(TensorBuffer, GetGlBufferFromAhwb) {
   // Create AHWB Tensor buffer.

@@ -34,4 +34,13 @@ typedef enum {
   kLiteRtTensorBufferTypeOpenClImageBufferFp16 = 15,
 } LiteRtTensorBufferType;
 
+inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClTexture ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
+}
+
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

@@ -29,6 +29,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gpu_environment.h"
 #include "litert/runtime/open_cl_sync.h"
 #include <CL/cl.h>
@@ -37,6 +38,7 @@
 #include "tflite/delegates/gpu/cl/buffer.h"
 #include "tflite/delegates/gpu/cl/cl_context.h"
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "tflite/delegates/gpu/cl/util.h"
 
 namespace litert {
 namespace internal {
@@ -135,13 +137,32 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
       error == CL_SUCCESS,
       Unexpected(kLiteRtStatusErrorRuntimeFailure,
                  absl::StrCat("Failed to create OpenCL buffer from "
-                              "AHardwareBuffer, cl_int error code:",
-                              error)));
+                              "AHardwareBuffer: ",
+                              tflite::gpu::cl::CLErrorCodeToString(error))));
 
   tflite::gpu::cl::Buffer cl_buffer(buffer, size_bytes);
 
   return OpenClMemory(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
                       std::move(cl_buffer), ahwb_buffer.ahwb);
+}
+
+Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
+    const LiteRtRankedTensorType& tensor_type, GlBuffer& gl_buffer) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+  tflite::gpu::cl::CLContext* context = env->getContext();
+  cl_int error;
+  cl_mem buffer = tflite::gpu::cl::clCreateFromGLBuffer(
+      context->context(), CL_MEM_READ_WRITE, gl_buffer.id(), &error);
+  LITERT_RETURN_IF_ERROR(
+      error == CL_SUCCESS,
+      Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrCat("Failed to create OpenCL buffer from GL buffer: ",
+                              tflite::gpu::cl::CLErrorCodeToString(error))));
+
+  tflite::gpu::cl::Buffer cl_buffer(buffer, gl_buffer.size_bytes());
+  return OpenClMemory(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
+                      std::move(cl_buffer));
 }
 
 }  // namespace internal

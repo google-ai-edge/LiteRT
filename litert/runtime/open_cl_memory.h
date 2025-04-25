@@ -25,6 +25,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/gl_buffer.h"
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/buffer.h"
 
@@ -97,6 +98,8 @@ class OpenClMemory {
                                       size_t bytes_size);
   static Expected<OpenClMemory> AllocFromAhwbBuffer(
       const LiteRtRankedTensorType& tensor_type, AhwbBuffer& ahwb_buffer);
+  static Expected<OpenClMemory> AllocFromGlBuffer(
+      const LiteRtRankedTensorType& tensor_type, GlBuffer& gl_buffer);
   size_t size_bytes() const { return size_; }
 
  private:

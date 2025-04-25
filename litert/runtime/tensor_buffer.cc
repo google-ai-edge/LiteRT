@@ -534,19 +534,8 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<litert::internal::OpenClMemory*>
 LiteRtTensorBufferT::GetOpenClMemory() {
-  switch (buffer_type_) {
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClTexture:
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      return &std::get<litert::internal::OpenClMemory>(buffer_);
-    default:
-      return Unexpected(
-          kLiteRtStatusErrorRuntimeFailure,
-          absl::StrFormat("Cannot get cl_mem from %s tensor buffer",
-                          BufferTypeToString(buffer_type_)));
+  if (IsOpenClMemory(buffer_type_)) {
+    return &std::get<litert::internal::OpenClMemory>(buffer_);
   }
   if (buffer_type_ == kLiteRtTensorBufferTypeAhwb) {
     if (auto it =
@@ -571,6 +560,34 @@ LiteRtTensorBufferT::GetOpenClMemory() {
                    "Failed to insert CL buffer into memory backed buffers"));
     return &std::get<litert::internal::OpenClMemory>(it->second);
   }
+  if (buffer_type_ == kLiteRtTensorBufferTypeGlBuffer) {
+    if (auto it =
+            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+        it != memory_backed_buffers_.end()) {
+      BufferVariant& memory_backed_buffer = it->second;
+      return &std::get<litert::internal::OpenClMemory>(memory_backed_buffer);
+    }
+    // Create a new CL buffer from the GL buffer if not found.
+    litert::internal::GlBuffer& gl_buffer =
+        std::get<litert::internal::GlBuffer>(buffer_);
+    LITERT_ASSIGN_OR_RETURN(
+        litert::internal::OpenClMemory cl_buffer_from_gl_buffer,
+        litert::internal::OpenClMemory::AllocFromGlBuffer(tensor_type_,
+                                                          gl_buffer));
+    auto [it, inserted] =
+        memory_backed_buffers_.insert({kLiteRtTensorBufferTypeOpenClBuffer,
+                                       std::move(cl_buffer_from_gl_buffer)});
+    LITERT_RETURN_IF_ERROR(
+        inserted == true,
+        Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to insert CL buffer into memory backed buffers"));
+    return &std::get<litert::internal::OpenClMemory>(it->second);
+  }
+  return Unexpected(
+      kLiteRtStatusErrorRuntimeFailure,
+      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
+                      BufferTypeToString(kLiteRtTensorBufferTypeOpenClBuffer),
+                      BufferTypeToString(buffer_type_)));
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
