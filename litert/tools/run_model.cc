@@ -33,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
@@ -40,12 +41,12 @@ ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
 ABSL_FLAG(bool, use_gpu, false, "Use GPU Accelerator.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
-ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
           "Decide if random value should be filled into tensor buffer to "
           "perform numerical check.");
-ABSL_FLAG(size_t, max_elements_to_print, 20,
-          "Maximum number of elements to print per tensor.");
+ABSL_FLAG(size_t, sample_size, 5,
+          "Number of sample elements to print from beginning, middle, and end "
+          "of tensor.");
 
 namespace litert {
 namespace {
@@ -75,7 +76,9 @@ Expected<void> FillInputBuffer(TensorBuffer& buffer) {
   return buffer.Write<float>(absl::MakeConstSpan(data));
 }
 
-// Prints tensor buffer information and data
+// Using tensor utility functions from the tensor_utils.h header
+
+// Function to print tensor buffer information and data
 Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
                                  const std::string& buffer_type, size_t index) {
   LITERT_ASSIGN_OR_RETURN(size_t size, buffer.Size());
@@ -99,41 +102,38 @@ Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
   ABSL_LOG(INFO) << "  ]";
   ABSL_LOG(INFO) << "  Total logical elements: " << total_elements;
 
-  // Print elements up to max_elements_to_print
-
   if (!absl::GetFlag(FLAGS_compare_numerical)) {
     return {};
   }
-  size_t max_elements = absl::GetFlag(FLAGS_max_elements_to_print);
-  size_t elements_to_print = std::min(total_elements, max_elements);
-  ABSL_LOG(INFO) << "  Data (first " << elements_to_print << " elements):";
 
+  size_t sample_size = absl::GetFlag(FLAGS_sample_size);
+
+  // Handle different data types using the tensor_utils library
   if (type.ElementType() == ElementType::Float32) {
-    std::vector<float> data(elements_to_print);
-
-    // Only read the elements we need to print
+    std::vector<float> data(total_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(data)));
 
-    for (size_t j = 0; j < elements_to_print; ++j) {
-      ABSL_LOG(INFO) << "    " << j << ": " << data[j];
-    }
-  } else if (type.ElementType() == ElementType::Int32) {
-    std::vector<int32_t> data(elements_to_print);
+    auto stats = tensor_utils::CalculateTensorStats(data, total_elements);
+    tensor_utils::PrintTensorStats(stats);
 
+    tensor_utils::PrintTensorSamples(data, total_elements, sample_size);
+  } else if (type.ElementType() == ElementType::Int32) {
+    std::vector<int32_t> data(total_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<int32_t>(absl::MakeSpan(data)));
 
-    for (size_t j = 0; j < elements_to_print; ++j) {
-      ABSL_LOG(INFO) << "    " << j << ": " << data[j];
-    }
-  } else {
-    // Just print bytes for other types
-    std::vector<uint8_t> data(elements_to_print);
+    auto stats = tensor_utils::CalculateTensorStats(data, total_elements);
+    tensor_utils::PrintTensorStats(stats);
 
+    tensor_utils::PrintTensorSamples(data, total_elements, sample_size);
+  } else {
+    // Default to uint8_t for other types
+    std::vector<uint8_t> data(total_elements);
     LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(data)));
 
-    for (size_t j = 0; j < elements_to_print; ++j) {
-      ABSL_LOG(INFO) << "    " << j << ": " << static_cast<int>(data[j]);
-    }
+    auto stats = tensor_utils::CalculateTensorStats(data, total_elements);
+    tensor_utils::PrintTensorStats(stats);
+
+    tensor_utils::PrintTensorSamples(data, total_elements, sample_size);
   }
 
   return {};
@@ -187,9 +187,7 @@ Expected<void> RunModel() {
     LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
 
     // Print tensor info and data if requested
-    if (absl::GetFlag(FLAGS_print_tensors)) {
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
-    }
   }
 
   ABSL_LOG(INFO) << "Prepare output buffers";
@@ -205,12 +203,10 @@ Expected<void> RunModel() {
   LITERT_LOG(LITERT_INFO, "Run took %lu microseconds", end - start);
 
   // Print output tensor information and values if requested
-  if (absl::GetFlag(FLAGS_print_tensors)) {
     for (size_t i = 0; i < output_buffers.size(); ++i) {
       auto& buffer = output_buffers[i];
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Output", i));
     }
-  }
 
   ABSL_LOG(INFO) << "Model run completed";
 
