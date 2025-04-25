@@ -34,6 +34,10 @@ typedef GLint LiteRtGLint;
 typedef uint32_t LiteRtGLenum;
 typedef uint32_t LiteRtGLuint;
 typedef int32_t LiteRtGLint;
+typedef void *EGLContext;
+typedef void *EGLDisplay;
+#define EGL_NO_CONTEXT static_cast<EGLContext>(0)
+#define EGL_NO_DISPLAY static_cast<EGLDisplay>(0)
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #ifdef __cplusplus

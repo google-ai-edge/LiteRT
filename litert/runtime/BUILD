@@ -137,8 +137,10 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
+        "//litert/c:litert_gl_types",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//tflite/delegates/gpu/cl:cl_command_queue",
         "//tflite/delegates/gpu/cl:cl_context",
@@ -147,6 +149,7 @@ cc_library(
         "@opencl_headers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/cl:gl_interop",
             "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],

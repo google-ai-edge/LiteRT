@@ -29,6 +29,8 @@ typedef enum {
   kLiteRtEnvOptionTagOpenClPlatformId = 3,
   kLiteRtEnvOptionTagOpenClContext = 4,
   kLiteRtEnvOptionTagOpenClCommandQueue = 5,
+  kLiteRtEnvOptionTagEglDisplay = 6,
+  kLiteRtEnvOptionTagEglContext = 7,
 } LiteRtEnvOptionTag;
 
 typedef struct {

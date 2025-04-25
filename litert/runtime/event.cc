@@ -120,10 +120,11 @@ Expected<void> LiteRtEventT::Signal() {
 Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEventType type) {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
-    auto& env = litert::internal::GpuEnvironmentSingleton::GetInstance();
+    LITERT_ASSIGN_OR_RETURN(
+        auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
     cl_int res;
     cl_event user_event =
-        tflite::gpu::cl::clCreateUserEvent(env.getContext()->context(), &res);
+        tflite::gpu::cl::clCreateUserEvent(env->getContext()->context(), &res);
     if (res != CL_SUCCESS) {
       return Error(
           kLiteRtStatusErrorRuntimeFailure,

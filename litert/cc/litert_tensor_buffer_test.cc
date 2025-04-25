@@ -634,8 +634,9 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   // TensorBuffer. ClBuffer::Unlock currently writes to CL buffer.
 
   tflite::gpu::cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
-  tflite::gpu::cl::CLCommandQueue* queue =
-      internal::GpuEnvironmentSingleton::GetInstance().getCommandQueue();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+  tflite::gpu::cl::CLCommandQueue* queue = env->getCommandQueue();
   std::vector<float> read_data;
   auto status = cl_buffer_from_ahwb.ReadData(queue, &read_data);
   ASSERT_TRUE(status.ok());

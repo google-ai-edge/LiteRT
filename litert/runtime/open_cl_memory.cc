@@ -120,8 +120,9 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
       0,
   };
 
-  cl_context context =
-      GpuEnvironmentSingleton::GetInstance().getContext()->context();
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+  cl_context context = env->getContext()->context();
   LITERT_RETURN_IF_ERROR(IsAhwbToClInteropSupported(),
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "clImportMemoryARM is not supported"));

@@ -81,8 +81,9 @@ bool IsAhwbToGlInteropSupported() {
 }
 
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
-  tflite::gpu::gl::EglEnvironment* egl_env =
-      GpuEnvironmentSingleton::GetInstance().getEglEnvironment();
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+  tflite::gpu::gl::EglEnvironment* egl_env = env->getEglEnvironment();
   LITERT_RETURN_IF_ERROR(egl_env != nullptr,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Failed to get EGL environment"));
@@ -226,8 +227,9 @@ size_t GlBuffer::offset() const {
 
 Expected<GlBuffer> GlBuffer::Alloc(size_t size_bytes) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::EglEnvironment* egl_env =
-      GpuEnvironmentSingleton::GetInstance().getEglEnvironment();
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+  tflite::gpu::gl::EglEnvironment* egl_env = env->getEglEnvironment();
   LITERT_RETURN_IF_ERROR(egl_env != nullptr,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Failed to get EGL environment"));
