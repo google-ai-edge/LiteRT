@@ -37,9 +37,10 @@
 
 using ::testing::ElementsAre;
 using ::testing::Eq;
-using testing::FloatNear;
-using testing::Pointwise;
+using ::testing::FloatNear;
+using ::testing::Pointwise;
 using ::testing::SizeIs;
+using ::testing::litert::IsOkAndHolds;
 
 namespace litert {
 namespace {
@@ -324,12 +325,12 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
       compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
 
   // Confirm input and output buffers are host memory.
-  EXPECT_THAT(*input_buffers[0].BufferType(),
-              Eq(kLiteRtTensorBufferTypeHostMemory));
-  EXPECT_THAT(*input_buffers[1].BufferType(),
-              Eq(kLiteRtTensorBufferTypeHostMemory));
-  EXPECT_THAT(*output_buffers[0].BufferType(),
-              Eq(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(input_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(input_buffers[1].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(output_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
 
   ASSERT_THAT(input_buffers, SizeIs(2));
   ASSERT_THAT(output_buffers, SizeIs(1));

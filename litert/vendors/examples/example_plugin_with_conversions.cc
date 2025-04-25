@@ -136,9 +136,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->byte_code.resize(num_partitions);
   for (auto i = 0; i < num_partitions; ++i) {
     auto name = absl::StrFormat("partition_%lu", i);
+    LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
     LITERT_RETURN_IF_ERROR(
         CompileSinglePartition(compiler_plugin->legalizations, std::move(name),
-                               model.Subgraph(i)->Get(), *result));
+                               subgraph.Get(), *result));
   }
 
   *compiled_result = result.release();

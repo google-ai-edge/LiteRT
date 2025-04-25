@@ -114,8 +114,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->byte_code.resize(num_partitions);
   for (auto i = 0; i < num_partitions; ++i) {
+    LITERT_ASSIGN_OR_RETURN(litert::Subgraph subgraph, model.Subgraph(i));
     LITERT_RETURN_IF_ERROR(
-        CompileSinglePartition(i, model.Subgraph(i)->Get(), *result, i));
+        CompileSinglePartition(i, subgraph.Get(), *result, i));
   }
 
   *compiled_result = result.release();

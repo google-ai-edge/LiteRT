@@ -19,11 +19,13 @@
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
 #include "litert/tools/outstream.h"
 
@@ -152,7 +154,10 @@ struct ApplyPluginRun {
   Options options;
 
   // Environment options.
-  Environment environment = *Environment::Create({});
+  Environment environment = [] {
+    LITERT_ASSIGN_OR_ABORT(Environment e, Environment::Create({}));
+    return e;
+  }();
 };
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run);

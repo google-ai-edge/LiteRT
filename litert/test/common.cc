@@ -32,6 +32,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_predicates.h"
 #include "litert/core/filesystem.h"
@@ -115,7 +116,9 @@ std::string GetLiteRtPath(absl::string_view rel_path) {
 }
 
 Model LoadTestFileModel(absl::string_view filename) {
-  return *Model::CreateFromFile(GetTestFilePath(filename));
+  LITERT_ASSIGN_OR_ABORT(auto model,
+                         Model::CreateFromFile(GetTestFilePath(filename)));
+  return model;
 }
 
 Expected<TflRuntime::Ptr> TflRuntime::CreateFromFlatBuffer(

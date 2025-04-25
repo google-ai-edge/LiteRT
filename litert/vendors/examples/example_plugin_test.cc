@@ -51,10 +51,11 @@ TEST(TestCallDummyPlugin, PartitionSimpleMultiAdd) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("simple_multi_op.tflite");
 
+  LITERT_ASSERT_OK_AND_ASSIGN(Subgraph subgraph, model.Subgraph(0));
+
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, model.Subgraph(0)->Get(),
-      &selected_op_list));
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 2);

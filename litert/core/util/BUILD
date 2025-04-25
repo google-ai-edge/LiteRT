@@ -60,6 +60,7 @@ cc_test(
     deps = [
         ":flatbuffer_tools",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_macros",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",

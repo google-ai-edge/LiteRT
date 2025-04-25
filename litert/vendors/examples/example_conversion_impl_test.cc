@@ -51,10 +51,12 @@ TEST(ExampleConversionImplTest, ConvertTensor) {
   ExampleTensorAllocator tensor_alloc;
   auto tensor_convert = MakeTensorConverter(tensor_alloc);
 
-  auto& example_tensor = **tensor_convert(Tensor(&litert_tensor));
-  EXPECT_EQ(example_tensor.type, ExampleTensorType::FLOAT);
-  EXPECT_THAT(example_tensor.dims, ElementsAreArray(kDims));
-  EXPECT_EQ(example_tensor.name, kName);
+  LITERT_ASSERT_OK_AND_ASSIGN(ExampleTensor * example_tensor,
+                              tensor_convert(Tensor(&litert_tensor)));
+
+  EXPECT_EQ(example_tensor->type, ExampleTensorType::FLOAT);
+  EXPECT_THAT(example_tensor->dims, ElementsAreArray(kDims));
+  EXPECT_EQ(example_tensor->name, kName);
 }
 
 TEST(ExampleConversionImplTest, ExampleGraphBuilder) {
