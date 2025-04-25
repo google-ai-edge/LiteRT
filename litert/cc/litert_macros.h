@@ -399,14 +399,13 @@ class LogBeforeAbort {
   LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER args
 
 #define LITERT_ASSIGN_OR_ABORT_HELPER_2(TMP_VAR, DECL, EXPR) \
-  LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, (void)_)
+  LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, _)
 
 #define LITERT_ASSIGN_OR_ABORT_HELPER_3(TMP_VAR, DECL, EXPR, LOG_EXPRESSION) \
   auto&& TMP_VAR = (EXPR);                                                   \
   if (::litert::ErrorStatusBuilder::IsError(TMP_VAR)) {                      \
     ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                      \
-    LOG_EXPRESSION;                                                          \
-    LogBeforeAbort(std::move(_));                                            \
+    ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                   \
   }                                                                          \
   DECL = std::move(TMP_VAR.Value());
 
