@@ -36,6 +36,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
 
@@ -96,9 +97,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
 
   enum ElementType ElementType() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
-      return static_cast<enum ElementType>(UnrankedTensorType()->element_type);
+      LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType())
+      return static_cast<enum ElementType>(tensor_type.element_type);
     } else {
-      return RankedTensorType()->ElementType();
+      LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType())
+      return tensor_type.ElementType();
     }
   }
 

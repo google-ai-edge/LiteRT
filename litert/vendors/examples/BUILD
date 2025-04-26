@@ -80,6 +80,7 @@ cc_library(
         "//litert/c:litert_op_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/cc:backend_ir",
         "//litert/vendors/cc:conversion",

@@ -95,7 +95,8 @@ cc_test(
     }),
     deps = [
         ":litert_any",
-        "//litert/c:litert_common",
+        "//litert/c:litert_any",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -121,8 +122,8 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_layout",
+        ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",

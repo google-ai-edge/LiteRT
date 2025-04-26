@@ -156,6 +156,7 @@ cc_test(
         ":environment",
         "//litert/c:litert_any",
         "//litert/cc:litert_any",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
