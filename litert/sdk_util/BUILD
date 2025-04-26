@@ -118,14 +118,7 @@ cc_test(
     ],
     deps = [
         "@com_google_googletest//:gtest_main",
-        # TODO: Add copybara transform for this.
-        # copybara:uncomment_begin(google-only)
-        # "//third_party/qairt/latest:qnn_lib_headers",
-        # copybara:uncomment_end
-
-        # copybara:comment_begin(oss-only)
         "@qairt//:qnn_lib_headers",
-        # copybara:comment_end
     ],
 )
 
@@ -150,7 +143,7 @@ cc_test(
 # sdk_release_tar(
 #     name = "litert_qualcomm_sdk_release",
 #     srcs = [
-#         "//third_party/qairt/latest:qnn_htp_latest_files",
+#         "@qairt//:qnn_htp_latest_files",
 #     ],
 #     strip_prefix = "third_party/qairt",
 # )
