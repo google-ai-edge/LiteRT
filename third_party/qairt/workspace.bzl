@@ -14,28 +14,12 @@
 
 """Workspace definition for QAIRT."""
 
-load("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+load("//litert/sdk_util:repo.bzl", "configurable_repo")
 
-def qairt_repo(path = ""):
-    """
-    Defines the qairt repository.
-
-    Args:
-      path: The path to the qairt repository. If empty, an empty repository is used.
-    """
-    if not path:
-        # Set valid but empty repo for now.
-        new_local_repository(
-            name = "qairt",
-            build_file_content = "package(default_visibility = [\"//visibility:public\"])\ncc_library(name = \"qnn_lib_headers\")",
-            path = ".",
-        )
-
-        return
-
-    # TODO: Extend the bazel repo rules to switch between hosted and local repos.
-    new_local_repository(
+def qairt():
+    configurable_repo(
         name = "qairt",
+        allow_local = True,
         build_file = "@//third_party/qairt:qairt.BUILD",
-        path = path,
+        local_path_env = "LITERT_QAIRT_SDK",
     )

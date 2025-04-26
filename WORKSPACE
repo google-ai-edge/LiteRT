@@ -173,8 +173,6 @@ kt_register_toolchains()  # to use the default toolchain, otherwise see toolchai
 # QUALCOMM ---------------------------------------------------------------------------------------
 
 # The actual macro call will be set during configure for now.
-load("//third_party/qairt:workspace.bzl", "qairt_repo")
+load("//third_party/qairt:workspace.bzl", "qairt")
 
-# This emits only a placeholder by default. We will add support to configure it through ./configure.
-# To setup maunually, replace with `qairt_repo(path = "/tmp/path/to/my/sdk")`.
-qairt_repo()
+qairt()
