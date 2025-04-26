@@ -118,6 +118,7 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_test"
         "-//litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_test"
         "-//litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test"
+        "-//litert/sdk_util:check_sdk_deps_test"
 )
 
 

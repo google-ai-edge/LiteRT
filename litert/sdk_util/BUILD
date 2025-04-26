@@ -109,6 +109,26 @@ selects.config_setting_group(
 
 # SDK ARTIFACT PREPERATION #########################################################################
 
+cc_test(
+    name = "check_sdk_deps_test",
+    srcs = ["check_sdk_deps_test.cc"],
+    tags = [
+        "no_oss",
+        "nobuilder",
+    ],
+    deps = [
+        "@com_google_googletest//:gtest_main",
+        # TODO: Add copybara transform for this.
+        # copybara:uncomment_begin(google-only)
+        # "//third_party/qairt/latest:qnn_lib_headers",
+        # copybara:uncomment_end
+
+        # copybara:comment_begin(oss-only)
+        "@qairt//:qnn_lib_headers",
+        # copybara:comment_end
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 #
 # # QUALCOMM SDK RELEASE -----------------------------------------------------------------------------
