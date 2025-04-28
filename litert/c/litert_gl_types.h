@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 #if LITERT_HAS_OPENGL_SUPPORT
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
 #include <GLES3/gl31.h>
 #include <GLES3/gl32.h>
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -36,6 +38,7 @@ typedef uint32_t LiteRtGLuint;
 typedef int32_t LiteRtGLint;
 typedef void *EGLContext;
 typedef void *EGLDisplay;
+typedef void *EGLSyncKHR;
 #define EGL_NO_CONTEXT static_cast<EGLContext>(0)
 #define EGL_NO_DISPLAY static_cast<EGLDisplay>(0)
 #endif  // LITERT_HAS_OPENGL_SUPPORT

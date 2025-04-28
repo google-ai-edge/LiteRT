@@ -154,11 +154,13 @@ TEST(Buffer, GpuWriteAhwbRead) {
   FillGlBuffer(gl_buffer.id(), 4);
 
   // Create EGL sync and fence before AHWB read.
-  LITERT_ASSERT_OK_AND_ASSIGN(int native_fence,
-                              GlBuffer::CreateEglSyncAndFence());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Event egl_sync_event,
+      Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
+  LITERT_ASSERT_OK_AND_ASSIGN(int egl_sync_fd, egl_sync_event.DupFd());
 
   // Wrap native fence in LiteRT event.
-  LiteRtEventT gpu_write_event = {.fd = native_fence, .owns_fd = true};
+  LiteRtEventT gpu_write_event = {.fd = egl_sync_fd, .owns_fd = true};
 
   // Read from AHWB on CPU, waiting for GPU write to complete.
   LITERT_ASSERT_OK_AND_ASSIGN(

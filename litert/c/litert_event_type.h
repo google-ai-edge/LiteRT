@@ -23,6 +23,8 @@ typedef enum {
   LiteRtEventTypeUnknown = 0,
   LiteRtEventTypeSyncFenceFd = 1,
   LiteRtEventTypeOpenCl = 2,
+  LiteRtEventTypeEglSyncFence = 3,
+  LiteRtEventTypeEglNativeSyncFence = 4,
 } LiteRtEventType;
 
 #ifdef __cplusplus

@@ -26,6 +26,7 @@
 extern "C" {
 // Forward declaration of OpenCL event to avoid including OpenCL headers.
 typedef struct _cl_event* cl_event;
+typedef void* EGLSyncKHR;
 }
 
 namespace litert {
@@ -53,6 +54,15 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     return Event(event, OwnHandle::kYes);
   }
 
+  // Creates an Event object with the given `egl_sync`.
+  // Note: This function assumes that all GL operations have been already added
+  // to the GPU command queue.
+  static Expected<Event> CreateFromEglSyncFence(EGLSyncKHR egl_sync) {
+    LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromEglSyncFence(egl_sync, &event));
+    return Event(event, OwnHandle::kYes);
+  }
+
   // Creates a managed event of the given `type`. Currently only
   // LiteRtEventTypeOpenCl is supported.
   static Expected<Event> CreateManaged(LiteRtEventType type) {
@@ -72,6 +82,12 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     cl_event cl_event;
     LITERT_RETURN_IF_ERROR(LiteRtGetEventOpenClEvent(Get(), &cl_event));
     return cl_event;
+  }
+
+  Expected<EGLSyncKHR> GetEglSync() {
+    EGLSyncKHR egl_sync;
+    LITERT_RETURN_IF_ERROR(LiteRtGetEventEglSync(Get(), &egl_sync));
+    return egl_sync;
   }
 
   // Pass -1 for timeout_in_ms for indefinite wait.

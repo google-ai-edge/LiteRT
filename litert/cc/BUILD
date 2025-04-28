@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:special_rule.bzl", "gles_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 
 package(
@@ -696,11 +697,28 @@ cc_test(
 cc_test(
     name = "litert_event_test",
     srcs = ["litert_event_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [
+            "-landroid",
+        ],
+        "//conditions:default": [],
+    }) + gles_linkopts(),
     deps = [
         ":litert_event",
+        ":litert_platform_support",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+litert_device_exec(
+    name = "litert_event_device_test",
+    backend_id = "cpu",
+    data = [
+    ],
+    target = ":litert_event_test",
 )
 
 cc_library(

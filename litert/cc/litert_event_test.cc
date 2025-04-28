@@ -16,21 +16,12 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/c/litert_event_type.h"
+#include "litert/cc/litert_platform_support.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
-
-using ::testing::Eq;
-
-constexpr int kFakeSyncFenceFd = 1;
-
-TEST(Event, NoEvent) {
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event, Event::CreateFromSyncFenceFd(kFakeSyncFenceFd, true));
-  LITERT_ASSERT_OK_AND_ASSIGN(int fd, event.GetSyncFenceFd());
-  EXPECT_THAT(fd, Eq(kFakeSyncFenceFd));
-}
 
 TEST(Event, DupFdOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
@@ -42,6 +33,24 @@ TEST(Event, IsSignaledOnNegativeFd) {
   LITERT_ASSERT_OK_AND_ASSIGN(Event event,
                               Event::CreateFromSyncFenceFd(-1, true));
   EXPECT_FALSE(event.IsSignaled());
+}
+
+TEST(Event, CreateManagedEglSyncFence) {
+  if (!HasOpenGlSupport()) {
+    GTEST_SKIP() << "Skipping test for platforms without OpenGL support.";
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Event event, Event::CreateManaged(LiteRtEventTypeEglSyncFence));
+  EXPECT_EQ(event.Type(), LiteRtEventTypeEglSyncFence);
+}
+
+TEST(Event, CreateManagedEglNativeSyncFence) {
+  if (!HasOpenGlSupport()) {
+    GTEST_SKIP() << "Skipping test for platforms without OpenGL support.";
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Event event, Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
+  EXPECT_EQ(event.Type(), LiteRtEventTypeEglNativeSyncFence);
 }
 
 }  // namespace

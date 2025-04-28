@@ -48,13 +48,8 @@ namespace internal {
 
 PFNGLBUFFERSTORAGEEXTERNALEXTPROC glBufferStorageExternalEXT;
 PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC eglGetNativeClientBufferANDROID;
-PFNEGLDUPNATIVEFENCEFDANDROIDPROC eglDupNativeFenceFDANDROID;
-PFNEGLCREATESYNCKHRPROC eglCreateSyncKHR;
-PFNEGLWAITSYNCKHRPROC eglWaitSyncKHR;
-PFNEGLCLIENTWAITSYNCKHRPROC eglClientWaitSyncKHR;
-PFNEGLDESTROYSYNCKHRPROC eglDestroySyncKHR;
 
-bool IsAhwbToGlInteropSupported() {
+bool IsAhwbToGlBufferInteropSupported() {
   static const bool extensions_allowed = [] {
     eglGetNativeClientBufferANDROID =
         reinterpret_cast<PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC>(
@@ -62,20 +57,7 @@ bool IsAhwbToGlInteropSupported() {
     glBufferStorageExternalEXT =
         reinterpret_cast<PFNGLBUFFERSTORAGEEXTERNALEXTPROC>(
             eglGetProcAddress("glBufferStorageExternalEXT"));
-    eglDupNativeFenceFDANDROID =
-        reinterpret_cast<PFNEGLDUPNATIVEFENCEFDANDROIDPROC>(
-            eglGetProcAddress("eglDupNativeFenceFDANDROID"));
-    eglCreateSyncKHR = reinterpret_cast<PFNEGLCREATESYNCKHRPROC>(
-        eglGetProcAddress("eglCreateSyncKHR"));
-    eglWaitSyncKHR = reinterpret_cast<PFNEGLWAITSYNCKHRPROC>(
-        eglGetProcAddress("eglWaitSyncKHR"));
-    eglClientWaitSyncKHR = reinterpret_cast<PFNEGLCLIENTWAITSYNCKHRPROC>(
-        eglGetProcAddress("eglClientWaitSyncKHR"));
-    eglDestroySyncKHR = reinterpret_cast<PFNEGLDESTROYSYNCKHRPROC>(
-        eglGetProcAddress("eglDestroySyncKHR"));
-    return eglClientWaitSyncKHR && eglWaitSyncKHR &&
-           eglGetNativeClientBufferANDROID && glBufferStorageExternalEXT &&
-           eglCreateSyncKHR && eglDupNativeFenceFDANDROID && eglDestroySyncKHR;
+    return eglGetNativeClientBufferANDROID && glBufferStorageExternalEXT;
   }();
   return extensions_allowed;
 }
@@ -88,7 +70,7 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Failed to get EGL environment"));
   LITERT_RETURN_IF_ERROR(
-      IsAhwbToGlInteropSupported(),
+      IsAhwbToGlBufferInteropSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure,
                  "AHardwareBuffer to GL interop is not supported"));
   LITERT_RETURN_IF_ERROR(
@@ -314,38 +296,6 @@ Expected<void> GlBuffer::Unlock() {
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "GlBuffer::Unlock() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-}
-
-Expected<int> GlBuffer::CreateEglSyncAndFence() {
-#if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
-  LITERT_RETURN_IF_ERROR(
-      IsAhwbToGlInteropSupported(),
-      Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                 "AHardwareBuffer to GL interop is not supported"));
-
-  auto egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-  LITERT_RETURN_IF_ERROR(egl_display != EGL_NO_DISPLAY,
-                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                    "Failed to get EGL display"));
-
-  EGLSyncKHR egl_sync =
-      eglCreateSyncKHR(egl_display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
-  LITERT_RETURN_IF_ERROR(
-      egl_sync != EGL_NO_SYNC_KHR,
-      Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                 "Failed to create EGL sync from AHardwareBuffer"));
-
-  int native_fence = eglDupNativeFenceFDANDROID(egl_display, egl_sync);
-  LITERT_RETURN_IF_ERROR(
-      native_fence != -1,
-      Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                 "Failed to dup native fence from AHardwareBuffer"));
-
-  return native_fence;
-#else
-  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                    "AHardwareBuffer to GL interop is not supported");
-#endif  // LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
 }
 
 }  // namespace internal

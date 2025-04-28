@@ -24,6 +24,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -347,16 +348,23 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   FillGlBuffer2(gl_buffer_2.id, 2);
 
   // Create EGL sync and fence before AHWB read.
-  // TODO(gcarranza): Integrate into LiteRT C++ API.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      int native_fence, ::litert::internal::GlBuffer::CreateEglSyncAndFence());
+      Event egl_sync_event,
+      Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
 
+  // EGL does not support querying the sync fd from the EGL sync event. So we
+  // dup the fd from the EGL sync event and use it to create a new event.
+  LITERT_ASSERT_OK_AND_ASSIGN(int egl_sync_fd, egl_sync_event.DupFd());
+
+  // Create two events from the same sync fd. One event will own the fd and the
+  // other event will not. Ownership is required to ensure that the fd is
+  // closed.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event_1,
-      Event::CreateFromSyncFenceFd(native_fence, /*owns_fd=*/false));
+      Event::CreateFromSyncFenceFd(egl_sync_fd, /*owns_fd=*/true));
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event event_2,
-      Event::CreateFromSyncFenceFd(native_fence, /*owns_fd=*/false));
+      Event::CreateFromSyncFenceFd(egl_sync_fd, /*owns_fd=*/false));
 
   // Set event so that AHWB read is blocked by GPU write.
   input_buffers[0].SetEvent(std::move(event_1));

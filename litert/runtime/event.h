@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
 #include "litert/cc/litert_expected.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -32,24 +33,22 @@ struct LiteRtEventT {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   int fd = -1;
   bool owns_fd = false;
-#endif
+#endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
   cl_event opencl_event;
-#endif
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
+  EGLSyncKHR egl_sync;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
   ~LiteRtEventT();
   litert::Expected<void> Wait(int64_t timeout_in_ms);
-  litert::Expected<int> GetSyncFenceFd() const {
-#if LITERT_HAS_SYNC_FENCE_SUPPORT
-    return fd;
-#else
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Sync fence is not supported on this platform");
-#endif
-  }
+  litert::Expected<int> GetSyncFenceFd();
   litert::Expected<void> Signal();
   litert::Expected<bool> IsSignaled() const;
   litert::Expected<int> DupFd() const;
   static litert::Expected<LiteRtEventT*> CreateManaged(LiteRtEventType type);
 };
+
+litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(EGLSyncKHR egl_sync);
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EVENT_H_

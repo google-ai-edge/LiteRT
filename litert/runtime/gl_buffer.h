@@ -83,12 +83,6 @@ class GlBuffer {
   size_t size_bytes() const;
   size_t offset() const;
 
-  // Creates an EGL sync object on the GPU command queue and returns a native
-  // fence associated with the sync object.
-  // Note: This function assumes that all GL operations have been already added
-  // to the GPU command queue.
-  static Expected<int> CreateEglSyncAndFence();
-
  private:
   absl::Mutex mutex_;
 #if LITERT_HAS_OPENGL_SUPPORT

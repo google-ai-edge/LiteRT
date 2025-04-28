@@ -27,6 +27,7 @@ extern "C" {
 
 // Forward declaration of OpenCL event to avoid including OpenCL headers.
 typedef struct _cl_event* cl_event;
+typedef void* EGLSyncKHR;
 
 LITERT_DEFINE_HANDLE(LiteRtEvent);
 
@@ -36,6 +37,9 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(int sync_fence_fd, bool owns_fd,
 LiteRtStatus LiteRtCreateEventFromOpenClEvent(cl_event cl_event,
                                               LiteRtEvent* event);
 
+LiteRtStatus LiteRtCreateEventFromEglSyncFence(EGLSyncKHR egl_sync,
+                                               LiteRtEvent* event);
+
 LiteRtStatus LiteRtCreateManagedEvent(LiteRtEventType type, LiteRtEvent* event);
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
@@ -43,6 +47,8 @@ LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 LiteRtStatus LiteRtGetEventSyncFenceFd(LiteRtEvent event, int* sync_fence_fd);
 
 LiteRtStatus LiteRtGetEventOpenClEvent(LiteRtEvent event, cl_event* cl_event);
+
+LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync);
 
 // Pass -1 for timeout_in_ms for indefinite wait.
 LiteRtStatus LiteRtWaitEvent(LiteRtEvent event, int64_t timeout_in_ms);

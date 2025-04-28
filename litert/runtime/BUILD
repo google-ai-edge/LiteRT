@@ -32,6 +32,7 @@ cc_library(
         ":gpu_environment",
         "//litert/c:litert_common",
         "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
@@ -115,6 +116,7 @@ cc_library(
         "@opencl_headers",
     ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
