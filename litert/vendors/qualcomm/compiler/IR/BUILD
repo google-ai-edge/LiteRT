@@ -26,8 +26,6 @@ cc_library(
         "nobuilder",
     ],
     deps = [
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -35,7 +33,9 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/qualcomm:common",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -53,14 +53,14 @@ cc_test(
     ],
     deps = [
         ":qnn_tensor",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_model",
         "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:test_models",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -77,7 +77,7 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_model",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -92,12 +92,12 @@ cc_test(
     ],
     deps = [
         ":qnn_op",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/strings",
         "//litert/c:litert_common",
         "//litert/test:common",
         "//litert/test:matchers",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -112,12 +112,12 @@ cc_test(
     ],
     deps = [
         ":qnn_op",
-        "@com_google_googletest//:gtest_main",
+        "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_googletest//:gtest_main",
+        "@qairt//:qnn_lib_headers",
     ],
 )

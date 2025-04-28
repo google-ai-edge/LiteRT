@@ -19,7 +19,7 @@
 #include <cstdio>
 #include <iostream>
 
-#include "third_party/qairt/latest/include/QNN/QnnLog.h"
+#include "include/QNN/QnnLog.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {

@@ -22,7 +22,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace {
 

@@ -18,7 +18,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 #define STRINGIFY(x) #x
 #define QNN_OP_NAME(prefix) STRINGIFY(prefix##__COUNTER__)

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace qnn {
 namespace {

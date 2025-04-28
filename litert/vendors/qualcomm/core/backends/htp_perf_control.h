@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/common.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
-#include "third_party/qairt/latest/include/QNN/QnnInterface.h"
+#include "include/QNN/HTP/QnnHtpDevice.h"  // from @qairt
+#include "include/QNN/QnnInterface.h"  // from @qairt
 
 template <typename T>
 std::vector<std::add_pointer_t<std::add_const_t<T>>> ObtainNullTermPtrVector(

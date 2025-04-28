@@ -113,7 +113,6 @@ cc_test(
     name = "check_sdk_deps_test",
     srcs = ["check_sdk_deps_test.cc"],
     tags = [
-        "no_oss",
         "nobuilder",
     ],
     deps = [

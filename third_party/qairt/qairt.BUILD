@@ -19,7 +19,7 @@ cc_library(
         ],
     ),
     includes = [
-        "latest/include/QNN/",
+        "latest/include/",
     ],
     visibility = ["//visibility:public"],
 )

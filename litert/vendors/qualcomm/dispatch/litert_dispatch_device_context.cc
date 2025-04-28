@@ -26,12 +26,12 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpMem.h"
-#include "third_party/qairt/latest/include/QNN/QnnBackend.h"
-#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
-#include "third_party/qairt/latest/include/QNN/QnnInterface.h"
-#include "third_party/qairt/latest/include/QNN/QnnMem.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/HTP/QnnHtpMem.h"  // from @qairt
+#include "include/QNN/QnnBackend.h"  // from @qairt
+#include "include/QNN/QnnCommon.h"  // from @qairt
+#include "include/QNN/QnnInterface.h"  // from @qairt
+#include "include/QNN/QnnMem.h"  // from @qairt
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;

@@ -15,7 +15,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_LOG_H_
 
-#include "third_party/qairt/latest/include/QNN/QnnLog.h"
+#include "include/QNN/QnnLog.h"  // from @qairt
 
 namespace litert::qnn {
 

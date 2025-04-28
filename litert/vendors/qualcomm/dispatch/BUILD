@@ -53,10 +53,6 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_Qualcomm.so",
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     visibility = ["//litert:litert_stable_abi_users"],
     deps = [
         "@com_google_absl//absl/log:absl_check",
@@ -74,7 +70,7 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 

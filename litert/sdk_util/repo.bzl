@@ -14,18 +14,23 @@
 
 """Repository rules that can toggle between local and remote repos."""
 
+load(
+    "@bazel_tools//tools/build_defs/repo:utils.bzl",
+    "get_auth",
+)
+
 def _get_path_str_if_do_local(ctx):
     if not ctx.attr.allow_local:
-        return None
+        return ""
 
     if not ctx.getenv(ctx.attr.allow_local_env, None):
-        return None
+        return ""
 
     local_repo_path = ctx.attr.local_path
     if local_repo_path:
         return local_repo_path
 
-    local_path_env_val = ctx.getenv(ctx.attr.local_path_env, None)
+    local_path_env_val = ctx.getenv(ctx.attr.local_path_env, "")
     return local_path_env_val
 
 def _get_path(ctx, s):
@@ -45,9 +50,9 @@ def _configurable_repo_impl(ctx):
     if not local_repo_path:
         if not ctx.attr.url:
             fail("A URL must be specified if local repo is not enabled.")
-        fail("http download not implemented yet.")
+        ctx.download_and_extract(url = ctx.attr.url, auth = get_auth(ctx, [ctx.attr.url]), strip_prefix = ctx.attr.strip_prefix)
 
-    if not local_repo_path.startswith("/"):
+    if local_repo_path and not local_repo_path.startswith("/"):
         fail("Only absolute paths to local files are supported")
 
     pth = _get_path(ctx, local_repo_path)

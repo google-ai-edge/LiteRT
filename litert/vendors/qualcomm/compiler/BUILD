@@ -47,17 +47,10 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "qnn_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     ungrte = True,
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":qnn_compose_graph",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
@@ -69,7 +62,10 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -104,9 +100,6 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -126,7 +119,10 @@ litert_test(
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
         "//litert/vendors/qualcomm/compiler/legalizations:quantize_op_legalization",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -141,15 +137,8 @@ litert_lib(
     name = "qnn_compose_graph",
     srcs = ["qnn_compose_graph.cc"],
     hdrs = ["qnn_compose_graph.h"],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     deps = [
         ":graph_mapper",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -202,7 +191,10 @@ litert_lib(
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -212,16 +204,8 @@ litert_lib(
         "graph_mapper.cc",
     ],
     hdrs = ["graph_mapper.h"],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -231,6 +215,10 @@ litert_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )

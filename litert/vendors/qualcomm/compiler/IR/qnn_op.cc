@@ -18,7 +18,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_model.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 // A macro dance to create a unique literal string given a prefix.
 #define STRINGIFY(x) #x

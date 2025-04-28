@@ -43,18 +43,18 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/qnn_log.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpContext.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpDevice.h"
-#include "third_party/qairt/latest/include/QNN/QnnBackend.h"
-#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
-#include "third_party/qairt/latest/include/QNN/QnnContext.h"
-#include "third_party/qairt/latest/include/QNN/QnnDevice.h"
-#include "third_party/qairt/latest/include/QNN/QnnInterface.h"
-#include "third_party/qairt/latest/include/QNN/QnnLog.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemCommon.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemContext.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemInterface.h"
+#include "include/QNN/HTP/QnnHtpContext.h"  // from @qairt
+#include "include/QNN/HTP/QnnHtpDevice.h"  // from @qairt
+#include "include/QNN/QnnBackend.h"  // from @qairt
+#include "include/QNN/QnnCommon.h"  // from @qairt
+#include "include/QNN/QnnContext.h"  // from @qairt
+#include "include/QNN/QnnDevice.h"  // from @qairt
+#include "include/QNN/QnnInterface.h"  // from @qairt
+#include "include/QNN/QnnLog.h"  // from @qairt
+#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "include/QNN/System/QnnSystemCommon.h"  // from @qairt
+#include "include/QNN/System/QnnSystemContext.h"  // from @qairt
+#include "include/QNN/System/QnnSystemInterface.h"  // from @qairt
 
 namespace litert::qnn {
 

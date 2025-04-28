@@ -28,7 +28,7 @@ litert_lib(
         "//litert/c:litert_model",
         "//litert/cc:litert_model",
         "//litert/vendors/qualcomm/compiler:graph_mapper",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -44,9 +44,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -61,7 +58,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -77,9 +77,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -94,7 +91,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -110,9 +110,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -127,7 +124,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -143,9 +143,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -160,7 +157,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -176,9 +176,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -193,7 +190,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -209,9 +209,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -226,7 +223,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -242,9 +242,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -259,7 +256,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -275,9 +275,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -292,7 +289,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -308,9 +308,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -325,7 +322,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -341,9 +341,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -358,7 +355,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -374,9 +374,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -391,7 +388,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -407,9 +407,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -424,7 +421,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -440,9 +440,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -457,7 +454,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -473,9 +473,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -490,7 +487,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -506,9 +506,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -523,7 +520,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -539,9 +539,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -556,7 +553,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -572,9 +572,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -590,7 +587,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -606,9 +606,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -623,7 +620,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -639,9 +639,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -656,7 +653,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -672,9 +672,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -689,7 +686,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -705,9 +705,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -722,7 +719,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -738,9 +738,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -755,7 +752,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -771,9 +771,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -788,7 +785,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -804,9 +804,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -821,7 +818,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -837,9 +837,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -854,7 +851,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -870,9 +870,6 @@ litert_lib(
     deps = [
         ":legalization",
         ":util",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -887,7 +884,10 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -902,8 +902,6 @@ litert_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":legalization",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
@@ -917,6 +915,8 @@ litert_lib(
         "//litert/vendors/qualcomm/compiler:graph_mapper",
         "//litert/vendors/qualcomm/compiler/IR:qnn_op",
         "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )

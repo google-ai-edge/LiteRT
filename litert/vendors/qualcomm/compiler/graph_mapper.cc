@@ -31,10 +31,10 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/IR/qnn_tensor.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "third_party/qairt/latest/include/QNN/HTP/QnnHtpGraph.h"
-#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
-#include "third_party/qairt/latest/include/QNN/QnnGraph.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/HTP/QnnHtpGraph.h"  // from @qairt
+#include "include/QNN/QnnCommon.h"  // from @qairt
+#include "include/QNN/QnnGraph.h"  // from @qairt
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 

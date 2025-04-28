@@ -31,7 +31,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/cc:litert_element_type",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -39,12 +39,8 @@ litert_lib(
     name = "qnn_log",
     srcs = ["qnn_log.cc"],
     hdrs = ["qnn_log.h"],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     deps = [
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -53,8 +49,6 @@ cc_library(
     hdrs = ["qnn_manager.h"],
     deps = [
         ":common",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
@@ -64,7 +58,9 @@ cc_library(
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -75,18 +71,10 @@ litert_cc_lib_with_qnn(
     ],
     hdrs = ["qnn_manager.h"],
     include_system = True,
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     ungrte = True,
     deps = [
         ":common",
         ":qnn_log",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
@@ -97,7 +85,11 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "//litert/vendors/qualcomm/core/schema:soc_table",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -141,12 +133,12 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -155,11 +147,11 @@ cc_library(
     srcs = ["qnn_tensor.cc"],
     hdrs = ["qnn_tensor.h"],
     deps = [
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@qairt//:qnn_lib_headers",
     ],
 )

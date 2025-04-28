@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "QnnCommon.h"                  // IWYU pragma: keep
 #include <gtest/gtest.h>  // IWYU pragma: keep
+#include "include/QNN/QnnCommon.h"  // from @qairt  // IWYU pragma: keep
 
 namespace {
 

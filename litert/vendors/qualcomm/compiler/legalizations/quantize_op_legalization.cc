@@ -30,7 +30,7 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/compiler/legalizations/util.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 

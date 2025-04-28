@@ -20,8 +20,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl  // Use StrFormat to return strings
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/qnn_manager.h"  // For QnnManager definition
-#include "third_party/qairt/latest/include/QNN/QnnInterface.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemInterface.h"
+#include "include/QNN/QnnInterface.h"  // from @qairt
+#include "include/QNN/System/QnnSystemInterface.h"  // from @qairt
 
 namespace litert::qnn::internal {
 namespace {

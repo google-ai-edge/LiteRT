@@ -38,15 +38,15 @@
 #include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "third_party/qairt/latest/include/QNN/QnnBackend.h"
-#include "third_party/qairt/latest/include/QNN/QnnCommon.h"
-#include "third_party/qairt/latest/include/QNN/QnnContext.h"
-#include "third_party/qairt/latest/include/QNN/QnnDevice.h"
-#include "third_party/qairt/latest/include/QNN/QnnInterface.h"
-#include "third_party/qairt/latest/include/QNN/QnnLog.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemContext.h"
-#include "third_party/qairt/latest/include/QNN/System/QnnSystemInterface.h"
+#include "include/QNN/QnnBackend.h"  // from @qairt
+#include "include/QNN/QnnCommon.h"  // from @qairt
+#include "include/QNN/QnnContext.h"  // from @qairt
+#include "include/QNN/QnnDevice.h"  // from @qairt
+#include "include/QNN/QnnInterface.h"  // from @qairt
+#include "include/QNN/QnnLog.h"  // from @qairt
+#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "include/QNN/System/QnnSystemContext.h"  // from @qairt
+#include "include/QNN/System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //

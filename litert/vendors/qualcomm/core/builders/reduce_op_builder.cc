@@ -13,8 +13,8 @@
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "third_party/qairt/latest/include/QNN/QnnOpDef.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnOpDef.h"  // from @qairt
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace qnn {
 

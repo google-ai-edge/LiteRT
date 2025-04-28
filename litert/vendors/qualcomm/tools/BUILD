@@ -21,12 +21,11 @@ cc_library(
     name = "dump",
     srcs = ["dump.cc"],
     hdrs = ["dump.h"],
-    tags = ["nobuilder"],
     deps = [
+        "//litert/vendors/qualcomm:qnn_manager_hdr",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "//litert/vendors/qualcomm:qnn_manager_hdr",
-        # copybara:uncomment "//third_party/qairt/latest:qnn_lib_headers",
+        "@qairt//:qnn_lib_headers",
     ],
 )

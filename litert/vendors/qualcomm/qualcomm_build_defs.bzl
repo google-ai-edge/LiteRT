@@ -18,8 +18,8 @@ load("//litert/build_common:litert_build_defs.bzl", "append_rule_kwargs", "liter
 
 _QNN_LIBCC_X86_64 = [
     # copybara:uncomment_begin(google-only)
-    # "//third_party/qairt/latest:lib/x86_64-linux-clang/libc++.so.1",
-    # "//third_party/qairt/latest:lib/x86_64-linux-clang/libc++abi.so.1",
+    # "@qairt//:lib/x86_64-linux-clang/libc++.so.1",
+    # "@qairt//:lib/x86_64-linux-clang/libc++abi.so.1",
     # copybara:uncomment_end
 ]  # @unused
 
@@ -32,13 +32,13 @@ _QNN_LIB_RPATHS_X86_64 = [
 
 _QNN_LIB_HTP_X86_64 = [
     # copybara:uncomment_begin(google-only)
-    # "//third_party/qairt/latest:lib/x86_64-linux-clang/libQnnHtp.so",
+    # "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
     # copybara:uncomment_end
 ]
 
 _QNN_LIB_SYSTEM_X86_64 = [
     # copybara:uncomment_begin(google-only)
-    # "//third_party/qairt/latest:lib/x86_64-linux-clang/libQnnSystem.so",
+    # "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
     # copybara:uncomment_end
 ]
 

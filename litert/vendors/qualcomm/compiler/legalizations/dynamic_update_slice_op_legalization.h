@@ -22,7 +22,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/compiler/legalizations/legalization.h"
-#include "third_party/qairt/latest/include/QNN/QnnTypes.h"
+#include "include/QNN/QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 

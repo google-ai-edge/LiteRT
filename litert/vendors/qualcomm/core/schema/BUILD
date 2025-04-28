@@ -10,8 +10,4 @@ cc_library(
     name = "soc_table",
     srcs = ["soc_table.cc"],
     hdrs = ["soc_table.h"],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
 )
