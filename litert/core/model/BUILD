@@ -348,6 +348,7 @@ cc_test(
     deps = [
         ":buffer_manager",
         "//litert/cc:litert_buffer_ref",
+        "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],

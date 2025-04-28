@@ -30,7 +30,7 @@
 
 #define LOAD_SYMB(S, H)                                                   \
   if (auto maybe_H = dlib_.LookupSymbol<void*>(#S); maybe_H.HasValue()) { \
-    H = reinterpret_cast<decltype(&S)>(std::move(maybe_H).Value());       \
+    H = reinterpret_cast<decltype(&S)>(std::move(maybe_H.Value()));       \
   } else {                                                                \
     LITERT_LOG(LITERT_WARNING, "Failed to load symbol %s: %s", #S,        \
                dlib_.DlError());                                          \
@@ -71,7 +71,7 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   for (auto& so_path : so_paths) {
     auto maybe_dlib = SharedLibrary::Load(so_path, RtldFlags::Default());
     if (maybe_dlib.HasValue()) {
-      dlib_ = std::move(maybe_dlib).Value();
+      dlib_ = std::move(maybe_dlib.Value());
     }
   }
 

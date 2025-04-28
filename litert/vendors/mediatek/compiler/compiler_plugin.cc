@@ -371,8 +371,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
     auto bytecode =
-        CompilePartition(**api, *model.Subgraph(i), graph_name, opt_soc_model);
+        CompilePartition(**api, subgraph, graph_name, opt_soc_model);
     rmdir(dla_directory_name);
     if (!bytecode) {
       LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
