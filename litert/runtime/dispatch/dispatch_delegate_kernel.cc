@@ -65,10 +65,24 @@ DispatchDelegateKernel::~DispatchDelegateKernel() {
     all_tfl_tensors.insert(internal_tensors_.begin(), internal_tensors_.end());
 
     for (auto& tfl_tensor : all_tfl_tensors) {
-      const auto& port_connections =
-          io_tensors_port_connections_.find(tfl_tensor)->second;
-      const auto& tensor_buffer_info =
-          tensor_buffer_infos_.find(tfl_tensor)->second;
+      auto itpc_it = io_tensors_port_connections_.find(tfl_tensor);
+      if (itpc_it == io_tensors_port_connections_.end()) {
+        LITERT_LOG(LITERT_ERROR,
+                   "IO tensor port connections not found for tensor %p",
+                   tfl_tensor);
+        continue;
+      }
+      const auto& port_connections = itpc_it->second;
+
+      auto tbi_it = tensor_buffer_infos_.find(tfl_tensor);
+      if (tbi_it == tensor_buffer_infos_.end()) {
+        // Tensor buffer initialized but never consumed will not present in
+        // tensor_buffer_infos_.
+        LITERT_LOG(LITERT_WARNING, "Tensor buffer info not found for tensor %p",
+                   tfl_tensor);
+        continue;
+      }
+      const auto& tensor_buffer_info = tbi_it->second;
       for (auto& pc : port_connections) {
         auto* invocation_context = node_invocation_contexts_[pc.node_idx];
         if (pc.is_input_port) {
