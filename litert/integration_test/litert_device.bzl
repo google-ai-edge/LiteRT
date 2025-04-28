@@ -167,77 +167,87 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         mh_user = mh_user,
     )
 
-QUALCOMM_SPEC = BackendSpec(
-    id = "qualcomm",
-    libs = [
-        ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
-        ("@qairt//:lib/aarch64-android/libQnnHtpV75Stub.so", "LD_LIBRARY_PATH"),
-        ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
-        ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
-        ("@qairt//:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
-        ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
-        ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
-    ],
-    mh_devices = [{
-        "model": "regex:sm-s928b|sm-s928u1",
-        "pool": "shared",
-    }],
-    plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
-    dispatch = "libLiteRtDispatch_Qualcomm.so",
-)
+def _QualcommSpec():
+    return {
+        "qualcomm": BackendSpec(
+            id = "qualcomm",
+            libs = [
+                ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:lib/aarch64-android/libQnnHtpV75Stub.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
+                ("@qairt//:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
+                ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
+            ],
+            mh_devices = [{
+                "model": "regex:sm-s928b|sm-s928u1",
+                "pool": "shared",
+            }],
+            plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
+            dispatch = "libLiteRtDispatch_Qualcomm.so",
+        ),
+    }
 
 # MEDIATEK
 
-MEDIATEK_SPEC = BackendSpec(
-    id = "mediatek",
-    libs = [
-        ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mediatek.so", "LD_LIBRARY_PATH"),
-        ("//litert/vendors/mediatek/compiler:libLiteRtCompilerPlugin_MediaTek.so", "LD_LIBRARY_PATH"),
-    ],
-    mh_devices = [{
-        "hardware": "mt6989",
-        "label": "odml-test",
-    }],
-    dispatch = "libLiteRtDispatch_Mediatek.so",
-    plugin = "libLiteRtCompilerPlugin_MediaTek.so",
-)
+def _MediatekSpec():
+    return {
+        "mediatek": BackendSpec(
+            id = "mediatek",
+            libs = [
+                ("//litert/vendors/mediatek/dispatch:libLiteRtDispatch_Mediatek.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/mediatek/compiler:libLiteRtCompilerPlugin_MediaTek.so", "LD_LIBRARY_PATH"),
+            ],
+            mh_devices = [{
+                "hardware": "mt6989",
+                "label": "odml-test",
+            }],
+            dispatch = "libLiteRtDispatch_Mediatek.so",
+            plugin = "libLiteRtCompilerPlugin_MediaTek.so",
+        ),
+    }
 
 # GOOGLE TENSOR
 
-GOOGLE_TENSOR_SPEC = BackendSpec(
-    id = "google_tensor",
-    libs = [
-        ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
-    ],
-    mh_devices = [{
-        "label": "odml-test",
-        "model": "pixel 9",
-    }],
-    mh_user = "odml-team",
-    dispatch = "libLiteRtDispatch_GoogleTensor.so",
-)
+def _GoogleTensorSpec():
+    return {
+        "google_tensor": BackendSpec(
+            id = "google_tensor",
+            libs = [
+                ("//litert/vendors/google_tensor/dispatch:libLiteRtDispatch_GoogleTensor.so", "LD_LIBRARY_PATH"),
+            ],
+            mh_devices = [{
+                "label": "odml-test",
+                "model": "pixel 9",
+            }],
+            mh_user = "odml-team",
+            dispatch = "libLiteRtDispatch_GoogleTensor.so",
+        ),
+    }
 
 # CPU
 
-CPU_SPEC = BackendSpec(
-    id = "cpu",
-)
+def _CpuSpec():
+    return {
+        "cpu": BackendSpec(
+            id = "cpu",
+        ),
+    }
 
 # GPU
 
-GPU_SPEC = BackendSpec(
-    id = "gpu",
-)
+def _GpuSpec():
+    return {
+        "gpu": BackendSpec(
+            id = "gpu",
+        ),
+    }
 
 # COMMON
 
-_SPECS = {
-    QUALCOMM_SPEC.id: QUALCOMM_SPEC,
-    GOOGLE_TENSOR_SPEC.id: GOOGLE_TENSOR_SPEC,
-    MEDIATEK_SPEC.id: MEDIATEK_SPEC,
-    CPU_SPEC.id: CPU_SPEC,
-    GPU_SPEC.id: GPU_SPEC,
-}
+def _Specs(name):
+    return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec())[name]
 
 # copybara:uncomment_begin(google-only)
 # # MOBILE HARNESS WRAPPER ###########################################################################
@@ -352,7 +362,7 @@ def litert_device_exec(
     data = data + []
     exec_env_vars = exec_env_vars + []
 
-    backend = _SPECS[backend_id]
+    backend = _Specs(backend_id)
 
     data.extend(backend.libs)
     exec_env_vars.extend(backend.env_paths)
@@ -493,7 +503,7 @@ def litert_integration_test(
         skips: List of substrings of models to skip.
     """
 
-    backend = _SPECS[backend_id]
+    backend = _Specs(backend_id)
 
     req_hardware = backend.id != "cpu" and backend.id != "gpu"
 
