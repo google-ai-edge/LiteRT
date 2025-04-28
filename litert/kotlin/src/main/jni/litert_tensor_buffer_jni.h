@@ -21,6 +21,7 @@
 extern "C" {
 #endif  // __cplusplus
 
+// TensorBuffer
 JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
                                                            jclass clazz,
@@ -67,6 +68,24 @@ JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeDestroy(JNIEnv* env,
                                                           jclass clazz,
                                                           jlong handle);
+
+// TensorBufferRequirements
+JNIEXPORT jintArray JNICALL
+Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetSupportedTypes(
+    JNIEnv* env, jclass clazz, jlong handle);
+
+JNIEXPORT jint JNICALL
+Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeBufferSize(
+    JNIEnv* env, jclass clazz, jlong handle);
+
+JNIEXPORT jintArray JNICALL
+Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetStrides(
+    JNIEnv* env, jclass clazz, jlong handle);
+
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeDestroy(
+    JNIEnv* env, jclass clazz, jlong handle);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

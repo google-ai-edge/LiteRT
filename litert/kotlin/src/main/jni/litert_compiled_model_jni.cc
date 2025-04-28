@@ -138,6 +138,29 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
 }
 
 JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputBufferRequirements(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
+    jstring signature, jstring input_name) {
+  auto compiled_model = CreateCompileModel(compiled_model_handle, model_handle);
+
+  AUTO_CLEANUP_JNI_STRING(env, signature);
+  AUTO_CLEANUP_JNI_STRING(env, input_name);
+  auto requirements =
+      signature_str == nullptr
+          ? compiled_model.GetInputBufferRequirements(input_name_str)
+          : compiled_model.GetInputBufferRequirements(signature_str,
+                                                      input_name_str);
+  if (!requirements) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get input buffer requirements: %s",
+               requirements.Error().Message().c_str());
+    ThrowLiteRtException(env, requirements.Error().Status(),
+                         requirements.Error().Message());
+    return 0;
+  }
+  return reinterpret_cast<jlong>(std::move(requirements->Release()));
+}
+
+JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring output_name) {
@@ -157,6 +180,29 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
     return 0;
   }
   return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
+    jstring signature, jstring output_name) {
+  auto compiled_model = CreateCompileModel(compiled_model_handle, model_handle);
+
+  AUTO_CLEANUP_JNI_STRING(env, signature);
+  AUTO_CLEANUP_JNI_STRING(env, output_name);
+  auto requirements =
+      signature_str == nullptr
+          ? compiled_model.GetOutputBufferRequirements(output_name_str)
+          : compiled_model.GetOutputBufferRequirements(signature_str,
+                                                       output_name_str);
+  if (!requirements) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get outpput buffer requirements: %s",
+               requirements.Error().Message().c_str());
+    ThrowLiteRtException(env, requirements.Error().Status(),
+                         requirements.Error().Message());
+    return 0;
+  }
+  return reinterpret_cast<jlong>(std::move(requirements->Release()));
 }
 
 JNIEXPORT jlongArray JNICALL

@@ -73,16 +73,38 @@ private constructor(
   fun createInputBuffer(inputName: String, signature: String? = null): TensorBuffer {
     assertNotDestroyed()
 
-    val handle = nativeCreateInputBuffer(handle, model.handle, signature, inputName)
-    return TensorBuffer(handle)
+    val tb = nativeCreateInputBuffer(handle, model.handle, signature, inputName)
+    return TensorBuffer(tb)
+  }
+
+  @Throws(LiteRtException::class)
+  fun getInputBufferRequirements(
+    inputName: String,
+    signature: String? = null,
+  ): TensorBufferRequirements {
+    assertNotDestroyed()
+
+    val tbr = nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
+    return TensorBufferRequirements(tbr)
   }
 
   @Throws(LiteRtException::class)
   fun createOutputBuffer(outputName: String, signature: String? = null): TensorBuffer {
     assertNotDestroyed()
 
-    val handle = nativeCreateOutputBuffer(handle, model.handle, signature, outputName)
-    return TensorBuffer(handle)
+    val tb = nativeCreateOutputBuffer(handle, model.handle, signature, outputName)
+    return TensorBuffer(tb)
+  }
+
+  @Throws(LiteRtException::class)
+  fun getOutputBufferRequirements(
+    outputName: String,
+    signature: String? = null,
+  ): TensorBufferRequirements {
+    assertNotDestroyed()
+
+    val tbr = nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
+    return TensorBufferRequirements(tbr)
   }
 
   @Throws(LiteRtException::class)
@@ -262,7 +284,23 @@ private constructor(
     ): Long
 
     @JvmStatic
+    private external fun nativeGetInputBufferRequirements(
+      compiledModelHandle: Long,
+      modelHandle: Long,
+      signature: String?,
+      inputName: String,
+    ): Long
+
+    @JvmStatic
     private external fun nativeCreateOutputBuffer(
+      compiledModelHandle: Long,
+      modelHandle: Long,
+      signature: String?,
+      outputName: String,
+    ): Long
+
+    @JvmStatic
+    private external fun nativeGetOutputBufferRequirements(
       compiledModelHandle: Long,
       modelHandle: Long,
       signature: String?,
