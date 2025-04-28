@@ -41,6 +41,7 @@ ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
 ABSL_FLAG(bool, use_gpu, false, "Use GPU Accelerator.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
+ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
           "Decide if random value should be filled into tensor buffer to "
           "perform numerical check.");
@@ -187,7 +188,9 @@ Expected<void> RunModel() {
     LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
 
     // Print tensor info and data if requested
+    if (absl::GetFlag(FLAGS_print_tensors)) {
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
+    }
   }
 
   ABSL_LOG(INFO) << "Prepare output buffers";
@@ -203,10 +206,12 @@ Expected<void> RunModel() {
   LITERT_LOG(LITERT_INFO, "Run took %lu microseconds", end - start);
 
   // Print output tensor information and values if requested
+  if (absl::GetFlag(FLAGS_print_tensors)) {
     for (size_t i = 0; i < output_buffers.size(); ++i) {
       auto& buffer = output_buffers[i];
       LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Output", i));
     }
+  }
 
   ABSL_LOG(INFO) << "Model run completed";
 
