@@ -20,6 +20,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/test/matchers.h"
 
 namespace litert::internal {
 
@@ -31,7 +32,9 @@ TEST(BufferManagerTest, EmptyFirstBuffer) {
   BufferManager manager;
 
   EXPECT_EQ(manager.NumBuffers(), 1);
-  EXPECT_EQ(manager.GetBuffer(BufferManager::kEmptyBufferId)->Size(), 0);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer,
+                              manager.GetBuffer(BufferManager::kEmptyBufferId));
+  EXPECT_EQ(buffer.Size(), 0);
 }
 
 TEST(BufferManagerTest, RegisterNonOwnedBuffer) {
@@ -41,7 +44,8 @@ TEST(BufferManagerTest, RegisterNonOwnedBuffer) {
   const auto id = manager.RegisterNonOwnedBuffer(buffer);
 
   EXPECT_EQ(manager.NumBuffers(), 2);
-  EXPECT_EQ(manager.GetBuffer(id)->StrView(), kData);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buffer, manager.GetBuffer(id));
+  EXPECT_EQ(managed_buffer.StrView(), kData);
 }
 
 TEST(BufferManagerTest, RegisterOwnedBuffer) {
@@ -51,7 +55,8 @@ TEST(BufferManagerTest, RegisterOwnedBuffer) {
   const auto id = manager.RegisterOwnedBuffer(std::move(buffer));
 
   EXPECT_EQ(manager.NumBuffers(), 2);
-  EXPECT_EQ(manager.GetBuffer(id)->StrView(), kData);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buffer, manager.GetBuffer(id));
+  EXPECT_EQ(managed_buffer.StrView(), kData);
 }
 
 TEST(BufferManagerTest, RegisterWithContext) {
@@ -62,8 +67,10 @@ TEST(BufferManagerTest, RegisterWithContext) {
   const auto id = manager.RegisterNonOwnedBuffer(buffer, context);
 
   EXPECT_EQ(manager.NumBuffers(), 2);
-  EXPECT_EQ(manager.GetBuffer(id)->StrView(), kData);
-  EXPECT_EQ(manager.GetContext(id)->get().should_append, true);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buffer, manager.GetBuffer(id));
+  EXPECT_EQ(managed_buffer.StrView(), kData);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_context, manager.GetContext(id));
+  EXPECT_EQ(managed_context.get().should_append, true);
 }
 
 }  // namespace
