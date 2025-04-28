@@ -23,11 +23,13 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 #define GET_RANK(op) ((op).RankedTensorType()->Layout().Rank())
 #define GET_DIMENSION(op) ((op).RankedTensorType()->Layout().Dimensions())
+#define GET_ELEMENT_TYPE(op) ((op).RankedTensorType()->ElementType())
 
 namespace litert::mediatek {
 
@@ -44,16 +46,15 @@ Expected<void> LegalizeFullyConnectedOp(
     input_indices.push_back(*id);
   }
 
-  // for beta
+  // if there's on bias input, add a zero bias
   if (input_indices.size() < 3) {
-    auto weights_shape = GET_DIMENSION(op.Inputs()[1]);
-    std::vector<uint32_t> bias_shape = {
-        static_cast<unsigned int>(weights_shape[0])};
-    std::vector<int32_t> bias_data(bias_shape[0], 0);
-    auto bias_data_operand =
-        operand_map.AddTensorByType(NEURON_TENSOR_QUANT8_SYMM, bias_shape,
-                                    bias_data.data(), bias_data.size() * 1);
-    input_indices.push_back(*bias_data_operand);
+    auto num_element = GET_DIMENSION(op.Inputs()[1])[0];
+    auto zero_bias_idx = AddZeroBiasForConvBase(op.Inputs()[0], op.Inputs()[1],
+                                                num_element, operand_map);
+    if (!zero_bias_idx) {
+      return zero_bias_idx.Error();
+    }
+    input_indices.push_back(*zero_bias_idx);
   }
 
   // A NEURON_FULLY_CONNECTED operation takes a 4rd scalar operand, which is

@@ -65,8 +65,8 @@ TEST(LiteRtMediatekOptionsTest, GetWithInvalidIdentifier) {
   LiteRtOpaqueOptions options;
   int payload_int = 17;
   void* payload = &payload_int;
-  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions("invalid_identifier", payload,
-                                            [](void*){}, &options));
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+      "invalid_identifier", payload, [](void*) {}, &options));
   LiteRtMediatekOptions options_data;
   EXPECT_EQ(LiteRtMediatekOptionsGet(options, &options_data),
             kLiteRtStatusErrorInvalidArgument);

@@ -32,6 +32,14 @@ struct AHardwareBuffer {};
 
 namespace litert::mediatek {
 
+static constexpr const char* kExtensionGeneralOpration =
+    "com.mediatek.general_operation";
+// Extension operand
+enum {
+  ADAPTER_EXTENSION_GENERAL_OPERAND_ARGSTRING = 0x0100,
+  ADAPTER_EXTENSION_GENERAL_OPERATION_TYPE = 0x0000,
+};
+
 using NeuronModelPtr = std::unique_ptr<NeuronModel, void (*)(NeuronModel*)>;
 using NeuronCompilationPtr =
     std::unique_ptr<NeuronCompilation, void (*)(NeuronCompilation*)>;

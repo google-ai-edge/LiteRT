@@ -16,12 +16,12 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_TOOLS_DUMP_H_
 
 #include <string>
+
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 namespace litert::qnn::internal {
 
 std::string Dump(const QnnManager& qnn);
-
 }
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_TOOLS_DUMP_H_

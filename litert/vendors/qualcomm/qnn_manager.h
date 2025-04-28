@@ -73,7 +73,7 @@ class QnnManager;
 
 namespace internal {
 
-  std::string Dump(const QnnManager& qnn);
+std::string Dump(const QnnManager& qnn);
 
 }  // namespace internal
 

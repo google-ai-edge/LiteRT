@@ -29,6 +29,21 @@ namespace litert::mediatek {
 
 bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
   // Do some common check
+  auto check_tensor_types = [&](const auto& tensors) {
+    for (const auto& tensor : tensors) {
+      auto mtk_type = GetNeuronTensorType(tensor);
+      if (!mtk_type) {
+        LITERT_LOG(LITERT_ERROR, "%s", mtk_type.Error().Message().c_str());
+        return false;
+      }
+    }
+    return true;
+  };
+
+  if (!check_tensor_types(op.Inputs()) || !check_tensor_types(op.Outputs())) {
+    return false;
+  }
+
   return true;
 }
 

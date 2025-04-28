@@ -16,11 +16,15 @@
 
 namespace litert::mediatek {
 
-Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t) {
+Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
+                                               int32_t tensor_flags) {
   auto ranked_tensor_type = t.RankedTensorType();
   if (!ranked_tensor_type) {
     return ranked_tensor_type.Error();
   }
+
+  const bool use_int8_asymm_signed =
+      tensor_flags & NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED;
 
   int32_t mtk_type;
   switch (ranked_tensor_type->ElementType()) {
@@ -42,7 +46,9 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t) {
       }
       break;
     case ElementType::Int8:
-      if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+      if (use_int8_asymm_signed) {
+        mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
+      } else if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
         mtk_type = NEURON_TENSOR_QUANT8_SYMM;
       } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
         mtk_type = NEURON_TENSOR_QUANT8_SYMM_PER_CHANNEL;
@@ -100,5 +106,72 @@ NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
   return api.api().model_add_operation(model, type, input.size(), input.data(),
                                        output.size(), output.data());
 };
+
+/*
+ * The format of data will be:
+ *  -------------------------------------------------------------------------------
+ *  | 1 byte typeLen  | N bytes type     | 4 bytes dataLen  | N bytes data |
+ *  -------------------------------------------------------------------------------
+ */
+int EncodeOperandValue(OemOperandValue* operand, uint8_t* output) {
+  size_t currPos = 0;
+
+  // 1 byte for typeLen, 4 bytes for bufferLen
+  if (output == nullptr) {
+    return -1;
+  }
+
+  // Set length of type
+  *output = operand->typeLen;
+  currPos += sizeof(uint8_t);
+
+  // Copy type to output
+  memcpy(output + currPos, operand->type, operand->typeLen);
+  currPos += operand->typeLen;
+
+  // Set the length of buffer
+  uint32_t* dataLen = reinterpret_cast<uint32_t*>(&output[currPos]);
+  *dataLen = operand->dataLen;
+  currPos += sizeof(uint32_t);
+
+  // Copy operand value to output
+  memcpy(&output[currPos], operand->data, operand->dataLen);
+
+  return 0;
+}
+
+size_t PackOemScalarString(const char* str, uint8_t** out_buffer) {
+  if (str == nullptr) {
+    return 0;
+  }
+  size_t out_len = 0;
+  uint8_t type[] = {'s', 't', 'r', 'i', 'n', 'g'};
+  OemOperandValue operand_value;
+
+  operand_value.typeLen = sizeof(type);
+  operand_value.type = type;
+  operand_value.dataLen = strlen(str);
+  if (operand_value.dataLen > MAX_OEM_OP_STRING_LEN) {
+    return 0;
+  }
+  operand_value.data =
+      reinterpret_cast<uint8_t*>(malloc(operand_value.dataLen));
+  if (operand_value.data == nullptr) {
+    return 0;
+  }
+  memcpy(operand_value.data, str, operand_value.dataLen);
+
+  out_len =
+      operand_value.typeLen + operand_value.dataLen + (sizeof(size_t) * 2);
+  *out_buffer = reinterpret_cast<uint8_t*>(calloc(out_len, sizeof(uint8_t)));
+  if (*out_buffer == nullptr) {
+    free(operand_value.data);
+    return 0;
+  }
+  EncodeOperandValue(&operand_value, *out_buffer);
+  free(operand_value.data);
+
+  return out_len;
+}
 
 }  // namespace litert::mediatek

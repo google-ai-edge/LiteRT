@@ -587,6 +587,19 @@ LiteRtStatus LiteRtGetDepthwiseConv2dStrideHOption(LiteRtOp op,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetDepthwiseConv2dDepthMultiplierOption(
+    LiteRtOp op, int32_t* depth_multiplier) {
+  if (op->OpCode() != kLiteRtOpCodeTflDepthwiseConv2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *depth_multiplier = opts.AsDepthwiseConv2DOptions()->depth_multiplier;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetDepthwiseConv2dFusedActivationOption(
     LiteRtOp op, uint32_t* fused_activation_function) {
   if (op->OpCode() != kLiteRtOpCodeTflDepthwiseConv2d) {

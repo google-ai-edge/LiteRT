@@ -87,6 +87,15 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSoftmax,
     kLiteRtOpCodeTflMean,
     kLiteRtOpCodeTflGelu,
+    kLiteRtOpCodeTflPad,
+    kLiteRtOpCodeTflLogistic,
+    kLiteRtOpCodeTflSum,
+    kLiteRtOpCodeTflConv2d,
+    kLiteRtOpCodeTflDepthwiseConv2d,
+    kLiteRtOpCodeTflSquaredDifference,
+    kLiteRtOpCodeTflResizeBilinear,
+    kLiteRtOpCodeTflResizeNearestNeighbor,
+    kLiteRtOpCodeTflTransposeConv,
 };
 // clang-format on
 
