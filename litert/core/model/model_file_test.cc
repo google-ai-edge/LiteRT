@@ -65,6 +65,7 @@ using ::testing::ElementsAreArray;
 using ::testing::FloatEq;
 using ::testing::Values;
 using ::testing::litert::IsError;
+using ::testing::litert::IsOkAndHolds;
 
 using ModelFactory = std::function<Expected<Model>()>;
 
@@ -213,8 +214,10 @@ TEST(ModelLoadTest, WithSignature) {
 }
 
 TEST(ModelLoadTest, NoSignature) {
-  auto model = *Model::CreateFromFile(testing::GetTfliteFilePath(
-      "java/demo/app/src/main/assets/mobilenet_v1_1.0_224.tflite"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTfliteFilePath(
+          "java/demo/app/src/main/assets/mobilenet_v1_1.0_224.tflite")));
   if (!model) {
     GTEST_SKIP() << "Model file is not available.";
   }
@@ -320,10 +323,10 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
 
   // The loaded buffer should indicate that it should be also serialized as
   // external.
-  const auto will_append = weights_buffer.GetBufferManager()
-                               ->GetContext(weights_buffer.GetBufferId())
-                               ->get()
-                               .should_append;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto weights_buffer_context,
+                              weights_buffer.GetBufferManager()->GetContext(
+                                  weights_buffer.GetBufferId()));
+  const auto will_append = weights_buffer_context.get().should_append;
   EXPECT_TRUE(will_append);
 
   // All tensors in the first subgraph should have the same buffer manager as
@@ -975,7 +978,8 @@ TEST_P(MultiSubgraphDupeConstTest, CheckGraph) {
     ASSERT_EQ(model.Subgraph(0).Tensors().size(), 3);
     auto& cst = model.Subgraph(0).Op(0).Input(1);
     Tensor t(&cst);
-    EXPECT_THAT(*t.WeightsData<float>(), ElementsAreArray(kWeights));
+    EXPECT_THAT(t.WeightsData<float>(),
+                IsOkAndHolds(ElementsAreArray(kWeights)));
   }
 
   {
@@ -983,7 +987,8 @@ TEST_P(MultiSubgraphDupeConstTest, CheckGraph) {
     ASSERT_EQ(model.Subgraph(1).Tensors().size(), 3);
     auto& cst = model.Subgraph(1).Op(0).Input(1);
     Tensor t(&cst);
-    EXPECT_THAT(*t.WeightsData<float>(), ElementsAreArray(kWeights));
+    EXPECT_THAT(t.WeightsData<float>(),
+                IsOkAndHolds(ElementsAreArray(kWeights)));
   }
   auto buf_id_0 = model.Subgraph(0).Op(0).Input(1).Weights().GetBufferId();
   auto buf_id_1 = model.Subgraph(1).Op(0).Input(1).Weights().GetBufferId();

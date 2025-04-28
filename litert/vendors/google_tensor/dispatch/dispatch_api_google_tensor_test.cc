@@ -21,12 +21,14 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
@@ -37,10 +39,11 @@ TEST(DispatchApi, GoogleTensor) {
   GTEST_SKIP()
       << "This test is specific to Android devices with a GoogleTensor eTPU";
 #endif
-
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
   LiteRtDispatchOption dispatch_option = {
       /*.name=*/kDispatchOptionSharedLibraryDir,
-      /*.value=*/*litert::ToLiteRtAny(std::any("/data/local/tmp")),
+      /*.value=*/lib_dir,
   };
   ASSERT_EQ(
       LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),

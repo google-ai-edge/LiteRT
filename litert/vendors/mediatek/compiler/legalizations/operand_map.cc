@@ -27,6 +27,7 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -58,7 +59,8 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
   if (t.HasWeights()) {
     auto weights = t.Weights().Bytes();
     if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
-      auto quant_param = operand_type->GetPerChannelQuantParams().Value();
+      LITERT_ASSIGN_OR_RETURN(auto quant_param,
+                              operand_type->GetPerChannelQuantParams());
       if (neuron_adapter_api_.api().model_set_symm_per_channel_quant_params(
               model_, *operand_index, &quant_param) != NEURON_NO_ERROR) {
         return Error(kLiteRtStatusErrorRuntimeFailure,

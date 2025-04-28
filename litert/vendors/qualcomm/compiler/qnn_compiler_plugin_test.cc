@@ -157,10 +157,11 @@ TEST(TestQnnPlugin, PartitionMulOps) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("one_mul.tflite");
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto subgraph, model.Subgraph(0));
+
   LiteRtOpListT selected_op_list;
   LITERT_ASSERT_OK(LiteRtCompilerPluginPartition(
-      plugin.get(), /*soc_model=*/nullptr, model.Subgraph(0)->Get(),
-      &selected_op_list));
+      plugin.get(), /*soc_model=*/nullptr, subgraph.Get(), &selected_op_list));
   const auto selected_ops = selected_op_list.Values();
 
   ASSERT_EQ(selected_ops.size(), 1);
@@ -370,7 +371,7 @@ TEST_P(QnnPlyginSupportedSocCompilationTest, CompileMulSubgraph) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("one_mul.tflite");
   auto soc_model = GetParam();
-  #ifdef __ANDROID__
+#ifdef __ANDROID__
   if (soc_model != "V75") {
     // TODO: Make this dynamic when device cloud testing has more devices.
     GTEST_SKIP() << "On device tests only support V75s.";

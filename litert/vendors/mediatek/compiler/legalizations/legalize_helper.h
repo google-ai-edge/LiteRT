@@ -14,29 +14,29 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 
-#define CHECK_RT_STATUS(function_call, error_message) \
-  do {                                                \
-    auto status = function_call;                      \
-    if (status != kLiteRtStatusOk) {                  \
-      return Error(status, error_message);            \
-    }                                                 \
-  } while (0)
-
-#define GET_ELEMENT_TYPE(op) ((op).RankedTensorType()->ElementType())
-
 namespace litert::mediatek {
 
+inline ElementType GetElementType(const Tensor& tensor) {
+  LITERT_ASSIGN_OR_ABORT(auto tensor_type, tensor.RankedTensorType());
+  return tensor_type.ElementType();
+}
+
 inline Expected<uint32_t> AddZeroBiasForConvBase(const Tensor& input_tensor,
-                                          const Tensor& filter_tensor,
-                                          int32_t num_element,
-                                          OperandMap& operand_map) {
+                                                 const Tensor& filter_tensor,
+                                                 int32_t num_element,
+                                                 OperandMap& operand_map) {
   std::vector<uint32_t> bias_shape = {static_cast<unsigned int>(num_element)};
-  auto input_type = GET_ELEMENT_TYPE(input_tensor);
+  auto input_type = GetElementType(input_tensor);
   auto bias_neuron_type = (input_type == ElementType::Float32)
                               ? NEURON_TENSOR_FLOAT32
                               : NEURON_TENSOR_INT32;
@@ -54,9 +54,9 @@ inline Expected<uint32_t> AddSumKeepDimsOption(const litert::Op& op,
                                                OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_SUM.
-  bool keepdim = 0;
-  CHECK_RT_STATUS(LiteRtGetSumKeepDimsOption(op.Get(), &keepdim),
-                  "Fails to get SumKeepDims");
+  bool keepdim = false;
+  LITERT_RETURN_IF_ERROR(LiteRtGetSumKeepDimsOption(op.Get(), &keepdim))
+      << "Fails to get SumKeepDims";
   return operand_map.AddScalarBool(keepdim);
 }
 
@@ -68,8 +68,8 @@ inline Expected<uint32_t> AddConv2dPaddingOption(const litert::Op& op,
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   uint32_t padding = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dPaddingOption(op.Get(), &padding),
-                  "Fails to get Conv2dPadding");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op.Get(), &padding))
+      << "Fails to get Conv2dPadding";
   return operand_map.AddScalarInt32(padding);
 }
 
@@ -78,8 +78,8 @@ inline Expected<uint32_t> AddConv2dStrideWOption(const litert::Op& op,
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t stride_w = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dStrideWOption(op.Get(), &stride_w),
-                  "Fails to get Conv2dStrideW");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideWOption(op.Get(), &stride_w))
+      << "Fails to get Conv2dStrideW";
   return operand_map.AddScalarInt32(stride_w);
 }
 
@@ -88,8 +88,8 @@ inline Expected<uint32_t> AddConv2dStrideHOption(const litert::Op& op,
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t stride_h = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dStrideHOption(op.Get(), &stride_h),
-                  "Fails to get Conv2dStrideH");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideHOption(op.Get(), &stride_h))
+      << "Fails to get Conv2dStrideH";
   return operand_map.AddScalarInt32(stride_h);
 }
 
@@ -98,8 +98,8 @@ inline Expected<uint32_t> AddConv2dFuseActivationOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   uint32_t fuse = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dFusedActivationOption(op.Get(), &fuse),
-                  "Fails to get Conv2dFuseActivation");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dFusedActivationOption(op.Get(), &fuse))
+      << "Fails to get Conv2dFuseActivation";
   return operand_map.AddScalarInt32(fuse);
 }
 
@@ -108,8 +108,8 @@ inline Expected<uint32_t> AddConv2dDilationWOption(const litert::Op& op,
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t dilation_w = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dDilationWOption(op.Get(), &dilation_w),
-                  "Fails to get Conv2dDilationW");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dDilationWOption(op.Get(), &dilation_w))
+      << "Fails to get Conv2dDilationW";
   return operand_map.AddScalarInt32(dilation_w);
 }
 
@@ -118,8 +118,8 @@ inline Expected<uint32_t> AddConv2dDilationHOption(const litert::Op& op,
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t dilation_h = 0;
-  CHECK_RT_STATUS(LiteRtGetConv2dDilationHOption(op.Get(), &dilation_h),
-                  "Fails to get Conv2dDilationH");
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dDilationHOption(op.Get(), &dilation_h))
+      << "Fails to get Conv2dDilationH";
   return operand_map.AddScalarInt32(dilation_h);
 }
 
@@ -138,8 +138,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dPaddingOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   uint32_t padding = 0;
-  CHECK_RT_STATUS(LiteRtGetDepthwiseConv2dPaddingOption(op.Get(), &padding),
-                  "Fails to get DepthwiseConv2dPadding");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dPaddingOption(op.Get(), &padding))
+      << "Fails to get DepthwiseConv2dPadding";
   return operand_map.AddScalarInt32(padding);
 }
 
@@ -148,8 +149,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dStrideWOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t stride_w = 0;
-  CHECK_RT_STATUS(LiteRtGetDepthwiseConv2dStrideWOption(op.Get(), &stride_w),
-                  "Fails to get DepthwiseConv2dStrideW");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dStrideWOption(op.Get(), &stride_w))
+      << "Fails to get DepthwiseConv2dStrideW";
   return operand_map.AddScalarInt32(stride_w);
 }
 
@@ -158,8 +160,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dStrideHOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t stride_h = 0;
-  CHECK_RT_STATUS(LiteRtGetDepthwiseConv2dStrideHOption(op.Get(), &stride_h),
-                  "Fails to get DepthwiseConv2dStrideH");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dStrideHOption(op.Get(), &stride_h))
+      << "Fails to get DepthwiseConv2dStrideH";
   return operand_map.AddScalarInt32(stride_h);
 }
 
@@ -168,9 +171,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dDepthMultiplierOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t depth_multiplier = 0;
-  CHECK_RT_STATUS(LiteRtGetDepthwiseConv2dDepthMultiplierOption(
-                      op.Get(), &depth_multiplier),
-                  "Fails to get DepthwiseConv2dDepthMultiplier");
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthwiseConv2dDepthMultiplierOption(
+      op.Get(), &depth_multiplier))
+      << "Fails to get DepthwiseConv2dDepthMultiplier";
   return operand_map.AddScalarInt32(depth_multiplier);
 }
 
@@ -179,9 +182,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dFuseActivationOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   uint32_t fuse = 0;
-  CHECK_RT_STATUS(
-      LiteRtGetDepthwiseConv2dFusedActivationOption(op.Get(), &fuse),
-      "Fails to get DepthwiseConv2dFuseActivation");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dFusedActivationOption(op.Get(), &fuse))
+      << "Fails to get DepthwiseConv2dFuseActivation";
   return operand_map.AddScalarInt32(fuse);
 }
 
@@ -190,9 +193,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dDilationWOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t dilation_w = 0;
-  CHECK_RT_STATUS(
-      LiteRtGetDepthwiseConv2dDilationWOption(op.Get(), &dilation_w),
-      "Fails to get DepthwiseConv2dDilationW");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dDilationWOption(op.Get(), &dilation_w))
+      << "Fails to get DepthwiseConv2dDilationW";
   return operand_map.AddScalarInt32(dilation_w);
 }
 
@@ -201,9 +204,9 @@ inline Expected<uint32_t> AddDepthwiseConv2dDilationHOption(
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_CONV2D.
   int32_t dilation_h = 0;
-  CHECK_RT_STATUS(
-      LiteRtGetDepthwiseConv2dDilationHOptions(op.Get(), &dilation_h),
-      "Fails to get DepthwiseConv2dDilationH");
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDepthwiseConv2dDilationHOptions(op.Get(), &dilation_h))
+      << "Fails to get DepthwiseConv2dDilationH";
   return operand_map.AddScalarInt32(dilation_h);
 }
 
