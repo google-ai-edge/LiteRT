@@ -17,7 +17,9 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "liter
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_stable_abi_users"],
+    default_visibility = [
+        "//visibility:public",  # copybara:comment_replace "//litert:litert_stable_abi_users",
+    ],
 )
 
 cc_library(

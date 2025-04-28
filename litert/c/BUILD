@@ -18,7 +18,9 @@ load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gle
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_stable_abi_users"],
+    default_visibility = [
+        "//visibility:public",  # copybara:comment_replace "//litert:litert_stable_abi_users",
+    ],
 )
 
 cc_library(
