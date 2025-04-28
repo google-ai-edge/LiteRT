@@ -21,17 +21,21 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
-#define GET_DIMENSION(op) ((op).RankedTensorType()->Layout().Dimensions())
-#define CHECK_OP_IDX_AND_RETURN_ERROR(op_idx) \
-  if (!(op_idx)) {                            \
-    return (op_idx).Error();                  \
-  }
-
 namespace litert::mediatek {
+
+namespace {
+
+absl::Span<const int32_t> GetDimensions(Tensor& op) {
+  LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
+  return tensor_type.Layout().Dimensions();
+}
+
+}  // namespace
 
 Expected<void> LegalizeResizeBilinearOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
@@ -43,25 +47,25 @@ Expected<void> LegalizeResizeBilinearOp(
   // instead the height and width will be added individually as
   // scalars.
   std::vector<uint32_t> input_indices;
-  auto input_tensor_id = operand_map.GetOperandIndex(op.Inputs()[0]);
-  CHECK_OP_IDX_AND_RETURN_ERROR(input_tensor_id);
-  input_indices.push_back(*input_tensor_id);
+  LITERT_ASSIGN_OR_RETURN(auto input_tensor_id,
+                          operand_map.GetOperandIndex(op.Inputs()[0]));
+  input_indices.push_back(input_tensor_id);
 
-  auto output_dim = GET_DIMENSION(op.Outputs()[0]);
+  auto output_dim = GetDimensions(op.Outputs()[0]);
   const int32_t output_height = output_dim[1];
-  auto output_height_operand_index = operand_map.AddScalarInt32(output_height);
-  CHECK_OP_IDX_AND_RETURN_ERROR(output_height_operand_index);
-  input_indices.push_back(*output_height_operand_index);
+  LITERT_ASSIGN_OR_RETURN(auto output_height_operand_index,
+                          operand_map.AddScalarInt32(output_height));
+  input_indices.push_back(output_height_operand_index);
 
   const int32_t output_width = output_dim[2];
-  auto output_width_operand_index = operand_map.AddScalarInt32(output_width);
-  CHECK_OP_IDX_AND_RETURN_ERROR(output_width_operand_index);
-  input_indices.push_back(*output_width_operand_index);
+  LITERT_ASSIGN_OR_RETURN(auto output_width_operand_index,
+                          operand_map.AddScalarInt32(output_width));
+  input_indices.push_back(output_width_operand_index);
 
   // Use NHWC format
-  auto format_operand_index = operand_map.AddScalarBool(false);
-  CHECK_OP_IDX_AND_RETURN_ERROR(format_operand_index);
-  input_indices.push_back(*format_operand_index);
+  LITERT_ASSIGN_OR_RETURN(auto format_operand_index,
+                          operand_map.AddScalarBool(false));
+  input_indices.push_back(format_operand_index);
 
   bool align_corners;
   if (auto status =
@@ -69,9 +73,9 @@ Expected<void> LegalizeResizeBilinearOp(
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");
   }
-  auto align_corners_operand_index = operand_map.AddScalarBool(align_corners);
-  CHECK_OP_IDX_AND_RETURN_ERROR(align_corners_operand_index);
-  input_indices.push_back(*align_corners_operand_index);
+  LITERT_ASSIGN_OR_RETURN(auto align_corners_operand_index,
+                          operand_map.AddScalarBool(align_corners));
+  input_indices.push_back(align_corners_operand_index);
 
   bool half_pixel_centers;
   if (auto status = LiteRtGetResizeBilinearHalfPixelCenterOption(
@@ -79,16 +83,14 @@ Expected<void> LegalizeResizeBilinearOp(
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get align corners");
   }
-  auto half_pixel_centers_operand_index =
-      operand_map.AddScalarBool(half_pixel_centers);
-  CHECK_OP_IDX_AND_RETURN_ERROR(half_pixel_centers_operand_index);
-  input_indices.push_back(*half_pixel_centers_operand_index);
+  LITERT_ASSIGN_OR_RETURN(auto half_pixel_centers_operand_index,
+                          operand_map.AddScalarBool(half_pixel_centers));
+  input_indices.push_back(half_pixel_centers_operand_index);
 
   std::vector<uint32_t> output_indices;
   for (auto& output : op.Outputs()) {
-    auto id = operand_map.GetOperandIndex(output);
-    CHECK_OP_IDX_AND_RETURN_ERROR(id);
-    output_indices.push_back(*id);
+    LITERT_ASSIGN_OR_RETURN(auto id, operand_map.GetOperandIndex(output));
+    output_indices.push_back(id);
   }
 
   if (ModelAddOperation(neuron_adapter_api, model,

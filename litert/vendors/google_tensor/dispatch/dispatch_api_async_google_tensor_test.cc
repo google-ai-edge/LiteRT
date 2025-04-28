@@ -17,6 +17,8 @@
 #include <cstring>
 #include <memory>
 
+#include "litert/test/matchers.h"
+
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
 #endif
@@ -26,6 +28,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -45,9 +48,12 @@ TEST(DispatchApiAsync, GoogleTensor) {
       << "This test is specific to Android devices with a GoogleTensor eTPU";
 #endif
 
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
+
   LiteRtDispatchOption dispatch_option = {
       /*.name=*/kDispatchOptionSharedLibraryDir,
-      /*.value=*/*litert::ToLiteRtAny(std::any("/data/local/tmp")),
+      /*.value=*/lib_dir,
   };
   ASSERT_EQ(
       LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),

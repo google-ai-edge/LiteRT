@@ -66,8 +66,9 @@ TEST(ModelTest, GetBuildStamp) {
 
   LiteRtModelT model;
 
-  LITERT_ASSERT_OK(model.PushMetadata(
-      kLiteRtBuildStampKey, *MakeBuildStamp(kSocManufacturer, kSocModel)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto build_stamp_ref,
+                              MakeBuildStamp(kSocManufacturer, kSocModel));
+  LITERT_ASSERT_OK(model.PushMetadata(kLiteRtBuildStampKey, build_stamp_ref));
   auto build_stamp = GetBuildStamp(model);
   ASSERT_TRUE(build_stamp);
   EXPECT_TRUE(IsCompiled(model));
@@ -286,7 +287,9 @@ TEST(ModelWeightsTest, WeightsWithExternalBufferManager) {
   BufferRef<uint8_t> buf(kData.data(), kData.size());
   SetWeightsFromUnownedBuffer(weights, buf);
 
-  EXPECT_EQ(manager.GetBuffer(weights.GetBufferId())->StrView(), kData);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto weights_buffer,
+                              manager.GetBuffer(weights.GetBufferId()));
+  EXPECT_EQ(weights_buffer.StrView(), kData);
   EXPECT_EQ(weights.Buffer().StrView(), kData);
 }
 

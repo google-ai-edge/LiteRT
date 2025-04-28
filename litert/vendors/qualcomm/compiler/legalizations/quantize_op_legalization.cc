@@ -77,16 +77,20 @@ LiteRtStatus QuantizeOpLegalization::LegalizeQuantizeOpAsQuantizeOp(
 }
 
 inline bool IsTensorUInt8(Tensor& tensor) {
-  return tensor.RankedTensorType()->ElementType() == ElementType::UInt8;
+  LITERT_ASSIGN_OR_ABORT(auto type, tensor.RankedTensorType());
+  return type.ElementType() == ElementType::UInt8;
 }
 inline bool IsTensorInt8(Tensor& tensor) {
-  return tensor.RankedTensorType()->ElementType() == ElementType::Int8;
+  LITERT_ASSIGN_OR_ABORT(auto type, tensor.RankedTensorType());
+  return type.ElementType() == ElementType::Int8;
 }
 inline bool IsTensorUInt16(Tensor& tensor) {
-  return tensor.RankedTensorType()->ElementType() == ElementType::UInt16;
+  LITERT_ASSIGN_OR_ABORT(auto type, tensor.RankedTensorType());
+  return type.ElementType() == ElementType::UInt16;
 }
 inline bool IsTensorInt16(Tensor& tensor) {
-  return tensor.RankedTensorType()->ElementType() == ElementType::Int16;
+  LITERT_ASSIGN_OR_ABORT(auto type, tensor.RankedTensorType());
+  return type.ElementType() == ElementType::Int16;
 }
 
 inline bool IsTensorPerTensorQuantized(Tensor& tensor) {
