@@ -54,7 +54,7 @@ void DefaultStdOutLogger(const char* fmt, QnnLog_Level_t level,
   buffer1[sizeof(buffer1) - 1] = 0;
   vsnprintf(buffer2, sizeof(buffer2), fmt, argp);
   buffer2[sizeof(buffer1) - 2] = 0;
-  printf("%s %s\n", buffer1, buffer2);
+  printf("%s %s", buffer1, buffer2);
 }
 
 }  // namespace
