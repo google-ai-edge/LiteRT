@@ -83,35 +83,32 @@ constexpr char kBaseDir[] = "/data/local/tmp/runfiles";
 constexpr char kBaseDir[] = "";
 #endif  // __ANDROID__
 
-std::string GetTestFilePath(absl::string_view filename) {
-  static constexpr absl::string_view kTestDataDir =
-      "odml/litert/litert/"
-      "test/testdata/";
+constexpr absl::string_view kLiteRtDir = "litert";
+constexpr absl::string_view kInternalPrefx = "third_party/odml/litert";
 
+std::string GetTestFilePath(absl::string_view filename) {
+  static constexpr absl::string_view kTestDataDir = "test/testdata/";
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({kBaseDir, "third_party", kTestDataDir, filename});
+    return internal::Join(
+        {kBaseDir, kInternalPrefx, kLiteRtDir, kTestDataDir, filename});
   } else {
-    return internal::Join({kBaseDir, kTestDataDir, filename});
+    return internal::Join({kBaseDir, kLiteRtDir, kTestDataDir, filename});
   }
 }
 
 std::string GetTfliteFilePath(absl::string_view filename) {
-  static constexpr absl::string_view kTestDataDir = "tensorflow/lite/";
-
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({kBaseDir, "third_party", kTestDataDir, filename});
+    return internal::Join({kBaseDir, "third_party/tensorflow/lite/", filename});
   } else {
-    return internal::Join({kBaseDir, kTestDataDir, filename});
+    return internal::Join({kBaseDir, "external/tflite/", filename});
   }
 }
 
 std::string GetLiteRtPath(absl::string_view rel_path) {
-  static constexpr absl::string_view kLiteRtRoot = "odml/litert/litert/";
-
   if constexpr (!tsl::kIsOpenSource) {
-    return internal::Join({kBaseDir, "third_party", kLiteRtRoot, rel_path});
+    return internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
   } else {
-    return internal::Join({kBaseDir, kLiteRtRoot, rel_path});
+    return internal::Join({kBaseDir, kLiteRtDir, rel_path});
   }
 }
 
