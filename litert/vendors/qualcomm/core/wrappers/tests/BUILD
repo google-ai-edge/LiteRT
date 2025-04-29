@@ -13,10 +13,6 @@ cc_test(
     srcs = [
         "op_wrapper_test.cc",
     ],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     deps = [
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
@@ -36,10 +32,6 @@ cc_test(
     name = "tensor_wrapper_test",
     srcs = [
         "tensor_wrapper_test.cc",
-    ],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
     ],
     deps = [
         "//litert/vendors/qualcomm/core/utils:miscs",
@@ -62,10 +54,6 @@ cc_test(
     srcs = [
         "param_wrapper_test.cc",
     ],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-    ],
     deps = [
         "//litert/vendors/qualcomm/core/wrappers:param_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
@@ -85,10 +73,6 @@ cc_test(
     name = "quantize_params_wrapper_test",
     srcs = [
         "quantize_params_wrapper_test.cc",
-    ],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
     ],
     deps = [
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",

@@ -24,4 +24,4 @@ cc_library(
     visibility = ["//visibility:public"],
 )
 
-exports_files(glob(["**"]))
+exports_files(glob(["**/*.so"]))
