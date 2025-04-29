@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
 #define ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_CONVERSION_H_
 
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/tensor_buffer.h"
 

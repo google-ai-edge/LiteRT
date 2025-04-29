@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_layout.h"

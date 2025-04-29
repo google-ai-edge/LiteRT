@@ -21,7 +21,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"

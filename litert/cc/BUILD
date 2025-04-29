@@ -176,7 +176,30 @@ cc_library(
     name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
-        "litert_tensor_buffer_requirements.cc",
+    ],
+    hdrs = [
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        ":litert_detail",
+        ":litert_event",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        ":litert_model",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//tflite/c:c_api_types",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer_internal",
+    srcs = [
+        "litert_tensor_buffer.cc",
     ],
     hdrs = [
         "litert_tensor_buffer.h",
@@ -195,7 +218,6 @@ cc_library(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/runtime:tensor_buffer",
         "//tflite/c:c_api_types",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -221,6 +243,42 @@ cc_test(
         ":litert_model",
         ":litert_platform_support",
         ":litert_tensor_buffer",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_environment",
+        "//litert/runtime:gpu_environment",
+        "//litert/runtime:tensor_buffer",
+        "//litert/test:matchers",
+        "//tflite/delegates/gpu/cl:buffer",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@opencl_headers",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_test(
+    name = "litert_tensor_buffer_internal_test",
+    srcs = [
+        "litert_tensor_buffer_test.cc",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":litert_element_type",
+        ":litert_event",
+        ":litert_handle",
+        ":litert_layout",
+        ":litert_macros",
+        ":litert_model",
+        ":litert_platform_support",
+        ":litert_tensor_buffer_internal",
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
@@ -255,12 +313,12 @@ cc_library(
         "litert_tensor_buffer_requirements.h",
     ],
     deps = [
-        ":litert_detail",
+        ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_expected",
+        "//litert/c:litert_tensor_buffer_types",
         "//tflite/c:c_api_types",
         "@com_google_absl//absl/types:span",
     ],
@@ -462,7 +520,7 @@ cc_library(
         ":litert_macros",
         ":litert_model",
         ":litert_options",
-        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_internal",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
@@ -797,7 +855,7 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_layout",
-        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_internal",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_layout",

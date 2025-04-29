@@ -18,12 +18,6 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,8 +38,6 @@ extern "C" {
 // 4. Fill the input LiteRtTensorBuffer with input data
 // 5. Invoke the model with the input/output LiteRtTensorBuffer
 // 6. Evaluate the output LiteRtTensorBuffer
-
-LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
 
 // Creates a LiteRtCompiledModel from a LiteRtModel object. Parameter
 // `jit_compilation_options` is optional and can be null, and is owned by the

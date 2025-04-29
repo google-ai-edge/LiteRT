@@ -19,7 +19,6 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event.h"
 #include "litert/c/litert_model.h"
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -43,8 +42,6 @@ typedef struct AHardwareBuffer AHardwareBuffer;
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-
-LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
 
 #define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
 

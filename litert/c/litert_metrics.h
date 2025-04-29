@@ -27,8 +27,6 @@ typedef struct LiteRtMetric {
   LiteRtAny value;
 } LiteRtMetric;
 
-LITERT_DEFINE_HANDLE(LiteRtMetrics);
-
 // Create a metrics object. The caller is responsible for deallocating the
 // returned metrics by calling `LiteRtDestroyMetrics`.
 LiteRtStatus LiteRtCreateMetrics(LiteRtMetrics* metrics);
