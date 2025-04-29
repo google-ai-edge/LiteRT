@@ -68,11 +68,11 @@ Expected<T*> OpenClMemory::Lock() {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to allocate aligned memory");
     }
-    // Use the GPU Delegate API to download the data from the OpenCL buffer
-    // to the aligned memory.
-    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryDownload(
-        &tensor_type_, buffer_type_, cpu_buffer_size_, GetMemoryPtr(), data_));
   }
+  // Use the GPU Delegate API to download the data from the OpenCL buffer
+  // to the aligned memory.
+  LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryDownload(
+      &tensor_type_, buffer_type_, cpu_buffer_size_, GetMemoryPtr(), data_));
   return Expected<T*>(static_cast<T*>(data_));
 }
 
