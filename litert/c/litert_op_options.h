@@ -24,8 +24,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtOp);
-
 //==============================================================================
 //
 //  Get option APIs for LiteRt ADD op.

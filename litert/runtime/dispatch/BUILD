@@ -76,7 +76,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_internal",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core:environment_options",

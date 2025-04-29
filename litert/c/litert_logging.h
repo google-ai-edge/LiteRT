@@ -23,8 +23,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtLogger);
-
 // WARNING: The values of the following enum are to be kept in sync with
 // tflite::LogSeverity.
 typedef enum {

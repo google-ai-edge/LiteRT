@@ -19,13 +19,11 @@
 #include <stdint.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-
-LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
 
 LiteRtStatus LiteRtCreateTensorBufferRequirements(
     int num_supported_tensor_buffer_types,

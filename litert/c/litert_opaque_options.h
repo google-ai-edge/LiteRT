@@ -28,7 +28,6 @@ extern "C" {
 //   different types;
 //
 // - a payload field and associated payload destructor callback;
-LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);
 
 LiteRtStatus LiteRtCreateOpaqueOptions(
     const char* payload_identifier, void* payload_data,

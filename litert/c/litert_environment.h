@@ -22,8 +22,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-LITERT_DEFINE_HANDLE(LiteRtEnvironment);
-
 // Create a LiteRT environment with options.
 // Used to set the path of the compiler plugin library and dispatch library.
 //

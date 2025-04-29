@@ -21,7 +21,8 @@
 #include <utility>
 #include <vector>
 
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
 class LiteRtTensorBufferRequirementsT {

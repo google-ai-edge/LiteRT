@@ -26,6 +26,47 @@ extern "C" {
   typedef struct name##T* name;    \
   typedef const struct name##T* name##Const
 
+// LiteRT Accelerator object. (litert_accelerator.h)
+LITERT_DEFINE_HANDLE(LiteRtAccelerator);
+// LiteRT CompiledModel object. (litert_compiled_model.h)
+LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
+// LiteRT Environment object. (litert_environment.h)
+LITERT_DEFINE_HANDLE(LiteRtEnvironment);
+// LiteRT EnvironmentOptions object. (litert_environment_options.h)
+LITERT_DEFINE_HANDLE(LiteRtEnvironmentOptions);
+// LiteRT Event object. (litert_event.h)
+LITERT_DEFINE_HANDLE(LiteRtEvent);
+// LiteRT Logger object. (litert_logging.h)
+LITERT_DEFINE_HANDLE(LiteRtLogger);
+// LiteRT Metrics object. (litert_metrics.h)
+LITERT_DEFINE_HANDLE(LiteRtMetrics);
+
+// Constant data behind a tensor stored in the model. (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtWeights);
+// Values/edges of the model's graph. (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtTensor);
+// Operations/nodes of the model's graph. (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtOp);
+// Fundamental block of program, i.e. a function body. (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtSubgraph);
+// Signature of the model.  (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtSignature);
+// A collection of subgraph + metadata + signature.  (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtModel);
+// Append only list of ops.  (litert_model.h)
+LITERT_DEFINE_HANDLE(LiteRtOpList);
+// Representations of an custom op.  (litert_op_options.h)
+LITERT_DEFINE_HANDLE(LiteRtOp);
+// A linked list of type erased opaque options. These are added to the
+// LiteRtOptions object. (litert_opaque_options.h)
+LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);
+// The compilation options for the LiteRtCompiledModel. (litert_options.h)
+LITERT_DEFINE_HANDLE(LiteRtOptions);
+// LiteRT TensorBuffer object. (litert_tensor_buffer.h)
+LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
+// LiteRT TensorBufferRequirements object. (litert_tensor_buffer_requirements.h)
+LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
+
 #if __ANDROID_API__ >= 26
 #define LITERT_HAS_AHWB_SUPPORT 1
 #else

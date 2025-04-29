@@ -20,13 +20,10 @@
 #include <stdint.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-LITERT_DEFINE_HANDLE(LiteRtAccelerator);
 
 typedef size_t LiteRtAcceleratorId;
 
