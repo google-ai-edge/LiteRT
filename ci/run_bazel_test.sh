@@ -41,7 +41,6 @@ BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 # TODO(b/385356261): no matching constructor for initialization of 'litert::Tensor::TensorUse'
 # TODO(b/385360853): Qualcomm related tests do not build in LiteRT
 # TODO(b/385361335): sb_api.h file not found
-# TODO(b/385361755): no member named 'view' in 'std::basic_stringstream<char>'
 EXCLUDED_TARGETS=(
         "-//tflite/delegates/flex:buffer_map_test"
         "-//tflite/delegates/gpu/cl/kernels:convolution_transposed_3x3_test"
@@ -91,29 +90,17 @@ EXCLUDED_TARGETS=(
 LITERT_EXCLUDED_TARGETS=(
         "-//litert/c:litert_compiled_model_shared_lib_test"
         "-//litert/c:litert_compiled_model_test"
-        "-//litert/c:litert_custom_op_test"
         "-//litert/cc:litert_compiled_model_test"
-        "-//litert/cc:litert_custom_op_test"
         # Requires mGPU environment.
         "-//litert/cc:litert_environment_test"
-        "-//litert/compiler/plugin:algo_test"
         "-//litert/runtime:compiled_model_test"
         "-//litert/runtime:gpu_environment_test"
-        "-//litert/tools:apply_plugin_test"
-        # TODO: b/407376374 - Mobilenet is larger than copybara size limit.
-        "-//litert/tools:benchmark_litert_model_test"
-        "-//litert/tools:dump_test"
+        # Requires c++20.
         "-//litert/tools:tool_display_test"
-        "-//litert/vendors/cc:convert_graph_test"
-        "-//litert/vendors/cc:partition_with_capabilities_test"
-        "-//litert/vendors/examples:example_conversion_impl_test"
-        "-//litert/vendors/examples:example_plugin_with_conversions_test"
-        "-//litert/cc:litert_model_predicates_test"
-        "-//litert/cc:litert_model_test"
-        "-//litert/core/model:model_buffer_test"
-        "-//litert/core/model:model_file_test"
-        "-//litert/core/util:flatbuffer_tools_test"
-        "-//litert/vendors/examples:example_plugin_test"
+        # Requires c++20.
+        "-//litert/tools:dump_test"
+        # Requires c++20.
+        "-//litert/tools:apply_plugin_test"
 )
 
 
