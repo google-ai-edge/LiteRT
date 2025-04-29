@@ -203,9 +203,6 @@ DecoderOperation::DecoderOperation(
 
 ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     LITERT_LOG(LITERT_VERBOSE, "get_attr %s for %s", name.c_str(), op_name_.c_str());
-    // TODO: Op specific implementation needed
-    // Fetch attributes from each TFLite op to map them to
-    // OV TFLite FrontEnd spec
     switch (litert_op_code_) {
         case LiteRtOpCode::kLiteRtOpCodeTflConv2d:
             if (name == "strides") {
@@ -335,7 +332,10 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
                 int32_t new_shape_size;
                 LiteRtStatus status =
                     LiteRtGetReshapeNewShapeOption(litert_op_, &reshape_new_shape, &new_shape_size);
-                DECODER_CHECK_STATUS(status, "new_shape");
+                if (status == kLiteRtStatusErrorInvalidArgument) {
+                    LITERT_LOG(LITERT_INFO, "New shape unavailable for %s", name.c_str());
+                    return {};
+                }
                 std::vector<int64_t> new_shape(new_shape_size);
                 for (int i = 0; i < new_shape_size; ++i) {
                     new_shape[i] = reshape_new_shape[i];
@@ -351,6 +351,279 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
                 LiteRtStatus status = LiteRtGetMeanKeepDimsOption(litert_op_, &keep_dims);
                 DECODER_CHECK_STATUS(status, "keep_dims");
                 return keep_dims;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear:
+            if (name == "align_corners") {
+                bool align_corners;
+                LiteRtStatus status =
+                    LiteRtGetResizeBilinearAlignCornersOption(litert_op_, &align_corners);
+                DECODER_CHECK_STATUS(status, "align_corners");
+                return align_corners;
+            } else if (name == "half_pixel_centers") {
+                bool half_pixel_centers;
+                LiteRtStatus status =
+                    LiteRtGetResizeBilinearHalfPixelCenterOption(litert_op_, &half_pixel_centers);
+                DECODER_CHECK_STATUS(status, "half_pixel_centers");
+                return half_pixel_centers;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor:
+            if (name == "align_corners") {
+                bool align_corners;
+                LiteRtStatus status =
+                    LiteRtGetResizeNearestNeighborAlignCornersOption(litert_op_, &align_corners);
+                DECODER_CHECK_STATUS(status, "align_corners");
+                return align_corners;
+            } else if (name == "half_pixel_centers") {
+                bool half_pixel_centers;
+                LiteRtStatus status = LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
+                    litert_op_, &half_pixel_centers);
+                DECODER_CHECK_STATUS(status, "half_pixel_centers");
+                return half_pixel_centers;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflConcatenation:
+            if (name == "axis") {
+                int32_t axis;
+                LiteRtStatus status = LiteRtGetConcatenationAxisOption(litert_op_, &axis);
+                DECODER_CHECK_STATUS(status, "axis");
+                return axis;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d:
+            if (name == "strides") {
+                int32_t stride_w;
+                LiteRtStatus status = LiteRtGetMaxPool2dStrideWOption(litert_op_, &stride_w);
+                DECODER_CHECK_STATUS(status, "stride_w");
+                int32_t stride_h;
+                status = LiteRtGetMaxPool2dStrideHOption(litert_op_, &stride_h);
+                DECODER_CHECK_STATUS(status, "stride_h");
+                return std::vector<int64_t>{1, stride_h, stride_w, 1};
+            } else if (name == "padding") {
+                uint32_t padding;
+                LiteRtStatus status = LiteRtGetMaxPool2dPaddingOption(litert_op_, &padding);
+                DECODER_CHECK_STATUS(status, "padding");
+                return std::string(tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
+            } else if (name == "ksize") {
+                int32_t filter_width;
+                LiteRtStatus status =
+                    LiteRtGetMaxPool2dFilterWidthOption(litert_op_, &filter_width);
+                DECODER_CHECK_STATUS(status, "filter_width");
+                int32_t filter_height;
+                status = LiteRtGetMaxPool2dFilterHeightOption(litert_op_, &filter_height);
+                DECODER_CHECK_STATUS(status, "filter_height");
+                return std::vector<int64_t>{1, filter_height, filter_width, 1};
+            } else if (name == "activation") {
+                uint32_t fused_activation;
+                LiteRtStatus status =
+                    LiteRtGetMaxPool2dFusedActivationOption(litert_op_, &fused_activation);
+                DECODER_CHECK_STATUS(status, "fused_activation");
+                return tflite::EnumNameActivationFunctionType(
+                    static_cast<tflite::ActivationFunctionType>(fused_activation));
+            } else if (name == "data_format") {
+                return "NHWC";
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d:
+            if (name == "strides") {
+                int32_t stride_w;
+                LiteRtStatus status = LiteRtGetAveragePool2dStrideWOption(litert_op_, &stride_w);
+                DECODER_CHECK_STATUS(status, "stride_w");
+                int32_t stride_h;
+                status = LiteRtGetAveragePool2dStrideHOption(litert_op_, &stride_h);
+                DECODER_CHECK_STATUS(status, "stride_h");
+                return std::vector<int64_t>{1, stride_h, stride_w, 1};
+            } else if (name == "padding") {
+                uint32_t padding;
+                LiteRtStatus status = LiteRtGetAveragePool2dPaddingOption(litert_op_, &padding);
+                DECODER_CHECK_STATUS(status, "padding");
+                return std::string(tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
+            } else if (name == "ksize") {
+                int32_t filter_width;
+                LiteRtStatus status =
+                    LiteRtGetAveragePool2dFilterWidthOption(litert_op_, &filter_width);
+                DECODER_CHECK_STATUS(status, "filter_width");
+                int32_t filter_height;
+                status = LiteRtGetAveragePool2dFilterHeightOption(litert_op_, &filter_height);
+                DECODER_CHECK_STATUS(status, "filter_height");
+                return std::vector<int64_t>{1, filter_height, filter_width, 1};
+            } else if (name == "activation") {
+                uint32_t fused_activation;
+                LiteRtStatus status =
+                    LiteRtGetAveragePool2dFusedActivationOption(litert_op_, &fused_activation);
+                DECODER_CHECK_STATUS(status, "fused_activation");
+                return tflite::EnumNameActivationFunctionType(
+                    static_cast<tflite::ActivationFunctionType>(fused_activation));
+            } else if (name == "data_format") {
+                return "NHWC";
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflMul:
+            if (name == "fused_activation_function") {
+                uint32_t fused_activation;
+                LiteRtStatus status =
+                    LiteRtGetMulFusedActivationOption(litert_op_, &fused_activation);
+                DECODER_CHECK_STATUS(status, "fused_activation");
+                return tflite::EnumNameActivationFunctionType(
+                    static_cast<tflite::ActivationFunctionType>(fused_activation));
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflTransposeConv:
+            if (name == "strides") {
+                int32_t stride_w;
+                LiteRtStatus status = LiteRtGetTransposeConvStrideWOption(litert_op_, &stride_w);
+                DECODER_CHECK_STATUS(status, "stride_w");
+                int32_t stride_h;
+                status = LiteRtGetTransposeConvStrideHOption(litert_op_, &stride_h);
+                DECODER_CHECK_STATUS(status, "stride_h");
+                return std::vector<int64_t>{1, stride_h, stride_w, 1};
+            } else if (name == "padding") {
+                uint32_t padding;
+                LiteRtStatus status = LiteRtGetTransposeConvPaddingOption(litert_op_, &padding);
+                DECODER_CHECK_STATUS(status, "padding");
+                return std::string(tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
+            } else if (name == "dilations") {
+                // TODO: This information is not available in litert. Returning value similar to OV
+                // tflite decoder.
+                return std::vector<int64_t>{1, 1, 1, 1};
+            } else if (name == "activation") {
+                uint32_t fused_activation;
+                LiteRtStatus status =
+                    LiteRtGetTransposeConvFusedActivationOption(litert_op_, &fused_activation);
+                DECODER_CHECK_STATUS(status, "fused_activation");
+                return tflite::EnumNameActivationFunctionType(
+                    static_cast<tflite::ActivationFunctionType>(fused_activation));
+            } else if (name == "data_format") {
+                return "NHWC";
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflSoftmax:
+            if (name == "beta") {
+                float beta;
+                LiteRtStatus status = LiteRtGetSoftmaxBetaOption(litert_op_, &beta);
+                DECODER_CHECK_STATUS(status, "beta");
+                return beta;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflMirrorPad:
+            if (name == "mode") {
+                // TODO: Currently litert_options doesn't provide an option for this. Hence
+                // hardcoding to "REFLECT" mode.
+                return std::string("REFLECT");
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflStridedSlice:
+            if (name == "begin_mask") {
+                int32_t begin_mask;
+                LiteRtStatus status = LiteRtGetStridedSliceBeginMaskOption(litert_op_, &begin_mask);
+                DECODER_CHECK_STATUS(status, "begin_mask");
+                return begin_mask;
+            } else if (name == "end_mask") {
+                int32_t end_mask;
+                LiteRtStatus status = LiteRtGetStridedSliceEndMaskOption(litert_op_, &end_mask);
+                DECODER_CHECK_STATUS(status, "end_mask");
+                return end_mask;
+            } else if (name == "new_axis_mask") {
+                int32_t new_axis_mask;
+                LiteRtStatus status =
+                    LiteRtGetStridedSliceNewAxisMaskOption(litert_op_, &new_axis_mask);
+                DECODER_CHECK_STATUS(status, "new_axis_mask");
+                return new_axis_mask;
+            } else if (name == "ellipsis_mask") {
+                int32_t ellipsis_mask;
+                LiteRtStatus status =
+                    LiteRtGetStridedSliceEllipsisMaskOption(litert_op_, &ellipsis_mask);
+                DECODER_CHECK_STATUS(status, "ellipsis_mask");
+                return ellipsis_mask;
+            } else if (name == "shrink_axis_mask") {
+                int32_t shrink_axis_mask;
+                LiteRtStatus status =
+                    LiteRtGetStridedSliceShrinkAxisMaskOption(litert_op_, &shrink_axis_mask);
+                DECODER_CHECK_STATUS(status, "shrink_axis_mask");
+                return shrink_axis_mask;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace:
+            if (name == "block_size") {
+                int32_t block_size;
+                LiteRtStatus status = LiteRtGetDepthToSpaceBlockSizeOption(litert_op_, &block_size);
+                DECODER_CHECK_STATUS(status, "block_size");
+                return block_size;
+            } else if (name == "data_format") {
+                return "NHWC";
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflGather:
+            if (name == "axis") {
+                int32_t axis;
+                LiteRtStatus status = LiteRtGetGatherAxisOption(litert_op_, &axis);
+                DECODER_CHECK_STATUS(status, "axis");
+                return axis;
+            } else if (name == "batch_dims") {
+                int32_t batch_dims;
+                LiteRtStatus status = LiteRtGetGatherBatchDimsOption(litert_op_, &batch_dims);
+                DECODER_CHECK_STATUS(status, "batch_dims");
+                return batch_dims;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul:
+            if (name == "adj_x") {
+                bool adj_x;
+                LiteRtStatus status = LiteRtGetBatchMatmulAdjXOption(litert_op_, &adj_x);
+                DECODER_CHECK_STATUS(status, "adj_x");
+                return adj_x;
+            } else if (name == "adj_y") {
+                bool adj_y;
+                LiteRtStatus status = LiteRtGetBatchMatmulAdjYOption(litert_op_, &adj_y);
+                DECODER_CHECK_STATUS(status, "adj_y");
+                return adj_y;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu:
+            if (name == "alpha") {
+                float alpha;
+                LiteRtStatus status = LiteRtGetLeakyReluAlphaOption(litert_op_, &alpha);
+                DECODER_CHECK_STATUS(status, "alpha");
+                return alpha;
+            } else {
+                LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+                return nullptr;
+            }
+        case LiteRtOpCode::kLiteRtOpCodeTflPack:
+            if (name == "axis") {
+                int32_t axis;
+                LiteRtStatus status = LiteRtGetPackAxisOption(litert_op_, &axis);
+                DECODER_CHECK_STATUS(status, "axis");
+                return axis;
             } else {
                 LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
                 return nullptr;
