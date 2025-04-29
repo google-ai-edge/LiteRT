@@ -38,8 +38,6 @@ typedef struct {
   LiteRtAny value;
 } LiteRtEnvOption;
 
-LITERT_DEFINE_HANDLE(LiteRtEnvironmentOptions);
-
 // Retrieves the value corresponding to the given tag.
 //
 // Returns kLiteRtStatusErrorNotFound if the option tag is not found.

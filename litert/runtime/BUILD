@@ -73,9 +73,7 @@ cc_library(
         "open_cl_sync.h",
         "tensor_buffer.h",
         "tensor_buffer_requirements.h",
-        "//litert/c:litert_event.h",
         "//litert/c:litert_tensor_buffer.h",
-        "//litert/c:litert_tensor_buffer_requirements.h",
     ],
     linkopts = gles_linkopts(),
     deps = [

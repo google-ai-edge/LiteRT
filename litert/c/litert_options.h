@@ -17,14 +17,10 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-
-// The compilation options for the LiteRtCompiledModel.
-LITERT_DEFINE_HANDLE(LiteRtOptions);
 
 // Creates a compilation option object.
 LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options);

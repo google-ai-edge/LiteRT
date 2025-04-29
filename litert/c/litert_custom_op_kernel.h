@@ -20,7 +20,6 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_tensor_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -29,8 +29,6 @@ extern "C" {
 typedef struct _cl_event* cl_event;
 typedef void* EGLSyncKHR;
 
-LITERT_DEFINE_HANDLE(LiteRtEvent);
-
 LiteRtStatus LiteRtCreateEventFromSyncFenceFd(int sync_fence_fd, bool owns_fd,
                                               LiteRtEvent* event);
 

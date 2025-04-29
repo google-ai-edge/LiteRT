@@ -15,12 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_H_
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATOR_H_
 
-#include <cstddef>
-#include <memory>
-#include <vector>
-
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/runtime/metrics.h"
 
 // We need to forward declare this to avoid a dependency loop.

@@ -45,7 +45,6 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_layout",
-        ":litert_tensor_buffer",
     ],
 )
 
