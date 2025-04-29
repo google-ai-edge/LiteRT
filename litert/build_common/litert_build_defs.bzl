@@ -35,7 +35,16 @@ def to_path(label, get_parent = False):
 def make_rpaths(rpaths):
     paths = []
     for rp in rpaths:
-        if ":" in rp:
+        if rp.startswith("@"):
+            # Handle repository paths (E.g. @repo_name//:target/file.txt), relavant in OSS.
+            repo_name, repo_targ = rp.removeprefix("@").split("//")
+            pref = "//external/{}".format(repo_name)
+            if repo_targ.startswith(":"):
+                repo_path = pref + repo_targ
+            else:
+                repo_path = pref + "/" + repo_targ
+            paths.append(to_path(repo_path, get_parent = True))
+        elif ":" in rp:
             paths.append(to_path(rp, get_parent = True))
         else:
             paths.append(rp)
