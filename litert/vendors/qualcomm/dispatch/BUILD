@@ -93,6 +93,7 @@ litert_device_test(
         "//litert/cc:litert_any",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
+        "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/qualcomm/core/utils:miscs",

@@ -19,6 +19,8 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_tensor_buffer_types.h"
+
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
 #endif
@@ -59,6 +61,7 @@
 using litert::testing::MakeRuntimeFromTestFile;
 using testing::FloatNear;
 using testing::Pointwise;
+using testing::litert::IsOkAndHolds;
 using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
 using testing::ElementsAre;
 
@@ -201,13 +204,15 @@ TEST(DispatchDelegate, HwBuffer) {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto* input_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
-    ASSERT_EQ(input_buffer_requirements->SupportedTypes()->at(0),
-              kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
+                                input_buffer_requirements->SupportedTypes());
+    ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer,
         buffer_context.CreateBufferForTensor(interpreter.input_tensor(i)));
     ASSERT_TRUE(input_buffer.IsOwned());
-    ASSERT_EQ(*input_buffer.BufferType(), kLiteRtTensorBufferTypeAhwb);
+    ASSERT_THAT(input_buffer.BufferType(),
+                IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
     LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
                                 input_buffer.Duplicate());
     auto status = buffer_context.RegisterTensorBuffer(
@@ -222,13 +227,15 @@ TEST(DispatchDelegate, HwBuffer) {
         auto* output_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
     ASSERT_NE(output_buffer_requirements, nullptr);
-    ASSERT_EQ(output_buffer_requirements->SupportedTypes()->at(0),
-              kLiteRtTensorBufferTypeAhwb);
+    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
+                                output_buffer_requirements->SupportedTypes());
+    ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,
         buffer_context.CreateBufferForTensor(interpreter.output_tensor(i)));
     ASSERT_TRUE(output_buffer.IsOwned());
-    ASSERT_EQ(*output_buffer.BufferType(), kLiteRtTensorBufferTypeAhwb);
+    ASSERT_THAT(output_buffer.BufferType(),
+                IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
     LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
                                 output_buffer.Duplicate());
     auto status = buffer_context.RegisterTensorBuffer(
@@ -585,9 +592,9 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(env, model,
-                                                    kLiteRtHwAcceleratorCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(

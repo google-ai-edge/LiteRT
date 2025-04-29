@@ -174,9 +174,11 @@ cc_test(
         # "@ml_drift//ml_drift/cl:environment",
         # "@ml_drift//ml_drift/cl:opencl_wrapper",
         # copybara:uncomment_end
+        "//litert/c:litert_any",
         "//litert/c:litert_environment",
         "//litert/c:litert_environment_options",
         "//litert/cc:litert_any",
+        "//litert/test:matchers",
     ],
 )
 

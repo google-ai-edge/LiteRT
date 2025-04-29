@@ -387,7 +387,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     // Check all weights in this subgraph, see if any of them were previously
     // seen and added to existing qnn context, use the largest weight size to
     // determine which context to use.
-    for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(partition_idx));
+    for (const auto& op : subgraph.Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
           auto buffer_id = input.Weights().BufferId();
@@ -429,7 +430,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       ++next_context_handle_idx;
     }
     // Set context handle index for all weight buffers in this subgraph.
-    for (const auto& op : model.Subgraph(partition_idx)->Ops()) {
+    LITERT_ASSIGN_OR_RETURN(auto partition, model.Subgraph(partition_idx));
+    for (const auto& op : partition.Ops()) {
       for (const auto& input : op.Inputs()) {
         if (input.IsConstant()) {
           auto buffer_id = input.Weights().BufferId();
@@ -444,10 +446,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     result->byte_code_index[partition_idx] = context_handle_idx;
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
-    LiteRtSubgraph partition = model.Subgraph(partition_idx)->Get();
+
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
-        **qnn_manager, context_handles[context_handle_idx].get(), partition,
-        entry_point_name));
+        **qnn_manager, context_handles[context_handle_idx].get(),
+        partition.Get(), entry_point_name));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 

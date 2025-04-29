@@ -51,6 +51,7 @@ using ::testing::Eq;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::SizeIs;
+using ::testing::litert::IsOkAndHolds;
 
 constexpr absl::string_view kGoogleTensorTflite = "simple_model_npu.tflite";
 constexpr absl::string_view kDispatchLibraryDir =
@@ -104,9 +105,12 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(*input_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*input_buffers[1].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*output_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[1].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(output_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -175,9 +179,12 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(*input_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*input_buffers[1].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*output_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[1].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(output_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -327,9 +334,12 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(*input_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*input_buffers[1].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(*output_buffers[0].BufferType(), Eq(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[1].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(output_buffers[0].BufferType(),
+              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
 
   // TODO(gcarranza): Integrate with LiteRT Environment.
 #if LITERT_HAS_OPENGL_SUPPORT

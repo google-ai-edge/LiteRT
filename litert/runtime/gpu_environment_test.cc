@@ -22,9 +22,11 @@
 #include <gtest/gtest.h>
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
@@ -42,18 +44,24 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   ml_drift::cl::Environment env;
   ASSERT_OK(ml_drift::cl::CreateEnvironment(&env));
 
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(
+          std::any(reinterpret_cast<int64_t>(env.context().context()))));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(
+          std::any(reinterpret_cast<int64_t>(env.queue()->queue()))));
+
   const std::array<LiteRtEnvOption, 2> environment_options = {
       LiteRtEnvOption{
           /*.tag=*/kLiteRtEnvOptionTagOpenClContext,
-          /*.value=*/
-          *ToLiteRtAny(
-              std::any(reinterpret_cast<int64_t>(env.context().context()))),
+          /*.value=*/context_id,
       },
       LiteRtEnvOption{
           /*.tag=*/kLiteRtEnvOptionTagOpenClCommandQueue,
-          /*.value=*/
-          *ToLiteRtAny(
-              std::any(reinterpret_cast<int64_t>(env.queue()->queue()))),
+          /*.value=*/queue_id,
       },
   };
   auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);

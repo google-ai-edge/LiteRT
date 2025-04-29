@@ -14,9 +14,11 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/fully_connected_op_legalization.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_options.h"
@@ -27,11 +29,21 @@
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
-#define GET_RANK(op) ((op).RankedTensorType()->Layout().Rank())
-#define GET_DIMENSION(op) ((op).RankedTensorType()->Layout().Dimensions())
-#define GET_ELEMENT_TYPE(op) ((op).RankedTensorType()->ElementType())
-
 namespace litert::mediatek {
+
+namespace {
+
+size_t GetRank(Tensor& op) {
+  LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
+  return tensor_type.Layout().Rank();
+}
+
+absl::Span<const int32_t> GetDimensions(Tensor& op) {
+  LITERT_ASSIGN_OR_ABORT(auto tensor_type, op.RankedTensorType());
+  return tensor_type.Layout().Dimensions();
+}
+
+}  // namespace
 
 Expected<void> LegalizeFullyConnectedOp(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
@@ -48,7 +60,7 @@ Expected<void> LegalizeFullyConnectedOp(
 
   // if there's on bias input, add a zero bias
   if (input_indices.size() < 3) {
-    auto num_element = GET_DIMENSION(op.Inputs()[1])[0];
+    auto num_element = GetDimensions(op.Inputs()[1])[0];
     auto zero_bias_idx = AddZeroBiasForConvBase(op.Inputs()[0], op.Inputs()[1],
                                                 num_element, operand_map);
     if (!zero_bias_idx) {
@@ -75,7 +87,7 @@ Expected<void> LegalizeFullyConnectedOp(
   auto output_operand = OperandType::Create(op.Outputs()[0]);
   std::vector<uint32_t> output_indices;
 
-  if (GET_RANK(op.Outputs()[0]) > 2) {
+  if (GetRank(op.Outputs()[0]) > 2) {
     // if output_operand shape <B, K, N>, reshape to <B * K, N>
     auto last_dim = output_operand->GetDimension().back();
     auto elements = output_operand->GetElementCount();
@@ -100,7 +112,7 @@ Expected<void> LegalizeFullyConnectedOp(
                  "Failed to set NEURON_FULLY_CONNECTED operation");
   }
 
-  if (GET_RANK(op.Outputs()[0]) > 2) {
+  if (GetRank(op.Outputs()[0]) > 2) {
     // intermediate as reshape input
     input_indices = {output_indices.back()};
     auto output_operand = operand_map.GetOperandIndex(op.Outputs()[0]);
