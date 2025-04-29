@@ -841,4 +841,24 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_logging",
+    hdrs = ["litert_logging.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+    ],
+)
+
+cc_test(
+    name = "litert_logging_test",
+    srcs = ["litert_logging_test.cc"],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(srcs = ["litert_dispatch_delegate.h"])

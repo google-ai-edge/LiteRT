@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_C_LITERT_LOGGING_H_
 
 #include <stdarg.h>
+#include <stddef.h>
 
 #include "litert/c/litert_common.h"
 
@@ -39,22 +40,57 @@ typedef enum {
 #define LITERT_ERROR kLiteRtLogSeverityError
 #define LITERT_SILENT kLiteRtLogSeveritySilent
 
+const char* LiteRtGetLogSeverityName(LiteRtLogSeverity severity);
+
+// Creates a default LiteRT logger.
 LiteRtStatus LiteRtCreateLogger(LiteRtLogger* logger);
+
 LiteRtStatus LiteRtGetMinLoggerSeverity(LiteRtLogger logger,
                                         LiteRtLogSeverity* min_severity);
+
 LiteRtStatus LiteRtSetMinLoggerSeverity(LiteRtLogger logger,
                                         LiteRtLogSeverity min_severity);
+
 LiteRtStatus LiteRtLoggerLog(LiteRtLogger logger, LiteRtLogSeverity severity,
                              const char* format, ...);
+
+LiteRtStatus LiteRtGetLoggerIdentifier(LiteRtLoggerConst logger,
+                                       const char** identifier);
+
 void LiteRtDestroyLogger(LiteRtLogger logger);
 
+// Creates a sink logger.
+//
+// A sink logger will store the logs instead of outputting them. This allows the
+// C++ public API to silence logs generated at the C boundary and control
+// when/if to output them.
+LiteRtStatus LiteRtCreateSinkLogger(LiteRtLogger* logger);
+
+// Returns the number of log calls that were done to the sink logger.
+LiteRtStatus LiteRtGetSinkLoggerSize(LiteRtLogger logger, size_t* size);
+
+// Returns the idx_th log in the sink logger.
+LiteRtStatus LiteRtGetSinkLoggerMessage(LiteRtLogger logger, size_t idx,
+                                        const char** message);
+
+// Clears the sink logger.
+LiteRtStatus LiteRtClearSinkLogger(LiteRtLogger logger);
+
 LiteRtLogger LiteRtGetDefaultLogger();
+
 LiteRtStatus LiteRtSetDefaultLogger(LiteRtLogger logger);
+
 LiteRtStatus LiteRtDefaultLoggerLog(LiteRtLogSeverity severity,
                                     const char* format, ...);
 
+// Use the library provided standard logger instead of creating a new one.
+LiteRtStatus LiteRtUseStandardLogger();
+
+// Use the library provided sink logger instead of creating a new one.
+LiteRtStatus LiteRtUseSinkLogger();
+
 #ifdef __cplusplus
-}
+}  // extern "C"
 #endif  // __cplusplus
 
 #define LITERT_LOGGER_LOG_PROD(logger, severity, format, ...)                  \

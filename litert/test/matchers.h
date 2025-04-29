@@ -344,6 +344,14 @@ inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
 
 }  // namespace testing::litert
 
+// Teaches GTest how to print LiteRtStatus enum values.
+//
+// LiteRtSTatus lives in the global namespace. We try to avoid conflict by only
+// defining this function in this file which is only pulled for tests.
+inline void PrintTo(const LiteRtStatus status, std::ostream* os) {
+  *os << LiteRtGetStatusString(status);
+}
+
 // GTest doesn't use `AbslStringify` if `GTEST_USE_ABSL` is not defined. This
 // provides a fallback implementation.
 //

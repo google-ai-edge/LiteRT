@@ -154,6 +154,7 @@ cc_library(
     deps = [
         ":litert_common",
         "//tflite:minimal_logging",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -165,6 +166,7 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_logging",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
