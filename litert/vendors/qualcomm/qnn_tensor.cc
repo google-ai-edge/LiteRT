@@ -22,7 +22,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace litert {
 namespace qnn {

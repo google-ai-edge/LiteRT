@@ -10,11 +10,11 @@
 #include "absl/base/attributes.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
-#include "include/QNN/HTP/QnnHtpDevice.h"  // from @qairt
-#include "include/QNN/HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
-#include "include/QNN/QnnCommon.h"  // from @qairt
-#include "include/QNN/QnnDevice.h"  // from @qairt
-#include "include/QNN/QnnInterface.h"  // from @qairt
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpPerfInfrastructure.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
 
 namespace {
 // constexpr config values

@@ -19,7 +19,9 @@ cc_library(
         ],
     ),
     includes = [
-        "latest/include/",
+        "latest/include/QNN/",
     ],
     visibility = ["//visibility:public"],
 )
+
+exports_files(glob(["**"]))

@@ -20,7 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace {
 

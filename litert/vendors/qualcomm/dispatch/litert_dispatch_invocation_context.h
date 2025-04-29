@@ -29,8 +29,8 @@
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "include/QNN/QnnCommon.h"  // from @qairt
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 class LiteRtDispatchDeviceContextT;
 

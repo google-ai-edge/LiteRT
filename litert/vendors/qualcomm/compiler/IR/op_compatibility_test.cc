@@ -21,7 +21,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/qualcomm/compiler/IR/qnn_op.h"
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace {
 

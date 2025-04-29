@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "include/QNN/HTP/QnnHtpDevice.h"  // from @qairt
-#include "include/QNN/QnnDevice.h"  // from @qairt
+#include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "QnnDevice.h"  // from @qairt
 namespace qnn {
 class HtpDeviceConfig {
  public:

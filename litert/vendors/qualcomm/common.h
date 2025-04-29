@@ -17,10 +17,10 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_element_type.h"
-#include "include/QNN/QnnCommon.h"  // from @qairt
-#include "include/QNN/QnnInterface.h"  // from @qairt
-#include "include/QNN/QnnTypes.h"  // from @qairt
-#include "include/QNN/System/QnnSystemInterface.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
 
 #ifdef __cplusplus
 extern "C" {

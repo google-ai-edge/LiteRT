@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 

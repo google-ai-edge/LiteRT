@@ -25,9 +25,9 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "include/QNN/QnnCommon.h"  // from @qairt
-#include "include/QNN/QnnGraph.h"  // from @qairt
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnGraph.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 

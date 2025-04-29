@@ -85,8 +85,8 @@ cc_library(
         "//litert/cc:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:matchers",
-        "//testing/base/public:gunit_for_library_testonly",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
     ],
 )
 

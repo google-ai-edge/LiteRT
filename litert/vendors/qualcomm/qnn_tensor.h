@@ -22,8 +22,8 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
-#include "include/QNN/QnnInterface.h"  // from @qairt
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnInterface.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 

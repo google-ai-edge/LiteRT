@@ -40,9 +40,9 @@
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "include/QNN/HTP/QnnHtpProfile.h"  // from @qairt
-#include "include/QNN/QnnCommon.h"  // from @qairt
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
 using litert::Unexpected;

@@ -50,7 +50,7 @@ def _configurable_repo_impl(ctx):
     if not local_repo_path:
         if not ctx.attr.url:
             fail("A URL must be specified if local repo is not enabled.")
-        ctx.download_and_extract(url = ctx.attr.url, auth = get_auth(ctx, [ctx.attr.url]), strip_prefix = ctx.attr.strip_prefix)
+        ctx.download_and_extract(url = ctx.attr.url, auth = get_auth(ctx, [ctx.attr.url]), stripPrefix = ctx.attr.strip_prefix)
 
     if local_repo_path and not local_repo_path.startswith("/"):
         fail("Only absolute paths to local files are supported")

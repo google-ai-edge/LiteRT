@@ -35,7 +35,7 @@
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 #include "litert/vendors/qualcomm/compiler/IR/qnn_op.h"
 #include "litert/vendors/qualcomm/compiler/legalizations/quantize_op_legalization.h"
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 namespace litert {
 namespace {
 

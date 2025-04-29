@@ -10,7 +10,7 @@
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "include/QNN/QnnOpDef.h"  // from @qairt
+#include "QnnOpDef.h"  // from @qairt
 
 namespace qnn {
 

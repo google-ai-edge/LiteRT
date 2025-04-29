@@ -22,7 +22,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "include/QNN/System/QnnSystemContext.h"  // from @qairt
+#include "System/QnnSystemContext.h"  // from @qairt
 
 namespace litert::qnn {
 

@@ -19,7 +19,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_model.h"
-#include "include/QNN/QnnTypes.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
