@@ -322,6 +322,7 @@ litert_device_test(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
