@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <ostream>
 #include <sstream>
 #include <utility>
@@ -84,7 +85,25 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       inputs_(context_binary_info.Graphs()[graph_index].Inputs()),
       outputs_(context_binary_info.Graphs()[graph_index].Outputs()) {
   input_buffer_handles_.resize(inputs_.size());
-  output_buffer_handles_.resize(outputs_.size());
+  int num_dumped_outputs = 0;
+  for (const auto& output : outputs_) {
+    if (output.IsMarkedDump()) num_dumped_outputs++;
+  }
+  // Put real graph output to the front since AttachOutput only attach first n
+  // outputs
+  int num_real_outputs = outputs_.size() - num_dumped_outputs;
+  output_buffer_handles_.resize(num_real_outputs);
+
+  std::vector<::qnn::TensorWrapper> reordered_outputs;
+
+  for (int i = num_dumped_outputs; i < outputs_.size(); i++) {
+    reordered_outputs.emplace_back(outputs_[i]);
+  }
+
+  for (int i = 0; i < num_dumped_outputs; i++) {
+    reordered_outputs.emplace_back(outputs_[i]);
+  }
+  outputs_.swap(reordered_outputs);
 }
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -281,6 +300,9 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   const size_t num_outs = outputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, outputs, num_outs, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_outs; ++i) {
+    if (outputs_.at(i).IsMarkedDump()) {
+      outputs_.at(i).AllocateOutputTensorBuffer();
+    }
     *(outputs + i) = outputs_.at(i).GetQnnTensor();
   }
 
@@ -299,6 +321,16 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   for (int i = 0; i < outputs_.size(); ++i) {
     if (outputs_[i].IsQuantU16()) {
       ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
+    }
+  }
+
+  std::string dump_folder = "/data/local/tmp/dumped_tensors/";
+  for (int i = 0; i < outputs_.size(); ++i) {
+    if (outputs_.at(i).IsMarkedDump()) {
+      auto status = WriteTensorTo(dump_folder, i);
+      if (!status) {
+        LITERT_LOG(LITERT_ERROR, "Failed to dump tensor id: %d", i);
+      }
     }
   }
 
@@ -411,5 +443,35 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile() {
 
   LITERT_LOG(LITERT_INFO, "%s", data_ss.str().c_str());
 
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
+    const std::string& output_folder, int tensor_idx) {
+  qnn::CreateDirectoryRecursive(output_folder);
+  auto& output_tensor = outputs_[tensor_idx];
+
+  auto tensor_name = output_tensor.GetName();
+  size_t first_underscore = tensor_name.find('_');
+  size_t second_underscore = tensor_name.find('_', first_underscore + 1);
+  if (first_underscore == std::string_view::npos ||
+      second_underscore == std::string_view::npos) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to dump tensor, error formatting tensor name");
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure);
+  }
+  auto framework_id = tensor_name.substr(
+      first_underscore + 1, second_underscore - first_underscore - 1);
+  auto output_path = output_folder + "/" + framework_id + ".raw";
+  std::ofstream fout(output_path, std::ios::binary);
+  if (fout.fail()) {
+    LITERT_LOG(LITERT_ERROR, "Failed to dump tensor");
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure);
+  }
+  // TODO (chunhsue-qti): dump quant param
+
+  fout.write(
+      static_cast<const char*>(output_tensor.GetQnnTensor().v2.clientBuf.data),
+      output_tensor.GetQnnTensor().v2.clientBuf.dataSize);
   return {};
 }

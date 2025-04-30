@@ -92,6 +92,10 @@ ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
           qualcomm_htp_performance_mode,
           kLiteRtQualcommHtpPerformanceModeDefault, "HTP performance mode.");
 
+ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
+          "Debug Feature. Ids to dump as outputs. Comma-separated list of "
+          "string. Use -1 to dump all op outputs.");
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtQualcommOptionsHtpPerformanceMode* options,
                    std::string* error) {
@@ -229,6 +233,9 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
 
   const auto profiling = absl::GetFlag(FLAGS_qualcomm_profiling);
   opts.SetProfiling(profiling);
+
+  const auto dump_tensor_ids = absl::GetFlag(FLAGS_qualcomm_dump_tensor_ids);
+  opts.SetDumpTensorIds(dump_tensor_ids);
 
   return opts;
 }

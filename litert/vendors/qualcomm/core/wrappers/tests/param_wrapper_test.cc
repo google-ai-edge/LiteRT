@@ -196,10 +196,12 @@ TEST(ParamWrapperTest, TensorParamTest) {
                       sizeof(decltype(data)::value_type), std::multiplies<>());
 
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_STATIC,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                QuantizeParamsWrapperVariant(),
                                dummy_dims,
+                               0,
                                static_cast<uint32_t>(data_size),
                                data_ptr};
 
