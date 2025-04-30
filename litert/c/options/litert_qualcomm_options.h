@@ -103,6 +103,7 @@ LiteRtStatus LiteRtQualcommOptionsGetPowerMode(
 
 #ifdef __cplusplus
 }  // extern "C"
+#endif  // __cplusplus
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
 
@@ -133,11 +134,13 @@ class QualcommOptions : public OpaqueOptions {
   void SetEnableWeightSharing(bool weight_sharing_enabled);
   bool GetEnableWeightSharing();
 
+  void SetDumpIds(const std::vector<std::string>& ids);
+  std::vector<int> GetDumpIds();
+
  private:
   LiteRtQualcommOptions Data() const;
 };
 
 }  // namespace litert::qualcomm
 
-#endif  // __cplusplus
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_

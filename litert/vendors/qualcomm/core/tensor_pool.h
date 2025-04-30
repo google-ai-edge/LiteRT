@@ -16,31 +16,43 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
-
+static const char* kQnnPrefix = "qnn_";
+std::uint32_t CreateQnnTensorId();
 class TensorPool {
  public:
   TensorPool();
 
-  TensorWrapper& CreateInputTensor(
+  TensorWrapper& CreateInputTensorWithId(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id);
 
-  TensorWrapper& CreateOutpuTensor(
+  TensorWrapper& CreateOutpuTensorWithId(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id);
 
   TensorWrapper& CreateNativeTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimentions);
 
+  TensorWrapper& CreateNativeTensorWithId(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id);
+
   TensorWrapper& CreateStaticTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
       const void* data);
+
+  TensorWrapper& CreateStaticTensorWithId(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id,
+      std::uint32_t bytes, const void* data);
 
   TensorWrapper& CloneNativeTensorFrom(const TensorWrapper& src);
 
@@ -142,12 +154,12 @@ TensorWrapper* TensorPool::ConvertStaticTensorFrom(
   if (!fill_result) {
     return nullptr;
   }
-
   const auto id = tensor_wrappers_.size();
   auto& back = tensor_wrappers_.emplace_back(
-      id, QNN_TENSOR_TYPE_STATIC, GetQnnDataType<T>(src_tensor.IsQuant()),
-      src_tensor.GetQuantParams(), src_tensor.GetDims(),
-      sizeof(T) * dst_data.size(), dst_data.data());
+      id, kQnnPrefix, QNN_TENSOR_TYPE_STATIC,
+      GetQnnDataType<T>(src_tensor.IsQuant()), src_tensor.GetQuantParams(),
+      src_tensor.GetDims(), CreateQnnTensorId(), sizeof(T) * dst_data.size(),
+      dst_data.data());
   return &back;
 }
 

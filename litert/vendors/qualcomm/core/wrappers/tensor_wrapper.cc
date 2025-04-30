@@ -67,12 +67,14 @@ std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
 TensorWrapper::TensorWrapper() = default;
 
 TensorWrapper::TensorWrapper(
-    std::uint32_t id, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    std::uint32_t id, std::string prefix, Qnn_TensorType_t tensor_type,
+    Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions)
-    : name_{std::to_string(id)},
+    const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id)
+    : name_{std::to_string(id) + "_" + prefix + std::to_string(framework_id)},
       dimentions_{dimentions},
-      quantize_params_{quantize_params} {
+      quantize_params_{quantize_params},
+      framework_id_(framework_id) {
   qnn_tensor_.v2.name = name_.c_str();
   qnn_tensor_.v2.type = tensor_type;
   qnn_tensor_.v2.dataFormat = QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER;
@@ -88,11 +90,13 @@ TensorWrapper::TensorWrapper(
 }
 
 TensorWrapper::TensorWrapper(
-    std::uint32_t id, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    std::uint32_t id, std::string prefix, Qnn_TensorType_t tensor_type,
+    Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
-    const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
-    const void* data)
-    : TensorWrapper(id, tensor_type, data_type, quantize_params, dimentions) {
+    const std::vector<std::uint32_t>& dimentions, std::uint32_t framework_id,
+    std::uint32_t bytes, const void* data)
+    : TensorWrapper(id, std::move(prefix), tensor_type, data_type,
+                    quantize_params, dimentions, framework_id) {
   // Use QNN_DATATYPE_SFIXED_POINT_8 for 4 bit quantization
   if (data_type == QNN_DATATYPE_SFIXED_POINT_4) {
     QNN_LOG_DEBUG("4bit Qunat, converting 4bit data to 8bit for QNN.");
@@ -109,6 +113,7 @@ TensorWrapper::TensorWrapper(const TensorWrapper& other)
     : qnn_tensor_{other.qnn_tensor_},
       name_{other.name_},
       dimentions_{other.dimentions_},
+      framework_id_{other.framework_id_},
       quantize_params_{other.quantize_params_},
       owned_data_{other.owned_data_} {
   qnn_tensor_.v2.name = name_.c_str();
@@ -125,6 +130,7 @@ TensorWrapper::TensorWrapper(TensorWrapper&& other)
     : qnn_tensor_{other.qnn_tensor_},
       name_{std::move(other.name_)},
       dimentions_{std::move(other.dimentions_)},
+      framework_id_{std::move(other.framework_id_)},
       quantize_params_{std::move(other.quantize_params_)},
       owned_data_{std::move(other.owned_data_)} {
   qnn_tensor_.v2.name = name_.c_str();

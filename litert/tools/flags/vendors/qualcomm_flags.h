@@ -30,6 +30,8 @@ ABSL_DECLARE_FLAG(LiteRtQualcommOptionsLogLevel, qualcomm_log_level);
 
 ABSL_DECLARE_FLAG(bool, enable_weight_sharing);
 
+ABSL_DECLARE_FLAG(std::vector<std::string>, dump_ids);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(LiteRtQualcommOptionsPowerMode, qualcomm_power_mode);

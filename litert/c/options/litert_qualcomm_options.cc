@@ -15,6 +15,7 @@
 #include "litert/c/options/litert_qualcomm_options.h"
 
 #include <memory>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -30,6 +31,7 @@ struct LiteRtQualcommOptionsT {
   bool enable_weight_sharing = true;
   LiteRtQualcommOptionsPowerMode power_mode =
       kLiteRtQualcommPowerModePerformance;
+  std::vector<int> dump_ids;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -125,6 +127,29 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtQualcommOptionsSetDumpIds(LiteRtQualcommOptions options,
+                                             int* ids,
+                                             std::uint32_t number_of_ids) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (int i = 0; i < number_of_ids; i++) {
+    options->dump_ids.emplace_back(ids[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDumpIds(LiteRtQualcommOptions options,
+                                             int** ids,
+                                             std::uint32_t* number_of_ids) {
+  if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *ids = options->dump_ids.data();
+  *number_of_ids = options->dump_ids.size();
+  return kLiteRtStatusOk;
+}
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // power_mode ------------------------------------------------------------------
@@ -197,6 +222,27 @@ bool QualcommOptions::GetEnableWeightSharing() {
   internal::AssertOk(LiteRtQualcommOptionsGetEnableWeightSharing, Data(),
                      &enable_weight_sharing);
   return enable_weight_sharing;
+}
+
+void QualcommOptions::SetDumpIds(const std::vector<std::string>& ids) {
+  std::vector<int> local_ids;
+  std::for_each(ids.begin(), ids.end(), [&local_ids](const std::string& id) {
+    local_ids.push_back(std::stoi(id));
+  });
+  internal::AssertOk(LiteRtQualcommOptionsSetDumpIds, Data(), local_ids.data(),
+                     local_ids.size());
+}
+
+std::vector<int> QualcommOptions::GetDumpIds() {
+  std::vector<int> dump_ids;
+  int* ids = nullptr;
+  std::uint32_t number_of_ids = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetDumpIds, Data(), &ids,
+                     &number_of_ids);
+  for (int i = 0; i < number_of_ids; i++) {
+    dump_ids.emplace_back(ids[i]);
+  }
+  return dump_ids;
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {

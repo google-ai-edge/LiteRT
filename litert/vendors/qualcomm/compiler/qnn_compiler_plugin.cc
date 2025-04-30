@@ -234,6 +234,17 @@ class LiteRtCompilerPluginT {
 #endif
   }
 
+  std::vector<int> DumpIds() {
+#ifdef __ANDROID__
+    return {};
+#else
+    if (!qnn_opts_) {
+      return {};
+    }
+    return qnn_opts_->GetDumpIds();
+#endif
+  }
+
  private:
   litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
       kLiteRtStatusErrorInvalidArgument, "Null environment options");
@@ -447,9 +458,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
+    // TODO: (chunhsue-qti) pass options as a whole
+    std::vector<int> dump_ids = compiler_plugin->DumpIds();
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         **qnn_manager, context_handles[context_handle_idx].get(),
-        partition.Get(), entry_point_name));
+        partition.Get(), entry_point_name, dump_ids));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 
