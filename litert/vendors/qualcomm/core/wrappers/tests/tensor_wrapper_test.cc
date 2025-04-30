@@ -45,9 +45,9 @@ TEST(TensorWrapperTest, SanityTest) {
 TEST(TensorWrapperTest, CopyTensorTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  TensorWrapper tensor_wrapper{0, QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8, q_param,
-                               dummy_dims};
+  TensorWrapper tensor_wrapper{
+      0,       "",        QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_UFIXED_POINT_8,
+      q_param, dummy_dims};
   TensorWrapper copied{tensor_wrapper};
 
   EXPECT_EQ(copied.GetRank(), 3);
@@ -77,10 +77,12 @@ TEST(TensorWrapperTest, MoveTensorTest) {
   std::vector<std::uint8_t> data = {1, 2, 3};
   void* data_ptr = reinterpret_cast<void*>(data.data());
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_STATIC,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                q_param,
                                dummy_dims,
+
                                static_cast<uint32_t>(data.size()),
                                data_ptr};
   TensorWrapper moved{tensor_wrapper};
@@ -112,6 +114,7 @@ TEST(TensorWrapperTest, QnnTensorTest) {
                       sizeof(decltype(data)::value_type), std::multiplies<>());
 
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_APP_WRITE,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                QuantizeParamsWrapperVariant(),
@@ -165,11 +168,13 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff8BitTest) {
   ScaleOffsetQuantizeParamsWrapper wrapper1(1, 0);
   ScaleOffsetQuantizeParamsWrapper wrapper2(1, kSUFixed8OffsetDiff);
   TensorWrapper tensor_wrapper0{0,
+                                "",
                                 QNN_TENSOR_TYPE_STATIC,
                                 QNN_DATATYPE_UFIXED_POINT_8,
                                 QuantizeParamsWrapperVariant(wrapper1),
                                 {}};
   TensorWrapper tensor_wrapper1{0,
+                                "",
                                 QNN_TENSOR_TYPE_STATIC,
                                 QNN_DATATYPE_SFIXED_POINT_8,
                                 QuantizeParamsWrapperVariant(wrapper2),
@@ -182,11 +187,13 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff16BitTest) {
   ScaleOffsetQuantizeParamsWrapper wrapper1(1, 0);
   ScaleOffsetQuantizeParamsWrapper wrapper2(1, kSUFixed16OffsetDiff);
   TensorWrapper tensor_wrapper0{0,
+                                "",
                                 QNN_TENSOR_TYPE_STATIC,
                                 QNN_DATATYPE_UFIXED_POINT_16,
                                 QuantizeParamsWrapperVariant(wrapper1),
                                 {}};
   TensorWrapper tensor_wrapper1{0,
+                                "",
                                 QNN_TENSOR_TYPE_STATIC,
                                 QNN_DATATYPE_SFIXED_POINT_16,
                                 QuantizeParamsWrapperVariant(wrapper2),
@@ -196,6 +203,7 @@ TEST(TensorWrapperTest, IsPerTensorQuantWithOffsetDiff16BitTest) {
 
 TEST(TensorWrapperTest, StaticTensorTest) {
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_STATIC,
                                QNN_DATATYPE_UNDEFINED,
                                QuantizeParamsWrapperVariant(),
@@ -208,6 +216,7 @@ TEST(TensorWrapperTest, StaticTensorTest) {
 
 TEST(TensorWrapperTest, SubgraphInputTensorTest) {
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_APP_WRITE,
                                QNN_DATATYPE_UNDEFINED,
                                QuantizeParamsWrapperVariant(),
@@ -220,6 +229,7 @@ TEST(TensorWrapperTest, SubgraphInputTensorTest) {
 
 TEST(TensorWrapperTest, SubgraphOutputTensorTest) {
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_APP_READ,
                                QNN_DATATYPE_UNDEFINED,
                                QuantizeParamsWrapperVariant(),
@@ -230,11 +240,27 @@ TEST(TensorWrapperTest, SubgraphOutputTensorTest) {
   EXPECT_TRUE(tensor_wrapper.IsSubgraphOutput());
 }
 
+TEST(TensorWrapperTest, DumpTensorTest) {
+  TensorWrapper tensor_wrapper{0,
+                               "",
+                               QNN_TENSOR_TYPE_APP_READ,
+                               QNN_DATATYPE_UNDEFINED,
+                               QuantizeParamsWrapperVariant(),
+                               {}};
+
+  EXPECT_FALSE(tensor_wrapper.IsMarkedDump());
+  tensor_wrapper.DumpTensor();
+  EXPECT_TRUE(tensor_wrapper.IsMarkedDump());
+}
+
 TEST(TensorWrapperTest, GetStaticTensorDataNonStaticTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  TensorWrapper tensor_wrapper{0, QNN_TENSOR_TYPE_APP_WRITE,
-                               QNN_DATATYPE_UFIXED_POINT_8, q_param,
+  TensorWrapper tensor_wrapper{0,
+                               "",
+                               QNN_TENSOR_TYPE_APP_WRITE,
+                               QNN_DATATYPE_UFIXED_POINT_8,
+                               q_param,
                                dummy_dims};
   EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<std::uint8_t>().has_value());
 }
@@ -242,9 +268,9 @@ TEST(TensorWrapperTest, GetStaticTensorDataNonStaticTest) {
 TEST(TensorWrapperTest, GetStaticTensorDataTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  TensorWrapper tensor_wrapper{0, QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8, q_param,
-                               dummy_dims};
+  TensorWrapper tensor_wrapper{
+      0,       "",        QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_UFIXED_POINT_8,
+      q_param, dummy_dims};
 
   EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<float>().has_value());
   EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<std::int8_t>().has_value());
@@ -262,9 +288,9 @@ TEST(TensorWrapperTest, GetStaticTensorDataTest) {
 TEST(TensorWrapperTest, ConvertQint16ToQuint16Test) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(0.0001, 0);
-  TensorWrapper tensor_wrapper{0, QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_SFIXED_POINT_16, q_param,
-                               dummy_dims};
+  TensorWrapper tensor_wrapper{
+      0,       "",        QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_SFIXED_POINT_16,
+      q_param, dummy_dims};
 
   std::vector<float> data = {1, 2, 3};
   const auto& int16_q_param_ref = tensor_wrapper.GetQuantParams();
@@ -307,11 +333,9 @@ TEST(TensorWrapperTest, ConvertQint16ToQuint16Test) {
 }
 TEST(TensorWrapperTest, QnnTensorPerTensorQuantConstructTest) {
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
-  TensorWrapper tensor_wrapper{0,
-                               QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               q_param,
-                               {1, 1, 3}};
+  TensorWrapper tensor_wrapper{
+      0,       "",       QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_UFIXED_POINT_8,
+      q_param, {1, 1, 3}};
   const auto& qnn_tensor = tensor_wrapper.GetQnnTensor();
   TensorWrapper tensor_wrapper_1(qnn_tensor);
   Qnn_Tensor_t& ref = tensor_wrapper.GetQnnTensor();
@@ -345,11 +369,9 @@ TEST(TensorWrapperTest, QnnTensorPerChannelQuantConstructTest) {
   AxisScaleOffsetQuantizeParamsWrapper q_param(
       0, absl::Span<float>(scales.data(), scales.size()),
       absl::Span<std::int32_t>(zero_points.data(), zero_points.size()));
-  TensorWrapper tensor_wrapper{0,
-                               QNN_TENSOR_TYPE_STATIC,
-                               QNN_DATATYPE_UFIXED_POINT_8,
-                               q_param,
-                               {1, 1, 3}};
+  TensorWrapper tensor_wrapper{
+      0,       "",       QNN_TENSOR_TYPE_STATIC, QNN_DATATYPE_UFIXED_POINT_8,
+      q_param, {1, 1, 3}};
   const auto& qnn_tensor = tensor_wrapper.GetQnnTensor();
   TensorWrapper tensor_wrapper_1(qnn_tensor);
   Qnn_Tensor_t& ref = tensor_wrapper.GetQnnTensor();

@@ -111,6 +111,27 @@ LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
   return profiling;
 }
 
+void QualcommOptions::SetDumpTensorIds(const std::vector<std::string>& ids) {
+  std::vector<int> local_ids;
+  std::for_each(ids.begin(), ids.end(), [&local_ids](const std::string& id) {
+    local_ids.push_back(std::stoi(id));
+  });
+  internal::AssertOk(LiteRtQualcommOptionsSetDumpTensorIds, Data(),
+                     local_ids.data(), local_ids.size());
+}
+
+std::vector<int> QualcommOptions::GetDumpTensorIds() {
+  std::vector<int> dump_ids;
+  int* ids = nullptr;
+  std::uint32_t number_of_ids = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetDumpTensorIds, Data(), &ids,
+                     &number_of_ids);
+  for (int i = 0; i < number_of_ids; i++) {
+    dump_ids.emplace_back(ids[i]);
+  }
+  return dump_ids;
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
