@@ -124,7 +124,7 @@ class LiteRtAcceleratorTest : public testing::Test {
  public:
   LiteRtEnvironment env_;
   void SetUp() override {
-    LiteRtEnvironmentCreate(/*num_options=*/0, nullptr, &env_);
+    LiteRtCreateEnvironment(/*num_options=*/0, nullptr, &env_);
     DummyAccelerator::RegisterAccelerator(kLiteRtHwAcceleratorCpu, env_);
   }
 

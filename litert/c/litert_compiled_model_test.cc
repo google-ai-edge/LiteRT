@@ -52,7 +52,7 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtEnvironment environment;
   LiteRtEnvOption options = {};
-  ASSERT_EQ(LiteRtEnvironmentCreate(/*num_options=*/0, &options, &environment),
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
             kLiteRtStatusOk);
 
   LiteRtCompiledModel compiled_model;

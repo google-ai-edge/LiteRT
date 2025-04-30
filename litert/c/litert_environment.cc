@@ -26,7 +26,7 @@
 extern "C" {
 #endif
 
-LiteRtStatus LiteRtEnvironmentCreate(int num_options,
+LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      const LiteRtEnvOption* options,
                                      LiteRtEnvironment* environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
