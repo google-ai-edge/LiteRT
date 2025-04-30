@@ -17,6 +17,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 // User-facing options for Qualcomm. This is not built as part of
@@ -100,6 +102,12 @@ LiteRtStatus LiteRtQualcommOptionsSetEnableWeightSharing(
 
 LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
     LiteRtQualcommOptions options, bool* enable_weight_sharing);
+
+LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
+    LiteRtQualcommOptions options, const int32_t* ids, uint32_t number_of_ids);
+
+LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
+    LiteRtQualcommOptions options, int32_t** ids, uint32_t* number_of_ids);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 

@@ -17,10 +17,14 @@
 
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <ostream>
 #include <sstream>
 #include <utility>
@@ -84,7 +88,24 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       inputs_(context_binary_info.Graphs()[graph_index].Inputs()),
       outputs_(context_binary_info.Graphs()[graph_index].Outputs()) {
   input_buffer_handles_.resize(inputs_.size());
-  output_buffer_handles_.resize(outputs_.size());
+
+  std::vector<::qnn::TensorWrapper> real_outputs;
+  std::vector<::qnn::TensorWrapper> dumped_outputs;
+  // Dumped tensors are treated as output, move them to the end of outputs_
+  std::for_each(
+      outputs_.begin(), outputs_.end(),
+      [&real_outputs, &dumped_outputs](const ::qnn::TensorWrapper& tensor) {
+        tensor.IsMarkedDump() ? dumped_outputs.emplace_back(tensor)
+                              : real_outputs.emplace_back(tensor);
+      });
+
+  output_buffer_handles_.resize(real_outputs.size());
+
+  outputs_.clear();
+  std::move(real_outputs.begin(), real_outputs.end(),
+            std::back_inserter(outputs_));
+  std::move(dumped_outputs.begin(), dumped_outputs.end(),
+            std::back_inserter(outputs_));
 }
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
@@ -281,6 +302,11 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   const size_t num_outs = outputs_.size();
   LITERT_STACK_ARRAY(Qnn_Tensor_t, outputs, num_outs, QNN_TENSOR_INIT);
   for (size_t i = 0; i < num_outs; ++i) {
+    if (outputs_.at(i).IsMarkedDump()) {
+      // need to manage its own buffer since LiteRT only allocates and attachs
+      // buffer for real graph in/out
+      outputs_.at(i).AllocateOutputTensorBuffer();
+    }
     *(outputs + i) = outputs_.at(i).GetQnnTensor();
   }
 
@@ -299,6 +325,16 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
   for (int i = 0; i < outputs_.size(); ++i) {
     if (outputs_[i].IsQuantU16()) {
       ConvertToInt16(output_buffer_handles_[i], outputs_[i].GetTensorBytes());
+    }
+  }
+  // TODO (chunhsue-qti): pass folder as option
+  std::string dump_folder = "/data/local/tmp/dumped_tensors/";
+  for (int i = 0; i < outputs_.size(); ++i) {
+    if (outputs_.at(i).IsMarkedDump()) {
+      auto status = WriteTensorTo(dump_folder, outputs_[i]);
+      if (!status) {
+        LITERT_LOG(LITERT_ERROR, "Failed to dump tensor id: %d", i);
+      }
     }
   }
 
@@ -413,5 +449,37 @@ Expected<void> LiteRtDispatchInvocationContextT::Profile() {
 
   LITERT_LOG(LITERT_INFO, "%s", data_ss.str().c_str());
 
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::WriteTensorTo(
+    const std::filesystem::path& output_folder, ::qnn::TensorWrapper& tensor) {
+  qnn::CreateDirectoryRecursive(output_folder);
+  std::filesystem::path output_path =
+      output_folder / (tensor.GetName() + ".raw");
+  std::ofstream fout(output_path, std::ios::binary);
+  if (fout.fail()) {
+    LITERT_LOG(LITERT_ERROR, "Failed to write dumped tensor");
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure);
+  }
+  fout.write(static_cast<const char*>(tensor.GetQnnTensor().v2.clientBuf.data),
+             tensor.GetQnnTensor().v2.clientBuf.dataSize);
+  std::filesystem::path quant_param_path =
+      output_folder / (tensor.GetName() + ".csv");
+  std::ofstream quant_file(quant_param_path);
+  float scale = 1;
+  int32_t zero_point = 0;
+  auto quant_param = tensor.GetQuantParams();
+  if (std::holds_alternative<qnn::ScaleOffsetQuantizeParamsWrapper>(
+          quant_param)) {
+    scale =
+        std::get<qnn::ScaleOffsetQuantizeParamsWrapper>(quant_param).GetScale();
+    zero_point = std::get<qnn::ScaleOffsetQuantizeParamsWrapper>(quant_param)
+                     .GetZeroPoint();
+  }
+  std::stringstream quant_ss;
+  quant_ss << scale << "," << zero_point << "\n";
+  quant_file << quant_ss.str();
+  quant_file.close();
   return {};
 }

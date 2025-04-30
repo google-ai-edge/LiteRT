@@ -4,9 +4,12 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/utils/log.h"
 namespace qnn {
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst) {
@@ -40,4 +43,26 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
     dst.emplace_back(upper);
   }
 }
+
+bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
+  std::error_code err;
+  err.clear();
+  if (!std::filesystem::create_directories(dir_name, err)) {
+    if (std::filesystem::exists(dir_name)) {
+      err.clear();
+      return true;
+    }
+    if (err) {
+      QNN_LOG_ERROR("%s", err.message().c_str());
+    }
+    return false;
+  }
+  return true;
+}
+
+bool IsStrEndsWith(std::string_view str, std::string_view suffix) {
+  return str.size() >= suffix.size() &&
+         str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 }  // namespace qnn

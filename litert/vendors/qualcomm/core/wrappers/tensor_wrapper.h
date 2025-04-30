@@ -13,13 +13,14 @@
 #include <variant>
 #include <vector>
 
+#include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
+static const char* kDumpSuffix = "_dump";
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
@@ -91,12 +92,12 @@ class TensorWrapper final {
  public:
   explicit TensorWrapper();
 
-  explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
+  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions);
 
-  explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
+  explicit TensorWrapper(std::string name, Qnn_TensorType_t tensor_type,
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions,
@@ -306,8 +307,27 @@ class TensorWrapper final {
 
   void ConvertQint16ToQuint16();
 
+  void MarkDump() {
+    if (!IsStrEndsWith(name_, kDumpSuffix)) {
+      name_ += kDumpSuffix;
+      qnn_tensor_.v2.name = name_.c_str();
+    }
+    SetTensorType(QNN_TENSOR_TYPE_APP_READ);
+  }
+
+  bool IsMarkedDump() const {
+    return IsStrEndsWith(name_, kDumpSuffix) &&
+           qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
+  }
+
+  std::string GetName() const { return name_; }
+
  private:
   Qnn_TensorType_t GetTensorType() const;
+
+  void SetTensorType(Qnn_TensorType_t tensor_type) {
+    qnn_tensor_.v2.type = tensor_type;
+  }
 
   void SetDataType(Qnn_DataType_t data_type) {
     qnn_tensor_.v2.dataType = data_type;

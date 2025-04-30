@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 
+#include <unordered_set>
 #include <vector>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -33,10 +34,11 @@ namespace litert::qnn {
 LiteRtStatus ConvertDataType(const litert::ElementType litert_type,
                              const bool is_quantized, Qnn_DataType_t& qnn_type);
 
-LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
-                           ::qnn::TensorPool& tensor_pool,
-                           ::qnn::TensorWrapper*& tensor_wrapper,
-                           bool is_tensor_read_and_write = false);
+LiteRtStatus ConvertTensor(
+    const litert::Tensor& litert_tensor, ::qnn::TensorPool& tensor_pool,
+    ::qnn::TensorWrapper*& tensor_wrapper,
+    const std::unordered_set<std::int32_t>& ids_to_dump = {},
+    bool is_tensor_read_and_write = false);
 
 LiteRtStatus ConvertOp(const bool use_htp_preferences,
                        const litert::Op& litert_op,

@@ -251,6 +251,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             kLiteRtQualcommHtpPerformanceModeBurst);
+  EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
 }
 
 }  // namespace
