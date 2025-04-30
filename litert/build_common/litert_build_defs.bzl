@@ -188,14 +188,21 @@ def _litert_base(
       ungrte: Whether to link against system libraries ("ungrte").
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
+
     if ungrte:
         append_rule_kwargs(
             cc_rule_kwargs,
             linkopts = select({
                 "@org_tensorflow//tensorflow:linux_x86_64": [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64],
                 "//conditions:default": [],
-            }),
+            }) + ["-Wl,--disable-new-dtags"],
         )
+    else:
+        append_rule_kwargs(
+            cc_rule_kwargs,
+            linkopts = ["-Wl,--disable-new-dtags"],
+        )
+
     rule(**cc_rule_kwargs)
 
 # Public

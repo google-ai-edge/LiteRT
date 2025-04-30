@@ -18,6 +18,7 @@ BUILD file for LiteRt SDK release artifacts.
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
 
 # copybara:uncomment_begin(google-only)
 # load("//litert/sdk_util:sdk_release.bzl", "sdk_release_tar")
@@ -109,14 +110,28 @@ selects.config_setting_group(
 
 # SDK ARTIFACT PREPERATION #########################################################################
 
-cc_test(
+litert_test(
     name = "check_sdk_deps_test",
     srcs = ["check_sdk_deps_test.cc"],
+    data = select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
+            "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+        ],
+        "//conditions:default": [],
+    }),
+    linkopts = ["-ldl"] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [make_rpaths(["@qairt//:lib/x86_64-linux-clang/libQnnHtp.so"])],
+        "//conditions:default": [],
+    }) + ["-Wl,--disable-new-dtags"],
+    linkstatic = True,
     tags = [
-        "nobuilder",
+        "no-remote-exec",
+        "notap",
     ],
+    ungrte = True,
     deps = [
-        "@com_google_googletest//:gtest_main",
+        "@com_google_absl//absl/log:absl_check",
         "@qairt//:qnn_lib_headers",
     ],
 )
