@@ -396,6 +396,9 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_TRUE(partition_result);
   // One new subgraph for the consumed composite op only, decomp not consumed.
   ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  // Examople plugin will select RMS norm composite op during partitioning. only
+  // 1 subgraph should remain in the model.
+  ASSERT_EQ(model.NumSubgraphs(), 1);
 }
 
 TEST(PartitionTest, SimpleNpuCallComposite) {
@@ -429,6 +432,25 @@ TEST(PartitionTest, MultiNpuCallComposite) {
   auto* non_npu_call_decomop = model.Subgraphs()[2];
   auto* decomp2 = model.Subgraphs()[3];
 
+  {
+    // Before partitioning, the model has 4 subgraphs. 1-3 are decompositions,
+    // and 0 is the main subgraph.
+    auto npu_call_op_0_option =
+        GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[0]);
+    ASSERT_TRUE(npu_call_op_0_option);
+    ASSERT_EQ(npu_call_op_0_option->subgraph, 1);
+
+    auto non_npu_call_op_0_option =
+        GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[1]);
+    ASSERT_TRUE(non_npu_call_op_0_option);
+    ASSERT_EQ(non_npu_call_op_0_option->subgraph, 2);
+
+    auto npu_call_op_1_option =
+        GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[2]);
+    ASSERT_TRUE(npu_call_op_1_option);
+    ASSERT_EQ(npu_call_op_1_option->subgraph, 3);
+  }
+
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
 
@@ -437,9 +459,10 @@ TEST(PartitionTest, MultiNpuCallComposite) {
     // Non-npu-call decompositions will be reindexed.
     ASSERT_EQ(model.NumSubgraphs(), 2);
     ASSERT_EQ(model.Subgraphs()[1], non_npu_call_decomop);
-    auto opts = GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[1]);
-    ASSERT_TRUE(opts);
-    ASSERT_EQ(opts->subgraph, 1);
+    auto non_npu_call_op_0_option =
+        GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[1]);
+    ASSERT_TRUE(non_npu_call_op_0_option);
+    ASSERT_EQ(non_npu_call_op_0_option->subgraph, 1);
   }
 
   {

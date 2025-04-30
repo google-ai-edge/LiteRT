@@ -32,6 +32,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/util/flatbuffer_tools.h"
 
 using ::litert::BufferRef;
 using ::litert::internal::TflBuffer;
@@ -149,16 +150,13 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
         auto opts = litert::internal::TakeTflOptions2(*op);
         auto& decomp_ind =
             opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
-        const auto new_ind = new_inds[decomp_ind];
-
-        // This op is either in a removed subgraph or refers to a subgraph that
-        // is not being removed.
-        ABSL_DCHECK((subgraph_index == -1) || (new_ind >= 0));
-
-        decomp_ind = new_ind;
-        litert::internal::SetTflOptions2(*op, std::move(opts));
+        // Skip update for decomposition ops that are already removed.
+        if (decomp_ind != -1) {
+          const auto new_ind = new_inds[decomp_ind];
+          decomp_ind = new_ind;
+          litert::internal::SetTflOptions2(*op, std::move(opts));
+        }
       });
-
   subgraphs_.TransferTo(dest, std::move(indices));
 }
 

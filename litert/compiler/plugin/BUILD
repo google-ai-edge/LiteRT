@@ -35,7 +35,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_op_options",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_shared_library",
         "//litert/core:build_stamp",
         "//litert/core:dynamic_loading",
