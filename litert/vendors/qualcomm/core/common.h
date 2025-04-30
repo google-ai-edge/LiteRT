@@ -68,7 +68,7 @@ static const char* kDispatchOptionLiteRtQnnOptions = "litert_qnn_options";
       false,                      /*use_htp_preferences*/        \
       true,                       /*use_qint16_as_quint16*/      \
       LITERT_QNN_HTP_OPTION_INIT, /*LiteRtQnnHtpBackendOptions*/ \
-      kQnnLogLevelInfo,           /*log_level*/                  \
+      kQnnLogOff,                 /*log_level*/                  \
   }
 // clang-format on
 #ifdef __cplusplus
