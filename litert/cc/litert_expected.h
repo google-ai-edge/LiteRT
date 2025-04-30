@@ -236,33 +236,37 @@ class Expected {
     return value_;
   }
 
-  const T&& Value() const&& {
-    CheckVal();
-    return std::move(value_);
-  }
+  // Deleted: an Expected should always be checked before accessing its value.
+  const T&& Value() const&& = delete;
 
-  T&& Value() && {
-    CheckVal();
-    return std::move(value_);
-  }
+  // Deleted: an Expected should always be checked before accessing its value.
+  T&& Value() && = delete;
 
-  const T* operator->() const {
+  const T* operator->() const& {
     CheckVal();
     return &value_;
   }
 
-  T* operator->() {
+  T* operator->() & {
     CheckVal();
     return &value_;
   }
+
+  // Deleted: an Expected should always be checked before accessing its value.
+  const T* operator->() const&& = delete;
+
+  // Deleted: an Expected should always be checked before accessing its value.
+  T* operator->() && = delete;
 
   const T& operator*() const& { return Value(); }
 
   T& operator*() & { return Value(); }
 
-  const T&& operator*() const&& { return std::move(Value()); }
+  // Deleted: an Expected should always be checked before accessing its value.
+  const T&& operator*() const&& = delete;
 
-  T&& operator*() && { return std::move(Value()); }
+  // Deleted: an Expected should always be checked before accessing its value.
+  T&& operator*() && = delete;
 
   // Observer for Unexpected, program exits if it doesn't have one.
   const class Error& Error() const& {
@@ -275,15 +279,11 @@ class Expected {
     return unexpected_.Error();
   }
 
-  const class Error&& Error() const&& {
-    CheckNoVal();
-    return std::move(unexpected_.Error());
-  }
+  // Deleted: an Expected should always be checked before accessing its error.
+  const class Error&& Error() const&& = delete;
 
-  class Error&& Error() && {
-    CheckNoVal();
-    return std::move(unexpected_.Error());
-  }
+  // Deleted: an Expected should always be checked before accessing its error.
+  class Error&& Error() && = delete;
 
   // Does this expected contain a T Value. It contains an unexpected if not.
   bool HasValue() const { return has_value_; }
