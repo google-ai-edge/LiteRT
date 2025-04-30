@@ -8,18 +8,18 @@ cc_library(
     name = "qnn_lib_headers",
     hdrs = glob(
         [
-            "latest/include/QNN/*.h",
-            "latest/include/QNN/CPU/*.h",
-            "latest/include/QNN/HTP/*.h",
-            "latest/include/QNN/System/*.h",
+            "include/QNN/*.h",
+            "include/QNN/CPU/*.h",
+            "include/QNN/HTP/*.h",
+            "include/QNN/System/*.h",
         ],
         exclude = [
-            "latest/include/QNN/HTA/**/*.h",
-            "latest/include/QNN/TFLiteDelegate/**/*.h",
+            "include/QNN/HTA/**/*.h",
+            "include/QNN/TFLiteDelegate/**/*.h",
         ],
     ),
     includes = [
-        "latest/include/QNN/",
+        "include/QNN/",
     ],
     visibility = ["//visibility:public"],
 )

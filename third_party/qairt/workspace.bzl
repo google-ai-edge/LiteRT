@@ -22,5 +22,6 @@ def qairt():
         allow_local = True,
         build_file = "@//third_party/qairt:qairt.BUILD",
         local_path_env = "LITERT_QAIRT_SDK",
+        strip_prefix = "latest",
         url = "https://storage.googleapis.com/litert/litert_qualcomm_sdk_release.tar.gz",
     )
