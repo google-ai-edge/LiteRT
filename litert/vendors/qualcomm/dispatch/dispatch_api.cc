@@ -66,7 +66,7 @@ LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
                          : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
-  LiteRtQnnOptions qnn_options = LITERT_QNN_HTP_OPTION_INIT;
+  LiteRtQnnOptions qnn_options = LITERT_QNN_OPTIONS_INIT;
   qnn_options.htp_options.performance_mode = kHtpBurst;
   if (auto qnn_manager = QnnManager::Create(
           /*configs=*/configs,
