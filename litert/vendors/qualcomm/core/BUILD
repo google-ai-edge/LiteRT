@@ -25,12 +25,6 @@ cc_test(
     srcs = [
         "tensor_pool_test.cc",
     ],
-    tags = [
-        # Don't build/test in OS until qnn is available.
-        "nobuilder",
-        "notap",
-        "no_oss",
-    ],
     deps = [
         ":tensor_pool",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",

@@ -23,23 +23,12 @@ _QNN_LIBCC_X86_64 = [
     # copybara:uncomment_end
 ]  # @unused
 
-# TODO: Make rpaths dynamic with "$(location {})".
-_QNN_LIB_RPATHS_X86_64 = [
-    # copybara:uncomment_begin(google-only)
-    # "third_party/qairt/latest/lib/x86_64-linux-clang",
-    # copybara:uncomment_end
-]
-
 _QNN_LIB_HTP_X86_64 = [
-    # copybara:uncomment_begin(google-only)
-    # "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
-    # copybara:uncomment_end
+    "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
 ]
 
 _QNN_LIB_SYSTEM_X86_64 = [
-    # copybara:uncomment_begin(google-only)
-    # "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
-    # copybara:uncomment_end
+    "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
 ]
 
 def _litert_with_qnn_base(
@@ -68,7 +57,7 @@ def _litert_with_qnn_base(
         litert_rule_kwargs,
         data = data,
         linkopts = select({
-            "@org_tensorflow//tensorflow:linux_x86_64": [make_rpaths(_QNN_LIB_RPATHS_X86_64)],
+            "@org_tensorflow//tensorflow:linux_x86_64": [make_rpaths(_QNN_LIB_HTP_X86_64)],
             "//conditions:default": [],
         }),
     )
