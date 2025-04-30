@@ -195,7 +195,7 @@ TEST(ParamWrapperTest, TensorParamTest) {
       std::accumulate(dummy_dims.begin(), dummy_dims.end(),
                       sizeof(decltype(data)::value_type), std::multiplies<>());
 
-  TensorWrapper tensor_wrapper{0,
+  TensorWrapper tensor_wrapper{"",
                                QNN_TENSOR_TYPE_STATIC,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                QuantizeParamsWrapperVariant(),

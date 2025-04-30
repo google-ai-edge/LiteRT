@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/qualcomm/core/common.h"
+
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
 namespace qnn {
@@ -46,6 +50,14 @@ HtpPerformanceMode Options::GetHtpPerformanceMode() const {
   return htp_performance_mode_;
 }
 
+void Options::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
+  dump_tensor_ids_ = ids;
+}
+
+std::vector<std::int32_t> Options::GetDumpTensorIds() const {
+  return dump_tensor_ids_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -55,11 +67,15 @@ Profiling: %d\n\
 UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
-HtpPerformanceMode: %d\n";
+HtpPerformanceMode: %d\n\
+DumpTensorIds: %s\n";
+
+  std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, htp_performance_mode_);
+                         enable_weight_sharing_, htp_performance_mode_,
+                         dump_tensor_ids);
 }
 
 }  // namespace qnn
