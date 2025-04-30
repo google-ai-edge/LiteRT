@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 
-#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <sstream>
@@ -24,9 +23,10 @@
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"  // IWYU pragma: keep
-#include "litert/c/litert_logging.h"  // IWYU pragma: keep
-#include "litert/cc/litert_expected.h"  // IWYU pragma: keep
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_source_location.h"
 
 #define _CONCAT_NAME_IMPL(x, y) x##y
 
@@ -121,48 +121,6 @@
       _CONCAT_NAME(expected_value_or_error_, __LINE__), DECL, __VA_ARGS__)
 
 namespace litert {
-
-#if defined(__has_builtin) && __has_builtin(__builtin_FILE) && \
-    __has_builtin(__builtin_LINE)
-#define LITERT_INTERNAL_BUILTIN_FILE __builtin_FILE()
-#define LITERT_INTERNAL_BUILTIN_LINE __builtin_LINE()
-#else
-#define LITERT_INTERNAL_BUILTIN_FILE "unknown"
-#define LITERT_INTERNAL_BUILTIN_LINE 0
-#endif
-
-// Stores a file and a line number.
-//
-// Mimics a subset of `std::source_location` to be replaced by it when we update
-// to C++20.
-class SourceLocation {
-  // We have this to prevent `current()` parameters from begin modified.
-  struct PrivateTag {};
-
- public:
-  // Creates a SourceLocation with the line and file corresponding to the
-  // call site.
-  static constexpr SourceLocation current(
-      PrivateTag = PrivateTag{},
-      const char* file = LITERT_INTERNAL_BUILTIN_FILE,
-      uint32_t line = LITERT_INTERNAL_BUILTIN_LINE) {
-    return SourceLocation{file, line};
-  }
-
-  constexpr const char* file_name() const { return file_; }
-  constexpr uint32_t line() const { return line_; }
-
- private:
-  // Builds a SourceLocation object.
-  //
-  // Note: This is private as `std::source_location` doesn't provide a way of
-  // manually building a source location.
-  constexpr SourceLocation(const char* file, uint32_t line)
-      : file_(file), line_(line) {}
-
-  const char* file_;
-  uint32_t line_;
-};
 
 // Converts implicitly to either `LiteRtStatus` or `litert::Expected` holding an
 // error. This allows returning a status in functions using either of these as a

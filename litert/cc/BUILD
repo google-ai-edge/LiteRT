@@ -147,11 +147,26 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_source_location",
+    hdrs = ["litert_source_location.h"],
+)
+
+cc_test(
+    name = "litert_source_location_test",
+    srcs = ["litert_source_location_test.cc"],
+    deps = [
+        ":litert_source_location",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_macros",
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     deps = [
         ":litert_expected",
+        ":litert_source_location",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "@com_google_absl//absl/status",
