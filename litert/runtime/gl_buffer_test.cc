@@ -18,6 +18,7 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/cc/litert_event.h"
 #include "litert/runtime/gl_buffer.h"
 #include "litert/test/matchers.h"
 #include "tflite/delegates/gpu/gl/egl_environment.h"
