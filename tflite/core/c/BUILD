@@ -299,7 +299,6 @@ tflite_cc_library_with_c_headers_test(
     copts = tflite_copts(),
     visibility = [
         "//tflite:__subpackages__",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/lrt:__subpackages__",
         "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
     ] + c_api_visibility_allowlist(),
     deps = [
