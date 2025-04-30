@@ -31,5 +31,10 @@ def gles_headers():
     return []
 
 def gles_linkopts():
-    """This is a no-op outside of Google."""
-    return []
+    return select({
+        "@org_tensorflow//tensorflow:android": [
+            "-lGLESv3",
+            "-lEGL",
+        ],
+        "//conditions:default": [],
+    })
