@@ -121,6 +121,9 @@ ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
           kLiteRtGoogleTensorShardingIntensityMinimal,
           "Sharding intensity for Google Tensor.");
 
+ABSL_FLAG(std::string, google_tensor_testing_flags, "",
+          "Testing flags for Google Tensor. Flag1=value1,Flag2=value2");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::google_tensor {
@@ -137,6 +140,7 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
       absl::GetFlag(FLAGS_google_tensor_enable_large_model_support));
   options.SetShardingIntensity(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
+  options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
   return options;
 }
 

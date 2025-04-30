@@ -15,6 +15,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 
+#include <string>
+#include <vector>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -106,6 +109,14 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
     LiteRtGoogleTensorOptions options,
     LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity);
 
+// testing flags ---------------------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
+    LiteRtGoogleTensorOptions options, const std::string& testing_flags);
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
+    LiteRtGoogleTensorOptions options,
+    std::vector<std::vector<std::string>>* testing_flags);
+
 #ifdef __cplusplus
 }  // extern "C"
 
@@ -148,7 +159,12 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   void SetShardingIntensity(
       LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
+
   LiteRtGoogleTensorOptionsShardingIntensity GetShardingIntensity() const;
+
+  std::vector<std::vector<std::string>> GetTestingFlags() const;
+
+  void SetTestingFlags(const std::string& testing_flags);
 
  private:
   LiteRtGoogleTensorOptions Data() const;

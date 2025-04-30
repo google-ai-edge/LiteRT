@@ -38,6 +38,8 @@ ABSL_DECLARE_FLAG(bool, google_tensor_enable_large_model_support);
 ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
                   google_tensor_sharding_intensity);
 
+ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
+
 // PARSERS (internal) //////////////////////////////////////////////////////////
 
 bool AbslParseFlag(absl::string_view text,

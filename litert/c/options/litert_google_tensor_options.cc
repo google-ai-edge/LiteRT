@@ -14,8 +14,11 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
+#include <cstddef>
 #include <memory>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -35,6 +38,7 @@ struct LiteRtGoogleTensorOptionsT {
   bool enable_large_model_support = false;
   LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
       kLiteRtGoogleTensorShardingIntensityMinimal;
+  std::vector<std::vector<std::string>> testing_flags = {};
 };
 
 LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -202,6 +206,53 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
   return kLiteRtStatusOk;
 }
 
+// testing flags ---------------------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
+    LiteRtGoogleTensorOptions options, const std::string& testing_flags) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (testing_flags.empty()) {
+    options->testing_flags = {};
+  }
+  std::vector<std::vector<std::string>> result;
+  std::stringstream ss(testing_flags);
+  std::string segment;
+
+  // Split the input string by ',' to get individual "key=value" segments
+  while (std::getline(ss, segment, ',')) {
+    std::vector<std::string> currentPair;
+    size_t delimiterPos = segment.find('=');
+
+    if (delimiterPos != std::string::npos) {
+      // '=' found, split into key and value
+      std::string key = segment.substr(0, delimiterPos);
+      std::string value = segment.substr(delimiterPos + 1);
+      currentPair.push_back(key);
+      currentPair.push_back(value);
+    } else {
+      // '=' not found, consider the whole segment as the key and an
+      // empty string as the value
+      currentPair.push_back(segment);
+      currentPair.push_back("");  // Empty value
+    }
+    result.push_back(currentPair);
+  }
+  options->testing_flags = result;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
+    LiteRtGoogleTensorOptions options,
+    std::vector<std::vector<std::string>>* testing_flags) {
+  if (options == nullptr || testing_flags == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *testing_flags = options->testing_flags;
+  return kLiteRtStatusOk;
+}
+
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
 
 namespace litert::google_tensor {
@@ -306,6 +357,19 @@ GoogleTensorOptions::GetShardingIntensity() const {
   LiteRtGoogleTensorOptionsGetShardingIntensity(options_data,
                                                 &sharding_intensity);
   return sharding_intensity;
+}
+
+void GoogleTensorOptions::SetTestingFlags(const std::string& testing_flags) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetTestingFlags, Data(),
+                     testing_flags);
+}
+
+std::vector<std::vector<std::string>> GoogleTensorOptions::GetTestingFlags()
+    const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  std::vector<std::vector<std::string>> testing_flags;
+  LiteRtGoogleTensorOptionsGetTestingFlags(options_data, &testing_flags);
+  return testing_flags;
 }
 
 LiteRtGoogleTensorOptions GoogleTensorOptions::Data() const {
