@@ -22,57 +22,7 @@ package(
     ],
 )
 
-cc_library(
-    name = "litert_environment",
-    hdrs = ["litert_environment.h"],
-    deps = [
-        ":litert_any",
-        ":litert_environment_options",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_environment_options",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_test(
-    name = "litert_environment_test",
-    srcs = [
-        "litert_environment_test.cc",
-    ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-llog"],
-        "//conditions:default": [],
-    }),
-    deps = [
-        ":litert_compiled_model",
-        ":litert_environment",
-        ":litert_expected",
-        ":litert_model",
-        "//litert/c:litert_common",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_event",
-    hdrs = ["litert_event.h"],
-    deps = [
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        "//litert/c:litert_event",
-        "//litert/c:litert_event_type",
-    ],
-)
+# LiteRT C++ APIs which don't use C API calls to framework.
 
 cc_library(
     name = "litert_any",
@@ -173,10 +123,431 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_buffer_ref",
+    hdrs = [
+        "litert_buffer_ref.h",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_buffer_ref_test",
+    srcs = ["litert_buffer_ref_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_macros",
+    srcs = ["litert_macros.cc"],
+    hdrs = ["litert_macros.h"],
+    deps = [
+        ":litert_expected",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+    ],
+)
+
+cc_test(
+    name = "litert_macros_test",
+    srcs = ["litert_macros_test.cc"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_expected",
+    hdrs = ["litert_expected.h"],
+    deps = [
+        ":litert_detail",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "litert_expected_test",
+    srcs = ["litert_expected_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_expected",
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_detail",
+    hdrs = ["litert_detail.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+# Dispatch Delegate of LiteRt.
+# Warning: This API is not ABI stable and is subject to change.
+cc_library(
+    name = "litert_dispatch_delegate",
+    hdrs = [
+        "litert_dispatch_delegate.h",
+    ],
+    deps = [
+        "//litert/c:litert_environment_options",
+        "//litert/runtime/dispatch:dispatch_delegate",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+    ],
+)
+
+cc_library(
+    name = "litert_element_type",
+    hdrs = ["litert_element_type.h"],
+    deps = ["//litert/c:litert_model"],
+)
+
+cc_test(
+    name = "litert_element_type_test",
+    srcs = ["litert_element_type_test.cc"],
+    deps = [
+        ":litert_element_type",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_model_predicates",
+    srcs = ["litert_model_predicates.cc"],
+    hdrs = ["litert_model_predicates.h"],
+    deps = [
+        ":litert_detail",
+        ":litert_model",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "litert_layout",
+    hdrs = ["litert_layout.h"],
+    deps = [
+        ":litert_consts",
+        ":litert_expected",
+        ":litert_macros",
+        "//litert/c:litert_layout",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_layout_test",
+    srcs = ["litert_layout_test.cc"],
+    deps = [
+        ":litert_layout",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_model_predicates_test",
+    srcs = ["litert_model_predicates_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+    ],
+    deps = [
+        ":litert_element_type",
+        ":litert_model",
+        ":litert_model_predicates",
+        "//litert/c:litert_op_code",
+        "//litert/test:common",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer_utils",
+    srcs = ["litert_tensor_buffer_utils.cc"],
+    hdrs = ["litert_tensor_buffer_utils.h"],
+    deps = [
+        "//litert/c:litert_logging",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
+    name = "litert_op_options",
+    srcs = ["litert_op_options.cc"],
+    hdrs = ["litert_op_options.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_op_options_test",
+    srcs = ["litert_op_options_test.cc"],
+    deps = [
+        ":litert_op_options",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_shared_library",
+    srcs = ["litert_shared_library.cc"],
+    hdrs = ["litert_shared_library.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "test_litert_shared_library_impl",
+    srcs = ["test_shared_library.cc"],
+)
+
+cc_shared_library(
+    name = "test_litert_shared_library",
+    shared_lib_name = "test_shared_library.so",
+    deps = [":test_litert_shared_library_impl"],
+)
+
+cc_test(
+    name = "litert_shared_library_test",
+    srcs = ["litert_shared_library_test.cc"],
+    data = [":test_litert_shared_library"],
+    defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
+    deps = [
+        ":litert_shared_library",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_opaque_options",
+    srcs = ["litert_opaque_options.cc"],
+    hdrs = [
+        "litert_opaque_options.h",
+    ],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_opaque_options_test",
+    srcs = ["litert_opaque_options_test.cc"],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        ":litert_opaque_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_platform_support",
+    srcs = [],
+    hdrs = ["litert_platform_support.h"],
+    deps = [
+        "//litert/c:litert_platform_support",
+    ],
+)
+
+cc_library(
+    name = "litert_logging",
+    hdrs = ["litert_logging.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+    ],
+)
+
+cc_test(
+    name = "litert_logging_test",
+    srcs = ["litert_logging_test.cc"],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_environment_options",
+    hdrs = ["litert_environment_options.h"],
+    deps = [
+        ":litert_any",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+    ],
+)
+
+cc_test(
+    name = "litert_environment_options_test",
+    srcs = ["litert_environment_options_test.cc"],
+    deps = [
+        ":litert_environment",
+        ":litert_environment_options",
+        ":litert_expected",
+        "//litert/c:litert_environment_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# LiteRT C++ APIs which will use libLiteRtRuntimeCApi.so.
+# - litert::Environment
+# - litert::Event
+# - litert::TensorBuffer
+# - litert::TensorBufferRequirements
+# - litert::CompiledModel
+# - litert::Options
+# - litert::CustomOpKernel
+# - litert::DispatchDelegate
+
+cc_library(
+    name = "litert_environment",
+    hdrs = ["litert_environment.h"],
+    deps = [
+        ":litert_any",
+        ":litert_environment_options",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_environment_options",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "litert_environment_test",
+    srcs = [
+        "litert_environment_test.cc",
+    ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-llog"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_model",
+        "//litert/c:litert_common",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_event",
+    hdrs = ["litert_event.h"],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+    ],
+)
+
+cc_test(
+    name = "litert_event_test",
+    srcs = ["litert_event_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [
+            "-landroid",
+        ],
+        "//conditions:default": [],
+    }) + gles_linkopts(),
+    deps = [
+        ":litert_event",
+        ":litert_platform_support",
+        "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_device_exec(
+    name = "litert_event_device_test",
+    backend_id = "cpu",
+    data = [
+    ],
+    target = ":litert_event_test",
+)
+
+cc_library(
     name = "litert_tensor_buffer",
     srcs = [
         "litert_tensor_buffer.cc",
-        "litert_tensor_buffer_requirements.cc",
     ],
     hdrs = [
         "litert_tensor_buffer.h",
@@ -282,175 +653,6 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_buffer_ref",
-    hdrs = [
-        "litert_buffer_ref.h",
-    ],
-    deps = [
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_library(
-    name = "litert_macros",
-    srcs = ["litert_macros.cc"],
-    hdrs = ["litert_macros.h"],
-    deps = [
-        ":litert_expected",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-    ],
-)
-
-cc_test(
-    name = "litert_macros_test",
-    srcs = ["litert_macros_test.cc"],
-    deps = [
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_expected",
-    hdrs = ["litert_expected.h"],
-    deps = [
-        ":litert_detail",
-        "//litert/c:litert_common",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ],
-)
-
-cc_test(
-    name = "litert_expected_test",
-    srcs = ["litert_expected_test.cc"],
-    deps = [
-        ":litert_buffer_ref",
-        ":litert_expected",
-        "//litert/c:litert_common",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_detail",
-    hdrs = ["litert_detail.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "@com_google_absl//absl/log:absl_check",
-    ],
-)
-
-# Dispatch Delegate of LiteRt.
-# Warning: This API is not ABI stable and is subject to change.
-cc_library(
-    name = "litert_dispatch_delegate",
-    hdrs = [
-        "litert_dispatch_delegate.h",
-    ],
-    deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/runtime/dispatch:dispatch_delegate",
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/delegates/utils:simple_opaque_delegate",
-    ],
-)
-
-cc_test(
-    name = "litert_buffer_ref_test",
-    srcs = ["litert_buffer_ref_test.cc"],
-    deps = [
-        ":litert_buffer_ref",
-        "//litert/core/util:flatbuffer_tools",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_element_type",
-    hdrs = ["litert_element_type.h"],
-    deps = ["//litert/c:litert_model"],
-)
-
-cc_test(
-    name = "litert_element_type_test",
-    srcs = ["litert_element_type_test.cc"],
-    deps = [
-        ":litert_element_type",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_model_predicates",
-    srcs = ["litert_model_predicates.cc"],
-    hdrs = ["litert_model_predicates.h"],
-    deps = [
-        ":litert_detail",
-        ":litert_model",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_library(
-    name = "litert_layout",
-    hdrs = ["litert_layout.h"],
-    deps = [
-        ":litert_consts",
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_layout",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_test(
-    name = "litert_model_predicates_test",
-    srcs = ["litert_model_predicates_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-    ],
-    deps = [
-        ":litert_element_type",
-        ":litert_model",
-        ":litert_model_predicates",
-        "//litert/c:litert_op_code",
-        "//litert/test:common",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "litert_layout_test",
-    srcs = ["litert_layout_test.cc"],
-    deps = [
-        ":litert_layout",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_compiled_model",
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
@@ -479,28 +681,6 @@ cc_library(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
-    name = "litert_options",
-    hdrs = ["litert_options.h"],
-    deps = [
-        ":litert_custom_op_kernel",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        ":litert_opaque_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_opaque_options",
-        "//litert/c:litert_options",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
     ],
 )
 
@@ -619,177 +799,6 @@ litert_device_test(
 # copybara:uncomment_end
 
 cc_library(
-    name = "litert_tensor_buffer_utils",
-    srcs = ["litert_tensor_buffer_utils.cc"],
-    hdrs = ["litert_tensor_buffer_utils.h"],
-    deps = [
-        "//litert/c:litert_logging",
-        "//litert/c:litert_tensor_buffer_types",
-    ],
-)
-
-cc_library(
-    name = "litert_op_options",
-    srcs = ["litert_op_options.cc"],
-    hdrs = ["litert_op_options.h"],
-    deps = [
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_op_options_test",
-    srcs = ["litert_op_options_test.cc"],
-    deps = [
-        ":litert_op_options",
-        "//litert/c:litert_op_code",
-        "//litert/core/model",
-        "//litert/core/util:flatbuffer_tools",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
-    name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
-    deps = [
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
-    name = "test_litert_shared_library_impl",
-    srcs = ["test_shared_library.cc"],
-)
-
-cc_shared_library(
-    name = "test_litert_shared_library",
-    shared_lib_name = "test_shared_library.so",
-    deps = [":test_litert_shared_library_impl"],
-)
-
-cc_test(
-    name = "litert_shared_library_test",
-    srcs = ["litert_shared_library_test.cc"],
-    data = [":test_litert_shared_library"],
-    defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
-    deps = [
-        ":litert_shared_library",
-        "//litert/test:matchers",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "litert_event_test",
-    srcs = ["litert_event_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-        ],
-        "//conditions:default": [],
-    }) + gles_linkopts(),
-    deps = [
-        ":litert_event",
-        ":litert_platform_support",
-        "//litert/c:litert_common",
-        "//litert/c:litert_event_type",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-litert_device_exec(
-    name = "litert_event_device_test",
-    backend_id = "cpu",
-    data = [
-    ],
-    target = ":litert_event_test",
-)
-
-cc_library(
-    name = "litert_opaque_options",
-    srcs = ["litert_opaque_options.cc"],
-    hdrs = [
-        "litert_opaque_options.h",
-    ],
-    deps = [
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
-    name = "litert_platform_support",
-    srcs = [],
-    hdrs = ["litert_platform_support.h"],
-    deps = [
-        "//litert/c:litert_platform_support",
-    ],
-)
-
-cc_library(
-    name = "litert_environment_options",
-    hdrs = ["litert_environment_options.h"],
-    deps = [
-        ":litert_any",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-    ],
-)
-
-cc_test(
-    name = "litert_environment_options_test",
-    srcs = ["litert_environment_options_test.cc"],
-    deps = [
-        ":litert_environment",
-        ":litert_environment_options",
-        ":litert_expected",
-        "//litert/c:litert_environment_options",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "litert_opaque_options_test",
-    srcs = ["litert_opaque_options_test.cc"],
-    deps = [
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        ":litert_opaque_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_custom_op_kernel",
     srcs = ["litert_custom_op_kernel.cc"],
     hdrs = ["litert_custom_op_kernel.h"],
@@ -842,22 +851,24 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_logging",
-    hdrs = ["litert_logging.h"],
+    name = "litert_options",
+    hdrs = ["litert_options.h"],
     deps = [
+        ":litert_custom_op_kernel",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        ":litert_opaque_options",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-    ],
-)
-
-cc_test(
-    name = "litert_logging_test",
-    srcs = ["litert_logging_test.cc"],
-    deps = [
-        ":litert_logging",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "@com_google_googletest//:gtest_main",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
+        "//tflite/kernels:builtin_ops",
     ],
 )
 
