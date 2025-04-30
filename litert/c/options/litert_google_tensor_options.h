@@ -49,6 +49,13 @@ typedef enum LiteRtGoogleTensorOptionsTruncationType {
   kLiteRtGoogleTensorFloatTruncationTypeHalf = 3,
 } LiteRtGoogleTensorOptionsTruncationType;
 
+typedef enum LiteRtGoogleTensorOptionsShardingIntensity {
+  kLiteRtGoogleTensorShardingIntensityMinimal = 0,
+  kLiteRtGoogleTensorShardingIntensityModerate = 1,
+  kLiteRtGoogleTensorShardingIntensityExtensive = 2,
+  kLiteRtGoogleTensorShardingIntensityMaximum = 3,
+} LiteRtGoogleTensorOptionsShardingIntensity;
+
 LiteRtStatus LiteRtGoogleTensorOptionsSetFloatTruncationType(
     LiteRtGoogleTensorOptions options,
     LiteRtGoogleTensorOptionsTruncationType truncation_type);
@@ -80,6 +87,24 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetDumpOpTimings(
 
 LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
     LiteRtGoogleTensorOptions options, bool* dump_op_timings);
+
+// enable_large_model_support --------------------------------------------------
+
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnableLargeModelSupport(
+    LiteRtGoogleTensorOptions options, bool enable_large_model_support);
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
+    LiteRtGoogleTensorOptions options, bool* enable_large_model_support);
+
+// sharding intensity ---------------------------------------------------------
+
+LiteRtStatus LiteRtGoogleTensorOptionsSetShardingIntensity(
+    LiteRtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
+    LiteRtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity);
 
 #ifdef __cplusplus
 }  // extern "C"
@@ -116,6 +141,14 @@ class GoogleTensorOptions : public OpaqueOptions {
   void SetDumpOpTimings(bool dump_op_timings);
 
   bool GetDumpOpTimings() const;
+
+  bool GetEnableLargeModelSupport() const;
+
+  void SetEnableLargeModelSupport(bool enable_large_model_support);
+
+  void SetShardingIntensity(
+      LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
+  LiteRtGoogleTensorOptionsShardingIntensity GetShardingIntensity() const;
 
  private:
   LiteRtGoogleTensorOptions Data() const;

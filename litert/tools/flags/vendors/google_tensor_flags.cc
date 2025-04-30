@@ -62,6 +62,43 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
   }
 }
 
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtGoogleTensorOptionsShardingIntensity* options,
+                   std::string* error) {
+  if (text == "minimal") {
+    *options = kLiteRtGoogleTensorShardingIntensityMinimal;
+    return true;
+  }
+  if (text == "moderate") {
+    *options = kLiteRtGoogleTensorShardingIntensityModerate;
+    return true;
+  }
+  if (text == "extensive") {
+    *options = kLiteRtGoogleTensorShardingIntensityExtensive;
+    return true;
+  }
+  if (text == "maximum") {
+    *options = kLiteRtGoogleTensorShardingIntensityMaximum;
+    return true;
+  }
+  *error = "Unknown sharding intensity";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    LiteRtGoogleTensorOptionsShardingIntensity options) {
+  switch (options) {
+    case kLiteRtGoogleTensorShardingIntensityMinimal:
+      return "minimal";
+    case kLiteRtGoogleTensorShardingIntensityModerate:
+      return "moderate";
+    case kLiteRtGoogleTensorShardingIntensityExtensive:
+      return "extensive";
+    case kLiteRtGoogleTensorShardingIntensityMaximum:
+      return "maximum";
+  }
+}
+
 ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
           google_tensor_truncation_type,
           kLiteRtGoogleTensorFloatTruncationTypeUnspecified,
@@ -76,8 +113,13 @@ ABSL_FLAG(std::string, google_tensor_output_dir, "",
 ABSL_FLAG(bool, google_tensor_dump_op_timings, false,
           "Whether to dump op timings.");
 
-ABSL_FLAG(bool, google_tensor_enable_reference, false,
-          "Whether to enable reference.");
+ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
+          "Whether to enable large model support.");
+
+ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
+          google_tensor_sharding_intensity,
+          kLiteRtGoogleTensorShardingIntensityMinimal,
+          "Sharding intensity for Google Tensor.");
 
 // NOLINTEND(*alien-types*)
 
@@ -91,6 +133,10 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
       absl::GetFlag(FLAGS_google_tensor_int64_to_int32));
   options.SetOutputDir(absl::GetFlag(FLAGS_google_tensor_output_dir));
   options.SetDumpOpTimings(absl::GetFlag(FLAGS_google_tensor_dump_op_timings));
+  options.SetEnableLargeModelSupport(
+      absl::GetFlag(FLAGS_google_tensor_enable_large_model_support));
+  options.SetShardingIntensity(
+      absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   return options;
 }
 

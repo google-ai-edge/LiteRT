@@ -32,6 +32,9 @@ struct LiteRtGoogleTensorOptionsT {
   bool int64_to_int32_truncation = false;
   std::string output_dir = "";
   bool dump_op_timings = false;
+  bool enable_large_model_support = false;
+  LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
+      kLiteRtGoogleTensorShardingIntensityMinimal;
 };
 
 LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -159,6 +162,46 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetDumpOpTimings(
   return kLiteRtStatusOk;
 }
 
+// enable_large_model_support --------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnableLargeModelSupport(
+    LiteRtGoogleTensorOptions options, bool enable_large_model_support) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_large_model_support = enable_large_model_support;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
+    LiteRtGoogleTensorOptions options, bool* enable_large_model_support) {
+  if (options == nullptr || enable_large_model_support == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_large_model_support = options->enable_large_model_support;
+  return kLiteRtStatusOk;
+}
+
+// sharding intensity ----------------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetShardingIntensity(
+    LiteRtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->sharding_intensity = sharding_intensity;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
+    LiteRtGoogleTensorOptions options,
+    LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity) {
+  if (options == nullptr || sharding_intensity == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *sharding_intensity = options->sharding_intensity;
+  return kLiteRtStatusOk;
+}
+
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
 
 namespace litert::google_tensor {
@@ -234,6 +277,35 @@ bool GoogleTensorOptions::GetDumpOpTimings() const {
   bool dump_op_timings;
   LiteRtGoogleTensorOptionsGetDumpOpTimings(options_data, &dump_op_timings);
   return dump_op_timings;
+}
+
+void GoogleTensorOptions::SetEnableLargeModelSupport(
+    bool enable_large_model_support) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetEnableLargeModelSupport,
+                     Data(), enable_large_model_support);
+}
+
+bool GoogleTensorOptions::GetEnableLargeModelSupport() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  bool enable_large_model_support;
+  LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
+      options_data, &enable_large_model_support);
+  return enable_large_model_support;
+}
+
+void GoogleTensorOptions::SetShardingIntensity(
+    LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetShardingIntensity, Data(),
+                     sharding_intensity);
+}
+
+LiteRtGoogleTensorOptionsShardingIntensity
+GoogleTensorOptions::GetShardingIntensity() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity;
+  LiteRtGoogleTensorOptionsGetShardingIntensity(options_data,
+                                                &sharding_intensity);
+  return sharding_intensity;
 }
 
 LiteRtGoogleTensorOptions GoogleTensorOptions::Data() const {
