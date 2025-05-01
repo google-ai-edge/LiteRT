@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,11 +25,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -104,7 +100,7 @@ class CompilerPlugin {
 
   // Selects ops for the plugin to compile.
   Expected<std::vector<LiteRtOpWithPartitionIndex>> Partition(
-      const Subgraph& subgraph, absl::string_view soc_model = "");
+      LiteRtSubgraph subgraph, absl::string_view soc_model = "");
 
   // Compile given LiteRtSubgraphs. Result object must be outlived by
   // this CompilerPlugin.

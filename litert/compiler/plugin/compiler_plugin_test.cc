@@ -111,7 +111,7 @@ TEST(CompilerPluginTest, Partition) {
 
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
   auto subgraph = model.MainSubgraph();
-  auto ops = plugins->front().Partition(*subgraph);
+  auto ops = plugins->front().Partition(subgraph->Get());
   ASSERT_TRUE(ops);
 
   EXPECT_EQ(ops->size(), 2);

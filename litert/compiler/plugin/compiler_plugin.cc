@@ -35,15 +35,11 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_op_options.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/compiler/plugin/algo.h"
@@ -329,11 +325,11 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
 }
 
 Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
-    const Subgraph& subgraph, absl::string_view soc_model) {
+    LiteRtSubgraph subgraph, absl::string_view soc_model) {
   LiteRtOpListT ops;
   const char* soc_model_str = !soc_model.empty() ? soc_model.data() : nullptr;
   LITERT_RETURN_IF_ERROR(plugin_api_.compiler_plugin_partition(
-      plugin_handle_, soc_model_str, subgraph.Get(), &ops));
+      plugin_handle_, soc_model_str, subgraph, &ops));
   return ops.Values();
 }
 
@@ -439,8 +435,7 @@ Expected<PartitionResult> PartitionModel(
       continue;
     }
     auto* subgraph = model.Subgraphs()[i];
-    auto selected_ops =
-        compiler_plugin.Partition(Subgraph(subgraph), soc_model);
+    auto selected_ops = compiler_plugin.Partition(subgraph, soc_model);
     // TODO ensure selected ops don't contain npu_calls.
     if (!selected_ops) {
       return selected_ops.Error();
