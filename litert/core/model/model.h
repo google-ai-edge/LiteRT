@@ -24,11 +24,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <utility>
-#include <variant>
 #include <vector>
 
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -726,9 +725,9 @@ class LiteRtModelT {
   using BufferId = BufferManager::BufferId;
 
   using OpAssetReference = std::pair<BufferId, std::string>;
-  using OpAssetMap = absl::flat_hash_map<LiteRtOp, OpAssetReference>;
+  using OpAssetMap = std::unordered_map<LiteRtOp, OpAssetReference>;
 
-  using MetadataMap = absl::flat_hash_map<std::string, BufferId>;
+  using MetadataMap = std::unordered_map<std::string, BufferId>;
 
   using TflFlatbuffer = ::litert::internal::FlatbufferWrapper;
 
@@ -819,7 +818,7 @@ class LiteRtModelT {
   // if it exists.
   litert::Expected<litert::BufferRef<uint8_t>> FindMetadata(
       absl::string_view key) const {
-    if (auto it = metadata_.find(key); it != metadata_.end()) {
+    if (auto it = metadata_.find(std::string(key)); it != metadata_.end()) {
       const auto buf_id = it->second;
       return Buffers()->GetBuffer(buf_id);
     }
@@ -833,7 +832,7 @@ class LiteRtModelT {
   // Adds a new metadata buffer to the model. Fails if it already exists.
   template <class... Args>
   LiteRtStatus PushMetadata(absl::string_view key, Args&&... args) {
-    if (metadata_.contains(key)) {
+    if (metadata_.find(std::string(key)) != metadata_.end()) {
       return kLiteRtStatusErrorInvalidArgument;
     }
     const auto buf_id = Buffers()->RegisterOwnedBuffer(
