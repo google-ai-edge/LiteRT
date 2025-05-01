@@ -103,7 +103,18 @@ std::vector<OpWrapper> BuildTransposeConvOp(
     // QNN only support per-tensor quant for bias,
     // and the scale and offset are both zero.
     bias_tensor.ConvertAxisScaleOffsetToScaleOffset();
-    conv_op.AddInputTensor(bias_tensor);
+    if (bias_tensor.GetRank() == 4 && bias_tensor.GetDim(0) == 1 &&
+        bias_tensor.GetDim(1) == 1 && bias_tensor.GetDim(2) == 1 &&
+        bias_tensor.GetDim(3) == 1 &&
+        bias_tensor.GetDataType() == Qnn_DataType_t::QNN_DATATYPE_FLOAT_32) {
+      auto bias_data = bias_tensor.GetStaticTensorData<float>().value();
+      auto& bias_rank1 = tensor_pool.CreateStaticTensor(
+          bias_tensor.GetDataType(), bias_tensor.GetQuantParams(), {1},
+          bias_tensor.GetTensorBytes(), bias_data.data());
+      conv_op.AddInputTensor(bias_rank1);
+    } else {
+      conv_op.AddInputTensor(bias_tensor);
+    }
   }
 
   TensorWrapper& output_tensor = outputs[kOutputIndex];
