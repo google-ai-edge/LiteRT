@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//tflite:build_def.bzl", "tflite_jni_binary", "tflite_jni_linkopts", "tflite_linkopts_no_undefined")
+
+# copybara:uncomment_begin(google-only)
+# load(
+#     "//tflite:build_def.bzl",
+#     "tflite_jni_linkopts",
+#     "tflite_linkopts_no_undefined",
+# )
+# copybara:uncomment_end
+
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
-load(
-    "//tflite:build_def.bzl",
-    "tflite_jni_binary",
-    "tflite_jni_linkopts",
-    "tflite_linkopts_no_undefined",
-)
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 
 package(
@@ -107,9 +111,32 @@ cc_library(
     }),
 )
 
+# TODO(b/409850505): Unify the JNI build target with the OSS version.
+# copybara:uncomment_begin(google-only)
+# android_jni_library(
+#     name = "litert_jni_lib",
+#     binary_name = "liblitert_jni.so",
+#     force_android = True,
+#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
+#         "@org_tensorflow//tensorflow:android": ["-landroid"],
+#         "//conditions:default": [],
+#     }),
+#     deps = [
+#         ":litert_compiled_model_jni",
+#         ":litert_environment_jni",
+#         ":litert_model_jni",
+#         ":litert_tensor_buffer_jni",
+#     ],
+# )
+# copybara:uncomment_end
+
+# copybara:comment_begin(oss-only)
 tflite_jni_binary(
     name = "litert_jni",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined(),
+    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }),
     linkscript = ":litert_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,
@@ -122,9 +149,10 @@ tflite_jni_binary(
 )
 
 cc_library(
-    name = "litert_jni_cc",
+    name = "litert_jni_lib",
     srcs = [":litert_jni"],
 )
+# copybara:comment_end
 
 # It's needed to include all the files in one target to be able to pack them in the aar.
 kt_android_library(
@@ -143,17 +171,17 @@ kt_android_library(
     manifest = "src/main/AndroidManifest.xml",
     visibility = ["//visibility:public"],
     deps = [
-        ":litert_jni_cc",  # buildcleaner: keep
+        ":litert_jni_lib",  # buildcleaner: keep
         "@maven//:com_google_android_play_ai_delivery",
         "@maven//:com_google_guava_guava",
         "@maven//:androidx_lifecycle_lifecycle_common",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_android",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_guava",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
         # copybara:uncomment_end
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
     ],
 )
 
