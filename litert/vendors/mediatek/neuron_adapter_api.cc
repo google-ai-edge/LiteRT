@@ -25,6 +25,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_shared_library.h"
 
@@ -43,9 +44,21 @@ namespace mediatek {
 NeuronAdapterApi::NeuronAdapterApi() : api_(new Api) {}
 
 litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
-    std::optional<std::string> shared_library_dir) {
+    std::optional<std::string> shared_library_dir,
+    absl::optional<LiteRtOpaqueOptions> options) {
   std::unique_ptr<NeuronAdapterApi> neuron_adapter_api(new NeuronAdapterApi);
-  if (auto status = neuron_adapter_api->LoadSymbols(shared_library_dir);
+
+  LiteRtMediatekOptionsNeronSDKVersionType sdk_version =
+      kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
+  if (options.has_value()) {
+    ::litert::OpaqueOptions opq_opts(options.value(), ::litert::OwnHandle::kNo);
+    auto mediatek_options =
+        ::litert::FindOpaqueOptions<::litert::mediatek::MediatekOptions>(
+            opq_opts);
+    sdk_version = mediatek_options->GetNeronSDKVersionType();
+  }
+  if (auto status =
+          neuron_adapter_api->LoadSymbols(shared_library_dir, sdk_version);
       !status) {
     LITERT_LOG(LITERT_ERROR, "Failed to load NeuronAdapter shared library: %s",
                status.Error().Message().c_str());
@@ -56,21 +69,43 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
 }
 
 litert::Expected<void> NeuronAdapterApi::LoadSymbols(
-    std::optional<std::string> shared_library_dir) {
+    std::optional<std::string> shared_library_dir,
+    LiteRtMediatekOptionsNeronSDKVersionType sdk_version) {
   constexpr auto kLibNeuronAdapterLib = "libneuron_adapter.so";
+  std::vector<std::string> so_paths;
 
-  const std::vector<std::string> so_paths = {
-      // The following preinstalled library is for system partition
-      // applications.
-      "libneuronusdk_adapter.mtk.so", "libneuron_adapter_mgvi.so",
-      kLibNeuronAdapterLib,
-      // Finally, the app may want to provide their own version of the library.
-      shared_library_dir.has_value()
-          ? absl::StrCat(*shared_library_dir, "/", kLibNeuronAdapterLib)
-          : kLibNeuronAdapterLib};
+  // Add preinstalled libraries for system partition applications.
+  so_paths.push_back("libneuronusdk_adapter.mtk.so");
+  so_paths.push_back("libneuron_adapter_mgvi.so");
+
+  // Add the library from the provided shared lib directory if available.
+  shared_library_dir.has_value()
+      ? so_paths.push_back(
+            absl::StrCat(*shared_library_dir, "/", kLibNeuronAdapterLib))
+      : so_paths.push_back(kLibNeuronAdapterLib);
+
+#if !defined(__ANDROID__)
+  // Add SDK specific paths for Linux.
+  std::string sdk_path;
+  switch (sdk_version) {
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
+      sdk_path = "third_party/neuro_pilot/v7_0_8_20250225/host/lib";
+      break;
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
+      sdk_path = "third_party/neuro_pilot/v8_20241223/host/lib";
+      break;
+    default:
+      return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           "Invalid sdk_version");
+  }
+  so_paths.push_back(absl::StrCat(sdk_path, "/", kLibNeuronAdapterLib));
+#endif
+
   for (auto& so_path : so_paths) {
     auto maybe_dlib = SharedLibrary::Load(so_path, RtldFlags::Default());
     if (maybe_dlib.HasValue()) {
+      LITERT_LOG(LITERT_INFO, "Loading MediaTek NeuronAdapter .so from: %s",
+                 so_path.c_str());
       dlib_ = std::move(maybe_dlib.Value());
     }
   }

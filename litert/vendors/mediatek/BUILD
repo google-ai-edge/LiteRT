@@ -39,6 +39,7 @@ litert_cc_lib_with_mtk(
         # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
     ],

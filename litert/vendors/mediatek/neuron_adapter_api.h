@@ -21,6 +21,7 @@
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_shared_library.h"
 
@@ -56,7 +57,9 @@ class NeuronAdapterApi {
   NeuronAdapterApi& operator=(const NeuronAdapterApi&) = delete;
   NeuronAdapterApi& operator=(NeuronAdapterApi&&) = delete;
 
-  static Expected<Ptr> Create(std::optional<std::string> shared_library_dir);
+  static Expected<Ptr> Create(
+      std::optional<std::string> shared_library_dir,
+      std::optional<LiteRtOpaqueOptions> opaque_options = std::nullopt);
 
   const Api& api() const { return *api_; }
 
@@ -81,7 +84,8 @@ class NeuronAdapterApi {
  private:
   NeuronAdapterApi();
   litert::Expected<void> LoadSymbols(
-      std::optional<std::string> shared_library_dir);
+      std::optional<std::string> shared_library_dir,
+      LiteRtMediatekOptionsNeronSDKVersionType sdk_version);
 
   // Handle to the shared library that implements the Neuron API.
   //
