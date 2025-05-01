@@ -18,12 +18,20 @@
 import pathlib
 from typing import cast
 
-from tqdm.tqdm import auto as autotqdm
+# pylint: disable=g-import-not-at-top
+# pytype: disable=import-error
+try:
+  from tqdm import auto as autotqdm
+except ImportError:
+  from tqdm.tqdm import auto as autotqdm
+# pytype: enable=import-error
 
 from litert.python.aot.core import common
 from litert.python.aot.core import components
 from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
+
+# pylint: enable=g-import-not-at-top
 
 
 def resolve_backend(config: types.Config) -> types.BackendT:

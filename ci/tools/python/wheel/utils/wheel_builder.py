@@ -58,6 +58,9 @@ def parse_args() -> argparse.Namespace:
       "--src", help="single source file for the wheel", action="append"
   )
   parser.add_argument(
+      "--py_src", help="single source file for the wheel", action="append"
+  )
+  parser.add_argument(
       "--platform",
       required=True,
       help="Platform name to be passed to build module",
@@ -78,6 +81,7 @@ def create_empty_init_files(dst_dir: str) -> None:
   for dir_name in dir_list:
     with open(os.path.join(dir_name, "__init__.py"), "w"):
       pass
+    create_empty_init_files(dir_name.path)
 
 
 def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
@@ -86,7 +90,7 @@ def create_init_files(dst_dir: str, meta_dict: Optional[dict[str, str]] = None):
   if meta_dict:
     with open(os.path.join(dst_dir, "__init__.py"), "w") as f:
       for key, value in meta_dict.items():
-        f.write(f"{key} = \"{value}\"\n")
+        f.write(f'{key} = "{value}"\n')
 
 
 def construct_meta_dict(args) -> dict[str, str]:
@@ -110,6 +114,13 @@ def prepare_build_tree(tree_path, args, project_name: str):
 
   for src in args.src:
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
+
+  for src in args.py_src:
+    dest = os.path.join(src_dir, src.removeprefix("litert/python/"))
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(
+        src, os.path.join(src_dir, src.removeprefix("litert/python/"))
+    )
 
   meta_dict = construct_meta_dict(args)
 

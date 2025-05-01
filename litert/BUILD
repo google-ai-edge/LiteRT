@@ -25,6 +25,7 @@ package_group(
     name = "litert_internal_users",
     packages = [
         # Self packages.
+        "//ci/tools/...",
         "//litert/c/...",
         "//litert/cc/...",
         "//litert/compiler/...",
@@ -66,6 +67,7 @@ package_group(
     name = "litert_python_internal_users",
     packages = [
         "//litert/python/...",
+        "//ci/tools/...",
         # copybara:uncomment "//third_party/py/ai_edge_torch/aot/...",
     ],
 )

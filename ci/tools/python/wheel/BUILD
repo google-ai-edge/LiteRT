@@ -43,6 +43,28 @@ genrule(
     cmd = "sed -e 's/tflite\\.profiling\\.proto/ai_edge_litert/g' $< > $@",
 )
 
+# TODO(weiyiw): Walk the dependencies and pull in related files.
+# TODO(weiyiw): Support data files.
+ALL_PY_SRC_MODULES = [
+    "//litert/python/aot:prepare_for_npu",
+    "//litert/python/aot:aot_compile",
+    "//litert/python/aot/ai_pack:export_lib",
+    "//litert/python/aot/core:common",
+    "//litert/python/aot/core:types",
+    "//litert/python/aot/core:apply_plugin",
+    "//litert/python/aot/core:mlir_transforms",
+    "//litert/python/aot/core:components",
+    "//litert/python/aot/core:tflxx_util",
+    "//litert/python/aot/vendors:import_vendor",
+    "//litert/python/aot/vendors",
+    "//litert/python/aot/vendors:fallback_backend",
+    "//litert/python/aot/vendors/example:example_backend",
+    "//litert/python/aot/vendors/mediatek:mediatek_backend",
+    "//litert/python/aot/vendors/mediatek:target",
+    "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
+    "//litert/python/aot/vendors/qualcomm:target",
+]
+
 py_wheel(
     name = "litert_wheel",
     srcs = [
@@ -57,6 +79,7 @@ py_wheel(
     nightly_suffix = ":nightly_iso_date",
     platform_name = get_wheel_platform_name(),
     project_name = "ai_edge_litert",
+    py_srcs = ALL_PY_SRC_MODULES,
     setup_py = ":setup_py",
     version = LITERT_FULL_VERSION,
 )
