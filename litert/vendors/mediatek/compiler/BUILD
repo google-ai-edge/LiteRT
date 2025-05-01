@@ -26,11 +26,6 @@ litert_dynamic_lib(
     export_litert_only = True,
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_MediaTek.so",
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     ungrte = True,
     visibility = ["//litert:__subpackages__"],
     deps = [
@@ -61,13 +56,7 @@ cc_library(
     name = "create_model",
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     deps = [
-        # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
@@ -93,6 +82,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:transpose_conv_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:transpose_op_legalization",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@neuro_pilot//:latest_host_headers",
     ],
 )
 
@@ -100,14 +90,7 @@ cc_library(
     name = "compile_model",
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     deps = [
-        "@com_google_absl//absl/strings:string_view",
-        # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -118,6 +101,8 @@ cc_library(
         "//litert/cc:litert_model_predicates",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "@com_google_absl//absl/strings:string_view",
+        "@neuro_pilot//:latest_host_headers",
     ],
 )
 
@@ -135,8 +120,6 @@ litert_test(
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
-        "nobuilder",
-        "no_oss",
         "nosan",
     ],
     # Currently this test can only be run on Android because we don't have x86 shared libraries for

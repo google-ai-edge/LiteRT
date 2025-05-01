@@ -74,9 +74,11 @@ TEST(TestMediatekPlugin, PartitionAdd) {
   auto plugin = CreatePlugin();
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
+  auto subgraph = model.Subgraph(0);
+  ASSERT_TRUE(subgraph.HasValue());
   LiteRtOpListT selected_op_list;
   ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/nullptr,
-                                          model.Subgraph(0)->Get(),
+                                          subgraph->Get(),
                                           &selected_op_list),
             kLiteRtStatusOk);
   const auto selected_ops = selected_op_list.Values();

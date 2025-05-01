@@ -176,3 +176,9 @@ kt_register_toolchains()  # to use the default toolchain, otherwise see toolchai
 load("//third_party/qairt:workspace.bzl", "qairt")
 
 qairt()
+
+# MEDIATEK ---------------------------------------------------------------------------------------
+
+load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
+
+neuro_pilot()

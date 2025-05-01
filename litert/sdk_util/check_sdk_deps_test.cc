@@ -22,6 +22,8 @@
 #include <iostream>
 #include <string>
 
+
+#include "neuron/api/NeuronAdapter.h"  // IWYU pragma: keep
 #include <gtest/gtest.h>  // IWYU pragma: keep
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "QnnCommon.h"  // from @qairt  // IWYU pragma: keep
@@ -84,6 +86,19 @@ TEST(CheckSoAvailabilityTest, CheckQnnSystemSdk) {
     std::cerr << "------ dlerror() -----\n";
     std::cerr << std::string(err) << "\n";
     std::cerr << "------ libQnnSystem.so link error info -----\n";
+    DumpLinkDbg();
+  }
+}
+
+
+TEST(CheckSoAvailabilityTest, CheckLatestMediatekSdk) {
+  void *lib_qnn_handle = dlopen("libneuron_adapter.so", RTLD_LAZY);
+  ASSERT_NE(lib_qnn_handle, nullptr);
+  if (lib_qnn_handle == nullptr) {
+    char *err = dlerror();
+    std::cerr << "------ dlerror() -----\n";
+    std::cerr << std::string(err) << "\n";
+    std::cerr << "------ libneuron_adapter.so link error info -----\n";
     DumpLinkDbg();
   }
 }
