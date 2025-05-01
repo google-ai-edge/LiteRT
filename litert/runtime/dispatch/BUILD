@@ -49,6 +49,36 @@ cc_library(
 )
 
 cc_library(
+    name = "dispatch_opaque_options",
+    srcs = [
+        "dispatch_opaque_options.cc",
+    ],
+    hdrs = [
+        "dispatch_opaque_options.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "dispatch_opaque_options_test",
+    srcs = [
+        "dispatch_opaque_options_test.cc",
+    ],
+    deps = [
+        ":dispatch_opaque_options",
+        "//litert/cc:litert_opaque_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "dispatch_delegate",
     srcs = [
         "dispatch_delegate.cc",
