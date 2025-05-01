@@ -55,6 +55,7 @@ package_group(
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
         # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
+        "//litert/samples/...",
         "//litert/vendors/...",
         # copybara:uncomment "//third_party/odml/litert/llm/...",
         # copybara:uncomment "//third_party/odml/litert_lm/...",
