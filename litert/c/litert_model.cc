@@ -469,6 +469,14 @@ LiteRtStatus LiteRtGetTensorName(LiteRtTensor tensor, const char** name) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetTensorIndex(LiteRtTensor tensor, uint32_t* tensor_index) {
+  if (!tensor || !tensor_index) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *tensor_index = tensor->TensorIndex();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetQuantizationTypeId(LiteRtTensor tensor,
                                          LiteRtQuantizationTypeId* q_type_id) {
   if (!tensor || !q_type_id) {

@@ -187,6 +187,17 @@ TEST(LiteRtTensorTest, Name) {
   EXPECT_STREQ(name, kName);
 }
 
+TEST(LiteRtTensorTest, Index) {
+  static constexpr const std::uint32_t kTensorIndex = 1;
+
+  LiteRtTensorT tensor;
+  tensor.SetTensorIndex(kTensorIndex);
+
+  std::uint32_t index;
+  LITERT_ASSERT_OK(LiteRtGetTensorIndex(&tensor, &index));
+  EXPECT_EQ(index, kTensorIndex);
+}
+
 TEST(LiteRtTensorTest, QuantizationNone) {
   LiteRtTensorT tensor;
 

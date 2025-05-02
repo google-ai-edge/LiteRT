@@ -259,8 +259,9 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   const auto num_tensors = tfl_subgraph.tensors()->size();
   for (auto i = 0; i < num_tensors; ++i) {
     const auto* tfl_tensor = tfl_subgraph.tensors()->Get(i);
-    LITERT_RETURN_IF_ERROR(
-        UnpackTensor(context, *tfl_tensor, litert_subgraph.EmplaceTensor()));
+    auto& litert_tensor = litert_subgraph.EmplaceTensor();
+    LITERT_RETURN_IF_ERROR(UnpackTensor(context, *tfl_tensor, litert_tensor));
+    litert_tensor.SetTensorIndex(i);
   }
 
   // Unpack ops, pass litert_subgraph so they can look up the new litert

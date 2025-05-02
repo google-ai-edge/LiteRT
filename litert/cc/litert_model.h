@@ -175,6 +175,12 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     return absl::string_view(name);
   }
 
+  std::uint32_t TensorIndex() const {
+    std::uint32_t tensor_index;
+    internal::AssertOk(LiteRtGetTensorIndex, Get(), &tensor_index);
+    return tensor_index;
+  }
+
   struct TensorUse;
   using TensorUses =
       absl::InlinedVector<TensorUse, kExpectedMaxNumOfTensorUses>;

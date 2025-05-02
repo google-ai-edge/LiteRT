@@ -45,6 +45,7 @@ void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest) {
   dest.SetName({src.Name().cbegin(), src.Name().cend()});
   dest.SetQarams(src.Qparams());
   dest.SetType(src.Type());
+  dest.SetTensorIndex(src.TensorIndex());
 
   // Manully copy per-channel quantization params,quant array is owned by
   // tensor.

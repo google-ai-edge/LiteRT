@@ -343,6 +343,12 @@ class LiteRtTensorT {
   // Update the name associated with this tensor.
   void SetName(std::string name) { name_ = std::move(name); }
 
+  // Get tensor index associated with this tensor.
+  std::uint32_t TensorIndex() const {return tensor_index_; }
+
+  // Update the index associated with this tensor.
+  void SetTensorIndex(std::uint32_t tensor_index) { tensor_index_ = tensor_index; }
+
   // Get quantization information for this tensor.
   const Quantization& Qparams() const { return quantization_; }
   Quantization& Qparams() { return quantization_; }
@@ -399,6 +405,8 @@ class LiteRtTensorT {
   TensorType tensor_type_;
 
   std::string name_;
+
+  std::uint32_t tensor_index_;
 
   std::vector<UserData> user_data_;
 };
