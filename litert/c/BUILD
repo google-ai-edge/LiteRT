@@ -592,14 +592,9 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-            "-Wl,-soname=libLiteRtRuntimeCApi.so",
-        ],
-        "@org_tensorflow//tensorflow:ios": [],
-        "@org_tensorflow//tensorflow:macos": [],
-        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
-    }),
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    }) + ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
