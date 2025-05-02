@@ -30,8 +30,37 @@ constexpr const char *kPluginSocModels[] = {
 };  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kSupportedOps[] = {
-    kLiteRtOpCodeTflAdd,
     kLiteRtOpCodeTflConv2d,
+    kLiteRtOpCodeTflDepthwiseConv2d,
+    kLiteRtOpCodeTflSplit,
+    kLiteRtOpCodeTflFullyConnected,
+    kLiteRtOpCodeTflAdd,
+    kLiteRtOpCodeTflReshape,
+    kLiteRtOpCodeTflMean,
+    kLiteRtOpCodeTflResizeBilinear,
+    kLiteRtOpCodeTflResizeNearestNeighbor,
+    kLiteRtOpCodeTflConcatenation,
+    kLiteRtOpCodeTflMaxPool2d,
+    kLiteRtOpCodeTflAveragePool2d,
+    kLiteRtOpCodeTflMul,
+    kLiteRtOpCodeTflTransposeConv,
+    kLiteRtOpCodeTflSoftmax,
+    kLiteRtOpCodeTflMirrorPad,
+    kLiteRtOpCodeTflStridedSlice,
+    kLiteRtOpCodeTflDepthToSpace,
+    kLiteRtOpCodeTflGather,
+    kLiteRtOpCodeTflBatchMatmul,
+    kLiteRtOpCodeTflLeakyRelu,
+    kLiteRtOpCodeTflPack,
+    // These ops donot call get_attribute
+    kLiteRtOpCodeTflDequantize,
+    kLiteRtOpCodeTflLogistic,
+    kLiteRtOpCodeTflRelu,
+    kLiteRtOpCodeTflTanh,
+    kLiteRtOpCodeTflPad,
+    kLiteRtOpCodeTflTranspose,
+    kLiteRtOpCodeTflSlice,
+    kLiteRtOpCodeTflQuantize,
 };
 // clang format on
 
@@ -167,7 +196,6 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
             LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());
             continue;
         }
-        LITERT_LOG(LITERT_INFO, "op type %d is supported", op.Code());
         LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
     }
 
