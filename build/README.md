@@ -48,7 +48,7 @@ To build different targets, you can either:
 
 The Docker environment:
 1. Sets up a Ubuntu 22.04 build environment (with newer libc/libc++)
-2. Installs Bazel 5.3.0 and necessary build tools
+2. Installs Bazel 7.4.1 and necessary build tools
 3. Configures Android SDK and NDK with the correct versions
 4. Automatically initializes and updates git submodules
 5. Automatically generates the .tf_configure.bazelrc file
