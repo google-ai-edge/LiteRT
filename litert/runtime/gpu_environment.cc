@@ -124,10 +124,23 @@ Expected<void> GpuEnvironmentSingleton::Initialize(
   // Set up context.
   if (options_.context) {
     if (options_.IsGlAware()) {
-      return Unexpected(
-          kLiteRtStatusErrorInvalidArgument,
-          "OpenCL context and EGL parameters are both set. Only set EGL "
-          "parameters so runtime will create a GL-aware CL context.");
+      // TODO(b/383176413): Add check to confirm this context is GL-aware.
+      // We currently assume that user configured context properly.
+      context_ = tflite::gpu::cl::CLContext(options_.context,
+                                            /*has_ownership=*/false);
+#if LITERT_HAS_OPENGL_SUPPORT
+      LITERT_RETURN_IF_ERROR(eglGetCurrentContext() == options_.egl_context)
+          << "EGL context is not the same as provided context";
+      LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
+          << "EGL display is not the same as provided display";
+      std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+      // This function call implicitly reuses provided EGL context and display
+      // present on this thread.
+      LITERT_RETURN_IF_ERROR(
+          tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
+          << "Failed to create EGL environment";
+      egl_env_ = std::move(egl_env);
+#endif  // LITERT_HAS_OPENGL_SUPPORT
     } else {
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
