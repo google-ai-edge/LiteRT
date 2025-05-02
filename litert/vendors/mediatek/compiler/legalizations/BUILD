@@ -21,6 +21,11 @@ cc_library(
     name = "operand_map",
     srcs = ["operand_map.cc"],
     hdrs = ["operand_map.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         ":neuron_utils",
         "//litert/c:litert_common",
@@ -40,6 +45,11 @@ cc_library(
     hdrs = [
         "neuron_utils.h",
     ],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -53,6 +63,11 @@ cc_library(
     name = "legalize_helper",
     hdrs = [
         "legalize_helper.h",
+    ],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
     ],
     deps = [
         ":operand_map",
@@ -68,6 +83,11 @@ cc_library(
     name = "add_op_legalization",
     srcs = ["add_op_legalization.cc"],
     hdrs = ["add_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -83,6 +103,11 @@ cc_library(
     name = "mul_op_legalization",
     srcs = ["mul_op_legalization.cc"],
     hdrs = ["mul_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -98,6 +123,11 @@ cc_library(
     name = "batch_matmul_op_legalization",
     srcs = ["batch_matmul_op_legalization.cc"],
     hdrs = ["batch_matmul_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -113,6 +143,11 @@ cc_library(
     name = "fully_connected_op_legalization",
     srcs = ["fully_connected_op_legalization.cc"],
     hdrs = ["fully_connected_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "legalize_helper",
         "operand_map",
@@ -131,6 +166,11 @@ cc_library(
     name = "reshape_op_legalization",
     srcs = ["reshape_op_legalization.cc"],
     hdrs = ["reshape_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -146,6 +186,11 @@ cc_library(
     name = "transpose_op_legalization",
     srcs = ["transpose_op_legalization.cc"],
     hdrs = ["transpose_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -161,6 +206,11 @@ cc_library(
     name = "rsqrt_op_legalization",
     srcs = ["rsqrt_op_legalization.cc"],
     hdrs = ["rsqrt_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -176,6 +226,11 @@ cc_library(
     name = "concat_op_legalization",
     srcs = ["concat_op_legalization.cc"],
     hdrs = ["concat_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -191,6 +246,11 @@ cc_library(
     name = "quantize_op_legalization",
     srcs = ["quantize_op_legalization.cc"],
     hdrs = ["quantize_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -206,6 +266,11 @@ cc_library(
     name = "common_op_legalization",
     srcs = ["common_op_legalization.cc"],
     hdrs = ["common_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -221,6 +286,11 @@ cc_library(
     name = "sub_op_legalization",
     srcs = ["sub_op_legalization.cc"],
     hdrs = ["sub_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -236,6 +306,11 @@ cc_library(
     name = "softmax_op_legalization",
     srcs = ["softmax_op_legalization.cc"],
     hdrs = ["softmax_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -251,6 +326,11 @@ cc_library(
     name = "mean_op_legalization",
     srcs = ["mean_op_legalization.cc"],
     hdrs = ["mean_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -266,6 +346,11 @@ cc_library(
     name = "gelu_op_legalization",
     srcs = ["gelu_op_legalization.cc"],
     hdrs = ["gelu_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -281,6 +366,11 @@ cc_library(
     name = "squared_difference_op_legalization",
     srcs = ["squared_difference_op_legalization.cc"],
     hdrs = ["squared_difference_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -296,6 +386,11 @@ cc_library(
     name = "resize_bilinear_op_legalization",
     srcs = ["resize_bilinear_op_legalization.cc"],
     hdrs = ["resize_bilinear_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -312,6 +407,11 @@ cc_library(
     name = "resize_nearest_neighbor_op_legalization",
     srcs = ["resize_nearest_neighbor_op_legalization.cc"],
     hdrs = ["resize_nearest_neighbor_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "operand_map",
         "//litert/c:litert_common",
@@ -327,6 +427,11 @@ cc_library(
     name = "transpose_conv_op_legalization",
     srcs = ["transpose_conv_op_legalization.cc"],
     hdrs = ["transpose_conv_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "legalize_helper",
         "operand_map",

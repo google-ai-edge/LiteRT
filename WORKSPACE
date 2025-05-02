@@ -179,6 +179,8 @@ qairt()
 
 # MEDIATEK ---------------------------------------------------------------------------------------
 
-load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
+# TODO: Enable once mtk sdk is available.
 
-neuro_pilot()
+# load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
+
+# neuro_pilot()

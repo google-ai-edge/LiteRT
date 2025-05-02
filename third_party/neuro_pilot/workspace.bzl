@@ -22,5 +22,4 @@ def neuro_pilot():
         allow_local = True,
         build_file = "@//third_party/neuro_pilot:neuro_pilot.BUILD",
         local_path_env = "NEURO_PILOT_SDK",
-        url = "https://storage.googleapis.com/litert/neuro_pilot.tar",
     )

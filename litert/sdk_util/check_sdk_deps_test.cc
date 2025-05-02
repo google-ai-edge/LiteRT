@@ -22,8 +22,10 @@
 #include <iostream>
 #include <string>
 
-
+#ifdef LITERT_HAS_MTK_SDK
+// TODO: Enable once mtk sdk is available.
 #include "neuron/api/NeuronAdapter.h"  // IWYU pragma: keep
+#endif
 #include <gtest/gtest.h>  // IWYU pragma: keep
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "QnnCommon.h"  // from @qairt  // IWYU pragma: keep
@@ -92,6 +94,9 @@ TEST(CheckSoAvailabilityTest, CheckQnnSystemSdk) {
 
 
 TEST(CheckSoAvailabilityTest, CheckLatestMediatekSdk) {
+  #ifndef LITERT_HAS_MTK_SDK
+  GTEST_SKIP() << "MTK SDK is not available.";
+  #endif
   void *lib_qnn_handle = dlopen("libneuron_adapter.so", RTLD_LAZY);
   ASSERT_NE(lib_qnn_handle, nullptr);
   if (lib_qnn_handle == nullptr) {
