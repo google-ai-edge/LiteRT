@@ -35,11 +35,7 @@ class Environment private constructor(handle: Long) : JniHandle(handle) {
     assertNotDestroyed()
 
     val accelerators = nativeGetAvailableAccelerators(handle)
-    return accelerators
-      .map { Accelerator.of(it) }
-      .toMutableSet()
-      .apply { add(Accelerator.CPU) } // CPU is always available.
-      .toSet()
+    return accelerators.map { Accelerator.of(it) }.toSet()
   }
 
   companion object {
