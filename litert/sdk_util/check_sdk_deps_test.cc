@@ -23,17 +23,26 @@
 #include <string>
 
 #ifdef LITERT_HAS_MTK_SDK
-// TODO: Enable once mtk sdk is available.
 #include "neuron/api/NeuronAdapter.h"  // IWYU pragma: keep
 #endif
 #include <gtest/gtest.h>  // IWYU pragma: keep
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "QnnCommon.h"  // from @qairt  // IWYU pragma: keep
 #include "System/QnnSystemCommon.h"  // from @qairt  // IWYU pragma: keep
 
 namespace {
 
-void DumpLinkDbg() {
+void DumpLinkDbg(void *lib_handle, absl::string_view lib_name) {
+  if (lib_handle != nullptr) {
+    std::string dl_info(512, '\0');
+    dlinfo(lib_handle, RTLD_DI_ORIGIN, dl_info.data());
+    std::cerr << "------ Loaded .so @ -----\n";
+    std::cerr << absl::StreamFormat("%s/%s", dl_info, lib_name) << "\n";
+    return;
+  }
+
   // PWD AND RUNFILES TREE
   auto pwd = std::filesystem::current_path();
   std::cerr << "pwd: " << std::string(pwd) << "\n";
@@ -42,6 +51,11 @@ void DumpLinkDbg() {
       std::cerr << "file: " << std::string(file.path()) << "\n";
     }
   }
+
+  // DL API OUTPUT
+  char *err = dlerror();
+  std::cerr << "------ dlerror() -----\n";
+  std::cerr << std::string(err) << "\n";
 
   // RPATH OF THIS ELF
 
@@ -69,43 +83,29 @@ void DumpLinkDbg() {
 }
 
 TEST(CheckSoAvailabilityTest, CheckQnnSdk) {
-  void *lib_qnn_handle = dlopen("libQnnHtp.so", RTLD_LAZY);
+  static constexpr absl::string_view kLib = "libQnnHtp.so";
+  void *lib_qnn_handle = dlopen(kLib.data(), RTLD_LAZY);
   EXPECT_NE(lib_qnn_handle, nullptr);
-  if (lib_qnn_handle == nullptr) {
-    char *err = dlerror();
-    std::cerr << "------ dlerror() -----\n";
-    std::cerr << std::string(err) << "\n";
-    std::cerr << "------ libQnnHtp.so link error info -----\n";
-    DumpLinkDbg();
-  }
+  DumpLinkDbg(lib_qnn_handle, kLib);
 }
 
 TEST(CheckSoAvailabilityTest, CheckQnnSystemSdk) {
-  void *lib_qnn_handle = dlopen("libQnnSystem.so", RTLD_LAZY);
-  ASSERT_NE(lib_qnn_handle, nullptr);
-  if (lib_qnn_handle == nullptr) {
-    char *err = dlerror();
-    std::cerr << "------ dlerror() -----\n";
-    std::cerr << std::string(err) << "\n";
-    std::cerr << "------ libQnnSystem.so link error info -----\n";
-    DumpLinkDbg();
-  }
+  static constexpr absl::string_view kLib = "libQnnSystem.so";
+  void *lib_qnn_handle = dlopen(kLib.data(), RTLD_LAZY);
+  EXPECT_NE(lib_qnn_handle, nullptr);
+  DumpLinkDbg(lib_qnn_handle, kLib);
 }
 
-
+// NOLINTBEGIN
 TEST(CheckSoAvailabilityTest, CheckLatestMediatekSdk) {
   #ifndef LITERT_HAS_MTK_SDK
   GTEST_SKIP() << "MTK SDK is not available.";
   #endif
-  void *lib_qnn_handle = dlopen("libneuron_adapter.so", RTLD_LAZY);
-  ASSERT_NE(lib_qnn_handle, nullptr);
-  if (lib_qnn_handle == nullptr) {
-    char *err = dlerror();
-    std::cerr << "------ dlerror() -----\n";
-    std::cerr << std::string(err) << "\n";
-    std::cerr << "------ libneuron_adapter.so link error info -----\n";
-    DumpLinkDbg();
-  }
+  static constexpr absl::string_view kLib = "libneuron_adapter.so";
+  void *lib_neuron_adapter_handle = dlopen(kLib.data(), RTLD_LAZY);
+  EXPECT_NE(lib_neuron_adapter_handle, nullptr);
+  DumpLinkDbg(lib_neuron_adapter_handle, kLib);
 }
+// NOLINTEND
 
 }  // namespace

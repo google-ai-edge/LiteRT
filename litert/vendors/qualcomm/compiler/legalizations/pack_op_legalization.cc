@@ -90,7 +90,9 @@ LiteRtStatus PackOpLegalization::LegalizeOp(const Op& src, Qnn_OpConfig_t& dest,
   // Qnn does not support Packing scalars, scalar value are legalized as 1D
   // tensor with single element. In such case, we need to add a reshape op to
   // convert result packed 2D tensor to 1D tensor.
-  auto input_layout = op_ins[0].RankedTensorType()->Layout();
+  LITERT_ASSIGN_OR_RETURN(auto input_ranked_tensor_type,
+                          op_ins[0].RankedTensorType());
+  auto input_layout = input_ranked_tensor_type.Layout();
   if (input_layout.Rank() == 0) {
     // prepare Pack op output tensor.
     Qnn_Tensor_t pack_op_out = BuildDefaultTensor();

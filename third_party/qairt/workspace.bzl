@@ -19,7 +19,6 @@ load("//litert/sdk_util:repo.bzl", "configurable_repo")
 def qairt():
     configurable_repo(
         name = "qairt",
-        allow_local = True,
         build_file = "@//third_party/qairt:qairt.BUILD",
         local_path_env = "LITERT_QAIRT_SDK",
         strip_prefix = "latest",

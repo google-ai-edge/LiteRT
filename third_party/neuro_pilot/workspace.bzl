@@ -19,7 +19,6 @@ load("//litert/sdk_util:repo.bzl", "configurable_repo")
 def neuro_pilot():
     configurable_repo(
         name = "neuro_pilot",
-        allow_local = True,
         build_file = "@//third_party/neuro_pilot:neuro_pilot.BUILD",
-        local_path_env = "NEURO_PILOT_SDK",
+        local_path_env = "LITERT_NEURO_PILOT_SDK",
     )

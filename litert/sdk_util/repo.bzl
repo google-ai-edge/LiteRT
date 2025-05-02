@@ -19,20 +19,6 @@ load(
     "get_auth",
 )
 
-def _get_path_str_if_do_local(ctx):
-    if not ctx.attr.allow_local:
-        return ""
-
-    if not ctx.getenv(ctx.attr.allow_local_env, None):
-        return ""
-
-    local_repo_path = ctx.attr.local_path
-    if local_repo_path:
-        return local_repo_path
-
-    local_path_env_val = ctx.getenv(ctx.attr.local_path_env, "")
-    return local_path_env_val
-
 def _get_path(ctx, s):
     """Turns string into path, ensuring its valid."""
     path = ctx.workspace_root.get_child(s)
@@ -42,32 +28,35 @@ def _get_path(ctx, s):
         )
     return path
 
-def _configurable_repo_impl(ctx):
-    # Resolve remote/vs local
-    local_repo_path = _get_path_str_if_do_local(ctx)
+def _prepare_repo_files(ctx):
+    if ctx.attr.local_path_env and ctx.getenv(ctx.attr.local_path_env, None):
+        sdk_path_from_env = ctx.getenv(ctx.attr.local_path_env, None)
 
-    # Setup files
-    if not local_repo_path:
-        if not ctx.attr.url:
-            fail("A URL must be specified if local repo is not enabled.")
-        ctx.download_and_extract(url = ctx.attr.url, auth = get_auth(ctx, [ctx.attr.url]), stripPrefix = ctx.attr.strip_prefix)
+        if sdk_path_from_env:
+            if not sdk_path_from_env.startswith("/"):
+                fail("Local path must be absolute.")
 
-    if local_repo_path and not local_repo_path.startswith("/"):
-        fail("Only absolute paths to local files are supported")
+            if ctx.path(sdk_path_from_env).is_dir:
+                for child in ctx.path(sdk_path_from_env + ctx.attr.strip_prefix).readdir():
+                    ctx.symlink(child, child.basename)
 
-    pth = _get_path(ctx, local_repo_path)
+            elif not sdk_path_from_env.endswith(".tar.gz"):
+                fail("Local path is not a dir or a tarball")
 
-    if pth.is_dir:
-        for child in pth.readdir():
-            ctx.symlink(child, child.basename)
+            else:
+                ctx.extract(sdk_path_from_env, stripPrefix = ctx.attr.strip_prefix)
 
-    elif pth.basename.endswith("tar.gz"):
-        ctx.extract(pth, stripPrefix = ctx.attr.strip_prefix)
+    elif not ctx.attr.url:
+        fail("A URL must be specified if local repo is not enabled.")
 
     else:
-        fail("Local path is not a dir or a tarball")
+        ctx.download_and_extract(
+            url = ctx.attr.url,
+            auth = get_auth(ctx, [ctx.attr.url]),
+            stripPrefix = ctx.attr.strip_prefix,
+        )
 
-    # Resolve BUILD
+def _prepare_build_file(ctx):
     build_file = ctx.attr.build_file
     build_file_contents = ctx.attr.build_file_contents
 
@@ -75,7 +64,6 @@ def _configurable_repo_impl(ctx):
         fail("Only one of build_file or build_file_contents may be specified")
 
     if build_file:
-        # TODO forward file
         ctx.delete("BUILD.bazel")
         ctx.symlink(ctx.attr.build_file, "BUILD.bazel")
 
@@ -91,35 +79,46 @@ def _configurable_repo_impl(ctx):
         if not has_build:
             fail("No BUILD.bazel file in out dir, please configure one or add it to the target repo.")
 
+def _configurable_repo_impl(ctx):
+    _prepare_repo_files(ctx)
+    _prepare_build_file(ctx)
+
+# PUBLIC ###########################################################################################
+
 configurable_repo = repository_rule(
     implementation = _configurable_repo_impl,
     attrs = {
-        "local_path": attr.string(
-            doc = "A path to the repository files on the local machine, either absolute or relative to workspace root. This can be either a directory or a tarball. This always takes precedence over `local_path_env`",
-        ),
-        "allow_local": attr.bool(
-            doc = "Specifies whether or not pulling the repository from local machine is permitted. Url must be specified if this is false. This takes precedence over `allow_local_env`",
-            mandatory = True,
-        ),
         "local_path_env": attr.string(
-            doc = "An environment variable to look for a path to local repository files, either absolute or relative to workspace root. This is used when `local_path` is unspecified and `allow_local` is true.",
-        ),
-        "allow_local_env": attr.string(
-            doc = "An environment variable to serve as a toggle for whether or not local repository functionality is enabled. It can be set by the user to swap between local/remote repos. This is used when `allow_local` is true. The non-existance of this env var is interpreted as disabling local repo.",
-            default = "LITERT_ALLOW_LOCAL_REPO",
+            doc = """
+            An environment variable to look for an absolute path to local repository files. 
+            NOTE: If this is specified, and the environment variable is set, it will take 
+            precedence over the URL.
+            """,
+            mandatory = False,
         ),
         "url": attr.string(
-            doc = "The url to the hosted litert repo archive to download. This must be a tarball. The remote files are used when local repository functionality is not enabled.",
+            doc = """
+            The url to the hosted litert repo archive to download. This must be a tarball.
+            This may be unspecified if local path approach is used.
+            """,
+            mandatory = False,
         ),
         "build_file": attr.label(
             allow_single_file = True,
-            doc = "A build file to associate with the root of the repo.",
+            doc = """
+            A build file to associate with the root of the repo.
+            """,
         ),
         "build_file_contents": attr.string(
-            doc = "String contents to associate with the root of the repo. Only one of `build_file` or `build_file_contents` may be specified.",
+            doc = """
+            String contents to associate with the root of the repo.
+            Only one of `build_file` or `build_file_contents` may be specified.
+            """,
         ),
         "strip_prefix": attr.string(
-            doc = "Prefix to strip when extracting archives.",
+            doc = """
+            Prefix to strip when extracting archives.
+            """,
         ),
     },
 )
