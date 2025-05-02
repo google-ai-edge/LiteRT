@@ -480,6 +480,32 @@ cc_test(
 # - litert::CustomOpKernel
 # - litert::DispatchDelegate
 
+LITERT_C_API_DEPS = [
+    "//litert/c:litert_any",
+    "//litert/c:litert_common",
+    "//litert/c:litert_compiled_model",
+    "//litert/c:litert_custom_op_kernel",
+    "//litert/c:litert_environment",
+    "//litert/c:litert_environment_options",
+    "//litert/c:litert_event",
+    "//litert/c:litert_event_type",
+    "//litert/c:litert_gl_types",
+    "//litert/c:litert_layout",
+    "//litert/c:litert_logging",
+    "//litert/c:litert_metrics",
+    "//litert/c:litert_model",
+    "//litert/c:litert_opaque_options",
+    "//litert/c:litert_options",
+    "//litert/c:litert_tensor_buffer",
+    "//litert/c:litert_tensor_buffer_types",
+    "//tflite:framework",
+    "//tflite/c:c_api_opaque",
+    "//tflite/c:c_api_types",
+    "//tflite/c:common",
+    "//tflite/core:private_cc_api_stable",
+    "//tflite/kernels:builtin_ops",
+]
+
 cc_library(
     name = "litert_environment",
     hdrs = ["litert_environment.h"],
@@ -489,11 +515,14 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_environment_options",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -527,9 +556,13 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_event",
-        "//litert/c:litert_event_type",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -575,18 +608,16 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         ":litert_model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_event",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_model",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/runtime:tensor_buffer",
-        "//tflite/c:c_api_types",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -644,12 +675,15 @@ cc_library(
         ":litert_detail",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_expected",
-        "//tflite/c:c_api_types",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -680,23 +714,16 @@ cc_library(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_compiled_model",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
-        "//litert/c:litert_tensor_buffer",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -822,13 +849,14 @@ cc_library(
         ":litert_handle",
         ":litert_layout",
         ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_tensor_buffer",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
@@ -874,17 +902,16 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         ":litert_opaque_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_opaque_options",
-        "//litert/c:litert_options",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
-exports_files(srcs = ["litert_dispatch_delegate.h"])
+exports_files(glob([
+    "*.h",
+    "*.cc",
+]))
