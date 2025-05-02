@@ -16,6 +16,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
+        # copybara:uncomment_begin(internal)
         "//third_party/odml/infra/genai/inference:__subpackages__",
         "//litert/c:__subpackages__",
         "//litert/compiler:__subpackages__",
@@ -24,6 +25,9 @@ package(
         "//litert/tools:__subpackages__",
         "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
         "//third_party/odml/litert_lm/runtime:__subpackages__",
+        # copybara:commend_end_and_uncomment_begin
+        # "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
