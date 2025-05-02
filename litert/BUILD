@@ -55,6 +55,7 @@ package_group(
         # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
+        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
         # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
         "//litert/samples/...",
         "//litert/vendors/...",

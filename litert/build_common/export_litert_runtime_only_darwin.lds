@@ -1,2 +1,2 @@
 # All LiteRt C APIs
-LiteRt*
+_LiteRt*

@@ -114,6 +114,8 @@ def symbol_opts():
     """Defines linker flags whether to include symbols or not."""
     return select({
         "@org_tensorflow//tensorflow:debug": [],
+        "@org_tensorflow//tensorflow:macos": [],
+        "@org_tensorflow//tensorflow:ios": [],
         "//conditions:default": [
             # Omit symbol table, for all non debug builds
             "-Wl,-s",
