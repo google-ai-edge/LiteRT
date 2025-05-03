@@ -15,7 +15,6 @@ limitations under the License.
 
 #include <jni.h>
 
-#include <algorithm>
 #include <cstdint>
 
 #include "tflite/delegates/nnapi/nnapi_delegate.h"
