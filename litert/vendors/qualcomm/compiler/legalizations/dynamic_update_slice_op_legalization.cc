@@ -206,19 +206,22 @@ LiteRtStatus DynamicUpdateSliceOpLegalization::LegalizeOp(
   std::vector<uint32_t> transpose_operand_op_output_dims(
       kTransposeOpOutputRank);
   std::vector<uint32_t> transpose_update_op_output_dims(kTransposeOpOutputRank);
-  auto operand_dims = src.Inputs()[kDynamicUpdateSliceOpOperandIndex]
-                          .RankedTensorType()
-                          ->Layout()
-                          .Dimensions();
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto operand_type,
+      src.Inputs()[kDynamicUpdateSliceOpOperandIndex].RankedTensorType());
+  auto operand_dims = operand_type->Layout().Dimensions();
+
   transpose_operand_op_output_dims[0] = cast_f(operand_dims[1]);
   transpose_operand_op_output_dims[1] = cast_f(operand_dims[0]);
   transpose_operand_op_output_dims[2] = cast_f(operand_dims[2]);
   transpose_operand_op_output_dims[3] = cast_f(operand_dims[3]);
 
-  auto update_dims = src.Inputs()[kDynamicUpdateSliceOpUpdateIndex]
-                         .RankedTensorType()
-                         ->Layout()
-                         .Dimensions();
+  LITERT_ASSIGN_OR_RETURN(
+      auto update_type,
+      src.Inputs()[kDynamicUpdateSliceOpUpdateIndex].RankedTensorType());
+  auto update_dims = update_type->Layout().Dimensions();
+
   transpose_update_op_output_dims[0] = cast_f(update_dims[1]);
   transpose_update_op_output_dims[1] = cast_f(update_dims[0]);
   transpose_update_op_output_dims[2] = cast_f(update_dims[2]);
