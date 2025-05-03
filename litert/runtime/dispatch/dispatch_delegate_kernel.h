@@ -24,10 +24,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_dispatch_delegate.h"
-#include "litert/c/litert_metrics.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/runtime/metrics.h"
@@ -50,7 +47,8 @@ class DispatchDelegateKernel
   ~DispatchDelegateKernel() override;
 
   static Expected<Ptr> Create(std::string&& graph_name,
-                              const LiteRtDispatchDelegateOptions& options,
+                              LiteRtEnvironmentOptions environment_options,
+                              LiteRtOptions options,
                               LiteRtDispatchDeviceContext device_context);
 
   TfLiteStatus Init(TfLiteOpaqueContext* context,
@@ -67,11 +65,12 @@ class DispatchDelegateKernel
   Expected<LiteRtMetricsT> StopMetricsCollection();
 
  private:
-  DispatchDelegateKernel(const LiteRtDispatchDelegateOptions& options,
-                         std::string&& graph_name,
+  DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
+                         LiteRtOptions options, std::string&& graph_name,
                          LiteRtDispatchDeviceContext device_context,
                          bool async_dispatch)
-      : options_(options),
+      : environment_options_(environment_options),
+        options_(options),
         graph_name_(std::move(graph_name)),
         device_context_(std::move(device_context)),
         async_dispatch_(async_dispatch) {}
@@ -113,7 +112,11 @@ class DispatchDelegateKernel
   Expected<void> ScheduleAsyncExecution(TfLiteOpaqueContext* context);
   Expected<void> ScheduleSyncExecution(TfLiteOpaqueContext* context);
 
-  const LiteRtDispatchDelegateOptions& options_;
+  Expected<const void*> FindAllocBase() const;
+  Expected<int> FindAllocBaseFd() const;
+
+  LiteRtEnvironmentOptions environment_options_;
+  LiteRtOptions options_;
   const std::string graph_name_;
   LiteRtDispatchDeviceContext device_context_;
   const bool async_dispatch_;  // Indicates whether the Dispatch API can be

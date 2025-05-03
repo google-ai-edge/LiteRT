@@ -16,21 +16,18 @@
 
 #include <memory>
 
-#include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/environment.h"
+#include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
 
 namespace litert {
-
 namespace {
+
 constexpr const char kCpuAcceleratorName[] = "CpuAccelerator";
 
 struct CpuAcceleratorVersion {
@@ -53,8 +50,7 @@ class CpuAccelerator final
 
   // Creates a Dispatch delegate instance.
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOpaqueOptions options,
-                                     void** delegate) {
+                                     LiteRtOptions options, void** delegate) {
     LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
                   "Delegate pointer is null.");
     LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
@@ -84,10 +80,10 @@ class CpuAccelerator final
 
 extern "C" {
 
-LiteRtStatus LiteRtRegisterCpuAccelerator(
-    LiteRtEnvironmentT* environment, LiteRtCpuAcceleratorOptions* options) {
+LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
   LITERT_ENSURE(environment != nullptr, kLiteRtStatusErrorInvalidArgument,
-                "accelerator handle is invalid");
+                "environment handle is null");
+
   LiteRtAccelerator accelerator_handle;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
   litert::internal::AcceleratorGuard accelerator(accelerator_handle);
@@ -101,6 +97,7 @@ LiteRtStatus LiteRtRegisterCpuAccelerator(
   LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
       environment, accelerator.release(), accelerator_impl.release(),
       litert::CpuAccelerator::Destroy));
+
   return kLiteRtStatusOk;
 }
 

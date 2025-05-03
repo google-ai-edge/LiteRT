@@ -56,8 +56,7 @@ class DummyAccelerator {
   }
 
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOpaqueOptions options,
-                                     void** delegate) {
+                                     LiteRtOptions options, void** delegate) {
     return kLiteRtStatusOk;
   }
 

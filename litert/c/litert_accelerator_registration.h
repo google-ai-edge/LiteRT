@@ -74,8 +74,7 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
-                                   LiteRtOpaqueOptions options,
-                                   void** delegate),
+                                   LiteRtOptions options, void** delegate),
     void (*DestroyDelegate)(void* delegate));
 
 // Sets the function used to surface whether the delegate created by the

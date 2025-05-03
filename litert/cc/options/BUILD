@@ -16,7 +16,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # copybara:uncomment_begin(internal)
-        # "//litert:litert_stable_abi_users",
+        # "//litert:litert_public",
         # "//third_party/odml/litert_lm/runtime:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",

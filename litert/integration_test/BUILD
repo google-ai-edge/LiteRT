@@ -20,7 +20,7 @@ load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_stable_abi_users"],
+    default_visibility = ["//litert:litert_public"],
 )
 
 sh_binary(
