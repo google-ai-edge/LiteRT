@@ -94,7 +94,6 @@ LITERT_EXCLUDED_TARGETS=(
         # Requires mGPU environment.
         "-//litert/cc:litert_environment_test"
         "-//litert/runtime:compiled_model_test"
-        "-//litert/runtime:gpu_environment_test"
         # Requires c++20.
         "-//litert/tools:tool_display_test"
         # Requires c++20.

@@ -157,30 +157,30 @@ cc_library(
     }),
 )
 
-cc_test(
-    name = "gpu_environment_test",
-    srcs = ["gpu_environment_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    tags = [
-        "requires-gpu-nvidia",
-    ],
-    deps = [
-        ":gpu_environment",
-        "@com_google_googletest//:gtest_main",
-        # copybara:uncomment_begin(google-only)
-        # "@ml_drift//ml_drift/cl:environment",
-        # "@ml_drift//ml_drift/cl:opencl_wrapper",
-        # copybara:uncomment_end
-        "//litert/c:litert_any",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_environment_options",
-        "//litert/cc:litert_any",
-        "//litert/test:matchers",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "gpu_environment_test",
+#     srcs = ["gpu_environment_test.cc"],
+#     linkopts = select({
+#         "@org_tensorflow//tensorflow:android": ["-landroid"],
+#         "//conditions:default": [],
+#     }),
+#     tags = [
+#         "requires-gpu-nvidia",
+#     ],
+#     deps = [
+#         ":gpu_environment",
+#         "@com_google_googletest//:gtest_main",
+#         "@ml_drift//ml_drift/cl:environment",
+#         "@ml_drift//ml_drift/cl:opencl_wrapper",
+#         "//litert/c:litert_any",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/cc:litert_any",
+#         "//litert/test:matchers",
+#     ],
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "tfl_utils",
@@ -349,51 +349,53 @@ cc_test(
     }),
 )
 
-cc_library(
-    name = "tensor_buffer_conversion",
-    srcs = ["tensor_buffer_conversion.cc"],
-    hdrs = ["tensor_buffer_conversion.h"],
-    linkopts = gles_linkopts(),
-    deps = [
-        ":tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer_utils",
-        "@com_google_absl//absl/strings:str_format",
-    ] + gles_deps(),
-)
-
-cc_test(
-    name = "tensor_buffer_conversion_test",
-    srcs = ["tensor_buffer_conversion_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    tags = [
-        "notap",
-    ],
-    deps = [
-        ":tensor_buffer",
-        ":tensor_buffer_conversion",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_model",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_layout",
-        "//litert/core:environment",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
-)
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "tensor_buffer_conversion",
+#     srcs = ["tensor_buffer_conversion.cc"],
+#     hdrs = ["tensor_buffer_conversion.h"],
+#     linkopts = gles_linkopts(),
+#     deps = [
+#         ":tensor_buffer",
+#         "@com_google_absl//absl/strings:str_format",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_tensor_buffer_utils",
+#     ] + gles_deps(),
+# )
+#
+# cc_test(
+#     name = "tensor_buffer_conversion_test",
+#     srcs = ["tensor_buffer_conversion_test.cc"],
+#     linkopts = select({
+#         "@org_tensorflow//tensorflow:android": ["-landroid"],
+#         "//conditions:default": [],
+#     }),
+#     tags = [
+#         "notap",
+#     ],
+#     deps = [
+#         ":tensor_buffer",
+#         ":tensor_buffer_conversion",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_model",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_layout",
+#         "//litert/core:environment",
+#         "//litert/test:matchers",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "accelerator",
