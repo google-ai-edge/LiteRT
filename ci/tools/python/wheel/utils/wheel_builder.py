@@ -61,6 +61,9 @@ def parse_args() -> argparse.Namespace:
       "--py_src", help="single source file for the wheel", action="append"
   )
   parser.add_argument(
+      "--package_data", help="single source data for the wheel", action="append"
+  )
+  parser.add_argument(
       "--platform",
       required=True,
       help="Platform name to be passed to build module",
@@ -79,8 +82,9 @@ def create_empty_init_files(dst_dir: str) -> None:
   """Create __init__.py files."""
   dir_list = [f for f in os.scandir(dst_dir) if f.is_dir()]
   for dir_name in dir_list:
-    with open(os.path.join(dir_name, "__init__.py"), "w"):
-      pass
+    if not os.path.exists(os.path.join(dir_name, "__init__.py")):
+      with open(os.path.join(dir_name, "__init__.py"), "w"):
+        pass
     create_empty_init_files(dir_name.path)
 
 
@@ -125,6 +129,19 @@ def prepare_build_tree(tree_path, args, project_name: str):
   meta_dict = construct_meta_dict(args)
 
   create_init_files(src_dir, meta_dict)
+
+  # Copy package data files to the build tree, after filling the __init__.
+  for src in args.package_data:
+    def get_dest(file_path: str):
+      delimiter = "litert/"
+      index = file_path.find(delimiter)
+      if index != -1:
+        return file_path[index + len(delimiter):]
+      else:
+        return file_path
+    dest = os.path.join(src_dir, get_dest(src))
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.copyfile(src, dest)
 
 
 def build_pyproject_wheel(

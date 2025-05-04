@@ -41,6 +41,8 @@ def _py_wheel_impl(ctx):
     filelist = [f for filelist in filelist_lists for f in filelist]
     py_filelist_lists = [src.files.to_list() for src in ctx.attr.py_srcs]
     py_filelist = [f for py_filelist in py_filelist_lists for f in py_filelist]
+    package_data_filelist_lists = [src.files.to_list() for src in ctx.attr.package_data]
+    package_data_filelist = [f for package_data_filelist in package_data_filelist_lists for f in package_data_filelist]
     version = ctx.attr.version
     project_name = ctx.attr.project_name
 
@@ -67,6 +69,9 @@ def _py_wheel_impl(ctx):
     for f in py_filelist:
         args.add("--py_src", f.path)
 
+    for f in package_data_filelist:
+        args.add("--package_data", f.path)
+
     if ctx.attr.platform_name:
         args.add("--platform", ctx.attr.platform_name)
 
@@ -76,7 +81,7 @@ def _py_wheel_impl(ctx):
     ctx.actions.run(
         mnemonic = "WheelBuilder",
         arguments = [args],
-        inputs = filelist + py_filelist + [ctx.file.setup_py],
+        inputs = filelist + py_filelist + package_data_filelist + [ctx.file.setup_py],
         outputs = [output_file],
         executable = executable,
     )
@@ -89,6 +94,9 @@ py_wheel = rule(
             allow_files = True,
         ),
         "py_srcs": attr.label_list(
+            allow_files = True,
+        ),
+        "package_data": attr.label_list(
             allow_files = True,
         ),
         "project_name": attr.string(mandatory = True),

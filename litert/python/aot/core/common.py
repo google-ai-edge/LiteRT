@@ -25,6 +25,7 @@ NPU = "npu"
 
 
 _WORKSPACE_PREFIX = "litert"
+_AI_EDGE_LITERT_PREFIX = "ai_edge_litert"
 _LITERT_ROOT = ""
 _PYTHON_ROOT = "python/aot"
 
@@ -36,7 +37,11 @@ MODULE_ROOT = ".".join([
 
 
 def get_resource(litert_relative_path: pathlib.Path) -> pathlib.Path:
-  resource_root: abc.Traversable = resources.files(_WORKSPACE_PREFIX)
+  """Returns the path to a resource in the Litert workspace."""
+  try:
+    resource_root: abc.Traversable = resources.files(_WORKSPACE_PREFIX)
+  except ModuleNotFoundError:
+    resource_root: abc.Traversable = resources.files(_AI_EDGE_LITERT_PREFIX)
   litert_resource: abc.Traversable = resource_root.joinpath(
       _LITERT_ROOT, str(litert_relative_path)
   )

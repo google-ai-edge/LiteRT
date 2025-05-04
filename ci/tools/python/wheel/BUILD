@@ -43,6 +43,7 @@ genrule(
     cmd = "sed -e 's/tflite\\.profiling\\.proto/ai_edge_litert/g' $< > $@",
 )
 
+# This includes the dependencies that lives in litert/python/
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
 ALL_PY_SRC_MODULES = [
@@ -65,6 +66,11 @@ ALL_PY_SRC_MODULES = [
     "//litert/python/aot/vendors/qualcomm:target",
 ]
 
+# This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
+PACKAGE_DATA = [
+    "//litert/tools:apply_plugin_main",
+]
+
 py_wheel(
     name = "litert_wheel",
     srcs = [
@@ -77,6 +83,7 @@ py_wheel(
         "//tflite/python/metrics:metrics_interface",
     ],
     nightly_suffix = ":nightly_iso_date",
+    package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),
     project_name = "ai_edge_litert",
     py_srcs = ALL_PY_SRC_MODULES,
