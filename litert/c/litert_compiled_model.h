@@ -43,6 +43,9 @@ extern "C" {
 // `jit_compilation_options` is optional and can be null, and is owned by the
 // caller.  The model is loaded into memory and the caller takes ownership of
 // the returned object.
+//
+// Caller owns the returned LiteRtCompiledModel. The owner is responsible for
+// calling LiteRtDestroyCompiledModel() to release the object.
 LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                                        LiteRtModel model,
                                        LiteRtOptions compilation_options,
@@ -57,6 +60,9 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
 // - signature_index: the index of the signature in `LiteRtModel`.
 // - input_index: the index of the input tensor in the signature (subgraph).
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
+//
+// Note: The returned LiteRtTensorBufferRequirements is still owned by the
+// LiteRtCompiledModel and should not outlive the LiteRtCompiledModel.
 LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index,
@@ -71,6 +77,9 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 // - signature_index: the index of the signature in `LiteRtModel`.
 // - input_index: the index of the input tensor in the signature (subgraph).
 // - buffer_requirements: the returned `LiteRtTensorBufferRequirements`.
+//
+// Note: The returned LiteRtTensorBufferRequirements is still owned by the
+// LiteRtCompiledModel and should not outlive the LiteRtCompiledModel.
 LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
@@ -120,6 +129,7 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
 
+// Destroy a owned LiteRtCompiledModel object.
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
 
 // Start collection of HW-specific metrics at a specific level of detail (>= 0).

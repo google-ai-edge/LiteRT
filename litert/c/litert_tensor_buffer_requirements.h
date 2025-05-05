@@ -25,6 +25,12 @@
 extern "C" {
 #endif  // __cplusplus
 
+// Create a LiteRtTensorBufferRequirements from a list of supported tensor
+// buffer types, buffer size, and strides.
+//
+// Caller owns the returned LiteRtTensorBufferRequirements. The owner is
+// responsible for calling LiteRtDestroyTensorBufferRequirements() to release
+// the object.
 LiteRtStatus LiteRtCreateTensorBufferRequirements(
     int num_supported_tensor_buffer_types,
     const LiteRtTensorBufferType* supported_tensor_buffer_types,
@@ -52,6 +58,7 @@ LiteRtStatus LiteRtJoinTensorBufferRequirements(
     LiteRtTensorBufferRequirements src_requirements_2,
     LiteRtTensorBufferRequirements* joined_requirements);
 
+// Destroy a owned LiteRtTensorBufferRequirements object.
 void LiteRtDestroyTensorBufferRequirements(
     LiteRtTensorBufferRequirements requirements);
 

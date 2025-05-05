@@ -62,6 +62,9 @@ typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
 // with optional host memory buffer deallocator (it can be NULL). Return an
 // error if the passed host memory buffer doesn't satisfy
 // LITERT_HOST_MEMORY_BUFFER_ALIGNMENT alignment.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
     const LiteRtRankedTensorType* tensor_type, void* host_buffer_addr,
     size_t host_buffer_size, LiteRtHostMemoryDeallocator deallocator,
@@ -77,6 +80,9 @@ LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
 // be used to specify multiple tensor buffers sharing the same underlying AHWB,
 // in which case the provided AHWB must be sufficiently large to accomodate for
 // the allocation needed for all tensor buffers sharing it.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
     const LiteRtRankedTensorType* tensor_type, AHardwareBuffer* ahwb,
     size_t ahwb_offset, LiteRtAhwbDeallocator deallocator,
@@ -94,6 +100,9 @@ LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
 // the same underlying ION buffer, in which case parameter `ion_buffer_size`
 // must be the entire size of the underlying ION memory buffer, including the
 // allocation needed for all tensor buffers sharing it.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
     const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
@@ -112,6 +121,9 @@ LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer buffer,
 // the same underlying ION buffer, in which case parameter `ion_buffer_size`
 // must be the entire size of the underlying ION memory buffer, including the
 // allocation needed for all tensor buffers sharing it.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -132,6 +144,9 @@ LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
 // parameter `fastrpc_buffer_size` must be the entire size of the underlying
 // FastRPC memory buffer, including the allocation needed for all tensor buffers
 // sharing it.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
     int fastrpc_fd, size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset,
@@ -146,6 +161,9 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 #if LITERT_HAS_OPENCL_SUPPORT
 // Create a tensor buffer from an existing OpenCL memory of a given size, with
 // optional opencl memory buffer deallocator (it can be NULL).
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
@@ -157,6 +175,10 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                cl_mem* cl_mem_addr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+// Create a tensor buffer from an existing OpenGL Buffer.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     const LiteRtRankedTensorType* tensor_type, LiteRtGLenum target,
     LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -167,6 +189,10 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
                                            LiteRtGLuint* id, size_t* size_bytes,
                                            size_t* offset);
 
+// Create a tensor buffer from an existing OpenGL Texture.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     const LiteRtRankedTensorType* tensor_type, LiteRtGLenum target,
     LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer,
@@ -176,7 +202,10 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
 
-// Create a buffer backed by managed memory for a given size.
+// Create a managed TensorBuffer for a given size and type.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
@@ -240,7 +269,7 @@ LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
 // TODO b/413449050 - Update behavior to upload contents without conversion.
 LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 
-// Destroy a tensor buffer. If the tensor buffer is managed, the number of
+// Destroy a owned tensor buffer. If the tensor buffer is managed, the number of
 // references to it is decreased and released the underlying TensorBufferT when
 // the last reference is removed.
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer buffer);

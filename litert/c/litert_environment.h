@@ -24,13 +24,15 @@ extern "C" {
 
 // Create a LiteRT environment with options.
 // Used to set the path of the compiler plugin library and dispatch library.
+// Caller owns the returned LiteRtEnvironment. The owner is responsible for
+// calling LiteRtDestroyEnvironment() to release the environment.
 //
 // Note: options of kLiteRtEnvOptionTagOpenCl* shouldn't be set with this API.
 LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      const LiteRtEnvOption* options,
                                      LiteRtEnvironment* environment);
 
-// Destroy a created LiteRT environment.
+// Destroy a owned LiteRT environment object.
 void LiteRtDestroyEnvironment(LiteRtEnvironment environment);
 
 // Get the options that the environment was created with.
