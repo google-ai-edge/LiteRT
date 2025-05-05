@@ -1,5 +1,5 @@
 
-# LiteRT Android GPU Image Segmentation
+# LiteRT Android CPU/GPU/NPU Image Segmentation
 
 This project demonstrates:
 
@@ -24,10 +24,14 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
     the [-1, 1] range, outputting a new preprocessed **float** OpenGL buffer.
 4.  **Segmentation:**
     * The preprocessed float buffer (256x256) is passed to `SegmentationModel`.
+    * The `SegmentationModel` is initialized with an accelerator preference
+      (CPU, GPU, or NPU).
     * `SegmentationModel` reads buffer data (as floats).
     * It loads the segmentation model from model directory, and creates a
       `LiteRT` `CompiledModel` instance. It binds the input buffer to the
       model and generates 6 (256x256)segmentation masks for different classes.
+    * User can specify three different accelerators (gpu/npu/cpu) for executing the model.
+
 5.  **Coloring and Blending Masks:**
     * OpenGL buffer are created for each of the 6 (256x256) single-channel byte masks.
     * A predefined set of 6 RGBA colors is used.
@@ -60,7 +64,7 @@ Use the `deploy_and_run_on_android.sh` script. Review and edit paths within the
 script first.
 ```bash
 chmod +x deploy_and_run_on_android.sh
-./deploy_and_run_on_android.sh
+./deploy_and_run_on_android.sh --accelerator=gpu bazel-bin/
 ```
 
 Check for `output_segmented.png` on the device.

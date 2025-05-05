@@ -15,6 +15,7 @@
  */
 
 #include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <iostream>
 #include <string>
@@ -26,14 +27,23 @@
 #include "litert/samples/async_segmentation/segmentation_model.h"
 
 namespace {
-bool Initialize(ImageProcessor& processor, SegmentationModel& segmenter) {
+bool Initialize(ImageProcessor& processor, SegmentationModel& segmenter,
+                SegmentationModel::AcceleratorType accelerator_choice) {
   if (!processor.InitializeGL(
           "shaders/passthrough_shader.vert", "shaders/mask_blend_compute.glsl",
           "shaders/resize_compute.glsl", "shaders/preprocess_compute.glsl")) {
     std::cerr << "Failed to initialize ImageProcessor." << std::endl;
     return false;
   }
-  if (!segmenter.InitializeModel("./models/selfie_multiclass_256x256.tflite")) {
+  std::string model_path = "./models/selfie_multiclass_256x256.tflite";
+  std::string npu_library_path = "";
+  // We currently only support NPU model for Qualcomm devices (SM8750)
+  if (accelerator_choice == SegmentationModel::AcceleratorType::NPU) {
+    model_path = "./models/selfie_multiclass_256x256_SM8750.tflite";
+    npu_library_path = "/data/local/tmp/async_segmentation_android/npu/";
+  }
+  if (!segmenter.InitializeModel(model_path, accelerator_choice,
+                                 npu_library_path)) {
     std::cerr << "Failed to initialize SegmentationModel." << std::endl;
     processor.ShutdownGL();  // ImageProcessor destructor will handle this
     return false;
@@ -64,15 +74,33 @@ bool LoadImage(const std::string& path, ImageProcessor& processor, int& width,
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  if (argc != 3) {
-    std::cerr << "Usage: " << argv[0]
-              << " <input_image1_path> <output_image_path>" << std::endl;
+  if (argc < 3 || argc > 4) {
+    std::cerr
+        << "Usage: " << argv[0]
+        << " <input_image_path> <output_image_path> [cpu|gpu|npu (optional)]"
+        << std::endl;
     return 1;
   }
 
   const std::string input_file(argv[1]);
   const std::string output_file(argv[2]);
 
+  SegmentationModel::AcceleratorType accelerator_choice =
+      SegmentationModel::AcceleratorType::CPU;
+
+  if (argc == 4) {
+    std::string accelerator_arg = argv[3];
+    std::transform(accelerator_arg.begin(), accelerator_arg.end(),
+                   accelerator_arg.begin(), ::tolower);
+    if (accelerator_arg == "gpu") {
+      accelerator_choice = SegmentationModel::AcceleratorType::GPU;
+    } else if (accelerator_arg == "npu") {
+      accelerator_choice = SegmentationModel::AcceleratorType::NPU;
+    } else if (accelerator_arg != "cpu") {
+      std::cerr << "Warning: Unknown accelerator '" << argv[3]
+                << "'. Defaulting to CPU." << std::endl;
+    }
+  }
   // Define 6 distinct colors for the masks (RGBA)
   std::vector<RGBAColor> mask_colors = {
       {1.0f, 0.0f, 0.0f, 0.1f},  // Red (semi-transparent)
@@ -85,7 +113,7 @@ int main(int argc, char* argv[]) {
   ImageProcessor processor;
   SegmentationModel segmenter =
       SegmentationModel(&processor);  // Create segmentation model instance
-  if (!Initialize(processor, segmenter)) {
+  if (!Initialize(processor, segmenter, accelerator_choice)) {
     return 1;
   }
 

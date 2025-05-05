@@ -53,6 +53,8 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
@@ -63,6 +65,7 @@ cc_binary(
         ":image_utils",
         ":segmentation_model",
         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+        "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
         "//third_party/GL:GLES2_headers",
     ],
 )
@@ -106,6 +109,7 @@ cc_library(
         "//third_party/GL:GLES3_headers",
         "//third_party/GL/native:EGL",
         "//third_party/GL/native:GLESv3",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )

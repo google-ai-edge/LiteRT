@@ -31,12 +31,19 @@
 
 class SegmentationModel {
  public:
-  explicit SegmentationModel(ImageProcessor* image_processor)
+  // Enum to specify accelerator type
+  enum class AcceleratorType { CPU, GPU, NPU };
+
+  explicit SegmentationModel(
+      ImageProcessor* image_processor,
+      AcceleratorType accelerator_type = AcceleratorType::GPU)
       : image_processor_(image_processor) {};
   ~SegmentationModel() = default;
 
   // Initializes the LiteRT model from a given path.
-  bool InitializeModel(const std::string& model_path);
+  bool InitializeModel(const std::string& model_path,
+                       AcceleratorType accelerator_type = AcceleratorType::GPU,
+                       std::string npu_library_path = "");
 
   // Takes an SSBO ID as input
   bool RunSegmentation(GLuint preprocessed_input_buffer_id, int input_width,
@@ -50,6 +57,7 @@ class SegmentationModel {
   litert::Model model_;
   litert::CompiledModel compiled_model_;
   ImageProcessor* image_processor_;
+  AcceleratorType current_accelerator_ = AcceleratorType::CPU;
 
   std::vector<litert::TensorBuffer> input_buffers_;
   std::vector<litert::TensorBuffer> output_buffers_;

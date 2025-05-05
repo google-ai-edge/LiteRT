@@ -23,6 +23,7 @@
 
 #include "third_party/GL/gl/include/GLES2/gl2.h"
 #include "third_party/GL/gl/include/GLES3/gl3.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -31,14 +32,44 @@
 #include "litert/cc/litert_model.h"
 #include "litert/samples/async_segmentation/image_processor.h"
 
-bool SegmentationModel::InitializeModel(const std::string& model_path) {
+bool SegmentationModel::InitializeModel(const std::string& model_path,
+                                        AcceleratorType accelerator_type,
+                                        std::string npu_library_path) {
+  current_accelerator_ = accelerator_type;
   std::cout << "SegmentationModel: Initializing model ... Path: " << model_path
             << std::endl;
   LITERT_ASSIGN_OR_ABORT(model_, litert::Model::CreateFromFile(model_path));
   LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
 
-  LITERT_ASSIGN_OR_ABORT(compiled_model_,
-      litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorGpu));
+  switch (current_accelerator_) {
+    case AcceleratorType::CPU: {
+      LITERT_ASSIGN_OR_ABORT(
+          compiled_model_,
+          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorCpu));
+      break;
+    }
+    case AcceleratorType::GPU: {
+      LITERT_ASSIGN_OR_ABORT(
+          compiled_model_,
+          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorGpu));
+      break;
+    }
+    case AcceleratorType::NPU: {
+      // Environment setup.
+      const std::vector<litert::Environment::Option> environment_options = {
+        litert::Environment::Option{
+            litert::Environment::OptionTag::DispatchLibraryDir,
+            absl::string_view(npu_library_path),
+        },
+      };
+      LITERT_ASSIGN_OR_ABORT(env,
+                            litert::Environment::Create(environment_options));
+      LITERT_ASSIGN_OR_ABORT(
+          compiled_model_,
+          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorNpu));
+      break;
+    }
+  }
 
   LITERT_ASSIGN_OR_ABORT(auto signatures, model_.GetSignatures());
 
@@ -92,8 +123,19 @@ bool SegmentationModel::RunSegmentation(
     GLuint preprocessed_input_buffer_id, int input_width, int input_height,
     std::vector<GLuint>& output_buffer_ids) {
   std::cout << "SegmentationModel: Running segmentation on preprocessed "
-               "texture ..."
-            << std::endl;
+               "buffer on accelerator: ";
+  switch (current_accelerator_) {
+    case AcceleratorType::GPU:
+      std::cout << "GPU";
+      break;
+    case AcceleratorType::NPU:
+      std::cout << "NPU";
+      break;
+    default:
+      std::cout << "CPU";
+      break;
+  }
+  std::cout << std::endl;
   if (input_width != 256 || input_height != 256) {
     std::cerr << "SegmentationModel: Error - input to runSegmentation should "
                  "be preprocessed (256x256)."
