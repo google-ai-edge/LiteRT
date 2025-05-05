@@ -87,6 +87,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_api",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
