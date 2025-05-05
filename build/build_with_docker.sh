@@ -14,6 +14,10 @@
 
 #!/bin/bash
 
+# Change to the directory of this script.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}"
+
 # Check if Docker is installed and running
 if ! command -v docker &> /dev/null; then
     echo "Error: Docker is not installed or not in PATH"
