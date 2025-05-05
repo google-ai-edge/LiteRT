@@ -130,6 +130,12 @@ LiteRtStatus LiteRtCompiledModelStartMetricsCollection(
 LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
     LiteRtCompiledModel compiled_model, LiteRtMetrics metrics);
 
+// Returns true if the model is fully accelerated for all the selected HW
+// accelerator(s). For example, if both GPU and NPU are selected and the model
+// is only delegated to GPU, this method will still return true.
+LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
+    LiteRtCompiledModel compiled_model, bool* fully_accelerated);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

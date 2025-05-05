@@ -241,4 +241,10 @@ Expected<CompiledModel::Metrics> CompiledModel::StopMetricsCollection() {
   return CompiledModel::Metrics{.metrics = std::move(compiled_model_metrics)};
 }
 
+Expected<bool> CompiledModel::IsFullyAccelerated() {
+  bool fully_accelerated = false;
+  LITERT_RETURN_IF_ERROR(LiteRtCompiledModelIsFullyAccelerated(
+      Get(), &fully_accelerated));
+  return fully_accelerated;
+}
 }  // namespace litert

@@ -58,6 +58,11 @@ TEST(CompiledModelTest, Basic) {
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
+  // Check fully accelerated.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
+                              compiled_model.IsFullyAccelerated());
+  ASSERT_TRUE(fullyAccelerated);
+
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(

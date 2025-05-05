@@ -389,6 +389,8 @@ class CompiledModel
   // Stops collection of HW-specific metrics and report the collected metrics.
   Expected<Metrics> StopMetricsCollection();
 
+  Expected<bool> IsFullyAccelerated();
+
  private:
   // Returns the signature input index for the given input tensor name.
   Expected<size_t> FindInputIndex(size_t signature_index,

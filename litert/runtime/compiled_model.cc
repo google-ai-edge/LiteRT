@@ -302,8 +302,10 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                                       accelerator->StopMetricsCollection});
   }
 
+  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
+                          compiled_model->HasNonDelegatedOps());
   if (!(hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-      compiled_model->HasNonDelegatedOps()) {
+      has_non_delegated_ops) {
     return litert::Error(
         kLiteRtStatusErrorCompilation,
         "Some ops are not accelerated. Add kLiteRtHwAcceleratorCpu to the "
@@ -313,7 +315,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   return compiled_model;
 }
 
-bool LiteRtCompiledModelT::HasNonDelegatedOps() {
+Expected<bool> LiteRtCompiledModelT::HasNonDelegatedOps() {
   for (int subgraph_no = 0; subgraph_no < interp_->subgraphs_size();
        ++subgraph_no) {
     const auto* const subgraph = interp_->subgraph(subgraph_no);

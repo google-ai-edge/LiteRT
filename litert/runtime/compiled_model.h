@@ -112,6 +112,9 @@ class LiteRtCompiledModelT {
 
   litert::Expected<LiteRtMetricsT> StopMetricsCollection();
 
+  // Returns true if a non delegated operation is found in the interpreter.
+  litert::Expected<bool> HasNonDelegatedOps();
+
  private:
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
@@ -206,9 +209,6 @@ class LiteRtCompiledModelT {
 
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
-
-  // Returns true if a non delegated operation is found in the interpreter.
-  bool HasNonDelegatedOps();
 
   // NOTE: Any fields that must be destroyed after the TFL interpreter
   // is destroyed must be listed before field interp_.

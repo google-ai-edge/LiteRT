@@ -159,6 +159,18 @@ LiteRtStatus LiteRtCompiledModelStopMetricsCollection(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
+    LiteRtCompiledModel compiled_model, bool* fully_accelerated) {
+  LITERT_RETURN_IF_ERROR(
+      compiled_model != nullptr && fully_accelerated != nullptr,
+      kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSIGN_OR_RETURN(bool has_non_delegated_ops,
+                          compiled_model->HasNonDelegatedOps());
+  *fully_accelerated = !has_non_delegated_ops;
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
