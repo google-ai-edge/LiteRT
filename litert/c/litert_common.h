@@ -176,6 +176,15 @@ typedef enum {
   kLiteRtDelegatePrecisionFp32 = 2,
 } LiteRtDelegatePrecision;
 
+// Storage type needed by buffers to be allocated in the GPU delegate.
+// Default means the storage type will be automatically determined by the
+// delegate.
+typedef enum {
+  kLiteRtDelegateBufferStorageTypeDefault = 0,
+  kLiteRtDelegateBufferStorageTypeBuffer = 1,
+  kLiteRtDelegateBufferStorageTypeTexture2D = 2,
+} LiteRtDelegateBufferStorageType;
+
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;
 

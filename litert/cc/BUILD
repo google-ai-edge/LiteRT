@@ -806,8 +806,11 @@ litert_device_test(
 #         ":litert_compiled_model",
 #         ":litert_environment",
 #         ":litert_event",
+#         ":litert_expected",
+#         ":litert_macros",
 #         ":litert_model",
 #         ":litert_options",
+#         ":litert_platform_support",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/debugging:leak_check",
@@ -817,6 +820,8 @@ litert_device_test(
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/runtime/accelerators/gpu:accelerator_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
@@ -825,7 +830,15 @@ litert_device_test(
 #         "//tflite/c:c_api_opaque",
 #         "//tflite/c:common",
 #         "//tflite/kernels:builtin_ops",
-#     ],
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/cl:cl_device",
+#             "//tflite/delegates/gpu/cl:gl_interop",
+#             "//tflite/delegates/gpu/cl:opencl_wrapper",
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
 # )
 #
 # litert_device_exec(

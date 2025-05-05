@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -25,15 +26,28 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/runtime/accelerators/gpu/accelerator_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "tflite/delegates/gpu/cl/cl_device.h"
+#include "tflite/delegates/gpu/cl/gl_interop.h"
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#include "tflite/delegates/gpu/gl/egl_environment.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 using testing::Eq;
 using testing::FloatNear;
@@ -340,6 +354,258 @@ TEST(CompiledModelGpuTest, BasicAdd3dCstInt32) {
                      << kInt32TestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(Eq(), kInt32TestOutputTensor));
+  }
+}
+
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
+    CompiledModel& compiled_model, Signature& signature) {
+  LiteRtSubgraph subgraph_handle = signature.Subgraph();
+  Subgraph subgraph = Subgraph(subgraph_handle);
+
+  std::vector<TensorBuffer> input_buffers;
+  input_buffers.reserve(subgraph.Inputs().size());
+  for (Tensor& input_tensor : subgraph.Inputs()) {
+    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements input_buffer_requirements,
+                            compiled_model.GetInputBufferRequirements(
+                                signature.Key(), input_tensor.Name()));
+    LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
+                            input_tensor.RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            input_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto input_buffer,
+        TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                    ranked_tensor_type, buffer_size));
+    input_buffers.push_back(std::move(input_buffer));
+  }
+  return input_buffers;
+}
+
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
+    CompiledModel& compiled_model, Signature& signature) {
+  LiteRtSubgraph subgraph_handle = signature.Subgraph();
+  Subgraph subgraph = Subgraph(subgraph_handle);
+
+  std::vector<TensorBuffer> output_buffers;
+  output_buffers.reserve(subgraph.Outputs().size());
+  for (Tensor& output_tensor : subgraph.Outputs()) {
+    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements input_buffer_requirements,
+                            compiled_model.GetOutputBufferRequirements(
+                                signature.Key(), output_tensor.Name()));
+    LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
+                            output_tensor.RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            input_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto output_buffer,
+        TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                    ranked_tensor_type, buffer_size));
+    output_buffers.push_back(std::move(output_buffer));
+  }
+  return output_buffers;
+}
+
+bool IsGlClInteropSupported() {
+  if (!HasOpenGlSupport() || !HasOpenClSupport()) {
+    return false;
+  }
+#if LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+  if (!tflite::gpu::cl::LoadOpenCL().ok()) {
+    return false;
+  }
+  tflite::gpu::cl::CLDevice device;
+  if (!tflite::gpu::cl::CreateDefaultGPUDevice(&device).ok()) {
+    return false;
+  }
+  return tflite::gpu::cl::IsGlSharingSupported(device);
+#else
+  return false;
+#endif  // LITERT_HAS_OPENCL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+}
+
+// Runs model synchronously on OpenCL with GL input/output buffers.
+TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
+  if (!IsGlClInteropSupported()) {
+    GTEST_SKIP() << "GPU tests are not supported in this configuration";
+  }
+  // MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  // Check input and output path
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
+                              litert::ml_drift::GpuOptions::Create());
+  LITERT_ASSERT_OK(
+      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+  LITERT_ASSERT_OK(
+      gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.AddOpaqueOptions(std::move(gpu_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  auto signature_key = signatures[0].Key();
+  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
+  size_t signature_index = 0;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers, CreateGlInputBuffers(compiled_model, signatures[0]));
+
+  // Fill model inputs.
+  auto input_names = signatures[0].InputNames();
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // After GL buffers are filled, create and set egl sync fence event to each
+  // buffer. This ensures proper synchronization in the GPU command queue.
+  for (int i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
+                                input_buffers[i].BufferType());
+    ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto input_event, Event::CreateManaged(LiteRtEventTypeEglSyncFence));
+    input_buffers[i].SetEvent(std::move(input_event));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      CreateGlOutputBuffers(compiled_model, signatures[0]));
+
+  compiled_model.Run(signature_index, input_buffers, output_buffers);
+
+  // Check model output.
+  auto output_names = signatures[0].OutputNames();
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  {
+    auto lock_and_addr =
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
+// Runs model asynchronously on OpenCL with GL input/output buffers.
+TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
+  if (!IsGlClInteropSupported()) {
+    GTEST_SKIP() << "GPU tests are not supported in this configuration";
+  }
+  // MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  // Check input and output path
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
+                              litert::ml_drift::GpuOptions::Create());
+  LITERT_ASSERT_OK(
+      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+  LITERT_ASSERT_OK(
+      gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.AddOpaqueOptions(std::move(gpu_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
+  EXPECT_EQ(signatures.size(), 1);
+
+  auto signature_key = signatures[0].Key();
+  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
+  size_t signature_index = 0;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffers, CreateGlInputBuffers(compiled_model, signatures[0]));
+
+  // Fill model inputs.
+  auto input_names = signatures[0].InputNames();
+  EXPECT_EQ(input_names.size(), 2);
+  EXPECT_EQ(input_names.at(0), "arg0");
+  EXPECT_EQ(input_names.at(1), "arg1");
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // After GL buffers are filled, create and set egl sync fence event to each
+  // buffer. This ensures proper synchronization in the GPU command queue.
+  for (int i = 0; i < input_buffers.size(); ++i) {
+    LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
+                                input_buffers[i].BufferType());
+    ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto input_event, Event::CreateManaged(LiteRtEventTypeEglSyncFence));
+    input_buffers[i].SetEvent(std::move(input_event));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_buffers,
+      CreateGlOutputBuffers(compiled_model, signatures[0]));
+
+  // Execute model asynchronously.
+  bool async_execution_mode = true;
+  compiled_model.RunAsync(signature_index, input_buffers, output_buffers,
+                          async_execution_mode);
+
+  ASSERT_TRUE(output_buffers[0].HasEvent());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_event, output_buffers[0].GetEvent());
+  ASSERT_TRUE(output_event.Wait());
+
+  // Check model output.
+  auto output_names = signatures[0].OutputNames();
+  EXPECT_EQ(output_names.size(), 1);
+  EXPECT_EQ(output_names.at(0), "tfl.add");
+  {
+    auto lock_and_addr =
+        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
 
