@@ -388,5 +388,12 @@ TEST(TensorWrapperTest, QnnTensorPerChannelQuantConstructTest) {
   EXPECT_EQ(ref.v2.clientBuf.dataSize, qnn_tensor.v2.clientBuf.dataSize);
   EXPECT_EQ(ref.v2.clientBuf.data, qnn_tensor.v2.clientBuf.data);
 }
+
+TEST(TensorWrapperTest, SameTensorWrapperTest) {
+  TensorWrapper tensor_wrapper_1{};
+  EXPECT_EQ(tensor_wrapper_1, tensor_wrapper_1);
+  TensorWrapper& tensor_wrapper_ref = tensor_wrapper_1;
+  EXPECT_EQ(tensor_wrapper_1, tensor_wrapper_ref);
+}
 }  // namespace
 }  // namespace qnn
