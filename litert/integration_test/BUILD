@@ -351,20 +351,19 @@ litert_device_test(
 #     ],
 # )
 #
-# CPU_KOTLIN_GUITAR_TARGS = [
-#     # TODO: b/409462940 - Re-enable once the bug is fixed.
-#     # "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
-#     # "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test",
-# ]
-#
-# # TODO: b/409462940 - Add this to presubmit once the bug is fixed.
 # guitar_workflow_test(
-#     name = "litert_guitar_kotlin_tests",
-#     auto_deps = CPU_KOTLIN_GUITAR_TARGS,
+#     name = "litert_guitar_device_integration_tests_kotlin",
+#     auto_deps = [
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test",
+#     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
 #             litert_cpu_mh_guitar_test(
-#                 targets = CPU_KOTLIN_GUITAR_TARGS,
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
+#             ),
+#             litert_qualcomm_mh_guitar_test(
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test"],
 #             ),
 #         ],
 #     ),
