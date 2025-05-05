@@ -82,10 +82,6 @@ JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetStrides(
     JNIEnv* env, jclass clazz, jlong handle);
 
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeDestroy(
-    JNIEnv* env, jclass clazz, jlong handle);
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

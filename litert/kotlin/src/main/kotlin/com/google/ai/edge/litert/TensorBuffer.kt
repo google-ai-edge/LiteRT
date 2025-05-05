@@ -138,7 +138,7 @@ enum class TensorBufferType(private val type: Int) {
 /** Requirements for allocating a TensorBuffer. */
 class TensorBufferRequirements internal constructor(handle: Long) : JniHandle(handle) {
   override fun destroy() {
-    nativeDestroy(handle)
+    // The object is owned by the compiled model.
   }
 
   /** Returns all the types supported by the tensor buffer requirements. */
@@ -170,7 +170,5 @@ class TensorBufferRequirements internal constructor(handle: Long) : JniHandle(ha
     @JvmStatic private external fun nativeBufferSize(handle: Long): Int
 
     @JvmStatic private external fun nativeGetStrides(handle: Long): IntArray
-
-    @JvmStatic private external fun nativeDestroy(handle: Long)
   }
 }

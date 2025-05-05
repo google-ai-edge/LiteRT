@@ -301,13 +301,6 @@ Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetStrides(
   return result;
 }
 
-JNIEXPORT void JNICALL
-Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeDestroy(
-    JNIEnv* env, jclass clazz, jlong handle) {
-  LiteRtDestroyTensorBufferRequirements(
-      reinterpret_cast<LiteRtTensorBufferRequirements>(handle));
-}
-
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
