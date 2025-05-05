@@ -17,16 +17,17 @@ package(
     default_visibility = [
         # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
         # copybara:uncomment_begin(internal)
-        # "//third_party/darwinn/tflite:__subpackages__",
         # "//third_party/darwinn/litert:__subpackages__",
+        # "//third_party/darwinn/tflite:__subpackages__",
+        # "@mediapipe//mediapipe/calculators:__subpackages__",
         # "//third_party/odml/infra/genai/inference:__subpackages__",
+        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        # "//third_party/odml/litert_lm/runtime:__subpackages__",
         # "//litert/c:__subpackages__",
         # "//litert/compiler:__subpackages__",
         # "//litert/core:__subpackages__",
         # "//litert/runtime:__subpackages__",
         # "//litert/tools:__subpackages__",
-        # "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
-        # "//third_party/odml/litert_lm/runtime:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
