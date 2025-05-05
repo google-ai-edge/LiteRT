@@ -257,6 +257,15 @@ TEST(CcTensorTest, Name) {
   EXPECT_EQ(cc_tensor.Name(), kName);
 }
 
+TEST(CcTensorTest, Index) {
+  static constexpr std::uint32_t kIndex = 1;
+  LiteRtTensorT tensor;
+  tensor.SetTensorIndex(kIndex);
+
+  Tensor cc_tensor(&tensor);
+  EXPECT_EQ(cc_tensor.TensorIndex(), kIndex);
+}
+
 TEST(CcTensorTest, QuantizationNone) {
   LiteRtTensorT litert_tensor;
   litert_tensor.Qparams().first = kLiteRtQuantizationNone;

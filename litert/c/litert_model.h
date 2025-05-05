@@ -36,6 +36,9 @@ extern "C" {
 // attribute and if not set will return a zero-length string.
 LiteRtStatus LiteRtGetTensorName(LiteRtTensor tensor, const char** name);
 
+// Get the index associated with this tensor.
+LiteRtStatus LiteRtGetTensorIndex(LiteRtTensor tensor, uint32_t* tensor_index);
+
 // TENSOR TYPES
 
 // Primitive types for elements in a tensor.

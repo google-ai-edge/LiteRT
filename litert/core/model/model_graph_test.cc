@@ -91,9 +91,11 @@ static constexpr absl::Span<const int32_t> kDimsSpan(kDims);
 static constexpr auto kType = kLiteRtElementTypeInt32;
 static constexpr absl::string_view kCustomOptions = "OPTIONS";
 static constexpr auto kOpCode = kLiteRtOpCodeTflMul;
+static constexpr uint32_t kIndex = 1;
 
 LiteRtTensorT TestTensor() {
   LiteRtTensorT tensor;
+  tensor.SetTensorIndex(kIndex);
   tensor.Type().first = kLiteRtRankedTensorType;
   tensor.Type().second.ranked_tensor_type.element_type = kType;
   tensor.Type().second.ranked_tensor_type.layout.dimensions[0] = kDims[0];
@@ -120,6 +122,7 @@ TEST(ModelGraphTest, CloneTensor) {
   LiteRtTensorT dest;
   CloneTo(TestTensor(), dest);
   EXPECT_THAT(dest, HasRankedType(kType, kDimsSpan));
+  EXPECT_THAT(dest.TensorIndex(), kIndex);
 }
 
 TEST(ModelQuantizationTypeTest, ClonePerChannelQuantization) {
