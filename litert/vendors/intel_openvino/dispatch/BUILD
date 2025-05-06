@@ -12,8 +12,10 @@ litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
         "dispatch_api.cc",
+        "device_context.cc",
     ],
     hdrs = [
+        "device_context.h",
     ],
     copts = [
         "-Os",
