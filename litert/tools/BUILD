@@ -93,8 +93,8 @@ litert_cc_bin_with_qnn(
         # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         # "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-        # "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
-        # "//third_party/neuro_pilot:v7_0_8_20250225/host/lib/libneuron_adapter.so",
+        # "@neuro_pilot//:latest/host/lib/libneuron_adapter.so",
+        # "@neuro_pilot//:v7_0_8_20250225/host/lib/libneuron_adapter.so",
         # copybara:uncomment_end
     ],
     export_litert_only = 1,

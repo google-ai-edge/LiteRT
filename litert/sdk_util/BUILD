@@ -115,7 +115,7 @@ litert_test(
     srcs = ["check_sdk_deps_test.cc"],
     data = select({
         "@org_tensorflow//tensorflow:linux_x86_64": [
-            # copybara:uncomment "//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so",
+            # copybara:uncomment "@neuro_pilot//:latest/host/lib/libneuron_adapter.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
             "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
         ],
@@ -124,7 +124,7 @@ litert_test(
     linkopts = ["-ldl"] + select({
         "@org_tensorflow//tensorflow:linux_x86_64": [
             make_rpaths(["@qairt//:lib/x86_64-linux-clang/libQnnHtp.so"]),
-            # copybara:uncomment make_rpaths(["//third_party/neuro_pilot:latest/host/lib/libneuron_adapter.so"]),
+            # copybara:uncomment make_rpaths(["@neuro_pilot//:latest/host/lib/libneuron_adapter.so"]),
         ],
         "//conditions:default": [],
     }) + ["-Wl,--disable-new-dtags"],
@@ -138,7 +138,7 @@ litert_test(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
+        # copybara:uncomment "@neuro_pilot//:latest_host_headers",
         "@qairt//:qnn_lib_headers",
     ],
 )

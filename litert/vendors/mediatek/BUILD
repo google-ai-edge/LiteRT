@@ -34,13 +34,13 @@ litert_cc_lib_with_mtk(
     ],
     ungrte = True,
     deps = [
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:string_view",
-        # copybara:uncomment "//third_party/neuro_pilot:latest_host_headers",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@neuro_pilot//:latest_host_headers",
     ],
 )
