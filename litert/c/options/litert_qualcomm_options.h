@@ -15,10 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_opaque_options.h"
 
 // User-facing options for Qualcomm. This is not built as part of
 // libLiteRt_QualcommXXX.so, and should not include `vendor/` or qnn sdk
@@ -27,6 +25,9 @@
 // C-API for an opaque options type relevant to Qualcomm (both dspatch and
 // plugin).
 #ifdef __cplusplus
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_opaque_options.h"
+
 extern "C" {
 #endif  // __cplusplus
 

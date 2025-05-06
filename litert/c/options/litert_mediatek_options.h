@@ -15,9 +15,11 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+
+#ifdef __cplusplus
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
-#ifdef __cplusplus
+
 extern "C" {
 #endif  // __cplusplus
 
@@ -44,10 +46,10 @@ typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
 } LiteRtMediatekOptionsNeronSDKVersion;
 LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
     LiteRtMediatekOptions options,
-    LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
+    enum LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
 LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     LiteRtMediatekOptions options,
-    LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
+    enum LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
 #ifdef __cplusplus
 
 }  // extern "C"

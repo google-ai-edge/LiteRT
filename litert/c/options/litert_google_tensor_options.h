@@ -15,14 +15,15 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_
 
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+
+#ifdef __cplusplus
 #include <string>
 #include <vector>
 
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_opaque_options.h"
 
-#ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
@@ -109,6 +110,7 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetShardingIntensity(
     LiteRtGoogleTensorOptions options,
     LiteRtGoogleTensorOptionsShardingIntensity* sharding_intensity);
 
+#ifdef __cplusplus
 // testing flags ---------------------------------------------------------------
 LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
     LiteRtGoogleTensorOptions options, const std::string& testing_flags);
@@ -117,7 +119,6 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
     LiteRtGoogleTensorOptions options,
     std::vector<std::vector<std::string>>* testing_flags);
 
-#ifdef __cplusplus
 }  // extern "C"
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////

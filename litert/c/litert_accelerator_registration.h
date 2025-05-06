@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_ACCELERATOR_REGISTRATION_H_
 #define ODML_LITERT_LITERT_C_LITERT_ACCELERATOR_REGISTRATION_H_
 
+#include <stdbool.h>  // NOLINT
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
