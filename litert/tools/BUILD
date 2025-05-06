@@ -305,7 +305,6 @@ cc_binary(
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc/internal:litert_environment",

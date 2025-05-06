@@ -25,7 +25,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -48,6 +47,8 @@ ABSL_FLAG(bool, compare_numerical, false,
 ABSL_FLAG(size_t, sample_size, 5,
           "Number of sample elements to print from beginning, middle, and end "
           "of tensor.");
+ABSL_FLAG(size_t, iterations, 1,
+          "The number of iterations the graph will execute.");
 
 namespace litert {
 namespace {
@@ -198,12 +199,32 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto output_buffers,
                           compiled_model.CreateOutputBuffers(signature_index));
 
-  ABSL_LOG(INFO) << "Run model";
-  uint64_t start = tflite::profiling::time::NowMicros();
-  auto status =
-      compiled_model.Run(signature_index, input_buffers, output_buffers);
-  uint64_t end = tflite::profiling::time::NowMicros();
-  LITERT_LOG(LITERT_INFO, "Run took %lu microseconds", end - start);
+  const size_t iterations = absl::GetFlag(FLAGS_iterations);
+  if (iterations <= 0) {
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "iterations should be large than zero.");
+  }
+
+  ABSL_LOG(INFO) << "Run model for " << iterations << " times";
+  litert::Expected<void> status;
+  std::vector<uint64_t> timers(iterations, 0);
+  for (auto& timer : timers) {
+    uint64_t start = tflite::profiling::time::NowMicros();
+    status = compiled_model.Run(signature_index, input_buffers, output_buffers);
+    uint64_t end = tflite::profiling::time::NowMicros();
+    timer = end - start;
+  }
+  ABSL_LOG(INFO) << "First run took " << timers[0] << " microseconds";
+  ABSL_LOG(INFO) << "Slowest run took "
+                 << *std::max_element(timers.begin(), timers.end())
+                 << " microseconds";
+  ABSL_LOG(INFO) << "Fastest run took "
+                 << *std::min_element(timers.begin(), timers.end())
+                 << " microseconds";
+  ABSL_LOG(INFO) << "All runs took average "
+                 << std::accumulate(timers.begin(), timers.end(), uint64_t{0}) /
+                        timers.size()
+                 << " microseconds";
 
   // Print output tensor information and values if requested
   if (absl::GetFlag(FLAGS_print_tensors)) {
@@ -226,7 +247,7 @@ int main(int argc, char** argv) {
 
   auto res = litert::RunModel();
   if (!res) {
-    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
+    ABSL_LOG(ERROR) << res.Error().Message();
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
