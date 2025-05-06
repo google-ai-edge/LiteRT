@@ -1,0 +1,2 @@
+graft ai_edge_litert_sdk_qualcomm/data
+include ai_edge_litert_sdk_qualcomm/__init__.py

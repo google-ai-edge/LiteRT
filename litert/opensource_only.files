@@ -1,3 +1,5 @@
+ci/tools/python/vendor_sdk/BUILD:
+ci/tools/python/vendor_sdk/qualcomm/BUILD:
 ci/tools/python/wheel/BUILD:
 ci/tools/python/wheel/utils/BUILD:
 litert/build_common/special_rule.bzl:

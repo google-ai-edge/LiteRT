@@ -72,6 +72,13 @@ function initialize_pip_wheel_environment {
 
 }
 
+function install_sdk {
+  local sdk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
+  ${PYTHON_BIN} -m pip install ${sdk_dist_pkg?} --ignore-installed
+
+  echo
+}
+
 function install_wheel {
   local dist_pkg="$(ls ./dist/${pkg}*.whl)"
   ${PYTHON_BIN} -m pip install ${dist_pkg?} --ignore-installed
@@ -86,6 +93,11 @@ function uninstall_pip {
   local pip_pkg="ai-edge-litert"
 
   yes | ${PYTHON_BIN} -m pip uninstall ${pip_pkg}
+
+  local qnn_pip_pkg="ai_edge_litert_sdk_qualcomm"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${qnn_pip_pkg}
+
   echo
 }
 
@@ -93,6 +105,7 @@ function test_import {
   # Test whether import is successful.
   echo "------ Test import -----"
   ${PYTHON_BIN} -c "import ai_edge_litert"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   echo
 }
 
@@ -102,6 +115,7 @@ function test_ai_edge_litert {
   create_venv
   initialize_pip_wheel_environment
   ./ci/build_pip_package_with_bazel.sh
+  install_sdk
   install_wheel
   test_import
   uninstall_pip

@@ -80,6 +80,7 @@ else
 
   # Test build wheel
   if [[ "${TEST_WHEEL}" == "true" ]]; then
+    install_sdk
     install_wheel
     test_import
     uninstall_pip
