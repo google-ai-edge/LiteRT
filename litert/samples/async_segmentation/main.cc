@@ -22,6 +22,8 @@
 #include <vector>
 
 #include "third_party/GL/gl/include/GLES2/gl2.h"
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/samples/async_segmentation/image_processor.h"
 #include "litert/samples/async_segmentation/image_utils.h"
 #include "litert/samples/async_segmentation/segmentation_model.h"
@@ -31,19 +33,21 @@ bool Initialize(ImageProcessor& processor, SegmentationModel& segmenter,
                 SegmentationModel::AcceleratorType accelerator_choice) {
   if (!processor.InitializeGL(
           "shaders/passthrough_shader.vert", "shaders/mask_blend_compute.glsl",
-          "shaders/resize_compute.glsl", "shaders/preprocess_compute.glsl")) {
+          "shaders/resize_compute.glsl", "shaders/preprocess_compute.glsl",
+          "shaders/deinterleave_masks.glsl")) {
     std::cerr << "Failed to initialize ImageProcessor." << std::endl;
     return false;
   }
-  std::string model_path = "./models/selfie_multiclass_256x256.tflite";
-  std::string npu_library_path = "";
   // We currently only support NPU model for Qualcomm devices (SM8750)
-  if (accelerator_choice == SegmentationModel::AcceleratorType::NPU) {
-    model_path = "./models/selfie_multiclass_256x256_SM8750.tflite";
-    npu_library_path = "/data/local/tmp/async_segmentation_android/npu/";
-  }
-  if (!segmenter.InitializeModel(model_path, accelerator_choice,
-                                 npu_library_path)) {
+  std::string model_path =
+      accelerator_choice == SegmentationModel::AcceleratorType::NPU
+          ? "./models/selfie_multiclass_256x256_SM8750.tflite"
+          : "./models/selfie_multiclass_256x256.tflite";
+  std::string npu_library_path =
+      accelerator_choice == SegmentationModel::AcceleratorType::NPU
+          ? "/data/local/tmp/async_segmentation_android/npu/"
+          : "";
+  if (!segmenter.InitializeModel(model_path, npu_library_path)) {
     std::cerr << "Failed to initialize SegmentationModel." << std::endl;
     processor.ShutdownGL();  // ImageProcessor destructor will handle this
     return false;
@@ -111,13 +115,17 @@ int main(int argc, char* argv[]) {
       {0.0f, 1.0f, 1.0f, 0.1f}   // Cyan
   };
   ImageProcessor processor;
-  SegmentationModel segmenter =
-      SegmentationModel(&processor);  // Create segmentation model instance
+  // Whether to use GL buffers for input/output. Currently this is only used
+  // for the GPU accelerator.
+  bool use_gl_buffers =
+      accelerator_choice == SegmentationModel::AcceleratorType::GPU;
+  SegmentationModel segmenter(
+      use_gl_buffers,
+      accelerator_choice);  // Create segmentation model instance
   if (!Initialize(processor, segmenter, accelerator_choice)) {
     return 1;
   }
 
-  GLuint preprocessed_buffer_id = 0;  // For the output of preprocessing
   int preprocessed_width = 256, preprocessed_height = 256;
   int width1_orig = 0, height1_orig = 0, channels1_file = 0,
       loaded_channels1 = 3;
@@ -131,10 +139,21 @@ int main(int argc, char* argv[]) {
   }
 
   // --- Preprocess Image for Segmentation ---
-  preprocessed_buffer_id = processor.PreprocessInputForSegmentation(
-      tex_id_orig, width1_orig, height1_orig, preprocessed_width,
-      preprocessed_height);
-  if (!preprocessed_buffer_id) {
+  // When using GL buffers we need to set the number of channels to 4
+  // (RGBA with alpha channel set as 0) so that memory layout is compatible with
+  // GPU accelerator.
+  int num_channels = use_gl_buffers ? 4 : 3;
+  // When using GL buffers we can directly use the input buffer of the
+  // segmentation model for preprocessing.
+  GLuint preprocessed_buffer_id =
+      use_gl_buffers ? segmenter.GetInputGlBufferId(0)
+                     : processor.CreateOpenGLBuffer(
+                           nullptr, preprocessed_width * preprocessed_height *
+                                        num_channels * sizeof(float));
+
+  if (!processor.PreprocessInputForSegmentation(
+          tex_id_orig, width1_orig, height1_orig, preprocessed_width,
+          preprocessed_height, preprocessed_buffer_id, num_channels)) {
     std::cerr << "Failed to preprocess input image for segmentation."
               << std::endl;
     return 1;
@@ -142,15 +161,75 @@ int main(int argc, char* argv[]) {
   std::cout << "Preprocessed image to " << preprocessed_width << "x"
             << preprocessed_height << std::endl;
 
+  // If not using GL buffers, we need to read the preprocessed GL buffer to
+  // the input buffer of the segmentation model on CPU.
+  if (!use_gl_buffers) {
+    std::vector<float> preprocessed_buffer_data(
+        preprocessed_width * preprocessed_height * num_channels);
+    if (!processor.ReadBufferData(preprocessed_buffer_id, 0,
+                                  preprocessed_width * preprocessed_height *
+                                      num_channels * sizeof(float),
+                                  preprocessed_buffer_data.data())) {
+      std::cerr << "SegmentationModel: Failed to read preprocessed input SSBO."
+                << std::endl;
+      return 1;
+    }
+    litert::TensorBuffer& input_buffer = segmenter.GetInputBuffer(0);
+    if (!input_buffer
+             .Write<float>(absl::MakeConstSpan(preprocessed_buffer_data))
+             .HasValue()) {
+      std::cerr << "SegmentationModel: Failed to write preprocessed input to "
+                   "TensorBuffer on CPU."
+                << std::endl;
+      return 1;
+    }
+  }
+
   // --- Run Segmentation ---
-  std::vector<GLuint> mask_buffer_ids;  // Vector of 6 mask buffers
-  if (!segmenter.RunSegmentation(preprocessed_buffer_id, preprocessed_width,
-                                 preprocessed_height, mask_buffer_ids)) {
+  if (!segmenter.RunSegmentation()) {
     std::cerr << "Failed to run segmentation." << std::endl;
     return 1;
-  };
+  }
 
-  // --- Apply Colored Masks and Blend ---
+  // --- Post-Processing: Deinterleave masks from output buffer ---
+
+  // Generate 6 mask buffers for the 6 mask colors.
+  std::vector<GLuint> mask_buffer_ids;
+  mask_buffer_ids.reserve(6);
+  for (int i = 0; i < 6; ++i) {
+    mask_buffer_ids.push_back(processor.CreateOpenGLBuffer(
+        nullptr, preprocessed_width * preprocessed_height * sizeof(float)));
+  }
+  if (use_gl_buffers) {
+    // Deinterleave masks from the output buffer of the segmentation model on
+    // GPU.
+    GLuint output_buffer_id = segmenter.GetOutputGlBufferId(0);
+    if (!processor.DeinterleaveMasks(output_buffer_id, mask_buffer_ids)) {
+      std::cerr << "Failed to deinterleave masks." << std::endl;
+      return 1;
+    }
+  } else {
+    // We need to deinterleave masks from the output buffer of the segmentation
+    // model on CPU.
+    std::vector<float> deinterleaved_masks_data(preprocessed_width *
+                                                preprocessed_height * 6);
+    litert::TensorBuffer& output_buffer = segmenter.GetOutputBuffer(0);
+    if (!output_buffer.Read<float>(absl::MakeSpan(deinterleaved_masks_data))
+             .HasValue()) {
+      std::cerr << "Failed to read deinterleaved masks from output "
+                   "TensorBuffer on CPU."
+                << std::endl;
+      return 1;
+    }
+    if (!processor.DeinterleaveMasksCpu(deinterleaved_masks_data.data(),
+                                        preprocessed_width, preprocessed_height,
+                                        mask_buffer_ids)) {
+      std::cerr << "Failed to deinterleave masks." << std::endl;
+      return 1;
+    }
+  }
+
+  // --- Post-Processing: Apply Colored Masks and Blend ---
   int out_blend_width = 0, out_blend_height = 0;
   std::vector<unsigned char> final_blended_pixel_data;
 
@@ -193,7 +272,10 @@ int main(int argc, char* argv[]) {
 
   // ---- Clean Up ----
   processor.DeleteOpenGLTexture(tex_id_orig);
-  processor.DeleteOpenGLBuffer(preprocessed_buffer_id);
+  if (!use_gl_buffers) {
+    processor.DeleteOpenGLBuffer(preprocessed_buffer_id);
+  }
+
   for (GLuint id : mask_buffer_ids) {
     processor.DeleteOpenGLBuffer(id);
   }

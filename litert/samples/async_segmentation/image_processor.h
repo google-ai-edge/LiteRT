@@ -17,6 +17,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_IMAGE_PROCESSOR_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_IMAGE_PROCESSOR_H_
 
+#include <stdbool.h>
+
 #include <cstddef>
 #include <string>
 #include <vector>
@@ -37,7 +39,8 @@ class ImageProcessor {
   bool InitializeGL(const std::string& passthrough_vert_shader_path,
                     const std::string& mask_blend_compute_shader_path,
                     const std::string& resize_compute_shader_path,
-                    const std::string& preprocess_compute_shader_path);
+                    const std::string& preprocess_compute_shader_path,
+                    const std::string& deinterleave_masks_shader_path);
   void ShutdownGL();
 
   GLuint CreateOpenGLTexture(const unsigned char* image_data, int width,
@@ -60,15 +63,23 @@ class ImageProcessor {
   bool ReadTexturePixels(GLuint texture_id, int width, int height,
                          void* pixel_data, GLenum format, GLenum type);
 
-  GLuint PreprocessInputForSegmentation(GLuint input_tex_id, int input_width,
+  bool PreprocessInputForSegmentation(GLuint input_tex_id, int input_width,
                                         int input_height, int output_width,
-                                        int output_height);
+                                        int output_height,
+                                        GLuint preprocessed_buffer_id,
+                                        int num_channels);
 
   // Reads data from an SSBO into a pre-allocated CPU buffer.
   bool ReadBufferData(GLuint buffer_id, size_t offset, size_t data_size,
                       void* out_data);
   GLuint ResizeTextureOpenGL(GLuint src_tex_id, int src_width, int src_height,
                              int target_width, int target_height);
+
+  bool DeinterleaveMasksCpu(float* data, int mask_width, int mask_height,
+                            std::vector<GLuint>& output_buffer_ids);
+
+  bool DeinterleaveMasks(GLuint input_buffer_id,
+                         std::vector<GLuint>& output_buffer_ids);
 
  private:
   EGLDisplay egl_display_ = EGL_NO_DISPLAY;
@@ -78,6 +89,7 @@ class ImageProcessor {
   GLuint mask_blend_compute_shader_program_ = 0;
   GLuint resize_compute_shader_program_ = 0;
   GLuint preprocess_compute_shader_program_ = 0;
+  GLuint deinterleave_masks_shader_program_ = 0;
   GLuint fbo_ = 0;
 
   void CleanupEGLContext();

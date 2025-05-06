@@ -19,23 +19,95 @@
 #include <cstddef>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "third_party/GL/gl/include/GLES2/gl2.h"
 #include "third_party/GL/gl/include/GLES3/gl3.h"
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "third_party/GL/gl/include/GLES3/gl32.h"
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/samples/async_segmentation/image_processor.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/runtime/accelerators/gpu/accelerator_options.h"
+
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
+    litert::CompiledModel& compiled_model, litert::Signature& signature) {
+  LiteRtSubgraph subgraph_handle = signature.Subgraph();
+  litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
+
+  std::vector<litert::TensorBuffer> input_buffers;
+  input_buffers.reserve(subgraph.Inputs().size());
+  for (litert::Tensor& input_tensor : subgraph.Inputs()) {
+    LITERT_ASSIGN_OR_RETURN(
+        litert::TensorBufferRequirements input_buffer_requirements,
+        compiled_model.GetInputBufferRequirements(signature.Key(),
+                                                  input_tensor.Name()));
+    LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
+                            input_tensor.RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            input_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto input_buffer,
+        litert::TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                            ranked_tensor_type, buffer_size));
+    input_buffers.push_back(std::move(input_buffer));
+  }
+  return input_buffers;
+}
+
+// TODO(b/383176413): Add API to CompiledModel to create buffers of custom
+// buffer type.
+litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
+    litert::CompiledModel& compiled_model, litert::Signature& signature) {
+  LiteRtSubgraph subgraph_handle = signature.Subgraph();
+  litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
+
+  std::vector<litert::TensorBuffer> output_buffers;
+  output_buffers.reserve(subgraph.Outputs().size());
+  for (litert::Tensor& output_tensor : subgraph.Outputs()) {
+    LITERT_ASSIGN_OR_RETURN(
+        litert::TensorBufferRequirements input_buffer_requirements,
+        compiled_model.GetOutputBufferRequirements(signature.Key(),
+                                                   output_tensor.Name()));
+    LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
+                            output_tensor.RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
+                            input_buffer_requirements.BufferSize());
+    LITERT_ASSIGN_OR_RETURN(
+        auto output_buffer,
+        litert::TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+                                            ranked_tensor_type, buffer_size));
+    output_buffers.push_back(std::move(output_buffer));
+  }
+  return output_buffers;
+}
+
+litert::Options CreateGpuOptions() {
+  LITERT_ASSIGN_OR_ABORT(auto gpu_options,
+                         litert::ml_drift::GpuOptions::Create());
+  LITERT_ABORT_IF_ERROR(
+      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+  LITERT_ABORT_IF_ERROR(
+      gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+
+  LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
+  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.AddOpaqueOptions(std::move(gpu_options));
+  return options;
+}
 
 bool SegmentationModel::InitializeModel(const std::string& model_path,
-                                        AcceleratorType accelerator_type,
                                         std::string npu_library_path) {
-  current_accelerator_ = accelerator_type;
   std::cout << "SegmentationModel: Initializing model ... Path: " << model_path
             << std::endl;
   LITERT_ASSIGN_OR_ABORT(model_, litert::Model::CreateFromFile(model_path));
@@ -49,9 +121,16 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
       break;
     }
     case AcceleratorType::GPU: {
-      LITERT_ASSIGN_OR_ABORT(
-          compiled_model_,
-          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorGpu));
+      if (use_gl_buffers_) {
+        // If using GL buffers, we need to set specific options for GPU.
+        litert::Options options = CreateGpuOptions();
+        LITERT_ASSIGN_OR_ABORT(compiled_model_, litert::CompiledModel::Create(
+                                                    env, model_, options));
+      } else {
+        LITERT_ASSIGN_OR_ABORT(compiled_model_,
+                               litert::CompiledModel::Create(
+                                   env, model_, kLiteRtHwAcceleratorGpu));
+      }
       break;
     }
     case AcceleratorType::NPU: {
@@ -75,53 +154,27 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
 
   size_t signature_index = 0;
 
-  LITERT_ASSIGN_OR_ABORT(input_buffers_,
-                         compiled_model_.CreateInputBuffers(signature_index));
+  if (use_gl_buffers_) {
+    LITERT_ASSIGN_OR_ABORT(
+        input_buffers_,
+        CreateGlInputBuffers(compiled_model_, signatures[signature_index]));
 
-  LITERT_ASSIGN_OR_ABORT(output_buffers_,
-      compiled_model_.CreateOutputBuffers(signature_index));
+    LITERT_ASSIGN_OR_ABORT(
+        output_buffers_,
+        CreateGlOutputBuffers(compiled_model_, signatures[signature_index]));
 
+  } else {
+    LITERT_ASSIGN_OR_ABORT(input_buffers_,
+                           compiled_model_.CreateInputBuffers(signature_index));
+
+    LITERT_ASSIGN_OR_ABORT(
+        output_buffers_, compiled_model_.CreateOutputBuffers(signature_index));
+  }
   std::cout << "SegmentationModel: Model initialized." << std::endl;
   return true;
 }
 
-bool SegmentationModel::CreateMaskBuffers(
-    std::vector<float> data, int input_width, int input_height,
-    std::vector<GLuint>& output_buffer_ids) {
-  std::cout << "SegmentationModel: Creating mask buffers ..." << std::endl;
-  int mask_width = input_width;
-  int mask_height = input_height;
-  std::vector<std::vector<float>> out_masks_data;
-  out_masks_data.assign(6, std::vector<float>(mask_width * mask_height,
-                                              0));  // 6 single-channel masks
-
-  // Generate 6 distinct masks
-  for (int y = 0; y < mask_height; ++y) {
-    for (int x = 0; x < mask_width; ++x) {
-      for (int i = 0; i < 6; ++i) {
-        // Create different patterns for each mask
-        out_masks_data[i][y * mask_width + x] =
-            data[y * mask_width * 6 + x * 6 + i];
-      }
-    }
-  }
-
-  output_buffer_ids.reserve(6);
-  for (int i = 0; i < 6; ++i) {
-    GLuint mask_ssbo_id = image_processor_->CreateOpenGLBuffer(
-        out_masks_data[i].data(), out_masks_data[i].size() * sizeof(float));
-    if (mask_ssbo_id == 0) {
-      std::cerr << "Failed to create OpenGL buffer for mask " << i << std::endl;
-      return false;
-    }
-    output_buffer_ids.push_back(mask_ssbo_id);
-  }
-  return true;
-}
-
-bool SegmentationModel::RunSegmentation(
-    GLuint preprocessed_input_buffer_id, int input_width, int input_height,
-    std::vector<GLuint>& output_buffer_ids) {
+bool SegmentationModel::RunSegmentation() {
   std::cout << "SegmentationModel: Running segmentation on preprocessed "
                "buffer on accelerator: ";
   switch (current_accelerator_) {
@@ -136,49 +189,12 @@ bool SegmentationModel::RunSegmentation(
       break;
   }
   std::cout << std::endl;
-  if (input_width != 256 || input_height != 256) {
-    std::cerr << "SegmentationModel: Error - input to runSegmentation should "
-                 "be preprocessed (256x256)."
-              << std::endl;
-    return false;
-  }
-  if (preprocessed_input_buffer_id == 0) {
-    std::cerr << "SegmentationModel: Invalid preprocessed input buffer ID."
-              << std::endl;
-    return false;
-  }
-
-  // 1. Read preprocessed input GL buffer to CPU float buffer.
-  size_t buffer_data_size = input_width * input_height * 3 * sizeof(float);
-  std::vector<float> float_input_buffer(input_width * input_height * 3);
-  if (!image_processor_->ReadBufferData(preprocessed_input_buffer_id, 0,
-                                        buffer_data_size,
-                                        float_input_buffer.data())) {
-    std::cerr << "SegmentationModel: Failed to read preprocessed input SSBO to "
-                 "CPU float buffer."
-              << std::endl;
-    return false;
-  }
-
-  // 2. Copy input cpu data into model input tensor
-  input_buffers_[0].Write<float>(
-      absl::MakeSpan(float_input_buffer.data(), float_input_buffer.size()));
-  std::cout << "SegmentationModel: Preparing input tensor for "
-               "LiteRT model."
-            << std::endl;
-  // 3. Run model
-  compiled_model_.Run(0, input_buffers_, output_buffers_);
+  auto expected = compiled_model_.Run(0, input_buffers_, output_buffers_);
   std::cout << "SegmentationModel: Executing LiteRT model." << std::endl;
-  // 4. Get output tensor and read to CPU buffer
-  LITERT_ASSIGN_OR_ABORT(auto packed_size, output_buffers_[0].PackedSize());
-  auto output_size = input_width * input_height * 6;
-  std::cout << "SegmentationModel: Output size: " << output_size
-            << " packed_size:" << " " << packed_size << std::endl;
-  std::vector<float> output_cpu_buffer;
-  output_cpu_buffer.resize(output_size);
-  output_buffers_[0].Read<float>(
-      absl::MakeSpan(output_cpu_buffer.data(), packed_size / sizeof(float)));
-  // 5. Create mask buffers
-  return CreateMaskBuffers(output_cpu_buffer, input_width, input_height,
-                           output_buffer_ids);
+  if (!expected.HasValue()) {
+    std::cerr << "SegmentationModel: Failed to execute LiteRT model."
+              << std::endl;
+    return false;
+  }
+  return true;
 }

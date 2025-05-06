@@ -20,6 +20,7 @@ package(
 filegroup(
     name = "shader_files",
     srcs = [
+        "shaders/deinterleave_masks.glsl",
         "shaders/mask_blend_compute.glsl",
         "shaders/passthrough_shader.vert",
         "shaders/preprocess_compute.glsl",
@@ -64,9 +65,11 @@ cc_binary(
         ":image_processor",
         ":image_utils",
         ":segmentation_model",
+        "//litert/cc:litert_tensor_buffer",
         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
         "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
         "//third_party/GL:GLES2_headers",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -97,19 +100,21 @@ cc_library(
     srcs = ["segmentation_model.cc"],
     hdrs = ["segmentation_model.h"],
     deps = [
-        ":image_processor",
         "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/runtime/accelerators/gpu:accelerator_options",
         "//third_party/GL:EGL_headers",
         "//third_party/GL:GLES2_headers",
         "//third_party/GL:GLES3_headers",
         "//third_party/GL/native:EGL",
         "//third_party/GL/native:GLESv3",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
 )

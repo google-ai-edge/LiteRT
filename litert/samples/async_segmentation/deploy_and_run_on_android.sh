@@ -140,6 +140,7 @@ adb push "${HOST_SHADER_DIR}/passthrough_shader.vert" "${DEVICE_SHADER_DIR}/"
 adb push "${HOST_SHADER_DIR}/mask_blend_compute.glsl" "${DEVICE_SHADER_DIR}/"
 adb push "${HOST_SHADER_DIR}/resize_compute.glsl" "${DEVICE_SHADER_DIR}/"
 adb push "${HOST_SHADER_DIR}/preprocess_compute.glsl" "${DEVICE_SHADER_DIR}/"
+adb push "${HOST_SHADER_DIR}/deinterleave_masks.glsl" "${DEVICE_SHADER_DIR}/"
 echo "Pushed shaders."
 
 # Push test images

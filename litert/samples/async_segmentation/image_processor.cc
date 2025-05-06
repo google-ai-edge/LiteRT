@@ -148,7 +148,8 @@ bool ImageProcessor::InitializeGL(
     const std::string& passthrough_vert_shader_path,
     const std::string& mask_blend_compute_shader_path,
     const std::string& resize_compute_shader_path,
-    const std::string& preprocess_compute_shader_path) {
+    const std::string& preprocess_compute_shader_path,
+    const std::string& deinterleave_masks_shader_path) {
   egl_display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
   if (egl_display_ == EGL_NO_DISPLAY) {
     std::cerr << "ImageProcessor: Failed to get EGL display." << std::endl;
@@ -271,6 +272,14 @@ bool ImageProcessor::InitializeGL(
   if (!SetupComputeShader(preprocess_compute_shader_path,
                           preprocess_compute_shader_program_)) {
     std::cerr << "ImageProcessor: Failed to setup preprocess compute shader."
+              << std::endl;
+    ShutdownGL();
+    return false;
+  }
+
+  if (!SetupComputeShader(deinterleave_masks_shader_path,
+                          deinterleave_masks_shader_program_)) {
+    std::cerr << "Image Processor: Failed to setup deinterleave masks shader."
               << std::endl;
     ShutdownGL();
     return false;
@@ -412,8 +421,8 @@ GLuint ImageProcessor::CreateOpenGLTexture(const float* image_data, int width,
 
 GLuint ImageProcessor::CreateOpenGLBuffer(const void* data, size_t data_size,
                                           GLenum usage) {
-  if (!data || data_size == 0) {
-    std::cerr << "ImageProcessor::CreateOpenGLBuffer: Invalid data or size."
+  if (data_size <= 0) {
+    std::cerr << "ImageProcessor::CreateOpenGLBuffer: Invalid data size."
               << std::endl;
     return 0;
   }
@@ -493,36 +502,29 @@ GLuint ImageProcessor::ResizeTextureOpenGL(GLuint src_tex_id, int src_width,
   return resized_texture_id;
 }
 
-GLuint ImageProcessor::PreprocessInputForSegmentation(GLuint input_tex_id,
-                                                      int input_width,
-                                                      int input_height,
-                                                      int output_width,
-                                                      int output_height) {
+bool ImageProcessor::PreprocessInputForSegmentation(
+    GLuint input_tex_id, int input_width, int input_height, int output_width,
+    int output_height, GLuint preprocessed_buffer_id, int num_channels) {
   if (input_tex_id == 0 || input_width <= 0 || input_height <= 0) {
     std::cerr << "ImageProcessor::PreprocessInputForSegmentation: Invalid "
                  "input parameters."
               << std::endl;
-    return 0;
+    return false;
   }
   if (preprocess_compute_shader_program_ == 0) {
     std::cerr << "ImageProcessor::PreprocessInputForSegmentation: Preprocess "
                  "compute shader not initialized."
               << std::endl;
-    return 0;
+    return false;
   }
-
-  GLuint preprocessed_buffer_id = 0;
-  glGenBuffers(1, &preprocessed_buffer_id);
-  GlCheckErrorOp("PreprocessInputForSegmentation - glGenBuffers");
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, preprocessed_buffer_id);
-  glBufferData(GL_SHADER_STORAGE_BUFFER,
-               output_width * output_height * 3 * sizeof(float), nullptr,
-               GL_STATIC_DRAW);
-  GlCheckErrorOp("PreprocessInputForSegmentation - glBufferData for SSBO");
-  glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
   glUseProgram(preprocess_compute_shader_program_);
   GlCheckErrorOp("PreprocessInputForSegmentation - glUseProgram");
+
+  glUniform1i(
+      glGetUniformLocation(preprocess_compute_shader_program_, "num_channels"),
+      num_channels);
+  GlCheckErrorOp("PreprocessInputForSegmentation - set inputTexture uniform");
 
   glActiveTexture(GL_TEXTURE0);
   glBindTexture(GL_TEXTURE_2D, input_tex_id);
@@ -547,7 +549,7 @@ GLuint ImageProcessor::PreprocessInputForSegmentation(GLuint input_tex_id,
   glBindTexture(GL_TEXTURE_2D, 0);
   glUseProgram(0);
 
-  return preprocessed_buffer_id;
+  return true;
 }
 
 GLuint ImageProcessor::ApplyColoredMasks(
@@ -711,7 +713,8 @@ bool ImageProcessor::ReadBufferData(GLuint buffer_id, size_t offset,
                          &buffer_actual_size);
   if (offset + data_size > static_cast<size_t>(buffer_actual_size)) {
     std::cerr << "ImageProcessor::ReadBufferData: Requested read range exceeds "
-                 "buffer size."
+                 "buffer size. "
+              << offset + data_size << " > " << buffer_actual_size << " bytes."
               << std::endl;
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     return false;
@@ -737,6 +740,91 @@ bool ImageProcessor::ReadBufferData(GLuint buffer_id, size_t offset,
     // partially successful or failed.
   }
   glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  return true;
+}
+
+bool ImageProcessor::DeinterleaveMasksCpu(
+    float* data, int mask_width, int mask_height,
+    std::vector<GLuint>& output_buffer_ids) {
+  std::cout << "DeinterleaveMasksCpu: Deinterleaving masks on CPU ..."
+            << std::endl;
+  std::vector<std::vector<float>> out_masks_data;
+  out_masks_data.assign(6, std::vector<float>(mask_width * mask_height,
+                                              0));  // 6 single-channel masks
+
+  // Generate 6 distinct masks.
+  for (int y = 0; y < mask_height; ++y) {
+    for (int x = 0; x < mask_width; ++x) {
+      for (int i = 0; i < 6; ++i) {
+        // Create different patterns for each mask
+        out_masks_data[i][y * mask_width + x] =
+            data[y * mask_width * 6 + x * 6 + i];
+      }
+    }
+  }
+  for (int i = 0; i < 6; ++i) {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, output_buffer_ids[i]);
+    GlCheckErrorOp("DeinterleaveMasksCpu - glBindBuffer");
+    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0,
+                    mask_width * mask_height * sizeof(float),
+                    out_masks_data[i].data());
+    GlCheckErrorOp("DeinterleaveMasksCpu - glBufferSubData");
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+  }
+  return true;
+}
+
+bool ImageProcessor::DeinterleaveMasks(GLuint input_buffer_id,
+                                       std::vector<GLuint>& output_buffer_ids) {
+  int mask_width = 256;
+  int mask_height = 256;
+  if (output_buffer_ids.size() != 6) {
+    std::cerr << "ImageProcessor::DeinterleaveMasks: Requires exactly 6 output "
+                 "buffers."
+              << std::endl;
+    return false;
+  }
+  if (deinterleave_masks_shader_program_ == 0) {
+    std::cerr << "ImageProcessor::DeinterleaveMasks: Deinterleave masks shader "
+                 "not initialized."
+              << std::endl;
+    return false;
+  }
+
+  glUseProgram(deinterleave_masks_shader_program_);
+  GlCheckErrorOp("DeinterleaveMasks - glUseProgram");
+
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, input_buffer_id);
+  for (int i = 0; i < output_buffer_ids.size(); ++i) {
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1 + i, output_buffer_ids[i]);
+  }
+  GlCheckErrorOp("DeinterleaveMasks - glBindBufferBase");
+
+  glUniform1i(
+      glGetUniformLocation(deinterleave_masks_shader_program_, "mask_width"),
+      mask_width);
+  glUniform1i(
+      glGetUniformLocation(deinterleave_masks_shader_program_, "mask_height"),
+      mask_height);
+
+  GlCheckErrorOp(
+      "DeinterleaveMasks - set mask_width and mask_height "
+      "uniform");
+
+  glDispatchCompute((mask_width + 7) / 8, (mask_height + 7) / 8, 1);
+  GlCheckErrorOp("DeinterleaveMasks - glDispatchCompute");
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  GlCheckErrorOp("DeinterleaveMasks - glMemoryBarrier");
+
+  glFinish();
+  GlCheckErrorOp("DeinterleaveMasks - glFinish");
+
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0);
+  for (int i = 0; i < output_buffer_ids.size(); ++i) {
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1 + i, 0);
+  }
+  glUseProgram(0);
+
   return true;
 }
 
@@ -770,6 +858,10 @@ void ImageProcessor::CleanupGLResources() {
   if (preprocess_compute_shader_program_) {
     glDeleteProgram(preprocess_compute_shader_program_);
     preprocess_compute_shader_program_ = 0;
+  }
+  if (deinterleave_masks_shader_program_) {
+    glDeleteProgram(deinterleave_masks_shader_program_);
+    deinterleave_masks_shader_program_ = 0;
   }
   GlCheckErrorOp("CleanupGLResources");
 }

@@ -25,9 +25,9 @@
 #include "third_party/GL/gl/include/EGL/eglext.h"
 #include "third_party/GL/gl/include/GLES3/gl3.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/samples/async_segmentation/image_processor.h"
 
 class SegmentationModel {
  public:
@@ -35,28 +35,43 @@ class SegmentationModel {
   enum class AcceleratorType { CPU, GPU, NPU };
 
   explicit SegmentationModel(
-      ImageProcessor* image_processor,
+      bool use_gl_buffers,
       AcceleratorType accelerator_type = AcceleratorType::GPU)
-      : image_processor_(image_processor) {};
+      : use_gl_buffers_(use_gl_buffers),
+        current_accelerator_(accelerator_type) {};
   ~SegmentationModel() = default;
 
   // Initializes the LiteRT model from a given path.
   bool InitializeModel(const std::string& model_path,
-                       AcceleratorType accelerator_type = AcceleratorType::GPU,
                        std::string npu_library_path = "");
 
-  // Takes an SSBO ID as input
-  bool RunSegmentation(GLuint preprocessed_input_buffer_id, int input_width,
-                       int input_height,
-                       std::vector<GLuint>& output_buffer_ids);
+  bool RunSegmentation();
+
+  GLuint GetInputGlBufferId(int index) {
+    LITERT_ASSIGN_OR_ABORT(auto buffer, input_buffers_[index].GetGlBuffer());
+    return buffer.id;
+  }
+  GLuint GetOutputGlBufferId(int index) {
+    LITERT_ASSIGN_OR_ABORT(auto buffer, output_buffers_[index].GetGlBuffer());
+    return buffer.id;
+  }
+
+  litert::TensorBuffer& GetInputBuffer(int index) {
+    return input_buffers_[index];
+  }
+
+  litert::TensorBuffer& GetOutputBuffer(int index) {
+    return output_buffers_[index];
+  }
+
+  bool UseGlBuffers() { return use_gl_buffers_; }
 
  private:
-  bool CreateMaskBuffers(std::vector<float> data, int input_width,
-                         int input_height,
-                         std::vector<GLuint>& output_buffer_ids);
+  // Whether to use GL buffers for input/output. Currently this is only used
+  // for the GPU accelerator.
+  bool use_gl_buffers_;
   litert::Model model_;
   litert::CompiledModel compiled_model_;
-  ImageProcessor* image_processor_;
   AcceleratorType current_accelerator_ = AcceleratorType::CPU;
 
   std::vector<litert::TensorBuffer> input_buffers_;
