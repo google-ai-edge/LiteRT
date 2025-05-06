@@ -616,28 +616,28 @@ filegroup(
 cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
-        ":litert_custom_op_kernel.h",
-        ":litert_environment.h",
-        ":litert_environment_options.h",
         ":litert_accelerator.h",
-        ":litert_opaque_options.h",
         ":litert_any.h",
         ":litert_common.h",
         ":litert_compiled_model.h",
-        ":litert_options.h",
+        ":litert_custom_op_kernel.h",
+        ":litert_environment.h",
+        ":litert_environment_options.h",
         ":litert_event.h",
         ":litert_event_type.h",
+        ":litert_gl_types.h",
         ":litert_layout.h",
         ":litert_logging.h",
         ":litert_metrics.h",
         ":litert_model.h",
         ":litert_op_code.h",
         ":litert_op_options.h",
+        ":litert_opaque_options.h",
+        ":litert_options.h",
         ":litert_platform_support.h",
         ":litert_tensor_buffer.h",
         ":litert_tensor_buffer_requirements.h",
         ":litert_tensor_buffer_types.h",
-        ":litert_gl_types.h",
         # Needed for litert/c/litert_op_code.h
         "//tflite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h
@@ -649,10 +649,20 @@ cc_library(
     ],
 )
 
+# Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
+# resolve the symbols, not from libLiteRtRuntimeCApi.so.
+config_setting(
+    name = "resolve_symbols_in_exec",
+    define_values = {"resolve_symbols_in_exec": "true"},
+)
+
 # This is cc_library target based on `libLiteRtRuntimeCApi.so`.
 cc_library(
     name = "litert_runtime_c_api_shared_lib",
-    srcs = [":litert_runtime_c_api_so"],
+    srcs = select({
+        ":resolve_symbols_in_exec": [],
+        "//conditions:default": [":litert_runtime_c_api_so"],
+    }),
     hdrs = glob(["litert_*.h"]) + [
         # Needed for litert/c/litert_op_code.h
         "//tflite:builtin_ops.h",
