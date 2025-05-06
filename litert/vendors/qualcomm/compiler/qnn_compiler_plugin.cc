@@ -298,8 +298,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(litert::qnn::ConvertOp(
-      compiler_plugin->Options().GetUseHtpPreference(), op, tensor_pool,
-      input_tensors, output_tensors, op_wrappers));
+        compiler_plugin->Options().GetUseHtpPreference(), op, tensor_pool,
+        input_tensors, output_tensors, op_wrappers));
 
     if (compiler_plugin->Options().GetUseQint16AsQuint16()) {
       tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {

@@ -75,15 +75,16 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options) {
   }
 }
 
-ABSL_FLAG(bool, qualcomm_enable_weight_sharing, true,
+ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
 
 ABSL_FLAG(bool, qualcomm_use_htp_preference, false,
-          "Whether to transform ops into the HTP prefered pattern.");
+          "Whether to transform a litert op into the HTP prefered pattern.");
 
-ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, true,
-          "Whether to automatically convert int16 model into uin16 model.");
+ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
+          "Whether to automatically convert a quantized int16 model into a "
+          "quantized uin16 model.");
 
 ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
           qualcomm_htp_performance_mode,

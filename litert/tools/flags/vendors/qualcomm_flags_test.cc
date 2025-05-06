@@ -238,5 +238,17 @@ TEST(ProfilingTest, Parse) {
   }
 }
 
+TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
+  Expected<QualcommOptions> options = QualcommOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_EQ(options.Value().GetLogLevel(), kLiteRtQualcommLogLevelInfo);
+  EXPECT_EQ(options.Value().GetProfiling(), kLiteRtQualcommProfilingOff);
+  EXPECT_FALSE(options.Value().GetUseHtpPreference());
+  EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
+  EXPECT_FALSE(options.Value().GetEnableWeightSharing());
+  EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
+            kLiteRtQualcommHtpPerformanceModeDefault);
+}
+
 }  // namespace
 }  // namespace litert::qualcomm
