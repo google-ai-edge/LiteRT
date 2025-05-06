@@ -281,47 +281,49 @@ cc_library(
     ],
 )
 
-cc_test(
-    name = "compiled_model_test",
-    srcs = ["compiled_model_test.cc"],
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
-    # require GPU to run OpenCL tests.
-    tags = [
-        "requires-gpu-nvidia",
-    ],
-    deps = [
-        ":compiled_model",
-        ":tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_model",
-        "//litert/c:litert_options",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer",
-        "//litert/core/model",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:common",
-        "//tflite/kernels:builtin_ops",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "compiled_model_test",
+#     srcs = ["compiled_model_test.cc"],
+#     data = [
+#         "//litert/test:testdata/simple_model.tflite",
+#     ],
+#     linkopts = select({
+#         "@org_tensorflow//tensorflow:android": ["-landroid"],
+#         "//conditions:default": [],
+#     }),
+#     # require GPU to run OpenCL tests.
+#     tags = [
+#         "requires-gpu-nvidia",
+#     ],
+#     deps = [
+#         ":compiled_model",
+#         ":tensor_buffer",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_model",
+#         "//litert/c:litert_options",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_handle",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_tensor_buffer",
+#         "//litert/core/model",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model",
+#         "//tflite:framework",
+#         "//tflite/c:c_api_opaque",
+#         "//tflite/c:common",
+#         "//tflite/kernels:builtin_ops",
+#     ],
+# )
+# copybara:uncomment_end
 
 cc_test(
     name = "gl_buffer_test",
