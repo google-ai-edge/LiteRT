@@ -517,6 +517,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           buffer_is_cpu_compatible = true;
         }
       }
+    } else if (buffer->buffer_type() == kLiteRtTensorBufferTypeFastRpc) {
+      buffer_is_cpu_compatible = true;
     }
 #endif
     if (buffer_is_cpu_compatible) {
