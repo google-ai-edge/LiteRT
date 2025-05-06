@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Docker image to provide a hermetic build environment for Litert.
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,6 +30,7 @@ RUN apt-get update && apt-get install -y \
     unzip \
     wget \
     zip \
+    llvm \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -91,7 +92,7 @@ RUN mkdir -p ${ANDROID_SDK_HOME}/platform-tools
 RUN chmod -R go=u ${ANDROID_DEV_HOME}
 
 # Install Python dependencies
-RUN pip3 install numpy six absl-py wheel setuptools pybind11
+RUN pip3 install --break-system-packages numpy six absl-py wheel setuptools pybind11
 
 # Set up environment variables for auto-configuration
 ENV PYTHON_BIN_PATH=/usr/bin/python3
