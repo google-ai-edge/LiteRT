@@ -29,7 +29,6 @@ cc_library(
     hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
         "//litert/cc:litert_element_type",
         "@qairt//:qnn_lib_headers",
     ],
