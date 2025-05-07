@@ -14,13 +14,25 @@
 
 """Python wrapper for LiteRT compiled models."""
 
+import os
 from typing import Any, Dict, List
 
-from litert.python.litert_wrapper.compiled_model_wrapper import (
-    _pywrap_litert_compiled_model_wrapper as _cm,
-)
-from litert.python.litert_wrapper.compiled_model_wrapper.hardware_accelerator import HardwareAccelerator
-from litert.python.litert_wrapper.tensor_buffer_wrapper.tensor_buffer import TensorBuffer
+# pylint: disable=g-import-not-at-top
+if not os.path.splitext(__file__)[0].endswith(
+    os.path.join("ai_edge_litert", "compiled_model")
+):
+  # This file is part of litert package.
+  from litert.python.litert_wrapper.compiled_model_wrapper import (
+      _pywrap_litert_compiled_model_wrapper as _cm,
+  )
+  from litert.python.litert_wrapper.compiled_model_wrapper.hardware_accelerator import HardwareAccelerator
+  from litert.python.litert_wrapper.tensor_buffer_wrapper.tensor_buffer import TensorBuffer
+else:
+  # This file is part of ai_edge_litert package.
+  from ai_edge_litert import _pywrap_litert_compiled_model_wrapper as _cm
+  from ai_edge_litert.hardware_accelerator import HardwareAccelerator
+  from ai_edge_litert.tensor_buffer import TensorBuffer
+# pylint: enable=g-import-not-at-top
 
 
 class CompiledModel:

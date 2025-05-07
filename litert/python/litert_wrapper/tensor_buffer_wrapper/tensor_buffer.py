@@ -14,8 +14,19 @@
 
 """Python wrapper for LiteRT tensor buffer."""
 
+import os
 import numpy as np
-from litert.python.litert_wrapper.tensor_buffer_wrapper import _pywrap_litert_tensor_buffer_wrapper as _tb
+
+# pylint: disable=g-import-not-at-top
+if not os.path.splitext(__file__)[0].endswith(
+    os.path.join("ai_edge_litert", "tensor_buffer")
+):
+  # This file is part of litert package.
+  from litert.python.litert_wrapper.tensor_buffer_wrapper import _pywrap_litert_tensor_buffer_wrapper as _tb
+else:
+  # This file is part of ai_edge_litert package.
+  from ai_edge_litert import _pywrap_litert_tensor_buffer_wrapper as _tb
+# pylint: enable=g-import-not-at-top
 
 
 class TensorBuffer:
