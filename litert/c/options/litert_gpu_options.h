@@ -54,6 +54,27 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
     LiteRtOpaqueOptions gpu_accelerator_options,
     LiteRtDelegateBufferStorageType buffer_storage_type);
 
+// Sets the GPU accelerator prefer texture weights.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool prefer_texture_weights);
+
+// Sets the GPU accelerator serialization directory.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
+    LiteRtOpaqueOptions gpu_accelerator_options, const char* serialization_dir);
+
+// Sets the GPU accelerator model token.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelToken(
+    LiteRtOpaqueOptions gpu_accelerator_options, const char* model_token);
+
+// Sets the GPU accelerator serialization of program cache.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool serialize_program_cache);
+
+// Sets the GPU accelerator serialization of external tensors.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool serialize_external_tensors);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -78,6 +99,21 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPrecision(
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType(
     LiteRtDelegateBufferStorageType* type, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    bool* prefer_texture_weights, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+    const char** serialization_dir, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelToken(
+    const char** model_token, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    bool* serialize_program_cache, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"
