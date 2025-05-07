@@ -151,6 +151,18 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status =
             LegalizeGeluOp(neuron_adapter_api, model->get(), operand_map, op);
         break;
+      case kLiteRtOpCodeTflMaxPool2d:
+        status = LegalizeOp(
+            neuron_adapter_api, model->get(), operand_map, op,
+            NEURON_MAX_POOL_2D,
+            std::make_tuple(
+                AddMaxPool2dPaddingOption,           // padding
+                AddMaxPool2dStrideWOption,           // stride_w
+                AddMaxPool2dStrideHOption,           // stride_h
+                AddMaxPool2dFilterWOption,           // filter_w
+                AddMaxPool2dFilterHOption,           // filter_h
+                AddMaxPool2dFuseActivationOption));  // activation
+        break;
       case kLiteRtOpCodeTflPad:
         status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
                                   op, NEURON_PAD);

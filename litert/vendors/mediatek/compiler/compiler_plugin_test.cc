@@ -48,7 +48,13 @@ const auto kSupportedOps = Values(
     "simple_tanh_op.tflite",
     "simple_softmax_op.tflite",
     "simple_mean_op.tflite",
-    "simple_gelu_op.tflite"
+    "simple_gelu_op.tflite",
+    "simple_pad.tflite",
+    "simple_logistic.tflite",
+    "simple_sum_op.tflite",
+    "simple_resize_bilinear_op.tflite",
+    "simple_resize_nearest_neighbor_op.tflite",
+    "simple_max_pool_2d.tflite"
     );
 // clang-format on
 
