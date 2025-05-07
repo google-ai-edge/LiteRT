@@ -79,7 +79,9 @@ class CompiledModel
                          LiteRtCompiledModel compiled_model, OwnHandle owned)
       : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
             compiled_model, owned),
-        model_(Model::CreateFromNonOwnedHandle(litert_model)) {}
+        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
+    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
+  }
 
   // Creates a CompiledModel from a TFLite file.
   //
@@ -391,6 +393,12 @@ class CompiledModel
 
   Expected<bool> IsFullyAccelerated();
 
+  // Returns the environment used to create this compiled model.
+  // The returned Environment doesn't own the underlying LiteRtEnvironment.
+  Expected<Environment> GetEnvironment() const {
+    return Environment(env_, OwnHandle::kNo);
+  }
+
  private:
   // Returns the signature input index for the given input tensor name.
   Expected<size_t> FindInputIndex(size_t signature_index,
@@ -402,6 +410,7 @@ class CompiledModel
 
   // Creates a TensorBuffer with the given buffer requirements and tensor type.
   static Expected<TensorBuffer> CreateBufferImpl(
+      LiteRtEnvironment env,
       const TensorBufferRequirements& buffer_requirements,
       const RankedTensorType& tensor_type);
 
@@ -447,6 +456,7 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;
 
+  LiteRtEnvironment env_;
   Model model_;
 };
 

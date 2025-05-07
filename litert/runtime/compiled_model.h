@@ -44,7 +44,7 @@ class LiteRtCompiledModelT {
  public:
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
 
-  LiteRtCompiledModelT() = default;
+  explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env) : env_(env) {}
   ~LiteRtCompiledModelT() = default;
 
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
@@ -115,6 +115,9 @@ class LiteRtCompiledModelT {
   // Returns true if a non delegated operation is found in the interpreter.
   litert::Expected<bool> HasNonDelegatedOps();
 
+  // Returns the environment associated with the compiled model.
+  litert::Expected<LiteRtEnvironmentT*> GetEnvironment() { return env_; }
+
  private:
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
@@ -133,7 +136,7 @@ class LiteRtCompiledModelT {
   // This is called in the public Create*() methods.
   // The flatbuffer_model_ must be set before calling this method.
   litert::Expected<void> InitializeRuntime(
-      LiteRtOptions jit_compilation_options);
+      LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options);
 
   // Handles any JIT compilation and intializes the flatbuffer_model_ and
   // related field within the compiled model.
@@ -209,6 +212,9 @@ class LiteRtCompiledModelT {
 
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
+
+  // The environment associated with the compiled model.
+  LiteRtEnvironmentT* env_;
 
   // NOTE: Any fields that must be destroyed after the TFL interpreter
   // is destroyed must be listed before field interp_.

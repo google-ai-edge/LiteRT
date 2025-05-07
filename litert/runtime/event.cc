@@ -179,7 +179,8 @@ Expected<void> LiteRtEventT::Signal() {
                "The event signal is not supported");
 }
 
-Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEventType type) {
+Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
+                                                    LiteRtEventType type) {
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     LITERT_ASSIGN_OR_RETURN(

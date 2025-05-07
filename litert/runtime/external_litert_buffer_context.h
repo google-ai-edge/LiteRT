@@ -20,7 +20,6 @@
 #include <utility>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
@@ -32,7 +31,7 @@ namespace litert::internal {
 
 class ExternalLiteRtBufferContext : public TfLiteExternalContext {
  public:
-  ExternalLiteRtBufferContext() = default;
+  ExternalLiteRtBufferContext(LiteRtEnvironment env) : env_(env) {}
   ~ExternalLiteRtBufferContext() = default;
 
   static Expected<ExternalLiteRtBufferContext*> GetInstance(
@@ -128,7 +127,11 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   // Returns true if the async execution mode is set.
   inline bool IsAsyncExecutionMode() const { return async_execution_mode_; }
 
+  // Returns the LiteRtEnvironment used to create CompiledModel.
+  inline LiteRtEnvironment GetEnvironment() const { return env_; }
+
  private:
+  LiteRtEnvironment env_;
   std::unordered_map<const TfLiteOpaqueTensor*, TensorBufferRequirements>
       buffer_requirements_;
   std::unordered_map<const TfLiteOpaqueTensor*, TensorBuffer> tensor_buffers_;

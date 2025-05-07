@@ -86,10 +86,10 @@ TEST(CompiledModelTest, Basic) {
                   tensor_buffer_requirements, &tensor_buffer_size),
               kLiteRtStatusOk);
     LiteRtTensorBuffer tensor_buffer;
-    EXPECT_EQ(
-        LiteRtCreateManagedTensorBuffer(tensor_buffer_type, &kInput0TensorType,
-                                        tensor_buffer_size, &tensor_buffer),
-        kLiteRtStatusOk);
+    EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
+                  environment, tensor_buffer_type, &kInput0TensorType,
+                  tensor_buffer_size, &tensor_buffer),
+              kLiteRtStatusOk);
     input_tensor_buffers.push_back(tensor_buffer);
   }
 
@@ -115,10 +115,10 @@ TEST(CompiledModelTest, Basic) {
                   tensor_buffer_requirements, &tensor_buffer_size),
               kLiteRtStatusOk);
     LiteRtTensorBuffer tensor_buffer;
-    EXPECT_EQ(
-        LiteRtCreateManagedTensorBuffer(tensor_buffer_type, &kInput0TensorType,
-                                        tensor_buffer_size, &tensor_buffer),
-        kLiteRtStatusOk);
+    EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
+                  environment, tensor_buffer_type, &kInput0TensorType,
+                  tensor_buffer_size, &tensor_buffer),
+              kLiteRtStatusOk);
     output_tensor_buffers.push_back(tensor_buffer);
   }
 

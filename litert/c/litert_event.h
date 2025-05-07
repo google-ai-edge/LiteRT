@@ -56,7 +56,8 @@ LiteRtStatus LiteRtCreateEventFromEglSyncFence(EGLSyncKHR egl_sync,
 //
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
-LiteRtStatus LiteRtCreateManagedEvent(LiteRtEventType type, LiteRtEvent* event);
+LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
+                                      LiteRtEventType type, LiteRtEvent* event);
 
 LiteRtStatus LiteRtGetEventEventType(LiteRtEvent event, LiteRtEventType* type);
 
