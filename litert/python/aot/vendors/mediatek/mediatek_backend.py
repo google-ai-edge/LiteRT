@@ -17,6 +17,7 @@
 
 import copy
 import functools
+import itertools
 from typing import Iterable, Self
 
 from litert.python.aot.core import components
@@ -38,22 +39,49 @@ class MediaTekBackend(types.Backend):
     return target_lib.SocModel(self.config.get("soc_model", "ALL"))
 
   @property
+  def android_os_version(self) -> target_lib.AndroidOsVersion:
+    return target_lib.AndroidOsVersion(
+        self.config.get("android_os_version", "ALL")
+    )
+
+  @property
   def target(self) -> target_lib.Target:
-    return target_lib.Target(self.soc_model, self.soc_manufacturer)
+    return target_lib.Target(
+        self.soc_model, self.soc_manufacturer, self.android_os_version
+    )
 
   @property
   def target_id(self) -> str:
     return repr(self.target)
 
-  def specialize(self) -> Iterable["MediaTekBackend"]:
-    if self.soc_model != target_lib.SocModel.ALL:
+  def specialize(self) -> Iterable[Self]:
+    if (
+        self.soc_model != target_lib.SocModel.ALL
+        and self.android_os_version != target_lib.AndroidOsVersion.ALL
+    ):
       yield self
     else:
-      for soc_model in target_lib.SocModel:
-        if soc_model != target_lib.SocModel.ALL:
-          new_config = copy.deepcopy(self.config)
-          new_config["soc_model"] = soc_model.value
-          yield self.create(new_config)
+      if self.soc_model == target_lib.SocModel.ALL:
+        soc_models = filter(
+            lambda x: x != target_lib.SocModel.ALL, target_lib.SocModel
+        )
+      else:
+        soc_models = [self.soc_model]
+      if self.android_os_version == target_lib.AndroidOsVersion.ALL:
+        android_os_versions = [
+            x
+            for x in target_lib.AndroidOsVersion
+            if x != target_lib.AndroidOsVersion.ALL
+        ]
+      else:
+        android_os_versions = [self.android_os_version]
+      for soc_model, android_os_version in itertools.product(
+          soc_models, android_os_versions
+      ):
+        new_config = copy.deepcopy(self.config)
+        new_config["soc_model"] = soc_model.value
+        new_config["android_os_version"] = android_os_version.value
+        yield self.create(new_config)
 
   @classmethod
   def id(cls) -> str:
@@ -91,6 +119,8 @@ def _call_component(
   )
 
 
+# TODO(toribiosteven): Translate SOC | OS version to the corresponding
+# MediaTek SDK version and pass to the plugin.
 @_call_component.register
 def _apply_plugin(
     component: components.ApplyPluginT,
@@ -128,4 +158,3 @@ def _mlir_transforms(
     output_model: types.Model,
 ):
   return component(input_model, output_model, [])
-

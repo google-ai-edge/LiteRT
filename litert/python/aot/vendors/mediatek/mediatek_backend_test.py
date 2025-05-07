@@ -123,7 +123,7 @@ class MediaTekBackendTest(test_common.TestWithTfliteModels):
 
   def test_target_id(self):
     backend = mediatek_backend.MediaTekBackend.create(self.basic_config)
-    self.assertEqual(backend.target_id_suffix, "_MediaTek_ALL")
+    self.assertEqual(backend.target_id_suffix, "_MediaTek_ALL_ALL")
 
 
 if __name__ == "__main__":
