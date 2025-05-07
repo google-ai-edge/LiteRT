@@ -31,6 +31,24 @@ inline ElementType GetElementType(const Tensor& tensor) {
   return tensor_type.ElementType();
 }
 
+inline LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
+                                       NeuronAdapterPaddingCode& neuron_padding) {
+  switch (litert_padding) {
+    case 0: {
+      neuron_padding = NEURON_PADDING_SAME;
+      break;
+    }
+    case 1: {
+      neuron_padding = NEURON_PADDING_VALID;
+      break;
+    }
+    default: {
+      return kLiteRtStatusErrorUnsupported;
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
 inline Expected<uint32_t> AddZeroBiasForConvBase(const Tensor& input_tensor,
                                                  const Tensor& filter_tensor,
                                                  int32_t num_element,
@@ -70,7 +88,10 @@ inline Expected<uint32_t> AddConv2dPaddingOption(const litert::Op& op,
   uint32_t padding = 0;
   LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op.Get(), &padding))
       << "Fails to get Conv2dPadding";
-  return operand_map.AddScalarInt32(padding);
+  NeuronAdapterPaddingCode neuron_padding = NEURON_PADDING_SAME;
+  CHECK_RT_STATUS(ConvertPaddingType(padding, neuron_padding),
+                  "Fails to convert padding");
+  return operand_map.AddScalarInt32(neuron_padding);
 }
 
 inline Expected<uint32_t> AddConv2dStrideWOption(const litert::Op& op,
@@ -141,7 +162,10 @@ inline Expected<uint32_t> AddDepthwiseConv2dPaddingOption(
   LITERT_RETURN_IF_ERROR(
       LiteRtGetDepthwiseConv2dPaddingOption(op.Get(), &padding))
       << "Fails to get DepthwiseConv2dPadding";
-  return operand_map.AddScalarInt32(padding);
+  NeuronAdapterPaddingCode neuron_padding = NEURON_PADDING_SAME;
+  CHECK_RT_STATUS(ConvertPaddingType(padding, neuron_padding),
+                  "Fails to convert padding");
+  return operand_map.AddScalarInt32(neuron_padding);
 }
 
 inline Expected<uint32_t> AddDepthwiseConv2dStrideWOption(
