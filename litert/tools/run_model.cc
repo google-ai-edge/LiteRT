@@ -22,6 +22,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <numeric>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -62,6 +64,8 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
+ABSL_FLAG(std::string, dump_output_folder, "",
+          "Specify a folder path to store all output tensors.");
 
 namespace litert {
 namespace {
@@ -205,6 +209,32 @@ Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
   return {};
 }
 
+Expected<void> DumpTensorBuffer(TensorBuffer& buffer,
+                                const std::filesystem::path& dump_path) {
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type, buffer.TensorType());
+  const auto& layout = tensor_type.Layout();
+  LITERT_ASSIGN_OR_RETURN(size_t num_elements, layout.NumElements());
+
+  if (tensor_type.ElementType() == ElementType::Float32) {
+    std::vector<float> data(num_elements);
+    LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(data)));
+
+    std::ofstream output_file(dump_path.c_str(),
+                              std::ios::out | std::ios::binary);
+    if (!output_file.is_open()) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to open file while dumping tensor buffer.");
+    }
+    output_file.write(reinterpret_cast<char*>(data.data()),
+                      sizeof(decltype(data)::value_type) * data.size());
+  } else {
+    return Error(kLiteRtStatusErrorUnsupported,
+                 "Unsupported element type encountered while dumping tensor.");
+  }
+
+  return {};
+}
+
 Expected<void> RunModel() {
   if (absl::GetFlag(FLAGS_graph).empty()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
@@ -282,6 +312,25 @@ Expected<void> RunModel() {
   }
 
   ABSL_LOG(INFO) << "Model run completed";
+
+  const auto dump_output_folder = absl::GetFlag(FLAGS_dump_output_folder);
+  if (!dump_output_folder.empty()) {
+    std::filesystem::path output_folder_path(dump_output_folder);
+    if (!std::filesystem::is_directory(output_folder_path)) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          "The specified path for dumping output tensors is not a directory.");
+    }
+
+    ABSL_LOG(INFO) << "Dump output tensors into " << dump_output_folder;
+
+    for (size_t i = 0; i < output_buffers.size(); ++i) {
+      const auto dump_path =
+          output_folder_path / ("output_" + std::to_string(i) + ".raw");
+      auto& buffer = output_buffers[i];
+      LITERT_RETURN_IF_ERROR(DumpTensorBuffer(buffer, dump_path));
+    }
+  }
 
   return status;
 }
