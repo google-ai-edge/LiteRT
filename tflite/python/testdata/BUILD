@@ -184,7 +184,7 @@ pybind_extension(
         ":test_registerer",
         "//tflite:framework",
         "//tflite/kernels:builtin_ops",
-        "@org_tensorflow//third_party/python_runtime:headers",
+        "@local_xla//third_party/python_runtime:headers",
         "@pybind11",
     ],
 )

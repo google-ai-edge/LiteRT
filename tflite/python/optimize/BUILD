@@ -29,9 +29,9 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:optional",
+        "@local_xla//third_party/python_runtime:headers",  # buildcleaner: keep
         "@org_tensorflow//tensorflow/compiler/mlir/lite:offset_buffer",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
-        "@org_tensorflow//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
 
@@ -53,8 +53,8 @@ pybind_extension(
         ":calibration_wrapper_lib",
         "//tflite:framework",
         "//tflite/core:framework_stable",
+        "@local_xla//third_party/python_runtime:headers",
         "@org_tensorflow//tensorflow/python/lib/core:pybind11_lib",
-        "@org_tensorflow//third_party/python_runtime:headers",
         "@pybind11",
     ],
 )
