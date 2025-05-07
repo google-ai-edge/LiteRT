@@ -30,6 +30,16 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Model_nativeLoadFile(
 JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_Model_nativeDestroy(
     JNIEnv* env, jclass clazz, jlong handle);
 
+JNIEXPORT jobject JNICALL
+Java_com_google_ai_edge_litert_Model_nativeGetInputTensorType(
+    JNIEnv* env, jclass clazz, jlong handle, jstring input_name,
+    jstring signature);
+
+JNIEXPORT jobject JNICALL
+Java_com_google_ai_edge_litert_Model_nativeGetOutputTensorType(
+    JNIEnv* env, jclass clazz, jlong handle, jstring output_name,
+    jstring signature);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

@@ -70,6 +70,11 @@ cc_library(
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_model",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
         "//conditions:default": ["//third_party/java/jdk:jni"],

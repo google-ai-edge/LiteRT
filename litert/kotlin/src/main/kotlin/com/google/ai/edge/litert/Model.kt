@@ -18,11 +18,49 @@ package com.google.ai.edge.litert
 
 import android.content.res.AssetManager
 
+/** The type of a tensor, including its element type and layout. */
+data class TensorType
+@JvmOverloads
+constructor(val elementType: ElementType, val layout: Layout? = null) {
+
+  /** Data type of tensor elements. */
+  // TODO(niuchl): Add support for more element types.
+  enum class ElementType {
+    INT,
+    FLOAT,
+    INT8,
+    BOOLEAN,
+  }
+
+  /** Layout of a tensor. */
+  data class Layout
+  @JvmOverloads
+  constructor(val dimensions: IntArray, val strides: IntArray = intArrayOf()) {
+    val rank: Int
+      get() = dimensions.size
+
+    val hasStrides: Boolean
+      get() = strides.isNotEmpty()
+  }
+}
+
 /** Model represents a LiteRT model file. */
 class Model private constructor(handle: Long) : JniHandle(handle) {
 
   protected override fun destroy() {
     nativeDestroy(handle)
+  }
+
+  fun getInputTensorType(inputName: String, signature: String? = null): TensorType {
+    assertNotDestroyed()
+
+    return nativeGetInputTensorType(handle, inputName, signature)
+  }
+
+  fun getOutputTensorType(outputName: String, signature: String? = null): TensorType {
+    assertNotDestroyed()
+
+    return nativeGetOutputTensorType(handle, outputName, signature)
   }
 
   companion object {
@@ -48,6 +86,20 @@ class Model private constructor(handle: Long) : JniHandle(handle) {
     @JvmStatic private external fun nativeLoadFile(filePath: String): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
+
+    @JvmStatic
+    private external fun nativeGetInputTensorType(
+      handle: Long,
+      inputName: String,
+      signature: String?,
+    ): TensorType
+
+    @JvmStatic
+    private external fun nativeGetOutputTensorType(
+      handle: Long,
+      outputName: String,
+      signature: String?,
+    ): TensorType
   }
 }
 
