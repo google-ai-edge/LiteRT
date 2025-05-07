@@ -14,7 +14,10 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_stable_abi_users"],
+    default_visibility = [
+        "//litert:litert_stable_abi_users",
+        "//third_party/odml/litert_lm/runtime:__subpackages__",
+    ],
 )
 
 cc_library(
