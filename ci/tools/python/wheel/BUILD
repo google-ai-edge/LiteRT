@@ -47,6 +47,7 @@ genrule(
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
 ALL_PY_SRC_MODULES = [
+    "//litert/c:libLiteRtRuntimeCApi.so",
     "//litert/python/aot:prepare_for_npu",
     "//litert/python/aot:aot_compile",
     "//litert/python/aot/ai_pack:export_lib",
