@@ -76,6 +76,10 @@ py_wheel(
     srcs = [
         ":fixed_protos",
         ":fixed_pydeps",
+        "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper.so",
+        "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
+        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper.so",
+        "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
         "//tflite/experimental/genai:pywrap_genai_ops.so",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
