@@ -33,7 +33,7 @@ def aot_compile(
         types.CompilationConfig | list[types.CompilationConfig] | None
     ) = None,
     quantizer: components.AieQuantizerT | None = None,
-    keep_going: bool = False,
+    keep_going: bool = True,
     subgraphs_to_compile: list[int] | None = None,
     **kwargs,
 ) -> types.CompiledModels:
@@ -50,7 +50,8 @@ def aot_compile(
       registered targets.
     config: The compilation config(s). Cannot be specified with target.
     quantizer: The quantizer to use for quantization.
-    keep_going: Whether to keep going if some backends fail.
+    keep_going: Whether to keep going if some backends fail. If False, fail
+      fast on the first error and raise an exception.
     subgraphs_to_compile: The subgraph index list to compile to NPU. If None,
       compile all subgraphs.
     **kwargs: Additional arguments to pass to the backend.
