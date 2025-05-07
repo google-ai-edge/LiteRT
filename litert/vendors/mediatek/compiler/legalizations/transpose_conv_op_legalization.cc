@@ -86,9 +86,12 @@ Expected<void> LegalizeTransposeConvOp(
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to get padding");
   }
-  auto padding_operand_index =
-      operand_map.AddScalarInt32(static_cast<int32_t>(padding));
+  NeuronAdapterPaddingCode neuron_padding = NEURON_PADDING_SAME;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, neuron_padding))
+      << "Fails to convert padding";
+  auto padding_operand_index = operand_map.AddScalarInt32(neuron_padding);
   CHECK_OP_IDX_AND_RETURN_ERROR(padding_operand_index);
+
   input_indices.push_back(*padding_operand_index);
 
   int32_t stride_width;
