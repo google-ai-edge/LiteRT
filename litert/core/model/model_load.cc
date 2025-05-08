@@ -51,11 +51,14 @@ class FlatbufferContext {
                     BufferManager* buffer_manager)
       : tfl_flatbuffer_(tfl_flatbuffer), buffer_manager_(buffer_manager) {}
 
-  void SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
-    const auto builtin_code =
-        PackedModel()->operator_codes()->Get(ind)->builtin_code();
-    litert_op.SetOpCode(static_cast<LiteRtOpCode>(builtin_code));
+  Expected<void> SetOpCode(LiteRtOpT& litert_op, uint32_t ind) {
+    const auto* code = PackedModel()->operator_codes()->Get(ind);
+    const int32_t builtin_code = code->builtin_code();
+    const int32_t dep_code = code->deprecated_builtin_code();
+    litert_op.SetOpCode(
+        static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
     litert::internal::SetTflOpCodeInd(litert_op, ind);
+    return {};
   }
 
   // Get the buffer at the given index in the tflite model.
@@ -139,7 +142,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   // OP CODE
 
-  context.SetOpCode(litert_op, tfl_op.opcode_index());
+  LITERT_RETURN_IF_ERROR(context.SetOpCode(litert_op, tfl_op.opcode_index()));
 
   return kLiteRtStatusOk;
 }
