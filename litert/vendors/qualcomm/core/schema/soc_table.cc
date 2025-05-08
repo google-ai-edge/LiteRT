@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
+
 #include <cstdint>
 namespace qnn {
 constexpr SocInfo kSocInfos[] = {
@@ -18,6 +19,9 @@ constexpr SocInfo kSocInfos[] = {
              4  // vtcm_size_in_mb
              )},
     {SocInfo("SM8450", SnapdragonModel::SM8450, DspArch::V69,
+             8  // vtcm_size_in_mb
+             )},
+    {SocInfo("SM8475", SnapdragonModel::SM8475, DspArch::V69,
              8  // vtcm_size_in_mb
              )},
     {SocInfo("SM8550", SnapdragonModel::SM8550, DspArch::V73,

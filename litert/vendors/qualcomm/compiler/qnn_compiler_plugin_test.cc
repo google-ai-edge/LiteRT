@@ -131,6 +131,7 @@ const auto kSupportedSocModels = Values(
     "SA8255",
     "SM8350",
     "SM8450",
+    "SM8475",
     "SM8550",
     "SM8650",
     "SM8750"
@@ -145,7 +146,7 @@ TEST(TestQnnPlugin, GetConfigInfo) {
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 8);
+  ASSERT_EQ(num_supported_soc_models, 9);
 
   const char* config_id;
   LITERT_ASSERT_OK(

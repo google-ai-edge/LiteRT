@@ -11,6 +11,7 @@ enum class SnapdragonModel {
   SA8295 = 39,
   SM8350 = 30,
   SM8450 = 36,
+  SM8475 = 42,
   SM8550 = 43,
   SA8255 = 52,
   SM8650 = 57,
