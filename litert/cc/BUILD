@@ -215,6 +215,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -902,6 +903,15 @@ cc_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_detail_test",
+    srcs = ["litert_detail_test.cc"],
+    deps = [
+        ":litert_detail",
         "@com_google_googletest//:gtest_main",
     ],
 )

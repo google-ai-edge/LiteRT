@@ -15,12 +15,14 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
 
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <optional>
 #include <utility>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 
 namespace litert {
@@ -75,6 +77,58 @@ template <class T, class It>
 std::optional<size_t> FindInd(It begin, It end, T val) {
   auto it = std::find(begin, end, val);
   return (it == end) ? std::nullopt : std::make_optional(it - begin);
+}
+
+// Compile time strings.
+
+template <size_t Len>
+using StrLiteral = const char (&)[Len];
+
+template <size_t Len>
+using CtStrData = std::array<char, Len>;
+
+template <size_t Len>
+class CtStr {
+ public:
+  using Data = CtStrData<Len>;
+
+  constexpr CtStr() = default;
+  constexpr explicit CtStr(Data&& data) : data_(std::move(data)) {}
+
+  template <size_t N, class I = std::make_index_sequence<N - 1>>
+  constexpr explicit CtStr(StrLiteral<N> lit) : CtStr(lit, I{}) {}
+
+  constexpr absl::string_view Str() const {
+    return absl::string_view(data_.data(), data_.size());
+  }
+
+ private:
+  template <size_t N, size_t... I>
+  constexpr CtStr(StrLiteral<N> lit, std::index_sequence<I...>)
+      : data_(Data({lit[I]...})) {}
+
+  Data data_ = {};
+};
+template <size_t N>
+CtStr(CtStrData<N>&&) -> CtStr<N>;
+template <size_t N, class I = std::make_index_sequence<N - 1>>
+CtStr(StrLiteral<N>) -> CtStr<N - 1>;
+
+// Concat compile time strings.
+
+template <size_t... Ns>
+constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
+  using Out = CtStr<(Ns + ...) - sizeof...(Ns)>;
+  typename Out::Data data = {};
+  auto cur = data.begin();
+  (
+      [&]() {
+        for (auto i = 0; i < Ns - 1; ++i) {
+          *cur++ = strs[i];
+        }
+      }(),
+      ...);
+  return CtStr(std::move(data));
 }
 
 namespace internal {
