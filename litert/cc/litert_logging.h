@@ -24,6 +24,15 @@
 
 namespace litert {
 
+// Detects whether the current build is debug or not.
+inline constexpr bool IsDbg() {
+#ifdef NDEBUG
+  return false;
+#else
+  return true;
+#endif
+}
+
 // Sets up log interception and reverts it upon destruction.
 //
 // Useful to catch logs automatically dumped when the C API is called.
