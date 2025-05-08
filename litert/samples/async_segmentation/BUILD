@@ -56,7 +56,7 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        # copybara:uncomment "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
     ],
     linkopts = select({
