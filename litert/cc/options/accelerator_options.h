@@ -38,6 +38,11 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
   LiteRtStatus SetDelegatePrecision(LiteRtDelegatePrecision precision);
   LiteRtStatus SetBufferStorageType(LiteRtDelegateBufferStorageType type);
+  LiteRtStatus SetPreferTextureWeights(bool prefer_texture_weights);
+  LiteRtStatus SetSerializationDir(const char* serialization_dir);
+  LiteRtStatus SetModelToken(const char* model_token);
+  LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
+  LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
 };
 
 }  // namespace litert
