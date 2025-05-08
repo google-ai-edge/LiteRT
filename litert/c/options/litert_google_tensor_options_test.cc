@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_opaque_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert::google_tensor {

@@ -25,9 +25,6 @@
 // C-API for an opaque options type relevant to Qualcomm (both dspatch and
 // plugin).
 #ifdef __cplusplus
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/litert_opaque_options.h"
-
 extern "C" {
 #endif  // __cplusplus
 
@@ -103,41 +100,5 @@ LiteRtStatus LiteRtQualcommOptionsGetPowerMode(
 
 #ifdef __cplusplus
 }  // extern "C"
-
-// C++ WRAPPERS ////////////////////////////////////////////////////////////////
-
-namespace litert::qualcomm {
-
-// Wraps a LiteRtQualcommOptions object for convenience.
-class QualcommOptions : public OpaqueOptions {
- public:
-  using LogLevel = LiteRtQualcommOptionsLogLevel;
-  using PowerMode = LiteRtQualcommOptionsPowerMode;
-
-  using OpaqueOptions::OpaqueOptions;
-
-  static const char* Discriminator() {
-    return LiteRtQualcommOptionsGetIdentifier();
-  }
-
-  static Expected<QualcommOptions> Create(OpaqueOptions& options);
-
-  static Expected<QualcommOptions> Create();
-
-  void SetLogLevel(LogLevel log_level);
-  LogLevel GetLogLevel();
-
-  void SetPowerMode(PowerMode power_mode);
-  PowerMode GetPowerMode();
-
-  void SetEnableWeightSharing(bool weight_sharing_enabled);
-  bool GetEnableWeightSharing();
-
- private:
-  LiteRtQualcommOptions Data() const;
-};
-
-}  // namespace litert::qualcomm
-
 #endif  // __cplusplus
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_

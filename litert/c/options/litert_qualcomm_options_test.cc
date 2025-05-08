@@ -21,6 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert::qualcomm {

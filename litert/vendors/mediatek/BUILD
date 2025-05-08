@@ -36,9 +36,9 @@ litert_cc_lib_with_mtk(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
+        "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:latest_host_headers",

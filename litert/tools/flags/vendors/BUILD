@@ -24,9 +24,9 @@ cc_library(
     srcs = ["qualcomm_flags.cc"],
     hdrs = ["qualcomm_flags.h"],
     deps = [
-        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_qualcomm_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -50,9 +50,9 @@ cc_library(
     srcs = ["google_tensor_flags.cc"],
     hdrs = ["google_tensor_flags.h"],
     deps = [
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_google_tensor_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -76,9 +76,9 @@ cc_library(
     srcs = ["mediatek_flags.cc"],
     hdrs = ["mediatek_flags.h"],
     deps = [
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -90,8 +90,8 @@ cc_test(
     srcs = ["mediatek_flags_test.cc"],
     deps = [
         ":mediatek_flags",
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:marshalling",
         "@com_google_absl//absl/strings:string_view",

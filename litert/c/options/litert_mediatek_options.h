@@ -17,9 +17,6 @@
 #include "litert/c/litert_opaque_options.h"
 
 #ifdef __cplusplus
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
-
 extern "C" {
 #endif  // __cplusplus
 
@@ -54,25 +51,5 @@ LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
 
 }  // extern "C"
 
-// C++ WRAPPERS ////////////////////////////////////////////////////////////////
-namespace litert::mediatek {
-
-// Wraps a LiteRtMediatekOptions object for convenience.
-class MediatekOptions : public OpaqueOptions {
- public:
-  using OpaqueOptions::OpaqueOptions;
-  MediatekOptions() = delete;
-  static const char* Discriminator();
-  static Expected<MediatekOptions> Create(OpaqueOptions& options);
-  static Expected<MediatekOptions> Create();
-  void SetNeronSDKVersionType(
-      LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
-  LiteRtMediatekOptionsNeronSDKVersionType GetNeronSDKVersionType();
-
- private:
-  LiteRtMediatekOptions Data() const;
-};
-
-}  // namespace litert::mediatek
 #endif  // __cplusplus
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_

@@ -20,8 +20,8 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/marshalling.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 
 namespace litert::mediatek {
 namespace {

@@ -665,10 +665,9 @@ cc_library(
         "//conditions:default": [":litert_runtime_c_api_so"],
     }),
     hdrs = glob(["litert_*.h"]) + [
-        # Needed for litert/c/litert_op_code.h
-        "//tflite:builtin_ops.h",
-        # Neeeded for litert/c/litert_model.h
-        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+        "//litert/c/options:options_headers",
+        "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",  # Needed for litert/c/litert_model.h
         "//tflite/core/c:headers_filegroup",
     ],
     linkstatic = 1,

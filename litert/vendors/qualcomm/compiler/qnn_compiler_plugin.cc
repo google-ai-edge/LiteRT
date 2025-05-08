@@ -37,8 +37,8 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
-#include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"

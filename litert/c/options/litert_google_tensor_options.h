@@ -22,8 +22,6 @@
 #include <string>
 #include <vector>
 
-#include "litert/cc/litert_opaque_options.h"
-
 extern "C" {
 #endif  // __cplusplus
 
@@ -118,60 +116,7 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
 LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
     LiteRtGoogleTensorOptions options,
     std::vector<std::vector<std::string>>* testing_flags);
-
 }  // extern "C"
-
-// C++ WRAPPERS ////////////////////////////////////////////////////////////////
-
-namespace litert::google_tensor {
-
-// Wraps a LiteRtGoogleTensorOptions object for convenience.
-class GoogleTensorOptions : public OpaqueOptions {
- public:
-  using OpaqueOptions::OpaqueOptions;
-
-  GoogleTensorOptions() = delete;
-
-  static const char* Discriminator();
-
-  static Expected<GoogleTensorOptions> Create(OpaqueOptions& options);
-  static Expected<GoogleTensorOptions> Create();
-
-  void SetFloatTruncationType(
-      LiteRtGoogleTensorOptionsTruncationType truncation_type);
-
-  LiteRtGoogleTensorOptionsTruncationType GetFloatTruncationType() const;
-
-  void SetInt64ToInt32Truncation(bool int64_to_int32_truncation);
-
-  bool GetInt64ToInt32Truncation() const;
-
-  void SetOutputDir(absl::string_view output_dir);
-
-  absl::string_view GetOutputDir() const;
-
-  void SetDumpOpTimings(bool dump_op_timings);
-
-  bool GetDumpOpTimings() const;
-
-  bool GetEnableLargeModelSupport() const;
-
-  void SetEnableLargeModelSupport(bool enable_large_model_support);
-
-  void SetShardingIntensity(
-      LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
-
-  LiteRtGoogleTensorOptionsShardingIntensity GetShardingIntensity() const;
-
-  std::vector<std::vector<std::string>> GetTestingFlags() const;
-
-  void SetTestingFlags(const std::string& testing_flags);
-
- private:
-  LiteRtGoogleTensorOptions Data() const;
-};
-
-}  // namespace litert::google_tensor
 #endif  // __cplusplus
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_GOOGLE_TENSOR_OPTIONS_H_

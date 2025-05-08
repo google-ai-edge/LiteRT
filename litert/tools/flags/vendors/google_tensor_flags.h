@@ -19,8 +19,8 @@
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
