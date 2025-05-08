@@ -191,8 +191,8 @@ kt_android_library(
 )
 
 # bazel build --config=android_arm64 --android_ndk_min_sdk_version=26 \
-#   //litert/kotlin:litert_kotlin_api_aar
+#   //litert/kotlin:litert
 aar_with_jni(
-    name = "litert_kotlin_api_aar",
+    name = "litert",
     android_library = ":litert_kotlin_api",
 )
