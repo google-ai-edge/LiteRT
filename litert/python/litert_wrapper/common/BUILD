@@ -26,6 +26,6 @@ cc_library(
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/strings:string_view",
-        "@org_tensorflow//third_party/python_runtime:headers",
+        "@local_xla//third_party/python_runtime:headers",
     ],
 )
