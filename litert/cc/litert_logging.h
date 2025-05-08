@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <ostream>
+#include <string>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -76,6 +77,17 @@ class InterceptLogs {
 
   LiteRtLogger original_logger_;
 };
+
+// Returns a human readable string representing the given number of bytes.
+inline std::string HumanReadableSize(size_t bytes) {
+  static constexpr auto kGb = 1024 * 1024 * 1024;
+  static constexpr auto kMb = 1024 * 1024;
+  static constexpr auto kKb = 1024;
+  if (bytes >= kGb) return std::to_string((float)bytes / kGb) + " GB ";
+  if (bytes >= kMb) return std::to_string((float)bytes / kMb) + " MB ";
+  if (bytes >= kKb) return std::to_string((float)bytes / kKb) + " KB ";
+  return std::to_string(bytes) + " B ";
+}
 
 }  // namespace litert
 
