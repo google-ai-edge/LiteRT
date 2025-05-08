@@ -183,3 +183,7 @@ qairt()
 load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
 
 neuro_pilot()
+
+load("//third_party/stblib:workspace.bzl", stblib = "repo")
+
+stblib()
