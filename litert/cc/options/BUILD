@@ -39,6 +39,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "accelerator_options",
+    srcs = ["accelerator_options.cc"],
+    hdrs = ["accelerator_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "accelerator_options_test",
+    srcs = ["accelerator_options_test.cc"],
+    deps = [
+        ":accelerator_options",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_gpu_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "litert_cpu_options_test",
     srcs = ["litert_cpu_options_test.cc"],

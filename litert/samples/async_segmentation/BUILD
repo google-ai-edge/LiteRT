@@ -109,7 +109,7 @@ cc_library(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//litert/runtime/accelerators/gpu:accelerator_options",
+        "//litert/cc/options:accelerator_options",
         "//third_party/GL:EGL_headers",
         "//third_party/GL:GLES2_headers",
         "//third_party/GL:GLES3_headers",

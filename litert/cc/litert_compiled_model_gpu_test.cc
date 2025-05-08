@@ -37,7 +37,7 @@
 #include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/runtime/accelerators/gpu/accelerator_options.h"
+#include "litert/cc/options/accelerator_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -448,7 +448,7 @@ TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
-                              litert::ml_drift::GpuOptions::Create());
+                              litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ASSERT_OK(
@@ -535,7 +535,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
-                              litert::ml_drift::GpuOptions::Create());
+                              litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ASSERT_OK(

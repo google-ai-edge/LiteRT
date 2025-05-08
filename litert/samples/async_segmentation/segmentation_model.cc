@@ -36,7 +36,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/runtime/accelerators/gpu/accelerator_options.h"
+#include "litert/cc/options/accelerator_options.h"
 
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
@@ -93,8 +93,7 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
 }
 
 litert::Options CreateGpuOptions() {
-  LITERT_ASSIGN_OR_ABORT(auto gpu_options,
-                         litert::ml_drift::GpuOptions::Create());
+  LITERT_ASSIGN_OR_ABORT(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ABORT_IF_ERROR(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ABORT_IF_ERROR(

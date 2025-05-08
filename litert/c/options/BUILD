@@ -122,11 +122,36 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_gpu_options",
+    srcs = ["litert_gpu_options.cc"],
+    hdrs = ["litert_gpu_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 cc_test(
     name = "litert_mediatek_options_test",
     srcs = ["litert_mediatek_options_test.cc"],
     deps = [
         ":litert_mediatek_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "litert_gpu_options_test",
+    srcs = ["litert_gpu_options_test.cc"],
+    deps = [
+        ":litert_gpu_options",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
