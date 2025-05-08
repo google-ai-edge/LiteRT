@@ -113,6 +113,10 @@ ABSL_FLAG(LiteRtQualcommOptionsLogLevel, qualcomm_log_level,
 ABSL_FLAG(LiteRtQualcommOptionsPowerMode, qualcomm_power_mode,
           kLiteRtQualcommPowerModeUnknown, "Power preference for HTP device.");
 
+ABSL_FLAG(std::vector<std::string>, qualcomm_dump_ids, {},
+          "Debug Feature. Ids to dump as outputs. Comma-separated list of "
+          "string. Use -1 to dump all op outputs.");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -128,6 +132,9 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
 
   const auto power_mode = absl::GetFlag(FLAGS_qualcomm_power_mode);
   opts.SetPowerMode(power_mode);
+
+  const auto dump_ids = absl::GetFlag(FLAGS_qualcomm_dump_ids);
+  opts.SetDumpIds(dump_ids);
 
   return opts;
 }

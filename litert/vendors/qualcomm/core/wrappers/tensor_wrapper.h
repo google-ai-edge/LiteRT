@@ -20,6 +20,7 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
+static const std::string kDumpSuffix = "_dump";
 
 // Get the Qnn_DataType_t associated with given C++ type.
 template <typename T>
@@ -91,16 +92,18 @@ class TensorWrapper final {
  public:
   explicit TensorWrapper();
 
-  explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
-                         const QuantizeParamsWrapperVariant& quantize_params,
-                         const std::vector<std::uint32_t>& dimentions);
-
-  explicit TensorWrapper(std::uint32_t id, Qnn_TensorType_t tensor_type,
-                         Qnn_DataType_t data_type,
+  explicit TensorWrapper(std::uint32_t id, std::string prefix,
+                         Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions,
-                         std::uint32_t bytes, const void* data);
+                         std::uint32_t framework_id);
+
+  explicit TensorWrapper(std::uint32_t id, std::string prefix,
+                         Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+                         const QuantizeParamsWrapperVariant& quantize_params,
+                         const std::vector<std::uint32_t>& dimentions,
+                         std::uint32_t framework_id, std::uint32_t bytes,
+                         const void* data);
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
 
@@ -306,8 +309,24 @@ class TensorWrapper final {
 
   void ConvertQint16ToQuint16();
 
+  void DumpTensor() {
+    name_ += kDumpSuffix;
+    qnn_tensor_.v2.name = name_.c_str();
+    SetOutputTensorType(QNN_TENSOR_TYPE_APP_READ);
+  }
+
+  uint32_t GetFrameWorkId() const { return framework_id_; }
+
+  bool IsMarkedDump() const { return IsStrEndsWith(name_, kDumpSuffix); }
+
+  std::string GetName() const { return name_; }
+
  private:
   Qnn_TensorType_t GetTensorType() const;
+
+  void SetOutputTensorType(Qnn_TensorType_t tensor_type) {
+    qnn_tensor_.v2.type = tensor_type;
+  }
 
   void SetDataType(Qnn_DataType_t data_type) {
     qnn_tensor_.v2.dataType = data_type;
@@ -326,6 +345,7 @@ class TensorWrapper final {
   std::vector<std::uint32_t> dimentions_{};
   QuantizeParamsWrapperVariant quantize_params_{};
   std::vector<std::byte> owned_data_{};
+  std::uint32_t framework_id_{std::numeric_limits<std::uint32_t>::max()};
 };
 
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;

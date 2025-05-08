@@ -43,7 +43,8 @@ LiteRtStatus ConvertOp(const litert::Op& litert_op,
 // context behind "qnn". Uses given graph_name to name entry point.
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                           LiteRtSubgraph subgraph,
-                          absl::string_view qnn_graph_name);
+                          absl::string_view qnn_graph_name,
+                          const std::vector<int>& dump_ids);
 
 }  // namespace litert::qnn
 
