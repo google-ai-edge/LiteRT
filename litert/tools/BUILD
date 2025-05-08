@@ -317,6 +317,24 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "analyze_model_main",
+    srcs = ["analyze_model_main.cc"],
+    deps = [
+        ":dump",
+        ":tool_display",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_logging",
+        "//litert/cc:litert_model",
+        "//litert/core/model",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # We create a library for benchmark_main.cc to faciliate the creation of a
 # customized benchmark model binary that only needs linking with extra
 # dependency, e.g., enabling creating of benchmark binaries with a custom
