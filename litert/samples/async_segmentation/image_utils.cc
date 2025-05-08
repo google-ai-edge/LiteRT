@@ -24,8 +24,10 @@
 #include <vector>     // For RGB conversion buffer in saveImage for JPG
 
 // STB Image libraries
-#include "third_party/stblib/stb_image.h"
-#include "third_party/stblib/stb_image_write.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"  // from @stblib
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"  // from @stblib
 
 unsigned char* ImageUtils::LoadImage(const std::string& path, int& width,
                                      int& height, int& channels_in_file,

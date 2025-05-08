@@ -21,9 +21,9 @@
 #include <vector>
 
 // EGL
-#include "third_party/GL/gl/include/EGL/egl.h"
-#include "third_party/GL/gl/include/EGL/eglext.h"
-#include "third_party/GL/gl/include/GLES3/gl3.h"
+#include "EGL/egl.h"
+#include "EGL/eglext.h"
+#include "GLES3/gl3.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"

@@ -84,9 +84,11 @@ if [ ! -d "$BINARY_BUILD_PATH" ]; then
 fi
 
 # --- Configuration ---
-PACKAGE_LOCATION="third_party/odml/litert/litert/samples/async_segmentation"
-C_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/third_party/odml/litert/litert/c"
-NPU_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/third_party/odml/litert/litert/vendors/qualcomm/dispatch"
+ROOT_DIR="litert/"
+
+PACKAGE_LOCATION="${ROOT_DIR}/samples/async_segmentation"
+C_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}/c"
+NPU_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}/vendors/qualcomm/dispatch"
 PACKAGE_NAME="async_segmentation"
 OUTPUT_PATH="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}"
 

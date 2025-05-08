@@ -22,10 +22,11 @@
 #include <cstddef>
 #include <string>
 #include <vector>
+
 // EGL
-#include "third_party/GL/gl/include/EGL/egl.h"
-#include "third_party/GL/gl/include/EGL/eglext.h"
-#include "third_party/GL/gl/include/GLES3/gl3.h"
+#include "EGL/egl.h"
+#include "EGL/eglext.h"
+#include "GLES3/gl3.h"
 
 struct RGBAColor {
   float r, g, b, a;
