@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gl_native_deps", "gles_deps", "gles_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -79,7 +79,7 @@ cc_library(
     srcs = ["image_utils.cc"],
     hdrs = ["image_utils.h"],
     deps = [
-        "@stblib",
+        "@stblib//:stb_image_hdrs",
     ],
 )
 
@@ -89,7 +89,6 @@ cc_library(
     hdrs = ["image_processor.h"],
     linkopts = gles_linkopts(),
     deps = [
-        "//litert/c:litert_gl_types",
         "@com_google_absl//absl/log:absl_check",
     ] + gles_deps(),
 )
@@ -109,11 +108,6 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/options:accelerator_options",
-        "//third_party/GL:EGL_headers",
-        "//third_party/GL:GLES2_headers",
-        "//third_party/GL:GLES3_headers",
-        "//third_party/GL/native:EGL",
-        "//third_party/GL/native:GLESv3",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + gles_deps() + gl_native_deps(),
 )

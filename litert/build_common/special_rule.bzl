@@ -22,6 +22,10 @@ def lite_rt_friends():
 
     return []
 
+def gl_native_deps():
+    """This is a no-op outside of Google."""
+    return []
+
 def gles_deps():
     """This is a no-op outside of Google."""
     return []

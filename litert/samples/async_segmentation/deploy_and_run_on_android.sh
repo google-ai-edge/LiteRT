@@ -86,9 +86,9 @@ fi
 # --- Configuration ---
 ROOT_DIR="litert/"
 
-PACKAGE_LOCATION="${ROOT_DIR}/samples/async_segmentation"
-C_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}/c"
-NPU_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}/vendors/qualcomm/dispatch"
+PACKAGE_LOCATION="${ROOT_DIR}samples/async_segmentation"
+C_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}c"
+NPU_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}vendors/qualcomm/dispatch"
 PACKAGE_NAME="async_segmentation"
 OUTPUT_PATH="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}"
 
