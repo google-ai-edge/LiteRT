@@ -34,12 +34,10 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_model_predicates.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/interpreter.h"
 #include "tflite/kernels/register.h"
-#include "tsl/platform/platform.h"
 
 namespace litert::testing {
 
@@ -88,7 +86,7 @@ constexpr absl::string_view kInternalPrefx = "third_party/odml/litert";
 
 std::string GetTestFilePath(absl::string_view filename) {
   static constexpr absl::string_view kTestDataDir = "test/testdata/";
-  if constexpr (!tsl::kIsOpenSource) {
+  if constexpr (!IsOss()) {
     return internal::Join(
         {kBaseDir, kInternalPrefx, kLiteRtDir, kTestDataDir, filename});
   } else {
@@ -97,7 +95,7 @@ std::string GetTestFilePath(absl::string_view filename) {
 }
 
 std::string GetTfliteFilePath(absl::string_view filename) {
-  if constexpr (!tsl::kIsOpenSource) {
+  if constexpr (!IsOss()) {
     return internal::Join({kBaseDir, "third_party/tensorflow/lite/", filename});
   } else {
     return internal::Join({kBaseDir, "external/tflite/", filename});
@@ -105,7 +103,7 @@ std::string GetTfliteFilePath(absl::string_view filename) {
 }
 
 std::string GetLiteRtPath(absl::string_view rel_path) {
-  if constexpr (!tsl::kIsOpenSource) {
+  if constexpr (!IsOss()) {
     return internal::Join({kBaseDir, kInternalPrefx, kLiteRtDir, rel_path});
   } else {
     return internal::Join({kBaseDir, kLiteRtDir, rel_path});

@@ -16,7 +16,6 @@
 #define ODML_LITERT_LITERT_TEST_COMMON_H_
 
 #include <string>
-#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
@@ -24,6 +23,7 @@
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/interpreter.h"
+#include "tsl/platform/platform.h"
 
 namespace litert::testing {
 
@@ -102,6 +102,13 @@ inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFileWithNpuModel(
   }
   return TflRuntime::CreateFromFlatBuffer(std::move(*flatbuffer));
 }
+
+// TODO(lukeboyer): Add own implementation and remove tf dependency.
+// Detects whether the code is running in OSS environment.
+inline constexpr bool IsOss() { return tsl::kIsOpenSource; }
+
+// Macro version of above.
+#define LITERT_IS_OSS IsOss()
 
 }  // namespace litert::testing
 
