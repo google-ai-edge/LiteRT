@@ -22,17 +22,25 @@
 #include <iostream>
 #include <string>
 
-#ifdef LITERT_HAS_MTK_SDK
-#include "neuron/api/NeuronAdapter.h"  // IWYU pragma: keep
-#endif
 #include <gtest/gtest.h>  // IWYU pragma: keep
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_logging.h"
+#include "litert/test/common.h"
 #include "QnnCommon.h"  // from @qairt  // IWYU pragma: keep
 #include "System/QnnSystemCommon.h"  // from @qairt  // IWYU pragma: keep
 
+#if !LITERT_IS_OSS
+#include "neuron/api/NeuronAdapter.h"  // IWYU pragma: keep
+#endif
+
 namespace {
+
+using ::litert::IsDbg;
+using ::litert::testing::IsOss;
+using ::testing::TestWithParam;
+using ::testing::Values;
 
 void DumpLinkDbg(void *lib_handle, absl::string_view lib_name) {
   if (lib_handle != nullptr) {
@@ -82,30 +90,35 @@ void DumpLinkDbg(void *lib_handle, absl::string_view lib_name) {
   }
 }
 
-TEST(CheckSoAvailabilityTest, CheckQnnSdk) {
-  static constexpr absl::string_view kLib = "libQnnHtp.so";
-  void *lib_qnn_handle = dlopen(kLib.data(), RTLD_LAZY);
-  EXPECT_NE(lib_qnn_handle, nullptr);
-  DumpLinkDbg(lib_qnn_handle, kLib);
-}
+template <bool InternalOnly>
+class CheckSdkTestImpl : public TestWithParam<absl::string_view> {
+ public:
+  void SetUp() override {
+    if constexpr (InternalOnly && IsOss()) {
+      GTEST_SKIP() << "Skipping test for non-OSS builds.";
+    }
+  }
+  void DoTest() {
+    void *lib_handle = dlopen(GetParam().data(), RTLD_LAZY);
+    EXPECT_NE(lib_handle, nullptr);
+    if constexpr (IsDbg()) {
+      DumpLinkDbg(lib_handle, GetParam());
+    }
+  }
+};
 
-TEST(CheckSoAvailabilityTest, CheckQnnSystemSdk) {
-  static constexpr absl::string_view kLib = "libQnnSystem.so";
-  void *lib_qnn_handle = dlopen(kLib.data(), RTLD_LAZY);
-  EXPECT_NE(lib_qnn_handle, nullptr);
-  DumpLinkDbg(lib_qnn_handle, kLib);
-}
+using CheckSdkTest = CheckSdkTestImpl<false>;
+TEST_P(CheckSdkTest, CheckSdk) { DoTest(); }
 
-// NOLINTBEGIN
-TEST(CheckSoAvailabilityTest, CheckLatestMediatekSdk) {
-  #ifndef LITERT_HAS_MTK_SDK
-  GTEST_SKIP() << "MTK SDK is not available.";
-  #endif
-  static constexpr absl::string_view kLib = "libneuron_adapter.so";
-  void *lib_neuron_adapter_handle = dlopen(kLib.data(), RTLD_LAZY);
-  EXPECT_NE(lib_neuron_adapter_handle, nullptr);
-  DumpLinkDbg(lib_neuron_adapter_handle, kLib);
-}
-// NOLINTEND
+using InternalOnlyCheckSdkTest = CheckSdkTestImpl<true>;
+TEST_P(InternalOnlyCheckSdkTest, CheckSdk) { DoTest(); }
+
+////////////////////////////////////////////////////////////////////////////////
+
+INSTANTIATE_TEST_SUITE_P(Qairt, CheckSdkTest,
+                         Values("libQnnHtp.so", "libQnnSystem.so"));
+
+INSTANTIATE_TEST_SUITE_P(NueronAdapter, InternalOnlyCheckSdkTest,
+                         Values("libneuron_adapter.so"));
 
 }  // namespace

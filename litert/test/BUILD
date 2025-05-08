@@ -54,7 +54,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
         "//litert/core:filesystem",
         "//litert/core/model:model_buffer",
         "//litert/core/util:flatbuffer_tools",

@@ -36,6 +36,7 @@ package_group(
         "//litert/python/...",
         "//litert/runtime/...",
         "//litert/test/...",
+        "//litert/sdk_util/...",
         "//litert/tools/...",
         # Users with access to core internal apis.
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",

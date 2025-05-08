@@ -108,7 +108,7 @@ inline Expected<TflRuntime::Ptr> MakeRuntimeFromTestFileWithNpuModel(
 inline constexpr bool IsOss() { return tsl::kIsOpenSource; }
 
 // Macro version of above.
-#define LITERT_IS_OSS IsOss()
+#define LITERT_IS_OSS TSL_IS_IN_OSS
 
 }  // namespace litert::testing
 
