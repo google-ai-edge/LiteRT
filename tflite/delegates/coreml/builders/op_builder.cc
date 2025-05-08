@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/delegates/coreml/builders/op_builder.h"
 
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <string>
