@@ -34,6 +34,11 @@ typedef enum {
   kLiteRtLogSeveritySilent = 4,
 } LiteRtLogSeverity;
 
+#ifndef NDEBUG
+#define LITERT_DEBUG kLiteRtLogSeverityInfo
+#else
+#define LITERT_DEBUG kLiteRtLogSeveritySilent
+#endif
 #define LITERT_VERBOSE kLiteRtLogSeverityVerbose
 #define LITERT_INFO kLiteRtLogSeverityInfo
 #define LITERT_WARNING kLiteRtLogSeverityWarning
@@ -91,6 +96,14 @@ LiteRtStatus LiteRtUseSinkLogger();
 
 #ifdef __cplusplus
 }  // extern "C"
+
+// Compile statement only in debug mode.
+#ifndef NDEBUG
+#define LITERT_DEBUG_CODE(stmt) stmt;
+#else
+#define LITERT_DEBUG_CODE(stmt)
+#endif
+
 #endif  // __cplusplus
 
 #define LITERT_LOGGER_LOG_PROD(logger, severity, format, ...)                  \

@@ -47,6 +47,22 @@ TEST(Layout, MinLogging) {
   LiteRtDestroyLogger(logger);
 }
 
+TEST(DebugMacros, DebugOnlyCode) {
+  bool val = false;
+  LITERT_DEBUG_CODE(val = true);
+
+  bool val2 = false;
+  LITERT_DEBUG_CODE({ val2 = true; });
+
+#ifndef NDEBUG
+  EXPECT_TRUE(val2 && val);
+
+#else
+  EXPECT_FALSE(val2 || val);
+
+#endif
+}
+
 TEST(LiteRtLoggerTest, LiteRtGetLoggerIdentifierFailsWithInvalidInput) {
   const char* identifier = nullptr;
   EXPECT_THAT(LiteRtGetLoggerIdentifier(nullptr, &identifier), IsError());
