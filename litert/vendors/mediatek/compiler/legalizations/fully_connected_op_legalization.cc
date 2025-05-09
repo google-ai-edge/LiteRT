@@ -120,13 +120,12 @@ Expected<void> LegalizeFullyConnectedOp(
       return output_operand.Error();
     }
 
-    LITERT_ASSIGN_OR_RETURN(auto tensor_type,
-                            op.Outputs()[0].RankedTensorType());
-    auto dimension = tensor_type.Layout().Dimensions();
+    auto dimension = GetDimensions(op.Outputs()[0]);
     std::vector<uint32_t> new_shape(dimension.begin(), dimension.end());
     std::vector<uint32_t> tensor_shape = {(uint32_t)new_shape.size()};
-    auto new_shape_operand_index = operand_map.AddTensorInt32(
-        tensor_shape, new_shape.data(), new_shape.size() * sizeof(int32_t));
+    auto new_shape_operand_index = operand_map.AddTensorByType(
+        NEURON_TENSOR_INT32, tensor_shape, new_shape.data(),
+        new_shape.size() * sizeof(int32_t));
     if (!new_shape_operand_index) {
       return new_shape_operand_index.Error();
     }

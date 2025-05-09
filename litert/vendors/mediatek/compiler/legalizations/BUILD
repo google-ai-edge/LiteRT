@@ -20,7 +20,10 @@ package(
 cc_library(
     name = "operand_map",
     srcs = ["operand_map.cc"],
-    hdrs = ["operand_map.h"],
+    hdrs = [
+        "operand_map.h",
+        "extra_data_mgr.h",
+    ],
     tags = [
         # Don't build/test in OS until MediaTek SDK is available.
         "nobuilder",
