@@ -11,14 +11,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
 namespace litert::qualcomm {
@@ -26,9 +26,6 @@ namespace litert::qualcomm {
 // Wraps a LiteRtQualcommOptions object for convenience.
 class QualcommOptions : public OpaqueOptions {
  public:
-  using LogLevel = LiteRtQualcommOptionsLogLevel;
-  using PowerMode = LiteRtQualcommOptionsPowerMode;
-
   using OpaqueOptions::OpaqueOptions;
 
   static const char* Discriminator() {
@@ -39,14 +36,24 @@ class QualcommOptions : public OpaqueOptions {
 
   static Expected<QualcommOptions> Create();
 
-  void SetLogLevel(LogLevel log_level);
-  LogLevel GetLogLevel();
+  void SetLogLevel(LiteRtQualcommOptionsLogLevel log_level);
+  LiteRtQualcommOptionsLogLevel GetLogLevel();
 
-  void SetPowerMode(PowerMode power_mode);
-  PowerMode GetPowerMode();
+  void SetHtpPerformanceMode(
+      LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode);
+  LiteRtQualcommOptionsHtpPerformanceMode GetHtpPerformanceMode();
+
+  void SetUseHtpPreference(bool use_htp_preference);
+  bool GetUseHtpPreference();
+
+  void SetUseQint16AsQuint16(bool use_qin16_as_quint16);
+  bool GetUseQint16AsQuint16();
 
   void SetEnableWeightSharing(bool weight_sharing_enabled);
   bool GetEnableWeightSharing();
+
+  void SetProfiling(LiteRtQualcommOptionsProfiling profiling);
+  LiteRtQualcommOptionsProfiling GetProfiling();
 
  private:
   LiteRtQualcommOptions Data() const;

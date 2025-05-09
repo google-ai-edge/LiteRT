@@ -87,25 +87,25 @@ bool SetQnnHtpPerfInfrastructure(
   return true;
 }
 
-bool HandleDownvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
+bool HandleDownvoteConfig(const ::qnn::HtpPerformanceMode perf_mode,
                           QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3) {
   bool status = true;
   dcvs_v3.dcvsEnable = kDcvsEnable;
 
   switch (perf_mode) {
-    case LiteRtQnnHtpPerformanceMode::kHtpBurst:
-    case LiteRtQnnHtpPerformanceMode::kHtpSustainedHighPerformance:
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPerformance:
-    case LiteRtQnnHtpPerformanceMode::kHtpBalanced:
+    case ::qnn::HtpPerformanceMode::kBurst:
+    case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+    case ::qnn::HtpPerformanceMode::kHighPerformance:
+    case ::qnn::HtpPerformanceMode::kBalanced:
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
           kSleepMaxLatency, DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
           DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
           DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpPowerSaver:
-    case LiteRtQnnHtpPerformanceMode::kHtpLowPowerSaver:
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPowerSaver:
+    case ::qnn::HtpPerformanceMode::kPowerSaver:
+    case ::qnn::HtpPerformanceMode::kLowPowerSaver:
+    case ::qnn::HtpPerformanceMode::kHighPowerSaver:
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
           kSleepMaxLatency, DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
@@ -115,14 +115,14 @@ bool HandleDownvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER,
           DCVS_VOLTAGE_VCORNER_MIN_VOLTAGE_CORNER);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpLowBalanced:
+    case ::qnn::HtpPerformanceMode::kLowBalanced:
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
           kSleepMaxLatency, DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS,
           DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS2,
           DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpExtremePowerSaver:
+    case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_POWER_SAVER_MODE,
           kSleepMaxLatency, DCVS_VOLTAGE_CORNER_DISABLE,
@@ -137,11 +137,11 @@ bool HandleDownvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
   return status;
 }
 
-bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
+bool HandleUpvoteConfig(const ::qnn::HtpPerformanceMode perf_mode,
                         QnnHtpPerfInfrastructure_DcvsV3_t& dcvs_v3) {
   bool status = true;
   switch (perf_mode) {
-    case LiteRtQnnHtpPerformanceMode::kHtpBurst:
+    case ::qnn::HtpPerformanceMode::kBurst:
       dcvs_v3.dcvsEnable = kDcvsDisable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
@@ -152,8 +152,8 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
           DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpSustainedHighPerformance:
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPerformance:
+    case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+    case ::qnn::HtpPerformanceMode::kHighPerformance:
       dcvs_v3.dcvsEnable = kDcvsDisable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_ADJUST_UP_DOWN,
@@ -162,7 +162,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_TURBO, DCVS_VOLTAGE_VCORNER_TURBO,
           DCVS_VOLTAGE_VCORNER_TURBO);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpPowerSaver:
+    case ::qnn::HtpPerformanceMode::kPowerSaver:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -171,7 +171,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_SVS, DCVS_VOLTAGE_VCORNER_SVS,
           DCVS_VOLTAGE_VCORNER_SVS);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpLowPowerSaver:
+    case ::qnn::HtpPerformanceMode::kLowPowerSaver:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -180,7 +180,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_SVS2, DCVS_VOLTAGE_VCORNER_SVS2,
           DCVS_VOLTAGE_VCORNER_SVS2);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPowerSaver:
+    case ::qnn::HtpPerformanceMode::kHighPowerSaver:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -189,7 +189,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_SVS_PLUS, DCVS_VOLTAGE_VCORNER_SVS_PLUS,
           DCVS_VOLTAGE_VCORNER_SVS_PLUS);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpLowBalanced:
+    case ::qnn::HtpPerformanceMode::kLowBalanced:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -198,7 +198,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_NOM, DCVS_VOLTAGE_VCORNER_NOM,
           DCVS_VOLTAGE_VCORNER_NOM);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpBalanced:
+    case ::qnn::HtpPerformanceMode::kBalanced:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -207,7 +207,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
           DCVS_VOLTAGE_VCORNER_NOM_PLUS, DCVS_VOLTAGE_VCORNER_NOM_PLUS,
           DCVS_VOLTAGE_VCORNER_NOM_PLUS);
       break;
-    case LiteRtQnnHtpPerformanceMode::kHtpExtremePowerSaver:
+    case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
       dcvs_v3.dcvsEnable = kDcvsEnable;
       status = SetQnnHtpPerfInfrastructure(
           dcvs_v3, QNN_HTP_PERF_INFRASTRUCTURE_POWERMODE_PERFORMANCE_MODE,
@@ -226,7 +226,7 @@ bool HandleUpvoteConfig(const LiteRtQnnHtpPerformanceMode& perf_mode,
 
 std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
     const std::uint32_t power_config_id,
-    const LiteRtQnnHtpPerformanceMode perf_mode,
+    const ::qnn::HtpPerformanceMode perf_mode,
     const PerformanceModeVoteType vote_type) {
   constexpr const int kNumConfigs = 1;
   std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> power_configs(
@@ -283,8 +283,8 @@ struct PerfControl::BackendConfig {
 };
 
 PerfControl::PerfControl(const QNN_INTERFACE_VER_TYPE* api,
-                         const LiteRtQnnHtpBackendOptions& htp_options)
-    : api_(api), performance_mode_(htp_options.performance_mode) {
+                         const ::qnn::HtpPerformanceMode htp_performance_mode)
+    : api_(api), performance_mode_(htp_performance_mode) {
   backend_config_ = std::make_unique<BackendConfig>();
 }
 
@@ -292,7 +292,7 @@ PerfControl::~PerfControl() = default;
 
 bool PerfControl::CreatePerfPowerConfigPtr(
     const std::uint32_t power_config_id,
-    const LiteRtQnnHtpPerformanceMode perf_mode,
+    const ::qnn::HtpPerformanceMode perf_mode,
     const PerformanceModeVoteType vote_type) {
   if (vote_type == PerformanceModeVoteType::kUpVote) {
     backend_config_->perf_power_configs_ =
@@ -325,7 +325,7 @@ void PerfControl::PerformanceVote() {
 };
 
 std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
-    LiteRtQnnHtpPerformanceMode perf_mode) {
+    ::qnn::HtpPerformanceMode perf_mode) {
   std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> power_configs;
 
   QnnHtpPerfInfrastructure_PowerConfig_t rpc_control_latency;
@@ -336,22 +336,22 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetRpcPollingPowerConfig(
       QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_UNKNOWN;
 
   switch (perf_mode) {
-    case LiteRtQnnHtpPerformanceMode::kHtpBurst:
-    case LiteRtQnnHtpPerformanceMode::kHtpSustainedHighPerformance:
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPerformance:
+    case ::qnn::HtpPerformanceMode::kBurst:
+    case ::qnn::HtpPerformanceMode::kSustainedHighPerformance:
+    case ::qnn::HtpPerformanceMode::kHighPerformance:
       rpc_polling_time.option =
           QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME;
       rpc_polling_time.rpcPollingTimeConfig = kRpcPollingTimeHighPower;
       power_configs.emplace_back(rpc_polling_time);
       ABSL_FALLTHROUGH_INTENDED;
       // intentionally no break here.
-    case LiteRtQnnHtpPerformanceMode::kHtpPowerSaver:
-    case LiteRtQnnHtpPerformanceMode::kHtpLowPowerSaver:
-    case LiteRtQnnHtpPerformanceMode::kHtpHighPowerSaver:
-    case LiteRtQnnHtpPerformanceMode::kHtpLowBalanced:
-    case LiteRtQnnHtpPerformanceMode::kHtpBalanced:
-    case LiteRtQnnHtpPerformanceMode::kHtpDefault:
-    case LiteRtQnnHtpPerformanceMode::kHtpExtremePowerSaver:
+    case ::qnn::HtpPerformanceMode::kPowerSaver:
+    case ::qnn::HtpPerformanceMode::kLowPowerSaver:
+    case ::qnn::HtpPerformanceMode::kHighPowerSaver:
+    case ::qnn::HtpPerformanceMode::kLowBalanced:
+    case ::qnn::HtpPerformanceMode::kBalanced:
+    case ::qnn::HtpPerformanceMode::kDefault:
+    case ::qnn::HtpPerformanceMode::kExtremePowerSaver:
       rpc_control_latency.option =
           QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_CONTROL_LATENCY;
       rpc_control_latency.rpcControlLatencyConfig = kRpcControlLatency;

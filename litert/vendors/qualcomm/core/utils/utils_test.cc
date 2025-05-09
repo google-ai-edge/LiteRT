@@ -1,5 +1,6 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -20,25 +21,25 @@ bool IsPrefix(std::string_view prefix, std::string_view full) {
   return prefix == full.substr(0, prefix.size());
 }
 
-bool CheckLoggoing(const std::string log_path, LiteRtQnnLogLevel log_level) {
+bool CheckLoggoing(const std::string log_path, ::qnn::LogLevel log_level) {
   std::ifstream fin(log_path);
   std::string msg;
   while (std::getline(fin, msg)) {
     // Log severity: DEBUG > VERBOSE > INFO > WARN > ERROR
     switch (log_level) {
-      case kQnnLogOff:
+      case ::qnn::LogLevel::kOff:
         if (IsPrefix("ERROR:", msg)) return false;
         [[fallthrough]];
-      case kQnnLogLevelError:
+      case ::qnn::LogLevel::kError:
         if (IsPrefix("WARNING:", msg)) return false;
         [[fallthrough]];
-      case kQnnLogLevelWarn:
+      case ::qnn::LogLevel::kWarn:
         if (IsPrefix("INFO:", msg)) return false;
         [[fallthrough]];
-      case kQnnLogLevelInfo:
+      case ::qnn::LogLevel::kInfo:
         if (IsPrefix("VERBOSE:", msg)) return false;
         [[fallthrough]];
-      case kQnnLogLevelVerbose:
+      case ::qnn::LogLevel::kVerbose:
         if (IsPrefix("DEBUG:", msg)) return false;
         [[fallthrough]];
       default:
@@ -50,12 +51,12 @@ bool CheckLoggoing(const std::string log_path, LiteRtQnnLogLevel log_level) {
 
 }  // namespace
 
-class LiteRtLog : public ::testing::TestWithParam<LiteRtQnnLogLevel> {};
-INSTANTIATE_TEST_SUITE_P(, LiteRtLog,
-                         ::testing::Values(kQnnLogOff, kQnnLogLevelError,
-                                           kQnnLogLevelWarn, kQnnLogLevelInfo,
-                                           kQnnLogLevelVerbose,
-                                           kQnnLogLevelDebug));
+class LiteRtLog : public ::testing::TestWithParam<::qnn::LogLevel> {};
+INSTANTIATE_TEST_SUITE_P(
+    , LiteRtLog,
+    ::testing::Values(::qnn::LogLevel::kOff, ::qnn::LogLevel::kError,
+                      ::qnn::LogLevel::kWarn, ::qnn::LogLevel::kInfo,
+                      ::qnn::LogLevel::kVerbose, ::qnn::LogLevel::kDebug));
 
 TEST_P(LiteRtLog, SanityTest) {
   // Create temp file for log
@@ -70,7 +71,7 @@ TEST_P(LiteRtLog, SanityTest) {
   qnn::QNNLogger::SetLogFilePointer(file_ptr);
 
   // Set log_level and print message to file
-  LiteRtQnnLogLevel log_level = GetParam();
+  auto log_level = GetParam();
   qnn::QNNLogger::SetLogLevel(log_level);
   QNN_LOG_VERBOSE("This is a verbose message.");
   QNN_LOG_INFO("This is an info message.");

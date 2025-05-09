@@ -90,7 +90,6 @@ cc_library(
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",

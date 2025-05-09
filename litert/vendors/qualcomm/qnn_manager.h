@@ -43,7 +43,6 @@
 #include "QnnContext.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
-#include "QnnLog.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
@@ -55,10 +54,10 @@
 // Syntactic sugar for various Qnn Sdk routines.
 //
 // Provides various utilities for linking shared libraries at runtime
-// against Qnn symbols as well as convience getters and storage of handles
+// against Qnn symbols as well as convenience getters and storage of handles
 // (pointers). Provides simple wrappers for freeing handles and returning
 // LiteRtStatus rather than Qnn ones. Additionally exposes hooks for dumping
-// api and shared libarary details.
+// api and shared library details.
 //
 // Does not own any memory and will always have trivial cstor/dstor. The
 // user is responsible for freeing any Qnn handles explicitly. Note,
@@ -91,9 +90,9 @@ class QnnManager {
 
   static Expected<Ptr> Create(
       absl::Span<const QnnBackend_Config_t*> configs,
+      const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt,
-      std::optional<::qnn::SocInfo> soc_info = std::nullopt,
-      const LiteRtQnnOptions& options = LITERT_QNN_OPTIONS_INIT);
+      std::optional<::qnn::SocInfo> soc_info = std::nullopt);
 
   static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
@@ -145,7 +144,7 @@ class QnnManager {
   LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
                     std::optional<std::string> shared_library_dir,
                     std::optional<::qnn::SocInfo> soc_info,
-                    const LiteRtQnnOptions& options);
+                    const ::qnn::Options& options);
 
   //
   // Manage libQnn*.so Loading
