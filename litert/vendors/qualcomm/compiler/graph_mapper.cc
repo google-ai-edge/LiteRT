@@ -26,7 +26,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/IR/qnn_tensor.h"

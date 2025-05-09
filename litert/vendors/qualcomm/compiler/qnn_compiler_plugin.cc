@@ -33,10 +33,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/vendors/c/litert_compiler_plugin.h"
