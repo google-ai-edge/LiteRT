@@ -15,6 +15,8 @@
 
 """Qualcomm SDK for AI Edge LiteRT."""
 
+__version__ = "{{ PACKAGE_VERSION }}"
+
 import os
 import pathlib
 import sys

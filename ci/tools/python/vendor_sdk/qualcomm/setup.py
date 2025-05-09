@@ -29,12 +29,13 @@ import zipfile
 import setuptools
 from setuptools.command.build_py import build_py as _build_py  # pylint: disable=g-importing-member
 
-PACKAGE_NAME = 'ai_edge_litert_sdk_qualcomm'
-PACKAGE_VERSION = '0.0.0'
+PACKAGE_NAME = '{{ PACKAGE_NAME }}'
+PACKAGE_VERSION = '{{ PACKAGE_VERSION }}'
+
+SKIP_SDK_DOWNLOAD = os.environ.get('SKIP_SDK_DOWNLOAD', False)
 
 
 # --- Configuration for Qualcomm SDK Download ---
-# TODO(lukeboyer): Update the URL to contain the Qairt SDK version.
 # Qairt version doesn't not necessarily match the SDK version though.
 QAIRT_URL = 'https://softwarecenter.qualcomm.com/api/download/software/sdks/Qualcomm_AI_Runtime_Community/All/2.34.0.250424/v2.34.0.250424.zip'
 QAIRT_CONTENT_DIR = 'qairt/2.34.0.250424'
@@ -169,13 +170,16 @@ class CustomBuildPy(_build_py):
   def run(self):
 
     print('Preparing SDK...')
-    _download_and_extract(QAIRT_URL, QAIRT_CONTENT_DIR, QAIRT_TARGET_DIR)
+    if SKIP_SDK_DOWNLOAD:
+      print('Skipping SDK download...')
+    else:
+      _download_and_extract(QAIRT_URL, QAIRT_CONTENT_DIR, QAIRT_TARGET_DIR)
 
     super().run()
 
 
 setuptools.setup(
-    name=PACKAGE_NAME,
+    name=PACKAGE_NAME.replace('_', '-'),
     version=PACKAGE_VERSION,
     description='Qualcomm SDK for AI Edge LiteRT',
     url='https://www.tensorflow.org/lite/',
