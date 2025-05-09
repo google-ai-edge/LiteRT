@@ -69,22 +69,42 @@ Expected<T*> OpenClMemory::Lock() {
                         "Failed to allocate aligned memory");
     }
   }
-  // Use the GPU Delegate API to download the data from the OpenCL buffer
-  // to the aligned memory.
-  LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryDownload(
-      &tensor_type_, buffer_type_, cpu_buffer_size_, GetMemoryPtr(), data_));
+  if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+    LITERT_ASSIGN_OR_RETURN(auto cl_env,
+                            GpuEnvironmentSingleton::GetInstance());
+    LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
+                               ->EnqueueReadBuffer(GetMemoryPtr(),
+                                                   cpu_buffer_size_, data_,
+                                                   /*async=*/false)
+                               .ok());
+  } else {
+    // Use the GPU Delegate API to download the data from the OpenCL buffer
+    // to the aligned memory.
+    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryDownload(
+        &tensor_type_, buffer_type_, cpu_buffer_size_, GetMemoryPtr(), data_));
+  }
   return Expected<T*>(static_cast<T*>(data_));
 }
 
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
-  // The current Unlock() translates the packed buffer (data_) if the underlying
-  // H/W buffer has a stride. This conversion is done by
-  // LiteRtGpuMemoryUpload().
-  // TODO b/413449050 - Update behavior to upload raw H/W buffer as it is.
-  LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(
-      &tensor_type_, buffer_type_, cpu_buffer_size_, data_, GetMemoryPtr()));
+  if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+    LITERT_ASSIGN_OR_RETURN(auto cl_env,
+                            GpuEnvironmentSingleton::GetInstance());
+    LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
+                               ->EnqueueWriteBuffer(GetMemoryPtr(),
+                                                    cpu_buffer_size_, data_,
+                                                    /*async=*/true)
+                               .ok());
+  } else {
+    // The current Unlock() translates the packed buffer (data_) if the
+    // underlying H/W buffer has a stride. This conversion is done by
+    // LiteRtGpuMemoryUpload().
+    // TODO b/413449050 - Update behavior to upload raw H/W buffer as it is.
+    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(
+        &tensor_type_, buffer_type_, cpu_buffer_size_, data_, GetMemoryPtr()));
+  }
   return Expected<void>();
 }
 
@@ -99,6 +119,16 @@ Expected<OpenClMemory> OpenClMemory::Alloc(
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
+
+  if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+    tflite::gpu::cl::Buffer buffer;
+    LITERT_ASSIGN_OR_RETURN(auto cl_env,
+                            GpuEnvironmentSingleton::GetInstance());
+    LITERT_RETURN_IF_ERROR(tflite::gpu::cl::CreateReadWriteBuffer(
+                               bytes_size, cl_env->getContext(), &buffer)
+                               .ok());
+    return Expected<OpenClMemory>(tensor_type, buffer_type, std::move(buffer));
+  }
 
   cl_mem cl_memory;
   LITERT_RETURN_IF_ERROR(
