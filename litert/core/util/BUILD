@@ -78,7 +78,7 @@ cc_library(
     ],
     # TODO: Either move this to cc/ or refactor users. Then, remove this visibility.
     visibility = [
-        "//litert:litert_stable_abi_users",
+        "//litert:litert_public",
     ],
     deps = [
         "//litert/c:litert_common",

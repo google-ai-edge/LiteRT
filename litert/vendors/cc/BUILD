@@ -14,7 +14,7 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_stable_abi_users"],
+    default_visibility = ["//litert:litert_public"],
 )
 
 cc_library(
@@ -151,7 +151,7 @@ cc_test(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_options",
         "@com_google_googletest//:gtest_main",
     ],
 )

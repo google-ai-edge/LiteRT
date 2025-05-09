@@ -111,7 +111,7 @@ litert_cc_bin_with_qnn(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_options",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -144,7 +144,7 @@ cc_binary(
     deps = [
         ":apply_plugin",
         ":outstream",
-        "//litert/cc:litert_options",
+        "//litert/cc/internal:litert_options",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
@@ -186,7 +186,7 @@ cc_library(
     hdrs = ["dump.h"],
     # TODO: Either refactor this code to be in cc/ or setup to only build in debug mode.
     # Then, we can remove this visibility.
-    visibility = ["//litert:litert_stable_abi_users"],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
@@ -385,11 +385,11 @@ litert_device_test(
     deps = [
         ":benchmark_litert_model",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_options",
+        "//litert/cc/internal:litert_tensor_buffer",
         "//litert/test:common",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
