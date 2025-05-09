@@ -18,6 +18,8 @@ package(
     licenses = ["notice"],
 )
 
+# This is a test commit test with kokoro:run
+
 exports_files(["tflite_convert.py"])
 
 flatbuffer_py_library(
