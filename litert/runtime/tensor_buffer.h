@@ -83,17 +83,11 @@ class LiteRtTensorBufferT {
       size_t fastrpc_buffer_offset,
       LiteRtFastRpcDeallocator deallocator = nullptr);
 
-#if LITERT_HAS_OPENCL_SUPPORT
-  static litert::Expected<Ptr> CreateFromOpenClMemory(
-      const LiteRtRankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem buffer,
-      size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
-#endif  // LITERT_HAS_OPENCL_SUPPORT
-
   static litert::Expected<Ptr> CreateFromGlBuffer(
       const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
       LiteRtGLuint id, size_t size_bytes, size_t offset,
       LiteRtGlBufferDeallocator deallocator = nullptr);
+
   static litert::Expected<Ptr> CreateFromGlTexture(
       const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
       LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes,
@@ -103,8 +97,20 @@ class LiteRtTensorBufferT {
       LiteRtTensorBufferType buffer_type,
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
+#if LITERT_HAS_OPENCL_SUPPORT
+  static litert::Expected<Ptr> CreateFromOpenClMemory(
+      const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, cl_mem buffer,
+      size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
+
+  size_t packed_buffer_size() const { return packed_buffer_size_; }
+  size_t buffer_size() const { return buffer_size_; }
+  size_t buffer_offset() const { return buffer_offset_; }
+
   bool is_opencl_memory() const {
     switch (buffer_type_) {
       case kLiteRtTensorBufferTypeOpenClBuffer:
@@ -118,9 +124,6 @@ class LiteRtTensorBufferT {
         return false;
     }
   }
-  size_t packed_buffer_size() const { return packed_buffer_size_; }
-  size_t buffer_size() const { return buffer_size_; }
-  size_t buffer_offset() const { return buffer_offset_; }
 
   bool HasEvent() const { return event_ != nullptr; }
 
@@ -143,11 +146,11 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetIonBuffer();
   litert::Expected<std::pair<void*, int>> GetDmaBufBuffer();
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
+  litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
+  litert::Expected<litert::internal::GlTexture*> GetGlTexture();
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-  litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
-  litert::Expected<litert::internal::GlTexture*> GetGlTexture();
 
   litert::Expected<void*> Lock();
   litert::Expected<void> Unlock();
