@@ -66,13 +66,15 @@ LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
                          : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
-  LiteRtQnnOptions qnn_options = LITERT_QNN_OPTIONS_INIT;
-  qnn_options.htp_options.performance_mode = kHtpBurst;
+  // TODO(Alen): initialize qnn_options from LiteRtOptions
+  ::qnn::Options qnn_options;
+  qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
+  qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
   if (auto qnn_manager = QnnManager::Create(
           /*configs=*/configs,
+          /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt,
-          /*options=*/qnn_options);
+          /*soc_model*/ std::nullopt);
       !qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();

@@ -52,8 +52,12 @@ litert_dynamic_lib(
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/qualcomm:qnn_manager",

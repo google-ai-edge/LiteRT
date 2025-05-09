@@ -11,12 +11,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
 
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 
 // User-facing options for Qualcomm. This is not built as part of
 // libLiteRt_QualcommXXX.so, and should not include `vendor/` or qnn sdk
@@ -28,11 +29,11 @@
 extern "C" {
 #endif  // __cplusplus
 
+LITERT_DEFINE_HANDLE(LiteRtQualcommOptions);
+
 // Create a qualcomm options object that is type erased. The actual option
 // data can be accessed from the payload.
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options);
-
-LITERT_DEFINE_HANDLE(LiteRtQualcommOptions);
 
 // The a string identifier that discriminates qualcomm options within
 // type erased options.
@@ -45,7 +46,7 @@ LiteRtStatus LiteRtQualcommOptionsGet(LiteRtOpaqueOptions options,
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
-// log_level -------------------------------------------------------------------
+// log_level
 
 // This determines the logging level of all underlying qualcomm sdk libraries.
 // Does not effect litert logging. Defaults to INFO.
@@ -67,10 +68,32 @@ LiteRtStatus LiteRtQualcommOptionsGetLogLevel(
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-// enable_weight_sharing -------------------------------------------------------
+// use_htp_preference
+
+// This option controls whether to convert a LiteRt operation to QNN operations
+// which are preferred by the HTP backend. Defaults to false.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseHtpPreference(
+    LiteRtQualcommOptions options, bool use_htp_preference);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseHtpPreference(
+    LiteRtQualcommOptions options, bool* use_htp_preference);
+
+// use_qint16_as_quint16
+
+// This option controls whether to convert a quantized int16 model to a
+// quantized uint16 model. Defaults to false.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseQint16AsQuint16(
+    LiteRtQualcommOptions options, bool use_qint16_as_quint16);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseQint16AsQuint16(
+    LiteRtQualcommOptions options, bool* use_qint16_as_quint16);
+
+// enable_weight_sharing
 
 // Weight sharing indicates whether different subgraphs may share weight
-// tensors. This is only supported on x86 AOT. Defaults to true.
+// tensors. This is only supported on x86 AOT. Defaults to false.
 
 LiteRtStatus LiteRtQualcommOptionsSetEnableWeightSharing(
     LiteRtQualcommOptions options, bool enable_weight_sharing);
@@ -80,25 +103,53 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
-// power_mode ------------------------------------------------------------------
+// htp_performance_mode
 
 // Configures the HTP device to optimize for performance or power efficiency.
-// See QnnHtpPerfInfrastructure_PowerMode_t in qnn_sdk. By default, it will
-// be decided by the backend (unknown).
+// See QnnHtpPerfInfrastructure_SetPowerConfigFn_t in qnn_sdk. By default, it
+// will be decided by the backend (unknown).
 
-typedef enum LiteRtQualcommOptionsPowerMode {
-  kLiteRtQualcommPowerModeUnknown = 0,
-  kLiteRtQualcommPowerModePerformance = 1,
-  kLiteRtQualcommPowerModePowerSaver = 2,
-} LiteRtQualcommOptionsPowerMode;
+typedef enum LiteRtQualcommOptionsHtpPerformanceMode {
+  kLiteRtQualcommHtpPerformanceModeDefault = 0,
+  kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance = 1,
+  kLiteRtQualcommHtpPerformanceModeBurst = 2,
+  kLiteRtQualcommHtpPerformanceModeHighPerformance = 3,
+  kLiteRtQualcommHtpPerformanceModePowerSaver = 4,
+  kLiteRtQualcommHtpPerformanceModeLowPowerSaver = 5,
+  kLiteRtQualcommHtpPerformanceModeHighPowerSaver = 6,
+  kLiteRtQualcommHtpPerformanceModeLowBalanced = 7,
+  kLiteRtQualcommHtpPerformanceModeBalanced = 8,
+  kLiteRtQualcommHtpPerformanceModeExtremePowerSaver = 9,
+} LiteRtQualcommOptionsHtpPerformanceMode;
 
-LiteRtStatus LiteRtQualcommOptionsSetPowerMode(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsPowerMode power_mode);
+LiteRtStatus LiteRtQualcommOptionsSetHtpPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode);
 
-LiteRtStatus LiteRtQualcommOptionsGetPowerMode(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsPowerMode* power_mode);
+LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsHtpPerformanceMode* htp_performance_mode);
+
+// profiling
+
+// This option controls the profiling level. A higher level results in a more
+// detailed report after execution. Defaults to off.
+
+typedef enum LiteRtQualcommOptionsProfiling {
+  kLiteRtQualcommProfilingOff = 0,
+  kLiteRtQualcommProfilingBasic,
+  kLiteRtQualcommProfilingDetailed,
+  kLiteRtQualcommProfilingLinting,
+} LiteRtQualcommOptionsProfiling;
+
+LiteRtStatus LiteRtQualcommOptionsSetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling);
+
+LiteRtStatus LiteRtQualcommOptionsGetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
 
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_

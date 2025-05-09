@@ -19,32 +19,38 @@
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 
 // GENERAL SDK SETTINGS ////////////////////////////////////////////////////////
 
 ABSL_DECLARE_FLAG(LiteRtQualcommOptionsLogLevel, qualcomm_log_level);
-
-// COMPILATION OPTIONS /////////////////////////////////////////////////////////
-
-ABSL_DECLARE_FLAG(bool, enable_weight_sharing);
-
-// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
-
-ABSL_DECLARE_FLAG(LiteRtQualcommOptionsPowerMode, qualcomm_power_mode);
-
-// PARSERS (internal) //////////////////////////////////////////////////////////
-
+std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options);
 bool AbslParseFlag(absl::string_view text,
                    LiteRtQualcommOptionsLogLevel* options, std::string* error);
 
-std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options);
+// COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
+
+ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
+
+ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
+
+// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+ABSL_DECLARE_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
+                  qualcomm_htp_performance_mode);
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtQualcommOptionsPowerMode* options, std::string* error);
+                   LiteRtQualcommOptionsHtpPerformanceMode* options,
+                   std::string* error);
+std::string AbslUnparseFlag(LiteRtQualcommOptionsHtpPerformanceMode options);
 
-std::string AbslUnparseFlag(LiteRtQualcommOptionsPowerMode options);
+ABSL_DECLARE_FLAG(LiteRtQualcommOptionsProfiling, qualcomm_profiling);
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtQualcommOptionsProfiling* options, std::string* error);
+std::string AbslUnparseFlag(LiteRtQualcommOptionsProfiling options);
 
 // TO OBJECT (internal) ////////////////////////////////////////////////////////
 
