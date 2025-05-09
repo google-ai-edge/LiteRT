@@ -15,6 +15,7 @@ pybind_extension(
     pytype_srcs = [
         "_pywrap_analyzer_wrapper.pyi",
     ],
+    visibility = ["//visibility:public"],
     deps = [
         ":model_analyzer",
         "@pybind11",
