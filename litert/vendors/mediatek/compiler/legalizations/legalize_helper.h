@@ -242,6 +242,78 @@ inline Expected<uint32_t> AddDepthwiseConv2dDataOption(
 }
 
 //==============================================================================
+// kLiteRtOpCodeTflAveragePool2d
+//==============================================================================
+inline Expected<uint32_t> AddAveragePool2dPaddingOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  uint32_t padding = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dPaddingOption(op.Get(), &padding))
+      << "Fails to get AveragePool2dPadding";
+  NeuronAdapterPaddingCode neuron_padding = NEURON_PADDING_SAME;
+  LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, neuron_padding))
+      << "Fails to convert padding";
+  return operand_map.AddScalarInt32(neuron_padding);
+}
+
+inline Expected<uint32_t> AddAveragePool2dStrideWOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  int32_t stride_w = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dStrideWOption(op.Get(), &stride_w))
+      << "Fails to get AveragePool2dStrideW";
+  return operand_map.AddScalarInt32(stride_w);
+}
+
+inline Expected<uint32_t> AddAveragePool2dStrideHOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  int32_t stride_h = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dStrideHOption(op.Get(), &stride_h))
+      << "Fails to get AveragePool2dStrideH";
+  return operand_map.AddScalarInt32(stride_h);
+}
+
+inline Expected<uint32_t> AddAveragePool2dFuseActivationOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  uint32_t fuse = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFusedActivationOption(op.Get(), &fuse))
+      << "Fails to get AveragePool2dFuseActivation";
+  return operand_map.AddScalarInt32(fuse);
+}
+
+inline Expected<uint32_t> AddAveragePool2dFilterWOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  int32_t filter_w = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterWidthOption(op.Get(), &filter_w))
+      << "Fails to get AveragePool2dFilterW";
+  return operand_map.AddScalarInt32(filter_w);
+}
+
+inline Expected<uint32_t> AddAveragePool2dFilterHOption(
+    const litert::Op& op, OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_AVERAGE_POOL_2D.
+  int32_t filter_h = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterHeightOption(op.Get(), &filter_h))
+      << "Fails to get AveragePool2dFilterH";
+  return operand_map.AddScalarInt32(filter_h);
+}
+
+//==============================================================================
 // kLiteRtOpCodeTflMaxPool2d
 //==============================================================================
 inline Expected<uint32_t> AddMaxPool2dPaddingOption(
@@ -312,6 +384,7 @@ inline Expected<uint32_t> AddMaxPool2dFuseActivationOption(
       << "Fails to get MaxPool2dFuseActivation";
   return operand_map.AddScalarInt32(fuse);
 }
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_

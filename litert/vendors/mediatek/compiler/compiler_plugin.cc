@@ -98,7 +98,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflResizeNearestNeighbor,
     kLiteRtOpCodeTflTransposeConv,
     kLiteRtOpCodeTflMaxPool2d,
-    kLiteRtOpCodeTflHardSwish
+    kLiteRtOpCodeTflHardSwish,
+    kLiteRtOpCodeTflAveragePool2d
 };
 // clang-format on
 
