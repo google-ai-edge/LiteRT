@@ -69,6 +69,16 @@ TensorWrapper& TensorPool::CloneNativeTensorFrom(
   return back;
 }
 
+TensorWrapper& TensorPool::CloneNativeTensorFrom(
+    const TensorWrapper& src,
+    const qnn::QuantizeParamsWrapperVariant& quant_params) {
+  const auto id = tensor_wrappers_.size();
+  auto& back = tensor_wrappers_.emplace_back(id, QNN_TENSOR_TYPE_NATIVE,
+                                             src.GetDataType(), quant_params,
+                                             src.dimentions_);
+  return back;
+}
+
 TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,
                                                  Qnn_DataType_t data_type) {
   const auto id = tensor_wrappers_.size();

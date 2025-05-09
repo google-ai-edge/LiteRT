@@ -6,10 +6,11 @@
 
 #include <vector>
 
+#include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
-
 namespace qnn {
-void GraphToGraphTransform(std::vector<OpWrapper>& ops);
+void GraphToGraphTransform(std::vector<OpWrapper>& ops,
+                           TensorPool& tensor_pool);
 }  // namespace qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_TRANSFORMATION_GRAPH_TO_GRAPH_H_

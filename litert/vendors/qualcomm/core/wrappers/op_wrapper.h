@@ -42,11 +42,17 @@ class OpWrapper final {
 
   Qnn_OpConfig_t GetOpConfig();
 
+  bool IsOpType(QnnOpCode qnn_op_code) const;
+
+  QnnOpCode GetOpCode() const;
+
   bool IsOpCode(QnnOpCode op_code) const;
 
   const qnn::TensorWrapper& GetInputTensor(size_t i) const;
 
   const qnn::TensorWrapper& GetOutputTensor(size_t i) const;
+
+  const qnn::TensorParamWrapper& GetTensorPararm(size_t i) const;
 
   void StealOutputs(const OpWrapper& other);
 
