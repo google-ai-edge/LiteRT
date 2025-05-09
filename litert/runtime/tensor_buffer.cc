@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -731,3 +732,43 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
   }
 }
+
+namespace litert::internal {
+
+absl::string_view GetTensorBufferTypeName(
+    const LiteRtTensorBufferT& tensor_buffer) {
+  switch (tensor_buffer.buffer_type()) {
+    case kLiteRtTensorBufferTypeUnknown:
+      return "Unknown";
+    case kLiteRtTensorBufferTypeHostMemory:
+      return "HostMemory";
+    case kLiteRtTensorBufferTypeAhwb:
+      return "Ahwb";
+    case kLiteRtTensorBufferTypeIon:
+      return "Ion";
+    case kLiteRtTensorBufferTypeDmaBuf:
+      return "DmaBuf";
+    case kLiteRtTensorBufferTypeFastRpc:
+      return "FastRpc";
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+      return "OpenClBuffer";
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      return "OpenClBufferFp16";
+    case kLiteRtTensorBufferTypeOpenClTexture:
+      return "OpenClTexture";
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      return "OpenClTextureFp16";
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      return "OpenClImageBuffer";
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+      return "OpenClImageBufferFp16";
+    case kLiteRtTensorBufferTypeGlBuffer:
+      return "GlBuffer";
+    case kLiteRtTensorBufferTypeGlTexture:
+      return "GlTexture";
+    default:
+      return "No type found";
+  }
+}
+
+}  // namespace litert::internal

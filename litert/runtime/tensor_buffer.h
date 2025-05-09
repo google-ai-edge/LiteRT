@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -252,5 +253,14 @@ class LiteRtTensorBufferT {
   absl::flat_hash_map<LiteRtTensorBufferType, BufferVariant>
       memory_backed_buffers_;
 };
+
+namespace litert::internal {
+
+// TODO: Also add ability to get tensor shape/dtype info, and forward to
+// the public c api.
+absl::string_view GetTensorBufferTypeName(
+    const LiteRtTensorBufferT& tensor_buffer);
+
+}  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_H_
