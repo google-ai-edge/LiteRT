@@ -163,6 +163,10 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                 AddMaxPool2dFilterHOption,           // filter_h
                 AddMaxPool2dFuseActivationOption));  // activation
         break;
+      case kLiteRtOpCodeTflHardSwish:
+        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
+                                  op, NEURON_HARD_SWISH);
+        break;
       case kLiteRtOpCodeTflPad:
         status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
                                   op, NEURON_PAD);

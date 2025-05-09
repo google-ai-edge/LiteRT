@@ -54,7 +54,8 @@ const auto kSupportedOps = Values(
     "simple_sum_op.tflite",
     "simple_resize_bilinear_op.tflite",
     "simple_resize_nearest_neighbor_op.tflite",
-    "simple_max_pool_2d.tflite"
+    "simple_max_pool_2d.tflite",
+    "simple_hard_swish_op.tflite"
     );
 // clang-format on
 
