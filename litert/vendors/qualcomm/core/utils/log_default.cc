@@ -11,14 +11,14 @@ namespace qnn {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 FILE* QNNLogger::log_file_pointer_ = stderr;
-LiteRtQnnLogLevel QNNLogger::log_level_ = kQnnLogLevelInfo;
+::qnn::LogLevel QNNLogger::log_level_ = ::qnn::LogLevel::kInfo;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 void QNNLogger::SetLogFilePointer(FILE* fp) { log_file_pointer_ = fp; }
-void QNNLogger::SetLogLevel(LiteRtQnnLogLevel log_level) {
+void QNNLogger::SetLogLevel(::qnn::LogLevel log_level) {
   log_level_ = log_level;
 }
 // NOLINTNEXTLINE(cert-dcl50-cpp)
-void QNNLogger::Log(LiteRtQnnLogLevel severity, const char* format, ...) {
+void QNNLogger::Log(::qnn::LogLevel severity, const char* format, ...) {
   if (severity > log_level_) {
     return;
   }

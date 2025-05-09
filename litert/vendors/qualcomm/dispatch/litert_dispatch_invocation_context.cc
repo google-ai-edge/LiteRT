@@ -126,12 +126,13 @@ LiteRtDispatchInvocationContextT::Create(
 
   // TODO: Add profiling_level as an option & related test code with different
   // profiling level after having option interface
-  int profiling_level = LiteRtQnnProfilingOptions::kQnnProfilingOff;
+  auto profiling_level = ::qnn::Profiling::kOff;
 
   Qnn_ProfileHandle_t profile_handle = nullptr;
-  if (profiling_level != LiteRtQnnProfilingOptions::kQnnProfilingOff) {
+  if (profiling_level != ::qnn::Profiling::kOff) {
     if (auto status = qnn.Api()->profileCreate(
-            qnn.BackendHandle(), profiling_level, &profile_handle);
+            qnn.BackendHandle(),
+            static_cast<QnnProfile_Level_t>(profiling_level), &profile_handle);
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to create profile handle");
