@@ -15,8 +15,11 @@
 
 """Qualcomm SDK for AI Edge LiteRT."""
 
+__version__ = "{{ PACKAGE_VERSION }}"
+
 import os
 import pathlib
+import platform
 import sys
 
 _SDK_FILES_SUBDIR = "data"
@@ -24,6 +27,13 @@ _SDK_FILES_SUBDIR = "data"
 
 def get_sdk_path() -> pathlib.Path | None:
   """Returns the absolute path to the root of the downloaded SDK files."""
+  is_linux = sys.platform == "linux"
+  is_x86_architecture = platform.machine() in ("x86_64", "i386", "i686")
+  if not (is_linux and is_x86_architecture):
+    raise NotImplementedError(
+        "Currently LiteRT NPU AOT for Qualcomm is only supported on Linux x86"
+        " architecture."
+    )
   try:
     package_dir = pathlib.Path(__file__).parent.resolve()
     sdk_path = package_dir / _SDK_FILES_SUBDIR

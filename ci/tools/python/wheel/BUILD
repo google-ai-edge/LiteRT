@@ -6,7 +6,7 @@ load("//litert:litert.bzl", "MANYLINUX_LEVEL")
 load("//litert:version.bzl", "LITERT_FULL_VERSION")
 
 package(
-    default_visibility = ["//visibility:private"],
+    default_visibility = ["//ci/tools/python:__subpackages__"],
 )
 
 string_flag(
