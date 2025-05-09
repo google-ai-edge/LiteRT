@@ -113,8 +113,39 @@ private constructor(
   private val envManaged: Boolean = false,
 ) : JniHandle(handle) {
 
+  /** Options to specify CPU acceleration for compiling a model. */
+  data class CpuOptions
+  constructor(
+    val numThreads: Int? = null,
+    val xnnPackFlags: Int? = null,
+    val xnnPackWeightCachePath: String? = null,
+  ) {
+    // Keys for passing the CPU options to the native layer.
+    internal enum class Key constructor(val value: Int) {
+      NUM_THREADS(0),
+      XNNPACK_FLAGS(1),
+      XNNPACK_WEIGHT_CACHE_PATH(2),
+    }
+
+    // Converts the options to a map, with all values converted to strings.
+    internal fun toMap(): Map<Key, String> {
+      val map = mutableMapOf<Key, String>()
+      if (numThreads != null) {
+        map[Key.NUM_THREADS] = numThreads.toString()
+      }
+      if (xnnPackFlags != null) {
+        map[Key.XNNPACK_FLAGS] = xnnPackFlags.toString()
+      }
+      if (xnnPackWeightCachePath != null) {
+        map[Key.XNNPACK_WEIGHT_CACHE_PATH] = xnnPackWeightCachePath
+      }
+      return map.toMap()
+    }
+  }
+
   /** Options to specify hardware acceleration for compiling a model. */
   class Options constructor(internal vararg val accelerators: Accelerator) {
+    var cpuOptions: CpuOptions? = null
 
     companion object {
       @JvmStatic val CPU = Options(Accelerator.CPU)
@@ -281,8 +312,15 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
+      val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       return CompiledModel(
-        nativeCreate(env.handle, model.handle, options.accelerators.map { it.value }.toIntArray()),
+        nativeCreate(
+          env.handle,
+          model.handle,
+          options.accelerators.map { it.value }.toIntArray(),
+          cpuOptionsMap.keys.map { it.value }.toIntArray(),
+          cpuOptionsMap.values.toTypedArray(),
+        ),
         model,
         env,
         modelManaged,
@@ -325,7 +363,13 @@ private constructor(
     }
 
     @JvmStatic
-    private external fun nativeCreate(envHandle: Long, modelHandle: Long, options: IntArray): Long
+    private external fun nativeCreate(
+      envHandle: Long,
+      modelHandle: Long,
+      accelerators: IntArray,
+      cpuOptionsKeys: IntArray,
+      cpuOptionsValues: Array<String>,
+    ): Long
 
     @JvmStatic
     private external fun nativeCreateInputBuffer(
