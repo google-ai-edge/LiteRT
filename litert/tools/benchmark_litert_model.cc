@@ -41,6 +41,7 @@ using ::litert::TensorBuffer;
 Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
+  auto use_cpu = params.Get<bool>("use_cpu");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
@@ -54,6 +55,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
           LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu |
           LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
     }
+    return compilation_options;
   }
   if (use_gpu) {
     if (require_full_delegation) {
@@ -64,6 +66,11 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
           LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu |
           LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
     }
+    return compilation_options;
+  }
+  if (use_cpu) {
+    compilation_options.SetHardwareAccelerators(
+        LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
   }
   return compilation_options;
 }
