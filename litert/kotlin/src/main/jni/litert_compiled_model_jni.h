@@ -25,7 +25,8 @@ JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreate(
     JNIEnv* env, jclass clazz, jlong env_handle, jlong model_handle,
     jintArray accelerators, jintArray cpu_options_keys,
-    jobjectArray cpu_options_values);
+    jobjectArray cpu_options_values, jintArray gpu_options_keys,
+    jobjectArray gpu_options_values);
 
 JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(

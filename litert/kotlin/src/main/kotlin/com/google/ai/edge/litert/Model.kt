@@ -143,9 +143,69 @@ private constructor(
     }
   }
 
+  /** Options to specify GPU acceleration for compiling a model. */
+  data class GpuOptions
+  constructor(
+    val constantTensorSharing: Boolean? = null,
+    val infiniteFloatCapping: Boolean? = null,
+    val benchmarkMode: Boolean? = null,
+    val allowSrcQuantizedFcConvOps: Boolean? = null,
+    val precision: Precision? = null,
+    val bufferStorageType: BufferStorageType? = null,
+  ) {
+    /** Precision for GPU options. */
+    enum class Precision constructor(val value: Int) {
+      DEFAULT(0),
+      FP16(1),
+      FP32(2),
+    }
+
+    /** Buffer storage type for GPU options. */
+    enum class BufferStorageType constructor(val value: Int) {
+      DEFAUTL(0),
+      BUFFER(1),
+      TEXTURE_2D(2),
+    }
+
+    // Keys for passing the GPU options to the native layer.
+    internal enum class Key constructor(val value: Int) {
+      CONSTANT_TENSOR_SHARING(0),
+      INFINITE_FLOAT_CAPPING(1),
+      BENCHMARK_MODE(2),
+      ALLOW_SRC_QUANTIZED_FC_CONV_OPS(3),
+      PRECISION(4),
+      BUFFER_STORAGE_TYPE(5),
+    }
+
+    // Converts the options to a map, with all values converted to strings.
+    internal fun toMap(): Map<Key, String> {
+      val map = mutableMapOf<Key, String>()
+      if (constantTensorSharing != null) {
+        map[Key.CONSTANT_TENSOR_SHARING] = constantTensorSharing.toString()
+      }
+      if (infiniteFloatCapping != null) {
+        map[Key.INFINITE_FLOAT_CAPPING] = infiniteFloatCapping.toString()
+      }
+      if (benchmarkMode != null) {
+        map[Key.BENCHMARK_MODE] = benchmarkMode.toString()
+      }
+      if (allowSrcQuantizedFcConvOps != null) {
+        map[Key.ALLOW_SRC_QUANTIZED_FC_CONV_OPS] = allowSrcQuantizedFcConvOps.toString()
+      }
+      if (precision != null) {
+        map[Key.PRECISION] = precision.value.toString()
+      }
+      if (bufferStorageType != null) {
+        map[Key.BUFFER_STORAGE_TYPE] = bufferStorageType.value.toString()
+      }
+      return map.toMap()
+    }
+  }
+
   /** Options to specify hardware acceleration for compiling a model. */
   class Options constructor(internal vararg val accelerators: Accelerator) {
     var cpuOptions: CpuOptions? = null
+    var gpuOptions: GpuOptions? = null
 
     companion object {
       @JvmStatic val CPU = Options(Accelerator.CPU)
@@ -313,6 +373,7 @@ private constructor(
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
+      val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
       return CompiledModel(
         nativeCreate(
           env.handle,
@@ -320,6 +381,8 @@ private constructor(
           options.accelerators.map { it.value }.toIntArray(),
           cpuOptionsMap.keys.map { it.value }.toIntArray(),
           cpuOptionsMap.values.toTypedArray(),
+          gpuOptionsMap.keys.map { it.value }.toIntArray(),
+          gpuOptionsMap.values.toTypedArray(),
         ),
         model,
         env,
@@ -369,6 +432,8 @@ private constructor(
       accelerators: IntArray,
       cpuOptionsKeys: IntArray,
       cpuOptionsValues: Array<String>,
+      gpuOptionsKeys: IntArray,
+      gpuOptionsValues: Array<String>,
     ): Long
 
     @JvmStatic
