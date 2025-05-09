@@ -313,7 +313,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
-    if (std::all_of(
+    // TODO: Unblock QNN validation for RMSNorm
+    if (op.Code() == kLiteRtOpCodeShloComposite ||
+        std::all_of(
             op_wrappers.begin(), op_wrappers.end(),
             [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
               return kLiteRtStatusOk ==
