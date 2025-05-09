@@ -26,6 +26,8 @@ pytype_strict_library(
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:fallback_backend",
+        "//litert/python/aot/vendors/mediatek:mediatek_backend",
+        "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:target",
     ],
 )

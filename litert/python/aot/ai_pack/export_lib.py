@@ -20,6 +20,8 @@ import pathlib
 from litert.python.aot.core import common
 from litert.python.aot.core import types
 from litert.python.aot.vendors import fallback_backend
+from litert.python.aot.vendors.mediatek import mediatek_backend
+from litert.python.aot.vendors.mediatek import target as mtk_target
 from litert.python.aot.vendors.qualcomm import target as qnn_target
 
 # TODO: b/407453529 - Add unittests.
@@ -62,17 +64,79 @@ def _export_model_files_to_ai_pack(
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
+    *,
+    separate_mtk_ai_pack: bool = True,
 ):
-  """Exports the model tflite files to the AI pack directory structure."""
+  """Exports the model tflite files to the AI pack directory structure.
+
+  Args:
+    compiled_models: The compiled models to export.
+    ai_pack_dir: The directory to export the AI pack to.
+    ai_pack_name: The name of the AI pack.
+    litert_model_name: The name of the model in the litert format.
+    separate_mtk_ai_pack: Whether to separate the MTK AI pack. If True, the main
+      AI pack will use the fallback model for MTK targets. The MTK AI pack will
+      contain all MTK models, and empty directories for non-MTK targets.
+  """
+  fallback_model = None
+  for backend, model in compiled_models.models_with_backend:
+    if backend.target_id == fallback_backend.FallbackBackend.id():
+      fallback_model = model
+  assert fallback_model is not None, 'Fallback model is required.'
+
   model_export_dir = ai_pack_dir / ai_pack_name
   os.makedirs(model_export_dir, exist_ok=True)
   for backend, model in compiled_models.models_with_backend:
-    backend_id = backend.target_id
+    target_id = backend.target_id
+    backend_id = backend.id()
     if backend_id == fallback_backend.FallbackBackend.id():
       backend_id = 'other'
-    group_name = 'model#group_' + backend_id
+    group_name = 'model#group_' + target_id
     export_dir = model_export_dir / group_name
     os.makedirs(export_dir, exist_ok=True)
+    model_export_path = export_dir / (litert_model_name + common.DOT_TFLITE)
+    if (
+        separate_mtk_ai_pack
+        and backend_id == mediatek_backend.MediaTekBackend.id()
+    ):
+      # Use the fallback model for MTK targets in main AI pack.
+      model_to_export = fallback_model
+    else:
+      model_to_export = model
+    if not model_to_export.in_memory:
+      model_to_export.load()
+    model_to_export.save(model_export_path, export_only=True)
+
+  if separate_mtk_ai_pack:
+    _export_model_files_to_mtk_ai_pack(
+        compiled_models=compiled_models,
+        ai_pack_dir=ai_pack_dir,
+        ai_pack_name=ai_pack_name + '_mtk',
+        litert_model_name=litert_model_name + '_mtk',
+    )
+
+
+def _export_model_files_to_mtk_ai_pack(
+    compiled_models: types.CompiledModels,
+    ai_pack_dir: pathlib.Path,
+    ai_pack_name: str,
+    litert_model_name: str,
+):
+  """Exports the model tflite files to the MTK AI pack directory structure."""
+  model_export_dir = ai_pack_dir / ai_pack_name
+  os.makedirs(model_export_dir, exist_ok=True)
+  for backend, model in compiled_models.models_with_backend:
+    backend_id = backend.id()
+    target_id = backend.target_id
+    if backend_id == fallback_backend.FallbackBackend.id():
+      # Skip fallback CPU / GPU model.
+      continue
+    group_name = 'model#group_' + target_id
+    export_dir = model_export_dir / group_name
+    os.makedirs(export_dir, exist_ok=True)
+    if backend_id != mediatek_backend.MediaTekBackend.id():
+      # Skip non-MTK targets, just create empty directory.
+      continue
     model_export_path = export_dir / (litert_model_name + common.DOT_TFLITE)
     if not model.in_memory:
       model.load()
@@ -80,8 +144,8 @@ def _export_model_files_to_ai_pack(
 
 
 def _write_ai_pack_manifest(ai_pack_dir: pathlib.Path):
-  """Writes the AndroidManifest.xml file."""
-  manifest_path = ai_pack_dir / 'AndroidManifest.xml'
+  """Writes the AiPackManifest.xml file."""
+  manifest_path = ai_pack_dir / 'AiPackManifest.xml'
   manifest_path.write_text(_AI_PACK_MANIFEST)
 
 
@@ -110,11 +174,21 @@ def _target_to_ai_pack_info(target: types.Target) -> str | None:
         device_group_name=group_name, device_selectors=device_selectors
     )
     return device_group
+  elif isinstance(target, mtk_target.Target):
+    group_name = str(target)
+    # TODO: b/407453529 - Support MTK SDK Version / OS version in selector.
+    selector = _process_mtk_target(target)
+    device_selector = _DEVICE_SELECTOR_TEMPLATE.format(
+        soc_man=selector[0], soc_model=selector[1]
+    )
+    device_group = _DEVICE_GROUP_TEMPLATE.format(
+        device_group_name=group_name, device_selectors=device_selector
+    )
+    return device_group
   elif isinstance(target, fallback_backend.FallbackTarget):
     # Don't need to have device selector for fallback target.
     return None
   else:
-    # TODO: b/407453529 - Support MTK targets.
     print('unsupported target ', target)
     return None
 
@@ -126,6 +200,15 @@ def _process_qnn_target(target: qnn_target.Target) -> list[tuple[str, str]]:
   manufacturer = ['Qualcomm', 'QTI']
   models = [str(target.soc_model)]
   return list(itertools.product(manufacturer, models))
+
+
+# TODO: b/407453529 - Auto-generate this function from CSVs.
+def _process_mtk_target(
+    target: mtk_target.Target,
+) -> tuple[str, str]:
+  """Returns tuple of (manufacturer, model) for the given MTK target."""
+  # Play cannot distinguish between Qualcomm and QTI for now.
+  return str(target.soc_manufacturer), str(target.soc_model)
 
 
 def _write_targeting_config(
@@ -153,7 +236,7 @@ def export(
   structure:
 
   {ai_pack_dir}/
-    AndroidManifest.xml
+    AiPackManifest.xml
     device_targeting_configuration.xml
     {ai_pack_name}/
       model#group_target_1/
