@@ -14,8 +14,25 @@
 # ==============================================================================
 """This module contains a rule to generate a sdist archive for a Python package."""
 
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+
+def _get_full_sdist_name(sdist_name, version):
+    sdist_version = version.replace("-", "")
+    return "{sdist_name}-{sdist_version}.tar.gz".format(
+        sdist_name = sdist_name,
+        sdist_version = sdist_version,
+    )
+
 def _sdist_impl(ctx):
-    output_sdist = ctx.outputs.sdist_archive
+    version = ctx.attr.version
+    package_name = ctx.attr.package_name
+    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
+        version = version + ".dev" + ctx.attr.nightly_suffix[BuildSettingInfo].value
+        sdist_name = _get_full_sdist_name(package_name + "_nightly", version)
+    else:
+        sdist_name = _get_full_sdist_name(package_name, version)
+
+    output_sdist = ctx.actions.declare_file(sdist_name)
 
     sdist_wrapper_executable = ctx.executable._sdist_wrapper
 
@@ -25,9 +42,14 @@ def _sdist_impl(ctx):
         setup_py_dir = "."
 
     args = ctx.actions.args()
+    args.add("--project_name", package_name)
+    args.add("--version", version)
     args.add("--dir", setup_py_dir)
     args.add("--setup_py", setup_py_name)
     args.add("--output_sdist_path", output_sdist.path)
+
+    if ctx.attr.nightly_suffix and ctx.attr.nightly_suffix[BuildSettingInfo].value != "":
+        args.add("--nightly_suffix", "_nightly")
 
     all_input_files = depset(
         direct = [ctx.file.setup_py, ctx.file.manifest_in],
@@ -42,7 +64,7 @@ def _sdist_impl(ctx):
         progress_message = "Creating sdist for {} via Python wrapper".format(ctx.attr.package_name),
         mnemonic = "PySdistWrapper",
     )
-    return [DefaultInfo(files = depset([output_sdist]))]
+    return [DefaultInfo(files = depset(direct = [output_sdist]))]
 
 sdist_rule = rule(
     implementation = _sdist_impl,
@@ -66,9 +88,9 @@ sdist_rule = rule(
             mandatory = True,
             doc = "Name of the Python package.",
         ),
-        "sdist_archive_name": attr.string(
+        "version": attr.string(
             mandatory = True,
-            doc = "The desired name for the output sdist .tar.gz file (e.g., 'my_package-1.0.tar.gz').",
+            doc = "Version of the Python package.",
         ),
         "_sdist_wrapper": attr.label(
             default = Label("//ci/tools/python/vendor_sdk:sdist_wrapper"),
@@ -76,6 +98,6 @@ sdist_rule = rule(
             cfg = "exec",
             doc = "The py_binary wrapper script for sdist creation.",
         ),
+        "nightly_suffix": attr.label(),
     },
-    outputs = {"sdist_archive": "%{sdist_archive_name}"},
 )

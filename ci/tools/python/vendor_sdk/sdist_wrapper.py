@@ -28,13 +28,18 @@ def main():
       description="Wrapper to create sdist using setup.py."
   )
   parser.add_argument(
+      "--project_name",
+      required=True,
+      help="Name of the project",
+  )
+  parser.add_argument(
       "--dir",
       required=True,
       help="Directory containing the project files.",
   )
   parser.add_argument(
       "--setup_py",
-      default="setup.py",
+      default="setup.template.py",
       help="Name of the setup script (default: setup.py).",
   )
   parser.add_argument(
@@ -42,15 +47,57 @@ def main():
       required=True,
       help="Full path where the final sdist .tar.gz should be placed.",
   )
+  parser.add_argument(
+      "--nightly_suffix",
+      help=(
+          "Suffix to be added to the name of the sdist for nightly builds. Does"
+          " not affect the name of the module."
+      ),
+  )
+  parser.add_argument("--version", help="version of the sdist")
 
   args = parser.parse_args()
 
   original_cwd = os.getcwd()
+  build_dir = os.path.join(os.getcwd(), "sdist_build")
+  os.makedirs(build_dir)
   sdist_temp_output_dir = "dist_sdist_temp"
+  project_name = args.project_name
+  version = args.version
 
   try:
     print(f"Changing working directory to: {args.dir}")
     os.chdir(args.dir)
+
+    with open(args.setup_py, "rt") as f:
+      setup_py_content = f.read()
+    setup_py_content = setup_py_content.replace(
+        "{{ PACKAGE_NAME }}",
+        project_name + "_nightly" if args.nightly_suffix else project_name,
+    )
+    setup_py_content = setup_py_content.replace(
+        "{{ PACKAGE_VERSION }}",
+        version,
+    )
+    tmp_setup_py_path = os.path.join(build_dir, "setup.py")
+    with open(tmp_setup_py_path, "wt") as f:
+      f.write(setup_py_content)
+
+    shutil.copy("MANIFEST.in", build_dir)
+
+    os.makedirs(os.path.join(build_dir, project_name))
+    with open(os.path.join(project_name, "__init__.py"), "rt") as f:
+      init_py_content = f.read()
+    init_py_content = init_py_content.replace(
+        "{{ PACKAGE_VERSION }}",
+        version,
+    )
+    dest_init_py_path = os.path.join(build_dir, project_name, "__init__.py")
+    with open(dest_init_py_path, "wt") as f:
+      f.write(init_py_content)
+
+    print(f"Changing working directory to: {build_dir}")
+    os.chdir(build_dir)
 
     if os.path.exists(sdist_temp_output_dir):
       shutil.rmtree(sdist_temp_output_dir)
@@ -58,7 +105,7 @@ def main():
 
     cmd = [
         sys.executable,
-        args.setup_py,
+        tmp_setup_py_path,
         "sdist",
         "--dist-dir",
         sdist_temp_output_dir,
@@ -114,6 +161,7 @@ def main():
     shutil.move(actual_sdist_file, final_output_path_abs)
 
     print(f"Successfully created sdist: {final_output_path_abs}")
+    shutil.rmtree(build_dir)
 
   finally:
     os.chdir(original_cwd)
