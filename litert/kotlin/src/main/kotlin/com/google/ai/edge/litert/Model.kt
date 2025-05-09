@@ -148,7 +148,7 @@ private constructor(
     var cpuOptions: CpuOptions? = null
 
     companion object {
-      @JvmStatic val CPU = Options(Accelerator.CPU)
+      @JvmStatic val NONE = Options()
     }
   }
 
@@ -306,7 +306,7 @@ private constructor(
 
     private fun create(
       model: Model,
-      options: Options = Options.CPU,
+      options: Options = Options.NONE,
       optionalEnv: Environment? = null,
       modelManaged: Boolean,
       envManaged: Boolean = optionalEnv == null,
@@ -333,7 +333,7 @@ private constructor(
     @JvmStatic
     fun create(
       model: Model,
-      options: Options = Options.CPU,
+      options: Options = Options.NONE,
       optionalEnv: Environment? = null,
     ): CompiledModel {
       return create(model, options, optionalEnv, modelManaged = false)
@@ -345,7 +345,7 @@ private constructor(
     fun create(
       assetManager: AssetManager,
       assetName: String,
-      options: Options = Options.CPU,
+      options: Options = Options.NONE,
       optionalEnv: Environment? = null,
     ): CompiledModel {
       return create(Model.load(assetManager, assetName), options, optionalEnv, modelManaged = true)
@@ -356,7 +356,7 @@ private constructor(
     @JvmStatic
     fun create(
       filePath: String,
-      options: Options = Options.CPU,
+      options: Options = Options.NONE,
       optionalEnv: Environment? = null,
     ): CompiledModel {
       return create(Model.load(filePath), options, optionalEnv, modelManaged = true)
