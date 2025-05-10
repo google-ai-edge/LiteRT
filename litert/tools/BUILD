@@ -244,6 +244,7 @@ cc_library(
     ],
 )
 
+#copybara:comment_begin(google-only)
 cc_test(
     name = "benchmark_litert_model_test",
     srcs = ["benchmark_litert_model_test.cc"],
@@ -265,6 +266,7 @@ cc_test(
             "//tflite/tools/benchmark:benchmark_params",
         ],
 )
+#copybara:comment_end
 
 cc_library(
     name = "tensor_utils",

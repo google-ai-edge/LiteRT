@@ -56,7 +56,7 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        # copybara:uncomment "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
     ],
     linkopts = select({
@@ -67,10 +67,10 @@ cc_binary(
         ":image_processor",
         ":image_utils",
         ":segmentation_model",
-        "//litert/cc:litert_tensor_buffer",
-        "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-        "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
         "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_tensor_buffer",
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
+        "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
     ] + gles_deps(),
 )
 

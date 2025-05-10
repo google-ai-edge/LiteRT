@@ -87,12 +87,12 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
     packed_buffer_size_ = *packed_size;
   }
   LITERT_LOG(LITERT_DEBUG, "Created tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this));
+             ::litert::internal::GetTensorBufferTypeName(*this).data());
 }
 
 LiteRtTensorBufferT::~LiteRtTensorBufferT() {
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this));
+             ::litert::internal::GetTensorBufferTypeName(*this).data());
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeUnknown:
       // Nothing to do.

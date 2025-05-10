@@ -181,5 +181,91 @@ TEST(GpuAcceleratorCompilationOptions, SetDelegatePrecisionFp32Precision) {
   EXPECT_THAT(precision, Eq(kLiteRtDelegatePrecisionFp32));
 }
 
+TEST(GpuAcceleratorCompilationOptions, SetSerializationDir) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  const char* serialization_dir = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+      &serialization_dir, payload));
+  EXPECT_EQ(serialization_dir, nullptr);
+
+  options.SetSerializationDir("/data/local/tmp");
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+      &serialization_dir, payload));
+  EXPECT_EQ(serialization_dir, "/data/local/tmp");
+}
+
+TEST(GpuAcceleratorCompilationOptions, SetModelCacheKey) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  const char* model_cache_key = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+      &model_cache_key, payload));
+  EXPECT_EQ(model_cache_key, nullptr);
+
+  options.SetModelCacheKey("model_cache");
+  LITERT_ASSERT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+      &model_cache_key, payload));
+  EXPECT_EQ(model_cache_key, "model_cache");
+}
+
+TEST(GpuAcceleratorCompilationOptions, SetSerializeProgramCache) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  bool serialize_program_cache = false;
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+          &serialize_program_cache, payload));
+  EXPECT_EQ(serialize_program_cache, true);
+
+  options.SetSerializeProgramCache(false);
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+          &serialize_program_cache, payload));
+  EXPECT_EQ(serialize_program_cache, false);
+}
+
+TEST(GpuAcceleratorCompilationOptions, SetSerializeExternalTensors) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  bool serialize_external_tensors = false;
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+          &serialize_external_tensors, payload));
+  EXPECT_EQ(serialize_external_tensors, false);
+
+  options.SetSerializeExternalTensors(true);
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+          &serialize_external_tensors, payload));
+  EXPECT_EQ(serialize_external_tensors, true);
+}
+
+TEST(GpuAcceleratorCompilationOptions, SetPreferTextureWeights) {
+  LITERT_ASSERT_OK_AND_ASSIGN(GpuOptions options, GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtGpuOptionsPayload payload,
+                              options.GetData<LiteRtGpuOptionsPayloadT>());
+  // Check the default value.
+  bool prefer_texture_weights = false;
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+          &prefer_texture_weights, payload));
+  EXPECT_EQ(prefer_texture_weights, false);
+
+  options.SetPreferTextureWeights(true);
+  LITERT_ASSERT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+          &prefer_texture_weights, payload));
+  EXPECT_EQ(prefer_texture_weights, true);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift

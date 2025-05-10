@@ -27,19 +27,27 @@ extern "C" {
 // options.
 LiteRtStatus LiteRtCreateGpuOptions(LiteRtOpaqueOptions* options);
 
-// Enables the GPU accelerator constant tensor sharing.
+// Enables the GPU accelerator constant tensor sharing to enable sharing of
+// constant tensors between different subgraphs.
 LiteRtStatus LiteRtSetGpuOptionsConstantTensorSharing(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
-// Enables the GPU accelerator infinite float capping.
+// Enables the GPU accelerator infinite float capping to enforce capping
+// inf/-inf to max float values for the softmax input and padding
 LiteRtStatus LiteRtSetGpuOptionsInfiniteFloatCapping(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
-// Enables the GPU accelerator benchmark mode.
+// Enables the GPU accelerator benchmark mode. This will disable some
+// optimizations that are not needed for benchmarking.
 LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
                                               bool enable);
 
-// Enables the GPU accelerator allow src quantized FC conv ops.
+// This enables dynamic range quantization of the input tensor for large sized
+// fully connected and convolution operations, if the device supports it. This
+// will result in accuracy loss, since the input tensor will be quantized to
+// 8-bit. Turning this on will also increase the initialization time to
+// calculate some extra constant tensor. `enable_constant_tensors_sharing` must
+// be true to use this.
 LiteRtStatus
 LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
     LiteRtOpaqueOptions gpu_accelerator_options, bool enable);
@@ -49,10 +57,49 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPrecision(
     LiteRtOpaqueOptions gpu_accelerator_options,
     LiteRtDelegatePrecision precision);
 
-// Sets the GPU buffer storage type.
+// Sets the GPU buffer storage type. If true, the delegate will use buffer
+// storage type.
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
     LiteRtOpaqueOptions gpu_accelerator_options,
     LiteRtDelegateBufferStorageType buffer_storage_type);
+
+// If true, the delegate will prefer to use textures rather than buffers for
+// weights. Use option when weights in texture has better performance.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool prefer_texture_weights);
+
+// The nul-terminated directory to use for serialization.
+// Whether serialization actually happens or not is dependent on backend used
+// and validity of this directory.
+// Set to nullptr implies the delegate will not try serialization.
+//
+// NOTE: Users should ensure that this directory is private to the app to
+// avoid data access issues.
+// Delegate copies the string and doesn't take ownership of the memory.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
+    LiteRtOpaqueOptions gpu_accelerator_options, const char* serialization_dir);
+
+// The unique nul-terminated token string that acts as a 'namespace' for
+// all serialization entries.
+// Should be unique to a particular model (graph & constants).
+// For an example of how to generate this from a TFLite model, see
+// StrFingerprint() in lite/delegates/serialization.h.
+//
+// Set to nullptr implies the delegate will not try serialization.
+// Delegate copies the string and doesn't take ownership of the memory.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
+    LiteRtOpaqueOptions gpu_accelerator_options, const char* model_cache_key);
+
+// When set to true AND the serialization_dir and model_cache_key are also set,
+// the delegate will serialize the program cache.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    LiteRtOpaqueOptions gpu_accelerator_options, bool serialize_program_cache);
+
+// Set to true to serialize immutable external tensors. By default only the
+// non-external tensors are serialized.
+LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool serialize_external_tensors);
 
 // Declarations below this point are meant to be used by accelerator code.
 
@@ -78,6 +125,21 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPrecision(
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType(
     LiteRtDelegateBufferStorageType* type, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+    bool* prefer_texture_weights, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+    const char** serialization_dir, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+    const char** model_cache_key, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+    bool* serialize_program_cache, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+    bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

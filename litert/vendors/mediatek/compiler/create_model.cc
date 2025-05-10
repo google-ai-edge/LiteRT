@@ -158,8 +158,20 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                 AddMaxPool2dFuseActivationOption));  // activation
         break;
       case kLiteRtOpCodeTflHardSwish:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map,
                                   op, NEURON_HARD_SWISH);
+        break;
+      case kLiteRtOpCodeTflAveragePool2d:
+        status = LegalizeOp(
+            neuron_adapter_api, model, *operand_map, op,
+            NEURON_AVERAGE_POOL_2D,
+            std::make_tuple(
+                AddAveragePool2dPaddingOption,           // padding
+                AddAveragePool2dStrideWOption,           // stride_w
+                AddAveragePool2dStrideHOption,           // stride_h
+                AddAveragePool2dFilterWOption,           // filter_w
+                AddAveragePool2dFilterHOption,           // filter_h
+                AddAveragePool2dFuseActivationOption));  // activation
         break;
       case kLiteRtOpCodeTflPad:
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map,

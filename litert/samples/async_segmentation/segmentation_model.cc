@@ -22,9 +22,9 @@
 #include <utility>
 #include <vector>
 
-#include "GLES2/gl2.h"
-#include "GLES3/gl3.h"
-#include "GLES3/gl32.h"
+#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
+#include <GLES3/gl32.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"

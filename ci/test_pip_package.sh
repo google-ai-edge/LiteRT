@@ -105,7 +105,7 @@ function test_import {
   # Test whether import is successful.
   echo "------ Test import -----"
   ${PYTHON_BIN} -c "import ai_edge_litert"
-  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   echo
 }
 

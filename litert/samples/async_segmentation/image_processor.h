@@ -24,9 +24,9 @@
 #include <vector>
 
 // EGL
-#include "EGL/egl.h"
-#include "EGL/eglext.h"
-#include "GLES3/gl3.h"
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES3/gl3.h>
 
 struct RGBAColor {
   float r, g, b, a;

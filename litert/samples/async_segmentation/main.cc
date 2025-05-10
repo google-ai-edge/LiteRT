@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-#include "GLES2/gl2.h"
+#include <GLES2/gl2.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/samples/async_segmentation/image_processor.h"

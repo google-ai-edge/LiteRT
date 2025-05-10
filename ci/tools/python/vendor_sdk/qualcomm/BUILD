@@ -14,20 +14,20 @@
 # ==============================================================================
 
 load("//ci/tools/python/vendor_sdk:sdist.bzl", "sdist_rule")
+load("//litert:version.bzl", "LITERT_SDK_QUALCOMM_FULL_VERSION")
 
 package(
     default_visibility = ["//visibility:private"],
 )
 
-# TODO(weiyiw): Figure out some way to utilize the version from BUILD.
-# NOTE: When changing this version, please also update setup.py as well to match this version.
-VERSION = "0.0.0"
+PROJECT_NAME = "ai_edge_litert_sdk_qualcomm"
 
 sdist_rule(
     name = "ai_edge_litert_sdk_qualcomm_sdist",
-    package_name = "ai_edge_litert_sdk_qualcomm",
+    package_name = PROJECT_NAME,
     manifest_in = "MANIFEST.in",
+    nightly_suffix = "//ci/tools/python/wheel:nightly_iso_date",
     package_srcs = glob(["ai_edge_litert_sdk_qualcomm/**"]),
-    sdist_archive_name = "ai_edge_litert_sdk_qualcomm-{VERSION}.tar.gz".format(VERSION = VERSION),
     setup_py = "setup.py",
+    version = LITERT_SDK_QUALCOMM_FULL_VERSION,
 )
