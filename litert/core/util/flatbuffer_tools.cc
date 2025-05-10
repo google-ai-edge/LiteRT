@@ -20,8 +20,9 @@
 #include <vector>
 
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
-#include "litert/core/filesystem.h"
+#include "litert/cc/litert_macros.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tensorflow/compiler/mlir/lite/core/model_builder_base.h"
 
 #ifndef NDEBUG
 // Make flatbuffers verifier `assert` in debug mode.
@@ -271,27 +272,34 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
-    OwningBufferRef<uint8_t>&& buffer) {
+  OwningBufferRef<uint8_t>&& buffer) {
   static constexpr size_t k2GiB = 2e+9;
   if (buffer.Size() < k2GiB &&
       !VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
     return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
   }
-
   auto alloc = MakeAllocation(buffer);
+  LITERT_ASSIGN_OR_ABORT(auto wrapper,
+                           (CreateFromAllocation(std::move(alloc))));
+  // Keep the buffer alive for the lifetime of the wrapper.
+  wrapper->model_buf_ = std::move(buffer);
+  return wrapper;
+}
 
+Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
+    ::tflite::Allocation::Ptr alloc) {
   if (alloc == nullptr) {
-    return Error(kLiteRtStatusErrorFileIO, "Failed to make allocation");
+    return Error(kLiteRtStatusErrorFileIO, "Invalid allocation");
   }
 
-  auto fb_model = ::tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(alloc->base()), alloc->bytes());
+  auto fb_model =
+      ::tflite::FlatBufferModel::BuildFromAllocation(std::move(alloc));
   if (fb_model == nullptr) {
     return Error(kLiteRtStatusErrorFileIO, "Failed to build flatbuffer model");
   }
 
   return FlatbufferWrapper::Ptr(new FlatbufferWrapper(
-      std::move(fb_model), std::move(alloc), std::move(buffer)));
+      std::move(fb_model)));
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
@@ -302,11 +310,10 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
     absl::string_view path) {
-  auto buf = LoadBinaryFile(path);
-  if (!buf) {
-    return buf.Error();
-  }
-  return FlatbufferWrapper::CreateFromBuffer(std::move(*buf));
+  auto error_reporter = tflite::DefaultErrorReporter();
+  auto allocation =
+      tflite::GetAllocationFromFile(path.data(), error_reporter);
+  return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 
 OwningBufferRef<uint8_t> SerializeFlatbuffer(const TflModel& tfl_model) {

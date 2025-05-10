@@ -130,7 +130,7 @@ class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
 TEST(ModelLoadTest, BadFilepath) {
   LiteRtModel model = nullptr;
   EXPECT_THAT(LiteRtCreateModelFromFile("bad_path", &model),
-              IsError(kLiteRtStatusErrorNotFound));
+              IsError(kLiteRtStatusErrorFileIO));
 }
 
 TEST(ModelLoadTest, BadFileData) {
@@ -150,7 +150,7 @@ TEST(ModelLoadTest, BadFileData) {
 
   LiteRtModel model = nullptr;
   EXPECT_THAT(LiteRtCreateModelFromFile(test_file_path.c_str(), &model),
-              IsError(kLiteRtStatusErrorInvalidFlatbuffer));
+              IsError(kLiteRtStatusErrorFileIO));
   // NOLINTEND
 }
 

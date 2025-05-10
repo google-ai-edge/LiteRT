@@ -267,9 +267,13 @@ class FlatbufferWrapper {
   // Load flatbuffer from allocated buffer and take ownership.
   static Expected<Ptr> CreateFromBuffer(OwningBufferRef<uint8_t>&& buffer);
 
+  // Load flatbuffer from TFLite allocation and take ownership.
+  static Expected<Ptr> CreateFromAllocation(tflite::Allocation::Ptr alloc);
+
   // Underlying buffer.
   BufferRef<uint8_t> Buf() const {
-    return BufferRef<uint8_t>(alloc_->base(), alloc_->bytes());
+    auto alloc = fb_model_.get()->allocation();
+    return BufferRef<uint8_t>(alloc->base(), alloc->bytes());
   }
 
   // Underlying model object.
@@ -292,15 +296,10 @@ class FlatbufferWrapper {
   FlatbufferWrapper() = default;
 
  private:
-  FlatbufferWrapper(::tflite::FlatBufferModel::Ptr fb_model,
-                    ::tflite::Allocation::Ptr alloc,
-                    OwningBufferRef<uint8_t>&& model_buf)
-      : fb_model_(std::move(fb_model)),
-        alloc_(std::move(alloc)),
-        model_buf_(std::forward<OwningBufferRef<uint8_t>>(model_buf)) {}
+  explicit FlatbufferWrapper(::tflite::FlatBufferModel::Ptr fb_model)
+      : fb_model_(std::move(fb_model)) {}
 
   ::tflite::FlatBufferModel::Ptr fb_model_;
-  ::tflite::Allocation::Ptr alloc_;
   OwningBufferRef<uint8_t> model_buf_;
 };
 

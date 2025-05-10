@@ -38,6 +38,7 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_consts",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/core:filesystem",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
@@ -47,6 +48,7 @@ cc_library_with_testonly_vis(
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
