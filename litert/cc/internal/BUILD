@@ -25,6 +25,22 @@ package(
 )
 
 cc_library(
+    name = "litert_dispatch_delegate",
+    hdrs = [
+        "//litert/cc:litert_dispatch_delegate.h",
+    ],
+    deps = [
+        "//litert/c:litert_environment_options",
+        "//litert/runtime/dispatch:dispatch_delegate",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+    ],
+)
+
+cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
@@ -36,6 +52,24 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "litert_custom_op_kernel",
+    srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
+    hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
+    deps = [
+        ":litert_tensor_buffer",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_op_kernel",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_layout",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -74,9 +108,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//tflite/c:c_api_types",
         "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ],
@@ -91,29 +123,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//tflite/c:c_api_types",
         "@com_google_absl//absl/types:span",
-    ],
-)
-
-# Dispatch Delegate of LiteRt.
-# Warning: This API is not ABI stable and is subject to change.
-cc_library(
-    name = "litert_dispatch_delegate",
-    hdrs = [
-        "//litert/cc:litert_dispatch_delegate.h",
-    ],
-    deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/runtime/dispatch:dispatch_delegate",
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/delegates/utils:simple_opaque_delegate",
     ],
 )
 
@@ -137,12 +151,6 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -162,31 +170,5 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
     ],
 )
-
-cc_library(
-    name = "litert_custom_op_kernel",
-    srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
-    hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
-    deps = [
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_op_kernel",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_layout",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-exports_files(srcs = ["litert_dispatch_delegate.h"])
