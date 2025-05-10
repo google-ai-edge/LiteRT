@@ -19,49 +19,72 @@ package(
     ],
 )
 
-# VISIBILITY #######################################################################################
-
+# These are the internal packages that have access to the cc api linked against the runtime .so.
 package_group(
-    name = "litert_internal_users",
+    name = "litert_internal_users_with_public_cc",
     packages = [
         # Self packages.
         "//ci/tools/...",
-        "//litert/c/...",
         "//litert/cc/...",
-        "//litert/compiler/...",
-        "//litert/core/...",
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
-        "//litert/runtime/...",
         "//litert/test/...",
         "//litert/sdk_util/...",
-        "//litert/tools/...",
         # Users with access to core internal apis.
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
         # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-        # copybara:uncomment "//third_party/darwinn/litert/...",
     ],
 )
 
+# These are the internal packages that have access to the cc api linked statically.
 package_group(
-    name = "litert_stable_abi_users",
-    includes = [
-        ":litert_internal_users",
+    name = "litert_internal_users_with_internal_cc",
+    packages = [
+        # copybara:uncomment "//third_party/darwinn/litert/...",
+        # copybara:uncomment "//third_party/darwinn/tflite/...",
+        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
+        # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
+        "//litert/c/...",
+        "//litert/compiler/...",
+        "//litert/core/...",
+        "//litert/runtime/...",
+        "//litert/tools/...",
+        "//litert/vendors/cc/...",
+        # copybara:uncomment "//third_party/odml/litert_lm/...",
     ],
+)
+
+# All packages with visibility to the internal apis.
+package_group(
+    name = "litert_internal_users",
+    includes = [
+        ":litert_internal_users_with_internal_cc",
+        ":litert_internal_users_with_public_cc",
+    ],
+)
+
+# Users with access to only the public stable abi + wrappers.
+package_group(
+    name = "litert_external_users",
     packages = [
         # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
-        # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
         "//litert/samples/...",
         "//litert/vendors/...",
         # copybara:uncomment "//third_party/odml/litert/llm/...",
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
+    ],
+)
+
+# All litert users, least restrictive option.
+package_group(
+    name = "litert_public",
+    includes = [
+        ":litert_external_users",
+        ":litert_internal_users",
     ],
 )
 

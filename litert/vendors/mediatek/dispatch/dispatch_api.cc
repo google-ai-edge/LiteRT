@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cstdio>
-#include <cstring>
 #include <optional>
 #include <string>
 
@@ -21,24 +20,26 @@
 #include <android/hardware_buffer.h>
 #endif
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
-#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace {
 
-litert::mediatek::NeuronAdapterApi* TheNeuronAdapter;
+litert::mediatek::NeuronAdapterApi* static_neuron_adapter;
 char BuildId[256];
+
+LiteRtEnvironmentOptions static_environment_options;
+
+LiteRtOptions static_options;
 
 }  // namespace
 
@@ -49,35 +50,37 @@ namespace mediatek {
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-const char* GetSharedLibraryDir(const LiteRtDispatchOption* options,
-                                int num_options) {
-  for (auto i = 0; i < num_options; ++i) {
-    auto& option = options[i];
-    if (!strcmp(option.name, kDispatchOptionSharedLibraryDir)) {
-      return option.value.str_value;
-    }
+std::optional<std::string> GetSharedLibraryDir(
+    LiteRtEnvironmentOptions environment_options) {
+  litert::EnvironmentOptions env_options(environment_options);
+  auto dispatch_lib_dir_any =
+      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
+  if (!dispatch_lib_dir_any) {
+    LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
+               dispatch_lib_dir_any.Error().Message().c_str());
+    return std::nullopt;
   }
-  return nullptr;
+  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
 }
 
-LiteRtStatus LiteRtInitialize(const LiteRtDispatchOption* options,
-                              int num_options) {
-  auto* shared_library_dir = GetSharedLibraryDir(options, num_options);
-  std::optional<std::string> shared_library_dir_opt =
-      shared_library_dir ? std::make_optional(std::string(shared_library_dir))
-                         : std::nullopt;
+LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
+                              LiteRtOptions options) {
+  static_environment_options = environment_options;
+  static_options = options;
+
+  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
 
   if (auto neuron_adapter_api =
           litert::mediatek::NeuronAdapterApi::Create(shared_library_dir_opt);
       neuron_adapter_api) {
-    TheNeuronAdapter = neuron_adapter_api->release();
+    static_neuron_adapter = neuron_adapter_api->release();
   } else {
     LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
                neuron_adapter_api.Error().Message().c_str());
     return neuron_adapter_api.Error().Status();
   }
 
-  auto get_version = TheNeuronAdapter->api().get_version;
+  auto get_version = static_neuron_adapter->api().get_version;
   if (!get_version) {
     LITERT_LOG(LITERT_ERROR, "get_version not found");
     return kLiteRtStatusErrorRuntimeFailure;
@@ -119,7 +122,8 @@ LiteRtStatus LiteRtGetCapabilities(int* capabilities) {
 
 LiteRtStatus LiteRtDeviceContextCreate(
     LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(*TheNeuronAdapter);
+  if (auto context =
+          LiteRtDispatchDeviceContextT::Create(*static_neuron_adapter);
       context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
@@ -203,7 +207,7 @@ LiteRtStatus LiteRtInvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      *TheNeuronAdapter, device_context, exec_type, exec_bytecode_buffer,
+      *static_neuron_adapter, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
   if (!context) {
     LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",
