@@ -25,6 +25,7 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/vendors/mediatek/compiler/legalizations/extra_data_mgr.h"
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -189,15 +190,20 @@ class OperandMap {
   }
 
   // Add a tensor operand to the model
-  Expected<uint32_t> AddTensorInt32(std::vector<uint32_t>& shape,
-                                    const void* data, const size_t data_size) {
-    return AddTensor(NEURON_TENSOR_INT32, shape, data, data_size);
-  }
-
-  // Add a tensor operand to the model
   Expected<uint32_t> AddTensorByType(int mtk_type, std::vector<uint32_t>& shape,
                                      const void* data, const size_t data_size) {
-    return AddTensor(mtk_type, shape, data, data_size);
+    const NeuronOperandType tensor_type = {
+        .type = mtk_type,
+        .dimensionCount = (uint32_t)shape.size(),
+        .dimensions = shape.data(),
+    };
+    return AddTensor(tensor_type, data, data_size);
+  }
+
+  Expected<uint32_t> AddTensorByOperandType(const NeuronOperandType tensor_type,
+                                            const void* data,
+                                            const size_t data_size) {
+    return AddTensor(tensor_type, data, data_size);
   }
 
   Expected<uint32_t> AddOperand(const NeuronOperandType& operand) {
@@ -227,8 +233,8 @@ class OperandMap {
                    "Failed to get extension operand type");
     }
     std::vector<uint32_t> tensor_shape = {(uint32_t)oem_scalar_size};
-    auto result =
-        AddTensor(operand_type, tensor_shape, oem_scalar, oem_scalar_size);
+    auto result = AddTensorByType(operand_type, tensor_shape, oem_scalar,
+                                  oem_scalar_size);
     free(oem_scalar);
 
     // Get oem op type
@@ -281,15 +287,9 @@ class OperandMap {
     return operand_index;
   }
 
-  Expected<uint32_t> AddTensor(int32_t mtk_type,
-                               const std::vector<uint32_t>& shape,
+  Expected<uint32_t> AddTensor(const NeuronOperandType tensor_type,
                                const void* data, const size_t data_size) {
-    const NeuronOperandType scalar_type = {
-        .type = mtk_type,
-        .dimensionCount = (uint32_t)shape.size(),
-        .dimensions = shape.data(),
-    };
-    auto operand_index = Register(scalar_type);
+    auto operand_index = Register(tensor_type);
     if (!operand_index) {
       return operand_index.Error();
     }
@@ -305,6 +305,7 @@ class OperandMap {
   NeuronModel* model_;
   int next_operand_index_ = 0;
   absl::flat_hash_map<LiteRtTensor, uint32_t> map_;
+  ExtraDataMgr extra_data_mgr_;
 };
 
 }  // namespace litert::mediatek

@@ -38,6 +38,7 @@
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 #include "litert/vendors/mediatek/compiler/create_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/neuron_schema_generated.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
@@ -51,6 +52,7 @@ using litert::Expected;
 using litert::mediatek::NeuronAdapterApi;
 using litert::mediatek::NeuronCompilationPtr;
 using litert::mediatek::NeuronModelPtr;
+using litert::mediatek::OperandMap;
 
 namespace {
 
@@ -98,6 +100,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflResizeNearestNeighbor,
     kLiteRtOpCodeTflTransposeConv,
     kLiteRtOpCodeTflMaxPool2d,
+    kLiteRtOpCodeTflDequantize,
+    kLiteRtOpCodeTflPadv2,
     kLiteRtOpCodeTflHardSwish,
     kLiteRtOpCodeTflAveragePool2d
 };
@@ -310,10 +314,13 @@ namespace {
 Expected<std::vector<uint8_t>> CompilePartition(
     NeuronAdapterApi& neuron_adapter_api, const litert::Subgraph& partition,
     const std::string& graph_name, std::optional<std::string> soc_model) {
-  auto model = CreateModel(neuron_adapter_api, partition, graph_name);
+  auto model = neuron_adapter_api.CreateModel();
   if (!model) {
     return model.Error();
   }
+  OperandMap operand_map(neuron_adapter_api, model->get());
+  LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
+                                     model->get(), &operand_map));
 
   auto compilation = CompileModel(neuron_adapter_api, model->get(), soc_model);
   if (!compilation) {

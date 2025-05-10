@@ -22,6 +22,7 @@
 #include "neuron/api/NeuronAdapter.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/add_op_legalization.h"
@@ -33,7 +34,6 @@
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mean_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mul_op_legalization.h"
-#include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/compiler/legalizations/reshape_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_bilinear_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_nearest_neighbor_op_legalization.h"
@@ -48,24 +48,18 @@
 
 namespace litert::mediatek {
 
-Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
-                                     const litert::Subgraph& partition,
-                                     const std::string& model_name) {
-  auto model = neuron_adapter_api.CreateModel();
-  if (!model) {
-    return model.Error();
-  }
-
-  if (neuron_adapter_api.api().model_set_name(
-          model->get(), model_name.c_str()) != NEURON_NO_ERROR) {
+Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
+                           const litert::Subgraph& partition,
+                           const std::string& model_name, NeuronModel* model,
+                           OperandMap* operand_map) {
+  if (neuron_adapter_api.api().model_set_name(model, model_name.c_str()) !=
+      NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to set model name");
   }
 
-  OperandMap operand_map(neuron_adapter_api, model->get());
-
   std::vector<uint32_t> input_indices;
   for (const auto& input : partition.Inputs()) {
-    auto operand_index = operand_map.GetOperandIndex(input);
+    auto operand_index = operand_map->GetOperandIndex(input);
     if (!operand_index) {
       return operand_index.Error();
     }
@@ -74,7 +68,7 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
 
   std::vector<uint32_t> output_indices;
   for (const auto& output : partition.Outputs()) {
-    auto operand_index = operand_map.GetOperandIndex(output);
+    auto operand_index = operand_map->GetOperandIndex(output);
     if (!operand_index) {
       return operand_index.Error();
     }
@@ -82,7 +76,7 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
   }
 
   if (neuron_adapter_api.api().model_identify_inputs_and_outputs(
-          model->get(), input_indices.size(), input_indices.data(),
+          model, input_indices.size(), input_indices.data(),
           output_indices.size(), output_indices.data()) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to identify model I/Os");
@@ -92,85 +86,73 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
     Expected<void> status;
     switch (op.Code()) {
       case kLiteRtOpCodeTflAdd:
-        status =
-            LegalizeAddOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeAddOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflMul:
-        status =
-            LegalizeMulOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeMulOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflBatchMatmul:
-        status = LegalizeBatchMatMulOp(neuron_adapter_api, model->get(),
-                                       operand_map, op);
+        status =
+            LegalizeBatchMatMulOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflFullyConnected:
-        status = LegalizeFullyConnectedOp(neuron_adapter_api, model->get(),
-                                          operand_map, op);
+        status = LegalizeFullyConnectedOp(neuron_adapter_api, model,
+                                          *operand_map, op);
         break;
       case kLiteRtOpCodeTflReshape:
-        status = LegalizeReshapeOp(neuron_adapter_api, model->get(),
-                                   operand_map, op);
+        status = LegalizeReshapeOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflTranspose:
-        status = LegalizeTransposeOp(neuron_adapter_api, model->get(),
-                                     operand_map, op);
+        status =
+            LegalizeTransposeOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflRsqrt:
-        status =
-            LegalizeRsqrtOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeRsqrtOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflConcatenation:
-        status =
-            LegalizeConcatOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeConcatOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflQuantize:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_QUANTIZE);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_QUANTIZE);
         break;
       case kLiteRtOpCodeTflSlice:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_SLICE);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_SLICE);
         break;
       case kLiteRtOpCodeTflTanh:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_TANH);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_TANH);
         break;
       case kLiteRtOpCodeTflSub:
-        status =
-            LegalizeSubOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeSubOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflSoftmax:
-        status = LegalizeSoftmaxOp(neuron_adapter_api, model->get(),
-                                   operand_map, op);
+        status = LegalizeSoftmaxOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflMean:
-        status =
-            LegalizeMeanOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeMeanOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflGelu:
-        status =
-            LegalizeGeluOp(neuron_adapter_api, model->get(), operand_map, op);
+        status = LegalizeGeluOp(neuron_adapter_api, model, *operand_map, op);
         break;
       case kLiteRtOpCodeTflMaxPool2d:
         status = LegalizeOp(
-            neuron_adapter_api, model->get(), operand_map, op,
-            NEURON_MAX_POOL_2D,
-            std::make_tuple(
-                AddMaxPool2dPaddingOption,           // padding
-                AddMaxPool2dStrideWOption,           // stride_w
-                AddMaxPool2dStrideHOption,           // stride_h
-                AddMaxPool2dFilterWOption,           // filter_w
-                AddMaxPool2dFilterHOption,           // filter_h
-                AddMaxPool2dFuseActivationOption));  // activation
+            neuron_adapter_api, model, *operand_map, op, NEURON_MAX_POOL_2D,
+            std::make_tuple(AddMaxPool2dPaddingOption,           // padding
+                            AddMaxPool2dStrideWOption,           // stride_w
+                            AddMaxPool2dStrideHOption,           // stride_h
+                            AddMaxPool2dFilterWOption,           // filter_w
+                            AddMaxPool2dFilterHOption,           // filter_h
+                            AddMaxPool2dFuseActivationOption));  // activation
         break;
       case kLiteRtOpCodeTflHardSwish:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_HARD_SWISH);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_HARD_SWISH);
         break;
       case kLiteRtOpCodeTflAveragePool2d:
         status = LegalizeOp(
-            neuron_adapter_api, model->get(), operand_map, op,
-            NEURON_AVERAGE_POOL_2D,
+            neuron_adapter_api, model, *operand_map, op, NEURON_AVERAGE_POOL_2D,
             std::make_tuple(
                 AddAveragePool2dPaddingOption,           // padding
                 AddAveragePool2dStrideWOption,           // stride_w
@@ -180,21 +162,21 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                 AddAveragePool2dFuseActivationOption));  // activation
         break;
       case kLiteRtOpCodeTflPad:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_PAD);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_PAD);
         break;
       case kLiteRtOpCodeTflLogistic:
-        status = LegalizeCommonOp(neuron_adapter_api, model->get(), operand_map,
-                                  op, NEURON_LOGISTIC);
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_LOGISTIC);
         break;
       case kLiteRtOpCodeTflSum:
-        status = LegalizeOp(neuron_adapter_api, model->get(), operand_map, op,
+        status = LegalizeOp(neuron_adapter_api, model, *operand_map, op,
                             NEURON_REDUCE_SUM,
                             std::make_tuple(AddSumKeepDimsOption));
         break;
       case kLiteRtOpCodeTflConv2d:
         status = LegalizeOp(
-            neuron_adapter_api, model->get(), operand_map, op, NEURON_CONV_2D,
+            neuron_adapter_api, model, *operand_map, op, NEURON_CONV_2D,
             std::make_tuple(AddConv2dPaddingOption,         // padding
                             AddConv2dStrideWOption,         // stride_w
                             AddConv2dStrideHOption,         // stride_h
@@ -205,7 +187,7 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         break;
       case kLiteRtOpCodeTflDepthwiseConv2d:
         status = LegalizeOp(
-            neuron_adapter_api, model->get(), operand_map, op,
+            neuron_adapter_api, model, *operand_map, op,
             NEURON_DEPTHWISE_CONV_2D,
             std::make_tuple(
                 AddDepthwiseConv2dPaddingOption,  // padding
@@ -218,20 +200,28 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                 AddDepthwiseConv2dDilationHOption));     // dilation_h
         break;
       case kLiteRtOpCodeTflSquaredDifference:
-        status = LegalizeSquaredDifferenceOp(neuron_adapter_api, model->get(),
-                                             operand_map, op);
+        status = LegalizeSquaredDifferenceOp(neuron_adapter_api, model,
+                                             *operand_map, op);
         break;
       case kLiteRtOpCodeTflResizeBilinear:
-        status = LegalizeResizeBilinearOp(neuron_adapter_api, model->get(),
-                                          operand_map, op);
+        status = LegalizeResizeBilinearOp(neuron_adapter_api, model,
+                                          *operand_map, op);
         break;
       case kLiteRtOpCodeTflResizeNearestNeighbor:
-        status = LegalizeResizeNearestNeighborOp(neuron_adapter_api,
-                                                 model->get(), operand_map, op);
+        status = LegalizeResizeNearestNeighborOp(neuron_adapter_api, model,
+                                                 *operand_map, op);
         break;
       case kLiteRtOpCodeTflTransposeConv:
-        status = LegalizeTransposeConvOp(neuron_adapter_api, model->get(),
-                                         operand_map, op);
+        status = LegalizeTransposeConvOp(neuron_adapter_api, model,
+                                         *operand_map, op);
+        break;
+      case kLiteRtOpCodeTflDequantize:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_DEQUANTIZE);
+        break;
+      case kLiteRtOpCodeTflPadv2:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_PAD_V2);
         break;
       default:
         return Error(kLiteRtStatusErrorRuntimeFailure, "Unsupported op");
@@ -242,11 +232,11 @@ Expected<NeuronModelPtr> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
     }
   }
 
-  if (neuron_adapter_api.api().model_finish(model->get()) != NEURON_NO_ERROR) {
+  if (neuron_adapter_api.api().model_finish(model) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to finish model");
   }
 
-  return model;
+  return {};
 }
 
 }  // namespace litert::mediatek

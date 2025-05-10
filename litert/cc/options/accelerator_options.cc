@@ -72,8 +72,8 @@ LiteRtStatus GpuOptions::SetSerializationDir(const char* serialization_dir) {
 }
 
 LiteRtStatus GpuOptions::SetModelCacheKey(const char* model_cache_key) {
-  return LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(Get(),
-                                                             model_cache_key);
+  return LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
+      Get(), model_cache_key);
 }
 
 LiteRtStatus GpuOptions::SetSerializeProgramCache(

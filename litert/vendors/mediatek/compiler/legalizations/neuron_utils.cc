@@ -57,6 +57,20 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
                      "Int8 is not supported.");
       }
       break;
+    case ElementType::Int4:
+      if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+        mtk_type = NEURON_EXT_TENSOR_QUANT4_SYMM;
+      } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
+        mtk_type = NEURON_EXT_TENSOR_QUANT4_SYMM_PER_CHANNEL;
+      } else {
+        return Error(kLiteRtStatusErrorRuntimeFailure,
+                     "Int4 is not supported.");
+      }
+      break;
+    case ElementType::Int64:
+      mtk_type = NEURON_TENSOR_INT32;
+      LITERT_LOG(LITERT_WARNING, "Currently force casting int64 to int32.");
+      break;
     default:
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrFormat("Unsupported element type: %d",
@@ -172,6 +186,47 @@ size_t PackOemScalarString(const char* str, uint8_t** out_buffer) {
   free(operand_value.data);
 
   return out_len;
+}
+
+Expected<void> UnpackDenseInt4IntoInt8(const int8_t* src_buffer,
+                                       int num_elements, int8_t* dst_buffer) {
+  // num_elements means the number of elements regardless of packed or
+  // For example, 3 elements means both
+  //   1) Packed: 3 int4's = 12 bit -> 16 bits (padded) = 2 bytes.
+  //      stored in src_buffer[0] and src_buffer[1] (i = 0..1)
+  //   2) Unpacked: 3 int8's = 3 bytes.
+  //.     stored in dst_buffer[0], dst_buffer[1] and dst_buffer[2] (j =
+  for (int i = 0; i < num_elements / 2; i++) {
+    int8_t byte = src_buffer[i];
+    // Shift left first so that sign is properly extended when shifted
+    int8_t lower = static_cast<int8_t>(byte << 4) >> 4;
+    int8_t higher = byte >> 4;
+    dst_buffer[2 * i] = lower;
+    dst_buffer[2 * i + 1] = higher;
+  }
+
+  // If the buffer size is odd, extract the final lower nibble.
+  if (num_elements % 2 != 0) {
+    dst_buffer[num_elements - 1] =
+        static_cast<int8_t>(src_buffer[num_elements / 2] << 4) >> 4;
+  }
+  return {};
+}
+
+Expected<void> CastInt64IntoInt32(const int64_t* src_buffer, int num_elements,
+                                  int32_t* dst_buffer) {
+  for (int i = 0; i < num_elements; ++i) {
+    int64_t value = src_buffer[i];
+    // Check if the value exceeds the int32_t range
+    if (value > std::numeric_limits<int32_t>::max() ||
+        value < std::numeric_limits<int32_t>::min()) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "CastInt64IntoInt32: value out of int32_t range.");
+    } else {
+      dst_buffer[i] = static_cast<int32_t>(value);
+    }
+  }
+  return {};
 }
 
 }  // namespace litert::mediatek

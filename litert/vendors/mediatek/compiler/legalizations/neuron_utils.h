@@ -56,6 +56,14 @@ NeuronReturnCode ModelAddOperation(const NeuronAdapterApi& api,
 
 size_t PackOemScalarString(const char* str, uint8_t** out_buffer);
 
+// Unpack or inflate `src_buffer` by taking each element and splitting it as
+// two elements into `dst_buffer`.
+Expected<void> UnpackDenseInt4IntoInt8(const int8_t* src_buffer,
+                                       int num_elements, int8_t* dst_buffer);
+
+Expected<void> CastInt64IntoInt32(const int64_t* src_buffer, int num_elements,
+                                  int32_t* dst_buffer);
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_NEURON_UTILS_H_

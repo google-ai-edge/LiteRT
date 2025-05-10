@@ -91,7 +91,6 @@ Expected<void> LegalizeTransposeConvOp(
       << "Fails to convert padding";
   auto padding_operand_index = operand_map.AddScalarInt32(neuron_padding);
   CHECK_OP_IDX_AND_RETURN_ERROR(padding_operand_index);
-
   input_indices.push_back(*padding_operand_index);
 
   int32_t stride_width;

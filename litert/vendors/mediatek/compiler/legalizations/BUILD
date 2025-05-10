@@ -20,7 +20,10 @@ package(
 cc_library(
     name = "operand_map",
     srcs = ["operand_map.cc"],
-    hdrs = ["operand_map.h"],
+    hdrs = [
+        "extra_data_mgr.h",
+        "operand_map.h",
+    ],
     tags = [
         # Don't build/test in OS until MediaTek SDK is available.
         "nobuilder",
@@ -109,7 +112,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -129,7 +132,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -149,8 +152,8 @@ cc_library(
         "notap",
     ],
     deps = [
-        "legalize_helper",
-        "operand_map",
+        ":legalize_helper",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -172,7 +175,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -192,7 +195,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -212,7 +215,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -232,7 +235,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -252,7 +255,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -272,7 +275,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -292,7 +295,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -312,7 +315,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -332,7 +335,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -352,7 +355,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -372,7 +375,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_options",
@@ -392,7 +395,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -413,7 +416,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "operand_map",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
@@ -433,8 +436,8 @@ cc_library(
         "notap",
     ],
     deps = [
-        "legalize_helper",
-        "operand_map",
+        ":legalize_helper",
+        ":operand_map",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_options",

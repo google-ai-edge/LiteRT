@@ -50,6 +50,7 @@ litert_dynamic_lib(
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/compiler/legalizations:common_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:operand_map",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "//litert/vendors/mediatek/schema:neuron_litert_schema",
         "@com_google_absl//absl/strings:str_format",
@@ -69,6 +70,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
