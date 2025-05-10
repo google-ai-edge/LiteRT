@@ -46,7 +46,8 @@ struct LiteRtEventT {
   litert::Expected<void> Signal();
   litert::Expected<bool> IsSignaled() const;
   litert::Expected<int> DupFd() const;
-  static litert::Expected<LiteRtEventT*> CreateManaged(LiteRtEventType type);
+  static litert::Expected<LiteRtEventT*> CreateManaged(LiteRtEnvironment env,
+                                                       LiteRtEventType type);
 };
 
 litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(EGLSyncKHR egl_sync);

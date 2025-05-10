@@ -85,6 +85,10 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
+// Returns the associated environment of the given compiled model.
+LiteRtStatus LiteRtGetCompiledModelEnvironment(
+    LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);
+
 // Runs the model of the given signature synchronously, with the provided
 // input/output LiteRtTensorBuffer.
 //

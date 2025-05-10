@@ -166,8 +166,9 @@ TEST(CompiledModelGpuTest, Async) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_event,
-                              Event::CreateManaged(LiteRtEventTypeOpenCl));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_event,
+      Event::CreateManaged(env->Get(), LiteRtEventTypeOpenCl));
   // Copy of the event to trigger the signal since the ownership of the
   // input_event is transferred to the input_buffers[0].
   LiteRtEvent litert_input_event = input_event.Get();
@@ -361,6 +362,7 @@ TEST(CompiledModelGpuTest, BasicAdd3dCstInt32) {
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
     CompiledModel& compiled_model, Signature& signature) {
+  LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
   LiteRtSubgraph subgraph_handle = signature.Subgraph();
   Subgraph subgraph = Subgraph(subgraph_handle);
 
@@ -376,7 +378,7 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto input_buffer,
-        TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
                                     ranked_tensor_type, buffer_size));
     input_buffers.push_back(std::move(input_buffer));
   }
@@ -387,6 +389,7 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
     CompiledModel& compiled_model, Signature& signature) {
+  LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
   LiteRtSubgraph subgraph_handle = signature.Subgraph();
   Subgraph subgraph = Subgraph(subgraph_handle);
 
@@ -402,7 +405,7 @@ Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto output_buffer,
-        TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
                                     ranked_tensor_type, buffer_size));
     output_buffers.push_back(std::move(output_buffer));
   }
@@ -488,7 +491,8 @@ TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
                                 input_buffers[i].BufferType());
     ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto input_event, Event::CreateManaged(LiteRtEventTypeEglSyncFence));
+        auto input_event,
+        Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
     input_buffers[i].SetEvent(std::move(input_event));
   }
 
@@ -575,7 +579,8 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
                                 input_buffers[i].BufferType());
     ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto input_event, Event::CreateManaged(LiteRtEventTypeEglSyncFence));
+        auto input_event,
+        Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
     input_buffers[i].SetEvent(std::move(input_event));
   }
 

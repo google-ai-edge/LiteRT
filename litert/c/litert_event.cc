@@ -104,10 +104,11 @@ LiteRtStatus LiteRtCreateEventFromEglSyncFence(EGLSyncKHR egl_sync,
 #endif
 }
 
-LiteRtStatus LiteRtCreateManagedEvent(LiteRtEventType type,
+LiteRtStatus LiteRtCreateManagedEvent(LiteRtEnvironment env,
+                                      LiteRtEventType type,
                                       LiteRtEvent* event) {
   LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event_res,
-                          LiteRtEventT::CreateManaged(type));
+                          LiteRtEventT::CreateManaged(env, type));
   *event = event_res;
   return kLiteRtStatusOk;
 }

@@ -120,7 +120,7 @@ ExternalLiteRtBufferContext::CreateBufferForTensor(
 
   LiteRtTensorBuffer litert_tensor_buffer;
   if (auto status = LiteRtCreateManagedTensorBuffer(
-          tensor_buffer_type, &litert_tensor_type, *tensor_buffer_size,
+          env_, tensor_buffer_type, &litert_tensor_type, *tensor_buffer_size,
           &litert_tensor_buffer);
       status != kLiteRtStatusOk) {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
