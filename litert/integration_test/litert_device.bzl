@@ -561,7 +561,7 @@ def litert_integration_test(
 #         args = [
 #             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
 #             "--dimension_pool=shared",
-#             "--dimension_model=\"sm-s928u1\"",
+#             "--dimension_model=sm-s928u1",
 #             "--run_as=xeno-mh-guitar",
 #         ],
 #         bazel_flags = [
@@ -578,7 +578,7 @@ def litert_integration_test(
 #         args = [
 #             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
 #             "--dimension_label=odml-test",
-#             "--dimension_hardware=\"mt6989\"",
+#             "--dimension_hardware=mt6989",
 #             "--run_as=xeno-mh-guitar",
 #         ],
 #         bazel_flags = [
