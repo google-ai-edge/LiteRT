@@ -22,6 +22,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "tflite/core/c/common.h"
 #include "tflite/logger.h"
 #include "tflite/minimal_logging.h"
 
@@ -112,6 +113,8 @@ const char* LiteRtGetLogSeverityName(LiteRtLogSeverity severity) {
       return "ERROR";
     case kLiteRtLogSeveritySilent:
       return "SILENT";
+    case kLiteRtLogSeverityDebug:
+      TFL_UNREACHABLE();
   }
   return "UNKNOWN";
 }
