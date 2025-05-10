@@ -70,6 +70,7 @@ ALL_PY_SRC_MODULES = [
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = [
     "//litert/tools:apply_plugin_main",
+    "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
 ]
 
 py_wheel(

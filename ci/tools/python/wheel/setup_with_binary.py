@@ -173,7 +173,7 @@ setuptools.setup(
     packages=setuptools.find_packages(exclude=[]),
     package_dir={'': '.'},
     package_data={'': [
-        '*.so', '*.pyd', '**/*_main'
+        '*.so', '*.pyd', '**/*_main', '**/*.so',
     ]},
     install_requires=[
         'flatbuffers',
