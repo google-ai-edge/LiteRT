@@ -27,7 +27,7 @@ load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths"
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
-        "//litert:litert_stable_abi_users",
+        "//litert:litert_public",
     ],
 )
 

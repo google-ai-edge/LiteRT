@@ -363,7 +363,7 @@ def gtest_main_no_heapcheck_deps():
 def cc_library_with_testonly_vis(
         name,
         vis = "//litert:litert_internal_users",
-        testonly_vis = "//litert:litert_stable_abi_users",
+        testonly_vis = "//litert:litert_public",
         rule = native.cc_library,
         **rule_kwargs):
     """

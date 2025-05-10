@@ -77,7 +77,7 @@ cc_library(
     linkopts = ["-ldl"],
     # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
     # Then, we can remove this visibility.
-    visibility = ["//litert:litert_stable_abi_users"],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":filesystem",
         "//litert/c:litert_common",

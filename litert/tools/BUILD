@@ -186,7 +186,7 @@ cc_library(
     hdrs = ["dump.h"],
     # TODO: Either refactor this code to be in cc/ or setup to only build in debug mode.
     # Then, we can remove this visibility.
-    visibility = ["//litert:litert_stable_abi_users"],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
