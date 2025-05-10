@@ -86,13 +86,19 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
   } else {
     packed_buffer_size_ = *packed_size;
   }
+// Our Emscripten builds process this as an error rather than a debug log, so
+// disabling for web platform temporarily to avoid breakages.
+#ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Created tensor buffer %p of type %s", this,
              ::litert::internal::GetTensorBufferTypeName(*this).data());
+#endif  // __EMSCRIPTEN__
 }
 
 LiteRtTensorBufferT::~LiteRtTensorBufferT() {
+#ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
              ::litert::internal::GetTensorBufferTypeName(*this).data());
+#endif  // __EMSCRIPTEN__
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeUnknown:
       // Nothing to do.
