@@ -58,7 +58,34 @@ LiteRtStatus GpuOptions::SetDelegatePrecision(
 LiteRtStatus GpuOptions::SetBufferStorageType(
     LiteRtDelegateBufferStorageType type) {
   return LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(Get(),
-                                                                    type);
+                                                                       type);
+}
+
+LiteRtStatus GpuOptions::SetPreferTextureWeights(bool prefer_texture_weights) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+      Get(), prefer_texture_weights);
+}
+
+LiteRtStatus GpuOptions::SetSerializationDir(const char* serialization_dir) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
+      Get(), serialization_dir);
+}
+
+LiteRtStatus GpuOptions::SetModelCacheKey(const char* model_cache_key) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(Get(),
+                                                             model_cache_key);
+}
+
+LiteRtStatus GpuOptions::SetSerializeProgramCache(
+    bool serialize_program_cache) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+      Get(), serialize_program_cache);
+}
+
+LiteRtStatus GpuOptions::SetSerializeExternalTensors(
+    bool serialize_external_tensors) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+      Get(), serialize_external_tensors);
 }
 
 }  // namespace litert

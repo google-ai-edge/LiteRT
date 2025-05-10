@@ -161,4 +161,133 @@ TEST(GpuAcceleratorPayload, SetAndGetUseBufferStorageType) {
   LiteRtDestroyOpaqueOptions(compilation_options);
 }
 
+TEST(GpuAcceleratorPayload, SetAndGetPreferTextureWeights) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  bool prefer_texture_weights = true;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+          &prefer_texture_weights, payload));
+  EXPECT_EQ(prefer_texture_weights, false);
+
+  LITERT_EXPECT_OK(
+      LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+          compilation_options, true));
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
+          &prefer_texture_weights, payload));
+  EXPECT_EQ(prefer_texture_weights, true);
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
+TEST(GpuAcceleratorPayload, SetAndGetSerializationDir) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  const char* serialization_dir = nullptr;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+      &serialization_dir, payload));
+  EXPECT_EQ(serialization_dir, nullptr);
+
+  LITERT_EXPECT_OK(LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
+      compilation_options, "/data/local/tmp"));
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
+      &serialization_dir, payload));
+  EXPECT_EQ(serialization_dir, "/data/local/tmp");
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
+TEST(GpuAcceleratorPayload, SetAndGetModelToken) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  const char* model_cache_key = nullptr;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+      &model_cache_key, payload));
+  EXPECT_EQ(model_cache_key, nullptr);
+
+  LITERT_EXPECT_OK(LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
+      compilation_options, "model_cache"));
+  LITERT_EXPECT_OK(LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
+      &model_cache_key, payload));
+  EXPECT_EQ(model_cache_key, "model_cache");
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
+TEST(GpuAcceleratorPayload, SetAndGetSerializeProgramCache) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  bool serialize_program_cache = false;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+          &serialize_program_cache, payload));
+  EXPECT_EQ(serialize_program_cache, true);
+
+  LITERT_EXPECT_OK(
+      LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+          compilation_options, false));
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
+          &serialize_program_cache, payload));
+  EXPECT_EQ(serialize_program_cache, false);
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
+TEST(GpuAcceleratorPayload, SetAndGetSerializeExternalTensors) {
+  LiteRtOpaqueOptions compilation_options;
+  LITERT_ASSERT_OK(LiteRtCreateGpuOptions(&compilation_options));
+
+  LiteRtGpuOptionsPayload payload = nullptr;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsData(
+      compilation_options, reinterpret_cast<void**>(&payload)));
+
+  bool serialize_external_tensors = true;
+
+  // Check the default value.
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+          &serialize_external_tensors, payload));
+  EXPECT_EQ(serialize_external_tensors, false);
+
+  LITERT_EXPECT_OK(
+      LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+          compilation_options, true));
+  LITERT_EXPECT_OK(
+      LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
+          &serialize_external_tensors, payload));
+  EXPECT_EQ(serialize_external_tensors, true);
+
+  LiteRtDestroyOpaqueOptions(compilation_options);
+}
+
 }  // namespace
