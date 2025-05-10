@@ -25,12 +25,18 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
 4.  **Segmentation:**
     * The preprocessed float buffer (256x256) is passed to `SegmentationModel`.
     * The `SegmentationModel` is initialized with an accelerator preference
-      (CPU, GPU, or NPU).
+      **(CPU, GPU, or NPU)**.
     * `SegmentationModel` reads buffer data (as floats).
+    * For **GPU**, the preprocessed buffer is created with 4-channel aligned, in
+      order to be compatible with the GPU accelerator. This will allow the
+      buffer to be directly bind as model input and executed in async fashion.
+    * For **NPU** and **CPU**, the buffer will be downloaded to CPU and executed
+      in sync model.
     * It loads the segmentation model from model directory, and creates a
       `LiteRT` `CompiledModel` instance. It binds the input buffer to the
       model and generates 6 (256x256)segmentation masks for different classes.
-    * User can specify three different accelerators (gpu/npu/cpu) for executing the model.
+    * User can specify three different accelerators (gpu/npu/cpu) for executing
+      the model.
 
 5.  **Coloring and Blending Masks:**
     * OpenGL buffer are created for each of the 6 (256x256) single-channel byte masks.
@@ -45,7 +51,7 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
 1.  **Android NDK**: Installed and configured for Bazel.
 2.  **Bazel**: Installed.
 3.  **ADB**: Installed and in PATH.
-4.  **LiteRT**: LiteRT libraries and headers for Android.
+4.  **LiteRT**: [LiteRT libraries](https://github.com/google-ai-edge/LiteRT).
 
 ## Setup Instructions
 
@@ -63,8 +69,8 @@ bazel build //litert/samples/async_segmentation --config=android_arm64
 Use the `deploy_and_run_on_android.sh` script. Review and edit paths within the
 script first.
 ```bash
-chmod +x deploy_and_run_on_android.sh
-./deploy_and_run_on_android.sh --accelerator=gpu bazel-bin/
+chmod +x litert/samples/async_segmentation/deploy_and_run_on_android.sh
+litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu bazel-bin/
 ```
 
 Check for `output_segmented.png` on the device.

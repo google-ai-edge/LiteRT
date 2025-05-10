@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-#include "GLES3/gl32.h"
+#include <GLES3/gl32.h>
 #include "absl/log/absl_check.h"  // from @com_google_absl
 
 namespace {
