@@ -47,11 +47,13 @@ pytype_strict_library(
 pytype_strict_library(
     name = "common",
     srcs = ["common.py"],
+    visibility = ["//visibility:public"],
 )
 
 pytype_strict_library(
     name = "types",
     srcs = ["types.py"],
+    visibility = ["//visibility:public"],
 )
 
 pytype_strict_library(
@@ -108,6 +110,7 @@ pytype_strict_library(
 pytype_strict_library(
     name = "components",
     srcs = ["components.py"],
+    visibility = ["//visibility:public"],
     deps = [":types"],
 )
 

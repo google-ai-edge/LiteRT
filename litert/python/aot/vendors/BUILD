@@ -33,6 +33,7 @@ pytype_strict_contrib_test(
 pytype_strict_library(
     name = "import_vendor",
     srcs = ["import_vendor.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":fallback_backend",
         "//litert/python/aot/core:types",
@@ -42,6 +43,7 @@ pytype_strict_library(
 pytype_strict_library(
     name = "vendors",
     srcs = ["__init__.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/mediatek:mediatek_backend",  # buildcleaner: keep
@@ -52,6 +54,7 @@ pytype_strict_library(
 pytype_strict_library(
     name = "fallback_backend",
     srcs = ["fallback_backend.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:types",

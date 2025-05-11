@@ -35,6 +35,7 @@ pytype_strict_library(
 pytype_strict_library(
     name = "aot_compile",
     srcs = ["aot_compile.py"],
+    visibility = ["//visibility:public"],
     deps = [
         ":prepare_for_npu",
         "//litert/python/aot/core:apply_plugin",
