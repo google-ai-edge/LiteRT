@@ -16,6 +16,7 @@
 """Wrapper for calling the apply plugin tooling."""
 
 
+import os
 import pathlib
 import re
 import subprocess
@@ -59,6 +60,7 @@ class ApplyPlugin(components.ApplyPluginT):
       output_model: types.Model,
       soc_manufacturer: str,
       soc_model: str,
+      **kwargs,
   ):
     """Applies a plugin to the input model.
 
@@ -67,6 +69,7 @@ class ApplyPlugin(components.ApplyPluginT):
       output_model: The path to the output model.
       soc_manufacturer: The SOC manufacturer of the plugin.
       soc_model: The SOC model of the plugin.
+      **kwargs: Additional arguments to pass to the underlying binary.
 
     Returns:
       The output model.
@@ -90,17 +93,24 @@ class ApplyPlugin(components.ApplyPluginT):
         f"--soc_model={soc_model}",
         f"--err={self.default_err}",
     ]
+    extra_args = [f"--{key}={value}" for key, value in kwargs.items()]
+    args.extend(extra_args)
     if self._subgraphs_to_compile:
       subgraphs_to_compile = ",".join(
           str(s) for s in self._subgraphs_to_compile
       )
       args.append(f"--subgraphs={subgraphs_to_compile}")
+    env = os.environ.copy()
+    ld_library_path = common.construct_ld_library_path()
+    if ld_library_path:
+      env["LD_LIBRARY_PATH"] = ld_library_path
     try:
       result = subprocess.run(
           args,
           check=True,
           capture_output=self._experimental_capture_stderr,
           text=True,
+          env=env,
       )
     except subprocess.CalledProcessError as e:
       tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)

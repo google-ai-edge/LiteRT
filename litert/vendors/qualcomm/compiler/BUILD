@@ -40,15 +40,20 @@ litert_dynamic_lib(
     export_litert_only = True,
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [make_rpaths(["//litert/c:litert_runtime_c_api_shared_lib"])],
+        "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so",
         "-Wl,-lc++abi",
+        "-stdlib=libc++",
+        "-fuse-ld=lld",
     ],
     shared_lib_name = "qnn_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_runtime_c_api_shared_lib",

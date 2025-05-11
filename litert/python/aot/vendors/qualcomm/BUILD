@@ -24,6 +24,7 @@ pytype_strict_library(
     srcs = ["qualcomm_backend.py"],
     deps = [
         ":target",
+        "//litert/python/aot/core:common",
         "//litert/python/aot/core:components",
         "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
