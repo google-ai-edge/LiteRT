@@ -101,5 +101,11 @@ bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp -
 
 mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
 
+## Mediatek SDK
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
+
+mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
+
 echo "Output can be found here:"
 find "./dist/"

@@ -73,8 +73,11 @@ function initialize_pip_wheel_environment {
 }
 
 function install_sdk {
-  local sdk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
-  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${sdk_dist_pkg?} --ignore-installed
+  local qc_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${qc_dist_pkg?} --ignore-installed
+
+  local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
   echo
 }
@@ -98,6 +101,10 @@ function uninstall_pip {
 
   yes | ${PYTHON_BIN} -m pip uninstall ${qnn_pip_pkg}
 
+  local mtk_pip_pkg="ai_edge_litert_sdk_mediatek"
+
+  yes | ${PYTHON_BIN} -m pip uninstall ${mtk_pip_pkg}
+
   echo
 }
 
@@ -106,6 +113,7 @@ function test_import {
   echo "------ Test import -----"
   ${PYTHON_BIN} -c "import ai_edge_litert"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_mediatek"
   echo
 }
 
