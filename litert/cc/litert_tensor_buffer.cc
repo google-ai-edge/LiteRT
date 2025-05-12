@@ -105,17 +105,7 @@ bool TensorBuffer::IsOpenClMemory() const {
       status != kLiteRtStatusOk) {
     return false;
   }
-  switch (tensor_buffer_type) {
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClTexture:
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      return true;
-    default:
-      return false;
-  }
+  return ::IsOpenClMemory(tensor_buffer_type);
 }
 
 }  // namespace litert

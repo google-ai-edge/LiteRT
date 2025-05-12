@@ -132,8 +132,7 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
       // internal opencl buffer is auto-disposed by the
       // litert::internal::OpenClMemory destructor.
       break;
@@ -418,8 +417,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16: {
+    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       return CreateManagedOpenClMemory(tensor_type, buffer_type, buffer_size);
 #else
@@ -680,8 +678,7 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16: {
+    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
@@ -719,8 +716,7 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16: {
+    case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
       return opencl_buffer->Unlock<float>();
@@ -768,10 +764,8 @@ absl::string_view GetTensorBufferTypeName(
       return "OpenClTexture";
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
       return "OpenClTextureFp16";
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-      return "OpenClImageBuffer";
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      return "OpenClImageBufferFp16";
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
+      return "OpenClImageBufferPacked";
     case kLiteRtTensorBufferTypeGlBuffer:
       return "GlBuffer";
     case kLiteRtTensorBufferTypeGlTexture:

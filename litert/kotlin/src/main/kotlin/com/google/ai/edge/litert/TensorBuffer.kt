@@ -123,8 +123,7 @@ enum class TensorBufferType(private val type: Int) {
   OpenClBufferFp16(11),
   OpenClTexture(12),
   OpenClTextureFp16(13),
-  OpenClImageBuffer(14),
-  OpenClImageBufferFp16(15);
+  OpenClBufferPacked(14);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 

@@ -111,19 +111,7 @@ class LiteRtTensorBufferT {
   size_t buffer_size() const { return buffer_size_; }
   size_t buffer_offset() const { return buffer_offset_; }
 
-  bool is_opencl_memory() const {
-    switch (buffer_type_) {
-      case kLiteRtTensorBufferTypeOpenClBuffer:
-      case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      case kLiteRtTensorBufferTypeOpenClTexture:
-      case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      case kLiteRtTensorBufferTypeOpenClImageBuffer:
-      case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-        return true;
-      default:
-        return false;
-    }
-  }
+  bool is_opencl_memory() const { return IsOpenClMemory(buffer_type_); }
 
   bool HasEvent() const { return event_ != nullptr; }
 
