@@ -308,7 +308,7 @@ cc_test(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
