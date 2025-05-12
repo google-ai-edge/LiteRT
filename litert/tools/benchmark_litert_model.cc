@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,6 +30,7 @@ limitations under the License.
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/cc/options/accelerator_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -46,39 +48,36 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
-  if (use_npu) {
-    if (require_full_delegation) {
-      compilation_options.SetHardwareAccelerators(
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu);
-    } else {
-      compilation_options.SetHardwareAccelerators(
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu |
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu |
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
-    }
-    return compilation_options;
+
+  if (use_cpu && require_full_delegation) {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Requesting full delegation and CPU acceleration are incompatible.");
+    std::abort();
   }
+
+  LiteRtHwAcceleratorSet hardware_accelerators = 0;
+
+  if (use_npu) {
+    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu;
+  }
+
   if (use_gpu) {
+    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu;
     LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
     // Enable no immutable external tensors mode.
     gpu_options.EnableNoImmutableExternalTensorsMode(/*enabled=*/true);
     // Enable benchmark mode to run clFinish() after each inference.
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     compilation_options.AddOpaqueOptions(std::move(gpu_options));
-    if (require_full_delegation) {
-      compilation_options.SetHardwareAccelerators(
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu);
-    } else {
-      compilation_options.SetHardwareAccelerators(
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu |
-          LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
-    }
-    return compilation_options;
   }
-  if (use_cpu) {
-    compilation_options.SetHardwareAccelerators(
-        LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu);
+
+  if (use_cpu || !require_full_delegation) {
+    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu;
   }
+
+  compilation_options.SetHardwareAccelerators(hardware_accelerators);
+
   return compilation_options;
 }
 litert::Expected<Environment> CreateDefaultEnvironment(
@@ -101,56 +100,46 @@ litert::Expected<Environment> CreateDefaultEnvironment(
 TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
   std::string fd_or_graph_path = params_.Get<std::string>("graph");
   LITERT_LOG(LITERT_INFO, "Loading model from: %s", fd_or_graph_path.c_str());
-  auto model_result = litert::Model::CreateFromFile(fd_or_graph_path);
-  if (!model_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to load model: %s",
-               fd_or_graph_path.c_str());
-    return kTfLiteError;
-  }
-  model_ = std::make_unique<litert::Model>(std::move(*model_result));
+  LITERT_ASSIGN_OR_RETURN(auto model_result,
+                          litert::Model::CreateFromFile(fd_or_graph_path),
+                          AsTfLiteStatus(_ << "Failed to load model."));
+  model_ = std::make_unique<litert::Model>(std::move(model_result));
   return kTfLiteOk;
 }
 
 TfLiteStatus BenchmarkLiteRtModel::Init() {
   TF_LITE_ENSURE_STATUS(LoadModel());
 
-  auto env = CreateDefaultEnvironment(params_);
-  if (!env) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create litert environment. %s",
-               env.Error().Message().c_str());
-    return kTfLiteError;
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, CreateDefaultEnvironment(params_),
+      AsTfLiteStatus(_ << "Failed to create litert environment."));
 
   auto compilation_options = CreateCompiledModelOptions(params_);
-  auto compiled_model_result =
-      litert::CompiledModel::Create(*env, *model_, compilation_options);
-  if (!compiled_model_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create compiled model.");
-    return kTfLiteError;
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_result,
+      litert::CompiledModel::Create(env, *model_, compilation_options),
+      AsTfLiteStatus(_ << "Failed to compile model."));
 
-  compiled_model_ = std::make_unique<litert::CompiledModel>(
-      std::move(*compiled_model_result));
+  compiled_model_ =
+      std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
   auto signature = params_.Get<std::string>("signature_to_run_for");
   if (signature.empty()) {
-    LITERT_ASSIGN_OR_RETURN(auto s, model_->GetSignature(0), kTfLiteError);
+    LITERT_ASSIGN_OR_RETURN(auto s, model_->GetSignature(0), AsTfLiteStatus(_));
     signature = s.Key();
   }
 
-  auto input_buffers_result = compiled_model_->CreateInputBuffers(signature);
-  if (!input_buffers_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create input buffers.");
-    return kTfLiteError;
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto input_buffers_result, compiled_model_->CreateInputBuffers(signature),
+      AsTfLiteStatus(_ << "Failed to create input buffer."));
   input_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
-      std::move(*input_buffers_result));
-  auto output_buffers_result = compiled_model_->CreateOutputBuffers(signature);
-  if (!output_buffers_result) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create output buffers.");
-    return kTfLiteError;
-  }
+      std::move(input_buffers_result));
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto output_buffers_result,
+      compiled_model_->CreateOutputBuffers(signature),
+      AsTfLiteStatus(_ << "Failed to create output buffer."));
   output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
-      std::move(*output_buffers_result));
+      std::move(output_buffers_result));
 
   return kTfLiteOk;
 }
