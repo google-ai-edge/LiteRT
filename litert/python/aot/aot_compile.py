@@ -36,7 +36,7 @@ def aot_compile(
     keep_going: bool = True,
     subgraphs_to_compile: list[int] | None = None,
     **kwargs,
-) -> types.CompiledModels:
+) -> types.CompilationResult:
   """Prepares a TFLite model for NPU execution.
 
   High level command that erforms various backend specific pre-processing steps

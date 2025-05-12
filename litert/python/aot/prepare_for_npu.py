@@ -50,7 +50,7 @@ def prepare_for_npu_multiple_configs(
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
     keep_going: bool = False,
-) -> types.CompiledModels:
+) -> types.CompilationResult:
   """Prepares a TFLite model for NPU execution."""
   backends = []
   for backend_class, config in configs:
@@ -72,7 +72,7 @@ def prepare_for_npu(
     transforms: components.MlirTransformsT | None = None,
     quantizer: components.AieQuantizerT | None = None,
     keep_going: bool = False,
-) -> types.CompiledModels:
+) -> types.CompilationResult:
   """Prepares a TFLite model for NPU execution.
 
   High level command that erforms various backend specific pre-processing steps
@@ -110,13 +110,13 @@ def compile_model(
     backends: list[types.Backend],
     pipeline: list[types.Component],
     keep_going: bool = False,
-) -> types.CompiledModels:
+) -> types.CompilationResult:
   """Compiles a TFLite model for NPU execution."""
   if flatbuffer.in_memory:
     base_name = "model"
   else:
     base_name = flatbuffer.path.name.removesuffix(common.DOT_TFLITE)
-  compile_models = types.CompiledModels()
+  compile_models = types.CompilationResult()
   with autotqdm.tqdm(backends, desc="Backend") as t_backends:
     for backend in t_backends:
       component_input = flatbuffer
