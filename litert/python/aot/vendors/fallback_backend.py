@@ -16,7 +16,7 @@
 """A Fallback backend for LITERT."""
 
 import functools
-from typing import Any, Self
+from typing import Any
 
 from litert.python.aot.core import components
 from litert.python.aot.core import types
@@ -58,7 +58,7 @@ class FallbackBackend(types.Backend):
     return "fallback"
 
   @classmethod
-  def create(cls, config: types.Config) -> Self:
+  def create(cls, config: types.Config) -> "FallbackBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)

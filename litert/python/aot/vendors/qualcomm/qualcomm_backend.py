@@ -17,7 +17,7 @@
 
 import copy
 import functools
-from typing import Iterable, Self
+from typing import Iterable
 
 from litert.python.aot.core import components
 from litert.python.aot.core import types
@@ -60,7 +60,7 @@ class QualcommBackend(types.Backend):
     return target_lib._QUALCOMM_BACKEND_ID  # pylint: disable=protected-access
 
   @classmethod
-  def create(cls, config: types.Config) -> Self:
+  def create(cls, config: types.Config) -> "QualcommBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)

@@ -19,7 +19,7 @@ import abc
 from collections.abc import Iterable
 import dataclasses
 import pathlib
-from typing import Any, MutableMapping, Protocol, Self, Type, TypeAlias
+from typing import Any, MutableMapping, Protocol, Type, TypeAlias
 
 
 @dataclasses.dataclass(frozen=True)
@@ -98,11 +98,11 @@ class Model:
     return self.data_
 
   @classmethod
-  def create_from_path(cls, path: pathlib.Path) -> Self:
+  def create_from_path(cls, path: pathlib.Path) -> 'Model':
     return Model(path=path, model_bytes=None)
 
   @classmethod
-  def create_from_bytes(cls, model_bytes: bytes) -> Self:
+  def create_from_bytes(cls, model_bytes: bytes) -> 'Model':
     return Model(path=None, model_bytes=model_bytes)
 
   def set_path(self, path: pathlib.Path | str):
@@ -265,7 +265,7 @@ class Backend(metaclass=abc.ABCMeta):
 
   @classmethod
   @abc.abstractmethod
-  def create(cls, config: Config) -> Self:
+  def create(cls, config: Config) -> 'Backend':
     """Creates a backend instance.
 
     If no target is specified, the backend will represent all targets.

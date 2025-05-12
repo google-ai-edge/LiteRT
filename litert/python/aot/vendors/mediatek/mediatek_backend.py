@@ -18,7 +18,7 @@
 import copy
 import functools
 import itertools
-from typing import Iterable, Self
+from typing import Iterable
 
 from litert.python.aot.core import components
 from litert.python.aot.core import types
@@ -54,7 +54,7 @@ class MediaTekBackend(types.Backend):
   def target_id(self) -> str:
     return repr(self.target)
 
-  def specialize(self) -> Iterable[Self]:
+  def specialize(self) -> Iterable["MediaTekBackend"]:
     if (
         self.soc_model != target_lib.SocModel.ALL
         and self.android_os_version != target_lib.AndroidOsVersion.ALL
@@ -88,7 +88,7 @@ class MediaTekBackend(types.Backend):
     return target_lib._MEDIATEK_BACKEND_ID  # pylint: disable=protected-access
 
   @classmethod
-  def create(cls, config: types.Config) -> Self:
+  def create(cls, config: types.Config) -> "MediaTekBackend":
     if config.get("backend_id", "") != cls.id():
       raise ValueError("Invalid backend id")
     return cls(config)
