@@ -71,7 +71,10 @@ ALL_PY_SRC_MODULES = [
 PACKAGE_DATA = [
     "//litert/tools:apply_plugin_main",
 ] + select({
-    "@org_tensorflow//tensorflow:linux_x86_64": ["//litert/vendors/mediatek/compiler:compiler_plugin_so"],
+    "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
+        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+    ],
     "//conditions:default": [],
 })
 

@@ -15,7 +15,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -40,24 +40,30 @@ litert_dynamic_lib(
     export_litert_only = True,
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [make_rpaths(["//litert/c:litert_runtime_c_api_shared_lib"])],
+        "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so",
-        "-Wl,-lc++abi",
     ],
     shared_lib_name = "qnn_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":qnn_compose_graph",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
+        # Uses internal litert_options to avoid duplicate symbol error.
+        "//litert/cc/internal:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -66,9 +72,6 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
 )

@@ -16,6 +16,7 @@
 """Constants and other small generic utilities."""
 
 from importlib import resources
+import os
 import pathlib
 
 TFLITE = "tflite"
@@ -51,3 +52,44 @@ def get_resource(litert_relative_path: pathlib.Path) -> pathlib.Path:
 
 def is_tflite(path: pathlib.Path) -> bool:
   return path.exists() and path.is_file() and path.suffix == f".{TFLITE}"
+
+
+def construct_ld_library_path() -> str:
+  """Constructs a string suitable for the LD_LIBRARY_PATH environment variable.
+
+  This function is used in ai_edge_litert python package, when the shared
+  libraries are not in a static location. This function will construct the
+  LD_LIBRARY_PATH environment variable using the ai_edge_litert directory, and
+  all subdirectories.
+
+  If the module is built from source, this function will return an empty string.
+
+  Returns:
+    A string suitable for the LD_LIBRARY_PATH environment variable.
+  """
+  try:
+    resource_root = resources.files(_AI_EDGE_LITERT_PREFIX)
+  except ModuleNotFoundError:
+    # Bulit from source case.
+    return ""
+  root_package_path = str(resource_root)
+
+  library_paths = set()
+
+  library_paths.add(os.path.abspath(root_package_path))
+
+  for dirpath, _, _ in os.walk(root_package_path):
+    library_paths.add(os.path.abspath(dirpath))
+
+  sorted_paths = sorted(list(library_paths))
+  new_ld_library_path = os.pathsep.join(sorted_paths)
+  current_ld_library_path = os.environ.get("LD_LIBRARY_PATH")
+
+  if current_ld_library_path:
+    if current_ld_library_path not in new_ld_library_path:
+      lib_paths = f"{new_ld_library_path}{os.pathsep}{current_ld_library_path}"
+    else:
+      lib_paths = new_ld_library_path
+  else:
+    lib_paths = new_ld_library_path
+  return lib_paths

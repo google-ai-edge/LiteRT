@@ -53,6 +53,7 @@ package_group(
         "//litert/runtime/...",
         "//litert/tools/...",
         "//litert/vendors/cc/...",
+        "//litert/vendors/qualcomm/...",
         # copybara:uncomment "//third_party/odml/litert_lm/...",
     ],
 )
