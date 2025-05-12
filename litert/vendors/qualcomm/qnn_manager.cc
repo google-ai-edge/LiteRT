@@ -298,7 +298,7 @@ std::optional<::qnn::SocInfo> FindSocInfo(
 LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
                               std::optional<std::string> shared_library_dir,
                               std::optional<::qnn::SocInfo> soc_info,
-                              const LiteRtQnnOptions& options) {
+                              const ::qnn::Options& options) {
   // If shared_library_dir is provided, add it to the path as it may contain
   // libs to be loaded.
   // TOOD: This should probably be done upstream in litert_dispatch.
@@ -321,10 +321,10 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  if (options.log_level != kQnnLogOff) {
+  if (options.GetLogLevel() != ::qnn::LogLevel::kOff) {
     if (auto status = Api()->logCreate(
             GetDefaultStdOutLogger(),
-            static_cast<QnnLog_Level_t>(options.log_level), &LogHandle());
+            static_cast<QnnLog_Level_t>(options.GetLogLevel()), &LogHandle());
         status != QNN_SUCCESS) {
       LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
       return kLiteRtStatusErrorRuntimeFailure;
@@ -396,10 +396,11 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   }
 
   // HTP Performance Settings
-  if (options.htp_options.performance_mode != kHtpDefault) {
+  if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
     LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
-               options.htp_options.performance_mode);
-    perf_control_ = std::make_unique<PerfControl>(Api(), options.htp_options);
+               options.GetHtpPerformanceMode());
+    perf_control_ =
+        std::make_unique<PerfControl>(Api(), options.GetHtpPerformanceMode());
     QnnHtpDevice_Arch_t local_arch =
         device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
             ->onChipDevice.arch;
@@ -457,8 +458,9 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 
 Expected<QnnManager::Ptr> QnnManager::Create(
     absl::Span<const QnnBackend_Config_t*> configs,
+    const ::qnn::Options& options,
     std::optional<std::string> shared_library_dir,
-    std::optional<::qnn::SocInfo> soc_info, const LiteRtQnnOptions& options) {
+    std::optional<::qnn::SocInfo> soc_info) {
   Ptr qnn_manager(new QnnManager);
   if (auto status =
           qnn_manager->Init(configs, shared_library_dir, soc_info, options);

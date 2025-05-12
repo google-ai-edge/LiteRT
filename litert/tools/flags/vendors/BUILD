@@ -24,6 +24,7 @@ cc_library(
     srcs = ["qualcomm_flags.cc"],
     hdrs = ["qualcomm_flags.h"],
     deps = [
+        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_qualcomm_options",
@@ -39,6 +40,9 @@ cc_test(
     deps = [
         ":qualcomm_flags",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_qualcomm_options",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )

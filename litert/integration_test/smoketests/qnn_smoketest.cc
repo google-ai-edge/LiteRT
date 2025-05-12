@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 
 namespace litert::test {
@@ -46,7 +48,8 @@ TEST(QnnSmokeTest, LoadLibsFromEnvPath) {
 
 TEST(QnnSmokeTest, QnnManagerCreate) {
   auto configs = QnnManager::DefaultBackendConfigs();
-  auto qnn = QnnManager::Create(configs);
+  auto options = ::qnn::Options();
+  auto qnn = QnnManager::Create(configs, options);
   EXPECT_TRUE(qnn);
 }
 

@@ -15,13 +15,18 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMPILER_QNN_COMPOSE_GRAPH_H_
 
+#include <vector>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_model.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -33,7 +38,8 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                            ::qnn::TensorWrapper*& tensor_wrapper,
                            bool is_tensor_read_and_write = false);
 
-LiteRtStatus ConvertOp(const litert::Op& litert_op,
+LiteRtStatus ConvertOp(const bool use_htp_preferences,
+                       const litert::Op& litert_op,
                        ::qnn::TensorPool& tensor_pool,
                        std::vector<::qnn::TensorWrapperRef>& input_tensors,
                        std::vector<::qnn::TensorWrapperRef>& output_tensors,
@@ -43,7 +49,8 @@ LiteRtStatus ConvertOp(const litert::Op& litert_op,
 // context behind "qnn". Uses given graph_name to name entry point.
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                           LiteRtSubgraph subgraph,
-                          absl::string_view qnn_graph_name);
+                          absl::string_view qnn_graph_name,
+                          const ::qnn::Options& options);
 
 }  // namespace litert::qnn
 

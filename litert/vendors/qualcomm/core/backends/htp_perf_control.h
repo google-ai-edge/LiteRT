@@ -24,7 +24,7 @@ std::vector<std::add_pointer_t<std::add_const_t<T>>> ObtainNullTermPtrVector(
   return ret;
 }
 
-// Defines Qnn performance mode vote types for htpbackend
+// Defines Qnn performance mode vote types for htp backend
 enum PerformanceModeVoteType {
   kNoVote = 0,
   kUpVote = 1,
@@ -33,7 +33,7 @@ enum PerformanceModeVoteType {
 class PerfControl {
  public:
   explicit PerfControl(const QNN_INTERFACE_VER_TYPE* api,
-                       const LiteRtQnnHtpBackendOptions& htp_options);
+                       const ::qnn::HtpPerformanceMode htp_performance_mode);
   PerfControl(const PerfControl&) = delete;
   PerfControl(PerfControl&&) = delete;
   PerfControl& operator=(const PerfControl&) = delete;
@@ -45,12 +45,12 @@ class PerfControl {
   // Direct vote is only supported in manual mode.
   void PerformanceVote();
   bool CreatePerfPowerConfigPtr(const std::uint32_t power_config_id,
-                                const LiteRtQnnHtpPerformanceMode perf_mode,
+                                const ::qnn::HtpPerformanceMode perf_mode,
                                 const PerformanceModeVoteType vote_type);
 
  private:
   inline bool IsPerfModeEnabled() const {
-    return performance_mode_ != LiteRtQnnHtpPerformanceMode::kHtpDefault;
+    return performance_mode_ != ::qnn::HtpPerformanceMode::kDefault;
   }
   const QNN_INTERFACE_VER_TYPE* api_{nullptr};
   struct BackendConfig;
@@ -58,7 +58,8 @@ class PerfControl {
   std::uint32_t powerconfig_client_id_{0};
   PerformanceModeVoteType manual_voting_type_{kNoVote};
   // HTPBackendOptions
-  LiteRtQnnHtpPerformanceMode performance_mode_{kHtpDefault};
+  ::qnn::HtpPerformanceMode performance_mode_{
+      ::qnn::HtpPerformanceMode::kDefault};
   std::uint32_t device_id_{0};
 };
 

@@ -42,7 +42,6 @@ cc_test(
         ":log",
         ":miscs",
         "//litert/vendors/qualcomm/core:common",
-        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

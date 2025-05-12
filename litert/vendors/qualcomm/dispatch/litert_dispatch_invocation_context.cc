@@ -21,12 +21,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <ostream>
+#include <sstream>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -42,6 +45,7 @@
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
+#include "QnnProfile.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
 using litert::Expected;
@@ -126,12 +130,13 @@ LiteRtDispatchInvocationContextT::Create(
 
   // TODO: Add profiling_level as an option & related test code with different
   // profiling level after having option interface
-  int profiling_level = LiteRtQnnProfilingOptions::kQnnProfilingOff;
+  auto profiling_level = ::qnn::Profiling::kOff;
 
   Qnn_ProfileHandle_t profile_handle = nullptr;
-  if (profiling_level != LiteRtQnnProfilingOptions::kQnnProfilingOff) {
+  if (profiling_level != ::qnn::Profiling::kOff) {
     if (auto status = qnn.Api()->profileCreate(
-            qnn.BackendHandle(), profiling_level, &profile_handle);
+            qnn.BackendHandle(),
+            static_cast<QnnProfile_Level_t>(profiling_level), &profile_handle);
         status != QNN_SUCCESS) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to create profile handle");

@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include <android/log.h>
+#include <cstdarg>
+#include <cstdio>
 
 #include "log.h"
+#include "litert/vendors/qualcomm/core/common.h"
 
 namespace qnn {
 namespace {
 
-int GetPlatformSeverity(LiteRtQnnLogLevel severity) {
+int GetPlatformSeverity(::qnn::LogLevel severity) {
   switch (severity) {
-    case kQnnLogLevelError:
+    case ::qnn::LogLevel::kError:
       return ANDROID_LOG_ERROR;
-    case kQnnLogLevelWarn:
+    case ::qnn::LogLevel::kWarn:
       return ANDROID_LOG_WARN;
-    case kQnnLogLevelInfo:
+    case ::qnn::LogLevel::kInfo:
       return ANDROID_LOG_INFO;
-    case kQnnLogLevelVerbose:
+    case ::qnn::LogLevel::kVerbose:
       return ANDROID_LOG_VERBOSE;
     default:
       return ANDROID_LOG_DEBUG;
@@ -27,14 +30,14 @@ int GetPlatformSeverity(LiteRtQnnLogLevel severity) {
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
 FILE* QNNLogger::log_file_pointer_ = stderr;
-LiteRtQnnLogLevel QNNLogger::log_level_ = kQnnLogLevelInfo;
+::qnn::LogLevel QNNLogger::log_level_ = ::qnn::LogLevel::kInfo;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 void QNNLogger::SetLogFilePointer(FILE* fp) { log_file_pointer_ = fp; }
-void QNNLogger::SetLogLevel(LiteRtQnnLogLevel log_level) {
+void QNNLogger::SetLogLevel(::qnn::LogLevel log_level) {
   log_level_ = log_level;
 }
 // NOLINTNEXTLINE(cert-dcl50-cpp)
-void QNNLogger::Log(LiteRtQnnLogLevel severity, const char* format, ...) {
+void QNNLogger::Log(::qnn::LogLevel severity, const char* format, ...) {
   if (severity > log_level_) {
     return;
   }
