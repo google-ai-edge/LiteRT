@@ -6,7 +6,7 @@ def tflxx_deps_if_enabled():
     """
     return select(
         {
-            "//litert/python/aot/core:tflxx_enabled": ["//%s/tflxx" % "experimental"],
+            "//litert/python/aot/core:tflxx_enabled": ["//litert/python/tools/model_utils/litert:passes"],
             "//conditions:default": [],
         },
     )

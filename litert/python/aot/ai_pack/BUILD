@@ -22,6 +22,7 @@ package(
 pytype_strict_library(
     name = "export_lib",
     srcs = ["export_lib.py"],
+    visibility = ["//visibility:public"],
     deps = [
         "//litert/python/aot/core:common",
         "//litert/python/aot/core:types",
