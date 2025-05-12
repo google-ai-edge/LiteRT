@@ -74,7 +74,7 @@ function initialize_pip_wheel_environment {
 
 function install_sdk {
   local sdk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
-  ${PYTHON_BIN} -m pip install ${sdk_dist_pkg?} --ignore-installed
+  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${sdk_dist_pkg?} --ignore-installed
 
   echo
 }
@@ -105,7 +105,7 @@ function test_import {
   # Test whether import is successful.
   echo "------ Test import -----"
   ${PYTHON_BIN} -c "import ai_edge_litert"
-  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
+  ${PYTHON_BIN} -c "import ai_edge_litert_sdk_qualcomm"
   echo
 }
 
