@@ -156,8 +156,8 @@ class Model:
 
 
 @dataclasses.dataclass()
-class CompiledModels:
-  """A collection of compiled models."""
+class CompilationResult:
+  """Compilation result, as a collection of compiled models."""
 
   models_with_backend: list[tuple['Backend', Model]] = dataclasses.field(
       default_factory=list

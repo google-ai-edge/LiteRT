@@ -60,7 +60,7 @@ _DEVICE_SELECTOR_TEMPLATE = """        <config:device-selector>
 
 
 def _export_model_files_to_ai_pack(
-    compiled_models: types.CompiledModels,
+    compiled_models: types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -117,7 +117,7 @@ def _export_model_files_to_ai_pack(
 
 
 def _export_model_files_to_mtk_ai_pack(
-    compiled_models: types.CompiledModels,
+    compiled_models: types.CompilationResult,
     ai_pack_dir: pathlib.Path,
     ai_pack_name: str,
     litert_model_name: str,
@@ -212,7 +212,7 @@ def _process_mtk_target(
 
 
 def _write_targeting_config(
-    compiled_models: types.CompiledModels, ai_pack_dir: pathlib.Path
+    compiled_models: types.CompilationResult, ai_pack_dir: pathlib.Path
 ) -> None:
   """Writes device_targeting_configuration.xml for the given compiled models."""
   compiled_targets = [
@@ -225,7 +225,7 @@ def _write_targeting_config(
 
 
 def export(
-    compiled_models: types.CompiledModels,
+    compiled_models: types.CompilationResult,
     ai_pack_dir: pathlib.Path | str,
     ai_pack_name: str,
     litert_model_name: str,
