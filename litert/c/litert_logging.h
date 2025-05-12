@@ -17,6 +17,7 @@
 
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "litert/c/litert_common.h"
 
@@ -26,7 +27,8 @@ extern "C" {
 
 // WARNING: The values of the following enum are to be kept in sync with
 // tflite::LogSeverity.
-typedef enum {
+typedef enum : int8_t {
+  kLiteRtLogSeverityDebug = -1,
   kLiteRtLogSeverityVerbose = 0,
   kLiteRtLogSeverityInfo = 1,
   kLiteRtLogSeverityWarning = 2,
@@ -34,10 +36,10 @@ typedef enum {
   kLiteRtLogSeveritySilent = 4,
 } LiteRtLogSeverity;
 
-#ifndef NDEBUG
-#define LITERT_DEBUG kLiteRtLogSeverityInfo
+#ifdef NDEBUG
+#define LITERT_DEBUG kLiteRtLogSeverityDebug
 #else
-#define LITERT_DEBUG kLiteRtLogSeveritySilent
+#define LITERT_DEBUG kLiteRtLogSeverityInfo
 #endif
 #define LITERT_VERBOSE kLiteRtLogSeverityVerbose
 #define LITERT_INFO kLiteRtLogSeverityInfo

@@ -154,6 +154,7 @@ cc_library(
     deps = [
         ":litert_common",
         "//tflite:minimal_logging",
+        "//tflite/core/c:private_common",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
