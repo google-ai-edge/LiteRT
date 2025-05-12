@@ -16,7 +16,6 @@
 """Constants and other small generic utilities."""
 
 from importlib import resources
-from importlib.resources import abc
 import pathlib
 
 TFLITE = "tflite"
@@ -39,10 +38,10 @@ MODULE_ROOT = ".".join([
 def get_resource(litert_relative_path: pathlib.Path) -> pathlib.Path:
   """Returns the path to a resource in the Litert workspace."""
   try:
-    resource_root: abc.Traversable = resources.files(_WORKSPACE_PREFIX)
+    resource_root = resources.files(_WORKSPACE_PREFIX)
   except ModuleNotFoundError:
-    resource_root: abc.Traversable = resources.files(_AI_EDGE_LITERT_PREFIX)
-  litert_resource: abc.Traversable = resource_root.joinpath(
+    resource_root = resources.files(_AI_EDGE_LITERT_PREFIX)
+  litert_resource = resource_root.joinpath(
       _LITERT_ROOT, str(litert_relative_path)
   )
   if not litert_resource.is_file():
