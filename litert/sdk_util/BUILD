@@ -135,12 +135,12 @@ litert_test(
     ],
     ungrte = True,
     deps = [
+        "//litert/cc:litert_logging",
+        "//litert/test:common",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        # copybara:uncomment "@neuro_pilot//:latest_host_headers",
-        "//litert/cc:litert_logging",
-        "//litert/test:common",
+        "@neuro_pilot//:latest_host_headers",
         "@qairt//:qnn_lib_headers",
     ],
 )

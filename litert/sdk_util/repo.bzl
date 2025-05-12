@@ -40,7 +40,7 @@ def _prepare_repo_files(ctx):
                 for child in ctx.path(sdk_path_from_env + ctx.attr.strip_prefix).readdir():
                     ctx.symlink(child, child.basename)
 
-            elif not sdk_path_from_env.endswith(".tar.gz"):
+            elif not sdk_path_from_env.endswith(".gz"):  # MTK gives us .gz instead of .tar.gz
                 fail("Local path is not a dir or a tarball")
 
             else:
@@ -54,7 +54,12 @@ def _prepare_repo_files(ctx):
             url = ctx.attr.url,
             auth = get_auth(ctx, [ctx.attr.url]),
             stripPrefix = ctx.attr.strip_prefix,
+            type = "tar.gz",  # MTK gives us .gz instead of .tar.gz
         )
+
+    if ctx.attr.symlink_mapping:
+        for dst, src in ctx.attr.symlink_mapping.items():
+            ctx.symlink(src, dst)
 
 def _prepare_build_file(ctx):
     build_file = ctx.attr.build_file
@@ -119,6 +124,12 @@ configurable_repo = repository_rule(
             doc = """
             Prefix to strip when extracting archives.
             """,
+        ),
+        "symlink_mapping": attr.string_dict(
+            doc = """
+            A mapping of files to symlink to in the repo.
+            """,
+            mandatory = False,
         ),
     },
 )

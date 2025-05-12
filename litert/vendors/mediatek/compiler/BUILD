@@ -26,13 +26,11 @@ litert_dynamic_lib(
     export_litert_only = True,
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_MediaTek.so",
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         ":compile_model",
         ":create_model",
@@ -62,11 +60,6 @@ cc_library(
     name = "create_model",
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
@@ -102,11 +95,6 @@ cc_library(
     name = "compile_model",
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
-    tags = [
-        # Don't build/test in OS until MediaTek SDK is available.
-        "nobuilder",
-        "notap",
-    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -137,8 +125,6 @@ litert_test(
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",
-        "nobuilder",
-        "no_oss",
         "nosan",
     ],
     # Currently this test can only be run on Android because we don't have x86 shared libraries for

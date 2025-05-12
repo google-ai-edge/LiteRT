@@ -70,7 +70,10 @@ ALL_PY_SRC_MODULES = [
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
 PACKAGE_DATA = [
     "//litert/tools:apply_plugin_main",
-]
+] + select({
+    "@org_tensorflow//tensorflow:linux_x86_64": ["//litert/vendors/mediatek/compiler:compiler_plugin_so"],
+    "//conditions:default": [],
+})
 
 py_wheel(
     name = "litert_wheel",
