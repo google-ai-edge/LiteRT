@@ -42,6 +42,13 @@ LiteRtStatus LiteRtSetGpuOptionsInfiniteFloatCapping(
 LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
                                               bool enable);
 
+// Set to true to run in no immutable external tensors mode. This prevents GPU
+// Accelerator from using immutable external tensors.
+//
+// WARNING: This is an experimental feature and subject to change.
+LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
+    LiteRtOpaqueOptions gpu_options, bool enable);
+
 // This enables dynamic range quantization of the input tensor for large sized
 // fully connected and convolution operations, if the device supports it. This
 // will result in accuracy loss, since the input tensor will be quantized to
@@ -115,6 +122,9 @@ LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
 
 LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
                                               LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsNoImmutableExternalTensorsMode(
+    bool* enabled, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus
 LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(

@@ -88,4 +88,8 @@ LiteRtStatus GpuOptions::SetSerializeExternalTensors(
       Get(), serialize_external_tensors);
 }
 
+LiteRtStatus GpuOptions::EnableNoImmutableExternalTensorsMode(bool enabled) {
+  return LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(Get(), enabled);
+}
+
 }  // namespace litert

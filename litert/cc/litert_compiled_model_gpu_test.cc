@@ -56,7 +56,18 @@ using testing::Pointwise;
 namespace litert {
 namespace {
 
-void BasicTest() {
+Expected<Options> CreateGpuOptions(bool no_immutable_external_tensors_mode) {
+  LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
+
+  LITERT_RETURN_IF_ERROR(gpu_options.EnableNoImmutableExternalTensorsMode(
+      no_immutable_external_tensors_mode));
+  LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.AddOpaqueOptions(std::move(gpu_options));
+  return std::move(options);
+}
+
+void BasicTest(bool no_immutable_external_tensors_mode) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -65,8 +76,9 @@ void BasicTest() {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model,
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
+      auto options, CreateGpuOptions(no_immutable_external_tensors_mode));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
@@ -113,7 +125,9 @@ void BasicTest() {
   }
 }
 
-TEST(CompiledModelGpuTest, Basic) {
+class CompiledModelGpuTest : public ::testing::TestWithParam<bool> {};
+
+TEST_P(CompiledModelGpuTest, Basic) {
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported in MSAN";
@@ -121,10 +135,10 @@ TEST(CompiledModelGpuTest, Basic) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  BasicTest();
+  BasicTest(CompiledModelGpuTest::GetParam());
 }
 
-TEST(CompiledModelGpuTest, Basic2nd) {
+TEST_P(CompiledModelGpuTest, Basic2nd) {
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported in MSAN";
@@ -134,10 +148,10 @@ TEST(CompiledModelGpuTest, Basic2nd) {
 
   // Run the test twice to verify that the CL environment is shared between
   // instances.
-  BasicTest();
+  BasicTest(CompiledModelGpuTest::GetParam());
 }
 
-TEST(CompiledModelGpuTest, Async) {
+TEST_P(CompiledModelGpuTest, Async) {
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported in MSAN";
@@ -153,8 +167,9 @@ TEST(CompiledModelGpuTest, Async) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model,
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
+      auto options, CreateGpuOptions(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
@@ -218,7 +233,7 @@ TEST(CompiledModelGpuTest, Async) {
   }
 }
 
-TEST(CompiledModelGpuTest, PartialDelegation) {
+TEST_P(CompiledModelGpuTest, PartialDelegation) {
   // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported in MSAN";
@@ -238,6 +253,10 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
       kLiteRtHwAcceleratorGpu | kLiteRtHwAcceleratorCpu;
   auto compilation_options = Options::Create();
   compilation_options->SetHardwareAccelerators(accelerator_flags);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK(gpu_options.EnableNoImmutableExternalTensorsMode(
+      CompiledModelGpuTest::GetParam()));
+  compilation_options->AddOpaqueOptions(std::move(gpu_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, model, *compilation_options));
@@ -292,7 +311,7 @@ TEST(CompiledModelGpuTest, PartialDelegation) {
   }
 }
 
-TEST(CompiledModelGpuTest, BasicAdd3dCstInt32) {
+TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
   constexpr const char* kInt32ModelFileName = "simple_add3d_cst_int32.tflite";
   constexpr const int32_t kInt32TestInput0Tensor[] = {1, 2, 3, 4, 5, 6};
   constexpr const int32_t kInt32TestOutputTensor[] = {11, 22, 33, 44, 55, 66};
@@ -312,8 +331,9 @@ TEST(CompiledModelGpuTest, BasicAdd3dCstInt32) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model,
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorGpu));
+      auto options, CreateGpuOptions(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
   EXPECT_EQ(signatures.size(), 1);
@@ -428,7 +448,7 @@ bool IsGlClInteropSupported() {
 }
 
 // Runs model synchronously on OpenCL with GL input/output buffers.
-TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
+TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
@@ -453,6 +473,8 @@ TEST(CompiledModelGpuTest, SyncWithGlClInterop) {
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+  LITERT_ASSERT_OK(gpu_options.EnableNoImmutableExternalTensorsMode(
+      CompiledModelGpuTest::GetParam()));
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
@@ -608,6 +630,9 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(CompiledModelGpuTest, CompiledModelGpuTest,
+                         ::testing::Values(false, true));
 
 }  // namespace
 }  // namespace litert

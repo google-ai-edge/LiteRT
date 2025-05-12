@@ -29,6 +29,7 @@ limitations under the License.
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/accelerator_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
@@ -58,6 +59,12 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     return compilation_options;
   }
   if (use_gpu) {
+    LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
+    // Enable no immutable external tensors mode.
+    gpu_options.EnableNoImmutableExternalTensorsMode(/*enabled=*/true);
+    // Enable benchmark mode to run clFinish() after each inference.
+    gpu_options.EnableBenchmarkMode(/*enabled=*/true);
+    compilation_options.AddOpaqueOptions(std::move(gpu_options));
     if (require_full_delegation) {
       compilation_options.SetHardwareAccelerators(
           LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu);

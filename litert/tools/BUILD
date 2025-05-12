@@ -233,6 +233,7 @@ cc_library(
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/cc/options:accelerator_options",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/tools:command_line_flags",
