@@ -53,9 +53,7 @@ cc_test(
 
 cc_test(
     name = "litert_any_test",
-    srcs = [
-        "litert_any_test.cc",
-    ],
+    srcs = ["litert_any_test.cc"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-llog"],
         "//conditions:default": [],
@@ -70,9 +68,7 @@ cc_test(
 
 cc_library(
     name = "litert_consts",
-    hdrs = [
-        "litert_consts.h",
-    ],
+    hdrs = ["litert_consts.h"],
     visibility = [
         "//litert:litert_public",
     ],
@@ -81,11 +77,13 @@ cc_library(
 cc_library(
     name = "litert_model",
     srcs = ["litert_model.cc"],
-    hdrs = [
-        "litert_model.h",
-    ],
+    hdrs = ["litert_model.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_buffer_ref",
@@ -106,9 +104,7 @@ cc_library(
 
 cc_test(
     name = "litert_model_test",
-    srcs = [
-        "litert_model_test.cc",
-    ],
+    srcs = ["litert_model_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
     ],
@@ -147,11 +143,13 @@ cc_test(
 
 cc_library(
     name = "litert_buffer_ref",
-    hdrs = [
-        "litert_buffer_ref.h",
-    ],
+    hdrs = ["litert_buffer_ref.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         "@com_google_absl//absl/strings:str_format",
@@ -194,7 +192,11 @@ cc_library(
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_expected",
@@ -221,7 +223,11 @@ cc_library(
     name = "litert_expected",
     hdrs = ["litert_expected.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_detail",
@@ -261,7 +267,11 @@ cc_library(
     name = "litert_element_type",
     hdrs = ["litert_element_type.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = ["//litert/c:litert_model"],
 )
@@ -296,7 +306,11 @@ cc_library(
     name = "litert_layout",
     hdrs = ["litert_layout.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_consts",
@@ -692,13 +706,17 @@ cc_library(
         "litert_tensor_buffer_requirements.h",
     ],
     visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-        # TOOD: Update none litert/ code to use proper internal/public cc targets.
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:__pkg__",
-        # copybara:uncomment "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/components:__pkg__",
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_external_users",
+        # "//litert:litert_internal_users_with_public_cc",
+        # # TOOD: Update none litert/ code to use proper internal/public cc targets.
+        # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
+        # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/components:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_detail",
@@ -808,11 +826,15 @@ cc_library(
     name = "litert_environment",
     hdrs = ["litert_environment.h"],
     visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-        # TODO: Update none litert/ code to use proper internal/public cc targets.
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/components:__pkg__",
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_external_users",
+        # "//litert:litert_internal_users_with_public_cc",
+        # # TODO: Update none litert/ code to use proper internal/public cc targets.
+        # "//third_party/odml/litert_lm/runtime/components:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_any",
@@ -859,10 +881,14 @@ cc_library(
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
     visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/engine:__pkg__",
-        # copybara:uncomment "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_external_users",
+        # "//litert:litert_internal_users_with_public_cc",
+        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_custom_op_kernel",

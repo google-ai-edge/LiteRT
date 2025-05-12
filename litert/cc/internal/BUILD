@@ -16,7 +16,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
-        # copybara:uncomment_begin(internal)
+        # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_internal_users_with_internal_cc",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",

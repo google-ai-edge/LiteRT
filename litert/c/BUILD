@@ -19,7 +19,11 @@ load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gle
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//visibility:public",  # copybara:comment_replace "//litert:litert_public",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
