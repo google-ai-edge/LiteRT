@@ -19,6 +19,13 @@ package(
     ],
 )
 
+genrule(
+    name = "litert_version_file",
+    srcs = ["version.bzl"],
+    outs = ["litert_version.txt"],
+    cmd = "grep 'LITERT_FULL_VERSION = ' $(location version.bzl) | head -n 1 | sed -E 's/.*LITERT_FULL_VERSION = \"([^\"]+)\".*/\\1/' > $@",
+)
+
 # These are the internal packages that have access to the cc api linked against the runtime .so.
 package_group(
     name = "litert_internal_users_with_public_cc",
