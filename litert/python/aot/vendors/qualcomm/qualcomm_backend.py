@@ -112,7 +112,16 @@ def _apply_plugin(
     # Otherwise we use the default library path.
     plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
     lib_dir = os.path.dirname(plugin_path)
-    extra_kwargs = {"libs": lib_dir}
+
+    try:
+      # pytype: disable=import-error
+      import ai_edge_litert_sdk_qualcomm  # pylint: disable=g-import-not-at-top
+      # pytype: enable=import-error
+
+      sdk_libs_path = str(ai_edge_litert_sdk_qualcomm.path_to_sdk_libs())
+    except ImportError:
+      sdk_libs_path = None
+    extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
   except FileNotFoundError:
     extra_kwargs = {}
   return component(

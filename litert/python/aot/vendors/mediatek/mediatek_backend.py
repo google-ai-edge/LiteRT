@@ -18,12 +18,19 @@
 import copy
 import functools
 import itertools
+import os
+import pathlib
 from typing import Iterable
 
+from litert.python.aot.core import common
 from litert.python.aot.core import components
 from litert.python.aot.core import types
 from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.mediatek import target as target_lib
+
+COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
+    "vendors/mediatek/compiler/libLiteRtCompilerPlugin_Mediatek.so"
+)
 
 
 @import_vendor.register_backend
@@ -128,11 +135,36 @@ def _apply_plugin(
     input_model: types.Model,
     output_model: types.Model,
 ):
+  """Calls the apply plugin component."""
+  try:
+    # If the plugin is not built from source (i.e. using ai_edge_litert wheel),
+    # we find the plugin library directory from the package path.
+    # Otherwise we use the default library path.
+    plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
+    lib_dir = os.path.dirname(plugin_path)
+
+    try:
+      # pytype: disable=import-error
+      import ai_edge_litert_sdk_mediatek  # pylint: disable=g-import-not-at-top
+      # pytype: enable=import-error
+
+      # TODO(weiyiw): Translate SOC | OS version to the corresponding
+      # MediaTek SDK version and pass to the plugin.
+      sdk_version = "v8"
+      sdk_libs_path = str(
+          ai_edge_litert_sdk_mediatek.path_to_sdk_libs(sdk_version)
+      )
+    except ImportError:
+      sdk_libs_path = None
+    extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_path}
+  except FileNotFoundError:
+    extra_kwargs = {}
   return component(
       input_model,
       output_model,
       backend.soc_manufacturer,
       backend.soc_model,
+      **extra_kwargs,
   )
 
 

@@ -60,6 +60,7 @@ class ApplyPlugin(components.ApplyPluginT):
       output_model: types.Model,
       soc_manufacturer: str,
       soc_model: str,
+      sdk_libs_path: str | None = None,
       **kwargs,
   ):
     """Applies a plugin to the input model.
@@ -69,6 +70,8 @@ class ApplyPlugin(components.ApplyPluginT):
       output_model: The path to the output model.
       soc_manufacturer: The SOC manufacturer of the plugin.
       soc_model: The SOC model of the plugin.
+      sdk_libs_path: The path to the SDK libs. If not provided,
+        the default SDK path will be used.
       **kwargs: Additional arguments to pass to the underlying binary.
 
     Returns:
@@ -103,6 +106,8 @@ class ApplyPlugin(components.ApplyPluginT):
     env = os.environ.copy()
     ld_library_path = common.construct_ld_library_path()
     if ld_library_path:
+      if sdk_libs_path:
+        ld_library_path = f"{sdk_libs_path}{os.pathsep}{ld_library_path}"
       env["LD_LIBRARY_PATH"] = ld_library_path
     try:
       result = subprocess.run(

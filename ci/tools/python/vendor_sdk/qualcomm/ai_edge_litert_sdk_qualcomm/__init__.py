@@ -25,6 +25,14 @@ import sys
 _SDK_FILES_SUBDIR = "data"
 
 
+def path_to_sdk_libs() -> pathlib.Path | None:
+  sdk_path = get_sdk_path()
+  if not sdk_path:
+    return None
+  # Currently we only support linux x86 architecture.
+  return get_sdk_path() / "lib/x86_64-linux-clang"
+
+
 def get_sdk_path() -> pathlib.Path | None:
   """Returns the absolute path to the root of the downloaded SDK files."""
   is_linux = sys.platform == "linux"
