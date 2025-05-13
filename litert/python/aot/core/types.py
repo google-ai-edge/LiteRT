@@ -193,7 +193,8 @@ class CompilationResult:
     output_dir.mkdir(parents=True, exist_ok=True)
     for backend, model in self.models_with_backend:
       model.save(
-          output_dir / (model_name + backend.target_id_suffix + '.tflite')
+          output_dir / (model_name + backend.target_id_suffix + '.tflite'),
+          export_only=True,
       )
 
   def compilation_report(self) -> str:

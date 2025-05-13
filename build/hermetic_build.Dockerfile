@@ -31,6 +31,9 @@ RUN apt-get update && apt-get install -y \
     wget \
     zip \
     llvm \
+    clang \
+    libc++-dev \
+    libc++abi-dev \
     && apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -103,7 +106,7 @@ ENV TF_DOWNLOAD_CLANG=0
 ENV TF_SET_ANDROID_WORKSPACE=1
 ENV TF_CONFIGURE_IOS=0
 ENV USE_BAZEL_VERSION=7.4.1
-
+ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/clang
 # Set NDK version for configuration
 ENV ANDROID_NDK_VERSION=25
 
@@ -146,6 +149,7 @@ build --action_env ANDROID_SDK_API_LEVEL="${ANDROID_SDK_API_LEVEL}"\n\
 build --action_env ANDROID_NDK_API_LEVEL="${ANDROID_NDK_API_LEVEL}"\n\
 build --action_env ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION}"\n\
 build --action_env TF_CONFIGURE_IOS="${TF_CONFIGURE_IOS}"\n\
+build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
 EOL\n\
 \n\
 echo "Configuration complete. .tf_configure.bazelrc has been generated at /litert_build/.tf_configure.bazelrc"\n\
