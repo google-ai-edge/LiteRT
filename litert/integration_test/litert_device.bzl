@@ -323,8 +323,8 @@ def _Specs(name):
 
 def get_driver():
     return if_oss(
-        "//litert/integration_test:run_on_device_driver_OSS",
-        "//litert/integration_test/google:run_on_device_driver",
+        "//litert/integration_test:run_on_device_driver",
+        "//litert/integration_test:run_on_device_driver",
     )
 
 def litert_device_exec(

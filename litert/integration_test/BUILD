@@ -24,8 +24,8 @@ package(
 )
 
 sh_binary(
-    name = "run_on_device_driver_OSS",
-    srcs = ["run_on_device_driver_OSS.sh"],
+    name = "run_on_device_driver",
+    srcs = ["run_on_device_driver.sh"],
 )
 
 # Internal test to validate the macros and underlying shell scripts.
@@ -374,5 +374,7 @@ litert_device_test(
 #         "notap",
 #     ],
 # )
+#
+# exports_files(srcs = ["run_on_device_driver.sh"])
 #
 # copybara:uncomment_end
