@@ -19,7 +19,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_tensor_buffer.h"
 
 struct TfLiteOpaqueTensor;
 
@@ -31,11 +30,6 @@ Expected<Layout> ConvertTensorLayout(
     const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
 Expected<RankedTensorType> ConvertTensorType(
-    const TfLiteOpaqueTensor* tfl_opaque_tensor);
-
-// Create a TensorBuffer attached to the TFL tensor's data buffer.
-Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
-    TfLiteOpaqueContext* tfl_context,
     const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
 // Resize a given `tfl_opaque_tensor` based on a given `layout`.

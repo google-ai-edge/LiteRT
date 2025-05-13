@@ -20,15 +20,11 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_tensor_buffer.h"
-#include "litert/core/util/tensor_type_util.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -99,19 +95,6 @@ Expected<RankedTensorType> ConvertTensorType(
   LITERT_ASSIGN_OR_RETURN(auto element_type, ConvertElementType(tfl_type));
   LITERT_ASSIGN_OR_RETURN(auto layout, ConvertTensorLayout(tfl_opaque_tensor));
   return RankedTensorType(element_type, std::move(layout));
-}
-
-Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
-    TfLiteOpaqueContext* tfl_context,
-    const TfLiteOpaqueTensor* tfl_opaque_tensor) {
-  LITERT_ASSIGN_OR_RETURN(auto tensor_type,
-                          ConvertTensorType(tfl_opaque_tensor));
-  void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
-  size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
-  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                          TensorBuffer::CreateFromHostMemory(
-                              tensor_type, host_mem_addr, buffer_size));
-  return tensor_buffer;
 }
 
 Expected<void> ResizeTensor(const LiteRtLayout& layout,

@@ -74,6 +74,7 @@ package_group(
         # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
+        "//litert/runtime/...",
         "//litert/samples/...",
         "//litert/vendors/...",
         # copybara:uncomment "//third_party/odml/litert/llm/...",

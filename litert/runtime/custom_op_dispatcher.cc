@@ -27,6 +27,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tfl_utils.h"
@@ -36,6 +37,23 @@
 #include "tflite/c/common.h"
 
 namespace litert::internal {
+namespace {
+
+// Creates a TensorBuffer attached to the TFL tensor's data buffer.
+Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
+    TfLiteOpaqueContext* tfl_context,
+    const TfLiteOpaqueTensor* tfl_opaque_tensor) {
+  LITERT_ASSIGN_OR_RETURN(auto tensor_type,
+                          ConvertTensorType(tfl_opaque_tensor));
+  void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
+  size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
+  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
+                          TensorBuffer::CreateFromHostMemory(
+                              tensor_type, host_mem_addr, buffer_size));
+  return tensor_buffer;
+}
+
+}  // namespace
 
 CustomOpDispatcher::CustomOpDispatcher(
     const LiteRtOptionsT::CustomOpOption& custom_op_option) {
