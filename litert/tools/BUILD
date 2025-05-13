@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:litert_build_defs.bzl", "litert_bin")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_bin_with_qnn")
+load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -79,34 +80,36 @@ cc_test(
     ],
 )
 
-# TODO - @lukeboyer: Figure out some selective inclusiion of the data deps, some are very large.
-litert_cc_bin_with_qnn(
+litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = [
         # copybara:uncomment_begin(google-only)
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
+        # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+        # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         # copybara:uncomment_end
         "//litert/vendors/examples:example_plugin_so",
-        # TODO: b/407046837 - Remove the comment once we are able to add the deps in OSS.
-        # copybara:uncomment_begin(google-only)
-        # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        # "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
+        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
+        "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+        # copybara:uncomment_begin(no-oss-yet)
         # "@neuro_pilot//:latest/host/lib/libneuron_adapter.so",
         # "@neuro_pilot//:v7_0_8_20250225/host/lib/libneuron_adapter.so",
         # copybara:uncomment_end
     ],
     export_litert_only = 1,
-    include_system = 1,
     linkstatic = 1,
     # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
         "noasan",
-        "nobuilder",
         "nomsan",
         "nosan",
     ],
+    target_compatible_with = select({
+        "@org_tensorflow//tensorflow:android": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     ungrte = True,
     deps = [
         ":apply_plugin",
@@ -123,6 +126,57 @@ litert_cc_bin_with_qnn(
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+# Apply plugin test tests the core logic of the tool (with a dummy plugin impl), while the
+# following tests the actual plugins will function correctly.
+[
+    tool_test(
+        name = "apply_vendor_plugin_test_{}_{}".format(
+            manufacturer.lower(),
+            soc_model,
+        ),
+        data = [
+            "//litert/test:testdata/simple_quantized_ops.tflite",
+        ],
+        tool = ":apply_plugin_main",
+        tool_args = [
+            "--soc_model={}".format(soc_model),
+            "--soc_manufacturer={}".format(manufacturer),
+            "--model={}".format(
+                runfile_path("//litert/test:testdata/simple_quantized_ops.tflite"),
+            ),
+            "--libs={}".format(lib_dir),
+            "--cmd=apply",
+            "--o=$$(mktemp)",
+        ],
+    )
+    for soc_model, manufacturer, lib_dir in [
+        [
+            "SA8295",
+            "Qualcomm",
+            # copybara:uncomment_begin(google-only)
+            # "third_party/odml/litert/litert/vendors/qualcomm/compiler",
+            # copybara:uncomment_end_and_comment_begin
+            "litert/vendors/qualcomm/compiler",
+            # copybara:comment_end
+        ],
+        # copybara:uncomment_begin(no-oss-yet)
+        # [
+        # "mt6991",
+        # "MediaTek",
+        # "third_party/odml/litert/litert/vendors/mediatek/compiler",
+        # ],
+        # copybara:uncomment_end
+    ]
+]
+
+test_suite(
+    name = "apply_vendor_plugin_tests",
+    tests = [
+        # copybara:uncomment ":apply_vendor_plugin_test_mediatek_mt6991",
+        ":apply_vendor_plugin_test_qualcomm_SA8295",
     ],
 )
 
