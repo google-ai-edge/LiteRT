@@ -200,3 +200,8 @@ qairt()
 load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
 
 neuro_pilot()
+
+# GOOGLE TENSOR ----------------------------------------------------------------------------------
+load("//third_party/google_tensor:workspace.bzl", "google_tensor")
+
+google_tensor()
