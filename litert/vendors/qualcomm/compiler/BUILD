@@ -15,7 +15,6 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
@@ -74,11 +73,6 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
-)
-
-build_test(
-    name = "build_plugin_so",
-    targets = [":qnn_compiler_plugin_so"],
 )
 
 litert_test(
