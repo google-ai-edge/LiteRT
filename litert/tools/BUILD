@@ -162,13 +162,15 @@ litert_bin(
             "litert/vendors/qualcomm/compiler",
             # copybara:comment_end
         ],
-        # copybara:uncomment_begin(no-oss-yet)
-        # [
-        # "mt6991",
-        # "MediaTek",
-        # "third_party/odml/litert/litert/vendors/mediatek/compiler",
-        # ],
-        # copybara:uncomment_end
+        [
+            "mt6991",
+            "MediaTek",
+            # copybara:uncomment_begin(google-only)
+            # "third_party/odml/litert/litert/vendors/mediatek/compiler",
+            # copybara:uncomment_end_and_comment_begin
+            "litert/vendors/mediatek/compiler",
+            # copybara:comment_end
+        ],
     ]
 ]
 
