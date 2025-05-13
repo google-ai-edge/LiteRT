@@ -239,6 +239,7 @@ cc_library(
     hdrs = ["compiled_model.h"],
     deps = [
         ":accelerator",
+        ":accelerator_model_compilation_data",
         ":custom_op_dispatcher",
         ":external_litert_buffer_context",
         ":metrics",
@@ -246,6 +247,7 @@ cc_library(
         "//litert/c:litert_accelerator",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_buffer_ref",
@@ -262,7 +264,6 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime/dispatch:dispatch_opaque_options",
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
@@ -275,7 +276,6 @@ cc_library(
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
@@ -417,6 +417,29 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
+    ],
+)
+
+cc_library(
+    name = "accelerator_model_compilation_data",
+    hdrs = ["accelerator_model_compilation_data.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "accelerator_model_compilation_data_test",
+    srcs = ["accelerator_model_compilation_data_test.cc"],
+    deps = [
+        ":accelerator_model_compilation_data",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/core:version",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

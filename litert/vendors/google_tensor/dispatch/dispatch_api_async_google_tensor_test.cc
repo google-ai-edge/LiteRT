@@ -34,8 +34,6 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
-#include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -44,32 +42,22 @@
 using ::testing::Pointwise;
 using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
 
-constexpr absl::string_view kPrecompiledTfliteFile =
-    "simple_model_npu_google_tensor_precompiled.tflite";
-constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
-
-litert::Expected<litert::Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      litert::Environment::Option{
-          litert::Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
-      },
-  };
-  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
-}
-
 TEST(DispatchApiAsync, GoogleTensor) {
 #if !defined(__ANDROID__)
   GTEST_SKIP()
       << "This test is specific to Android devices with a GoogleTensor eTPU";
 #endif
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
-            kLiteRtStatusOk);
+  LiteRtDispatchOption dispatch_option = {
+      /*.name=*/kDispatchOptionSharedLibraryDir,
+      /*.value=*/lib_dir,
+  };
+  ASSERT_EQ(
+      LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),
+      kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);

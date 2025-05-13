@@ -30,7 +30,6 @@ cc_library(
         "//litert/cc:litert_dispatch_delegate.h",
     ],
     deps = [
-        "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//tflite/c:c_api",
@@ -161,12 +160,6 @@ cc_library(
 cc_library(
     name = "litert_options",
     hdrs = ["//litert/cc:litert_options.h"],
-    visibility = [
-        "//litert:litert_internal_users_with_internal_cc",
-        # OSS build needs static lib.
-        "//litert/vendors/google_tensor/dispatch:__pkg__",
-        "//litert/vendors/mediatek/dispatch:__pkg__",
-    ],
     deps = [
         ":litert_custom_op_kernel",
         "//litert/c:litert_common",

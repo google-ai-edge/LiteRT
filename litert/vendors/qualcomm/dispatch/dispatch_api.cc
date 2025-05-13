@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <any>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_environment_options.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -42,37 +42,28 @@ static std::unique_ptr<QnnManager> TheQnnManager;
 
 QnnManager& Qnn() { return *TheQnnManager; }
 
-LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
-
-LiteRtOptions TheOptions = nullptr;
-
 char BuildId[256];
 
 // /////////////////////////////////////////////////////////////////////////////
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  TheEnvironmentOptions = environment_options;
-  TheOptions = options;
-
-  // TODO LUKE confirm where the lib dir is coming from, the
-  // "dispatch_library_dir" thing makes no sense Since this should be shared lib
-  // for libqnn.so.
-  litert::EnvironmentOptions env_options(environment_options);
-
-  const char* dispatch_lib_dir = nullptr;
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (dispatch_lib_dir_any) {
-    dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
+const char* GetSharedLibraryDir(const LiteRtDispatchOption* options,
+                                int num_options) {
+  for (auto i = 0; i < num_options; ++i) {
+    auto& option = options[i];
+    if (!strcmp(option.name, kDispatchOptionSharedLibraryDir)) {
+      return option.value.str_value;
+    }
   }
+  return nullptr;
+}
 
+LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
+  auto* shared_library_dir = GetSharedLibraryDir(options, num_options);
   std::optional<std::string> shared_library_dir_opt =
-      dispatch_lib_dir != nullptr
-          ? std::make_optional(std::string(dispatch_lib_dir))
-          : std::nullopt;
+      shared_library_dir ? std::make_optional(std::string(shared_library_dir))
+                         : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
   // TODO(Alen): initialize qnn_options from LiteRtOptions

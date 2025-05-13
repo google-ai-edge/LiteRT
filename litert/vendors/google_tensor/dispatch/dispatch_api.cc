@@ -15,19 +15,24 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
 #include <cstdio>
+#include <cstring>
 #include <optional>
+#include <set>
 #include <string>
 
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "third_party/odml/infra/southbound/sb_api.h"
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_event.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_environment_options.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -42,9 +47,6 @@ namespace {
 litert::google_tensor::Southbound* TheSouthbound;
 char BuildId[256];
 
-LiteRtEnvironmentOptions TheEnvironmntOptions;
-LiteRtOptions TheOptions;
-
 }  // namespace
 
 namespace litert {
@@ -54,25 +56,22 @@ namespace google_tensor {
 // Basic Execution API
 // /////////////////////////////////////////////////////////////////////////////
 
-std::optional<std::string> GetSharedLibraryDir(
-    LiteRtEnvironmentOptions environment_options) {
-  litert::EnvironmentOptions env_options(environment_options);
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (!dispatch_lib_dir_any) {
-    LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
-               dispatch_lib_dir_any.Error().Message().c_str());
-    return std::nullopt;
+const char* GetSharedLibraryDir(const LiteRtDispatchOption* options,
+                                int num_options) {
+  for (auto i = 0; i < num_options; ++i) {
+    auto& option = options[i];
+    if (!strcmp(option.name, kDispatchOptionSharedLibraryDir)) {
+      return option.value.str_value;
+    }
   }
-  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
+  return nullptr;
 }
 
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  TheEnvironmntOptions = environment_options;
-  TheOptions = options;
-
-  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
+LiteRtStatus Initialize(const LiteRtDispatchOption* options, int num_options) {
+  auto* shared_library_dir = GetSharedLibraryDir(options, num_options);
+  std::optional<std::string> shared_library_dir_opt =
+      shared_library_dir ? std::make_optional(std::string(shared_library_dir))
+                         : std::nullopt;
 
   if (auto southbound =
           litert::google_tensor::Southbound::Create(shared_library_dir_opt);

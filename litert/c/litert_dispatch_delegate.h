@@ -18,19 +18,49 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_metrics.h"
+#include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
 typedef struct LiteRtDispatchDelegateOptions LiteRtDispatchDelegateOptions;
+typedef struct LiteRtEnvironmentT* LiteRtEnvironment;
 
-// Create a delegate that uses the Dispatch API for execution.
+// Returns DispatchDelegateOptions populated with default values.
+LiteRtDispatchDelegateOptions* LiteRtCreateDefaultDispatchDelegateOptions(
+    LiteRtEnvironment environment);
+
+TfLiteStatus LiteRtAddDispatchDelegateOption(
+    LiteRtDispatchDelegateOptions* options, LiteRtDispatchOption option);
+
+void LiteRtDestroyDispatchDelegateOptions(
+    LiteRtDispatchDelegateOptions* options);
+
+// Create a delegate that uses the Dispatch API for execution. Takes ownership
+// of the passed `options`.
 //
-// [TODO] DOCUMENT OWNERSHIP
+// NOTE: The returned delegate instance must outlive the TFL interpreter.
 TfLiteOpaqueDelegate* LiteRtCreateDispatchDelegate(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+    LiteRtEnvironmentOptions environment_options,
+    LiteRtDispatchDelegateOptions* options);
 
 // Do any needed cleanup and delete 'delegate'.
 void LiteRtDestroyDispatchDelegate(TfLiteOpaqueDelegate* delegate);
+
+//
+// Common option helpers
+//
+
+// Alloc base is the address of the first byte of flatbuffer model in memory. It
+// is used by ops to find the start of npu byte code appended to the file.
+TfLiteStatus LiteRtDispatchDelegateAddAllocBaseOption(
+    LiteRtDispatchDelegateOptions* options, const void* alloc_base);
+
+// Alloc fd is the file descriptor for an mmapped flatbuffer. It is used by ops
+// to find the start of npu byte code appended to the file.
+TfLiteStatus LiteRtDispatchDelegateAddAllocFdOption(
+    LiteRtDispatchDelegateOptions* options, int alloc_fd);
 
 #ifdef __cplusplus
 extern "C" {

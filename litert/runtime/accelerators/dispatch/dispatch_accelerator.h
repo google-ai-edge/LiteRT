@@ -16,10 +16,15 @@
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_DISPATCH_DISPATCH_ACCELERATOR_H_
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+struct LiteRtNpuAcceleratorOptions {
+  const char* library_folder;
+};
 
 // Registers the NPU accelerator to the given environment.
 //
@@ -31,7 +36,8 @@ extern "C" {
 // passed upon creation).
 //
 // Once this function has returned, options may be freed or reused.
-LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment);
+LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment,
+                                          LiteRtNpuAcceleratorOptions* options);
 
 #ifdef __cplusplus
 }  // extern "C"

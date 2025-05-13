@@ -15,17 +15,26 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_DISPATCH_DELEGATE_H_
 #define ODML_LITERT_LITERT_CC_LITERT_DISPATCH_DELEGATE_H_
 
-#include "litert/c/litert_common.h"
+#include <memory>
+
+#include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_environment_options.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 
 namespace litert {
 
-// TODO LUKE
+using DispatchDelegateOptionsPtr =
+    std::unique_ptr<LiteRtDispatchDelegateOptions,
+                    void (*)(LiteRtDispatchDelegateOptions*)>;
 
 using DispatchDelegatePtr = tflite::TfLiteOpaqueDelegateUniquePtr;
 
+DispatchDelegateOptionsPtr CreateDispatchDelegateOptionsPtr(
+    LiteRtEnvironmentOptions environment_options);
+
 DispatchDelegatePtr CreateDispatchDelegatePtr(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+    LiteRtEnvironmentOptions environment_options,
+    DispatchDelegateOptionsPtr&& options);
 
 }  // namespace litert
 

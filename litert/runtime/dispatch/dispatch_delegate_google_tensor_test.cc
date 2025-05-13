@@ -33,6 +33,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_dispatch_delegate.h"
@@ -43,8 +47,8 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -78,15 +82,6 @@ litert::Expected<Environment> CreateDefaultEnvironment() {
   return litert::Environment::Create(absl::MakeConstSpan(environment_options));
 }
 
-litert::Expected<Options> CreateDispatchOptions(const uint8_t* base) {
-  LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
-                          internal::DispatchDelegateOptions::Create());
-  LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBase(base));
-  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  LITERT_RETURN_IF_ERROR(options.AddOpaqueOptions(std::move(dispatch_options)));
-  return options;
-}
-
 TEST(DispatchDelegate, CpuBuffer) {
   // The dispatch delegate must be declared before the TFL interpreter so that
   // it gets destroyed only after the interpreter and the dispatch delegate
@@ -99,6 +94,8 @@ TEST(DispatchDelegate, CpuBuffer) {
                               MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
+
   litert::internal::ExternalLiteRtBufferContext buffer_context;
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
@@ -107,13 +104,14 @@ TEST(DispatchDelegate, CpuBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
-
-  dispatch_delegate =
-      CreateDispatchDelegatePtr(env_options.Get(), options.Get());
+  LiteRtEnvironmentOptions env_options;
+  LiteRtGetEnvironmentOptions(env.Get(), &env_options);
+  auto dispatch_delegate_options =
+      CreateDispatchDelegateOptionsPtr(env_options);
+  LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
+                                           runtime->Flatbuffer().Buf().Data());
+  dispatch_delegate = CreateDispatchDelegatePtr(
+      env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -167,6 +165,9 @@ TEST(DispatchDelegate, HwBuffer) {
   // interpreter directly.
   DispatchDelegatePtr dispatch_delegate = {nullptr, nullptr};
 
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, CreateDefaultEnvironment());
+
   LITERT_ASSERT_OK_AND_ASSIGN(testing::TflRuntime::Ptr runtime,
                               MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
@@ -179,13 +180,15 @@ TEST(DispatchDelegate, HwBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
+  LiteRtEnvironmentOptions env_options;
+  LiteRtGetEnvironmentOptions(env.Get(), &env_options);
 
-  dispatch_delegate =
-      CreateDispatchDelegatePtr(env_options.Get(), options.Get());
+  auto dispatch_delegate_options =
+      CreateDispatchDelegateOptionsPtr(env_options);
+  LiteRtDispatchDelegateAddAllocBaseOption(dispatch_delegate_options.get(),
+                                           runtime->Flatbuffer().Buf().Data());
+  dispatch_delegate = CreateDispatchDelegatePtr(
+      env_options, std::move(dispatch_delegate_options));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "

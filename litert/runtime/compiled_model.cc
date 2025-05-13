@@ -28,13 +28,14 @@
 #endif
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -53,8 +54,8 @@
 #include "litert/core/options.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/accelerator.h"
+#include "litert/runtime/accelerator_model_compilation_data.h"
 #include "litert/runtime/custom_op_dispatcher.h"
-#include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
@@ -67,14 +68,12 @@
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
 
-using ::litert::Error;
-using ::litert::Expected;
-using ::litert::TensorBuffer;
-using ::litert::Unexpected;
-using ::litert::internal::DispatchDelegateOptions;
-using ::litert::internal::ExternalLiteRtBufferContext;
-using ::litert::internal::GetTensorBufferTypeName;
-using ::litert::internal::SerializeModel;
+using litert::Error;
+using litert::Expected;
+using litert::TensorBuffer;
+using litert::Unexpected;
+using litert::internal::ExternalLiteRtBufferContext;
+using litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtOptions jit_compilation_options) {
@@ -239,42 +238,42 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                  "Failed to initialize model memory.");
   }
 
-  ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
+  // Add a new link in the accelerator compilation options that holds some data
+  // that is computed during model compilation.
+  LITERT_ASSIGN_OR_RETURN(
+      auto model_compilation_data_options,
+      litert::internal::ModelCompilationData::CreateOptions());
 
-  {
-    // Add information about the model allocation to the opaque chain.
-    LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
-                            DispatchDelegateOptions::Create());
-    LITERT_RETURN_IF_ERROR(
-        dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
-    LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBaseFd(
-        GetAllocationFd(compiled_model->fb_model_->allocation())));
-    LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto* model_compilation_data,
+      model_compilation_data_options
+          .GetData<litert::internal::ModelCompilationData>());
+  model_compilation_data->allocation_base = compiled_model->GetModelBase();
+  model_compilation_data->allocation_fd =
+      GetAllocationFd(compiled_model->fb_model_->allocation());
+
+  // Temporarily append model_compilation_data to the jit_compilation_options,
+  // but remove it before returning from this function since the caller owns
+  // jit_compilation_options and may use it for other purposes.
+  ScopedCompilationOptionsModifier scoped_modifier(jit_compilation_options);
+  LITERT_RETURN_IF_ERROR(
+      scoped_modifier.Append(std::move(model_compilation_data_options)));
+
+  // Retrieve the accelerator options list.
+  LiteRtOpaqueOptions accelerator_options = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetOpaqueOptions(jit_compilation_options, &accelerator_options));
 
   // Apply accelerators matching the requested hardware support to the
   // model in the order they were registered.
   for (auto& accelerator : env->GetAcceleratorRegistry()) {
-    LITERT_DEBUG_CODE({
-      const char* accelerator_name = nullptr;
-      if (accelerator->GetName(accelerator.get(), &accelerator_name) !=
-              kLiteRtStatusOk ||
-          !accelerator_name) {
-        LITERT_LOG(LITERT_WARNING, "Failed to get name for accelerator");
-      } else {
-        LITERT_LOG(LITERT_DEBUG, "Apply accelerator %s", accelerator_name);
-      }
-    });
-
     bool delegate_responsible_for_jit = false;
     LITERT_RETURN_IF_ERROR(
         LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
             accelerator.get(), &delegate_responsible_for_jit));
-
     LiteRtHwAcceleratorSet accelerator_supported_hardware;
     LITERT_RETURN_IF_ERROR(accelerator->GetHardwareSupport(
         accelerator.get(), &accelerator_supported_hardware));
-
     // We don't apply the delegate if:
     //   - the delegate is responsible for JIT compilation
     //   - and JIT has not been requested for the hardware it supports.
@@ -285,7 +284,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
     TfLiteOpaqueDelegate* delegate_ptr = nullptr;
     LITERT_RETURN_IF_ERROR(
-        accelerator->CreateDelegate(accelerator.get(), jit_compilation_options,
+        accelerator->CreateDelegate(accelerator.get(), accelerator_options,
                                     reinterpret_cast<void**>(&delegate_ptr)));
 
     auto delegate = tflite::TfLiteOpaqueDelegateUniquePtr(
@@ -466,16 +465,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor,
     const char* tensor_name, LiteRtTensorBuffer buffer, bool is_input,
     std::vector<LiteRtTensorBuffer>& locked_buffers) {
-  LITERT_DEBUG_CODE({
-    absl::string_view io = is_input ? "input" : "output";
-    absl::string_view name = tensor_name ? tensor_name : "<unnamed>";
-    auto buffer_type = GetTensorBufferTypeName(*buffer);
-    LITERT_LOG(LITERT_DEBUG,
-               "Registering %s tensor %s from TfliteTensor %p to "
-               "LiteRtTensorBuffer %p of type %s",
-               io.data(), tensor, buffer, buffer_type.data());
-  });
-
   bool backend_requires_cpu_buffer = false;
 
   auto requirements = buffer_context_->GetBufferRequirements(tensor);
@@ -612,10 +601,7 @@ Expected<void> LiteRtCompiledModelT::Run(
   locked_buffers.reserve(num_inputs + num_outputs);
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
     for (auto locked_buffer : locked_buffers) {
-      if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
-        LITERT_LOG(LITERT_ERROR, "Failed to unlock buffer %p", locked_buffer);
-        ABSL_DCHECK(false);
-      }
+      LiteRtUnlockTensorBuffer(locked_buffer);
     }
   });
   for (int i = 0; i < num_inputs; ++i) {

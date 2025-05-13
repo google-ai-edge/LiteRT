@@ -52,7 +52,7 @@ struct LiteRtAcceleratorT {
   // Creates a delegate for the accelerator.
   // Used void** instead of TfLiteOpaqueDelegate** to avoid TFLite dependency.
   LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorT* accelerator,
-                                 LiteRtOptions compilation_options,
+                                 LiteRtOpaqueOptions compilation_options,
                                  void** delegate);
 
   // Destroys created delegate for the accelerator.

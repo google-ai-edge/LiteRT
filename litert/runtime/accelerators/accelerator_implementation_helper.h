@@ -19,10 +19,13 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/accelerator_model_compilation_data.h"
 
 namespace litert::internal {
 
@@ -53,6 +56,17 @@ Expected<void> SetAcceleratorBoilerplateFunctions(
   return {};
 }
 
+// Goes through the options in the linked list and returns the model
+// compilation data if it exists.
+inline static Expected<const litert::internal::ModelCompilationData*>
+GetModelCompilationData(LiteRtOpaqueOptions options) {
+  void* payload_data;
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptionsData(
+      options, litert::internal::ModelCompilationData::kIdentifier,
+      &payload_data));
+  return reinterpret_cast<litert::internal::ModelCompilationData*>(
+      payload_data);
+}
 
 // Helps accelerator implementation by providing a lot of the boilerplate
 // needed.

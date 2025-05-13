@@ -25,7 +25,6 @@
 #include <gtest/gtest.h>
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -33,9 +32,6 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
-#include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_environment_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -43,24 +39,8 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
-namespace {
-
-using ::litert::Environment;
-using ::litert::Options;
 using ::testing::Pointwise;
 static constexpr const float kTol = 5e-2;
-
-constexpr absl::string_view kDispatchLibraryDir = "/data/local/tmp";
-
-litert::Expected<Environment> CreateDefaultEnvironment() {
-  const std::vector<litert::Environment::Option> environment_options = {
-      Environment::Option{
-          Environment::OptionTag::DispatchLibraryDir,
-          kDispatchLibraryDir,
-      },
-  };
-  return Environment::Create(absl::MakeConstSpan(environment_options));
-}
 
 TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
@@ -68,12 +48,16 @@ TEST(Qualcomm, DispatchApiWithFastRpc) {
       << "This test is specific to Android devices with a Qualcomm NPU";
 #endif
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
-            kLiteRtStatusOk);
+  LiteRtDispatchOption dispatch_option = {
+      /*.name=*/kDispatchOptionSharedLibraryDir,
+      /*.value=*/lib_dir,
+  };
+  ASSERT_EQ(
+      LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),
+      kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);
@@ -325,11 +309,7 @@ TEST(Qualcomm, DispatchApiWithDmaBuf) {
       << "This test is specific to Android devices with a Qualcomm NPU";
 #endif
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  EXPECT_EQ(LiteRtDispatchInitialize(/*options=*/nullptr, /*num_options=*/0),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -608,12 +588,17 @@ TEST(Qualcomm, DispatchApiWithFastRpcInt16Model) {
   const size_t output_tensor_0_bytes =
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
-            kLiteRtStatusOk);
+  LiteRtDispatchOption dispatch_option = {
+      /*.name=*/kDispatchOptionSharedLibraryDir,
+      /*.value=*/lib_dir,
+  };
+
+  EXPECT_EQ(
+      LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),
+      kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);
@@ -900,11 +885,16 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   const size_t output_tensor_0_bytes =
       output_tensor_0.size() * sizeof(decltype(output_tensor_0)::value_type);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny lib_dir,
+                              litert::ToLiteRtAny(std::any("/data/local/tmp")));
 
-  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+  LiteRtDispatchOption dispatch_option = {
+      /*.name=*/kDispatchOptionSharedLibraryDir,
+      /*.value=*/lib_dir,
+  };
+
+  EXPECT_EQ(LiteRtDispatchInitialize(/*options=*/&dispatch_option,
+                                     /*num_options=*/1),
             kLiteRtStatusOk);
 
   const char* vendor_id;
@@ -1159,4 +1149,3 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
             kLiteRtStatusOk);
 }
-}  // namespace

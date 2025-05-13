@@ -29,20 +29,23 @@
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_dispatch_delegate.h"
+#include "litert/c/litert_event.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/dispatch_op_schema.h"
-#include "litert/runtime/dispatch/dispatch_opaque_options.h"
+#include "litert/runtime/dispatch/dispatch_delegate_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -107,8 +110,8 @@ DispatchDelegateKernel::~DispatchDelegateKernel() {
 }
 
 Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
-    std::string&& graph_name, LiteRtEnvironmentOptions environment_options,
-    LiteRtOptions options, LiteRtDispatchDeviceContext device_context) {
+    std::string&& graph_name, const LiteRtDispatchDelegateOptions& options,
+    LiteRtDispatchDeviceContext device_context) {
   int capabilities;
   if (auto status = LiteRtDispatchGetCapabilities(&capabilities);
       status != kLiteRtStatusOk) {
@@ -122,27 +125,8 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
     LITERT_LOG(LITERT_INFO, "Found async dispatch capabilities");
   }
 
-  return Ptr(new DispatchDelegateKernel(environment_options, options,
-                                        std::move(graph_name), device_context,
-                                        async_dispatch));
-}
-
-Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
-  LITERT_ASSIGN_OR_RETURN(
-      auto dispatch_options,
-      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
-  return dispatch_options.GetAllocBase();
-}
-
-Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
-  LITERT_ASSIGN_OR_RETURN(
-      auto dispatch_options,
-      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
-  return dispatch_options.GetAllocBaseFd();
+  return Ptr(new DispatchDelegateKernel(options, std::move(graph_name),
+                                        device_context, async_dispatch));
 }
 
 TfLiteStatus DispatchDelegateKernel::Init(
@@ -423,13 +407,19 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
   }
 
   // Find pointer to the start of the loaded model buffer.
-  LITERT_ASSIGN_OR_RETURN(const void* alloc_base, FindAllocBase());
-  LITERT_ASSIGN_OR_RETURN(const int alloc_fd, FindAllocBaseFd());
+  const auto alloc_base = FindAllocBase(options_);
+  if (!alloc_base) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Could not find requried delegate options \"alloc_base\"");
+  }
+
+  const auto alloc_fd = FindAllocFd(options_);
 
   // Get location of bytecode in the model buffer relative to alloc_base.
   LiteRtMemBuffer exec_bytecode_buffer = {
-      /*.fd=*/alloc_fd,
-      /*.base_addr=*/alloc_base,
+      /*.fd=*/alloc_fd ? *alloc_fd : -1,
+      /*.base_addr=*/*alloc_base,
       /*.offset=*/dispatch_opts.bytecode_offset,
       /*.size=*/dispatch_opts.bytecode_size};
   const auto& function_name = dispatch_opts.name;

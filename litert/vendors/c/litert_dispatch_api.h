@@ -18,7 +18,10 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_event.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
 #ifdef __cplusplus
@@ -28,7 +31,7 @@ extern "C" {
 // /////////////////////////////////////////////////////////////////////////////
 
 typedef LiteRtStatus (*LiteRtDispatchInitializeT)(
-    LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
+    const LiteRtDispatchOption* options, int num_options);
 
 typedef LiteRtStatus (*LiteRtDispatchGetVendorIdT)(const char** vendor_id);
 
