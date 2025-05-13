@@ -25,12 +25,25 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
 using ::testing::Pointwise;
+
+litert::Expected<litert::Environment> CreateDefaultEnvironment() {
+  const std::vector<litert::Environment::Option> environment_options = {
+      litert::Environment::Option{
+          litert::Environment::OptionTag::DispatchLibraryDir,
+          "/data/local/tmp",
+      },
+  };
+  return litert::Environment::Create(absl::MakeConstSpan(environment_options));
+}
 
 TEST(MediaTek, DispatchApiWithAhwb) {
 #if !defined(__ANDROID__)
@@ -38,13 +51,12 @@ TEST(MediaTek, DispatchApiWithAhwb) {
       << "This test is specific to Android devices with a MediaTek NPU";
 #endif
 
-  LiteRtDispatchOption dispatch_option = {
-      /*.name=*/kDispatchOptionSharedLibraryDir,
-      /*.value=*/*litert::ToLiteRtAny(std::any("/data/local/tmp")),
-  };
-  ASSERT_EQ(
-      LiteRtDispatchInitialize(/*options=*/&dispatch_option, /*num_options=*/1),
-      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, ::litert::Options::Create());
+
+  ASSERT_EQ(LiteRtDispatchInitialize(env_options.Get(), options.Get()),
+            kLiteRtStatusOk);
 
   const char* vendor_id;
   EXPECT_EQ(LiteRtDispatchGetVendorId(&vendor_id), kLiteRtStatusOk);

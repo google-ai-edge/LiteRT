@@ -99,8 +99,7 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
-                                   LiteRtOpaqueOptions options,
-                                   void** delegate),
+                                   LiteRtOptions options, void** delegate),
     void (*DestroyDelegate)(void* delegate)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;

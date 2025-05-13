@@ -582,7 +582,7 @@ cc_library(
         "//litert:litert_internal_users_with_public_cc",
     ],
     deps = [
-        "//litert/c:litert_environment_options",
+        "//litert/c:litert_common",
         "//litert/runtime/dispatch:dispatch_delegate",
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
@@ -655,7 +655,7 @@ cc_library(
     visibility = [
         "//litert:litert_external_users",
         "//litert:litert_internal_users_with_public_cc",
-        # TOOD: Update none litert/ code to use proper internal/public cc targets.
+        # TODO - b/416800841: Update none litert/ code to use proper internal/public cc targets.
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:__pkg__",
     ],
     deps = [
@@ -707,9 +707,9 @@ cc_library(
     ],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
+        # # TOOD: Update non-litert/ code to use proper internal/public cc targets.
         # "//litert:litert_external_users",
         # "//litert:litert_internal_users_with_public_cc",
-        # # TOOD: Update none litert/ code to use proper internal/public cc targets.
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
         # "//third_party/odml/litert_lm/runtime/components:__pkg__",
