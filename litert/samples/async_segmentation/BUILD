@@ -67,6 +67,7 @@ cc_binary(
         ":image_processor",
         ":image_utils",
         ":segmentation_model",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "//litert/cc:litert_tensor_buffer",
         # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
@@ -108,6 +109,8 @@ cc_library(
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/cc/options:accelerator_options",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
     ] + gles_deps() + gl_native_deps(),
 )

@@ -22,6 +22,8 @@
 #include <vector>
 
 #include <GLES2/gl2.h>
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/samples/async_segmentation/image_processor.h"
@@ -131,17 +133,23 @@ int main(int argc, char* argv[]) {
       loaded_channels1 = 3;
   GLuint tex_id_orig = 0;
 
+  auto start_time = absl::Now();
   // --- Load Image for Segmentation ---
   if (!LoadImage(input_file, processor, width1_orig, height1_orig,
                  channels1_file, tex_id_orig, loaded_channels1)) {
     std::cerr << "Failed to load image." << std::endl;
     return 1;
   }
+  // Record end time
+  auto end_time = absl::Now();
+  auto duration = end_time - start_time;
+  std::cout << "LoadImage took " << duration << std::endl;
 
   // --- Preprocess Image for Segmentation ---
   // When using GL buffers we need to set the number of channels to 4
   // (RGBA with alpha channel set as 0) so that memory layout is compatible with
   // GPU accelerator.
+  start_time = absl::Now();
   int num_channels = use_gl_buffers ? 4 : 3;
   // When using GL buffers we can directly use the input buffer of the
   // segmentation model for preprocessing.
@@ -192,7 +200,6 @@ int main(int argc, char* argv[]) {
   }
 
   // --- Post-Processing: Deinterleave masks from output buffer ---
-
   // Generate 6 mask buffers for the 6 mask colors.
   std::vector<GLuint> mask_buffer_ids;
   mask_buffer_ids.reserve(6);
@@ -254,7 +261,11 @@ int main(int argc, char* argv[]) {
     std::cerr << "Failed to read blended image data from SSBO." << std::endl;
     return 1;
   }
+  end_time = absl::Now();
+  duration = end_time - start_time;
+  std::cout << "Full segmentation pipeline took " << duration << std::endl;
 
+  start_time = absl::Now();
   // Convert float [0,1] to uchar [0,255]
   std::vector<unsigned char> final_blended_uchar_data(out_blend_width *
                                                       out_blend_height * 4);
@@ -269,6 +280,9 @@ int main(int argc, char* argv[]) {
   }
   std::cout << "Successfully saved final blended image to " << output_file
             << std::endl;
+  end_time = absl::Now();
+  duration = end_time - start_time;
+  std::cout << "SaveImage took " << duration << std::endl;
 
   // ---- Clean Up ----
   processor.DeleteOpenGLTexture(tex_id_orig);

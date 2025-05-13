@@ -25,6 +25,9 @@
 #include <GLES2/gl2.h>
 #include <GLES3/gl3.h>
 #include <GLES3/gl32.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -170,6 +173,13 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
         output_buffers_, compiled_model_.CreateOutputBuffers(signature_index));
   }
   std::cout << "SegmentationModel: Model initialized." << std::endl;
+  std::cout << "SegmentationModel: warming up model..." << std::endl;
+  auto start_time = absl::Now();
+  compiled_model_.Run(signature_index, input_buffers_, output_buffers_);
+  auto end_time = absl::Now();
+  auto duration = end_time - start_time;
+  std::cout << "SegmentationModel: warming up took: " << duration
+            << " microseconds" << std::endl;
   return true;
 }
 
@@ -188,12 +198,26 @@ bool SegmentationModel::RunSegmentation() {
       break;
   }
   std::cout << std::endl;
-  auto expected = compiled_model_.Run(0, input_buffers_, output_buffers_);
-  std::cout << "SegmentationModel: Executing LiteRT model." << std::endl;
-  if (!expected.HasValue()) {
-    std::cerr << "SegmentationModel: Failed to execute LiteRT model."
-              << std::endl;
-    return false;
+  if (use_gl_buffers_) {
+    bool async = false;
+    auto execution_result =
+        compiled_model_.RunAsync(0, input_buffers_, output_buffers_, async);
+    std::cout << "SegmentationModel: Async execution: " << async
+              << " LiteRT model." << std::endl;
+    if (!execution_result.HasValue()) {
+      std::cerr << "SegmentationModel: Failed to execute LiteRT model."
+                << std::endl;
+      return false;
+    }
+  } else {
+    auto execution_result =
+        compiled_model_.Run(0, input_buffers_, output_buffers_);
+    std::cout << "SegmentationModel: Sync execution LiteRT model." << std::endl;
+    if (!execution_result.HasValue()) {
+      std::cerr << "SegmentationModel: Failed to execute LiteRT model."
+                << std::endl;
+      return false;
+    }
   }
   return true;
 }
