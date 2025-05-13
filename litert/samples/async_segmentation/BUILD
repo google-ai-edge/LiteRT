@@ -58,6 +58,11 @@ cc_binary(
         ":test_images",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
+        "@qairt//:lib/aarch64-android/libQnnHtp.so",
+        "@qairt//:lib/aarch64-android/libQnnHtpPrepare.so",
+        "@qairt//:lib/aarch64-android/libQnnHtpV79Stub.so",
+        "@qairt//:lib/aarch64-android/libQnnSystem.so",
+        "@qairt//:lib/hexagon-v79/unsigned/libQnnHtpV79Skel.so",
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],

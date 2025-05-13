@@ -104,7 +104,7 @@ DEVICE_NPU_LIBRARY_DIR="${DEVICE_BASE_DIR}/npu"
 HOST_SHADER_DIR="${PACKAGE_LOCATION}/shaders"
 HOST_TEST_IMAGE_DIR="${PACKAGE_LOCATION}/test_images"
 HOST_MODEL_DIR="${PACKAGE_LOCATION}/models"
-HOST_NPU_LIBRARY_DIR="${PACKAGE_LOCATION}/npu/qualcomm"
+HOST_NPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/async_segmentation.runfiles/qairt/latest/lib/"
 
 # Qualcomm NPU library path
 LD_LIBRARY_PATH="${DEVICE_NPU_LIBRARY_DIR}/"
@@ -164,11 +164,11 @@ adb push "${NPU_LIBRARY_LOCATION}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_L
 echo "Pushed NPU dispatch library."
 
 # Push NPU libraries
-adb push "${HOST_NPU_LIBRARY_DIR}/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/libQnnHtpV79Stub.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/libQnnHtpV79Skel.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtpV79Stub.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIBRARY_DIR}/hexagon-v79/unsigned/libQnnHtpV79Skel.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU libraries."
 
 # Set execute permissions
