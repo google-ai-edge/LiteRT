@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("//litert/vendors/mediatek:mediatek_build_defs.bzl", "litert_cc_lib_with_mtk")
 
 package(
@@ -37,5 +38,13 @@ litert_cc_lib_with_mtk(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:v8_latest_host_headers",
+    ],
+)
+
+build_test(
+    name = "build_so_test",
+    targets = [
+        "//litert/vendors/mediatek/dispatch:dispatch_api_so",
+        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
     ],
 )
