@@ -94,8 +94,8 @@ litert_bin(
         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
         # copybara:uncomment_begin(no-oss-yet)
-        # "@neuro_pilot//:latest/host/lib/libneuron_adapter.so",
-        # "@neuro_pilot//:v7_0_8_20250225/host/lib/libneuron_adapter.so",
+        # "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+        # "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
         # copybara:uncomment_end
     ],
     export_litert_only = 1,

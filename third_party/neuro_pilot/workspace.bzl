@@ -24,9 +24,9 @@ def neuro_pilot():
         strip_prefix = "neuro_pilot",
         url = "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/57c17aa0-90b4-4871-a7b6-cdcdc678b3aa.gz",
         symlink_mapping = {
-            "latest": "v8_0_8",
+            "v8_latest": "v8_0_8",
             # Just let the compilation pass, we don't expect it to work...
             # TODO: Remove this once we have a working V7 version.
-            "v7_0_8_20250225": "v8_0_8",
+            "v7_latest": "v8_0_8",
         },
     )

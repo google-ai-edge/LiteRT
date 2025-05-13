@@ -17,8 +17,8 @@ exports_files(["LICENSE"])  # LICENCE from the original repository
         ],
     )
     for version, arch_name in [
-        ("latest", "host"),
-        ("v7_0_8_20250225", "host"),
+        ("v8_latest", "host"),
+        ("v7_latest", "host"),
     ]
 ]
 

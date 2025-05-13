@@ -36,6 +36,6 @@ litert_cc_lib_with_mtk(
         "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-        "@neuro_pilot//:latest_host_headers",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

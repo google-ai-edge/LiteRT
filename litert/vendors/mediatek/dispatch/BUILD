@@ -63,7 +63,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
-        "@neuro_pilot//:latest_host_headers",
+        "@neuro_pilot//:v8_latest_host_headers",
         # Needed to build in OSS
         "//litert/core/util:tensor_type_util",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -97,6 +97,6 @@ litert_device_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@neuro_pilot//:latest_host_headers",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

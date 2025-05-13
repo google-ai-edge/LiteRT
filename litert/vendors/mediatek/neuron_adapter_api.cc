@@ -89,10 +89,10 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   std::string sdk_path;
   switch (sdk_version) {
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
-      sdk_path = "third_party/neuro_pilot/v7_0_8_20250225/host/lib";
+      sdk_path = "third_party/neuro_pilot/v7_latest/host/lib";
       break;
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
-      sdk_path = "third_party/neuro_pilot/v8_20241223/host/lib";
+      sdk_path = "third_party/neuro_pilot/v8_latest/host/lib";
       break;
     default:
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
