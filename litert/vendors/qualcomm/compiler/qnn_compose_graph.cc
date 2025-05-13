@@ -35,7 +35,6 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/tools/dump.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/core/builders/broadcast_to_op_builder.h"
@@ -87,8 +86,6 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
-
-using ::litert::internal::Dump;
 
 LiteRtStatus ConvertPaddingType(const uint32_t litert_padding,
                                 ::qnn::PaddingType& qnn_padding) {
@@ -845,11 +842,6 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   std::vector<::qnn::OpWrapper> graph_op_wrappers;
   std::ostringstream dump;
   for (const auto& op : graph_mapper.Graph().Ops()) {
-    // Dump op info.
-    dump.clear();
-    Dump(*op.Get(), dump);
-    std::string s = dump.str();
-    LITERT_LOG(LITERT_VERBOSE, "%s", s.data());
     std::vector<::qnn::TensorWrapperRef> input_tensors;
     for (const auto& input : op.Inputs()) {
       if (const auto it = litert_tensor_to_wrapper.find(input.Get());

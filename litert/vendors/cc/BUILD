@@ -93,8 +93,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_opaque_options",
-        # OSS build needs to use the static version of litert_options.
-        "//litert/cc/internal:litert_options",
+        "//litert/cc:litert_options",
     ],
 )
 
