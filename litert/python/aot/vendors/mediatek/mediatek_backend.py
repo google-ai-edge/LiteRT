@@ -29,7 +29,7 @@ from litert.python.aot.vendors import import_vendor
 from litert.python.aot.vendors.mediatek import target as target_lib
 
 COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
-    "vendors/mediatek/compiler/libLiteRtCompilerPlugin_Mediatek.so"
+    "vendors/mediatek/compiler/libLiteRtCompilerPlugin_MediaTek.so"
 )
 
 
