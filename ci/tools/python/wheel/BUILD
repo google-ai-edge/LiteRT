@@ -47,7 +47,6 @@ genrule(
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
 ALL_PY_SRC_MODULES = [
-    "//litert/c:libLiteRtRuntimeCApi.so",
     "//litert/python/aot:prepare_for_npu",
     "//litert/python/aot:aot_compile",
     "//litert/python/aot/ai_pack:export_lib",
@@ -83,6 +82,7 @@ py_wheel(
     srcs = [
         ":fixed_protos",
         ":fixed_pydeps",
+        "//litert/c:libLiteRtRuntimeCApi.so",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper.so",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper.so",
