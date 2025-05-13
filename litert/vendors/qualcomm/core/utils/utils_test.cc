@@ -142,4 +142,13 @@ TEST(MiscTests, ConvertDataFromUInt16toInt16) {
   EXPECT_EQ(int16_data[3], 3);
 }
 
+TEST(MiscTests, IsStrEndsWith) {
+  EXPECT_TRUE(IsStrEndsWith("example_dump", "_dump"));
+  EXPECT_FALSE(IsStrEndsWith("example_dump", "_dumps"));
+  EXPECT_TRUE(IsStrEndsWith("test_dump", "_dump"));
+  EXPECT_FALSE(IsStrEndsWith("test", "_dump"));
+  EXPECT_TRUE(IsStrEndsWith("_dump", "_dump"));
+  EXPECT_FALSE(IsStrEndsWith("dump", "_dump"));
+}
+
 }  // namespace qnn

@@ -16,7 +16,9 @@
 
 #include "litert/c/options/litert_qualcomm_options.h"
 
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -31,6 +33,7 @@ struct LiteRtQualcommOptionsT {
   bool enable_weight_sharing = false;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
+  std::vector<int> dump_ids;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -167,6 +170,27 @@ LiteRtStatus LiteRtQualcommOptionsGetEnableWeightSharing(
 
   *enable_weight_sharing = options->enable_weight_sharing;
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
+    LiteRtQualcommOptions options, int* ids, std::uint32_t number_of_ids) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (int i = 0; i < number_of_ids; i++) {
+    options->dump_ids.emplace_back(ids[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
+    LiteRtQualcommOptions options, int** ids, std::uint32_t* number_of_ids) {
+  if (ids == nullptr || number_of_ids == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *ids = options->dump_ids.data();
+  *number_of_ids = options->dump_ids.size();
   return kLiteRtStatusOk;
 }
 

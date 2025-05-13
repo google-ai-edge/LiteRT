@@ -5,6 +5,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 
 #include <string>
+#include <vector>
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -55,6 +56,10 @@ class Options {
   void SetHtpPerformanceMode(const HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
+  // for per-layer dump
+  void SetDumpTensorIds(const std::vector<int>& ids);
+  std::vector<int> GetDumpTensorIds() const;
+
   std::string Dump() const;
 
  private:
@@ -64,6 +69,7 @@ class Options {
   bool use_qint16_as_quint16_ = false;
   bool enable_weight_sharing_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
+  std::vector<int> dump_tensor_ids_;
 };
 
 }  // namespace qnn

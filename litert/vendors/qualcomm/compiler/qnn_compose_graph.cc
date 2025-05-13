@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <iterator>
+#include <unordered_set>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -240,26 +241,28 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
       break;
   }
 
+  uint32_t tensor_index = litert_tensor.TensorIndex();
+
   if (litert_tensor.IsSubgraphInput()) {
-    auto& res = tensor_pool.CreateInputTensor(qnn_data_type, quantize_params,
-                                              dimentions);
+    auto& res = tensor_pool.CreateInputTensorWithId(
+        qnn_data_type, quantize_params, dimentions, tensor_index);
     tensor_wrapper = &res;
   } else if (litert_tensor.IsSubgraphOutput() || is_tensor_read_and_write) {
-    auto& res = tensor_pool.CreateOutpuTensor(qnn_data_type, quantize_params,
-                                              dimentions);
+    auto& res = tensor_pool.CreateOutpuTensorWithId(
+        qnn_data_type, quantize_params, dimentions, tensor_index);
     tensor_wrapper = &res;
   } else if (litert_tensor.IsConstant()) {
     LITERT_ENSURE(litert_tensor.HasWeights(),
                   kLiteRtStatusErrorInvalidLegalization,
                   "Empty weights for constant tensor.");
-    auto& res = tensor_pool.CreateStaticTensor(
-        qnn_data_type, quantize_params, dimentions,
+    auto& res = tensor_pool.CreateStaticTensorWithId(
+        qnn_data_type, quantize_params, dimentions, tensor_index,
         litert_tensor.Weights().Bytes().size(),
         reinterpret_cast<const void*>(litert_tensor.Weights().Bytes().data()));
     tensor_wrapper = &res;
   } else {
-    auto& res = tensor_pool.CreateNativeTensor(qnn_data_type, quantize_params,
-                                               dimentions);
+    auto& res = tensor_pool.CreateNativeTensorWithId(
+        qnn_data_type, quantize_params, dimentions, tensor_index);
     tensor_wrapper = &res;
   }
   return kLiteRtStatusOk;
@@ -863,6 +866,21 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
       ::qnn::TensorWrapper* tensor_wrapper{nullptr};
       LITERT_RETURN_IF_ERROR(ConvertTensor(output, tensor_pool, tensor_wrapper,
                                            is_tensor_read_and_write));
+
+      auto dump_ids = options.GetDumpTensorIds();
+      std::unordered_set<int> ids_to_dump(dump_ids.begin(), dump_ids.end());
+
+      if (!ids_to_dump.empty()) {
+        // -1 in ids_to_dump will dump all tensors
+        bool dump_tensor =
+            ids_to_dump.count(-1) > 0 ||
+            ids_to_dump.count(tensor_wrapper->GetFrameWorkId()) > 0;
+        if (!tensor_wrapper->IsSubgraphOutput() && dump_tensor) {
+          LITERT_LOG(LITERT_INFO, "LiteRT tensor index: %d is dumped",
+                     tensor_wrapper->GetFrameWorkId());
+          tensor_wrapper->DumpTensor();
+        }
+      }
       litert_tensor_to_wrapper.emplace(output.Get(), tensor_wrapper);
       output_tensors.emplace_back(*tensor_wrapper);
     }
@@ -878,10 +896,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   GraphToGraphTransform(graph_op_wrappers);
 
   if (options.GetUseQint16AsQuint16()) {
-    tensor_pool.ForEach(
-        [](::qnn::TensorWrapper& tensor_wrapper) {
-          tensor_wrapper.ConvertQint16ToQuint16();
-        });
+    tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
+      tensor_wrapper.ConvertQint16ToQuint16();
+    });
   }
 
   // Insert all tensors into Qnn graph and update the id of Qnn_Tensor_t inside.
