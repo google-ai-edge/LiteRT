@@ -471,7 +471,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     absl::string_view name = tensor_name ? tensor_name : "<unnamed>";
     auto buffer_type = GetTensorBufferTypeName(*buffer);
     LITERT_LOG(LITERT_DEBUG,
-               "Registering %s tensor %s from TfliteTensor %p to "
+               "Registering %s tensor from TfliteTensor %p to "
                "LiteRtTensorBuffer %p of type %s",
                io.data(), tensor, buffer, buffer_type.data());
   });
