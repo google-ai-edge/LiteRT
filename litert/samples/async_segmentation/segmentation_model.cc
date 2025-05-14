@@ -44,7 +44,8 @@
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
-    litert::CompiledModel& compiled_model, litert::Signature& signature) {
+    LiteRtEnvironment env, litert::CompiledModel& compiled_model,
+    litert::Signature& signature) {
   LiteRtSubgraph subgraph_handle = signature.Subgraph();
   litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
 
@@ -59,10 +60,10 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
                             input_tensor.RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
-    LITERT_ASSIGN_OR_RETURN(
-        auto input_buffer,
-        litert::TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
-                                            ranked_tensor_type, buffer_size));
+    LITERT_ASSIGN_OR_RETURN(auto input_buffer,
+                            litert::TensorBuffer::CreateManaged(
+                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                ranked_tensor_type, buffer_size));
     input_buffers.push_back(std::move(input_buffer));
   }
   return input_buffers;
@@ -71,7 +72,8 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
-    litert::CompiledModel& compiled_model, litert::Signature& signature) {
+    LiteRtEnvironment env, litert::CompiledModel& compiled_model,
+    litert::Signature& signature) {
   LiteRtSubgraph subgraph_handle = signature.Subgraph();
   litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
 
@@ -157,13 +159,13 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
   size_t signature_index = 0;
 
   if (use_gl_buffers_) {
-    LITERT_ASSIGN_OR_ABORT(
-        input_buffers_,
-        CreateGlInputBuffers(compiled_model_, signatures[signature_index]));
+    LITERT_ASSIGN_OR_ABORT(input_buffers_,
+                           CreateGlInputBuffers(env.Get(), compiled_model_,
+                                                signatures[signature_index]));
 
-    LITERT_ASSIGN_OR_ABORT(
-        output_buffers_,
-        CreateGlOutputBuffers(compiled_model_, signatures[signature_index]));
+    LITERT_ASSIGN_OR_ABORT(output_buffers_,
+                           CreateGlOutputBuffers(env.Get(), compiled_model_,
+                                                 signatures[signature_index]));
 
   } else {
     LITERT_ASSIGN_OR_ABORT(input_buffers_,
