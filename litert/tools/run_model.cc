@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+#define INCLUDE_QUALCOMM_RUNTIME_FLAGS
+#define INCLUDE_MEDIATEK_RUNTIME_FLAGS
+#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +23,7 @@
 #include <cstring>
 #include <numeric>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -32,14 +38,18 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
 
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
-ABSL_FLAG(bool, use_gpu, false, "Use GPU Accelerator.");
+ABSL_FLAG(std::string, accelerator, "cpu", "Which backend to use.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -53,6 +63,47 @@ ABSL_FLAG(size_t, iterations, 1,
 
 namespace litert {
 namespace {
+
+using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
+using ::litert::mediatek::MediatekOptionsFromFlags;
+using ::litert::qualcomm::QualcommOptionsFromFlags;
+
+LiteRtHwAccelerators GetAccelerator() {
+  const auto accelerator = absl::GetFlag(FLAGS_accelerator);
+  if (accelerator == "gpu") {
+    return kLiteRtHwAcceleratorGpu;
+  } else if (accelerator == "npu") {
+    return kLiteRtHwAcceleratorNpu;
+  } else {
+    return kLiteRtHwAcceleratorCpu;
+  }
+}
+
+Expected<Environment> GetEnvironment() {
+  std::vector<litert::Environment::Option> environment_options = {};
+  const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
+  if (!dispatch_library_dir.empty()) {
+    environment_options.push_back(litert::Environment::Option{
+        litert::Environment::OptionTag::DispatchLibraryDir,
+        absl::string_view(dispatch_library_dir)});
+  };
+  return Environment::Create(absl::MakeConstSpan(environment_options));
+}
+
+Expected<Options> GetOptions() {
+  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  options.SetHardwareAccelerators(GetAccelerator());
+  if (auto qnn_opts = QualcommOptionsFromFlags()) {
+    options.AddOpaqueOptions(std::move(*qnn_opts));
+  }
+  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
+    options.AddOpaqueOptions(std::move(*google_tensor_opts));
+  }
+  if (auto mediatek_opts = MediatekOptionsFromFlags()) {
+    options.AddOpaqueOptions(std::move(*mediatek_opts));
+  }
+  return options;
+}
 
 // Fills a tensor buffer with sample data based on element type
 Expected<void> FillInputBuffer(TensorBuffer& buffer) {
@@ -152,28 +203,11 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto model,
                           Model::CreateFromFile(absl::GetFlag(FLAGS_graph)));
 
-  const std::string dispatch_library_dir =
-      absl::GetFlag(FLAGS_dispatch_library_dir);
+  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
+  LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
-  std::vector<litert::Environment::Option> environment_options = {};
-  if (!dispatch_library_dir.empty()) {
-    environment_options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
-        absl::string_view(dispatch_library_dir)});
-  };
-
-  LITERT_ASSIGN_OR_RETURN(
-      auto env,
-      litert::Environment::Create(absl::MakeConstSpan(environment_options)));
-
-  ABSL_LOG(INFO) << "Create CompiledModel";
-  auto accelerator = absl::GetFlag(FLAGS_use_gpu) ? kLiteRtHwAcceleratorGpu
-                                                  : kLiteRtHwAcceleratorCpu;
-  if (accelerator == kLiteRtHwAcceleratorGpu) {
-    ABSL_LOG(INFO) << "Using GPU Accelerator";
-  }
   LITERT_ASSIGN_OR_RETURN(auto compiled_model,
-                          CompiledModel::Create(env, model, accelerator));
+                          CompiledModel::Create(env, model, options));
 
   LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
