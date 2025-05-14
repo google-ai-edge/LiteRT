@@ -329,24 +329,21 @@ cc_library(
     name = "tensor_utils",
     hdrs = ["tensor_utils.h"],
     deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_tensor_buffer",
+        "//tflite/profiling:time",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-        # copybara:uncomment_end
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc/internal:litert_compiled_model",
-        "//litert/cc:litert_element_type",
-        "//litert/cc/internal:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_tensor_buffer",
-        "//tflite/profiling:time",
     ],
 )
 
@@ -354,25 +351,29 @@ cc_binary(
     name = "run_model",
     srcs = ["run_model.cc"],
     deps = [
-        "//litert/tools:tensor_utils",
+        ":tensor_utils",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_tensor_buffer",
+        "//tflite/profiling:time",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-        # copybara:uncomment_end
-        "//litert/c:litert_common",
-        "//litert/cc/internal:litert_compiled_model",
-        "//litert/cc:litert_element_type",
-        "//litert/cc/internal:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_tensor_buffer",
-        "//tflite/profiling:time",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            # copybara:uncomment_begin(google-only)
+            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_binary(
