@@ -26,13 +26,24 @@ namespace litert::mediatek {
 class MediatekOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
+
   MediatekOptions() = delete;
+
   static const char* Discriminator();
+
   static Expected<MediatekOptions> Create(OpaqueOptions& options);
+
   static Expected<MediatekOptions> Create();
+
   void SetNeronSDKVersionType(
       LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
+
   LiteRtMediatekOptionsNeronSDKVersionType GetNeronSDKVersionType();
+
+  void SetEnableGemmaCompilerOptimizations(
+      bool enable_gemma_compiler_optimizations);
+
+  bool GetEnableGemmaCompilerOptimizations();
 
  private:
   LiteRtMediatekOptions Data() const;

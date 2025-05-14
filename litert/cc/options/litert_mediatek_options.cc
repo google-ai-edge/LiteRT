@@ -63,4 +63,17 @@ LiteRtMediatekOptions MediatekOptions::Data() const {
   internal::AssertOk(LiteRtMediatekOptionsGet, Get(), &options_data);
   return options_data;
 }
+
+void MediatekOptions::SetEnableGemmaCompilerOptimizations(
+    bool enable_gemma_compiler_optimizations) {
+  internal::AssertOk(LiteRtMediatekOptionsSetGemmaCompilerOptimizations, Data(),
+                     enable_gemma_compiler_optimizations);
+}
+
+bool MediatekOptions::GetEnableGemmaCompilerOptimizations() {
+  bool enable_gemma_compiler_optimizations;
+  internal::AssertOk(LiteRtMediatekOptionsGetGemmaCompilerOptimizations, Data(),
+                     &enable_gemma_compiler_optimizations);
+  return enable_gemma_compiler_optimizations;
+}
 }  // namespace litert::mediatek

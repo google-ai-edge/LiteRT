@@ -41,12 +41,20 @@ typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7 = 0,
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8 = 1,
 } LiteRtMediatekOptionsNeronSDKVersion;
+
 LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
     LiteRtMediatekOptions options,
     enum LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type);
+
 LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     LiteRtMediatekOptions options,
     enum LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
+
+LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
+    LiteRtMediatekOptions options, bool gemma_compiler_optimizations);
+
+LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+    LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
 #ifdef __cplusplus
 
 }  // extern "C"

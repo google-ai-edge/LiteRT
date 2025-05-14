@@ -26,6 +26,7 @@
 struct LiteRtMediatekOptionsT {
   LiteRtMediatekOptionsNeronSDKVersionType neron_sdk_version =
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
+  bool gemma_compiler_optimizations = false;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -74,6 +75,7 @@ LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
   options->neron_sdk_version = sdk_version_type;
   return kLiteRtStatusOk;
 }
+
 LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     LiteRtMediatekOptionsT* options,
     LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type) {
@@ -81,5 +83,26 @@ LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *sdk_version_type = options->neron_sdk_version;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
+    LiteRtMediatekOptions options, bool gemma_compiler_optimizations) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->gemma_compiler_optimizations = gemma_compiler_optimizations;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+    LiteRtMediatekOptions options, bool* gemma_compiler_optimizations) {
+  if (gemma_compiler_optimizations == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *gemma_compiler_optimizations = options->gemma_compiler_optimizations;
+
   return kLiteRtStatusOk;
 }

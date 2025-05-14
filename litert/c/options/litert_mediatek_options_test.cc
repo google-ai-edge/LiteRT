@@ -51,6 +51,55 @@ TEST(LiteRtMediatekOptionsTest, NeronSDKVersionType) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtMediatekOptionsTest, GemmaCompilerOptimizations) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  bool gemma_optimizations;
+  // Check default value (false)
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+      options_data, &gemma_optimizations));
+  ASSERT_FALSE(gemma_optimizations);
+
+  // Set to true
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetGemmaCompilerOptimizations(options_data, true));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+      options_data, &gemma_optimizations));
+  ASSERT_TRUE(gemma_optimizations);
+
+  // Set to false
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetGemmaCompilerOptimizations(options_data, false));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+      options_data, &gemma_optimizations));
+  ASSERT_FALSE(gemma_optimizations);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, GemmaCompilerOptimizationsInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  bool gemma_optimizations;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetGemmaCompilerOptimizations(nullptr, true),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(
+      LiteRtMediatekOptionsGetGemmaCompilerOptimizations(options_data, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
+                nullptr, &gemma_optimizations),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtMediatekOptionsTest, GetWithInvalidArguments) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
@@ -83,6 +132,13 @@ TEST(MediatekOptionsTest, CppApi) {
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
   EXPECT_EQ(options->GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+
+  // Test Gemma Compiler Optimizations
+  EXPECT_FALSE(options->GetEnableGemmaCompilerOptimizations());
+  options->SetEnableGemmaCompilerOptimizations(true);
+  EXPECT_TRUE(options->GetEnableGemmaCompilerOptimizations());
+  options->SetEnableGemmaCompilerOptimizations(false);
+  EXPECT_FALSE(options->GetEnableGemmaCompilerOptimizations());
 }
 
 }  // namespace
