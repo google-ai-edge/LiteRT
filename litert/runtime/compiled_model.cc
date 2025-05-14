@@ -77,7 +77,7 @@ using ::litert::internal::GetTensorBufferTypeName;
 using ::litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
-    LiteRtOptions jit_compilation_options) {
+    LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options) {
   tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
 
   // Apply custom ops.
@@ -105,7 +105,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   }
   // Register the ExternalLiteRtBufferContext for TensorBuffer handshaking.
   buffer_context_ =
-      std::make_unique<litert::internal::ExternalLiteRtBufferContext>();
+      std::make_unique<litert::internal::ExternalLiteRtBufferContext>(env);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 
@@ -218,7 +218,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
            << "No compilation options passed.";
   }
 
-  auto compiled_model = std::make_unique<LiteRtCompiledModelT>();
+  auto compiled_model = std::make_unique<LiteRtCompiledModelT>(env);
 
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   LITERT_RETURN_IF_ERROR(LiteRtGetOptionsHardwareAccelerators(
@@ -233,7 +233,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
       compiled_model->InitializeModel(*model, hardware_accelerators, *env));
 
   LITERT_RETURN_IF_ERROR(
-      compiled_model->InitializeRuntime(jit_compilation_options));
+      compiled_model->InitializeRuntime(env, jit_compilation_options));
   if (compiled_model->GetModelBase() == nullptr) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to initialize model memory.");

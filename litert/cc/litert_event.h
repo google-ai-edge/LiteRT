@@ -17,6 +17,7 @@
 
 #include <cstdint>
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/cc/litert_expected.h"
@@ -65,9 +66,10 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
 
   // Creates a managed event of the given `type`. Currently only
   // LiteRtEventTypeOpenCl is supported.
-  static Expected<Event> CreateManaged(LiteRtEventType type) {
+  static Expected<Event> CreateManaged(LiteRtEnvironment env,
+                                       LiteRtEventType type) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(type, &event));
+    LITERT_RETURN_IF_ERROR(LiteRtCreateManagedEvent(env, type, &event));
     return Event(event, OwnHandle::kYes);
   }
 

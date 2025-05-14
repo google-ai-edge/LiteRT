@@ -698,7 +698,8 @@ Expected<TensorBuffer> DispatchDelegateKernel::AllocateTensorBuffer(
 
   LITERT_ASSIGN_OR_RETURN(
       auto tensor_buffer,
-      TensorBuffer::CreateManaged(buffer_type, tensor_type, buffer_size));
+      TensorBuffer::CreateManaged(buffer_context_->GetEnvironment(),
+                                  buffer_type, tensor_type, buffer_size));
   return tensor_buffer;
 }
 

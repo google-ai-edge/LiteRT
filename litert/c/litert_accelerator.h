@@ -62,6 +62,11 @@ LiteRtStatus LiteRtGetAcceleratorVersion(LiteRtAccelerator accelerator,
 LiteRtStatus LiteRtGetAcceleratorHardwareSupport(
     LiteRtAccelerator accelerator, LiteRtHwAcceleratorSet* supported_hardware);
 
+// Fetches the accelerator environment.
+//
+LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAccelerator accelerator,
+                                             LiteRtEnvironment* environment);
+
 // Returns whether the accelerator TFLite delegate does some JIT compilation.
 LiteRtStatus LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator, bool* does_jit_compilation);

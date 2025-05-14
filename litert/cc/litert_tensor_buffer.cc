@@ -26,6 +26,12 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
+#if LITERT_HAS_OPENCL_SUPPORT
+#include <CL/cl.h>
+#else
+typedef struct _cl_mem* cl_mem;
+#endif
+
 namespace litert {
 
 Expected<TensorBuffer> TensorBuffer::Duplicate() const {
@@ -38,12 +44,12 @@ Expected<TensorBuffer> TensorBuffer::Duplicate() const {
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateManaged(
-    LiteRtTensorBufferType buffer_type, const RankedTensorType& tensor_type,
-    size_t buffer_size) {
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    const RankedTensorType& tensor_type, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      buffer_type, &litert_tensor_type, buffer_size, &tensor_buffer));
+      env, buffer_type, &litert_tensor_type, buffer_size, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
@@ -77,24 +83,36 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 #endif
 }
 
+Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromOpenClMemory(
+      env, &litert_tensor_type, buffer_type, cl_memory, size_bytes,
+      /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+}
+
 Expected<TensorBuffer> TensorBuffer::CreateFromGlBuffer(
-    const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
-    size_t size_bytes, size_t offset) {
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlBuffer(
-      &litert_tensor_type, target, id, size_bytes, offset,
+      env, &litert_tensor_type, target, id, size_bytes, offset,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
-    const RankedTensorType& tensor_type, LiteRtGLenum target, LiteRtGLuint id,
-    LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer) {
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+    size_t size_bytes, LiteRtGLint layer) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromGlTexture(
-      &litert_tensor_type, target, id, format, size_bytes, layer,
+      env, &litert_tensor_type, target, id, format, size_bytes, layer,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }

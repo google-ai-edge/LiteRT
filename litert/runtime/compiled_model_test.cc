@@ -56,14 +56,14 @@ using ::testing::litert::IsError;
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
-    const LiteRtTensorT& tensor, LiteRtTensorBufferType buffer_type,
-    size_t bytes) {
+    LiteRtEnvironment env, const LiteRtTensorT& tensor,
+    LiteRtTensorBufferType buffer_type, size_t bytes) {
   const LiteRtRankedTensorType ranked_tensor_type =
       tensor.Type().second.ranked_tensor_type;
 
   LiteRtTensorBufferT* tensor_buffer;
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      buffer_type, &ranked_tensor_type, bytes, &tensor_buffer));
+      env, buffer_type, &ranked_tensor_type, bytes, &tensor_buffer));
 
   return tensor_buffer;
 }
@@ -71,7 +71,7 @@ Expected<LiteRtTensorBufferT*> CreateBufferOfType(
 // Creates input or output tensor buffers of the given model, buffer type and
 // size.
 Expected<std::vector<LiteRtTensorBufferT*>> CreateInputOutputBuffersOfType(
-    LiteRtModelT& model, absl::string_view signature_key,
+    LiteRtEnvironment env, LiteRtModelT& model, absl::string_view signature_key,
     LiteRtTensorBufferType buffer_type, size_t bytes, bool is_input) {
   LITERT_ASSIGN_OR_RETURN(const LiteRtSignatureT& signature,
                           model.FindSignature(signature_key));
@@ -86,7 +86,7 @@ Expected<std::vector<LiteRtTensorBufferT*>> CreateInputOutputBuffersOfType(
   for (int i = 0; i < tensors.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         LiteRtTensorBufferT * tensor_buffer,
-        CreateBufferOfType(*tensors[i], buffer_type, bytes));
+        CreateBufferOfType(env, *tensors[i], buffer_type, bytes));
     tensor_buffers.push_back(tensor_buffer);
   }
   return tensor_buffers;
@@ -94,31 +94,33 @@ Expected<std::vector<LiteRtTensorBufferT*>> CreateInputOutputBuffersOfType(
 
 // Creates input buffers of the given model, buffer type, and size.
 Expected<std::vector<LiteRtTensorBufferT*>> CreateInputBuffersOfType(
-    LiteRtModelT& model, absl::string_view signature_key,
+    LiteRtEnvironment env, LiteRtModelT& model, absl::string_view signature_key,
     LiteRtTensorBufferType buffer_type, size_t bytes) {
-  return CreateInputOutputBuffersOfType(model, signature_key, buffer_type,
+  return CreateInputOutputBuffersOfType(env, model, signature_key, buffer_type,
                                         bytes, /*is_input=*/true);
 }
 
 // Creates output buffers of the given model, buffer type, and size.
 Expected<std::vector<LiteRtTensorBufferT*>> CreateOutputBuffersOfType(
-    LiteRtModelT& model, absl::string_view signature_key,
+    LiteRtEnvironment env, LiteRtModelT& model, absl::string_view signature_key,
     LiteRtTensorBufferType buffer_type, size_t bytes) {
-  return CreateInputOutputBuffersOfType(model, signature_key, buffer_type,
+  return CreateInputOutputBuffersOfType(env, model, signature_key, buffer_type,
                                         bytes, /*is_input=*/false);
 }
 
 // Creates a tensor buffer of the given tensor and buffer requirements.
 Expected<LiteRtTensorBufferT*> CreateBufferFromRequirements(
-    const LiteRtTensorT& tensor,
+    LiteRtEnvironment env, const LiteRtTensorT& tensor,
     const LiteRtTensorBufferRequirementsT& requirements) {
-  return CreateBufferOfType(tensor, requirements.SupportedBufferTypes().at(0),
+  return CreateBufferOfType(env, tensor,
+                            requirements.SupportedBufferTypes().at(0),
                             requirements.BufferSize());
 }
 
 // Creates input or output tensor buffers of the given model and requirements.
 Expected<std::vector<LiteRtTensorBufferT*>>
-CreateInputOutputBuffersFromRequirements(LiteRtModelT& model,
+CreateInputOutputBuffersFromRequirements(LiteRtEnvironment env,
+                                         LiteRtModelT& model,
                                          absl::string_view signature_key,
                                          LiteRtCompiledModelT& compiled_model,
                                          bool is_input) {
@@ -141,7 +143,7 @@ CreateInputOutputBuffersFromRequirements(LiteRtModelT& model,
 
     LITERT_ASSIGN_OR_RETURN(
         LiteRtTensorBufferT * tensor_buffer,
-        CreateBufferFromRequirements(*tensors[i], *requirements));
+        CreateBufferFromRequirements(env, *tensors[i], *requirements));
     tensor_buffers.push_back(tensor_buffer);
   }
   return tensor_buffers;
@@ -149,18 +151,18 @@ CreateInputOutputBuffersFromRequirements(LiteRtModelT& model,
 
 // Creates input buffers of the given model and requirements.
 Expected<std::vector<LiteRtTensorBufferT*>> CreateInputBuffersFromRequirements(
-    LiteRtModelT& model, absl::string_view signature_key,
+    LiteRtEnvironment env, LiteRtModelT& model, absl::string_view signature_key,
     LiteRtCompiledModelT& compiled_model) {
-  return CreateInputOutputBuffersFromRequirements(model, signature_key,
+  return CreateInputOutputBuffersFromRequirements(env, model, signature_key,
                                                   compiled_model,
                                                   /*is_input=*/true);
 }
 
 // Creates output buffers of the given model and requirements.
 Expected<std::vector<LiteRtTensorBufferT*>> CreateOutputBuffersFromRequirements(
-    LiteRtModelT& model, absl::string_view signature_key,
+    LiteRtEnvironment env, LiteRtModelT& model, absl::string_view signature_key,
     LiteRtCompiledModelT& compiled_model) {
-  return CreateInputOutputBuffersFromRequirements(model, signature_key,
+  return CreateInputOutputBuffersFromRequirements(env, model, signature_key,
                                                   compiled_model,
                                                   /*is_input=*/false);
 }
@@ -232,12 +234,14 @@ TEST(CompiledModelTest, Basic) {
 
   // Create and fill input and output LiteRtTensorBuffers. Buffers are
   // created to match CompiledModel's TensorBufferRequirements.
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<LiteRtTensorBuffer> input_buffers,
-                              CreateInputBuffersFromRequirements(
-                                  *model, signature_key, *compiled_model));
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<LiteRtTensorBuffer> output_buffers,
-                              CreateOutputBuffersFromRequirements(
-                                  *model, signature_key, *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                          *compiled_model));
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
@@ -379,13 +383,13 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   // TensorBufferRequirements expect host memory,but we create AHWB buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> input_buffers,
-      CreateInputBuffersOfType(*model, signature_key,
+      CreateInputBuffersOfType(env_ptr, *model, signature_key,
                                kLiteRtTensorBufferTypeAhwb,
                                sizeof(float) * kTestInput0Size));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> output_buffers,
-      CreateOutputBuffersOfType(*model, signature_key,
+      CreateOutputBuffersOfType(env_ptr, *model, signature_key,
                                 kLiteRtTensorBufferTypeAhwb,
                                 sizeof(float) * kTestOutputSize));
 
@@ -511,13 +515,13 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   // TensorBufferRequirements expect host memory,but we create OpenCL buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> input_buffers,
-      CreateInputBuffersOfType(*model, signature_key,
+      CreateInputBuffersOfType(env_ptr, *model, signature_key,
                                kLiteRtTensorBufferTypeOpenClBuffer,
                                sizeof(float) * kTestInput0Size));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBuffer> output_buffers,
-      CreateOutputBuffersOfType(*model, signature_key,
+      CreateOutputBuffersOfType(env_ptr, *model, signature_key,
                                 kLiteRtTensorBufferTypeOpenClBuffer,
                                 sizeof(float) * kTestOutputSize));
 

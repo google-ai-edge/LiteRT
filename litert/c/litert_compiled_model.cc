@@ -87,6 +87,15 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompiledModelEnvironment(
+    LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment) {
+  if (!compiled_model || !environment) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtRunCompiledModel(LiteRtCompiledModel compiled_model,
                                     LiteRtParamIndex signature_index,
                                     size_t num_input_buffers,

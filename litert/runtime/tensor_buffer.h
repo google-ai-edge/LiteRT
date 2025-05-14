@@ -84,22 +84,23 @@ class LiteRtTensorBufferT {
       LiteRtFastRpcDeallocator deallocator = nullptr);
 
   static litert::Expected<Ptr> CreateFromGlBuffer(
-      const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
-      LiteRtGLuint id, size_t size_bytes, size_t offset,
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
       LiteRtGlBufferDeallocator deallocator = nullptr);
 
   static litert::Expected<Ptr> CreateFromGlTexture(
-      const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
-      LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes,
-      LiteRtGLint layer, LiteRtGlTextureDeallocator deallocator = nullptr);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+      size_t size_bytes, LiteRtGLint layer,
+      LiteRtGlTextureDeallocator deallocator = nullptr);
 
   static litert::Expected<Ptr> CreateManaged(
-      LiteRtTensorBufferType buffer_type,
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
-      const LiteRtRankedTensorType& tensor_type,
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, cl_mem buffer,
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -220,11 +221,12 @@ class LiteRtTensorBufferT {
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedOpenClMemory(
-      const LiteRtRankedTensorType& tensor_type,
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedGlBuffer(
-      const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      size_t buffer_size);
 
   litert::Expected<void> IsValid();
 

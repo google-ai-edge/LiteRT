@@ -90,7 +90,9 @@ TEST(DispatchDelegate, CpuBuffer) {
       MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+
+  litert::internal::ExternalLiteRtBufferContext buffer_context(env.Get());
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -98,7 +100,6 @@ TEST(DispatchDelegate, CpuBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));
@@ -163,7 +164,9 @@ TEST(DispatchDelegate, HwBuffer) {
       MakeRuntimeFromTestFileWithNpuModel(kTfliteFile, kNpuFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+
+  litert::internal::ExternalLiteRtBufferContext buffer_context(env.Get());
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -171,7 +174,6 @@ TEST(DispatchDelegate, HwBuffer) {
   EXPECT_EQ(interpreter.outputs().size(), 1);
   ASSERT_EQ(interpreter.execution_plan().size(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, CreateDispatchOptions(runtime->Flatbuffer().Buf().Data()));

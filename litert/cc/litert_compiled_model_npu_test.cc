@@ -360,7 +360,7 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   // Create EGL sync and fence before AHWB read.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event egl_sync_event,
-      Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
+      Event::CreateManaged(env.Get(), LiteRtEventTypeEglNativeSyncFence));
 
   // EGL does not support querying the sync fd from the EGL sync event. So we
   // dup the fd from the EGL sync event and use it to create a new event.

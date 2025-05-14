@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_layout.h"
@@ -29,6 +30,7 @@
 #include "litert/runtime/gl_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/ion_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/open_cl_memory.h"
+#include "litert/test/matchers.h"
 
 namespace {
 constexpr const float kTensorData[] = {10, 20, 30, 40};
@@ -45,9 +47,13 @@ constexpr const LiteRtRankedTensorType kTensorType = {
 TEST(TensorBuffer, HostMemory) {
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -85,6 +91,7 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, Ahwb) {
@@ -93,11 +100,14 @@ TEST(TensorBuffer, Ahwb) {
                     "skipping the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeAhwb;
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -135,6 +145,7 @@ TEST(TensorBuffer, Ahwb) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, Ion) {
@@ -143,11 +154,14 @@ TEST(TensorBuffer, Ion) {
         << "ION buffers are not supported on this platform; skipping the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeIon;
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -185,6 +199,7 @@ TEST(TensorBuffer, Ion) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, DmaBuf) {
@@ -194,11 +209,14 @@ TEST(TensorBuffer, DmaBuf) {
            "the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeDmaBuf;
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -236,6 +254,7 @@ TEST(TensorBuffer, DmaBuf) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, FastRpc) {
@@ -245,11 +264,14 @@ TEST(TensorBuffer, FastRpc) {
            "the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeFastRpc;
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -287,13 +309,18 @@ TEST(TensorBuffer, FastRpc) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, Event) {
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
+
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -324,6 +351,7 @@ TEST(TensorBuffer, Event) {
   EXPECT_FALSE(has_event);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 TEST(TensorBuffer, OpenCL) {
@@ -337,11 +365,13 @@ TEST(TensorBuffer, OpenCL) {
                     "skipping the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
-
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -379,6 +409,7 @@ TEST(TensorBuffer, OpenCL) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -393,11 +424,14 @@ TEST(TensorBuffer, GlBuffer) {
                     "skipping the test";
   }
 
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeGlBuffer;
 
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
-      LiteRtCreateManagedTensorBuffer(kTensorBufferType, &kTensorType,
+      LiteRtCreateManagedTensorBuffer(env, kTensorBufferType, &kTensorType,
                                       sizeof(kTensorData), &tensor_buffer),
       kLiteRtStatusOk);
 
@@ -435,5 +469,6 @@ TEST(TensorBuffer, GlBuffer) {
   ASSERT_EQ(LiteRtUnlockTensorBuffer(tensor_buffer), kLiteRtStatusOk);
 
   LiteRtDestroyTensorBuffer(tensor_buffer);
+  LiteRtDestroyEnvironment(env);
 }
 #endif  // LITERT_HAS_OPENGL_SUPPORT

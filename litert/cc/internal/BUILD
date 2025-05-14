@@ -79,6 +79,7 @@ cc_library(
     name = "litert_event",
     hdrs = ["//litert/cc:litert_event.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_event",
         "//litert/c:litert_event_type",
         "//litert/cc:litert_expected",

@@ -192,19 +192,19 @@ TEST(DispatchApiAsync, GoogleTensor) {
 
   LiteRtTensorBuffer input_0_tensor_buffer;
   EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                input_0_tensor_buffer_type, &kInput0TensorType,
+                env.Get(), input_0_tensor_buffer_type, &kInput0TensorType,
                 input_0_tensor_buffer_size, &input_0_tensor_buffer),
             kLiteRtStatusOk);
 
   LiteRtTensorBuffer input_1_tensor_buffer;
   EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                input_1_tensor_buffer_type, &kInput1TensorType,
+                env.Get(), input_1_tensor_buffer_type, &kInput1TensorType,
                 input_1_tensor_buffer_size, &input_1_tensor_buffer),
             kLiteRtStatusOk);
 
   LiteRtTensorBuffer output_tensor_buffer;
   EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                output_tensor_buffer_type, &kOutputTensorType,
+                env.Get(), output_tensor_buffer_type, &kOutputTensorType,
                 output_tensor_buffer_size, &output_tensor_buffer),
             kLiteRtStatusOk);
 

@@ -15,6 +15,7 @@
 #include <any>
 #include <cstddef>
 #include <cstring>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -23,10 +24,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
@@ -179,55 +182,49 @@ TEST(DispatchApi, GoogleTensor) {
   // ///////////////////////////////////////////////////////////////////////////
 
   LiteRtTensorBuffer input_0_tensor_buffer;
-  EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                input_0_tensor_buffer_type, &kInput0TensorType,
-                input_0_tensor_buffer_size, &input_0_tensor_buffer),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
+      env.Get(), input_0_tensor_buffer_type, &kInput0TensorType,
+      input_0_tensor_buffer_size, &input_0_tensor_buffer));
 
   LiteRtTensorBuffer input_1_tensor_buffer;
-  EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                input_1_tensor_buffer_type, &kInput1TensorType,
-                input_1_tensor_buffer_size, &input_1_tensor_buffer),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
+      env.Get(), input_1_tensor_buffer_type, &kInput1TensorType,
+      input_1_tensor_buffer_size, &input_1_tensor_buffer));
 
   LiteRtTensorBuffer output_tensor_buffer;
-  EXPECT_EQ(LiteRtCreateManagedTensorBuffer(
-                output_tensor_buffer_type, &kOutputTensorType,
-                output_tensor_buffer_size, &output_tensor_buffer),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtCreateManagedTensorBuffer(
+      env.Get(), output_tensor_buffer_type, &kOutputTensorType,
+      output_tensor_buffer_size, &output_tensor_buffer));
 
   // ///////////////////////////////////////////////////////////////////////////
   // Register tensor buffers.
   // ///////////////////////////////////////////////////////////////////////////
 
   LiteRtTensorBufferHandle input_1_handle;
-  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
-                device_context, input_1_tensor_buffer, &input_1_handle),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtDispatchRegisterTensorBuffer(
+      device_context, input_1_tensor_buffer, &input_1_handle));
 
   LiteRtTensorBufferHandle input_0_handle;
-  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
-                device_context, input_0_tensor_buffer, &input_0_handle),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtDispatchRegisterTensorBuffer(
+      device_context, input_0_tensor_buffer, &input_0_handle));
 
   LiteRtTensorBufferHandle output_handle;
-  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
-                device_context, output_tensor_buffer, &output_handle),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtDispatchRegisterTensorBuffer(
+      device_context, output_tensor_buffer, &output_handle));
 
   // ///////////////////////////////////////////////////////////////////////////
   // Attach tensor buffers.
   // ///////////////////////////////////////////////////////////////////////////
 
-  EXPECT_EQ(LiteRtDispatchAttachInput(invocation_context,
-                                      /*graph_input_index=*/0, input_0_handle),
-            kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDispatchAttachInput(invocation_context,
-                                      /*graph_input_index=*/1, input_1_handle),
-            kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDispatchAttachOutput(invocation_context,
-                                       /*graph_output_index=*/0, output_handle),
-            kLiteRtStatusOk);
+  LITERT_EXPECT_OK(LiteRtDispatchAttachInput(invocation_context,
+                                             /*graph_input_index=*/0,
+                                             input_0_handle));
+  LITERT_EXPECT_OK(LiteRtDispatchAttachInput(invocation_context,
+                                             /*graph_input_index=*/1,
+                                             input_1_handle));
+  LITERT_EXPECT_OK(LiteRtDispatchAttachOutput(invocation_context,
+                                              /*graph_output_index=*/0,
+                                              output_handle));
 
   // ///////////////////////////////////////////////////////////////////////////
   // Fill the input buffers with data.

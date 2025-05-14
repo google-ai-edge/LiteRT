@@ -61,7 +61,7 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 }
 
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
-    const TensorBufferRequirements& buffer_requirements,
+    LiteRtEnvironment env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
   LITERT_ASSIGN_OR_RETURN(
       const std::vector<LiteRtTensorBufferType>& supported_types,
@@ -74,9 +74,9 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
   LiteRtTensorBufferType tensor_buffer_type = supported_types[0];
   LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer_requirements.BufferSize());
 
-  LITERT_ASSIGN_OR_RETURN(TensorBuffer buffer,
-                          TensorBuffer::CreateManaged(
-                              tensor_buffer_type, tensor_type, buffer_size));
+  LITERT_ASSIGN_OR_RETURN(TensorBuffer buffer, TensorBuffer::CreateManaged(
+                                                   env, tensor_buffer_type,
+                                                   tensor_type, buffer_size));
   return buffer;
 }
 
@@ -100,7 +100,7 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
   LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
                           tensor.RankedTensorType());
 
-  return CreateBufferImpl(buffer_requirements, tensor_type);
+  return CreateBufferImpl(env_, buffer_requirements, tensor_type);
 }
 
 Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(

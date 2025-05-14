@@ -90,6 +90,15 @@ LiteRtStatus LiteRtGetAcceleratorHardwareSupport(
   return accelerator->GetHardwareSupport(accelerator, supported_hardware);
 }
 
+LiteRtStatus LiteRtGetAcceleratorEnvironment(LiteRtAccelerator accelerator,
+                                             LiteRtEnvironment* environment) {
+  if (!accelerator || !environment) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *environment = accelerator->env;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtIsAcceleratorDelegateResponsibleForJitCompilation(
     LiteRtAccelerator accelerator, bool* does_jit_compilation) {
   if (!accelerator || !does_jit_compilation) {

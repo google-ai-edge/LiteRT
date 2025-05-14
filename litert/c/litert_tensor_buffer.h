@@ -165,7 +165,7 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
-    const LiteRtRankedTensorType* tensor_type,
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
     size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator,
     LiteRtTensorBuffer* buffer);
@@ -180,8 +180,8 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
-    const LiteRtRankedTensorType* tensor_type, LiteRtGLenum target,
-    LiteRtGLuint id, size_t size_bytes, size_t offset,
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* buffer);
 
 LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
@@ -194,8 +194,9 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
-    const LiteRtRankedTensorType* tensor_type, LiteRtGLenum target,
-    LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer,
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+    size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* buffer);
 
 LiteRtStatus LiteRtGetTensorBufferGlTexture(
@@ -207,7 +208,7 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
-    LiteRtTensorBufferType buffer_type,
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* buffer);
 

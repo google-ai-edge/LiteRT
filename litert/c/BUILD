@@ -327,11 +327,13 @@ cc_test(
     ],
     deps = [
         ":litert_common",
+        ":litert_environment",
         ":litert_model",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_layout",
         "//litert/runtime:tensor_buffer",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )

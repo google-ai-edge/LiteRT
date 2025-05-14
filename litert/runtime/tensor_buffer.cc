@@ -338,7 +338,7 @@ LiteRtTensorBufferT::CreateManagedFastRpcBuffer(
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
-    const LiteRtRankedTensorType& tensor_type,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t buffer_size,
     LiteRtOpenClDeallocator deallocator) {
   Ptr tensor_buffer(
@@ -350,7 +350,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
 
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOpenClMemory(
-    const LiteRtRankedTensorType& tensor_type,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
   LITERT_ASSIGN_OR_RETURN(auto buffer,
                           litert::internal::OpenClMemory::Alloc(
@@ -364,8 +364,8 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
-    const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
-    LiteRtGLuint id, size_t size_bytes, size_t offset,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
@@ -375,7 +375,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
 }
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
-    const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    size_t buffer_size) {
   auto buffer = litert::internal::GlBuffer::Alloc(buffer_size);
   if (!buffer) {
     return Unexpected(buffer.Error());
@@ -388,8 +389,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
 }
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
-    const LiteRtRankedTensorType& tensor_type, LiteRtGLenum target,
-    LiteRtGLuint id, LiteRtGLenum format, size_t size_bytes, LiteRtGLint layer,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+    size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
@@ -400,7 +402,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
 }
 
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
-    LiteRtTensorBufferType buffer_type,
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
@@ -419,14 +421,15 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
-      return CreateManagedOpenClMemory(tensor_type, buffer_type, buffer_size);
+      return CreateManagedOpenClMemory(env, tensor_type, buffer_type,
+                                       buffer_size);
 #else
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "OpenCL memory is not supported.");
 #endif  // LITERT_HAS_OPENCL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlBuffer: {
-      return CreateManagedGlBuffer(tensor_type, buffer_size);
+      return CreateManagedGlBuffer(env, tensor_type, buffer_size);
     }
     case kLiteRtTensorBufferTypeGlTexture: {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
