@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "litert/cc/options/litert_qualcomm_options.h"
+
 // c++ enum and wrapper without dependency.
 namespace qnn {
 
@@ -65,6 +67,10 @@ class Options {
   bool enable_weight_sharing_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
 };
+
+LiteRtStatus InitQnnOptions(
+    ::qnn::Options& qnn_options,
+    litert::qualcomm::QualcommOptions& qualcomm_options);
 
 }  // namespace qnn
 

@@ -25,8 +25,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
@@ -57,16 +59,17 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
   TheEnvironmentOptions = environment_options;
   TheOptions = options;
 
-  // TODO LUKE confirm where the lib dir is coming from, the
-  // "dispatch_library_dir" thing makes no sense Since this should be shared lib
-  // for libqnn.so.
-  litert::EnvironmentOptions env_options(environment_options);
+  auto [env, opts, opq_opts, qnn_opts] =
+      litert::ParseOptions<litert::qualcomm::QualcommOptions>(
+          TheEnvironmentOptions, TheOptions);
 
   const char* dispatch_lib_dir = nullptr;
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (dispatch_lib_dir_any) {
-    dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
+  if (env) {
+    auto dispatch_lib_dir_any =
+        env->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
+    if (dispatch_lib_dir_any) {
+      dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
+    }
   }
 
   std::optional<std::string> shared_library_dir_opt =
@@ -75,10 +78,14 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
           : std::nullopt;
 
   auto configs = QnnManager::DefaultBackendConfigs();
-  // TODO(Alen): initialize qnn_options from LiteRtOptions
   ::qnn::Options qnn_options;
-  qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
-  qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
+  if (qnn_opts) {
+    InitQnnOptions(qnn_options, *qnn_opts);
+  } else {
+    qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
+    qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
+  }
+
   if (auto qnn_manager = QnnManager::Create(
           /*configs=*/configs,
           /*options=*/qnn_options,

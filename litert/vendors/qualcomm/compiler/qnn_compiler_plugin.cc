@@ -90,22 +90,6 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #endif
 }
 
-// TODO(Alen): share this utility with dispatch_api
-LiteRtStatus InitQnnOptions(
-    ::qnn::Options& qnn_options,
-    litert::qualcomm::QualcommOptions& qualcomm_options) {
-  qnn_options.SetLogLevel(
-      static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
-  qnn_options.SetProfiling(
-      static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
-  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
-  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
-  qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
-  qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
-      qualcomm_options.GetHtpPerformanceMode()));
-  LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
-  return kLiteRtStatusOk;
-}
 
 }  // namespace
 

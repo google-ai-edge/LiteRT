@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #include "litert/vendors/qualcomm/core/common.h"
+
 #include <string>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 
 namespace qnn {
 
@@ -60,6 +64,22 @@ HtpPerformanceMode: %d\n";
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
                          enable_weight_sharing_, htp_performance_mode_);
+}
+
+LiteRtStatus InitQnnOptions(
+    ::qnn::Options& qnn_options,
+    litert::qualcomm::QualcommOptions& qualcomm_options) {
+  qnn_options.SetLogLevel(
+      static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
+  qnn_options.SetProfiling(
+      static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
+  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
+  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
+  qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
+  qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
+      qualcomm_options.GetHtpPerformanceMode()));
+  LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
+  return kLiteRtStatusOk;
 }
 
 }  // namespace qnn

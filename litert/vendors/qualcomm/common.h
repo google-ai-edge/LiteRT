@@ -97,6 +97,7 @@ inline LiteRtStatus LegalizeElementType(litert::ElementType litert_type,
 
 #ifdef __cplusplus
 }
+
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
