@@ -41,6 +41,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -147,10 +148,9 @@ Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
 
 TfLiteStatus DispatchDelegateKernel::Init(
     TfLiteOpaqueContext* context, const TfLiteOpaqueDelegateParams* params) {
-  if (auto status = InitHelper(context, *params); !status) {
-    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    return kTfLiteError;
-  }
+  LITERT_RETURN_IF_ERROR(
+      InitHelper(context, *params),
+      AsTfLiteStatus(_ << "Couldn't initialize the dispatch delegate kernel"));
   return kTfLiteOk;
 }
 
@@ -485,20 +485,14 @@ DispatchDelegateKernel::GetBufferRequirements(int node_idx,
 
   LiteRtTensorBufferRequirements tensor_buffer_requirements;
   if (is_input) {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtDispatchGetInputRequirements(
-            invocation_context, /*input_index=*/io_tensor_index,
-            &litert_tensor_type, &tensor_buffer_requirements),
-        Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to get tensor buffer requirements for input"));
-
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchGetInputRequirements(
+        invocation_context, /*input_index=*/io_tensor_index,
+        &litert_tensor_type, &tensor_buffer_requirements))
+        << "Failed to get input tensor requirements";
   } else {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtDispatchGetOutputRequirements(
-            invocation_context, /*output_index=*/io_tensor_index,
-            &litert_tensor_type, &tensor_buffer_requirements),
-        Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to get tensor buffer requirements for output"));
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchGetOutputRequirements(
+        invocation_context, /*output_index=*/io_tensor_index,
+        &litert_tensor_type, &tensor_buffer_requirements));
   }
 
   return TensorBufferRequirements(tensor_buffer_requirements, OwnHandle::kYes);

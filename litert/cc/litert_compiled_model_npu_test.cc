@@ -118,8 +118,8 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Run compiled model.
-  compiled_model.Run(model.DefaultSignatureKey(), input_buffers,
-                     output_buffers);
+  LITERT_ASSERT_OK(compiled_model.Run(model.DefaultSignatureKey(),
+                                      input_buffers, output_buffers));
 
   // Check model output.
   {

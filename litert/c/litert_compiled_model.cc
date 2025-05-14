@@ -40,14 +40,10 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
   if (!environment || !model || !compiled_model) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto created_compiled_model =
-      LiteRtCompiledModelT::Create(environment, model, jit_compilation_options);
-  if (!created_compiled_model) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               created_compiled_model.Error().Message().c_str());
-    return created_compiled_model.Error().Status();
-  }
-  *compiled_model = created_compiled_model->release();
+  LITERT_ASSIGN_OR_RETURN(auto created_compiled_model,
+                          LiteRtCompiledModelT::Create(
+                              environment, model, jit_compilation_options));
+  *compiled_model = created_compiled_model.release();
   return kLiteRtStatusOk;
 }
 

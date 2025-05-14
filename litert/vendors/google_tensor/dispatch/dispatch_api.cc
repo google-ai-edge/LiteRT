@@ -18,6 +18,8 @@
 #include <optional>
 #include <string>
 
+#include "litert/cc/litert_macros.h"
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
@@ -149,16 +151,11 @@ LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  if (auto result =
-          invocation_context->GetInputRequirements(input_index, *tensor_type);
-      result) {
-    *tensor_buffer_requirements = *result;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to get input requirements: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      *tensor_buffer_requirements,
+      invocation_context->GetInputRequirements(input_index, *tensor_type),
+      _ << "Failed to get input requirements.");
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetOutputRequirements(
