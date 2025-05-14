@@ -63,15 +63,35 @@ TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
   ASSERT_TRUE(options.HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8);
+  EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetFlagToVersion7) {
   absl::SetFlag(&FLAGS_mediatek_sdk_version_type,
                 kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
   Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+
   ASSERT_TRUE(options.HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, true);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_TRUE(options.Value().GetEnableGemmaCompilerOptimizations());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToFalse) {
+  // Explicitly set to false (even though it's the default) to ensure it's
+  // picked up
+  absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
 }
 
 }  // namespace

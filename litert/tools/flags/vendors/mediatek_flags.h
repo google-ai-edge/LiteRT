@@ -29,6 +29,10 @@
 ABSL_DECLARE_FLAG(LiteRtMediatekOptionsNeronSDKVersionType,
                   mediatek_sdk_version_type);
 
+ABSL_DECLARE_FLAG(bool, mediatek_enable_gemma_compiler_optimizations);
+
+// PARSERS (internal) //////////////////////////////////////////////////////////
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);

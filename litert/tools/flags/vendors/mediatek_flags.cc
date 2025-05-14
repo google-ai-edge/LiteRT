@@ -55,6 +55,9 @@ ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
           kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8,
           "Version for neuron sdk for Mediatek.");
 
+ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
+          "Whether to enable Gemma Mediatek compiler optimizations.");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::mediatek {
@@ -63,6 +66,8 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
   LITERT_ASSIGN_OR_RETURN(auto options, MediatekOptions::Create());
   options.SetNeronSDKVersionType(
       absl::GetFlag(FLAGS_mediatek_sdk_version_type));
+  options.SetEnableGemmaCompilerOptimizations(
+      absl::GetFlag(FLAGS_mediatek_enable_gemma_compiler_optimizations));
   return options;
 }
 
