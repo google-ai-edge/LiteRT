@@ -47,6 +47,9 @@
         <uses-native-library android:name="libcdsprpc.so" android:required="false" />
         <!-- Google Tensor NPU -->
         <uses-native-library android:name="libedgetpu_util.so" android:required="false" />
+        <!-- MTK NPU -->
+        <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false" />
+        <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false" />
 
     </application>
 
