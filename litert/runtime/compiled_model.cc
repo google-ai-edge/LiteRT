@@ -354,14 +354,14 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       const TfLiteNode& node = nodes_and_registration[node_index].first;
       const TfLiteRegistration& registration =
           nodes_and_registration[node_index].second;
-      // Skip delegate nodes expect for XNNPack ones.
+      // Don't mark delegate nodes as CPU nodes except for XNNPack ones.
       if (registration.builtin_code == kTfLiteBuiltinDelegate &&
           !(registration.custom_name &&
             registration.custom_name ==
                 absl::string_view("TfLiteXNNPackDelegate"))) {
         continue;
       }
-      // Skip AOT compiled NPU custom ops.
+      // Don't mark AOT compiled NPU custom ops as CPU nodes.
       if (registration.builtin_code == kTfLiteBuiltinCustom &&
           registration.custom_name &&
           absl::StrContains(registration.custom_name,
