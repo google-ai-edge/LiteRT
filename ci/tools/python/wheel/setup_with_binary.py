@@ -176,10 +176,12 @@ setuptools.setup(
         '*.so', '*.pyd', '**/*_main', '**/*.so',
     ]},
     install_requires=[
+        'backports.strenum',
         'flatbuffers',
         'numpy >= 1.23.2',  # Better to keep sync with both TF ci_build
         # and OpenCV-Python requirement.
         'tqdm',
+        'typing-extensions',
     ],
     # Use the custom command for the build_py step
     cmdclass={

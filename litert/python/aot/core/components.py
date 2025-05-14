@@ -16,9 +16,21 @@
 """Interfaces for specific components used in the LiteRt AOT flow."""
 
 import abc
-from typing import Any, TypeAlias
+import sys
+from typing import Any
 
 from litert.python.aot.core import types
+
+# pylint: disable=g-importing-member
+# pylint: disable=g-import-not-at-top
+# pylint: disable=g-bad-import-order
+if sys.version_info < (3, 10):
+  from typing_extensions import TypeAlias
+else:
+  from typing import TypeAlias
+# pylint: enable=g-bad-import-order
+# pylint: enable=g-import-not-at-top
+# pylint: enable=g-importing-member
 
 QuantRecipe: TypeAlias = list[dict[str, Any]] | str
 

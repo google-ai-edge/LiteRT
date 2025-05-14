@@ -1,16 +1,28 @@
 """Compilation target for Qualcomm SOCs."""
 
 import dataclasses
-import enum
+import sys
 from typing import Any
 
 from litert.python.aot.core import types
+
+# pylint: disable=g-importing-member
+# pylint: disable=g-import-not-at-top
+# pylint: disable=g-bad-import-order
+if sys.version_info >= (3, 11):
+  from enum import StrEnum  # pylint: disable=g-importing-member
+else:
+  from backports.strenum import StrEnum  # pylint: disable=g-importing-member
+# pylint: enable=g-bad-import-order
+# pylint: enable=g-import-not-at-top
+# pylint: enable=g-importing-member
+
 
 _QUALCOMM_BACKEND_ID = "qualcomm"
 
 
 # TODO(weiyiw): Generate this from supported_soc.csv.
-class SocModel(enum.StrEnum):
+class SocModel(StrEnum):
   """Qualcomm SOC model."""
 
   ALL = "ALL"
@@ -24,7 +36,7 @@ class SocModel(enum.StrEnum):
   SM8750 = "SM8750"
 
 
-class SocManufacturer(enum.StrEnum):
+class SocManufacturer(StrEnum):
   """Qualcomm SOC manufacturer."""
 
   QUALCOMM = "Qualcomm"

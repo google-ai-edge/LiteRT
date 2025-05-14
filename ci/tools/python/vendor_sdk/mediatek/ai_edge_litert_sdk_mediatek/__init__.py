@@ -21,11 +21,12 @@ import os
 import pathlib
 import platform
 import sys
+from typing import Optional
 
 _SDK_FILES_SUBDIR = "data"
 
 
-def path_to_sdk_libs(version: str = "v8") -> pathlib.Path | None:
+def path_to_sdk_libs(version: str = "v8") -> Optional[pathlib.Path]:
   sdk_path = get_sdk_path()
   if version != "v8":
     raise NotImplementedError(
@@ -37,7 +38,7 @@ def path_to_sdk_libs(version: str = "v8") -> pathlib.Path | None:
   return get_sdk_path() / "v8_0_8/host/lib"
 
 
-def get_sdk_path() -> pathlib.Path | None:
+def get_sdk_path() -> Optional[pathlib.Path]:
   """Returns the absolute path to the root of the downloaded SDK files."""
   is_linux = sys.platform == "linux"
   is_x86_architecture = platform.machine() in ("x86_64", "i386", "i686")

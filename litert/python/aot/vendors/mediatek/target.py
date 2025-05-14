@@ -1,15 +1,27 @@
 """Compilation target for MediaTek SOCs."""
 
 import dataclasses
-import enum
+import sys
 from typing import Any
 
 from litert.python.aot.core import types
 
+# pylint: disable=g-importing-member
+# pylint: disable=g-import-not-at-top
+# pylint: disable=g-bad-import-order
+if sys.version_info >= (3, 11):
+  from enum import StrEnum  # pylint: disable=g-importing-member
+else:
+  from backports.strenum import StrEnum  # pylint: disable=g-importing-member
+# pylint: enable=g-bad-import-order
+# pylint: enable=g-import-not-at-top
+# pylint: enable=g-importing-member
+
+
 _MEDIATEK_BACKEND_ID = "mediatek"
 
 
-class SocModel(enum.StrEnum):
+class SocModel(StrEnum):
   """MediaTek SOC model."""
 
   ALL = "ALL"
@@ -28,13 +40,13 @@ class SocModel(enum.StrEnum):
   MT6991 = "mt6991"
 
 
-class SocManufacturer(enum.StrEnum):
+class SocManufacturer(StrEnum):
   """MediaTek SOC manufacturer."""
 
   MEDIATEK = "MediaTek"
 
 
-class AndroidOsVersion(enum.StrEnum):
+class AndroidOsVersion(StrEnum):
   """Android OS version."""
 
   ALL = "ALL"

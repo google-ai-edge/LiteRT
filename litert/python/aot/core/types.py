@@ -19,7 +19,19 @@ import abc
 from collections.abc import Iterable
 import dataclasses
 import pathlib
-from typing import Any, MutableMapping, Protocol, Type, TypeAlias
+import sys
+from typing import Any, MutableMapping, Protocol, Type
+
+# pylint: disable=g-importing-member
+# pylint: disable=g-import-not-at-top
+# pylint: disable=g-bad-import-order
+if sys.version_info < (3, 10):
+  from typing_extensions import TypeAlias
+else:
+  from typing import TypeAlias
+# pylint: enable=g-bad-import-order
+# pylint: enable=g-import-not-at-top
+# pylint: enable=g-importing-member
 
 
 @dataclasses.dataclass(frozen=True)
