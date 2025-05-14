@@ -18,8 +18,14 @@
 
 #include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_cpu_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "tflite/c/c_api_types.h"
@@ -59,9 +65,32 @@ class CpuAccelerator final
                   kLiteRtStatusErrorInvalidArgument,
                   "Accelerator is not registered to an environment.");
 
+    litert::Options cc_options(options, litert::OwnHandle::kNo);
+    Expected<OpaqueOptions> opaque_options = cc_options.GetOpaqueOptions();
+    LiteRtCpuOptions cpu_options;
+    const auto options_data_status = LiteRtFindOpaqueOptionsData(
+        opaque_options->Get(), CpuOptions::Identifier().data(),
+        reinterpret_cast<void**>(&cpu_options));
+
+    switch (options_data_status) {
+      case kLiteRtStatusOk:
+        break;
+      case kLiteRtStatusErrorNotFound:
+        cpu_options = nullptr;
+        break;
+      default:
+        return options_data_status;
+    }
+
     // TODO: b/403547017 - Make the CPU accelerator configurable using the
     // compilation options.
     auto xnn_options = TfLiteXNNPackDelegateOptionsDefault();
+    if (cpu_options != nullptr) {
+      LiteRtGetCpuOptionsNumThread(cpu_options, &xnn_options.num_threads);
+      LiteRtGetCpuOptionsXNNPackFlags(cpu_options, &xnn_options.flags);
+      LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXnnPackWeightCachePath(
+          cpu_options, &xnn_options.weight_cache_file_path));
+    }
     *delegate = TfLiteXNNPackDelegateCreate(&xnn_options);
 
     LITERT_ENSURE(*delegate != nullptr, kLiteRtStatusErrorRuntimeFailure,

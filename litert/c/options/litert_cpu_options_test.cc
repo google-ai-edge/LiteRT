@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_cpu_options.h"
 
+#include <cstdint>
 #include <memory>
 #include <utility>
 
@@ -145,7 +146,7 @@ TEST_F(LiteRtCpuOptionsFieldsTest, GetNumThreadsFailsWithInvalidArgument) {
 
 TEST_F(LiteRtCpuOptionsFieldsTest, SetAndGetXNNPackFlags) {
   const int expected_flags = 4;
-  int flags = -1;
+  uint32_t flags = 0;
 
   // Avoid a no-op test.
   LITERT_EXPECT_OK(LiteRtGetCpuOptionsXNNPackFlags(cpu_options_, &flags));
@@ -165,7 +166,7 @@ TEST_F(LiteRtCpuOptionsFieldsTest, SetXNNPackFlagsFailsWithInvalidArgument) {
 }
 
 TEST_F(LiteRtCpuOptionsFieldsTest, GetXNNPackFlagsFailsWithInvalidArgument) {
-  int flags = 1;
+  uint32_t flags = 1;
   EXPECT_THAT(LiteRtGetCpuOptionsXNNPackFlags(/*options=*/nullptr, &flags),
               IsError(kLiteRtStatusErrorInvalidArgument));
   EXPECT_THAT(LiteRtGetCpuOptionsXNNPackFlags(cpu_options_, nullptr),

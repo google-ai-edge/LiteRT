@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_CPU_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_CPU_OPTIONS_H_
 
+#include <cstdint>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -33,8 +35,8 @@ class CpuOptions : public OpaqueOptions {
   Expected<void> SetNumThreads(int num_threads);
   Expected<int> GetNumThreads() const;
 
-  Expected<void> SetXNNPackFlags(int flags);
-  Expected<int> GetXNNPackFlags() const;
+  Expected<void> SetXNNPackFlags(uint32_t flags);
+  Expected<uint32_t> GetXNNPackFlags() const;
 
   Expected<void> SetXNNPackWeightCachePath(const char* path);
   Expected<absl::string_view> GetXNNPackWeightCachePath() const;

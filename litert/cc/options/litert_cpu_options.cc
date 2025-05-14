@@ -14,6 +14,8 @@
 
 #include "litert/cc/options/litert_cpu_options.h"
 
+#include <cstdint>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_cpu_options.h"
@@ -62,17 +64,17 @@ Expected<int> CpuOptions::GetNumThreads() const {
   return num_threads;
 }
 
-Expected<void> CpuOptions::SetXNNPackFlags(int flags) {
+Expected<void> CpuOptions::SetXNNPackFlags(uint32_t flags) {
   LiteRtCpuOptions cpu_options;
   LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
   LITERT_RETURN_IF_ERROR(LiteRtSetCpuOptionsXNNPackFlags(cpu_options, flags));
   return {};
 }
 
-Expected<int> CpuOptions::GetXNNPackFlags() const {
+Expected<uint32_t> CpuOptions::GetXNNPackFlags() const {
   LiteRtCpuOptions cpu_options;
   LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
-  int flags;
+  uint32_t flags;
   LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXNNPackFlags(cpu_options, &flags));
   return flags;
 }

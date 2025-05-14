@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_CPU_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_CPU_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 
@@ -44,11 +46,11 @@ LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
 
 // Sets the XNNPack flags used by the CPU accelerator.
 LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
-                                             int flags);
+                                             uint32_t flags);
 
 // Gets the XNNPack flags used by the CPU accelerator.
 LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
-                                             int* flags);
+                                             uint32_t* flags);
 
 // Sets the XNNPack weight cache file path used by the CPU accelerator.
 LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,

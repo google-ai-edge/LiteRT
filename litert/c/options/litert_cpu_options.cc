@@ -14,6 +14,7 @@
 
 #include "litert/c/options/litert_cpu_options.h"
 
+#include <stdint.h>
 #include <memory>
 
 #include "litert/c/litert_common.h"
@@ -71,7 +72,7 @@ LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
 }
 
 LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
-                                             int flags) {
+                                             uint32_t flags) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
   options->xnn.flags = flags;
@@ -79,7 +80,7 @@ LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
 }
 
 LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
-                                             int* const flags) {
+                                             uint32_t* const flags) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
   LITERT_RETURN_IF_ERROR(flags, litert::ErrorStatusBuilder::InvalidArgument())
