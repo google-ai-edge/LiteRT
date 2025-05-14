@@ -699,9 +699,7 @@ litert_device_exec(
 
 cc_library(
     name = "litert_tensor_buffer",
-    srcs = [
-        "litert_tensor_buffer.cc",
-    ],
+    srcs = ["litert_tensor_buffer.cc"],
     hdrs = [
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
@@ -713,8 +711,6 @@ cc_library(
         # "//litert:litert_internal_users_with_public_cc",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
-        # "//third_party/odml/litert_lm/runtime/components:__pkg__",
-        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -740,9 +736,7 @@ cc_library(
 
 cc_test(
     name = "litert_tensor_buffer_test",
-    srcs = [
-        "litert_tensor_buffer_test.cc",
-    ],
+    srcs = ["litert_tensor_buffer_test.cc"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -831,9 +825,6 @@ cc_library(
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_external_users",
         # "//litert:litert_internal_users_with_public_cc",
-        # # TODO: Update none litert/ code to use proper internal/public cc targets.
-        # "//third_party/odml/litert_lm/runtime/components:__pkg__",
-        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -886,8 +877,6 @@ cc_library(
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_external_users",
         # "//litert:litert_internal_users_with_public_cc",
-        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
-        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -1044,8 +1033,12 @@ cc_library(
     name = "litert_options",
     hdrs = ["litert_options.h"],
     visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_external_users",
+        # "//litert:litert_internal_users_with_public_cc",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_custom_op_kernel",
