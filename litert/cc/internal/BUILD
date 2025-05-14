@@ -163,10 +163,14 @@ cc_library(
     name = "litert_options",
     hdrs = ["//litert/cc:litert_options.h"],
     visibility = [
-        "//litert:litert_internal_users_with_internal_cc",
-        # OSS build needs static lib.
-        "//litert/vendors/google_tensor/dispatch:__pkg__",
-        "//litert/vendors/mediatek/dispatch:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_internal_users_with_internal_cc",
+        # # OSS build needs static lib.
+        # "//litert/vendors/google_tensor/dispatch:__pkg__",
+        # "//litert/vendors/mediatek/dispatch:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_custom_op_kernel",
