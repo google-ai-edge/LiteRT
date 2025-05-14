@@ -16,8 +16,6 @@
 """Wrapper for calling the apply plugin tooling."""
 
 
-import enum
-import io
 import os
 import pathlib
 import re
@@ -27,17 +25,6 @@ import tempfile
 from litert.python.aot.core import common
 from litert.python.aot.core import components
 from litert.python.aot.core import types
-
-
-# Defines how much of the apply_plugin_main logging the user cares about.
-class Logs(enum.Enum):
-  # Log everything.
-  ALL = 0
-  # Only log output from a failed apply plugin run.
-  ERRORS = 1
-  # Silent.
-  NONE = 2
-
 
 _BINARY = pathlib.Path("tools/apply_plugin_main")
 
@@ -52,14 +39,11 @@ class ApplyPlugin(components.ApplyPluginT):
 
   def __init__(
       self,
-      *,
-      log_dest: io.TextIOBase | None = None,
-      log_level: Logs = Logs.NONE,
+      experimental_capture_stderr: bool = False,
       subgraphs_to_compile: list[int] | None = None,
   ):
+    self._experimental_capture_stderr = experimental_capture_stderr
     self._subgraphs_to_compile = subgraphs_to_compile
-    self._log_level = log_level
-    self._log_dest = log_dest
 
   @property
   def default_err(self) -> str:
@@ -99,6 +83,8 @@ class ApplyPlugin(components.ApplyPluginT):
     if input_model.in_memory:
       tmp_file = tempfile.NamedTemporaryFile(mode="wb")
       input_model.save(tmp_file.name)
+    else:
+      tmp_file = None
 
     binary = common.get_resource(_BINARY)
     args = [
@@ -123,37 +109,40 @@ class ApplyPlugin(components.ApplyPluginT):
       if sdk_libs_path:
         ld_library_path = f"{sdk_libs_path}{os.pathsep}{ld_library_path}"
       env["LD_LIBRARY_PATH"] = ld_library_path
-
-    result = subprocess.run(
-        args,
-        check=False,
-        text=True,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-    )
-
-    if result.returncode:
-      if self._log_level in [Logs.ERRORS, Logs.ALL] and self._log_dest:
-        self._log_dest.write(result.stdout)
-      raise ValueError(f"{self.component_name} failed to apply plugin.")
+    try:
+      result = subprocess.run(
+          args,
+          check=True,
+          capture_output=self._experimental_capture_stderr,
+          text=True,
+          env=env,
+      )
+    except subprocess.CalledProcessError as e:
+      tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
+      tmp_file.write(e.stderr)
+      tmp_file.close()
+      raise ValueError(
+          f"{self.component_name} failed to apply plugin. See"
+          f" {tmp_file.name} for details."
+      ) from e
 
     if not common.is_tflite(output_model.path):
       raise ValueError(f"{output_model.path} is not a TFLite model.")
+    if tmp_file is not None:
+      tmp_file.close()
 
     # TODO(b/405256024): Use proper dataclass for passing stats
     # instead of parsing.
-    if self._log_level == Logs.ALL and self._log_dest:
-      self._log_dest.write(result.stdout)
-    partition_stats = _RE_PARTITION_STATS.findall(result.stdout)
-    output_model.partition_stats = types.PartitionStats(
-        subgraph_stats=[
-            types.SubgraphPartitionStats(
-                subgraph_index=int(s[0]),
-                num_ops_offloaded=int(s[1]),
-                num_total_ops=int(s[2]),
-                num_partitions_offloaded=int(s[3]),
-            )
-            for s in partition_stats
-        ]
-    )
+    if self._experimental_capture_stderr:
+      partition_stats = _RE_PARTITION_STATS.findall(result.stderr)
+      output_model.partition_stats = types.PartitionStats(
+          subgraph_stats=[
+              types.SubgraphPartitionStats(
+                  subgraph_index=int(s[0]),
+                  num_ops_offloaded=int(s[1]),
+                  num_total_ops=int(s[2]),
+                  num_partitions_offloaded=int(s[3]),
+              )
+              for s in partition_stats
+          ]
+      )
