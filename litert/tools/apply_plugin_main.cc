@@ -12,6 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#define INCLUDE_QUALCOMM_COMPILE_FLAGS
+#define INCLUDE_MEDIATEK_COMPILE_FLAGS
+#define INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS
+
 #include <memory>
 #include <string>
 #include <utility>

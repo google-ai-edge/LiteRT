@@ -23,6 +23,10 @@ cc_library(
     name = "qualcomm_flags",
     srcs = ["qualcomm_flags.cc"],
     hdrs = ["qualcomm_flags.h"],
+    copts = [
+        "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
+        "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
+    ],
     deps = [
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
@@ -37,6 +41,10 @@ cc_library(
 cc_test(
     name = "qualcomm_flags_test",
     srcs = ["qualcomm_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
+        "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
+    ],
     deps = [
         ":qualcomm_flags",
         "//litert/c/options:litert_qualcomm_options",
@@ -53,6 +61,10 @@ cc_library(
     name = "google_tensor_flags",
     srcs = ["google_tensor_flags.cc"],
     hdrs = ["google_tensor_flags.h"],
+    copts = [
+        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
+        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
+    ],
     deps = [
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -66,6 +78,10 @@ cc_library(
 cc_test(
     name = "google_tensor_flags_test",
     srcs = ["google_tensor_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
+        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
+    ],
     deps = [
         ":google_tensor_flags",
         "//litert/c/options:litert_google_tensor_options",
@@ -79,6 +95,10 @@ cc_library(
     name = "mediatek_flags",
     srcs = ["mediatek_flags.cc"],
     hdrs = ["mediatek_flags.h"],
+    copts = [
+        "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
+        "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+    ],
     deps = [
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -92,6 +112,10 @@ cc_library(
 cc_test(
     name = "mediatek_flags_test",
     srcs = ["mediatek_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
+        "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+    ],
     deps = [
         ":mediatek_flags",
         "//litert/cc:litert_expected",

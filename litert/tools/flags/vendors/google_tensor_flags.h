@@ -24,8 +24,16 @@
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
+#if defined(INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS)
+
 ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsTruncationType,
                   google_tensor_truncation_type);
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtGoogleTensorOptionsTruncationType* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_int64_to_int32);
 
@@ -38,26 +46,27 @@ ABSL_DECLARE_FLAG(bool, google_tensor_enable_large_model_support);
 ABSL_DECLARE_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
                   google_tensor_sharding_intensity);
 
-ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
-
-// PARSERS (internal) //////////////////////////////////////////////////////////
-
-bool AbslParseFlag(absl::string_view text,
-                   LiteRtGoogleTensorOptionsTruncationType* options,
-                   std::string* error);
-
-std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options);
-
 bool AbslParseFlag(absl::string_view text,
                    LiteRtGoogleTensorOptionsShardingIntensity* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsShardingIntensity options);
 
+ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
+
+#endif
+
+// PARSERS (internal) //////////////////////////////////////////////////////////
+
+#if defined(INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS) || \
+    defined(INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS)
+
 namespace litert::google_tensor {
 
 Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags();
 
 }  // namespace litert::google_tensor
+
+#endif
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_GOOGLE_TENSOR_FLAGS_H_

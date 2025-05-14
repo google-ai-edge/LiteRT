@@ -24,10 +24,10 @@
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
+#if defined(INCLUDE_MEDIATEK_COMPILE_FLAGS)
+
 ABSL_DECLARE_FLAG(LiteRtMediatekOptionsNeronSDKVersionType,
                   mediatek_sdk_version_type);
-
-// PARSERS (internal) //////////////////////////////////////////////////////////
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
@@ -35,9 +35,18 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options);
 
+#endif
+
+// PARSERS (internal) //////////////////////////////////////////////////////////
+
+#if defined(INCLUDE_MEDIATEK_COMPILE_FLAGS) || \
+    defined(INCLUDE_MEDIATEK_RUNTIME_FLAGS)
+
 namespace litert::mediatek {
 
 Expected<MediatekOptions> MediatekOptionsFromFlags();
+
+#endif
 
 }  // namespace litert::mediatek
 
