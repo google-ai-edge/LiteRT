@@ -100,6 +100,7 @@ cc_library(
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
     ],
     deps = [
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_mediatek_options",
@@ -118,6 +119,7 @@ cc_test(
     ],
     deps = [
         ":mediatek_flags",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/flags:flag",

@@ -31,13 +31,22 @@ ABSL_DECLARE_FLAG(LiteRtMediatekOptionsNeronSDKVersionType,
 
 ABSL_DECLARE_FLAG(bool, mediatek_enable_gemma_compiler_optimizations);
 
-// PARSERS (internal) //////////////////////////////////////////////////////////
-
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options);
+
+// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+                  mediatek_performance_mode_type);
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(LiteRtMediatekNeuronAdapterPerformanceMode options);
 
 #endif
 

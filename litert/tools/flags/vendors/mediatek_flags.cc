@@ -18,6 +18,7 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_mediatek_options.h"
@@ -38,7 +39,7 @@ bool AbslParseFlag(absl::string_view text,
     return true;
   }
 
-  *error = "Unknown truncation type";
+  *error = "Unknown sdk version type";
   return false;
 }
 
@@ -58,6 +59,54 @@ ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
 ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
           "Whether to enable Gemma Mediatek compiler optimizations.");
 
+ABSL_FLAG(
+    LiteRtMediatekNeuronAdapterPerformanceMode, mediatek_performance_mode_type,
+    kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer,
+    "Performance mode for Mediatek Inference.");
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   std::string* error) {
+  if (text == "low_power") {
+    *options = kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower;
+    return true;
+  }
+  if (text == "fast_single_answer") {
+    *options =
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer;
+    return true;
+  }
+  if (text == "sustained_speed") {
+    *options =
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
+    return true;
+  }
+  if (text == "turbo_boost") {
+    *options =
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost;
+    return true;
+  }
+
+  *error = "Unknown mediatek performance mode type";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    LiteRtMediatekNeuronAdapterPerformanceMode options) {
+  switch (options) {
+    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower:
+      return "low_power";
+    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed:
+      return "sustained_speed";
+    case (
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer
+        ):
+      return "fast_single_answer";
+    case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
+      return "turbo_boost";
+  }
+}
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::mediatek {
@@ -68,6 +117,8 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
       absl::GetFlag(FLAGS_mediatek_sdk_version_type));
   options.SetEnableGemmaCompilerOptimizations(
       absl::GetFlag(FLAGS_mediatek_enable_gemma_compiler_optimizations));
+  options.SetPerformanceMode(
+      absl::GetFlag(FLAGS_mediatek_performance_mode_type));
   return options;
 }
 
