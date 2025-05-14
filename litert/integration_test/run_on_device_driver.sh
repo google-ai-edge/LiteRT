@@ -79,8 +79,8 @@ echo "EXEC_ARGS=${exec_args[@]}"
 echo "EXEC_ENV_VARS=${exec_env_vars[@]}"
 
 
-DEVICEBIN="${device_rlocation_root}/${bin#${PREFIX}}"
-HOSTBIN="${bin#${PREFIX}}"
+DEVICEBIN="${device_rlocation_root}/${bin#"${PREFIX}"}"
+HOSTBIN="${bin#"${PREFIX}"}"
 
 echo "DEVICEBIN=${DEVICEBIN}"
 echo "HOSTBIN=${HOSTBIN}"
@@ -88,8 +88,8 @@ echo "HOSTBIN=${HOSTBIN}"
 adb push --sync "${HOSTBIN}" "${DEVICEBIN}"
 
 for HOSTFILE in "${data[@]}"; do
-  DEVICEFILE="${device_rlocation_root}/${HOSTFILE#${PREFIX}}"
-  HOSTFILE="${HOSTFILE#${PREFIX}}"
+  DEVICEFILE="${device_rlocation_root}/${HOSTFILE#"${PREFIX}"}"
+  HOSTFILE="${HOSTFILE#"${PREFIX}"}"
 
   echo "HOSTFILE=${HOSTFILE}"
   echo "DEVICEFILE=${DEVICEFILE}"
