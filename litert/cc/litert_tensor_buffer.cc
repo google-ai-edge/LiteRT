@@ -86,12 +86,17 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
     LiteRtEnvironment env, const RankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
+#if LITERT_HAS_OPENCL_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromOpenClMemory(
       env, &litert_tensor_type, buffer_type, cl_memory, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+#else
+  return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "OpenCL is not supported on this platform");
+#endif
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateFromGlBuffer(
