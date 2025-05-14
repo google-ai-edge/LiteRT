@@ -76,4 +76,19 @@ bool MediatekOptions::GetEnableGemmaCompilerOptimizations() {
                      &enable_gemma_compiler_optimizations);
   return enable_gemma_compiler_optimizations;
 }
+
+void MediatekOptions::SetPerformanceMode(
+    LiteRtMediatekNeuronAdapterPerformanceMode performance_mode) {
+  internal::AssertOk(LiteRtMediatekOptionsSetPerformanceMode, Data(),
+                     performance_mode);
+}
+
+LiteRtMediatekNeuronAdapterPerformanceMode
+MediatekOptions::GetPerformanceMode() {
+  LiteRtMediatekNeuronAdapterPerformanceMode performance_mode;
+  internal::AssertOk(LiteRtMediatekOptionsGetPerformanceMode, Data(),
+                     &performance_mode);
+  return performance_mode;
+}
+
 }  // namespace litert::mediatek

@@ -55,6 +55,34 @@ LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
 
 LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
+
+// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+// neuron_adapter_peformance_mode
+
+// Configures MTK devices to optimize for performance or power efficiency.
+// See NeuronAdapterPreferenceCode in mtk_sdk. By default, it
+// will use  Fast Single answer.
+
+typedef enum LiteRtMediatekNeuronAdapterPerformanceMode {
+  /* Prefer executing in a way that minimizes battery drain. */
+  kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower = 0,
+  /* Prefer executing as fast as possible. (more power consumption)*/
+  kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer = 1,
+  /* Prefer maximizing the throughput of successive frames */
+  kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed = 2,
+  /* Prefer executing with turbo boost. (most power consumption) */
+  kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost = 3,
+} LiteRtMediatekNeuronAdapterPerformanceMode;
+
+LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterPerformanceMode performance_mode);
+
+LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterPerformanceMode* performance_mode);
+
 #ifdef __cplusplus
 
 }  // extern "C"

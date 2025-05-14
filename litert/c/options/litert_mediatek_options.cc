@@ -27,6 +27,8 @@ struct LiteRtMediatekOptionsT {
   LiteRtMediatekOptionsNeronSDKVersionType neron_sdk_version =
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
   bool gemma_compiler_optimizations = false;
+  LiteRtMediatekNeuronAdapterPerformanceMode performance_mode =
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -65,7 +67,7 @@ LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
   return kLiteRtStatusOk;
 }
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
-// float_truncation_type -------------------------------------------------------
+// sdk_version_type -------------------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
     LiteRtMediatekOptionsT* options,
     LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type) {
@@ -103,6 +105,32 @@ LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *gemma_compiler_optimizations = options->gemma_compiler_optimizations;
+
+  return kLiteRtStatusOk;
+}
+
+// DISPATCH OPTIONS /////////////////////////////////////////////////////////
+// performance_mode -------------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterPerformanceMode performance_mode) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->performance_mode = performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterPerformanceMode* performance_mode) {
+  if (options == nullptr || performance_mode == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *performance_mode = options->performance_mode;
 
   return kLiteRtStatusOk;
 }

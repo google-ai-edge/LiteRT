@@ -45,6 +45,11 @@ class MediatekOptions : public OpaqueOptions {
 
   bool GetEnableGemmaCompilerOptimizations();
 
+  void SetPerformanceMode(
+      LiteRtMediatekNeuronAdapterPerformanceMode performance_mode);
+
+  LiteRtMediatekNeuronAdapterPerformanceMode GetPerformanceMode();
+
  private:
   LiteRtMediatekOptions Data() const;
 };
