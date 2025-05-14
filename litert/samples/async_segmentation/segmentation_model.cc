@@ -88,10 +88,10 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
                             output_tensor.RankedTensorType());
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
-    LITERT_ASSIGN_OR_RETURN(
-        auto output_buffer,
-        litert::TensorBuffer::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
-                                            ranked_tensor_type, buffer_size));
+    LITERT_ASSIGN_OR_RETURN(auto output_buffer,
+                            litert::TensorBuffer::CreateManaged(
+                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                ranked_tensor_type, buffer_size));
     output_buffers.push_back(std::move(output_buffer));
   }
   return output_buffers;
