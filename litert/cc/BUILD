@@ -220,6 +220,23 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_tflite_error_status_builder",
+    hdrs = ["litert_tflite_error_status_builder.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//tflite/c:c_api_types",
+    ],
+)
+
+cc_library(
     name = "litert_expected",
     hdrs = ["litert_expected.h"],
     visibility = [

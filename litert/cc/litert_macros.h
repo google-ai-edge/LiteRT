@@ -69,9 +69,10 @@
 // `litert::Expected` holding an error, a `LiteRtStatus` or a bool that
 // evaluated to `false`).
 //
-// Returns `return_value` if the result of `expr` represents an error.
+// `return_value` may be specified to return a custom value in case of error.
 //
-// The result of `expr` may be referenced as `status` in `return_expr`.
+// By when specifying `return_value`, an `ErrorStatusBuilder` variable called
+// `_` holding the result of `expr` can be used to customize the error message.
 //
 // By default, the return value is an `ErrorStatusBuilder` built from using the
 // result of `expr`. The error message of this builder can be customized by
@@ -97,7 +98,7 @@
 // `return_value` may be specified to return a custom value in case of error.
 //
 // By when specifying `return_value`, an `ErrorStatusBuilder` variable called
-// `_` can be used to customize the error message.
+// `_` holding the result of `expr` can be used to customize the error message.
 //
 // ```cpp
 // LITERT_ASSIGN_OR_RETURN(expr, _ << "Failed while trying to ...");
@@ -323,13 +324,14 @@ class LogBeforeAbort {
 #define LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(args) \
   LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD_HELPER args
 
-#define LITERT_RETURN_IF_ERROR_1(EXPR) \
-  LITERT_RETURN_IF_ERROR_2(EXPR,       \
-                           ::litert::ErrorStatusBuilder{std::move(status)})
+#define LITERT_RETURN_IF_ERROR_1(EXPR) LITERT_RETURN_IF_ERROR_2(EXPR, _)
 
-#define LITERT_RETURN_IF_ERROR_2(EXPR, RETURN_VALUE)                       \
-  if (auto status = (EXPR); ::litert::ErrorStatusBuilder::IsError(status)) \
+// NOLINTBEGIN(readability/braces)
+#define LITERT_RETURN_IF_ERROR_2(EXPR, RETURN_VALUE)                     \
+  if (auto status = EXPR; ::litert::ErrorStatusBuilder::IsError(status)) \
+    if (::litert::ErrorStatusBuilder _(std::move(status)); true)         \
   return RETURN_VALUE
+// NOLINTEND(readability/braces)
 
 #define LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
                                                        ...)                  \
