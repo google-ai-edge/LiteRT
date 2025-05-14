@@ -26,18 +26,18 @@ class SocModel(StrEnum):
 
   ALL = "ALL"
 
-  MT6853 = "mt6853"
-  MT6877 = "mt6877"
-  MT6878 = "mt6878"
-  MT6879 = "mt6879"
-  MT6886 = "mt6886"
-  MT6893 = "mt6893"
-  MT6895 = "mt6895"
-  MT6897 = "mt6897"
-  MT6983 = "mt6983"
-  MT6985 = "mt6985"
-  MT6989 = "mt6989"
-  MT6991 = "mt6991"
+  MT6853 = "MT6853"
+  MT6877 = "MT6877"
+  MT6878 = "MT6878"
+  MT6879 = "MT6879"
+  MT6886 = "MT6886"
+  MT6893 = "MT6893"
+  MT6895 = "MT6895"
+  MT6897 = "MT6897"
+  MT6983 = "MT6983"
+  MT6985 = "MT6985"
+  MT6989 = "MT6989"
+  MT6991 = "MT6991"
 
 
 class SocManufacturer(StrEnum):

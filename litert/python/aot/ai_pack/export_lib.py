@@ -16,12 +16,14 @@
 import itertools
 import os
 import pathlib
+from typing import cast
 
 from litert.python.aot.core import common
 from litert.python.aot.core import types
 from litert.python.aot.vendors import fallback_backend
 from litert.python.aot.vendors.mediatek import mediatek_backend
 from litert.python.aot.vendors.mediatek import target as mtk_target
+from litert.python.aot.vendors.qualcomm import qualcomm_backend
 from litert.python.aot.vendors.qualcomm import target as qnn_target
 
 # TODO: b/407453529 - Add unittests.
@@ -59,6 +61,19 @@ _DEVICE_SELECTOR_TEMPLATE = """        <config:device-selector>
         </config:device-selector>"""
 
 
+def _is_mobile_device_backend(backend: types.Backend):
+  target = backend.target
+  if backend.id() == qualcomm_backend.QualcommBackend.id():
+    target = cast(qnn_target.Target, target)
+    # Non Android QNN targets.
+    if target.soc_model in (
+        qnn_target.SocModel.SA8255,
+        qnn_target.SocModel.SA8295,
+    ):
+      return False
+  return True
+
+
 def _export_model_files_to_ai_pack(
     compiled_models: types.CompilationResult,
     ai_pack_dir: pathlib.Path,
@@ -84,13 +99,19 @@ def _export_model_files_to_ai_pack(
       fallback_model = model
   assert fallback_model is not None, 'Fallback model is required.'
 
-  model_export_dir = ai_pack_dir / ai_pack_name
+  model_export_dir = ai_pack_dir / ai_pack_name / 'src/main/assets'
   os.makedirs(model_export_dir, exist_ok=True)
   for backend, model in compiled_models.models_with_backend:
+    if not _is_mobile_device_backend(backend):
+      continue
     target_id = backend.target_id
     backend_id = backend.id()
     if backend_id == fallback_backend.FallbackBackend.id():
-      backend_id = 'other'
+      target_id = 'other'
+    elif backend_id == mediatek_backend.MediaTekBackend.id():
+      target_id = backend.target_id.replace(
+          mtk_target.SocManufacturer.MEDIATEK, 'Mediatek'
+      )
     group_name = 'model#group_' + target_id
     export_dir = model_export_dir / group_name
     os.makedirs(export_dir, exist_ok=True)
@@ -123,19 +144,26 @@ def _export_model_files_to_mtk_ai_pack(
     litert_model_name: str,
 ):
   """Exports the model tflite files to the MTK AI pack directory structure."""
-  model_export_dir = ai_pack_dir / ai_pack_name
+  model_export_dir = ai_pack_dir / ai_pack_name / 'src/main/assets'
   os.makedirs(model_export_dir, exist_ok=True)
   for backend, model in compiled_models.models_with_backend:
+    if not _is_mobile_device_backend(backend):
+      continue
     backend_id = backend.id()
     target_id = backend.target_id
     if backend_id == fallback_backend.FallbackBackend.id():
-      # Skip fallback CPU / GPU model.
-      continue
+      target_id = 'other'
+    elif backend_id == mediatek_backend.MediaTekBackend.id():
+      target_id = backend.target_id.replace(
+          mtk_target.SocManufacturer.MEDIATEK, 'Mediatek'
+      )
     group_name = 'model#group_' + target_id
     export_dir = model_export_dir / group_name
     os.makedirs(export_dir, exist_ok=True)
     if backend_id != mediatek_backend.MediaTekBackend.id():
-      # Skip non-MTK targets, just create empty directory.
+      # Skip non-MTK targets, just create a dummy file.
+      dummy_file = export_dir / 'dummy.txt'
+      dummy_file.touch()
       continue
     model_export_path = export_dir / (litert_model_name + common.DOT_TFLITE)
     if not model.in_memory:
@@ -149,10 +177,13 @@ def _write_ai_pack_manifest(ai_pack_dir: pathlib.Path):
   manifest_path.write_text(_AI_PACK_MANIFEST)
 
 
-def _build_targeting_config(compiled_targets: list[types.Target]) -> str:
+def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
   """Builds device-targeting-config in device_targeting_configuration.xml."""
   device_groups = []
-  for target in compiled_targets:
+  for backend in compiled_backends:
+    if not _is_mobile_device_backend(backend):
+      continue
+    target = backend.target
     device_group = _target_to_ai_pack_info(target)
     if device_group:
       device_groups.append(device_group)
@@ -175,7 +206,9 @@ def _target_to_ai_pack_info(target: types.Target) -> str | None:
     )
     return device_group
   elif isinstance(target, mtk_target.Target):
-    group_name = str(target)
+    group_name = str(target).replace(
+        mtk_target.SocManufacturer.MEDIATEK, 'Mediatek'
+    )
     # TODO: b/407453529 - Support MTK SDK Version / OS version in selector.
     selector = _process_mtk_target(target)
     device_selector = _DEVICE_SELECTOR_TEMPLATE.format(
@@ -208,17 +241,19 @@ def _process_mtk_target(
 ) -> tuple[str, str]:
   """Returns tuple of (manufacturer, model) for the given MTK target."""
   # Play cannot distinguish between Qualcomm and QTI for now.
-  return str(target.soc_manufacturer), str(target.soc_model)
+  return str(target.soc_manufacturer).replace(
+      mtk_target.SocManufacturer.MEDIATEK, 'Mediatek'
+  ), str(target.soc_model)
 
 
 def _write_targeting_config(
     compiled_models: types.CompilationResult, ai_pack_dir: pathlib.Path
 ) -> None:
   """Writes device_targeting_configuration.xml for the given compiled models."""
-  compiled_targets = [
-      x.target for x, _ in compiled_models.models_with_backend
-  ]
-  targeting_config = _build_targeting_config(compiled_targets=compiled_targets)
+  compiled_backends = [x for x, _ in compiled_models.models_with_backend]
+  targeting_config = _build_targeting_config(
+      compiled_backends=compiled_backends
+  )
 
   targeting_config_path = ai_pack_dir / 'device_targeting_configuration.xml'
   targeting_config_path.write_text(targeting_config)
@@ -238,7 +273,7 @@ def export(
   {ai_pack_dir}/
     AiPackManifest.xml
     device_targeting_configuration.xml
-    {ai_pack_name}/
+    {ai_pack_name}/src/main/assets/
       model#group_target_1/
         {litert_model_name}.tflite
       model#group_target_2/

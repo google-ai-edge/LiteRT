@@ -163,7 +163,7 @@ def _apply_plugin(
       input_model,
       output_model,
       backend.soc_manufacturer,
-      backend.soc_model,
+      backend.soc_model.lower(),
       **extra_kwargs,
   )
 
