@@ -79,7 +79,9 @@ interface ModelProvider {
 }
 
 /** ModelSelector allows to dynamically select a [ModelProvider] from a given set of providers. */
-class ModelSelector constructor(private vararg val modelProviders: ModelProvider) {
+class ModelSelector constructor(private val modelProviders: Set<ModelProvider>) {
+
+  constructor(vararg modelProviders: ModelProvider) : this(setOf(*modelProviders)) {}
 
   /**
    * Selects a [ModelProvider] from the given set based on the availability of model files and

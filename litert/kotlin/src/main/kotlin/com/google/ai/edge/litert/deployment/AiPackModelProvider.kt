@@ -43,10 +43,23 @@ class AiPackModelProvider(
   private val context: Context,
   private val aiPackName: String,
   private val modelPath: String,
-  private val accelerator: Accelerator,
-  private vararg val moreAccelerators: Accelerator,
+  private val accelerators: Set<Accelerator>,
 ) : ModelProvider {
   private val aiPackManager = AiPackManagerFactory.getInstance(context)
+
+  constructor(
+    context: Context,
+    aiPackName: String,
+    modelPath: String,
+    vararg accelerators: Accelerator,
+  ) : this(context, aiPackName, modelPath, setOf(*accelerators))
+
+  constructor(
+    context: Context,
+    aiPackName: String,
+    modelPath: String,
+    acceleratorsProvider: () -> Set<Accelerator>,
+  ) : this(context, aiPackName, modelPath, acceleratorsProvider())
 
   /** It's always a file, for on-demand AiPack. */
   override fun getType() = ModelProvider.Type.FILE
@@ -68,7 +81,7 @@ class AiPackModelProvider(
     return aiPackManager.getAiAssetLocation(aiPackName, modelPath)!!.path()
   }
 
-  override fun getCompatibleAccelerators() = setOf(accelerator, *moreAccelerators)
+  override fun getCompatibleAccelerators() = accelerators
 
   override suspend fun download() {
     if (!isReady()) {

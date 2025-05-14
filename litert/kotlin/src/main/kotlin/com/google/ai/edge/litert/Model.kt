@@ -203,7 +203,10 @@ private constructor(
   }
 
   /** Options to specify hardware acceleration for compiling a model. */
-  class Options constructor(internal vararg val accelerators: Accelerator) {
+  class Options constructor(internal val accelerators: Set<Accelerator>) {
+
+    constructor(vararg accelerators: Accelerator) : this(setOf(*accelerators)) {}
+
     var cpuOptions: CpuOptions? = null
     var gpuOptions: GpuOptions? = null
 
