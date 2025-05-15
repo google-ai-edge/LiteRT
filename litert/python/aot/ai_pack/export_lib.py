@@ -29,24 +29,6 @@ from litert.python.aot.vendors.qualcomm import target as qnn_target
 # TODO: b/407453529 - Add unittests.
 
 
-# TODO: b/407453529 - Use templating libraries like jinja2 to generate this.
-_AI_PACK_MANIFEST = """<!-- AiPackManifest.xml -->
-
-<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:dist="http://schemas.android.com/apk/distribution">
-
-  <dist:module
-      dist:type="ai-pack">
-    <dist:fusing dist:include="true" />
-    <dist:delivery>
-      <dist:install-time />
-    </dist:delivery>
-  </dist:module>
-
-</manifest>
-"""
-
 _DEVICE_TARGETING_CONFIGURATION = """<config:device-targeting-config
     xmlns:config="http://schemas.android.com/apk/config">
 {device_groups}
@@ -169,12 +151,6 @@ def _export_model_files_to_mtk_ai_pack(
     if not model.in_memory:
       model.load()
     model.save(model_export_path, export_only=True)
-
-
-def _write_ai_pack_manifest(ai_pack_dir: pathlib.Path):
-  """Writes the AiPackManifest.xml file."""
-  manifest_path = ai_pack_dir / 'AiPackManifest.xml'
-  manifest_path.write_text(_AI_PACK_MANIFEST)
 
 
 def _build_targeting_config(compiled_backends: list[types.Backend]) -> str:
@@ -300,7 +276,6 @@ def export(
       ai_pack_name=ai_pack_name,
       litert_model_name=litert_model_name,
   )
-  _write_ai_pack_manifest(ai_pack_dir=ai_pack_dir)
   _write_targeting_config(
       compiled_models=compiled_models, ai_pack_dir=ai_pack_dir
   )
