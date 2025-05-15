@@ -512,8 +512,9 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
 TEST(TensorBuffer, CreateFromGlTexture) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   // User provides EGL environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   // Create GL texture.
   tflite::gpu::gl::GlTexture gl_texture(GL_TEXTURE_2D, 1, GL_RGBA8, 1, 1,
@@ -540,8 +541,9 @@ tflite::gpu::gl::GlBuffer CreateTestGlBuffer(size_t size_bytes) {
 TEST(TensorBuffer, CreateFromGlBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   // User provides EGL environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   // Create GL buffer.
   tflite::gpu::gl::GlBuffer gl_buffer = CreateTestGlBuffer(sizeof(kTensorData));
