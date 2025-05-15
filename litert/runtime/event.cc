@@ -156,7 +156,8 @@ litert::Expected<int> LiteRtEventT::GetSyncFenceFd() {
   }
   return litert::Unexpected(
       kLiteRtStatusErrorInvalidArgument,
-      "GetSyncFenceFd is not supported for this event type");
+      absl::StrFormat("GetSyncFenceFd is not supported for this event type: %d",
+                      static_cast<int>(type)));
 #else
   return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Sync fence is not supported on this platform");
