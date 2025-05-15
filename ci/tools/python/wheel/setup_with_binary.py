@@ -183,6 +183,10 @@ setuptools.setup(
         'tqdm',
         'typing-extensions',
     ],
+    extras_require={
+        'npu-sdk': ['ai-edge-litert-sdk-qualcomm~=0.1.0',
+                    'ai-edge-litert-sdk-mediatek~=0.1.0'],
+    },
     # Use the custom command for the build_py step
     cmdclass={
         'build_py': CustomBuildPy,
