@@ -21,6 +21,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -30,6 +31,7 @@ class LiteRtDispatchInvocationContextT {
 
   static litert::Expected<Ptr> Create(
       litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+      litert::mediatek::MediatekOptions& mediatek_options,
       LiteRtDispatchDeviceContext device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
