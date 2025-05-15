@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
 
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -183,20 +184,7 @@ class ErrorStatusBuilder {
   // Note: this conversion logs the error message if there is one unless NDEBUG
   // is set (generally in case of optimized builds).
   operator LiteRtStatus() const noexcept {
-#ifndef NDEBUG
-    if (ShouldLog()) {
-      LiteRtLogger logger = LiteRtGetDefaultLogger();
-      LiteRtLogSeverity __min_severity__;
-      if (LiteRtGetMinLoggerSeverity(logger, &__min_severity__) !=
-          kLiteRtStatusOk) {
-        __min_severity__ = kLiteRtLogSeverityVerbose;
-      }
-      if (log_level_ >= __min_severity__) {
-        LiteRtLoggerLog(logger, log_level_, "[%s:%u] %s", loc_.file_name(),
-                        loc_.line(), LogMessage().c_str());
-      }
-    }
-#endif
+    PrintLog();
     return error_.Status();
   }
 
@@ -224,6 +212,14 @@ class ErrorStatusBuilder {
   template <class T>
   static constexpr bool IsError(const litert::Expected<T>& expected) {
     return !expected.HasValue();
+  }
+
+  void PrintLog() const noexcept {
+#ifndef NDEBUG
+    if (ShouldLog()) {
+      LITERT_LOG(log_level_, "%s", LogMessage().c_str());
+    }
+#endif
   }
 
   // Appends data to the error message.
@@ -269,23 +265,7 @@ class ErrorStatusBuilder {
            (!error_.Message().empty() || extra_log_);
   }
 
-  std::string LogMessage() const {
-    if (!error_.Message().empty() && extra_log_) {
-      std::string res;
-      res.reserve(error_.Message().size() + extra_log_->tellp() + 2);
-      res.append(error_.Message());
-      res.append(" ");
-      res.append(extra_log_->str());
-      return res;
-    }
-    if (!error_.Message().empty()) {
-      return error_.Message();
-    }
-    if (extra_log_) {
-      return extra_log_->str();
-    }
-    return {};
-  }
+  std::string LogMessage() const;
 
   litert::Error error_;
   litert::SourceLocation loc_;

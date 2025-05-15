@@ -14,13 +14,18 @@
 
 #include "litert/cc/litert_macros.h"
 
+#include <sstream>
+#include <string>
+
 #include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert {
 
 ErrorStatusBuilder::operator absl::Status() const noexcept {
+  PrintLog();
   switch (error_.Status()) {
     case kLiteRtStatusOk:
       return absl::OkStatus();
@@ -69,6 +74,27 @@ ErrorStatusBuilder::operator absl::Status() const noexcept {
     default:
       return absl::UnknownError(error_.Message());
   }
+}
+
+std::string ErrorStatusBuilder::LogMessage() const {
+  LiteRtLogger logger = LiteRtGetDefaultLogger();
+  LiteRtLogSeverity min_severity;
+  if (LiteRtGetMinLoggerSeverity(logger, &min_severity) != kLiteRtStatusOk) {
+    min_severity = kLiteRtLogSeverityVerbose;
+  }
+  if (log_level_ >= min_severity) {
+    std::stringstream sstr;
+    sstr << LiteRtGetLogSeverityName(log_level_) << ": [" << loc_.file_name()
+         << ':' << loc_.line() << ']';
+    if (extra_log_) {
+      sstr << ' ' << extra_log_->str();
+    }
+    if (!error_.Message().empty()) {
+      sstr << "\n└ " << error_.Message();
+    }
+    return sstr.str();
+  }
+  return "";
 }
 
 }  // namespace litert

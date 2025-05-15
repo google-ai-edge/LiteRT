@@ -14,10 +14,14 @@
 
 #include "litert/cc/litert_macros.h"
 
+#include <sstream>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_logging.h"
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace {
@@ -25,6 +29,7 @@ namespace {
 using testing::AllOf;
 using testing::HasSubstr;
 using testing::Property;
+using testing::litert::IsError;
 
 TEST(LiteRtReturnIfErrorTest, ConvertsResultToLiteRtStatus) {
   EXPECT_EQ(
@@ -252,6 +257,63 @@ TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
       ""
 #endif
   );
+}
+
+TEST(LiteRtErrorStatusBuilderTest, BacktraceWorks) {
+  const int error_1_line = __LINE__ + 3;
+  auto error_1 = []() -> Expected<void> {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorUnknown, "An error message."));
+    return {};
+  };
+
+  const int error_2_line = __LINE__ + 2;
+  auto error_2 = [&]() -> Expected<void> {
+    LITERT_RETURN_IF_ERROR(error_1());
+    return {};
+  };
+
+  const int error_3_line = __LINE__ + 2;
+  auto error_3 = [&]() -> Expected<void> {
+    LITERT_RETURN_IF_ERROR(error_2()) << "An extra message.";
+    return {};
+  };
+
+  const Expected<void> res = error_3();
+  ASSERT_THAT(res, IsError(kLiteRtStatusErrorUnknown));
+  std::stringstream error_message_builder;
+  error_message_builder.str("");
+  error_message_builder << "ERROR: [" << __FILE__ << ":" << error_1_line << "]";
+  EXPECT_THAT(res.Error().Message(), HasSubstr(error_message_builder.str()));
+
+  error_message_builder.str("");
+  error_message_builder << "ERROR: [" << __FILE__ << ":" << error_2_line << "]";
+  EXPECT_THAT(res.Error().Message(), HasSubstr(error_message_builder.str()));
+
+  error_message_builder.str("");
+  error_message_builder << "ERROR: [" << __FILE__ << ":" << error_3_line
+                        << "] An extra message.";
+  EXPECT_THAT(res.Error().Message(), HasSubstr(error_message_builder.str()));
+
+  EXPECT_THAT(res.Error().Message(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, CastToLiteRtStatusLogsError) {
+#ifdef NDEBUG
+  GTEST_SKIP() << "Logging is disabled in optimized builds";
+#endif
+  litert::InterceptLogs log_interceptor;
+  auto error_1 = []() -> LiteRtStatus {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorUnknown, "An error message."))
+        << "Failed a subcall.";
+    return kLiteRtStatusOk;
+  };
+  EXPECT_THAT(error_1(), IsError(kLiteRtStatusErrorUnknown));
+  std::stringstream intercepted_logs;
+  intercepted_logs << log_interceptor;
+  EXPECT_THAT(intercepted_logs.str(), HasSubstr("Failed a subcall."));
+  EXPECT_THAT(intercepted_logs.str(), HasSubstr("An error message."));
 }
 
 }  // namespace

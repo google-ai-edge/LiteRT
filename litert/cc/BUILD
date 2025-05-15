@@ -213,8 +213,10 @@ cc_test(
     srcs = ["litert_macros_test.cc"],
     deps = [
         ":litert_expected",
+        ":litert_logging",
         ":litert_macros",
         "//litert/c:litert_common",
+        "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
 )
