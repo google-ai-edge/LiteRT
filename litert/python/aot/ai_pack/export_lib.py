@@ -161,9 +161,9 @@ def _export_model_files_to_mtk_ai_pack(
     export_dir = model_export_dir / group_name
     os.makedirs(export_dir, exist_ok=True)
     if backend_id != mediatek_backend.MediaTekBackend.id():
-      # Skip non-MTK targets, just create a dummy file.
-      dummy_file = export_dir / 'dummy.txt'
-      dummy_file.touch()
+      # Skip non-MTK targets, just create a placeholder file.
+      placeholder_file = export_dir / 'placeholder.txt'
+      placeholder_file.touch()
       continue
     model_export_path = export_dir / (litert_model_name + common.DOT_TFLITE)
     if not model.in_memory:
