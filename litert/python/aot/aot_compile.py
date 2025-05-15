@@ -88,7 +88,9 @@ def aot_compile(
       output_dir = temp_dir.name
     else:
       input_path = input_model.path
-      output_dir = str(input_path.parent)
+      output_dir = input_path.parent / "_compiled_models"
+      output_dir.mkdir(parents=True, exist_ok=True)
+      output_dir = str(output_dir)
   output_dir_path = pathlib.Path(output_dir)
 
   if isinstance(config, types.CompilationConfig) or not config:

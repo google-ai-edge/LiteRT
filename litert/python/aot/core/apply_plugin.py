@@ -109,40 +109,38 @@ class ApplyPlugin(components.ApplyPluginT):
       if sdk_libs_path:
         ld_library_path = f"{sdk_libs_path}{os.pathsep}{ld_library_path}"
       env["LD_LIBRARY_PATH"] = ld_library_path
-    try:
-      result = subprocess.run(
-          args,
-          check=True,
-          capture_output=self._experimental_capture_stderr,
-          text=True,
-          env=env,
-      )
-    except subprocess.CalledProcessError as e:
-      tmp_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
-      tmp_file.write(e.stderr)
-      tmp_file.close()
+
+    result = subprocess.run(
+        args,
+        check=False,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+    )
+    if result.returncode:
+      log_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
+      log_file.write(result.stdout)
+      log_file.close()
       raise ValueError(
           f"{self.component_name} failed to apply plugin. See"
-          f" {tmp_file.name} for details."
-      ) from e
+          f" {log_file.name} for details."
+      )
 
     if not common.is_tflite(output_model.path):
       raise ValueError(f"{output_model.path} is not a TFLite model.")
+
+    partition_stats = _RE_PARTITION_STATS.findall(result.stdout)
+    output_model.partition_stats = types.PartitionStats(
+        subgraph_stats=[
+            types.SubgraphPartitionStats(
+                subgraph_index=int(s[0]),
+                num_ops_offloaded=int(s[1]),
+                num_total_ops=int(s[2]),
+                num_partitions_offloaded=int(s[3]),
+            )
+            for s in partition_stats
+        ]
+    )
     if tmp_file is not None:
       tmp_file.close()
-
-    # TODO(b/405256024): Use proper dataclass for passing stats
-    # instead of parsing.
-    if self._experimental_capture_stderr:
-      partition_stats = _RE_PARTITION_STATS.findall(result.stderr)
-      output_model.partition_stats = types.PartitionStats(
-          subgraph_stats=[
-              types.SubgraphPartitionStats(
-                  subgraph_index=int(s[0]),
-                  num_ops_offloaded=int(s[1]),
-                  num_total_ops=int(s[2]),
-                  num_partitions_offloaded=int(s[3]),
-              )
-              for s in partition_stats
-          ]
-      )
