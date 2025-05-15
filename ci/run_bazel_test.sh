@@ -71,20 +71,12 @@ EXCLUDED_TARGETS=(
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
         "-//tflite/delegates/gpu/..."
-        # TODO: (b/410925271) - Remove once the test is fixed.
-        "-//tflite/core/experimental/acceleration/mini_benchmark/c:c_api_test"
+        # ERROR with USE_PYWRAP_RULES=True
         "-//tflite/experimental/acceleration/..."
-        "-//tflite/python:analyzer_test"
-        "-//tflite/python:convert_saved_model_test"
-        "-//tflite/python:convert_test"
-        "-//tflite/python:test_util_test"
-        "-//tflite/python/metrics:metrics_test"
-        "-//tflite/toco/logging:gen_html_test"
-        "-//tflite/tools:flatbuffer_utils_test"
-        "-//tflite/tools:visualize_test"
+        "-//tflite/testing/..."
+        "-//tflite/tools/optimize/sparsity:format_converter_wrapper_pybind11_test"
         "-//tflite/tools/optimize/python:modify_model_interface_lib_test"
         "-//tflite/python/kernel_tests/signal:window_ops_test_cpu"
-        "-//tflite/testing/..."
 )
 
 LITERT_EXCLUDED_TARGETS=(
@@ -106,5 +98,7 @@ LITERT_EXCLUDED_TARGETS=(
 if [ "$LITERT_TARGETS_ONLY" == "true" ]; then
     bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 else
-    bazel test "${BUILD_FLAGS[@]}" -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    bazel test "${BUILD_FLAGS[@]}" --repo_env=USE_PYWRAP_RULES=True -- //tflite/... "${EXCLUDED_TARGETS[@]}"
+    # TODO: ecalubaquib - Remove this once pywrap added to toco targets.
+    bazel test "${BUILD_FLAGS[@]}" -- //tflite/toco/...
 fi
