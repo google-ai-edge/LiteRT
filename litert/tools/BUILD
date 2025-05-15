@@ -414,6 +414,20 @@ cc_library(
     ],
 )
 
+cc_binary(
+    name = "benchmark_model",
+    deps = [
+        ":benchmark_model_main",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            # copybara:uncomment_begin(google-only)
+            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
+)
+
 cc_library(
     name = "benchmark_stripped_litert_model",
     srcs = ["benchmark_stripped_litert_model.cc"],

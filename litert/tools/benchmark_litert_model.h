@@ -55,8 +55,7 @@ using ::tflite::utils::InputTensorData;
 
 class BenchmarkLiteRtModel : public BenchmarkModel {
  public:
-  BenchmarkLiteRtModel() = default;
-  explicit BenchmarkLiteRtModel(BenchmarkParams params)
+  explicit BenchmarkLiteRtModel(BenchmarkParams params = DefaultParams())
       : BenchmarkModel(std::move(params)) {}
   ~BenchmarkLiteRtModel() override = default;
   static BenchmarkParams DefaultParams() {
