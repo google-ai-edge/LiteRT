@@ -27,7 +27,14 @@
 
 #if LITERT_HAS_DMABUF_SUPPORT
 #include <dlfcn.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/dma-buf.h>
+#include <linux/dma-heap.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 
 namespace litert {
@@ -36,58 +43,42 @@ namespace internal {
 #if LITERT_HAS_DMABUF_SUPPORT
 namespace {
 
+int DmabufHeapAlloc(int heap_fd, size_t len) {
+  struct dma_heap_allocation_data data = {0};
+  data.len = len;  // Length of data to be allocated in bytes.
+  data.fd = 0;     // Output parameter.
+  data.fd_flags =
+      O_RDWR | O_CLOEXEC;  // Permissions for the memory to be allocated.
+  data.heap_flags = 0;
+  int ret = ioctl(heap_fd, DMA_HEAP_IOCTL_ALLOC, &data);
+  if (ret < 0) {
+    return ret;
+  }
+  return data.fd;
+}
+
 class DmaBufLibrary {
  public:
   using Ptr = std::unique_ptr<DmaBufLibrary>;
 
-  ~DmaBufLibrary() {
-    if (allocator_) {
-      free_allocator_(allocator_);
-    }
-  }
+  DmaBufLibrary(const DmaBufLibrary&) = delete;
+  DmaBufLibrary& operator=(const DmaBufLibrary&) = delete;
+  DmaBufLibrary(DmaBufLibrary&&) = default;
+  DmaBufLibrary& operator=(DmaBufLibrary&&) = default;
+
+  ~DmaBufLibrary() { ::close(heap_fd_); }
 
   static Expected<Ptr> Create() {
-    DlHandle dlhandle(::dlopen("libdmabufheap.so", RTLD_LAZY | RTLD_LOCAL),
-                      ::dlclose);
-    if (!dlhandle) {
+    int heap_fd = open("/dev/dma_heap/system", O_RDONLY | O_CLOEXEC);
+    if (heap_fd < 0) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "libdmabufheap.so not found");
+                        "Failed to open DMA-BUF system heap.");
     }
-
-    auto create_allocator = reinterpret_cast<CreateAllocator>(
-        ::dlsym(dlhandle.get(), "CreateDmabufHeapBufferAllocator"));
-    if (!create_allocator) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "CreateDmabufHeapBufferAllocator not found");
-    }
-
-    auto free_allocator = reinterpret_cast<FreeAllocator>(
-        ::dlsym(dlhandle.get(), "FreeDmabufHeapBufferAllocator"));
-    if (!free_allocator) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "FreeDmabufHeapBufferAllocator not found");
-    }
-
-    auto alloc_buffer = reinterpret_cast<AllocBuffer>(
-        ::dlsym(dlhandle.get(), "DmabufHeapAlloc"));
-    if (!alloc_buffer) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "DmabufHeapAlloc not found");
-    }
-
-    void* allocator = create_allocator();
-    if (!allocator) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "CreateDmabufHeapBufferAllocator failed");
-    }
-
-    return Ptr(new DmaBufLibrary(std::move(dlhandle), allocator, free_allocator,
-                                 alloc_buffer));
+    return Ptr(new DmaBufLibrary(heap_fd));
   }
 
   Expected<DmaBufBuffer> Alloc(size_t size) {
-    int fd = alloc_buffer_(allocator_, kDmaBufHeap, size, /*flags=*/0,
-                           /*legacy_align=*/0);
+    int fd = DmabufHeapAlloc(heap_fd_, size);
     if (fd < 0) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to allocate DMA-BUF buffer");
@@ -114,31 +105,15 @@ class DmaBufLibrary {
   }
 
  private:
-  static constexpr const char* kDmaBufHeap = "system";
-
   struct Record {
     int fd;
     void* addr;
     size_t size;
   };
 
-  using DlHandle = std::unique_ptr<void, int (*)(void*)>;
-  using CreateAllocator = void* (*)();
-  using FreeAllocator = void (*)(void*);
-  using AllocBuffer = int (*)(void*, const char*, size_t, unsigned int, size_t);
+  explicit DmaBufLibrary(int heap_fd) : heap_fd_(heap_fd) {}
 
-  DmaBufLibrary(DlHandle&& dlhandle, void* allocator,
-                FreeAllocator free_allocator, AllocBuffer alloc_buffer)
-      : dlhandle_(std::move(dlhandle)) {
-    allocator_ = allocator;
-    free_allocator_ = free_allocator;
-    alloc_buffer_ = alloc_buffer;
-  }
-
-  DlHandle dlhandle_;
-  void* allocator_;
-  FreeAllocator free_allocator_;
-  AllocBuffer alloc_buffer_;
+  int heap_fd_;
   absl::node_hash_map<void*, Record> records_;
 };
 
