@@ -29,7 +29,7 @@ limitations under the License.
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/options/accelerator_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
