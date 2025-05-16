@@ -375,13 +375,20 @@ private constructor(
       envManaged: Boolean = optionalEnv == null,
     ): CompiledModel {
       val env = optionalEnv ?: Environment.create()
+      val accelerators =
+        if (options.accelerators.size == 1 && options.accelerators.first() == Accelerator.NPU)
+        // If NPU is the only accelerator, CPU is added to support partially compiled models.
+        // TODO(niuchl): Document this behavior in the AOT flow.
+        setOf(Accelerator.NPU, Accelerator.CPU)
+        else options.accelerators
+
       val cpuOptionsMap = options.cpuOptions?.toMap() ?: mapOf()
       val gpuOptionsMap = options.gpuOptions?.toMap() ?: mapOf()
       return CompiledModel(
         nativeCreate(
           env.handle,
           model.handle,
-          options.accelerators.map { it.value }.toIntArray(),
+          accelerators.map { it.value }.toIntArray(),
           cpuOptionsMap.keys.map { it.value }.toIntArray(),
           cpuOptionsMap.values.toTypedArray(),
           gpuOptionsMap.keys.map { it.value }.toIntArray(),
