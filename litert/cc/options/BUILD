@@ -30,35 +30,45 @@ cc_library(
     hdrs = ["litert_cpu_options.h"],
     deps = [
         "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_cpu_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_cpu_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_library(
-    name = "accelerator_options",
-    srcs = ["accelerator_options.cc"],
-    hdrs = ["accelerator_options.h"],
+    name = "litert_gpu_options",
+    srcs = ["litert_gpu_options.cc"],
+    hdrs = ["litert_gpu_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_gpu_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_gpu_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_test(
-    name = "accelerator_options_test",
-    srcs = ["accelerator_options_test.cc"],
+    name = "litert_gpu_options_test",
+    srcs = ["litert_gpu_options_test.cc"],
     deps = [
-        ":accelerator_options",
+        ":litert_gpu_options",
         "//litert/c:litert_common",
         "//litert/c/options:litert_gpu_options",
         "//litert/test:matchers",
@@ -90,14 +100,19 @@ cc_library(
     hdrs = ["litert_qualcomm_options.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_qualcomm_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_qualcomm_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_library(
@@ -107,14 +122,19 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_google_tensor_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_google_tensor_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 cc_library(
@@ -124,12 +144,22 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_mediatek_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_mediatek_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
+
+exports_files(glob([
+    "*.h",
+    "*.cc",
+]))
