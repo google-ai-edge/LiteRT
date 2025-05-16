@@ -90,7 +90,7 @@ ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
 
 ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
           qualcomm_htp_performance_mode,
-          kLiteRtQualcommHtpPerformanceModeDefault, "HTP performance mode.");
+          kLiteRtQualcommHtpPerformanceModeBurst, "HTP performance mode.");
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtQualcommOptionsHtpPerformanceMode* options,

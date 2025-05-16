@@ -1,0 +1,65 @@
+<config:device-targeting-config
+    xmlns:config="http://schemas.android.com/apk/config">
+    <config:device-group name="Mediatek_MT6878_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6878"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Mediatek_MT6897_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6897"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Mediatek_MT6983_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6983"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Mediatek_MT6985_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6985"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Mediatek_MT6989_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6989"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Mediatek_MT6991_ANDROID_15">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Mediatek" model="MT6991"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Qualcomm_SM8450">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Qualcomm" model="SM8450"/>
+        </config:device-selector>
+        <config:device-selector>
+            <config:system-on-chip manufacturer="QTI" model="SM8450"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Qualcomm_SM8550">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Qualcomm" model="SM8550"/>
+        </config:device-selector>
+        <config:device-selector>
+            <config:system-on-chip manufacturer="QTI" model="SM8550"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Qualcomm_SM8650">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Qualcomm" model="SM8650"/>
+        </config:device-selector>
+        <config:device-selector>
+            <config:system-on-chip manufacturer="QTI" model="SM8650"/>
+        </config:device-selector>
+    </config:device-group>
+    <config:device-group name="Qualcomm_SM8750">
+        <config:device-selector>
+            <config:system-on-chip manufacturer="Qualcomm" model="SM8750"/>
+        </config:device-selector>
+        <config:device-selector>
+            <config:system-on-chip manufacturer="QTI" model="SM8750"/>
+        </config:device-selector>
+    </config:device-group>
+</config:device-targeting-config>

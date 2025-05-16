@@ -65,4 +65,5 @@ If you encounter build errors:
 You can run a shell in the container for debugging:
 ```
 docker run --rm -it --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v $(pwd)/..:/litert_build litert_build_env bash
+
 ```
