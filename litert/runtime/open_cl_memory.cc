@@ -43,14 +43,25 @@
 namespace litert {
 namespace internal {
 
-template Expected<float*> OpenClMemory::Lock<float>();
-template Expected<char*> OpenClMemory::Lock<char>();
+template Expected<float*> OpenClMemory::Lock<float>(
+    LiteRtTensorBufferLockMode mode);
+template Expected<char*> OpenClMemory::Lock<char>(
+    LiteRtTensorBufferLockMode mode);
 template Expected<void> OpenClMemory::Unlock<float>();
 template Expected<void> OpenClMemory::Unlock<char>();
 
 template <typename T>
-Expected<T*> OpenClMemory::Lock() {
+Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
   absl::MutexLock lock(&mutex_);
+  LITERT_RETURN_IF_ERROR(lock_state_ == kUnlocked,
+                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "The OpenCL memory is already locked."));
+  if (mode == kLiteRtTensorBufferLockModeRead) {
+    lock_state_ = kReadLocked;
+  } else if (mode == kLiteRtTensorBufferLockModeWrite) {
+    lock_state_ = kWriteLocked;
+  }
+
   // The buffer has not been locked, so we need to read from the OpenCL
   // buffer.
   if (data_ == nullptr) {
@@ -89,22 +100,31 @@ Expected<T*> OpenClMemory::Lock() {
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
-  if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-    LITERT_ASSIGN_OR_RETURN(auto cl_env,
-                            GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
-                               ->EnqueueWriteBuffer(GetMemoryPtr(),
-                                                    cpu_buffer_size_, data_,
-                                                    /*async=*/true)
-                               .ok());
-  } else {
-    // The current Unlock() translates the packed buffer (data_) if the
-    // underlying H/W buffer has a stride. This conversion is done by
-    // LiteRtGpuMemoryUpload().
-    // TODO b/413449050 - Update behavior to upload raw H/W buffer as it is.
-    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(
-        &tensor_type_, buffer_type_, cpu_buffer_size_, data_, GetMemoryPtr()));
+  LITERT_RETURN_IF_ERROR(
+      lock_state_ == kReadLocked || lock_state_ == kWriteLocked,
+      Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                 "The OpenCL memory is not locked."));
+  if (lock_state_ == kWriteLocked) {
+    if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
+      LITERT_ASSIGN_OR_RETURN(auto cl_env,
+                              GpuEnvironmentSingleton::GetInstance());
+      LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
+                                 ->EnqueueWriteBuffer(GetMemoryPtr(),
+                                                      cpu_buffer_size_, data_,
+                                                      /*async=*/true)
+                                 .ok());
+    } else {
+      // The current Unlock() translates the packed buffer (data_) if the
+      // underlying H/W buffer has a stride. This conversion is done by
+      // LiteRtGpuMemoryUpload().
+      // TODO b/413449050 - Update behavior to upload raw H/W buffer as it is.
+      LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(&tensor_type_, buffer_type_,
+                                                   cpu_buffer_size_, data_,
+                                                   GetMemoryPtr()));
+    }
   }
+
+  lock_state_ = kUnlocked;
   return Expected<void>();
 }
 

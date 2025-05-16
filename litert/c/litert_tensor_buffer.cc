@@ -386,12 +386,13 @@ LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer) {
 }
 
 LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
-                                    void** host_mem_addr) {
+                                    void** host_mem_addr,
+                                    LiteRtTensorBufferLockMode mode) {
   if (!tensor_buffer || !host_mem_addr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto mapped_addr, tensor_buffer->Lock());
+  LITERT_ASSIGN_OR_RETURN(auto mapped_addr, tensor_buffer->Lock(mode));
 
   *host_mem_addr = mapped_addr;
   return kLiteRtStatusOk;

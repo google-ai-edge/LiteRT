@@ -141,7 +141,7 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-  litert::Expected<void*> Lock();
+  litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
 
   // Used to duplicate the current tensor buffer. Internally it increases
