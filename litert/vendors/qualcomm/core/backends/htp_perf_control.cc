@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "absl/base/attributes.h"  // from @com_google_absl
+#include "litert/c/litert_logging.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "HTP/QnnHtpDevice.h"  // from @qairt
@@ -370,12 +371,14 @@ bool PerfControl::Init(const QnnHtpDevice_Arch_t& arch) {
   backend_config_->htp_perf_infra_ = &backend_config_->owned_htp_perf_infra_;
   if (auto status = GetPerfInfra(api_, backend_config_->htp_perf_infra_);
       !status) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get perf infra.");
     return false;
   }
   Qnn_ErrorHandle_t error = QNN_SUCCESS;
   error = backend_config_->htp_perf_infra_->createPowerConfigId(
       device_id_, /*core_id=*/0, &powerconfig_client_id_);
   if (error != QNN_SUCCESS) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create power config.");
     QNN_LOG_ERROR("HTP backend unable to create power config. Error %d",
                   QNN_GET_ERROR_CODE(error));
     return false;
@@ -387,6 +390,7 @@ bool PerfControl::Init(const QnnHtpDevice_Arch_t& arch) {
             CreatePerfPowerConfigPtr(powerconfig_client_id_, performance_mode_,
                                      PerformanceModeVoteType::kUpVote);
         !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create perf power config.");
       return false;
     }
 
@@ -394,6 +398,7 @@ bool PerfControl::Init(const QnnHtpDevice_Arch_t& arch) {
             CreatePerfPowerConfigPtr(powerconfig_client_id_, performance_mode_,
                                      PerformanceModeVoteType::kDownVote);
         !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create downvote perf power config.");
       return false;
     }
 
@@ -402,6 +407,7 @@ bool PerfControl::Init(const QnnHtpDevice_Arch_t& arch) {
 
     // Set Rpc polling mode
     if (arch >= QNN_HTP_DEVICE_ARCH_V69) {
+      LITERT_LOG(LITERT_INFO, "Setting rpc polling power config.");
       backend_config_->rpc_power_configs_ =
           SetRpcPollingPowerConfig(performance_mode_);
       backend_config_->rpc_power_configs_ptr_ =
