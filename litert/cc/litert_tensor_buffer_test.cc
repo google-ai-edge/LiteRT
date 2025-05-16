@@ -19,7 +19,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <utility>
-#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
@@ -43,10 +42,8 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/buffer.h"
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 namespace litert {
@@ -113,6 +110,63 @@ TEST(TensorBuffer, HostMemory) {
   {
     auto lock_and_addr = TensorBufferScopedLock::Create(
         *tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
+        0);
+  }
+}
+
+TEST(TensorBuffer, ClBuffer) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (!tflite::gpu::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform; skipping the "
+                    "test";
+  }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(env.Get(), kTensorBufferType, kTensorType,
+                                  sizeof(kTensorData)));
+
+  auto tensor_buffer_type = tensor_buffer.BufferType();
+  ASSERT_TRUE(tensor_buffer_type);
+  ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
+
+  auto tensor_type = tensor_buffer.TensorType();
+  ASSERT_TRUE(tensor_type);
+
+  ASSERT_EQ(tensor_type->ElementType(), ElementType::Float32);
+  ASSERT_EQ(tensor_type->Layout().Rank(), 1);
+  ASSERT_EQ(tensor_type->Layout().Dimensions()[0],
+            kTensorType.Layout().Dimensions()[0]);
+  ASSERT_FALSE(tensor_type->Layout().HasStrides());
+
+  auto size = tensor_buffer.Size();
+  ASSERT_TRUE(size);
+  ASSERT_EQ(*size, sizeof(kTensorData));
+
+  auto offset = tensor_buffer.Offset();
+  ASSERT_TRUE(offset);
+  ASSERT_EQ(*offset, 0);
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
+    ASSERT_TRUE(lock_and_addr);
+    std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
+  }
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -706,17 +760,20 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   EXPECT_THAT(cl_buffer, Ne(nullptr));
 
   // Read from CL buffer.
-  // TODO(gcarranza): Add ClBuffer ReadLock functionality to LiteRT
-  // TensorBuffer. ClBuffer::Unlock currently writes to CL buffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer cl_buffer_from_ahwb,
+                              TensorBuffer::CreateFromClBuffer(
+                                  env.Get(), RankedTensorType(kTestTensorType),
+                                  kLiteRtTensorBufferTypeOpenClBufferPacked,
+                                  cl_buffer, sizeof(kTensorData)));
 
-  tflite::gpu::cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  tflite::gpu::cl::CLCommandQueue* queue = gpu_env->getCommandQueue();
-  std::vector<float> read_data;
-  auto status = cl_buffer_from_ahwb.ReadData(queue, &read_data);
-  ASSERT_TRUE(status.ok());
-  ASSERT_EQ(std::memcmp(read_data.data(), kTensorData, sizeof(kTensorData)), 0);
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        cl_buffer_from_ahwb, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
+        0);
+  }
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
