@@ -646,7 +646,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
                       BufferTypeToString(buffer_type_)));
 }
 
-Expected<void*> LiteRtTensorBufferT::Lock() {
+Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types we wait here.
@@ -685,7 +685,7 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              opencl_memory->Lock<float>());
+                              opencl_memory->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
