@@ -21,6 +21,7 @@ cc_library(
     srcs = ["htp_perf_control.cc"],
     hdrs = ["htp_perf_control.h"],
     deps = [
+        "//litert/c:litert_logging",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
         "@com_google_absl//absl/base:core_headers",
