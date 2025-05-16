@@ -18,6 +18,7 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/runtime/gl_buffer.h"
 #include "litert/test/matchers.h"
@@ -86,7 +87,7 @@ TEST(Buffer, NegativeFenceAhwbRead) {
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
 
-  LiteRtEventT event;
+  LiteRtEventT event = {.type = LiteRtEventTypeSyncFenceFd};
   LITERT_ASSERT_OK_AND_ASSIGN(int fence_fd, event.GetSyncFenceFd());
   ASSERT_EQ(fence_fd, -1);
   // Since fence is -1, there should be no wait on fence.
@@ -135,8 +136,13 @@ void FillGlBuffer(GLuint id, std::size_t size) {
 }
 
 TEST(Buffer, GpuWriteAhwbRead) {
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+  LiteRtEnvironment env;
+  LITERT_ASSERT_OK(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -157,11 +163,12 @@ TEST(Buffer, GpuWriteAhwbRead) {
   // Create EGL sync and fence before AHWB read.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event egl_sync_event,
-      Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
+      Event::CreateManaged(env, LiteRtEventTypeEglNativeSyncFence));
   LITERT_ASSERT_OK_AND_ASSIGN(int egl_sync_fd, egl_sync_event.DupFd());
 
   // Wrap native fence in LiteRT event.
-  LiteRtEventT gpu_write_event = {.fd = egl_sync_fd, .owns_fd = true};
+  LiteRtEventT gpu_write_event = {
+      .type = LiteRtEventTypeSyncFenceFd, .fd = egl_sync_fd, .owns_fd = true};
 
   // Read from AHWB on CPU, waiting for GPU write to complete.
   LITERT_ASSERT_OK_AND_ASSIGN(
