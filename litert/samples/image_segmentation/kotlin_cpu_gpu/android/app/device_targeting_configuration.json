@@ -1,0 +1,67 @@
+{
+  "device_groups": [
+    {
+      "name": "Qualcomm_SM8750",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "Qualcomm",
+              "model": "SM8750"
+            }
+          ]
+        },
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8750"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Qualcomm_SM8650",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "Qualcomm",
+              "model": "SM8650"
+            }
+          ]
+        },
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8650"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Qualcomm_SM8550",
+      "device_selectors": [
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "Qualcomm",
+              "model": "SM8550"
+            }
+          ]
+        },
+        {
+          "system_on_chips": [
+            {
+              "manufacturer": "QTI",
+              "model": "SM8550"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
