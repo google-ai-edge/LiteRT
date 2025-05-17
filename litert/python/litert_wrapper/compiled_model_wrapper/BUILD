@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@local_xla//xla/tsl:tsl.bzl", "tsl_pybind_extension")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -46,12 +46,13 @@ cc_library(
     ],
 )
 
-tsl_pybind_extension(
+pybind_extension(
     name = "_pywrap_litert_compiled_model_wrapper",
     srcs = [
         "compiled_model_wrapper_pybind11.cc",
     ],
     hdrs = ["compiled_model_wrapper.h"],
+    link_in_framework = True,
     pytype_srcs = [
         "_pywrap_litert_compiled_model_wrapper.pyi",
     ],
