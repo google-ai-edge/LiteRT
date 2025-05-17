@@ -50,9 +50,6 @@ cc_library(
     srcs = ["common.cc"],
     hdrs = ["common.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc/options:litert_qualcomm_options",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
