@@ -955,11 +955,10 @@ litert_device_test(
     srcs = ["litert_compiled_model_npu_test.cc"],
     backend_id = "google_tensor",
     data = [
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-        "//litert/test:testdata/simple_model_npu.tflite",
+        "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
     ],
+    linkopts = gles_linkopts(),
     deps = [
-        ":litert_buffer_ref",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_event",
@@ -968,8 +967,6 @@ litert_device_test(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
-        "//litert/core/model:model_buffer",
-        "//litert/runtime:tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -977,12 +974,7 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # copybara:uncomment_begin(google-only)

@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -26,39 +25,33 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/core/model/model_buffer.h"
-#include "litert/runtime/ahwb_buffer.h"
-#include "litert/runtime/gl_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#if LITERT_HAS_OPENGL_SUPPORT
-#include "tflite/delegates/gpu/gl/egl_environment.h"
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
 namespace {
 
-using ::testing::Eq;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::SizeIs;
 using ::testing::litert::IsOkAndHolds;
 
-constexpr absl::string_view kGoogleTensorTflite = "simple_model_npu.tflite";
 constexpr absl::string_view kDispatchLibraryDir =
     "vendors/google_tensor/dispatch";
 
+constexpr absl::string_view kPrecompiledTfliteFile =
+    "simple_model_npu_google_tensor_precompiled.tflite";
+
 TEST(CompiledModelTest, RunWithGoogleTensorModel) {
-  if (!litert::internal::AhwbBuffer::IsSupported()) {
+  if (!HasAhwbSupport()) {
     GTEST_SKIP()
         << "The rest of this test is specific to Android devices with a "
            "GoogleTensor eTPU";
@@ -78,17 +71,10 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
                               litert::Environment::Create(environment_options));
 
   // Create Model.
-
-  // TODO(gcarranza): Replace internal API with C++ API or single npu tflite
-  // file.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(
-          testing::GetTestFilePath(kGoogleTensorTflite),
-          testing::GetTestFilePath(kGoogleTensorModelFileName)));
-
+  std::string model_file_path =
+      testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
+                              Model::CreateFromFile(model_file_path));
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
@@ -135,7 +121,7 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
 }
 
 TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
-  if (!litert::internal::AhwbBuffer::IsSupported()) {
+  if (!HasAhwbSupport()) {
     GTEST_SKIP()
         << "The rest of this test is specific to Android devices with a "
            "GoogleTensor eTPU";
@@ -152,17 +138,10 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
                               litert::Environment::Create(environment_options));
 
   // Create Model.
-
-  // TODO(gcarranza): Replace internal API with C++ API or single npu tflite
-  // file.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(
-          testing::GetTestFilePath(kGoogleTensorTflite),
-          testing::GetTestFilePath(kGoogleTensorModelFileName)));
-
+  std::string model_file_path =
+      testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
+                              Model::CreateFromFile(model_file_path));
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
@@ -290,7 +269,7 @@ void FillGlBuffer2(LiteRtGLuint id, size_t size) {
 }
 
 TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
-  if (!litert::internal::AhwbBuffer::IsSupported()) {
+  if (!HasAhwbSupport() || !HasOpenGlSupport()) {
     GTEST_SKIP()
         << "The rest of this test is specific to Android devices with a "
            "GoogleTensor eTPU";
@@ -307,17 +286,10 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
                               litert::Environment::Create(environment_options));
 
   // Create Model.
-
-  // TODO(gcarranza): Replace internal API with C++ API or single npu tflite
-  // file.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      BufferRef<uint8_t> model_with_byte_code,
-      internal::GetModelBufWithByteCode(
-          testing::GetTestFilePath(kGoogleTensorTflite),
-          testing::GetTestFilePath(kGoogleTensorModelFileName)));
-
+  std::string model_file_path =
+      testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
+                              Model::CreateFromFile(model_file_path));
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
@@ -340,17 +312,6 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
               IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
   EXPECT_THAT(output_buffers[0].BufferType(),
               IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-
-  // TODO(gcarranza): Integrate with LiteRT Environment.
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
-  LITERT_LOG(LITERT_INFO, "Initialized EGL environment");
-#else
-  LITERT_LOG(LITERT_INFO, "EGL environment not initialized");
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-
   // Write to input buffers on GPU.
   LITERT_ASSERT_OK_AND_ASSIGN(auto gl_buffer_1, input_buffers[0].GetGlBuffer());
   FillGlBuffer1(gl_buffer_1.id, 2);
