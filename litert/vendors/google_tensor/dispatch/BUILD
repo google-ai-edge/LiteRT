@@ -74,6 +74,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_options",
+        "//litert/cc:litert_macros",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
