@@ -35,21 +35,24 @@ typedef void* EGLSyncKHR;
 //
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
-LiteRtStatus LiteRtCreateEventFromSyncFenceFd(int sync_fence_fd, bool owns_fd,
+LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
+                                              int sync_fence_fd, bool owns_fd,
                                               LiteRtEvent* event);
 
 // Another LiteRtEvent creation API for OpenCL event.
 //
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
-LiteRtStatus LiteRtCreateEventFromOpenClEvent(cl_event cl_event,
+LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
+                                              cl_event cl_event,
                                               LiteRtEvent* event);
 
 // Another LiteRtEvent creation API for OpenCL event.
 //
 // Caller owns the returned LiteRtEvent. The owner is responsible for
 // calling LiteRtDestroyEvent() to release the object.
-LiteRtStatus LiteRtCreateEventFromEglSyncFence(EGLSyncKHR egl_sync,
+LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
+                                               EGLSyncKHR egl_sync,
                                                LiteRtEvent* event);
 
 // Create a LiteRtEvent with the given type.

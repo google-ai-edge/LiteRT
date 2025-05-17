@@ -25,7 +25,8 @@ namespace litert::internal {
 // and will involve a copy.
 // TODO(b/383176413): Investigate zero/fast-copy conversions.
 Expected<LiteRtTensorBufferT::Ptr> TensorBufferConvertTo(
-    LiteRtTensorBufferType buffer_type, LiteRtTensorBufferT& tensor_buffer);
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    LiteRtTensorBufferT& tensor_buffer);
 
 }  // namespace litert::internal
 

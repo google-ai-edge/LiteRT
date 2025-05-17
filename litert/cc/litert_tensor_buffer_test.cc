@@ -701,7 +701,8 @@ TEST(TensorBuffer, Event) {
                                   sizeof(kTensorData)));
   // Create event.
   LITERT_ASSERT_OK_AND_ASSIGN(
-      Event event, Event::CreateFromSyncFenceFd(kFakeSyncFenceFd, true));
+      Event event,
+      Event::CreateFromSyncFenceFd(env.Get(), kFakeSyncFenceFd, true));
   // Move event into tensor buffer.
   LITERT_EXPECT_OK(tensor_buffer.SetEvent(std::move(event)));
   EXPECT_TRUE(tensor_buffer.HasEvent());

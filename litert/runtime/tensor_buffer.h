@@ -201,7 +201,8 @@ class LiteRtTensorBufferT {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::GlBuffer, litert::internal::GlTexture>;
 
-  LiteRtTensorBufferT(const LiteRtRankedTensorType& tensor_type,
+  LiteRtTensorBufferT(LiteRtEnvironment env,
+                      const LiteRtRankedTensorType& tensor_type,
                       LiteRtTensorBufferType buffer_type, size_t buffer_size,
                       size_t buffer_offset = 0);
 
@@ -230,6 +231,7 @@ class LiteRtTensorBufferT {
 
   litert::Expected<void> IsValid();
 
+  LiteRtEnvironment env_;
   LiteRtRankedTensorType tensor_type_;
   std::vector<std::decay_t<decltype(LiteRtLayout::dimensions[0])>> dimensions_;
   std::vector<std::decay_t<decltype(LiteRtLayout::strides[0])>> strides_;

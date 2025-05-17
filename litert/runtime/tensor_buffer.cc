@@ -66,10 +66,11 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
 }  // namespace
 
 LiteRtTensorBufferT::LiteRtTensorBufferT(
-    const LiteRtRankedTensorType& tensor_type,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size,
     size_t buffer_offset)
-    : tensor_type_(tensor_type),
+    : env_(env),
+      tensor_type_(tensor_type),
       buffer_type_(buffer_type),
       buffer_size_(buffer_size),
       buffer_offset_(buffer_offset),
@@ -149,8 +150,9 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
     const LiteRtRankedTensorType& tensor_type, absl::Span<uint8_t> host_memory,
     LiteRtHostMemoryDeallocator deallocator) {
-  Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeHostMemory, host_memory.size()));
+  Ptr tensor_buffer(new LiteRtTensorBufferT(/*env=*/nullptr, tensor_type,
+                                            kLiteRtTensorBufferTypeHostMemory,
+                                            host_memory.size()));
   tensor_buffer->buffer_ = HostBuffer{
       .addr = host_memory.data(),
       .deallocator = deallocator,
@@ -192,7 +194,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromAhwb(
                           litert::internal::AhwbBuffer::GetSize(ahwb));
 
   Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeAhwb, buffer_size, ahwb_offset));
+      /*env=*/nullptr, tensor_type, kLiteRtTensorBufferTypeAhwb, buffer_size,
+      ahwb_offset));
   tensor_buffer->buffer_ = AhwbBuffer{
       .ahwb = ahwb,
       .deallocator = deallocator,
@@ -226,9 +229,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromIonBuffer(
                       "Invalid ION buffer fd");
   }
 
-  Ptr tensor_buffer(
-      new LiteRtTensorBufferT(tensor_type, kLiteRtTensorBufferTypeIon,
-                              ion_buffer_size, ion_buffer_offset));
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      /*env=*/nullptr, tensor_type, kLiteRtTensorBufferTypeIon, ion_buffer_size,
+      ion_buffer_offset));
   tensor_buffer->buffer_ = IonBuffer{
       .addr = ion_buffer_addr,
       .fd = ion_buffer_fd,
@@ -267,9 +270,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromDmaBufBuffer(
                       "Invalid DMA-BUF buffer fd");
   }
 
-  Ptr tensor_buffer(
-      new LiteRtTensorBufferT(tensor_type, kLiteRtTensorBufferTypeDmaBuf,
-                              dmabuf_buffer_size, dmabuf_buffer_offset));
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      /*env=*/nullptr, tensor_type, kLiteRtTensorBufferTypeDmaBuf,
+      dmabuf_buffer_size, dmabuf_buffer_offset));
   tensor_buffer->buffer_ = DmaBufBuffer{
       .addr = dmabuf_buffer_addr,
       .fd = dmabuf_buffer_fd,
@@ -308,9 +311,9 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromFastRpcBuffer(
                       "Invalid FastRPC buffer fd");
   }
 
-  Ptr tensor_buffer(
-      new LiteRtTensorBufferT(tensor_type, kLiteRtTensorBufferTypeFastRpc,
-                              fastrpc_buffer_size, fastrpc_buffer_offset));
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      /*env=*/nullptr, tensor_type, kLiteRtTensorBufferTypeFastRpc,
+      fastrpc_buffer_size, fastrpc_buffer_offset));
   tensor_buffer->buffer_ = FastRpcBuffer{
       .addr = fastrpc_buffer_addr,
       .fd = fastrpc_buffer_fd,
@@ -342,7 +345,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
     LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t buffer_size,
     LiteRtOpenClDeallocator deallocator) {
   Ptr tensor_buffer(
-      new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
       tensor_type, buffer_type, buffer, buffer_size, deallocator);
   return tensor_buffer;
@@ -356,7 +359,7 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
                           litert::internal::OpenClMemory::Alloc(
                               tensor_type, buffer_type, buffer_size));
   Ptr tensor_buffer(
-      new LiteRtTensorBufferT(tensor_type, buffer_type, buffer_size));
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
       std::move(buffer));
   return tensor_buffer;
@@ -368,7 +371,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
     LiteRtGlBufferDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
+      env, tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
   tensor_buffer->buffer_.emplace<litert::internal::GlBuffer>(
       target, id, size_bytes, offset, deallocator);
   return tensor_buffer;
@@ -382,7 +385,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
     return Unexpected(buffer.Error());
   }
   Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeGlBuffer, buffer_size));
+      env, tensor_type, kLiteRtTensorBufferTypeGlBuffer, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::GlBuffer>(
       std::move(*buffer));
   return tensor_buffer;
@@ -394,7 +397,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
     size_t size_bytes, LiteRtGLint layer,
     LiteRtGlTextureDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
-      tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
+      env, tensor_type, kLiteRtTensorBufferTypeGlTexture, size_bytes));
   tensor_buffer->buffer_.emplace<litert::internal::GlTexture>(
       litert::internal::GlTexture(target, id, format, size_bytes, layer,
                                   deallocator));

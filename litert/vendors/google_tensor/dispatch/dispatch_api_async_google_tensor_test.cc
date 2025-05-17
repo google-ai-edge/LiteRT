@@ -268,12 +268,12 @@ TEST(DispatchApiAsync, GoogleTensor) {
   Fence input_fence_1 = platforms::darwinn::fence_util::CreateFence();
 
   LiteRtEvent input_event_0;
-  ASSERT_EQ(LiteRtCreateEventFromSyncFenceFd(input_fence_0->GetFd(),
+  ASSERT_EQ(LiteRtCreateEventFromSyncFenceFd(env.Get(), input_fence_0->GetFd(),
                                              /*owns_fd=*/false, &input_event_0),
             kLiteRtStatusOk);
 
   LiteRtEvent input_event_1;
-  ASSERT_EQ(LiteRtCreateEventFromSyncFenceFd(input_fence_1->GetFd(),
+  ASSERT_EQ(LiteRtCreateEventFromSyncFenceFd(env.Get(), input_fence_1->GetFd(),
                                              /*owns_fd=*/false, &input_event_1),
             kLiteRtStatusOk);
 

@@ -51,7 +51,8 @@ TEST(TensorBufferConversionTest, HostToGl) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_host,
-      LiteRtTensorBufferT::CreateManaged(kLiteRtTensorBufferTypeHostMemory,
+      LiteRtTensorBufferT::CreateManaged(litert_env.get(),
+                                         kLiteRtTensorBufferTypeHostMemory,
                                          kTensorType, sizeof(kTensorData)));
   // Write data to the host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(void* host_memory,
@@ -61,7 +62,8 @@ TEST(TensorBufferConversionTest, HostToGl) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_gl,
-      litert::internal::TensorBufferConvertTo(kLiteRtTensorBufferTypeGlBuffer,
+      litert::internal::TensorBufferConvertTo(litert_env.get(),
+                                              kLiteRtTensorBufferTypeGlBuffer,
                                               *tensor_buffer_host));
 
   // Ensure that data was copied correctly from host to GL.
@@ -70,18 +72,23 @@ TEST(TensorBufferConversionTest, HostToGl) {
 #else
   // Since GL support is not enabled, the conversion should fail.
   EXPECT_FALSE(litert::internal::TensorBufferConvertTo(
-      kLiteRtTensorBufferTypeGlBuffer, *tensor_buffer_host));
+      litert_env.get(), kLiteRtTensorBufferTypeGlBuffer, *tensor_buffer_host));
 #endif
 }
 
 #if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
 TEST(TensorBufferConversionTest, GlToAhwb) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr litert_env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
   ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_gl,
-      LiteRtTensorBufferT::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+      LiteRtTensorBufferT::CreateManaged(litert_env.get(),
+                                         kLiteRtTensorBufferTypeGlBuffer,
                                          kTensorType, sizeof(kTensorData)));
   // Write data to the GL buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(litert::internal::GlBuffer * gl_buffer,
@@ -93,8 +100,8 @@ TEST(TensorBufferConversionTest, GlToAhwb) {
   // Convert.
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_ahwb,
-      litert::internal::TensorBufferConvertTo(kLiteRtTensorBufferTypeAhwb,
-                                              *tensor_buffer_gl));
+      litert::internal::TensorBufferConvertTo(
+          litert_env.get(), kLiteRtTensorBufferTypeAhwb, *tensor_buffer_gl));
   // Ensure that data was copied correctly from Gl to Ahwb.
   LITERT_ASSERT_OK_AND_ASSIGN(void* host_ahwb, tensor_buffer_ahwb->Lock());
   ASSERT_EQ(std::memcmp(host_ahwb, kTensorData, sizeof(kTensorData)), 0);
@@ -106,7 +113,7 @@ TEST(TensorBufferConversionTest, GlToCl) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr litert_env,
                               LiteRtEnvironmentT::CreateWithOptions({}));
-  if (!litert::internal::OpenClBuffer::IsSupported()) {
+  if (!litert::internal::OpenClMemory::IsSupported()) {
     GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
                     "skipping the test";
   }
@@ -116,7 +123,8 @@ TEST(TensorBufferConversionTest, GlToCl) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_gl,
-      LiteRtTensorBufferT::CreateManaged(kLiteRtTensorBufferTypeGlBuffer,
+      LiteRtTensorBufferT::CreateManaged(litert_env.get(),
+                                         kLiteRtTensorBufferTypeGlBuffer,
                                          kTensorType, sizeof(kTensorData)));
   // Write data to the GL buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(litert::internal::GlBuffer * gl_buffer,
@@ -128,8 +136,9 @@ TEST(TensorBufferConversionTest, GlToCl) {
   // Convert.
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtTensorBufferT::Ptr tensor_buffer_cl,
-      litert::internal::TensorBufferConvertTo(kLiteRtTensorBufferTypeOpenCl,
-                                              *tensor_buffer_gl));
+      litert::internal::TensorBufferConvertTo(
+          litert_env.get(), kLiteRtTensorBufferTypeOpenClBufferPacked,
+          *tensor_buffer_gl));
 
   // Ensure that data was copied correctly from Gl to CL.
   LITERT_ASSERT_OK_AND_ASSIGN(void* host_cl, tensor_buffer_cl->Lock());

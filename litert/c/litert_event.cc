@@ -28,10 +28,12 @@
 extern "C" {
 #endif
 
-LiteRtStatus LiteRtCreateEventFromSyncFenceFd(int sync_fence_fd, bool owns_fd,
+LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
+                                              int sync_fence_fd, bool owns_fd,
                                               LiteRtEvent* event) {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
-  *event = new LiteRtEventT{.type = LiteRtEventTypeSyncFenceFd,
+  *event = new LiteRtEventT{.env = env,
+                            .type = LiteRtEventTypeSyncFenceFd,
                             .fd = sync_fence_fd,
                             .owns_fd = owns_fd};
   return kLiteRtStatusOk;
@@ -40,10 +42,12 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(int sync_fence_fd, bool owns_fd,
 #endif
 }
 
-LiteRtStatus LiteRtCreateEventFromOpenClEvent(cl_event cl_event,
+LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
+                                              cl_event cl_event,
                                               LiteRtEvent* event) {
 #if LITERT_HAS_OPENCL_SUPPORT
   *event = new LiteRtEventT{
+      .env = env,
       .type = LiteRtEventTypeOpenCl,
       .opencl_event = cl_event,
   };
@@ -89,12 +93,14 @@ LiteRtStatus LiteRtGetEventEglSync(LiteRtEvent event, EGLSyncKHR* egl_sync) {
   return kLiteRtStatusErrorUnsupported;
 }
 
-LiteRtStatus LiteRtCreateEventFromEglSyncFence(EGLSyncKHR egl_sync,
+LiteRtStatus LiteRtCreateEventFromEglSyncFence(LiteRtEnvironment env,
+                                               EGLSyncKHR egl_sync,
                                                LiteRtEvent* event) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_ASSIGN_OR_RETURN(LiteRtEventType type,
-                          GetEventTypeFromEglSync(egl_sync));
+                          GetEventTypeFromEglSync(env, egl_sync));
   *event = new LiteRtEventT{
+      .env = env,
       .type = type,
       .egl_sync = egl_sync,
   };

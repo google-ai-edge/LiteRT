@@ -339,6 +339,7 @@ cc_test(
     deps = [
         ":tensor_buffer",
         "//litert/c:litert_common",
+        "//litert/cc:litert_environment",
         "//litert/test:matchers",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [

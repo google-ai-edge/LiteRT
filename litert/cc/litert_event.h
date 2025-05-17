@@ -40,27 +40,45 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
       : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
 
   // Creates an Event object with the given `sync_fence_fd`.
+  //
+  // Warning: This is an old API that does not take LiteRtEnvironment. It is
+  // provided for backward compatibility. New code should use the other
+  // CreateFromSyncFenceFd() API.
   static Expected<Event> CreateFromSyncFenceFd(int sync_fence_fd,
                                                bool owns_fd) {
     LiteRtEvent event;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromSyncFenceFd(
+        /*env=*/nullptr, sync_fence_fd, owns_fd, &event));
+    return Event(event, OwnHandle::kYes);
+  }
+
+  // Creates an Event object with the given `sync_fence_fd`.
+  static Expected<Event> CreateFromSyncFenceFd(LiteRtEnvironment env,
+                                               int sync_fence_fd,
+                                               bool owns_fd) {
+    LiteRtEvent event;
     LITERT_RETURN_IF_ERROR(
-        LiteRtCreateEventFromSyncFenceFd(sync_fence_fd, owns_fd, &event));
+        LiteRtCreateEventFromSyncFenceFd(env, sync_fence_fd, owns_fd, &event));
     return Event(event, OwnHandle::kYes);
   }
 
   // Creates an Event object with the given `cl_event`.
-  static Expected<Event> CreateFromOpenClEvent(cl_event cl_event) {
+  static Expected<Event> CreateFromOpenClEvent(LiteRtEnvironment env,
+                                               cl_event cl_event) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromOpenClEvent(cl_event, &event));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCreateEventFromOpenClEvent(env, cl_event, &event));
     return Event(event, OwnHandle::kYes);
   }
 
   // Creates an Event object with the given `egl_sync`.
   // Note: This function assumes that all GL operations have been already added
   // to the GPU command queue.
-  static Expected<Event> CreateFromEglSyncFence(EGLSyncKHR egl_sync) {
+  static Expected<Event> CreateFromEglSyncFence(LiteRtEnvironment env,
+                                                EGLSyncKHR egl_sync) {
     LiteRtEvent event;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateEventFromEglSyncFence(egl_sync, &event));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCreateEventFromEglSyncFence(env, egl_sync, &event));
     return Event(event, OwnHandle::kYes);
   }
 

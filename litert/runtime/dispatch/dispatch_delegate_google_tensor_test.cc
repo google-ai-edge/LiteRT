@@ -688,14 +688,14 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   Fence input_fence_0 = platforms::darwinn::fence_util::CreateFence();
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_0,
-      litert::Event::CreateFromSyncFenceFd(input_fence_0->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_0->GetFd(),
                                            /*owns_fd=*/false));
   input_buffers[0].SetEvent(std::move(input_event_0));
 
   Fence input_fence_1 = platforms::darwinn::fence_util::CreateFence();
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event input_event_1,
-      litert::Event::CreateFromSyncFenceFd(input_fence_1->GetFd(),
+      litert::Event::CreateFromSyncFenceFd(env.Get(), input_fence_1->GetFd(),
                                            /*owns_fd=*/false));
   input_buffers[1].SetEvent(std::move(input_event_1));
 

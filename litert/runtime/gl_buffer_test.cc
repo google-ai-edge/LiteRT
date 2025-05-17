@@ -24,6 +24,7 @@
 #include "tflite/delegates/gpu/gl/egl_environment.h"
 
 #if LITERT_HAS_AHWB_SUPPORT
+#include "litert/cc/litert_environment.h"
 #include "litert/runtime/ahwb_buffer.h"
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
@@ -135,8 +136,11 @@ void FillGlBuffer(GLuint id, std::size_t size) {
 }
 
 TEST(Buffer, GpuWriteAhwbRead) {
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -157,7 +161,7 @@ TEST(Buffer, GpuWriteAhwbRead) {
   // Create EGL sync and fence before AHWB read.
   LITERT_ASSERT_OK_AND_ASSIGN(
       Event egl_sync_event,
-      Event::CreateManaged(LiteRtEventTypeEglNativeSyncFence));
+      Event::CreateManaged(env.Get(), LiteRtEventTypeEglNativeSyncFence));
   LITERT_ASSERT_OK_AND_ASSIGN(int egl_sync_fd, egl_sync_event.DupFd());
 
   // Wrap native fence in LiteRT event.

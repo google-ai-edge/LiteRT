@@ -24,14 +24,16 @@ namespace litert {
 namespace {
 
 TEST(Event, DupFdOnNegativeFd) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Event event,
-                              Event::CreateFromSyncFenceFd(-1, true));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
   EXPECT_FALSE(event.DupFd());
 }
 
 TEST(Event, IsSignaledOnNegativeFd) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Event event,
-                              Event::CreateFromSyncFenceFd(-1, true));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      Event event, Event::CreateFromSyncFenceFd(env.Get(), -1, true));
   EXPECT_FALSE(event.IsSignaled());
 }
 

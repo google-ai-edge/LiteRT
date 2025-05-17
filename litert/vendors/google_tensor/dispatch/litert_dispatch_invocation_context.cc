@@ -503,7 +503,7 @@ litert::Expected<void> GetOutputEvent(
   }
 
   if (auto status = LiteRtCreateEventFromSyncFenceFd(
-          output_fence_fd, /*owns_fd=*/false, output_event);
+          /*env=*/nullptr, output_fence_fd, /*owns_fd=*/false, output_event);
       status != kLiteRtStatusOk) {
     return Error(status, "Failed to create event from sync fence fd");
   }

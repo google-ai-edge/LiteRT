@@ -29,6 +29,7 @@ typedef struct _cl_event* cl_event;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 struct LiteRtEventT {
+  LiteRtEnvironment env;
   LiteRtEventType type = LiteRtEventTypeUnknown;
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
   int fd = -1;
@@ -50,6 +51,7 @@ struct LiteRtEventT {
                                                        LiteRtEventType type);
 };
 
-litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(EGLSyncKHR egl_sync);
+litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
+                                                          EGLSyncKHR egl_sync);
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EVENT_H_
