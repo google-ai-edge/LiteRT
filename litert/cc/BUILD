@@ -729,6 +729,7 @@ cc_library(
         # "//litert:litert_external_users",
         # "//litert:litert_internal_users_with_public_cc",
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
+        # "//third_party/odml/infra/genai/inference/executor/google_tensor:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
