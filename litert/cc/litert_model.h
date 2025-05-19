@@ -469,6 +469,48 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return key;
   }
 
+  // Returns the tensor type for the given n-th input tensor.
+  Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
+                                                size_t input_index) const {
+    auto subgraph = Subgraph(signature_index);
+    return subgraph->Inputs()[input_index].RankedTensorType();
+  }
+
+  // Returns the tensor type for the given input tensor name.
+  Expected<RankedTensorType> GetInputTensorType(
+      size_t signature_index, absl::string_view input_name) const {
+    auto subgraph = Subgraph(signature_index);
+    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph->Input(input_name));
+    return tensor.RankedTensorType();
+  }
+
+  // Get input tensor type of the default signature for input name.
+  Expected<RankedTensorType> GetInputTensorType(
+      absl::string_view input_name) const {
+    return GetInputTensorType(/*signature_index=*/0, input_name);
+  }
+
+  // Returns the tensor type for the given n-th output tensor.
+  Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
+                                                 size_t output_index) const {
+    auto subgraph = Subgraph(signature_index);
+    return subgraph->Outputs()[output_index].RankedTensorType();
+  }
+
+  // Returns the tensor type for the given output tensor name.
+  Expected<RankedTensorType> GetOutputTensorType(
+      size_t signature_index, absl::string_view output_name) const {
+    auto subgraph = Subgraph(signature_index);
+    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph->Output(output_name));
+    return tensor.RankedTensorType();
+  }
+
+  // Get output tensor type of the default signature for output name.
+  Expected<RankedTensorType> GetOutputTensorType(
+      absl::string_view output_name) const {
+    return GetOutputTensorType(/*signature_index=*/0, output_name);
+  }
+
  private:
   // Parameter `owned` indicates if the created TensorBuffer object should take
   // ownership of the provided `tensor_buffer` handle.

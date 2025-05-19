@@ -48,19 +48,15 @@
 // buffer type.
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
     LiteRtEnvironment env, litert::CompiledModel& compiled_model,
-    litert::Signature& signature) {
-  LiteRtSubgraph subgraph_handle = signature.Subgraph();
-  litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
-
+    litert::Model& model, int signature_index) {
+  auto signature = model.GetSignature(signature_index);
   std::vector<litert::TensorBuffer> input_buffers;
-  input_buffers.reserve(subgraph.Inputs().size());
-  for (litert::Tensor& input_tensor : subgraph.Inputs()) {
+  for (int i = 0; i < signature->InputNames().size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBufferRequirements input_buffer_requirements,
-        compiled_model.GetInputBufferRequirements(signature.Key(),
-                                                  input_tensor.Name()));
+        compiled_model.GetInputBufferRequirements(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
-                            input_tensor.RankedTensorType());
+                            model.GetInputTensorType(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(auto input_buffer,
@@ -76,21 +72,19 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 // buffer type.
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
     LiteRtEnvironment env, litert::CompiledModel& compiled_model,
-    litert::Signature& signature) {
-  LiteRtSubgraph subgraph_handle = signature.Subgraph();
-  litert::Subgraph subgraph = litert::Subgraph(subgraph_handle);
+    litert::Model& model, int signature_index) {
+  auto signature = model.GetSignature(signature_index);
 
   std::vector<litert::TensorBuffer> output_buffers;
-  output_buffers.reserve(subgraph.Outputs().size());
-  for (litert::Tensor& output_tensor : subgraph.Outputs()) {
+  output_buffers.reserve(signature->OutputNames().size());
+  for (int i = 0; i < signature->OutputNames().size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
-        litert::TensorBufferRequirements input_buffer_requirements,
-        compiled_model.GetOutputBufferRequirements(signature.Key(),
-                                                   output_tensor.Name()));
+        litert::TensorBufferRequirements output_buffer_requirements,
+        compiled_model.GetOutputBufferRequirements(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
-                            output_tensor.RankedTensorType());
+                            model.GetOutputTensorType(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
-                            input_buffer_requirements.BufferSize());
+                            output_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(auto output_buffer,
                             litert::TensorBuffer::CreateManaged(
                                 env, kLiteRtTensorBufferTypeGlBuffer,
@@ -157,20 +151,18 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
     }
   }
 
-  env_ = std::make_unique<litert::Environment>(std::move(env));
-
   LITERT_ASSIGN_OR_ABORT(auto signatures, model_.GetSignatures());
 
   size_t signature_index = 0;
 
   if (use_gl_buffers_) {
-    LITERT_ASSIGN_OR_ABORT(input_buffers_,
-                           CreateGlInputBuffers(env.Get(), compiled_model_,
-                                                signatures[signature_index]));
+    LITERT_ASSIGN_OR_ABORT(
+        input_buffers_, CreateGlInputBuffers(env.Get(), compiled_model_, model_,
+                                             signature_index));
 
     LITERT_ASSIGN_OR_ABORT(output_buffers_,
                            CreateGlOutputBuffers(env.Get(), compiled_model_,
-                                                 signatures[signature_index]));
+                                                 model_, signature_index));
 
   } else {
     LITERT_ASSIGN_OR_ABORT(input_buffers_,
@@ -179,6 +171,9 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
     LITERT_ASSIGN_OR_ABORT(
         output_buffers_, compiled_model_.CreateOutputBuffers(signature_index));
   }
+
+  env_ = std::make_unique<litert::Environment>(std::move(env));
+
   std::cout << "SegmentationModel: Model initialized." << std::endl;
   std::cout << "SegmentationModel: warming up model..." << std::endl;
   auto start_time = absl::Now();
