@@ -73,8 +73,6 @@ android {
 project.extensions.extraProperties["ASSET_DIR"] = "$projectDir/src/main/assets"
 
 dependencies {
-  // TODO(b/414723246): Replace with maven package.
-  implementation(files("libs/litert.aar"))
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -88,8 +86,6 @@ dependencies {
   implementation(libs.androidx.material.icons.extended)
   implementation(libs.androidx.material2)
   implementation(libs.litert)
-  implementation(libs.litert.gpu)
-  implementation(libs.litert.gpu.api)
   implementation(libs.androidx.camera.core)
   implementation(libs.androidx.camera.lifecycle)
   implementation(libs.androidx.camera.view)
