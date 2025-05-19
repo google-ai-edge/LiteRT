@@ -23,14 +23,11 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/ahwb_buffer.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/gl/gl_buffer.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-
-#if LITERT_HAS_AHWB_SUPPORT
-#include "litert/runtime/ahwb_buffer.h"
-#endif  // LITERT_HAS_AHWB_SUPPORT
 
 namespace litert::internal {
 
@@ -66,11 +63,9 @@ class GlBuffer {
   // thread, it will be created.
   static Expected<GlBuffer> Alloc(size_t size_bytes);
 
-#if LITERT_HAS_AHWB_SUPPORT
   // Allocates a GL buffer from an AHardwareBuffer. If an EGL environment has
   // not been created on this thread, it will be created.
   static Expected<GlBuffer> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
-#endif  // LITERT_HAS_AHWB_SUPPORT
 
   template <typename T>
   Expected<T*> Lock();

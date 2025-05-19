@@ -341,7 +341,13 @@ cc_test(
         ":tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_platform_support",
+        "//litert/cc:litert_event",
         "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/gl:egl_environment",

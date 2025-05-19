@@ -29,6 +29,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/ahwb_buffer.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include <EGL/egl.h>
@@ -62,7 +63,10 @@ bool IsAhwbToGlBufferInteropSupported() {
   return extensions_allowed;
 }
 
+#endif  // LITERT_HAS_AHWB_SUPPORT
+
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
+#if LITERT_HAS_AHWB_SUPPORT
   LITERT_ASSIGN_OR_RETURN(
       auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
   tflite::gpu::gl::EglEnvironment* egl_env = env->getEglEnvironment();
@@ -119,8 +123,11 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
                                              size_bytes, /*offset=*/0,
                                              /*has_ownership=*/true);
   return GlBuffer(std::move(tflite_gl_buffer), ahwb_buffer.ahwb);
-}
+#else
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "AHWB support is not enabled.");
 #endif  // LITERT_HAS_AHWB_SUPPORT
+}
 
 GlBuffer::GlBuffer(LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes,
                    size_t offset, LiteRtGlBufferDeallocator deallocator) {

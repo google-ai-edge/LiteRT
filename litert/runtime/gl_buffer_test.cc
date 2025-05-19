@@ -12,38 +12,46 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/runtime/gl_buffer.h"
+
+#include <cstring>
+#include <vector>
+
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
+#include "litert/c/litert_event.h"
+#include "litert/c/litert_event_type.h"
+#include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_platform_support.h"
+#include "litert/runtime/ahwb_buffer.h"
+#include "litert/test/matchers.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
-#include <memory>
-
-#include <gtest/gtest.h>
-#include "litert/c/litert_environment.h"
-#include "litert/cc/litert_event.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/test/matchers.h"
 #include "tflite/delegates/gpu/gl/egl_environment.h"
-
-#if LITERT_HAS_AHWB_SUPPORT
-#include "litert/runtime/ahwb_buffer.h"
-#endif  // LITERT_HAS_AHWB_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
 namespace internal {
 namespace {
 
-using ::testing::FloatEq;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
 
 TEST(Buffer, GlBufferAlloc) {
-  if (!GlBuffer::IsSupported()) {
+  if (!LiteRtHasOpenGlSupport()) {
     GTEST_SKIP() << "OpenGL buffers are not supported on this platform";
   }
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+// TODO(b/383176413): Remove after GpuEnvironmentSingleton is removed.
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
   auto buffer = GlBuffer::Alloc(4 * sizeof(float));
   ASSERT_TRUE(buffer);
@@ -54,14 +62,15 @@ TEST(Buffer, GlBufferAlloc) {
   LITERT_ASSERT_OK(buffer->Unlock<float>());
 }
 
-#if LITERT_HAS_AHWB_SUPPORT
 TEST(Buffer, GlBufferAllocFromAhwb) {
-  if (!GlBuffer::IsSupported()) {
+  if (!LiteRtHasOpenGlSupport() || !LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "OpenGL buffers are not supported on this platform";
   }
-  // TODO(gcarranza): Incorporate this into LiteRT environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> env;
-  ASSERT_TRUE(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&env).ok());
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
+  ASSERT_TRUE(
+      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -84,6 +93,9 @@ TEST(Buffer, GlBufferAllocFromAhwb) {
 }
 
 TEST(Buffer, NegativeFenceAhwbRead) {
+  if (!LiteRtHasAhwbSupport()) {
+    GTEST_SKIP() << "AHWB support is not enabled on this platform";
+  }
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
 
@@ -98,7 +110,8 @@ TEST(Buffer, NegativeFenceAhwbRead) {
 }
 
 // Utility function to fill the GPU buffer.
-void FillGlBuffer(GLuint id, std::size_t size) {
+void FillGlBuffer(LiteRtGLuint id, size_t size) {
+#if LITERT_HAS_OPENGL_SUPPORT
   std::string shader_source = R"( #version 310 es
     precision highp float;
     layout(local_size_x = 1, local_size_y = 1) in;
@@ -133,16 +146,22 @@ void FillGlBuffer(GLuint id, std::size_t size) {
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
   glDeleteProgram(to_buffer_program);
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
 TEST(Buffer, GpuWriteAhwbRead) {
+  if (!LiteRtHasOpenGlSupport() || !LiteRtHasAhwbSupport()) {
+    GTEST_SKIP() << "AHWB support is not enabled on this platform";
+  }
   LiteRtEnvironment env;
   LITERT_ASSERT_OK(
       LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
 
+#if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
   ASSERT_TRUE(
       tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -161,10 +180,11 @@ TEST(Buffer, GpuWriteAhwbRead) {
   FillGlBuffer(gl_buffer.id(), 4);
 
   // Create EGL sync and fence before AHWB read.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      Event egl_sync_event,
-      Event::CreateManaged(env, LiteRtEventTypeEglNativeSyncFence));
-  LITERT_ASSERT_OK_AND_ASSIGN(int egl_sync_fd, egl_sync_event.DupFd());
+  LiteRtEventT* egl_sync_event;
+  LITERT_ASSERT_OK(LiteRtCreateManagedEvent(
+      env, LiteRtEventTypeEglNativeSyncFence, &egl_sync_event));
+  int egl_sync_fd;
+  LITERT_ASSERT_OK(LiteRtDupFdEvent(egl_sync_event, &egl_sync_fd));
 
   // Wrap native fence in LiteRT event.
   LiteRtEventT gpu_write_event = {
@@ -184,10 +204,6 @@ TEST(Buffer, GpuWriteAhwbRead) {
   LITERT_ASSERT_OK(AhwbBuffer::Unlock(ahwb_buffer.ahwb));
 }
 
-#endif  // LITERT_HAS_AHWB_SUPPORT
-
 }  // namespace
 }  // namespace internal
 }  // namespace litert
-
-#endif  // LITERT_HAS_OPENGL_SUPPORT
