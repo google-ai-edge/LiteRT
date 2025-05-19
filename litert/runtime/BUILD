@@ -14,6 +14,7 @@
 
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts")
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -339,7 +340,7 @@ cc_test(
     deps = [
         ":tensor_buffer",
         "//litert/c:litert_common",
-        "//litert/cc:litert_environment",
+        "//litert/c:litert_environment",
         "//litert/test:matchers",
     ] + gtest_main_no_heapcheck_deps() + select({
         "@org_tensorflow//tensorflow:android": [
@@ -348,6 +349,12 @@ cc_test(
         ],
         "//conditions:default": [],
     }),
+)
+
+litert_device_exec(
+    name = "gl_buffer_device_test",
+    data = [],
+    target = ":gl_buffer_test",
 )
 
 # copybara:uncomment_begin(google-only)
