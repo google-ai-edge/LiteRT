@@ -65,6 +65,7 @@ class ImageSegmentationHelper(private val context: Context) {
       withContext(singleThreadDispatcher) {
         val model =
           CompiledModel.create(
+            context.assets,
             "selfie_multiclass.tflite",
             CompiledModel.Options(toAccelerator(acceleratorEnum)),
             null,
