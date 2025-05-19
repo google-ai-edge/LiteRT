@@ -106,9 +106,11 @@ cc_library(
     hdrs = ["segmentation_model.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_event_type",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
+        "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",

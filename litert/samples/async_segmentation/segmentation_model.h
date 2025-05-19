@@ -17,7 +17,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_SEGMENTATION_MODEL_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_SEGMENTATION_MODEL_H_
 
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 // EGL
@@ -25,6 +27,7 @@
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -73,6 +76,7 @@ class SegmentationModel {
   litert::Model model_;
   litert::CompiledModel compiled_model_;
   AcceleratorType current_accelerator_ = AcceleratorType::CPU;
+  std::unique_ptr<litert::Environment> env_;
 
   std::vector<litert::TensorBuffer> input_buffers_;
   std::vector<litert::TensorBuffer> output_buffers_;

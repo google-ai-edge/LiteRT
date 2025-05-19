@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -30,9 +31,11 @@
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_event_type.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -154,6 +157,8 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
     }
   }
 
+  env_ = std::make_unique<litert::Environment>(std::move(env));
+
   LITERT_ASSIGN_OR_ABORT(auto signatures, model_.GetSignatures());
 
   size_t signature_index = 0;
@@ -200,7 +205,16 @@ bool SegmentationModel::RunSegmentation() {
       break;
   }
   std::cout << std::endl;
+
   if (use_gl_buffers_) {
+    // Create and set event for input tensor buffer.
+    std::cout << "SegmentationModel: Creating event for input tensor buffer."
+              << std::endl;
+    LITERT_ASSIGN_OR_ABORT(
+        auto event,
+        litert::Event::CreateManaged(env_->Get(), LiteRtEventTypeEglSyncFence));
+    input_buffers_[0].SetEvent(std::move(event));
+
     bool async = false;
     auto execution_result =
         compiled_model_.RunAsync(0, input_buffers_, output_buffers_, async);
