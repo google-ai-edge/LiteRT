@@ -1,7 +1,12 @@
-
 # LiteRT Android CPU/GPU/NPU Image Segmentation
+__Disclaimer:__
 
-This project demonstrates:
+*LiteRT NPU acceleration is only available through an Early Access Program. If
+you are not already enrolled, [sign up](http://forms.gle/CoH4jpLwxiEYvDvF6).
+See [NPU acceleration instruction](https://ai.google.dev/edge/litert/next/eap/npu) for more information about compiling NPU
+models and setup NPU runtime.*
+
+## This project demonstrates:
 
 1.  Preprocessing an input image: resizing to 256x256, and normalizing pixel
 values to the [-1, 1] range (stored in a float OpenGL buffer).
@@ -14,7 +19,7 @@ It's a command-line tool intended to be run via android ADB.
 The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
 `SegmentationModel` classes.
 
-**Image Processing Workflow:**
+## Image Processing Workflow:
 
 1.  Load one input image (as bytes).
 2.  Create an OpenGL texture for the input image (from byte data).
@@ -62,17 +67,17 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
 
 ## Setup Instructions
 
-## WORKSPACE Setup (for Open-Source Bazel)
+### WORKSPACE Setup (for Open-Source Bazel)
 Edit `WORKSPACE` to point to your NDK if not using `ANDROID_NDK_HOME`.
 
-## Build Instructions
+### Build Instructions
 Follow instructions for open-source Bazel.
 Example (open-source):
 ```bash
 bazel build //litert/samples/async_segmentation --config=android_arm64
 ```
 
-## Running the Executable
+### Running the Executable
 
 Use the `deploy_and_run_on_android.sh` script. Review and edit paths within the
 script first. `bash chmod +x
@@ -81,3 +86,14 @@ litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu
 bazel-bin/`
 
 Check for `output_segmented.png` on the device.
+
+### Performance
+
+*Performance measured on Samsung S25 Ultra, includes both pre/post processing.*
+
+| Processor             | Execution Type                 | Time (ms) |
+| :-------------------- | :----------------------------- | :-------- |
+| CPU                   | Sync Exec                      | 116       |
+| GPU                   | Sync Exec                      | 35        |
+| GPU                   | Async Exec + 0-copy buffer     | 17        |
+| NPU                   | Sync Exec                      | 17        |
