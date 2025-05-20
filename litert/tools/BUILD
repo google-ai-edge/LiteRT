@@ -285,6 +285,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_tflite_error_status_builder",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_options",
