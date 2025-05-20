@@ -54,3 +54,14 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_test(
+    name = "common_test",
+    srcs = [
+        "common_test.cc",
+    ],
+    deps = [
+        ":common",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
