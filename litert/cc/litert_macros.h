@@ -29,40 +29,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_source_location.h"
 
-#define _CONCAT_NAME_IMPL(x, y) x##y
-
-#define _CONCAT_NAME(x, y) _CONCAT_NAME_IMPL(x, y)
-
-#define _RETURN_VAL(val) return val
-
-#define LITERT_CHECK_STATUS_HAS_CODE(expr, code) ABSL_CHECK(expr == code);
-
-#define LITERT_CHECK_STATUS_OK(expr) \
-  LITERT_CHECK_STATUS_HAS_CODE(expr, kLiteRtStatusOk);
-
-#define LITERT_ENSURE_SUPPORTED(cond, msg) \
-  if (!(cond)) {                           \
-    LITERT_LOG(LITERT_ERROR, "%s", msg);   \
-    return kLiteRtStatusErrorUnsupported;  \
-  }
-
-#define LITERT_ENSURE(expr, fail_stat, msg) \
-  if (!(expr)) {                            \
-    LITERT_LOG(LITERT_ERROR, "%s", msg);    \
-    return fail_stat;                       \
-  }
-
-#define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                          \
-  if (LiteRtStatus status = expr;                                            \
-      (status != kLiteRtStatusOk && status != kLiteRtStatusLegalizeNoMatch)) \
-    return status;
-
-#define LITERT_STACK_ARRAY(ty, var, size, init) \
-  ty* var = (ty*)alloca(sizeof(ty) * size);     \
-  for (ty* e = var; e < var + size; ++e) {      \
-    *e = init;                                  \
-  }
-
 // LITERT_RETURN_IF_ERROR(expr);
 // LITERT_RETURN_IF_ERROR(expr, return_value);
 //
@@ -102,7 +68,7 @@
 // `_` holding the result of `expr` can be used to customize the error message.
 //
 // ```cpp
-// LITERT_ASSIGN_OR_RETURN(expr, _ << "Failed while trying to ...");
+// LITERT_ASSIGN_OR_RETURN(decl, expr, _ << "Failed while trying to ...");
 // ```
 #define LITERT_ASSIGN_OR_RETURN(DECL, ...)                                     \
   LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD((DECL, __VA_ARGS__,                  \
@@ -348,5 +314,39 @@ class LogBeforeAbort {
     ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                   \
   }                                                                          \
   DECL = std::move(TMP_VAR.Value());
+
+#define _CONCAT_NAME_IMPL(x, y) x##y
+
+#define _CONCAT_NAME(x, y) _CONCAT_NAME_IMPL(x, y)
+
+#define _RETURN_VAL(val) return val
+
+#define LITERT_CHECK_STATUS_HAS_CODE(expr, code) ABSL_CHECK(expr == code);
+
+#define LITERT_CHECK_STATUS_OK(expr) \
+  LITERT_CHECK_STATUS_HAS_CODE(expr, kLiteRtStatusOk);
+
+#define LITERT_ENSURE_SUPPORTED(cond, msg) \
+  if (!(cond)) {                           \
+    LITERT_LOG(LITERT_ERROR, "%s", msg);   \
+    return kLiteRtStatusErrorUnsupported;  \
+  }
+
+#define LITERT_ENSURE(expr, fail_stat, msg) \
+  if (!(expr)) {                            \
+    LITERT_LOG(LITERT_ERROR, "%s", msg);    \
+    return fail_stat;                       \
+  }
+
+#define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                          \
+  if (LiteRtStatus status = expr;                                            \
+      (status != kLiteRtStatusOk && status != kLiteRtStatusLegalizeNoMatch)) \
+    return status;
+
+#define LITERT_STACK_ARRAY(ty, var, size, init) \
+  ty* var = (ty*)alloca(sizeof(ty) * size);     \
+  for (ty* e = var; e < var + size; ++e) {      \
+    *e = init;                                  \
+  }
 
 #endif  // ODML_LITERT_LITERT_CC_LITERT_MACROS_H_
