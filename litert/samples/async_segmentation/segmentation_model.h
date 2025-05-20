@@ -17,16 +17,13 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_SEGMENTATION_MODEL_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_SAMPLES_ASYNC_SEGMENTATION_SEGMENTATION_MODEL_H_
 
-#include <memory>
 #include <string>
-#include <utility>
 #include <vector>
 
 // EGL
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
@@ -48,8 +45,7 @@ class SegmentationModel {
   ~SegmentationModel() = default;
 
   // Initializes the LiteRT model from a given path.
-  bool InitializeModel(const std::string& model_path,
-                       std::string npu_library_path = "");
+  bool InitializeModel(const std::string& model_path);
 
   bool RunSegmentation(bool run_async = true);
 

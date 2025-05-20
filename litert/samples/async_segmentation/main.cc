@@ -22,6 +22,7 @@
 #include <vector>
 
 #include <GLES2/gl2.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -47,11 +48,7 @@ bool Initialize(ImageProcessor& processor, SegmentationModel& segmenter,
       accelerator_choice == SegmentationModel::AcceleratorType::NPU
           ? "./models/selfie_multiclass_256x256_SM8750.tflite"
           : "./models/selfie_multiclass_256x256.tflite";
-  std::string npu_library_path =
-      accelerator_choice == SegmentationModel::AcceleratorType::NPU
-          ? "/data/local/tmp/async_segmentation_android/npu/"
-          : "";
-  if (!segmenter.InitializeModel(model_path, npu_library_path)) {
+  if (!segmenter.InitializeModel(model_path)) {
     std::cerr << "Failed to initialize SegmentationModel." << std::endl;
     processor.ShutdownGL();  // ImageProcessor destructor will handle this
     return false;
@@ -136,7 +133,16 @@ int main(int argc, char* argv[]) {
       {0.0f, 1.0f, 1.0f, 0.1f}   // Cyan
   };
   ImageProcessor processor;
-  LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
+  std::vector<litert::Environment::Option> environment_options = {};
+  if (accelerator_choice == SegmentationModel::AcceleratorType::NPU) {
+    // Environment setup.
+    environment_options.push_back(litert::Environment::Option{
+        litert::Environment::OptionTag::DispatchLibraryDir,
+        absl::string_view("/data/local/tmp/async_segmentation_android/npu/"),
+    });
+  }
+  LITERT_ASSIGN_OR_ABORT(auto env,
+                         litert::Environment::Create(environment_options));
   SegmentationModel segmenter(
       &env,
       use_gl_buffers,

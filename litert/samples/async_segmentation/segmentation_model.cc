@@ -107,8 +107,7 @@ litert::Options CreateGpuOptions() {
   return options;
 }
 
-bool SegmentationModel::InitializeModel(const std::string& model_path,
-                                        std::string npu_library_path) {
+bool SegmentationModel::InitializeModel(const std::string& model_path) {
   std::cout << "SegmentationModel: Initializing model ... Path: " << model_path
             << std::endl;
   LITERT_ASSIGN_OR_ABORT(model_, litert::Model::CreateFromFile(model_path));
@@ -134,13 +133,6 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
       break;
     }
     case AcceleratorType::NPU: {
-      // Environment setup.
-      const std::vector<litert::Environment::Option> environment_options = {
-        litert::Environment::Option{
-            litert::Environment::OptionTag::DispatchLibraryDir,
-            absl::string_view(npu_library_path),
-        },
-      };
       LITERT_ASSIGN_OR_ABORT(compiled_model_,
                              litert::CompiledModel::Create(
                                  *env_, model_, kLiteRtHwAcceleratorNpu));

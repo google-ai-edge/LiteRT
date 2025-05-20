@@ -77,6 +77,7 @@ cc_binary(
         "//litert/cc:litert_environment",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
     ] + gles_deps(),
