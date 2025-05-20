@@ -1,55 +1,22 @@
 # Guide to prepare and build the app
 
-## Compile the segmentation model for NPU
+LiteRT NPU acceleration is only available through an Early Access Program. If you are not already enrolled, [sign up](forms.gle/CoH4jpLwxiEYvDvF6).
 
-Follow the Colab (TODO: add link) to compile the sample model, and export
-compiled model files to
-[Google Play AI pack](https://developer.android.com/google/play/on-device-ai)
-directory structure.
+See [NPU acceleration instruction](https://ai.google.dev/edge/litert/next/eap/npu) for more information about compiling NPU models and setup NPU runtime.
 
-## Set up AI Packs
+## Performance numbers
 
-Copy the exported models from previous step to the directory `ai_pack` under
-the app's root directory. Then add a `build.gradle.kts` for each of the AI
-packs:
-
-```kotlin
-// ai_pack/selfie_multiclass/build.gradle.kts
-
-plugins { id("com.android.ai-pack") }
-
-aiPack {
-  packName = "selfie_multiclass"  // AI pack directory name
-  dynamicDelivery { deliveryType = "on-demand" }
-}
-```
-
-```kotlin
-// ai_pack/selfie_multiclass_mtk/build.gradle.kts
-
-plugins { id("com.android.ai-pack") }
-
-aiPack {
-  packName = "selfie_multiclass_mtk"  // AI pack directory name
-  dynamicDelivery { deliveryType = "on-demand" }
-}
-```
-
-Then move the file `ai_pack/device_targeting_configuration.xml` to the `app`
-module's directory.
-
-## Set up NPU runtime feature modules
-
-Download the NPU runtime libraries from GitHub (TODO: add link) and unpack it to
-the directory `litert_npu_runtime_libraries` under the app's root directory.
-Then run the helper script provided to fetch Qualcomm NPU libraries from their
-website.
-
-```sh
-$ ./litert_npu_runtime_libraries/fetch_qualcomm_library.sh
-```
+*   Measured on Samsung S25 Ultra
+*   Synchronized execution w/o zero copy buffer interop
+*   W/O pre/post processing
+  *   CPU Backend: 120 - 140 ms
+  *   GPU Backend: 40 - 50 ms
+  *   NPU Backend: 6 - 12 ms
 
 ## Build the app bundle
+
+WARNING: Before building the app, please follow instructions above to setup NPU
+models and runtime correctly.
 
 From the app's root directory, run:
 
