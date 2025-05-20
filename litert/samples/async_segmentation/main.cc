@@ -25,6 +25,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/samples/async_segmentation/image_processor.h"
@@ -122,7 +123,9 @@ int main(int argc, char* argv[]) {
   // for the GPU accelerator.
   bool use_gl_buffers =
       accelerator_choice == SegmentationModel::AcceleratorType::GPU;
+  LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
   SegmentationModel segmenter(
+      &env,
       use_gl_buffers,
       accelerator_choice);  // Create segmentation model instance
   if (!Initialize(processor, segmenter, accelerator_choice)) {

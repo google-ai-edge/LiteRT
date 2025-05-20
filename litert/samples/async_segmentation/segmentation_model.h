@@ -26,6 +26,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
@@ -38,10 +39,12 @@ class SegmentationModel {
   enum class AcceleratorType { CPU, GPU, NPU };
 
   explicit SegmentationModel(
+      litert::Environment* env,
       bool use_gl_buffers,
       AcceleratorType accelerator_type = AcceleratorType::GPU)
-      : use_gl_buffers_(use_gl_buffers),
-        current_accelerator_(accelerator_type) {};
+      : env_(env), use_gl_buffers_(use_gl_buffers),
+        current_accelerator_(accelerator_type) {
+        };
   ~SegmentationModel() = default;
 
   // Initializes the LiteRT model from a given path.
@@ -72,11 +75,11 @@ class SegmentationModel {
  private:
   // Whether to use GL buffers for input/output. Currently this is only used
   // for the GPU accelerator.
+  litert::Environment* env_;  // Not owned.
   bool use_gl_buffers_;
   litert::Model model_;
-  litert::CompiledModel compiled_model_;
   AcceleratorType current_accelerator_ = AcceleratorType::CPU;
-  std::unique_ptr<litert::Environment> env_;
+  litert::CompiledModel compiled_model_;
 
   std::vector<litert::TensorBuffer> input_buffers_;
   std::vector<litert::TensorBuffer> output_buffers_;

@@ -112,13 +112,12 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
   std::cout << "SegmentationModel: Initializing model ... Path: " << model_path
             << std::endl;
   LITERT_ASSIGN_OR_ABORT(model_, litert::Model::CreateFromFile(model_path));
-  LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
 
   switch (current_accelerator_) {
     case AcceleratorType::CPU: {
-      LITERT_ASSIGN_OR_ABORT(
-          compiled_model_,
-          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorCpu));
+      LITERT_ASSIGN_OR_ABORT(compiled_model_,
+                             litert::CompiledModel::Create(
+                                 *env_, model_, kLiteRtHwAcceleratorCpu));
       break;
     }
     case AcceleratorType::GPU: {
@@ -126,11 +125,11 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
         // If using GL buffers, we need to set specific options for GPU.
         litert::Options options = CreateGpuOptions();
         LITERT_ASSIGN_OR_ABORT(compiled_model_, litert::CompiledModel::Create(
-                                                    env, model_, options));
+                                                    *env_, model_, options));
       } else {
         LITERT_ASSIGN_OR_ABORT(compiled_model_,
                                litert::CompiledModel::Create(
-                                   env, model_, kLiteRtHwAcceleratorGpu));
+                                   *env_, model_, kLiteRtHwAcceleratorGpu));
       }
       break;
     }
@@ -142,11 +141,9 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
             absl::string_view(npu_library_path),
         },
       };
-      LITERT_ASSIGN_OR_ABORT(env,
-                            litert::Environment::Create(environment_options));
-      LITERT_ASSIGN_OR_ABORT(
-          compiled_model_,
-          litert::CompiledModel::Create(env, model_, kLiteRtHwAcceleratorNpu));
+      LITERT_ASSIGN_OR_ABORT(compiled_model_,
+                             litert::CompiledModel::Create(
+                                 *env_, model_, kLiteRtHwAcceleratorNpu));
       break;
     }
   }
@@ -156,12 +153,12 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
   size_t signature_index = 0;
 
   if (use_gl_buffers_) {
-    LITERT_ASSIGN_OR_ABORT(
-        input_buffers_, CreateGlInputBuffers(env.Get(), compiled_model_, model_,
-                                             signature_index));
+    LITERT_ASSIGN_OR_ABORT(input_buffers_,
+                           CreateGlInputBuffers(env_->Get(), compiled_model_,
+                                                model_, signature_index));
 
     LITERT_ASSIGN_OR_ABORT(output_buffers_,
-                           CreateGlOutputBuffers(env.Get(), compiled_model_,
+                           CreateGlOutputBuffers(env_->Get(), compiled_model_,
                                                  model_, signature_index));
 
   } else {
@@ -171,8 +168,6 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
     LITERT_ASSIGN_OR_ABORT(
         output_buffers_, compiled_model_.CreateOutputBuffers(signature_index));
   }
-
-  env_ = std::make_unique<litert::Environment>(std::move(env));
 
   std::cout << "SegmentationModel: Model initialized." << std::endl;
   std::cout << "SegmentationModel: warming up model..." << std::endl;
