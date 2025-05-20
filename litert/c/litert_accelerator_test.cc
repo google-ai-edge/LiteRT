@@ -28,21 +28,12 @@
 #include "litert/runtime/accelerator.h"
 #include "litert/test/matchers.h"
 
-#define LITERT_ENSURE_OK(expr)       \
-  do {                               \
-    LiteRtStatus status = (expr);    \
-    if (status != kLiteRtStatusOk) { \
-      return status;                 \
-    }                                \
-  } while (0)
-
 namespace {
 
 using testing::Eq;
 using testing::Ge;
 using testing::Ne;
 using testing::NotNull;
-using testing::StrEq;
 
 class DummyAccelerator {
  public:
@@ -53,15 +44,15 @@ class DummyAccelerator {
     dummy_accelerator->hardware_support_ = hardware_support;
     LiteRtAccelerator accelerator;
     LiteRtCreateAccelerator(&accelerator);
-    LITERT_ENSURE_OK(
+    LITERT_RETURN_IF_ERROR(
         LiteRtSetAcceleratorGetName(accelerator, DummyAccelerator::GetName));
-    LITERT_ENSURE_OK(LiteRtSetAcceleratorGetVersion(
+    LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetVersion(
         accelerator, DummyAccelerator::GetVersion));
-    LITERT_ENSURE_OK(LiteRtSetAcceleratorGetHardwareSupport(
+    LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
         accelerator, DummyAccelerator::GetHardwareSupport));
-    LITERT_ENSURE_OK(LiteRtRegisterAccelerator(env, accelerator,
-                                               dummy_accelerator.release(),
-                                               DummyAccelerator::Destroy));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtRegisterAccelerator(env, accelerator, dummy_accelerator.release(),
+                                  DummyAccelerator::Destroy));
     return kLiteRtStatusOk;
   }
 
