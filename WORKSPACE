@@ -205,3 +205,8 @@ neuro_pilot()
 load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 
 google_tensor()
+
+# LiteRT GPU ----------------------------------------------------------------------------------
+load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
+
+litert_gpu()

@@ -59,6 +59,7 @@ cc_binary(
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
         "@litert_gpu//:jni/arm64-v8a/libLiteRtGpuAccelerator.so",  # copybara:comment
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
         "@qairt//:lib/aarch64-android/libQnnHtp.so",
         "@qairt//:lib/aarch64-android/libQnnHtpPrepare.so",
         "@qairt//:lib/aarch64-android/libQnnHtpV79Stub.so",
@@ -73,11 +74,10 @@ cc_binary(
         ":image_processor",
         ":image_utils",
         ":segmentation_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
-        "//litert/cc:litert_tensor_buffer",
-        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
-        "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
     ] + gles_deps(),
 )
 
