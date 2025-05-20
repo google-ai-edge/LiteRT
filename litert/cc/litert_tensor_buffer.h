@@ -19,6 +19,7 @@
 #include <cstring>
 #include <utility>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -276,6 +277,7 @@ class TensorBuffer
   template <typename T>
   Expected<void> Write(absl::Span<const T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
+    absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     if (size < data.size() * sizeof(T)) {
       return Unexpected(
@@ -286,7 +288,6 @@ class TensorBuffer
               size, data.size() * sizeof(T)));
     }
     std::memcpy(host_mem_addr, data.data(), data.size() * sizeof(T));
-    Unlock();
     return {};
   }
 
@@ -298,6 +299,7 @@ class TensorBuffer
   template <typename T>
   Expected<void> Read(absl::Span<T> data) {
     LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
+    absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     size_t total_read_size = data.size() * sizeof(T);
     if (size < total_read_size) {
@@ -309,7 +311,6 @@ class TensorBuffer
               size, total_read_size));
     }
     std::memcpy(data.data(), host_mem_addr, total_read_size);
-    Unlock();
     return {};
   }
 };
@@ -317,8 +318,24 @@ class TensorBuffer
 class TensorBufferScopedLock {
  public:
   TensorBufferScopedLock(const TensorBufferScopedLock& arg) = delete;
-  TensorBufferScopedLock(TensorBufferScopedLock&& arg) = default;
-  ~TensorBufferScopedLock() { (void)LiteRtUnlockTensorBuffer(tensor_buffer_); }
+  TensorBufferScopedLock(TensorBufferScopedLock&& arg) noexcept
+      : tensor_buffer_(arg.tensor_buffer_) {
+    arg.tensor_buffer_ = nullptr;
+  };
+
+  TensorBufferScopedLock& operator=(TensorBufferScopedLock&& other) noexcept {
+    if (this != &other) {
+      tensor_buffer_ = other.tensor_buffer_;
+      other.tensor_buffer_ = nullptr;
+    }
+    return *this;
+  }
+
+  ~TensorBufferScopedLock() {
+    if (tensor_buffer_ != nullptr) {
+      (void)LiteRtUnlockTensorBuffer(tensor_buffer_);
+    }
+  }
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(

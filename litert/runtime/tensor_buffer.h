@@ -247,6 +247,7 @@ class LiteRtTensorBufferT {
   // an AHWB buffer.
   absl::flat_hash_map<LiteRtTensorBufferType, BufferVariant>
       memory_backed_buffers_;
+  bool is_locked_ = false;
 };
 
 namespace litert::internal {

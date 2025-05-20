@@ -742,6 +742,7 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         ":litert_model",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",

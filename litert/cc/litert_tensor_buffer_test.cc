@@ -54,6 +54,7 @@ namespace {
 
 using ::testing::Eq;
 using ::testing::Ne;
+using ::testing::litert::IsError;
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
 
@@ -114,6 +115,37 @@ TEST(TensorBuffer, HostMemory) {
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
         0);
+  }
+}
+
+TEST(TensorBuffer, DoubleLockOrUnlock) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(env.Get(), kTensorBufferType, kTensorType,
+                                  sizeof(kTensorData)));
+  LITERT_EXPECT_OK(tensor_buffer.Lock());
+  EXPECT_THAT(tensor_buffer.Lock(), IsError());
+  LITERT_EXPECT_OK(tensor_buffer.Unlock());
+  EXPECT_THAT(tensor_buffer.Unlock(), IsError());
+}
+
+TEST(TensorBuffer, TensorBufferScopedLock) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(env.Get(), kTensorBufferType, kTensorType,
+                                  sizeof(kTensorData)));
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
+    LITERT_EXPECT_OK(lock_and_addr);
   }
 }
 

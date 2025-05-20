@@ -650,6 +650,10 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 }
 
 Expected<void*> LiteRtTensorBufferT::Lock() {
+  LITERT_RETURN_IF_ERROR(is_locked_ == false,
+                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Tensor buffer is already locked."));
+  is_locked_ = true;
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types we wait here.
@@ -713,6 +717,10 @@ Expected<void*> LiteRtTensorBufferT::Lock() {
 }
 
 Expected<void> LiteRtTensorBufferT::Unlock() {
+  LITERT_RETURN_IF_ERROR(is_locked_ == true,
+                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                    "Tensor buffer is already unlocked."));
+  is_locked_ = false;
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeAhwb: {
       auto ahwb = std::get<AhwbBuffer>(buffer_).ahwb;
