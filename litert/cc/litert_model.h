@@ -472,15 +472,15 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   // Returns the tensor type for the given n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
-    auto subgraph = Subgraph(signature_index);
-    return subgraph->Inputs()[input_index].RankedTensorType();
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, Subgraph(signature_index));
+    return subgraph.Inputs()[input_index].RankedTensorType();
   }
 
   // Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       size_t signature_index, absl::string_view input_name) const {
-    auto subgraph = Subgraph(signature_index);
-    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph->Input(input_name));
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, Subgraph(signature_index));
+    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph.Input(input_name));
     return tensor.RankedTensorType();
   }
 
