@@ -88,6 +88,9 @@ project.extensions.extraProperties["ASSET_DIR"] = "$projectDir/src/main/assets"
 dependencies {
   // Strings for NPU runtime libraries
   implementation(project(":litert_npu_runtime_libraries:runtime_strings"))
+
+  implementation(libs.litert)
+
   implementation(libs.androidx.core.ktx)
   implementation(libs.androidx.lifecycle.runtime.ktx)
   implementation(libs.androidx.lifecycle.runtime.compose)
@@ -100,7 +103,6 @@ dependencies {
   implementation(libs.androidx.material.icons.core)
   implementation(libs.androidx.material.icons.extended)
   implementation(libs.androidx.material2)
-  implementation(libs.litert)
   implementation(libs.androidx.camera.core)
   implementation(libs.androidx.camera.lifecycle)
   implementation(libs.androidx.camera.view)
@@ -108,8 +110,8 @@ dependencies {
   implementation(libs.coil.compose)
   implementation(libs.androidx.compose.runtime.livedata)
   implementation(libs.android.play.ai.delivery)
-  implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.10.2"))
-  implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android")
+  implementation(platform(libs.kotlinx.coroutines.bom))
+  implementation(libs.kotlinx.coroutines.android)
 
   testImplementation(libs.junit)
   androidTestImplementation(libs.androidx.junit)
