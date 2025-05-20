@@ -46,6 +46,12 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
         model and generates 6 (256x256)segmentation masks for different classes.
     *   User can specify three different accelerators (gpu/npu/cpu) for
         executing the model.
+    *   User can specify whether `SegmentationModel` should use GL buffers
+        (`--use_gl_buffers`) for input and output buffers, eliminating the need
+        to create new OpenGL buffers. This enables zero-copy between pre and
+        post processing. Your target device must support OpenCL-OpenGL buffer
+        sharing (`cl_khr_gl_sharing`) to use this feature.
+        * Supported on (not limited to): Samsung Galaxy S24/S25
 
 5.  **Coloring and Blending Masks:**
 
@@ -82,7 +88,7 @@ bazel build //litert/samples/async_segmentation --config=android_arm64
 Use the `deploy_and_run_on_android.sh` script. Review and edit paths within the
 script first. `bash chmod +x
 litert/samples/async_segmentation/deploy_and_run_on_android.sh
-litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu
+litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu [--use_gl_buffers]
 bazel-bin/`
 
 Check for `output_segmented.png` on the device.

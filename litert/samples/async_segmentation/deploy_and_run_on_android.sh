@@ -35,7 +35,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 # Parse options
-TEMP=$(getopt -o '' --long accelerator: -- "$@")
+TEMP=$(getopt -o '' --long accelerator:,use_gl_buffers -- "$@")
 if [ $? -ne 0 ]; then
     echo "Error parsing options." >&2
     usage
@@ -44,17 +44,23 @@ fi
 eval set -- "$TEMP"
 unset TEMP
 
+USE_GL_BUFFERS=false
+
 while true; do
     case "$1" in
         '--accelerator')
             ACCELERATOR="$2"
             # Validate accelerator value
             if [[ "$ACCELERATOR" != "gpu" && "$ACCELERATOR" != "npu" && "$ACCELERATOR" != "cpu" ]]; then
-                echo "Error: Invalid value for --accelerator. Must be 'gpu', 'npu', or 'cpu'."
+                echo "Error: Invalid value for --accelerator. Must be 'gpu', 'npu', or 'cpu'." >&2
                 usage
+                exit 1
             fi
             shift 2
-            continue
+            ;;
+        '--use_gl_buffers')
+            USE_GL_BUFFERS=true
+            shift
             ;;
         '--')
             shift
@@ -68,6 +74,9 @@ while true; do
             ;;
     esac
 done
+
+echo "Selected Accelerator: $ACCELERATOR"
+echo "Use GL Buffers: $USE_GL_BUFFERS"
 
 # The remaining argument should be the binary_build_path
 if [ "$#" -ne 1 ]; then
@@ -197,5 +206,5 @@ echo "  adb pull ${DEVICE_BASE_DIR}/segmentation_mask_0.png ."
 echo "Set the dynamic library path:"
 echo "  LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\""
 
-adb shell "cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png ${ACCELERATOR}"
+adb shell "cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png ${ACCELERATOR} ${USE_GL_BUFFERS}"
 adb pull ${DEVICE_BASE_DIR}/output_segmented.png .

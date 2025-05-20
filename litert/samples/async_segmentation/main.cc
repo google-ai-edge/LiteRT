@@ -82,11 +82,11 @@ bool LoadImage(const std::string& path, ImageProcessor& processor, int& width,
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  if (argc < 3 || argc > 4) {
-    std::cerr
-        << "Usage: " << argv[0]
-        << " <input_image_path> <output_image_path> [cpu|gpu|npu (optional)]"
-        << std::endl;
+  if (argc < 3 || argc > 5) {
+    std::cerr << "Usage: " << argv[0]
+              << " <input_image_path> <output_image_path> [cpu|gpu|npu "
+                 "(accelerator)] [true|false (use_gl_buffers)]"
+              << std::endl;
     return 1;
   }
 
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
   SegmentationModel::AcceleratorType accelerator_choice =
       SegmentationModel::AcceleratorType::CPU;
 
-  if (argc == 4) {
+  if (argc >= 4) {
     std::string accelerator_arg = argv[3];
     std::transform(accelerator_arg.begin(), accelerator_arg.end(),
                    accelerator_arg.begin(), ::tolower);
@@ -109,6 +109,23 @@ int main(int argc, char* argv[]) {
                 << "'. Defaulting to CPU." << std::endl;
     }
   }
+  // Whether to use GL buffers for input/output. Currently this is only used
+  // for the GPU accelerator.
+  bool use_gl_buffers = false;
+  if (argc == 5) {
+    std::string use_gl_buffers_arg = argv[4];
+    std::transform(use_gl_buffers_arg.begin(), use_gl_buffers_arg.end(),
+                   use_gl_buffers_arg.begin(), ::tolower);
+    if (use_gl_buffers_arg == "true") {
+      use_gl_buffers = true;
+    } else if (use_gl_buffers_arg == "false") {
+      use_gl_buffers = false;
+    } else {
+      std::cerr << "Warning: Unknown value for use_gl_buffers '"
+                << use_gl_buffers_arg << "'. Defaulting to false." << std::endl;
+    }
+  }
+
   // Define 6 distinct colors for the masks (RGBA)
   std::vector<RGBAColor> mask_colors = {
       {1.0f, 0.0f, 0.0f, 0.1f},  // Red (semi-transparent)
@@ -119,10 +136,6 @@ int main(int argc, char* argv[]) {
       {0.0f, 1.0f, 1.0f, 0.1f}   // Cyan
   };
   ImageProcessor processor;
-  // Whether to use GL buffers for input/output. Currently this is only used
-  // for the GPU accelerator.
-  bool use_gl_buffers =
-      accelerator_choice == SegmentationModel::AcceleratorType::GPU;
   LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
   SegmentationModel segmenter(
       &env,
