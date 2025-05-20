@@ -74,6 +74,7 @@ cc_binary(
         ":image_processor",
         ":image_utils",
         ":segmentation_model",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
         "//litert/vendors/qualcomm/dispatch:dispatch_api",  # buildcleaner: keep
         "@com_google_absl//absl/time",

@@ -25,6 +25,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/samples/async_segmentation/image_processor.h"
 #include "litert/samples/async_segmentation/image_utils.h"
@@ -197,6 +198,12 @@ int main(int argc, char* argv[]) {
   if (!segmenter.RunSegmentation()) {
     std::cerr << "Failed to run segmentation." << std::endl;
     return 1;
+  }
+
+  litert::TensorBuffer& output_buffer = segmenter.GetOutputBuffer(0);
+  if (output_buffer.HasEvent()) {
+    LITERT_ASSIGN_OR_ABORT(auto event, output_buffer.GetEvent());
+    event.Wait();
   }
 
   // --- Post-Processing: Deinterleave masks from output buffer ---

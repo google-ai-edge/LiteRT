@@ -185,7 +185,7 @@ bool SegmentationModel::InitializeModel(const std::string& model_path,
   return true;
 }
 
-bool SegmentationModel::RunSegmentation() {
+bool SegmentationModel::RunSegmentation(bool run_async) {
   std::cout << "SegmentationModel: Running segmentation on preprocessed "
                "buffer on accelerator: ";
   switch (current_accelerator_) {
@@ -202,14 +202,15 @@ bool SegmentationModel::RunSegmentation() {
   std::cout << std::endl;
 
   if (use_gl_buffers_) {
-    // Create and set event for input tensor buffer.
-    std::cout << "SegmentationModel: Creating event for input tensor buffer."
-              << std::endl;
+    // Create and set event for input tensor buffer. Assumes that GL
+    // pre-processing has already been queued.
     LITERT_ASSIGN_OR_ABORT(
         auto event,
         litert::Event::CreateManaged(env_->Get(), LiteRtEventTypeEglSyncFence));
     input_buffers_[0].SetEvent(std::move(event));
+  }
 
+  if (run_async) {
     bool async = false;
     auto execution_result =
         compiled_model_.RunAsync(0, input_buffers_, output_buffers_, async);

@@ -48,7 +48,7 @@ class SegmentationModel {
   bool InitializeModel(const std::string& model_path,
                        std::string npu_library_path = "");
 
-  bool RunSegmentation();
+  bool RunSegmentation(bool run_async = true);
 
   GLuint GetInputGlBufferId(int index) {
     LITERT_ASSIGN_OR_ABORT(auto buffer, input_buffers_[index].GetGlBuffer());
