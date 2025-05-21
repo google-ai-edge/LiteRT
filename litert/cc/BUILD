@@ -782,6 +782,7 @@ cc_test(
         "//litert/test:matchers",
         "//tflite/delegates/gpu/cl:buffer",
         "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
