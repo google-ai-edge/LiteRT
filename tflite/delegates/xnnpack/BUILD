@@ -246,6 +246,7 @@ cc_library(
         ":tflite_with_xnnpack_qu8",  # buildcleaner: keep
         ":tflite_with_xnnpack_transient_indirection_buffer",  # buildcleaner: keep
         ":weight_cache",
+        "//tflite:array",
         "//tflite:kernel_api",
         "//tflite:minimal_logging",
         "//tflite/c:c_api_types",
@@ -291,6 +292,7 @@ cc_library(
         ":flexbuffers_util",
         ":quantization_util",
         ":weight_cache",
+        "//tflite:array",
         "//tflite:kernel_api",
         "//tflite:minimal_logging",
         "//tflite/c:c_api_types",
