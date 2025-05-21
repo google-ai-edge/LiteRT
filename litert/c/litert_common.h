@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -57,6 +57,8 @@ LITERT_DEFINE_HANDLE(LiteRtModel);
 LITERT_DEFINE_HANDLE(LiteRtOpList);
 // Representations of an custom op.  (litert_op_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOp);
+// A collection of runtime options. (litert_runtime_options.h)
+LITERT_DEFINE_HANDLE(LiteRtRuntimeOptions);
 // A linked list of type erased opaque options. These are added to the
 // LiteRtOptions object. (litert_opaque_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);

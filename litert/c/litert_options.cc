@@ -17,10 +17,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/options.h"
 
 #define LRT_CHECK_NON_NULL(handle)                          \
@@ -71,6 +71,15 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtAddRuntimeOptions(LiteRtOptions options,
+                                     LiteRtRuntimeOptions runtime_options) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(runtime_options);
+  options->runtime_options =
+      litert::RuntimeOptions(runtime_options, litert::OwnHandle::kNo);
+  return kLiteRtStatusOk;
+}
+
 // Retrieves the head of the accelerator compilation option list.
 //
 // Note: The following elements may be retrieved with
@@ -80,6 +89,14 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
   *opaque_options = options->options.Get();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetRuntimeOptions(LiteRtOptions options,
+                                     LiteRtRuntimeOptions* runtime_options) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(runtime_options);
+  *runtime_options = options->runtime_options.Get();
   return kLiteRtStatusOk;
 }
 

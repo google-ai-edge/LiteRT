@@ -256,6 +256,10 @@ class LiteRtCompiledModelT {
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
   absl::flat_hash_set<const void*> cpu_tensors_;
+
+  // The number of threads to use for inference. This is used to set the
+  // number of threads in the interpreter.
+  int interpreter_num_threads_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

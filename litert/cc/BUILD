@@ -1059,6 +1059,8 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         ":litert_opaque_options",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/cc/options:litert_runtime_options",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,

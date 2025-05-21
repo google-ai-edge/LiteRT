@@ -84,6 +84,16 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "litert_runtime_options_test",
+    srcs = ["litert_runtime_options_test.cc"],
+    deps = [
+        ":litert_runtime_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_qualcomm_options",
     srcs = ["litert_qualcomm_options.cc"],
@@ -131,5 +141,17 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_runtime_options",
+    hdrs = ["litert_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
     ],
 )

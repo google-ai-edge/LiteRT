@@ -35,17 +35,23 @@
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/model.h"
@@ -64,6 +70,7 @@
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
+#include "tflite/interpreter_options.h"
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
 
@@ -90,6 +97,28 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       resolver.AddCustom(option.op_name.c_str(), tflite_registration);
     }
   }
+  tflite::InterpreterOptions interpreter_options;
+  if (jit_compilation_options) {
+    litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
+    Expected<litert::OpaqueOptions> opaque_options =
+        cc_options.GetOpaqueOptions();
+    LiteRtCpuOptions cpu_options;
+    LiteRtFindOpaqueOptionsData(opaque_options->Get(),
+                                litert::CpuOptions::Identifier().data(),
+                                reinterpret_cast<void**>(&cpu_options));
+    LiteRtGetCpuOptionsNumThread(cpu_options, &interpreter_num_threads_);
+
+    if (jit_compilation_options->runtime_options) {
+      auto shlo_composite_inlining =
+          jit_compilation_options->runtime_options.GetShloCompositeInlining();
+      interpreter_options.SetShloCompositeInlining(*shlo_composite_inlining);
+    }
+  }
+
+  tflite::InterpreterBuilder builder(*fb_model_, resolver,
+                                     &interpreter_options);
+  builder(&interp_);
+  interp_->SetNumThreads(interpreter_num_threads_);
 
   tflite::InterpreterBuilder(*fb_model_, resolver)(&interp_);
   if (interp_ == nullptr) {
