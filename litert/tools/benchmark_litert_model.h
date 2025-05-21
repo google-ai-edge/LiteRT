@@ -177,6 +177,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<Model> model_;
 
  private:
+  std::unique_ptr<litert::Environment> environment_;
   std::unique_ptr<litert::CompiledModel> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
