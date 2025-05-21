@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -46,12 +46,18 @@ LiteRtStatus LiteRtGetOptionsHardwareAccelerators(
 LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions opaque_options);
 
+LiteRtStatus LiteRtAddRuntimeOptions(LiteRtOptions options,
+                                     LiteRtRuntimeOptions runtime_options);
+
 // Retrieves the head of the accelerator compilation option list.
 //
 // Note: The following elements may be retrieved with
 // `LiteRtGetNextAcceleratorCompilationOptions`.
 LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options);
+
+LiteRtStatus LiteRtGetRuntimeOptions(LiteRtOptions options,
+                                     LiteRtRuntimeOptions* runtime_options);
 
 // Adds a custom op kernel to the given options.
 LiteRtStatus LiteRtAddCustomOpKernelOption(

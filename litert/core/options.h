@@ -21,6 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 struct LiteRtOptionsT {
   struct CustomOpOption {
@@ -41,6 +42,7 @@ struct LiteRtOptionsT {
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   litert::OpaqueOptions options;
   std::vector<CustomOpOption> custom_op_options;
+  litert::RuntimeOptions runtime_options;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

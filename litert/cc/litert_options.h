@@ -26,6 +26,7 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 namespace litert {
 
@@ -63,10 +64,21 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return {};
   }
 
+  Expected<void> AddRuntimeOptions(RuntimeOptions&& options) {
+    LITERT_RETURN_IF_ERROR(LiteRtAddRuntimeOptions(Get(), options.Release()));
+    return {};
+  }
+
   Expected<OpaqueOptions> GetOpaqueOptions() {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
     return OpaqueOptions(options, OwnHandle::kNo);
+  }
+
+  Expected<RuntimeOptions> GetRuntimeOptions() {
+    LiteRtRuntimeOptions options;
+    LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptions(Get(), &options));
+    return RuntimeOptions(options, OwnHandle::kNo);
   }
 
   Expected<void> AddCustomOpKernel(const std::string& custom_op_name,
