@@ -94,13 +94,19 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
   return output_buffers;
 }
 
-litert::Options CreateGpuOptions() {
+litert::Options CreateGpuOptions(bool use_gl_buffers) {
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, litert::GpuOptions::Create());
-  LITERT_ABORT_IF_ERROR(
+  if (use_gl_buffers) {
+    LITERT_ABORT_IF_ERROR(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
-  LITERT_ABORT_IF_ERROR(
+    LITERT_ABORT_IF_ERROR(
       gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
-
+    LITERT_ABORT_IF_ERROR(
+        gpu_options.EnableNoImmutableExternalTensorsMode(false));
+  } else {
+    LITERT_ABORT_IF_ERROR(
+      gpu_options.EnableNoImmutableExternalTensorsMode(true));
+  }
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
   options.AddOpaqueOptions(std::move(gpu_options));
@@ -120,16 +126,10 @@ bool SegmentationModel::InitializeModel(const std::string& model_path) {
       break;
     }
     case AcceleratorType::GPU: {
-      if (use_gl_buffers_) {
         // If using GL buffers, we need to set specific options for GPU.
-        litert::Options options = CreateGpuOptions();
+        litert::Options options = CreateGpuOptions(use_gl_buffers_);
         LITERT_ASSIGN_OR_ABORT(compiled_model_, litert::CompiledModel::Create(
                                                     *env_, model_, options));
-      } else {
-        LITERT_ASSIGN_OR_ABORT(compiled_model_,
-                               litert::CompiledModel::Create(
-                                   *env_, model_, kLiteRtHwAcceleratorGpu));
-      }
       break;
     }
     case AcceleratorType::NPU: {
