@@ -274,7 +274,8 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
         LITERT_ASSIGN_OR_RETURN(
             auto lock_and_addr,
-            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer));
+            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer,
+                                           TensorBuffer::LockMode::kRead));
         std::memcpy(lock_and_addr.second, tensor_data, buffer_size);
       }
     }
@@ -299,7 +300,8 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
         size_t buffer_size = tensor_buffer_info.tensor_buffer_used_size;
         LITERT_ASSIGN_OR_RETURN(
             auto lock_and_addr,
-            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer));
+            TensorBufferScopedLock::Create(tensor_buffer_info.tensor_buffer,
+                                           TensorBuffer::LockMode::kWrite));
         std::memcpy(tensor_data, lock_and_addr.second, buffer_size);
       }
     }

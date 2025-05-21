@@ -104,13 +104,15 @@ TEST(TensorBuffer, HostMemory) {
   ASSERT_EQ(*offset, 0);
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
   }
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -185,13 +187,15 @@ TEST(TensorBuffer, Ahwb) {
   ASSERT_EQ(*offset, 0);
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
   }
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -235,13 +239,15 @@ TEST(TensorBuffer, Ion) {
   ASSERT_EQ(*offset, 0);
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
   }
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -286,13 +292,15 @@ TEST(TensorBuffer, DmaBuf) {
   ASSERT_EQ(*offset, 0);
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
   }
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -337,13 +345,15 @@ TEST(TensorBuffer, FastRpc) {
   ASSERT_EQ(*offset, 0);
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
   }
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(*tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
@@ -382,8 +392,8 @@ TEST(TensorBuffer, CreateFromExternalHostMemory) {
   auto tensor_buffer_from_external_memory = TensorBuffer::CreateFromHostMemory(
       kTensorType, host_memory_ptr, kTensorBufferSize);
 
-  auto lock_and_addr_external_memory =
-      TensorBufferScopedLock::Create(*tensor_buffer_from_external_memory);
+  auto lock_and_addr_external_memory = TensorBufferScopedLock::Create(
+      *tensor_buffer_from_external_memory, TensorBuffer::LockMode::kWrite);
   ASSERT_TRUE(lock_and_addr_external_memory);
   ASSERT_EQ(std::memcmp(lock_and_addr_external_memory->second, kTensorData,
                         sizeof(kTensorData)),
@@ -428,11 +438,11 @@ TEST(TensorBuffer, CreateFromAhwb) {
     // Create a tensor buffer that wraps the AHardwareBuffer.
     const RankedTensorType kTensorType(kTestTensorType);
     auto tensor_buffer_from_ahwb =
-        TensorBuffer::CreateFromAhwb(env.Get(), kTensorType, ahw_buffer,
+        TensorBuffer::CreateFromAhwb(kTensorType, ahw_buffer,
                                      /*ahwb_offset=*/0);
 
-    auto lock_and_addr_external_memory =
-        TensorBufferScopedLock::Create(*tensor_buffer_from_ahwb);
+    auto lock_and_addr_external_memory = TensorBufferScopedLock::Create(
+        *tensor_buffer_from_ahwb, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr_external_memory);
     ASSERT_EQ(std::memcmp(lock_and_addr_external_memory->second, kTensorData,
                           sizeof(kTensorData)),
@@ -464,8 +474,8 @@ TEST(TensorBuffer, Duplicate) {
     ASSERT_EQ(duplicated_tensor_buffer->Get(), tensor_buffer.Get());
 
     // Update tensor buffer using the duplicated tensor buffer.
-    auto lock_and_addr =
-        TensorBufferScopedLock::Create(*duplicated_tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        *duplicated_tensor_buffer, TensorBuffer::LockMode::kWrite);
     ASSERT_TRUE(lock_and_addr);
     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
 
@@ -476,7 +486,8 @@ TEST(TensorBuffer, Duplicate) {
   ASSERT_EQ(GetReferenceCount(tensor_buffer), 1);
   // Check that the original tensor buffer is not affected.
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     ASSERT_EQ(
         std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),

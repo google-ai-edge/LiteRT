@@ -260,9 +260,27 @@ class TensorBuffer
     return {};
   }
 
-  Expected<void*> Lock() {
+  enum class LockMode {
+    kRead = kLiteRtTensorBufferLockModeRead,
+    kWrite = kLiteRtTensorBufferLockModeWrite,
+    kReadWrite = kLiteRtTensorBufferLockModeReadWrite,
+  };
+
+  static LiteRtTensorBufferLockMode ToLiteRtLockMode(LockMode mode) {
+    switch (mode) {
+      case LockMode::kRead:
+        return kLiteRtTensorBufferLockModeRead;
+      case LockMode::kWrite:
+        return kLiteRtTensorBufferLockModeWrite;
+      case LockMode::kReadWrite:
+        return kLiteRtTensorBufferLockModeReadWrite;
+    }
+  }
+
+  Expected<void*> Lock(LockMode mode = LockMode::kWrite) {
     void* host_mem_addr;
-    LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(Get(), &host_mem_addr));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtLockTensorBuffer(Get(), &host_mem_addr, ToLiteRtLockMode(mode)));
     return host_mem_addr;
   }
 
@@ -276,7 +294,7 @@ class TensorBuffer
   // tensor buffer.
   template <typename T>
   Expected<void> Write(absl::Span<const T> data) {
-    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
+    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kWrite));
     absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     if (size < data.size() * sizeof(T)) {
@@ -298,7 +316,7 @@ class TensorBuffer
   // tensor buffer.
   template <typename T>
   Expected<void> Read(absl::Span<T> data) {
-    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock());
+    LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, Lock(LockMode::kRead));
     absl::Cleanup unlock = [this] { Unlock(); };
     LITERT_ASSIGN_OR_RETURN(size_t size, PackedSize());
     size_t total_read_size = data.size() * sizeof(T);
@@ -339,22 +357,25 @@ class TensorBufferScopedLock {
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
-      TensorBuffer& tensor_buffer) {
-    return Create<T>(tensor_buffer.Get());
+      TensorBuffer& tensor_buffer,
+      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
+    return Create<T>(tensor_buffer.Get(), mode);
   }
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, const T*>> Create(
-      const TensorBuffer& tensor_buffer) {
-    return Create<const T>(tensor_buffer.Get());
+      const TensorBuffer& tensor_buffer,
+      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
+    return Create<const T>(tensor_buffer.Get(), mode);
   }
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
-      LiteRtTensorBuffer tensor_buffer) {
+      LiteRtTensorBuffer tensor_buffer,
+      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
     void* host_mem_addr;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtLockTensorBuffer(tensor_buffer, &host_mem_addr));
+    LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(
+        tensor_buffer, &host_mem_addr, TensorBuffer::ToLiteRtLockMode(mode)));
     return std::make_pair(TensorBufferScopedLock(tensor_buffer),
                           static_cast<T*>(host_mem_addr));
   }

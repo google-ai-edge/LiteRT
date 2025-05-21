@@ -253,6 +253,13 @@ LiteRtStatus LiteRtSetTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
 // buffer and deallocate such event.
 LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
 
+// Lock mode for tensor buffer.
+typedef enum {
+  kLiteRtTensorBufferLockModeRead = 0,
+  kLiteRtTensorBufferLockModeWrite = 1,
+  kLiteRtTensorBufferLockModeReadWrite = 2,
+} LiteRtTensorBufferLockMode;
+
 // Lock a tensor buffer and map it to host memory, potentially synchronizing on
 // an event that was previously attached to the tensor buffer with
 // `LiteRtSetTensorBufferEvent`.
@@ -261,7 +268,8 @@ LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
 // the packed buffer.
 // TODO b/413449050 - Update behavior to return raw H/W buffer as it is.
 LiteRtStatus LiteRtLockTensorBuffer(LiteRtTensorBuffer tensor_buffer,
-                                    void** host_mem_addr);
+                                    void** host_mem_addr,
+                                    LiteRtTensorBufferLockMode lock_mode);
 
 // Unlock a tensor buffer and (potentially) unmap it from host memory.
 //

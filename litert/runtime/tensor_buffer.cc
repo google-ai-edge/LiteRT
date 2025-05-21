@@ -649,7 +649,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
                       BufferTypeToString(buffer_type_)));
 }
 
-Expected<void*> LiteRtTensorBufferT::Lock() {
+Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_RETURN_IF_ERROR(is_locked_ == false,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Tensor buffer is already locked."));

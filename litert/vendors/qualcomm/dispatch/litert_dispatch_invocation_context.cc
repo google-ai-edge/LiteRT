@@ -312,7 +312,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToUint16(
     return Unexpected(tensor_buffer.Error());
   }
   void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(*tensor_buffer, &mem_addr);
+  if (auto status = LiteRtLockTensorBuffer(
+          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
@@ -335,7 +336,8 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
     return Unexpected(tensor_buffer.Error());
   }
   void* mem_addr;
-  if (auto status = LiteRtLockTensorBuffer(*tensor_buffer, &mem_addr);
+  if (auto status = LiteRtLockTensorBuffer(
+          *tensor_buffer, &mem_addr, kLiteRtTensorBufferLockModeReadWrite);
       status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock the tensor buffer");
   }

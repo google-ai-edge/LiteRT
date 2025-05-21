@@ -534,7 +534,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 #endif
     if (buffer_is_cpu_compatible) {
       void* host_mem_addr;
-      if (auto status = LiteRtLockTensorBuffer(buffer, &host_mem_addr);
+      LiteRtTensorBufferLockMode lock_mode =
+          is_input ? kLiteRtTensorBufferLockModeRead
+                   : kLiteRtTensorBufferLockModeWrite;
+      if (auto status =
+              LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to lock the tensor buffer");
       }
@@ -557,7 +561,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   // accelerator handle the conversion.
   if (cpu_tensors_.find(tensor) != cpu_tensors_.end()) {
     void* host_mem_addr;
-    if (auto status = LiteRtLockTensorBuffer(buffer, &host_mem_addr);
+    if (auto status = LiteRtLockTensorBuffer(
+            buffer, &host_mem_addr, kLiteRtTensorBufferLockModeReadWrite);
         status != kLiteRtStatusOk) {
       return Unexpected(status, "Failed to lock the tensor buffer");
     }
