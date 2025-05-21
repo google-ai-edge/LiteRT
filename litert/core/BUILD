@@ -34,6 +34,7 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/options:litert_runtime_options",
     ],
 )
 

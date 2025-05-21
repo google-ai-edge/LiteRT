@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -127,6 +128,28 @@ TEST(LiteRtCompiledModelOptionsTest, AddAcceleratorCompilationOptionsWorks) {
   EXPECT_EQ(options_it, *accelerator_compilation_options2);
 
   LiteRtDestroyOptions(options);
+}
+
+TEST(LiteRtCompiledModelOptionsTest, AddRuntimeOptionsWorks) {
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  LiteRtRuntimeOptions runtime_options;
+  EXPECT_EQ(LiteRtCreateRuntimeOptions(&runtime_options), kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtAddRuntimeOptions(options, runtime_options), kLiteRtStatusOk);
+
+  EXPECT_EQ(LiteRtAddRuntimeOptions(nullptr, runtime_options),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtAddRuntimeOptions(options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtRuntimeOptions runtime_options_it = nullptr;
+  EXPECT_EQ(LiteRtGetRuntimeOptions(options, &runtime_options_it),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(options);
+  delete runtime_options;
 }
 
 }  // namespace
