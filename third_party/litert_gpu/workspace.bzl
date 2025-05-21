@@ -21,5 +21,5 @@ def litert_gpu():
         name = "litert_gpu",
         build_file = "@//third_party/litert_gpu:litert_gpu.BUILD",
         type = "jar",
-        url = "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/2.0.0-alpha/litert-2.0.0-alpha.aar",
+        url = "https://dl.google.com/android/maven2/com/google/ai/edge/litert/litert/2.0.0-alpha.1/litert-2.0.0-alpha.1.aar",
     )
