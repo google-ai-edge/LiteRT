@@ -20,11 +20,11 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_cpu_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
@@ -57,13 +57,15 @@ class CpuAccelerator final
   // Creates a Dispatch delegate instance.
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
                                      LiteRtOptions options, void** delegate) {
-    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Delegate pointer is null.");
-    LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator handle is invalid.");
-    LITERT_ENSURE(accelerator->env != nullptr,
-                  kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator is not registered to an environment.");
+    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Delegate pointer is null.";
+    LITERT_RETURN_IF_ERROR(accelerator != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator handle is invalid.";
+    LITERT_RETURN_IF_ERROR(accelerator->env != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator is not registered to an environment.";
 
     litert::Options cc_options(options, litert::OwnHandle::kNo);
     Expected<OpaqueOptions> opaque_options = cc_options.GetOpaqueOptions();
@@ -93,8 +95,9 @@ class CpuAccelerator final
     }
     *delegate = TfLiteXNNPackDelegateCreate(&xnn_options);
 
-    LITERT_ENSURE(*delegate != nullptr, kLiteRtStatusErrorRuntimeFailure,
-                  "XNNPack delegate failed to be created.");
+    LITERT_RETURN_IF_ERROR(*delegate != nullptr,
+                           ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
+        << "XNNPack delegate failed to be created.";
     return kLiteRtStatusOk;
   }
 
@@ -110,8 +113,9 @@ class CpuAccelerator final
 extern "C" {
 
 LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
-  LITERT_ENSURE(environment != nullptr, kLiteRtStatusErrorInvalidArgument,
-                "environment handle is null");
+  LITERT_RETURN_IF_ERROR(environment != nullptr,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "environment handle is null";
 
   LiteRtAccelerator accelerator_handle;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
