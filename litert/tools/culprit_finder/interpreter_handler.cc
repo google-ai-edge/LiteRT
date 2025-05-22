@@ -21,6 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/tools/culprit_finder/tflite_input_manager.h"
 #include "tflite/c/c_api_types.h"
@@ -29,7 +30,6 @@
 #include "tflite/interpreter_options.h"
 #include "tflite/kernels/register.h"
 #include "tflite/tools/delegates/delegate_provider.h"
-#include "tflite/tools/logging.h"
 #include "tflite/tools/model_loader.h"
 
 namespace litert::tools {
@@ -39,13 +39,13 @@ InterpreterHandler::Create(absl::string_view model_path) {
   std::unique_ptr<ModelLoader> model_loader =
       std::make_unique<::tflite::tools::PathModelLoader>(model_path);
   if (!model_loader) {
-    TFLITE_LOG(ERROR) << "Failed to initialize model loader with path "
-                      << model_path;
+    LITERT_LOG(LITERT_ERROR, "Failed to initialize model loader with path %s",
+               model_path.data());
     return litert::Unexpected(LiteRtStatus::kLiteRtStatusErrorInvalidArgument,
                               "Failed to initialize model loader with path");
   }
   if (!model_loader->Init()) {
-    TFLITE_LOG(ERROR) << "Failed to load model " << model_path;
+    LITERT_LOG(LITERT_ERROR, "Failed to load model %s", model_path.data());
     return litert::Unexpected(LiteRtStatus::kLiteRtStatusErrorRuntimeFailure,
                               "Failed to load model");
   }
@@ -68,12 +68,12 @@ InterpreterHandler::PrepareInterpreter(
 
   tflite::InterpreterBuilder interpreter_builder(*model_, resolver, &options);
   if (interpreter_builder(&interpreter) != kTfLiteOk) {
-    TFLITE_LOG(ERROR) << "Failed to build interpreter";
+    LITERT_LOG(LITERT_ERROR, "Failed to build interpreter");
     return litert::Unexpected(LiteRtStatus::kLiteRtStatusErrorRuntimeFailure,
                               "Failed to build interpreter");
   }
   if (interpreter == nullptr) {
-    TFLITE_LOG(ERROR) << "Interpreter is null";
+    LITERT_LOG(LITERT_ERROR, "Interpreter is null");
     return litert::Unexpected(LiteRtStatus::kLiteRtStatusErrorRuntimeFailure,
                               "Interpreter is null");
   }
@@ -91,7 +91,7 @@ InterpreterHandler::PrepareInterpreter(
   }
 
   if (interpreter->AllocateTensors() != kTfLiteOk) {
-    TFLITE_LOG(ERROR) << "Failed to allocate tensors";
+    LITERT_LOG(LITERT_ERROR, "Failed to allocate tensors");
     return litert::Unexpected(
         LiteRtStatus::kLiteRtStatusErrorMemoryAllocationFailure,
         "Failed to allocate tensors");
@@ -103,12 +103,12 @@ TfLiteStatus InterpreterHandler::RunInference(
     tflite::Interpreter& interpreter, TfliteInputManager& input_manager) {
   interpreter.ResetVariableTensors();
   if (input_manager.SetInputTensors(interpreter) != kTfLiteOk) {
-    TFLITE_LOG(ERROR) << "Failed to set input tensors";
+    LITERT_LOG(LITERT_ERROR, "Failed to set input tensors");
     return kTfLiteError;
   }
 
   if (interpreter.Invoke() != kTfLiteOk) {
-    TFLITE_LOG(ERROR) << "Failed to invoke interpreter";
+    LITERT_LOG(LITERT_ERROR, "Failed to invoke interpreter");
     return kTfLiteError;
   }
   return kTfLiteOk;

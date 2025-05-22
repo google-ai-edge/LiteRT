@@ -25,10 +25,10 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_logging.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/interpreter.h"
 #include "tflite/tools/command_line_flags.h"
-#include "tflite/tools/logging.h"
 #include "tflite/tools/tool_params.h"
 
 namespace litert::tools {
@@ -195,7 +195,8 @@ inline void GetOverallStat(int delegated_node_range_start,
         break;
 
       default:
-        TFLITE_LOG(ERROR) << "Unsupported tensor type: " << test_tensor->type;
+        LITERT_LOG(LITERT_ERROR, "Unsupported tensor type: %d",
+                   test_tensor->type);
     }
     overall_stat.output_error_stats.push_back(tensor_error_stat);
     overall_stat.min_error =
