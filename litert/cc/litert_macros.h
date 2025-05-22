@@ -332,12 +332,6 @@ class LogBeforeAbort {
     return kLiteRtStatusErrorUnsupported;  \
   }
 
-#define LITERT_ENSURE(expr, fail_stat, msg) \
-  if (!(expr)) {                            \
-    LITERT_LOG(LITERT_ERROR, "%s", msg);    \
-    return fail_stat;                       \
-  }
-
 #define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                          \
   if (LiteRtStatus status = expr;                                            \
       (status != kLiteRtStatusOk && status != kLiteRtStatusLegalizeNoMatch)) \
