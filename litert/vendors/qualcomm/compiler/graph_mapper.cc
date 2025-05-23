@@ -17,18 +17,15 @@
 
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 
-#include <alloca.h>
 #include <stdio.h>
 
 #include <array>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/compiler/IR/qnn_tensor.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -131,78 +128,9 @@ absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic() {
   }
 }
 
-LiteRtStatus GraphMapper::AssignTensorName(Qnn_Tensor_t& qnn_tensor) {
-  char* name = nullptr;
-  const int written = asprintf(&name, "Tensor_%d", cur_tensor_num_++);
-  LITERT_RETURN_IF_ERROR(written != -1 && name != nullptr,
-                         ErrorStatusBuilder(kLiteRtStatusErrorNotFound))
-      << "Failed to make tensor name";
-  qnn_tensor.v2.name = name;
-  return kLiteRtStatusOk;
-}
-
-absl::flat_hash_map<LiteRtTensor, uint32_t>& GraphMapper::CurrentScope() {
-  return current_scope_;
-}
-
-LiteRtStatus GraphMapper::LookupInScope(LiteRtTensor litert_tensor,
-                                        Qnn_Tensor_t& qnn_tensor) {
-  // If we go in topological order, this should never happen. TODO: add
-  // "internal error" status code.
-  const auto qnn_id = CurrentScope().find(litert_tensor);
-  // when qnn_id is not found, the tensor is a constant tensor thats not been
-  // added qnn graph.
-  if (qnn_id == CurrentScope().end()) {
-    LITERT_LOG(LITERT_INFO, "Adding constant tensor %s to qnn graph",
-               qnn_tensor.v2.name);
-    LITERT_RETURN_IF_ERROR(LegalizeAndRegister(litert_tensor, qnn_tensor));
-    LITERT_RETURN_IF_ERROR(PushToScope(litert_tensor, qnn_tensor));
-    // }
-    return kLiteRtStatusOk;
-  }
-  LITERT_LOG(LITERT_INFO, "Found tensor %d in current_scope.", qnn_id->second);
-  ResetTensor(qnn_tensor);
-  qnn_tensor.v2.id = qnn_id->second;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GraphMapper::PushToScope(LiteRtTensor litert_tensor,
-                                      Qnn_Tensor_t& qnn_tensor) {
-  CurrentScope()[litert_tensor] = MoveToId(qnn_tensor);
-  return kLiteRtStatusOk;
-}
-
 QnnManager& GraphMapper::Qnn() { return qnn_; }
 
 Qnn_GraphHandle_t& GraphMapper::QnnGraph() { return qnn_graph_; }
-
-LiteRtStatus GraphMapper::LegalizeAndRegister(LiteRtTensor litert_tensor,
-                                              Qnn_Tensor_t& qnn_tensor) {
-  litert::Tensor tensor(litert_tensor);
-  LITERT_RETURN_IF_ERROR(LegalizeTensor(tensor, qnn_tensor));
-  LITERT_RETURN_IF_ERROR(AssignTensorName(qnn_tensor));
-
-  // Set tensor as graph output if it is used by other Ops.
-  if (graph_outpus_.contains(litert_tensor)) {
-    LITERT_LOG(LITERT_INFO, "Setting tensor %d as Graph output",
-               qnn_tensor.v2.id);
-    qnn_tensor.v2.type = QNN_TENSOR_TYPE_APP_READ;
-  }
-
-  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
-      qnn_.Api()->tensorCreateGraphTensor(QnnGraph(), &qnn_tensor));
-
-  LITERT_LOG(LITERT_INFO, "Legalized and registered tensor %d",
-             qnn_tensor.v2.id);
-
-  for (int i = 0; i < qnn_tensor.v2.rank; ++i) {
-    LITERT_LOG(LITERT_INFO, "qnn_tensor dim[%d] = %d", i,
-               qnn_tensor.v2.dimensions[i]);
-  }
-
-  return kLiteRtStatusOk;
-}
 
 LiteRtStatus GraphMapper::IsLiteRtSubgraphSupported() {
   // For now, we assume all LiteRt subgraphs are supported.
