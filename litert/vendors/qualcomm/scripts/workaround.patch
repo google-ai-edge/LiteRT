@@ -1,0 +1,48 @@
+From 8d4703e2448d10fbcf189592bb6a1818242a8cee Mon Sep 17 00:00:00 2001
+From: weilhuan-quic <quic_weilhuan@quicinc.com>
+Date: Mon, 21 Apr 2025 17:15:35 +0800
+Subject: [PATCH] workaround
+
+---
+ litert/c/litert_common.h | 4 ++--
+ litert/test/common.cc    | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/litert/c/litert_common.h b/litert/c/litert_common.h
+index 8249bf33..da8c0be1 100644
+--- a/litert/c/litert_common.h
++++ b/litert/c/litert_common.h
+@@ -27,7 +27,7 @@ extern "C" {
+   typedef const struct name##T* name##Const
+ 
+ #if __ANDROID_API__ >= 26
+-#define LITERT_HAS_AHWB_SUPPORT 1
++#define LITERT_HAS_AHWB_SUPPORT 0
+ #else
+ #define LITERT_HAS_AHWB_SUPPORT 0
+ #endif  // __ANDROID_API__ >= 26
+@@ -42,7 +42,7 @@ extern "C" {
+ #define LITERT_HAS_ION_SUPPORT 1
+ #define LITERT_HAS_DMABUF_SUPPORT 1
+ #define LITERT_HAS_FASTRPC_SUPPORT 1
+-#define LITERT_HAS_OPENGL_SUPPORT 1
++#define LITERT_HAS_OPENGL_SUPPORT 0
+ #define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
+ // copybara:comment_begin(google-only)
+ #elif defined(GOOGLE_UNSUPPORTED_OS_LOONIX)
+diff --git a/litert/test/common.cc b/litert/test/common.cc
+index d05be4c8..ef6fdb99 100644
+--- a/litert/test/common.cc
++++ b/litert/test/common.cc
+@@ -84,7 +84,7 @@ constexpr char kBaseDir[] = "";
+ 
+ std::string GetTestFilePath(absl::string_view filename) {
+   static constexpr absl::string_view kTestDataDir =
+-      "odml/litert/litert/"
++      "bazel-bin/litert/"
+       "test/testdata/";
+ 
+   if constexpr (!tsl::kIsOpenSource) {
+-- 
+2.34.1
+
