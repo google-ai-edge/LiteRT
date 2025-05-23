@@ -139,20 +139,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "qnn_tensor",
-    srcs = ["qnn_tensor.cc"],
-    hdrs = ["qnn_tensor.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings:string_view",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
 build_test(
     name = "build_so_test",
     targets = [
