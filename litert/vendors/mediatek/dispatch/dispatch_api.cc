@@ -26,8 +26,10 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -40,6 +42,8 @@ char BuildId[256];
 LiteRtEnvironmentOptions static_environment_options;
 
 LiteRtOptions static_options;
+
+std::optional<litert::mediatek::MediatekOptions> static_mediatek_options;
 
 }  // namespace
 
@@ -67,6 +71,11 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
                               LiteRtOptions options) {
   static_environment_options = environment_options;
   static_options = options;
+  auto [env, opts, opq_opts, mtk_opts] =
+      litert::ParseOptions<litert::mediatek::MediatekOptions>(
+          environment_options, options);
+
+  static_mediatek_options = std::move(mtk_opts.Value());
 
   auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
 
@@ -207,8 +216,9 @@ LiteRtStatus LiteRtInvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      *static_neuron_adapter, device_context, exec_type, exec_bytecode_buffer,
-      function_name, num_inputs, num_outputs);
+      *static_neuron_adapter, *static_mediatek_options, device_context,
+      exec_type, exec_bytecode_buffer, function_name, num_inputs,
+      num_outputs);
   if (!context) {
     LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",
                context.Error().Message().c_str());

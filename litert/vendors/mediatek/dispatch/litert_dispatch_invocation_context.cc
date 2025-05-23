@@ -28,6 +28,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
@@ -46,6 +47,7 @@ constexpr int kExpectedRankForB409133962War = 4;
 
 Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromCachedNetwork(
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    litert::mediatek::MediatekOptions& mediatek_options,
     const void* bytecode_addr, size_t bytecode_size) {
   NeuronModel* model;
   NeuronCompilation* compilation;
@@ -54,6 +56,13 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromCachedNetwork(
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to restore model from compiled network");
+  }
+  if (neuron_adapter_api.api().compilation_set_preference(
+          compilation, mediatek_options.GetPerformanceMode()) !=
+      NEURON_NO_ERROR) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrFormat("Failed to set compilation preference %d",
+                                 mediatek_options.GetPerformanceMode()));
   }
   return std::make_pair(
       NeuronModelPtr{model, neuron_adapter_api.api().model_free},
@@ -75,6 +84,7 @@ uint16_t GetRestoreDlaExtensionOperandType(
 
 Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    litert::mediatek::MediatekOptions& mediatek_options,
     const void* bytecode_addr, size_t bytecode_size, int num_inputs,
     int num_outputs) {
   Expected<NeuronModelPtr> model = neuron_adapter_api.CreateModel();
@@ -184,12 +194,12 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation priority");
   }
-
   if (neuron_adapter_api.api().compilation_set_preference(
-          compilation->get(), NEURON_PREFER_SUSTAINED_SPEED) !=
+          compilation->get(), mediatek_options.GetPerformanceMode()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
-                 "Failed to set compilation preference");
+                 absl::StrFormat("Failed to set compilation preference %d",
+                                 mediatek_options.GetPerformanceMode()));
   }
 
   // We use AOT compile options since the DLA file was compiled ahead of time.
@@ -215,13 +225,15 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
 Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>>
 LoadModelAndCompilation(
     const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    litert::mediatek::MediatekOptions& mediatek_options,
     const void* bytecode_addr, size_t bytecode_size, int num_inputs,
     int num_outputs) {
-  if (auto result = LoadFromDlaBytecode(neuron_adapter_api, bytecode_addr,
-                                        bytecode_size, num_inputs, num_outputs);
+  if (auto result = LoadFromDlaBytecode(neuron_adapter_api, mediatek_options,
+                                        bytecode_addr, bytecode_size,
+                                        num_inputs, num_outputs);
       !result) {
-    return LoadFromCachedNetwork(neuron_adapter_api, bytecode_addr,
-                                 bytecode_size);
+    return LoadFromCachedNetwork(neuron_adapter_api, mediatek_options,
+                                 bytecode_addr, bytecode_size);
   } else {
     return result;
   }
@@ -230,8 +242,10 @@ LoadModelAndCompilation(
 }  // namespace
 
 Expected<LiteRtDispatchInvocationContextT::Ptr>
+
 LiteRtDispatchInvocationContextT::Create(
     litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    litert::mediatek::MediatekOptions& mediatek_options,
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
@@ -258,9 +272,9 @@ LiteRtDispatchInvocationContextT::Create(
     std::tie(exec_bytecode_ptr, exec_bytecode_size) = compile_graph.Value();
   }
 
-  auto model_and_compilation =
-      LoadModelAndCompilation(neuron_adapter_api, exec_bytecode_ptr,
-                              exec_bytecode_size, num_inputs, num_outputs);
+  auto model_and_compilation = LoadModelAndCompilation(
+      neuron_adapter_api, mediatek_options, exec_bytecode_ptr,
+      exec_bytecode_size, num_inputs, num_outputs);
   if (!model_and_compilation) {
     return model_and_compilation.Error();
   }
