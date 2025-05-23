@@ -213,6 +213,25 @@ cc_library(
     ] + tflite_extra_gles_deps(),
 )
 
+cc_library(
+    name = "gpu_compatibility_without_gl_deps",
+    srcs = ["gpu_compatibility.cc"],
+    hdrs = ["gpu_compatibility.h"],
+    visibility = ["//intelligence/mobile_acceleration/modules:__subpackages__"],
+    deps = [
+        ":android_info",
+        ":canonicalize_value",
+        ":database_fbs",
+        ":devicedb",
+        ":gpu_compatibility_binary_embed",
+        "//tflite/delegates/gpu:delegate_options",
+        "//tflite/delegates/gpu/common:gpu_info",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+    ],
+)
+
 cc_test(
     name = "gpu_compatibility_test",
     srcs = ["gpu_compatibility_test.cc"],
