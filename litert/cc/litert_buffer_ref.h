@@ -101,29 +101,31 @@ class BufferRef {
   using TupleT = std::tuple<const ByteT* const, const size_t, const size_t>;
 
   // Null buffer.
-  BufferRef() : size_(0), offset_(0), data_(nullptr) {}
+  BufferRef() : end_offset_(0), start_offset_(0), data_(nullptr) {}
 
   // Construct from already allocated buffer. Methods will only expose
   // data[offset, offset + size].
-  BufferRef(const ByteT* data, size_t size, size_t offset = 0)
-      : size_(size), offset_(offset), data_(const_cast<ByteT*>(data)) {}
-  BufferRef(const void* data, size_t size, size_t offset = 0)
-      : size_(size),
-        offset_(offset),
+  BufferRef(const ByteT* data, size_t end_offset, size_t start_offset = 0)
+      : end_offset_(end_offset),
+        start_offset_(start_offset),
+        data_(const_cast<ByteT*>(data)) {}
+  BufferRef(const void* data, size_t end_offset, size_t start_offset = 0)
+      : end_offset_(end_offset),
+        start_offset_(start_offset),
         data_(const_cast<ByteT*>(reinterpret_cast<const ByteT*>(data))) {}
   explicit BufferRef(absl::Span<const ByteT> data)
-      : size_(data.size()),
-        offset_(0),
+      : end_offset_(data.size()),
+        start_offset_(0),
         data_(const_cast<ByteT*>(data.data())) {}
 
   // Start of actual data.
-  const ByteT* Data() const { return data_ + offset_; }
+  const ByteT* Data() const { return data_ + start_offset_; }
 
   // Size of actual data.
-  size_t Size() const { return size_ - offset_; }
+  size_t Size() const { return end_offset_ - start_offset_; }
 
   // Get buffer details in tuple form.
-  TupleT Get() const { return TupleT(data_, size_, offset_); }
+  TupleT Get() const { return TupleT(data_, end_offset_, start_offset_); }
 
   // Start of actual data as signed char. Might not be null terminated.
   const char* StrData() const { return reinterpret_cast<const char*>(Data()); }
@@ -148,7 +150,8 @@ class BufferRef {
 
   // Print info about this buffer.
   void Dump(std::ostream& out) const {
-    out << absl::StreamFormat("%s[%lu:%lu]\n", TypeName(), offset_, size_);
+    out << absl::StreamFormat("%s[%lu:%lu]\n", TypeName(), start_offset_,
+                              end_offset_);
   }
 
   BufferRef(const BufferRef& other) = default;
@@ -157,8 +160,11 @@ class BufferRef {
   virtual ~BufferRef() = default;
 
  protected:
-  size_t size_;
-  size_t offset_;
+  // End of actual data, this offset is relative to data_.
+  size_t end_offset_;
+  // Start of actual data, this offset is relative to data_.
+  size_t start_offset_;
+  // Original pointer to the memory.
   ByteT* data_ = nullptr;
 
   // Debug name.
@@ -192,13 +198,15 @@ class MutableBufferRef : public BufferRef<ByteT> {
   MutableBufferRef(const void*, size_t, size_t) = delete;
 
   // Mutable start of actual data.
-  ByteT* Data() { return this->data_ + this->offset_; }
+  ByteT* Data() { return this->data_ + this->start_offset_; }
 
   // Get the mutable start of actual data as a char pointer.
   char* StrData() { return reinterpret_cast<char*>(Data()); }
 
   // Get buffer info in tuple form.
-  TupleT Get() { return TupleT(this->data_, this->size_, this->offset_); }
+  TupleT Get() {
+    return TupleT(this->data_, this->end_offset_, this->start_offset_);
+  }
 
   // Mutable span of actual data.
   absl::Span<ByteT> Span() { return absl::MakeSpan(Data(), this->Size()); }
@@ -276,13 +284,14 @@ class OwningBufferRef : public MutableBufferRef<ByteT> {
   // Drop reference to any owned memory.
   void Drop() {
     this->data_ = nullptr;
-    this->size_ = 0;
-    this->offset_ = 0;
+    this->end_offset_ = 0;
+    this->start_offset_ = 0;
   }
 
   // Get the buffer details and drop references to them.
   TupleT Release() {
-    auto res = std::make_tuple(this->data_, this->size_, this->offset_);
+    auto res =
+        std::make_tuple(this->data_, this->end_offset_, this->start_offset_);
     Drop();
     return res;
   }
@@ -290,7 +299,7 @@ class OwningBufferRef : public MutableBufferRef<ByteT> {
   // Get weak references to buffer data. Takes ownership of anything that
   // is swapped in.
   WeakTupleT GetWeak() {
-    return WeakTupleT(this->data_, this->size_, this->offset_);
+    return WeakTupleT(this->data_, this->end_offset_, this->start_offset_);
   }
 
   // Free any owned memory.
@@ -300,16 +309,17 @@ class OwningBufferRef : public MutableBufferRef<ByteT> {
   }
 
   // Reset any existing data and copy in given ro buffer.
-  void Assign(const ByteT* buf, size_t size, size_t offset = 0) {
+  void Assign(const ByteT* buf, size_t end_offset, size_t start_offset = 0) {
     Reset();
-    this->size_ = size;
-    this->data_ = (ByteT*)Allocator()(this->size_);
-    std::memcpy(this->data_, buf, this->size_);
-    this->offset_ = offset;
+    this->end_offset_ = end_offset;
+    this->data_ = (ByteT*)Allocator()(this->end_offset_);
+    std::memcpy(this->data_, buf, this->end_offset_);
+    this->start_offset_ = start_offset;
   }
 
   OwningBufferRef(OwningBufferRef&& other)
-      : MutableBufferRef<ByteT>(other.data_, other.size_, other.offset_) {
+      : MutableBufferRef<ByteT>(other.data_, other.end_offset_,
+                                other.start_offset_) {
     other.Drop();
   }
 
@@ -317,21 +327,21 @@ class OwningBufferRef : public MutableBufferRef<ByteT> {
     if (this != &other) {
       Reset();
       this->data_ = other.data_;
-      this->size_ = other.size_;
-      this->offset_ = other.offset_;
+      this->end_offset_ = other.end_offset_;
+      this->start_offset_ = other.start_offset_;
       other.Drop();
     }
     return *this;
   }
 
   OwningBufferRef(const OwningBufferRef& other)
-      : MutableBufferRef<ByteT>(/*data*/ (ByteT*)nullptr, other.size_,
-                                other.offset_) {
-    Assign(other.data_, other.size_, other.offset_);
+      : MutableBufferRef<ByteT>(/*data*/ (ByteT*)nullptr, other.end_offset_,
+                                other.start_offset_) {
+    Assign(other.data_, other.end_offset_, other.start_offset_);
   }
 
   OwningBufferRef& operator=(const OwningBufferRef& other) {
-    Assign(other.data_, other.size_, other.offset_);
+    Assign(other.data_, other.end_offset_, other.start_offset_);
     return *this;
   }
 
