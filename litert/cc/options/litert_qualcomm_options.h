@@ -55,6 +55,9 @@ class QualcommOptions : public OpaqueOptions {
   void SetProfiling(LiteRtQualcommOptionsProfiling profiling);
   LiteRtQualcommOptionsProfiling GetProfiling();
 
+  void SetDumpTensorIds(const std::vector<std::string>& ids);
+  std::vector<int> GetDumpTensorIds();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

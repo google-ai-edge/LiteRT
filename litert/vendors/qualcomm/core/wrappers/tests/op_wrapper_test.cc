@@ -88,6 +88,7 @@ TEST(OpWrapperTest, OpConfigTest) {
                       sizeof(decltype(data)::value_type), std::multiplies<>());
 
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_APP_WRITE,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                QuantizeParamsWrapperVariant(),
@@ -132,6 +133,7 @@ TEST(OpWrapperTest, MoveConstructorTest) {
   std::vector<std::uint8_t> data = {1, 2, 3};
   void* data_ptr = reinterpret_cast<void*>(data.data());
   TensorWrapper tensor_wrapper{0,
+                               "",
                                QNN_TENSOR_TYPE_APP_WRITE,
                                QNN_DATATYPE_UFIXED_POINT_8,
                                QuantizeParamsWrapperVariant(),

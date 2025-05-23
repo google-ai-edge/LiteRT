@@ -80,6 +80,9 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> ConvertToInt16(
       LiteRtTensorBufferHandle tensor_buffer_handle, size_t bytes);
 
+  litert::Expected<void> WriteTensorTo(const std::string& output_folder,
+                                       ::qnn::TensorWrapper& tensor);
+
   litert::qnn::QnnManager& qnn_manager_;
   LiteRtDispatchDeviceContextT& device_context_;
   litert::qnn::QnnManager::ContextHandle context_handle_;

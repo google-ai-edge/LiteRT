@@ -29,6 +29,7 @@ cc_library(
     srcs = ["miscs.cc"],
     hdrs = ["miscs.h"],
     deps = [
+        ":log",
         "@com_google_absl//absl/types:span",
     ],
 )
