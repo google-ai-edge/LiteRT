@@ -39,6 +39,10 @@ class Environment
   enum class OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
     DispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
+    ClDeviceId = kLiteRtEnvOptionTagOpenClDeviceId,
+    ClPlatformId = kLiteRtEnvOptionTagOpenClPlatformId,
+    ClContext = kLiteRtEnvOptionTagOpenClContext,
+    ClCommandQueue = kLiteRtEnvOptionTagOpenClCommandQueue,
     EglContext = kLiteRtEnvOptionTagEglContext,
     EglDisplay = kLiteRtEnvOptionTagEglDisplay,
   };

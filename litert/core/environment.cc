@@ -17,9 +17,11 @@
 #include <memory>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/gpu_environment.h"
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
@@ -30,4 +32,24 @@ litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
   }
 
   return env;
+}
+
+litert::Expected<void> LiteRtEnvironmentT::AddOptions(
+    absl::Span<const LiteRtEnvOption> options) {
+  LITERT_LOG(LITERT_INFO, "Adding options to the existing LiteRT environment");
+  for (const auto& opt : options) {
+    options_.SetOption(opt);
+  }
+  return {};
+}
+
+// C API to workaround Windows build issue.
+extern "C" litert::Expected<litert::internal::GpuEnvironment*>
+LiteRtGetGpuEnvironment(LiteRtEnvironment env) {
+  if (env == nullptr) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Can't get GPU environment from null LiteRtEnvironment");
+  }
+  return env->GetGpuEnvironment();
 }

@@ -26,6 +26,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
 #include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/buffer.h"
 
@@ -38,7 +39,8 @@ namespace litert::internal {
 class OpenClMemory {
  public:
   OpenClMemory(OpenClMemory&& other)
-      : tensor_type_(other.tensor_type_),
+      : gpu_env_(other.gpu_env_),
+        tensor_type_(other.tensor_type_),
         buffer_type_(other.buffer_type_),
         data_(other.data_),
         buffer_(std::move(other.buffer_)),
@@ -49,20 +51,24 @@ class OpenClMemory {
     other.ahwb_ = nullptr;
   }
 
-  explicit OpenClMemory(const LiteRtRankedTensorType& tensor_type,
+  explicit OpenClMemory(GpuEnvironment* gpu_env,
+                        const LiteRtRankedTensorType& tensor_type,
                         LiteRtTensorBufferType buffer_type,
                         tflite::gpu::cl::Buffer buffer,
                         AHardwareBuffer* ahwb = nullptr)
-      : tensor_type_(tensor_type),
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
         buffer_type_(buffer_type),
         buffer_(std::move(buffer)),
         size_(buffer_.GetMemorySizeInBytes()),
         ahwb_(ahwb) {}
 
-  OpenClMemory(const LiteRtRankedTensorType& tensor_type,
+  OpenClMemory(GpuEnvironment* gpu_env,
+               const LiteRtRankedTensorType& tensor_type,
                LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
                LiteRtOpenClDeallocator deallocator)
-      : tensor_type_(tensor_type),
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
         buffer_type_(buffer_type),
         deallocator_(deallocator),
         size_(size) {
@@ -92,17 +98,23 @@ class OpenClMemory {
   template <typename T>
   Expected<void> Unlock();
 
+  // Returns true if OpenCL is supported.
+  // Warning: This is only for TEST.
   static bool IsSupported();
-  static Expected<OpenClMemory> Alloc(const LiteRtRankedTensorType& tensor_type,
+  static Expected<OpenClMemory> Alloc(GpuEnvironment* gpu_env,
+                                      const LiteRtRankedTensorType& tensor_type,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t bytes_size);
   static Expected<OpenClMemory> AllocFromAhwbBuffer(
-      const LiteRtRankedTensorType& tensor_type, AhwbBuffer& ahwb_buffer);
+      GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+      AhwbBuffer& ahwb_buffer);
   static Expected<OpenClMemory> AllocFromGlBuffer(
-      const LiteRtRankedTensorType& tensor_type, GlBuffer& gl_buffer);
+      GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+      GlBuffer& gl_buffer);
   size_t size_bytes() const { return size_; }
 
  private:
+  GpuEnvironment* gpu_env_ = nullptr;
   const LiteRtRankedTensorType tensor_type_;
   LiteRtTensorBufferType buffer_type_;
   absl::Mutex mutex_;

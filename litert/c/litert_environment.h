@@ -39,13 +39,15 @@ void LiteRtDestroyEnvironment(LiteRtEnvironment environment);
 LiteRtStatus LiteRtGetEnvironmentOptions(LiteRtEnvironment environment,
                                          LiteRtEnvironmentOptions* options);
 
-// Create a LiteRT GPU global environment with options.
+// Create a LiteRT GPU environment with options.
+// The given `environment` takes ownership of the created GPU environment.
 // This API is usually called by the GPU accelerator implementation to set GPU
 // environment options which affect the entire LiteRT runtime.
 //
 // Note: In most cases, users should not call this API directly.
-LiteRtStatus LiteRtGpuGlobalEnvironmentCreate(int num_options,
-                                              const LiteRtEnvOption* options);
+LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
+                                        int num_options,
+                                        const LiteRtEnvOption* options);
 
 #ifdef __cplusplus
 }

@@ -73,7 +73,25 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
 
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromAhwb(
-      &litert_tensor_type, ahwb, ahwb_offset,
+      /*env=*/nullptr, &litert_tensor_type, ahwb, ahwb_offset,
+      /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+#else
+  return litert::Unexpected(
+      kLiteRtStatusErrorRuntimeFailure,
+      "AHardwareBuffer is not supported on this platform");
+#endif
+}
+
+Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    AHardwareBuffer* ahwb, size_t ahwb_offset) {
+#if LITERT_HAS_AHWB_SUPPORT
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromAhwb(
+      env, &litert_tensor_type, ahwb, ahwb_offset,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 #else

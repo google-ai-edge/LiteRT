@@ -24,21 +24,26 @@
 
 namespace litert::internal {
 
+class GpuEnvironment;
+
 // Creates a new OpenCL buffer with the given tensor type and buffer type.
 // The buffer size is the size of the tensor in bytes.
 // The created OpenCL buffer is returned in cl_memory.
-LiteRtStatus LiteRtGpuMemoryCreate(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, cl_mem* cl_memory);
 
 // Uploads the data from the CPU memory to the OpenCL buffer.
-LiteRtStatus LiteRtGpuMemoryUpload(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, const void* ptr,
                                    cl_mem cl_memory);
 
 // Downloads the data from the OpenCL buffer to the CPU memory.
-LiteRtStatus LiteRtGpuMemoryDownload(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
+                                     const LiteRtRankedTensorType* tensor_type,
                                      LiteRtTensorBufferType buffer_type,
                                      size_t bytes, cl_mem cl_memory, void* ptr);
 

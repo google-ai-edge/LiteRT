@@ -777,17 +777,21 @@ cc_test(
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/runtime:gpu_environment",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
         "//tflite/delegates/gpu/cl:buffer",
         "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:cl_device",
+        "//tflite/delegates/gpu/cl:environment",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@opencl_headers",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/cl:gl_interop",
             "//tflite/delegates/gpu/gl:egl_environment",
         ],
         "//conditions:default": [],
@@ -976,7 +980,12 @@ litert_device_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # copybara:uncomment_begin(google-only)
@@ -1007,6 +1016,7 @@ litert_device_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/c:litert_common",
+#         "//litert/c:litert_environment_options",
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
 #         "//litert/c:litert_tensor_buffer_types",
@@ -1015,10 +1025,7 @@ litert_device_test(
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
-#         "//tflite:framework",
-#         "//tflite/c:c_api_opaque",
-#         "//tflite/c:common",
-#         "//tflite/kernels:builtin_ops",
+#         "@opencl_headers",
 #     ] + select({
 #         "@org_tensorflow//tensorflow:android": [
 #             "//tflite/delegates/gpu/cl:cl_device",

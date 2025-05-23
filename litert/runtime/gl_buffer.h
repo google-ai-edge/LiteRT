@@ -24,6 +24,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/gpu_environment.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/gl/gl_buffer.h"
@@ -51,8 +52,9 @@ class GlBuffer {
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
-  GlBuffer(LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes,
-           size_t offset, LiteRtGlBufferDeallocator deallocator);
+  GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target, LiteRtGLuint id,
+           size_t size_bytes, size_t offset,
+           LiteRtGlBufferDeallocator deallocator);
 
   GlBuffer(GlBuffer&& other);
 
@@ -61,11 +63,12 @@ class GlBuffer {
   static bool IsSupported() { return true; }
   // Allocates a GL buffer. If an EGL environment has not been created on this
   // thread, it will be created.
-  static Expected<GlBuffer> Alloc(size_t size_bytes);
+  static Expected<GlBuffer> Alloc(GpuEnvironment* gpu_env, size_t size_bytes);
 
   // Allocates a GL buffer from an AHardwareBuffer. If an EGL environment has
   // not been created on this thread, it will be created.
-  static Expected<GlBuffer> AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer);
+  static Expected<GlBuffer> AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
+                                                AhwbBuffer& ahwb_buffer);
 
   template <typename T>
   Expected<T*> Lock();
@@ -91,6 +94,7 @@ class GlBuffer {
 #if LITERT_HAS_AHWB_SUPPORT
   AHardwareBuffer* ahwb_ = nullptr;
 #endif  // LITERT_HAS_AHWB_SUPPORT
+  GpuEnvironment* gpu_env_;
 };
 
 }  // namespace litert::internal

@@ -15,13 +15,13 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 
+#include <memory>
+
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/core/environment.h"
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
 #include "tflite/delegates/gpu/cl/cl_context.h"
@@ -69,51 +69,34 @@ struct GpuEnvironmentOptions {
   }
 };
 
-// Inner singleton class that is for storing the MLD global environment.
+// A class for storing the MLD global environment and kept in Environment.
 // This class is used to store OpenCL, OpenGL environment objects.
-class GpuEnvironmentSingleton {
+class GpuEnvironment {
  public:
-  GpuEnvironmentSingleton(const GpuEnvironmentSingleton&) = delete;
-  GpuEnvironmentSingleton& operator=(const GpuEnvironmentSingleton&) = delete;
-  GpuEnvironmentSingleton() = default;
-  ~GpuEnvironmentSingleton() = default;
+  GpuEnvironment(const GpuEnvironment&) = delete;
+  GpuEnvironment& operator=(const GpuEnvironment&) = delete;
+  GpuEnvironment() = default;
+  ~GpuEnvironment() = default;
   tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
   tflite::gpu::cl::CLContext* getContext() { return &context_; }
   tflite::gpu::cl::CLCommandQueue* getCommandQueue() { return &command_queue_; }
-#if LITERT_HAS_OPENGL_SUPPORT
-  tflite::gpu::gl::EglEnvironment* getEglEnvironment() {
-    return egl_env_.get();
-  }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+  EGLDisplay getEglDisplay() { return options_.egl_display; }
+  EGLContext getEglContext() { return options_.egl_context; }
 
-  static Expected<GpuEnvironmentSingleton*> GetInstance() {
-    if (instance_ == nullptr) {
-      LITERT_ASSIGN_OR_RETURN(instance_, Create(nullptr));
-    }
-    return instance_;
-  }
-
-  // Create the singleton instance with the given environment.
-  // It will fail if the singleton instance already exists.
-  static Expected<GpuEnvironmentSingleton*> Create(
+  // Create a GpuEnvironment with the given environment.
+  static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
-    if (instance_ == nullptr) {
-      instance_ = new GpuEnvironmentSingleton();
-      LITERT_RETURN_IF_ERROR(instance_->Initialize(environment));
-      LITERT_LOG(LITERT_INFO, "Created LiteRT GpuEnvironmentSingleton.");
-    } else {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "LiteRT GpuEnvironmentSingleton already exists");
-    }
-    return instance_;
+    auto instance = new GpuEnvironment();
+    instance->Initialize(environment);
+    LITERT_LOG(LITERT_INFO, "Created LiteRT GpuEnvironment.");
+    return std::unique_ptr<GpuEnvironment>(instance);
   }
 
  private:
   // Load the OpenCL device, context and command queue from the environment if
   // available. Otherwise, create the default device, context and command queue.
-  Expected<void> Initialize(LiteRtEnvironmentT* environment);
+  Expected<void> Initialize(LiteRtEnvironment environment);
 
-  static GpuEnvironmentSingleton* instance_;
   tflite::gpu::cl::CLDevice device_;
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;

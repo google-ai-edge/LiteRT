@@ -15,6 +15,7 @@
 #include "litert/runtime/gl_buffer.h"
 
 #include <cstring>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -26,7 +27,11 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_platform_support.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/environment.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/gpu_environment.h"
 #include "litert/test/matchers.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -42,18 +47,25 @@ using ::testing::Pointwise;
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
 
+Expected<LiteRtEnvironment> CreateGpuEnabledEnvironment() {
+  LiteRtEnvironment env;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env,
+                          litert::internal::GpuEnvironment::Create(env));
+  LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
+  return env;
+}
+
 TEST(Buffer, GlBufferAlloc) {
   if (!LiteRtHasOpenGlSupport()) {
     GTEST_SKIP() << "OpenGL buffers are not supported on this platform";
   }
-// TODO(b/383176413): Remove after GpuEnvironmentSingleton is removed.
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
-  auto buffer = GlBuffer::Alloc(4 * sizeof(float));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateGpuEnabledEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_env, env->GetGpuEnvironment());
+  auto buffer = GlBuffer::Alloc(gpu_env, 4 * sizeof(float));
   ASSERT_TRUE(buffer);
 
   // Test lock and unlock.
@@ -66,11 +78,8 @@ TEST(Buffer, GlBufferAllocFromAhwb) {
   if (!LiteRtHasOpenGlSupport() || !LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "OpenGL buffers are not supported on this platform";
   }
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateGpuEnabledEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_env, env->GetGpuEnvironment());
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -82,8 +91,8 @@ TEST(Buffer, GlBufferAllocFromAhwb) {
   LITERT_ASSERT_OK(litert::internal::AhwbBuffer::Unlock(ahwb_buffer.ahwb));
 
   // Create GL buffer from AHWB.
-  LITERT_ASSERT_OK_AND_ASSIGN(GlBuffer gl_buffer,
-                              GlBuffer::AllocFromAhwbBuffer(ahwb_buffer));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      GlBuffer gl_buffer, GlBuffer::AllocFromAhwbBuffer(gpu_env, ahwb_buffer));
 
   // Read from GL buffer backed by AHWB.
   LITERT_ASSERT_OK_AND_ASSIGN(float* gl_host_data, gl_buffer.Lock<float>());
@@ -153,15 +162,8 @@ TEST(Buffer, GpuWriteAhwbRead) {
   if (!LiteRtHasOpenGlSupport() || !LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "AHWB support is not enabled on this platform";
   }
-  LiteRtEnvironment env;
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
-
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateGpuEnabledEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_env, env->GetGpuEnvironment());
 
   LITERT_ASSERT_OK_AND_ASSIGN(AhwbBuffer ahwb_buffer,
                               AhwbBuffer::Alloc(4 * sizeof(float)));
@@ -173,8 +175,8 @@ TEST(Buffer, GpuWriteAhwbRead) {
   LITERT_ASSERT_OK(litert::internal::AhwbBuffer::Unlock(ahwb_buffer.ahwb));
 
   // Create GL buffer from AHWB.
-  LITERT_ASSERT_OK_AND_ASSIGN(GlBuffer gl_buffer,
-                              GlBuffer::AllocFromAhwbBuffer(ahwb_buffer));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      GlBuffer gl_buffer, GlBuffer::AllocFromAhwbBuffer(gpu_env, ahwb_buffer));
 
   // Schedule GPU write to GL buffer.
   FillGlBuffer(gl_buffer.id(), 4);

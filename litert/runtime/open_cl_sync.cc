@@ -120,20 +120,19 @@ absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
                                     BHWC(shape.b, shape.h, shape.w, shape.c));
 }
 
-LiteRtStatus LiteRtGpuMemoryCreate(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryCreate(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, cl_mem* cl_memory) {
   auto tensor_desc = CreateTensorDescriptor(tensor_type, buffer_type);
   LITERT_RETURN_IF_ERROR(tensor_desc.status().ok(),
                          kLiteRtStatusErrorUnsupported);
 
-  LITERT_ASSIGN_OR_RETURN(auto cl_env, GpuEnvironmentSingleton::GetInstance());
-
   tflite::gpu::cl::CLMemory tensor_memory;
 
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::AllocateTensorMemory(*cl_env->getContext(), *tensor_desc,
-                                            &tensor_memory)
+      tflite::gpu::cl::AllocateTensorMemory(*gpu_env->getContext(),
+                                            *tensor_desc, &tensor_memory)
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
@@ -167,7 +166,8 @@ LiteRtStatus LiteRtGpuMemoryUploadImpl(tflite::gpu::cl::Tensor& cl_tensor,
   return kLiteRtStatusOk;
 };
 
-LiteRtStatus LiteRtGpuMemoryUpload(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryUpload(GpuEnvironment* gpu_env,
+                                   const LiteRtRankedTensorType* tensor_type,
                                    LiteRtTensorBufferType buffer_type,
                                    size_t bytes, const void* ptr,
                                    cl_mem cl_memory) {
@@ -176,22 +176,21 @@ LiteRtStatus LiteRtGpuMemoryUpload(const LiteRtRankedTensorType* tensor_type,
                          kLiteRtStatusErrorUnsupported);
 
   auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
-  LITERT_ASSIGN_OR_RETURN(auto cl_env, GpuEnvironmentSingleton::GetInstance());
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*cl_env->getContext(), cl_memory,
+      tflite::gpu::cl::CreateTensorShared(*gpu_env->getContext(), cl_memory,
                                           *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtGpuMemoryUploadImpl<TensorBool, bool>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtGpuMemoryUploadImpl<TensorInt32, int32_t>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   } else {
     return LiteRtGpuMemoryUploadImpl<TensorFloat32, float>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   }
 
   return kLiteRtStatusOk;
@@ -220,7 +219,8 @@ LiteRtStatus LiteRtGpuMemoryDownloadImpl(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGpuMemoryDownload(const LiteRtRankedTensorType* tensor_type,
+LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
+                                     const LiteRtRankedTensorType* tensor_type,
                                      LiteRtTensorBufferType buffer_type,
                                      size_t bytes, cl_mem cl_memory,
                                      void* ptr) {
@@ -232,22 +232,21 @@ LiteRtStatus LiteRtGpuMemoryDownload(const LiteRtRankedTensorType* tensor_type,
   }
 
   auto cl_tensor = std::make_unique<tflite::gpu::cl::Tensor>();
-  LITERT_ASSIGN_OR_RETURN(auto cl_env, GpuEnvironmentSingleton::GetInstance());
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::cl::CreateTensorShared(*cl_env->getContext(), cl_memory,
+      tflite::gpu::cl::CreateTensorShared(*gpu_env->getContext(), cl_memory,
                                           *tensor_desc, cl_tensor.get())
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
 
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtGpuMemoryDownloadImpl<TensorBool, bool>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtGpuMemoryDownloadImpl<TensorInt32, int32_t>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   } else {
     return LiteRtGpuMemoryDownloadImpl<TensorFloat32, float>(
-        *cl_tensor, bytes, ptr, cl_env->getCommandQueue());
+        *cl_tensor, bytes, ptr, gpu_env->getCommandQueue());
   }
   return kLiteRtStatusOk;
 }

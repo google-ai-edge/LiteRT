@@ -23,9 +23,9 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "litert/c/litert_any.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_any.h"
+#include "litert/core/environment.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -67,15 +67,10 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);
   ASSERT_TRUE(litert_envt);
   auto singleton_env =
-      litert::internal::GpuEnvironmentSingleton::Create(litert_envt->get());
+      litert::internal::GpuEnvironment::Create(litert_envt->get());
   ASSERT_TRUE(singleton_env);
   EXPECT_EQ((*singleton_env)->getContext()->context(), env.context().context());
   EXPECT_EQ((*singleton_env)->getCommandQueue()->queue(), env.queue()->queue());
-
-  // Create another singleton environment should fail.
-  auto another_singleton_env =
-      litert::internal::GpuEnvironmentSingleton::Create(litert_envt->get());
-  EXPECT_FALSE(another_singleton_env);
 }
 
 }  // namespace

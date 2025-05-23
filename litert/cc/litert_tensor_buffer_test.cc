@@ -18,8 +18,9 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <memory>  // NOLINT: Used for OpenCL logic.
 #include <utility>
-#include <vector>
+#include <vector>  // NOLINT: Used for OpenCL logic.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
@@ -43,11 +44,19 @@
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/gpu_environment.h"
-#include <CL/cl.h>
-#include "tflite/delegates/gpu/cl/buffer.h"
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"
+#include <CL/cl.h>  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/buffer.h"  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/cl_context.h"  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/cl_device.h"  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/environment.h"  // NOLINT: Used for OpenCL logic.
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // NOLINT: Used for OpenCL logic.
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "tflite/delegates/gpu/cl/gl_interop.h"
+#include "tflite/delegates/gpu/gl/egl_environment.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
 namespace {
@@ -55,6 +64,7 @@ namespace {
 using ::testing::Eq;
 using ::testing::Ne;
 using ::testing::litert::IsError;
+using OptionTag = litert::Environment::OptionTag;
 
 constexpr const float kTensorData[] = {10, 20, 30, 40};
 
@@ -72,6 +82,117 @@ int GetReferenceCount(const TensorBuffer& tensor_buffer) {
       static_cast<LiteRtTensorBufferT*>(tensor_buffer.Get());
   return internal_tensor_buffer->RefCount();
 }
+
+#if LITERT_HAS_OPENGL_SUPPORT
+struct GpuEnvironmentOptions {
+  // If any of these objects are set, created environment will use them instead
+  // of creating/choosing own instances.
+  cl_device_id device_id = nullptr;
+  cl_platform_id platform_id = nullptr;
+  cl_context context = nullptr;
+  cl_command_queue command_queue = nullptr;
+
+  // Whenever input and/or output is GL object, EGL display and context must be
+  // set to create GL aware OpenCL context. Do not set these variables whenever
+  // GL interoperability is not needed.
+  // It is the error to set egl_display, egl_context AND context at the same
+  // time. If egl_display and egl_context are set, they will be used to create
+  // GL-aware CL context.
+  EGLDisplay egl_display = EGL_NO_DISPLAY;
+  EGLContext egl_context = EGL_NO_CONTEXT;
+
+  bool IsGlAware() const {
+    return egl_context != EGL_NO_CONTEXT && egl_display != EGL_NO_DISPLAY;
+  }
+};
+
+class UserGpuEnvironment {
+ public:
+  explicit UserGpuEnvironment(
+      std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env,
+      std::unique_ptr<tflite::gpu::cl::CLDevice> device,
+      std::unique_ptr<tflite::gpu::cl::CLContext> context,
+      std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue,
+      litert::Environment env)
+      : gl_env_(std::move(gl_env)),
+        device_(std::move(device)),
+        context_(std::move(context)),
+        command_queue_(std::move(command_queue)),
+        env_(std::move(env)) {}
+
+  static std::unique_ptr<UserGpuEnvironment> Create() {
+    std::vector<litert::Environment::Option> environment_options;
+    auto options = std::make_unique<GpuEnvironmentOptions>();
+
+    // Create GL environment.
+    std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env;
+    if (tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&gl_env).ok()) {
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::EglDisplay, reinterpret_cast<int64_t>(gl_env->display())});
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::EglContext,
+          reinterpret_cast<int64_t>(gl_env->context().context()),
+      });
+    }
+
+    // Create CL environment.
+    auto device = std::make_unique<tflite::gpu::cl::CLDevice>();
+    auto context = std::make_unique<tflite::gpu::cl::CLContext>();
+    auto command_queue = std::make_unique<tflite::gpu::cl::CLCommandQueue>();
+    if (tflite::gpu::cl::LoadOpenCL().ok()) {
+      EXPECT_OK(tflite::gpu::cl::CreateDefaultGPUDevice(device.get()));
+      if (tflite::gpu::cl::IsGlSharingSupported(*device)) {
+        EXPECT_OK(tflite::gpu::cl::CreateCLGLContext(
+            *device,
+            reinterpret_cast<cl_context_properties>(
+                gl_env->context().context()),
+            reinterpret_cast<cl_context_properties>(gl_env->display()),
+            context.get()));
+      } else {
+        EXPECT_OK(tflite::gpu::cl::CreateCLContext(*device, context.get()));
+      }
+
+      EXPECT_OK(tflite::gpu::cl::CreateCLCommandQueue(*device, *context,
+                                                      command_queue.get()));
+
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::ClDeviceId,
+          reinterpret_cast<int64_t>(device->id()),
+      });
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::ClPlatformId,
+          reinterpret_cast<int64_t>(device->platform()),
+      });
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::ClContext,
+          reinterpret_cast<int64_t>(context->context()),
+      });
+      environment_options.push_back(litert::Environment::Option{
+          OptionTag::ClCommandQueue,
+          reinterpret_cast<int64_t>(command_queue->queue()),
+      });
+    }
+
+    // Create LiteRt environment from GL and CL options.
+    auto env = litert::Environment::Create(environment_options);
+    return std::make_unique<UserGpuEnvironment>(
+        std::move(gl_env), std::move(device), std::move(context),
+        std::move(command_queue), std::move(*env));
+  }
+
+  LiteRtEnvironment GetEnvironment() { return env_.Get(); }
+  tflite::gpu::cl::CLCommandQueue* GetCommandQueue() {
+    return command_queue_.get();
+  }
+
+ private:
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env_;
+  std::unique_ptr<tflite::gpu::cl::CLDevice> device_;
+  std::unique_ptr<tflite::gpu::cl::CLContext> context_;
+  std::unique_ptr<tflite::gpu::cl::CLCommandQueue> command_queue_;
+  litert::Environment env_;
+};
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 TEST(TensorBuffer, HostMemory) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
@@ -553,11 +674,8 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
 
 #if LITERT_HAS_OPENGL_SUPPORT
 TEST(TensorBuffer, CreateFromGlTexture) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   // User provides EGL environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  auto user_gpu_env = UserGpuEnvironment::Create();
 
   // Create GL texture.
   tflite::gpu::gl::GlTexture gl_texture(GL_TEXTURE_2D, 1, GL_RGBA8, 1, 1,
@@ -569,9 +687,9 @@ TEST(TensorBuffer, CreateFromGlTexture) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,
       TensorBuffer::CreateFromGlTexture(
-          env.Get(), RankedTensorType(kTestTensorType), gl_texture.target(),
-          gl_texture.id(), gl_texture.format(), gl_texture.bytes_size(),
-          gl_texture.layer()));
+          user_gpu_env->GetEnvironment(), RankedTensorType(kTestTensorType),
+          gl_texture.target(), gl_texture.id(), gl_texture.format(),
+          gl_texture.bytes_size(), gl_texture.layer()));
 }
 
 tflite::gpu::gl::GlBuffer CreateTestGlBuffer(size_t size_bytes) {
@@ -582,11 +700,8 @@ tflite::gpu::gl::GlBuffer CreateTestGlBuffer(size_t size_bytes) {
 }
 
 TEST(TensorBuffer, CreateFromGlBuffer) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   // User provides EGL environment.
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
-  ASSERT_TRUE(
-      tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok());
+  auto user_gpu_env = UserGpuEnvironment::Create();
 
   // Create GL buffer.
   tflite::gpu::gl::GlBuffer gl_buffer = CreateTestGlBuffer(sizeof(kTensorData));
@@ -597,8 +712,9 @@ TEST(TensorBuffer, CreateFromGlBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,
       TensorBuffer::CreateFromGlBuffer(
-          env.Get(), RankedTensorType(kTestTensorType), gl_buffer.target(),
-          gl_buffer.id(), gl_buffer.bytes_size(), gl_buffer.offset()));
+          user_gpu_env->GetEnvironment(), RankedTensorType(kTestTensorType),
+          gl_buffer.target(), gl_buffer.id(), gl_buffer.bytes_size(),
+          gl_buffer.offset()));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer::GlBuffer gl_buffer_from_tensor_buffer,
@@ -611,14 +727,17 @@ TEST(TensorBuffer, CreateFromGlBuffer) {
 }
 
 TEST(TensorBuffer, CreateManagedGlBuffer) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
-  // EGL environment is provided by LiteRT if one is not provided by the user.
-  // This allows creation of managed GL buffers.
+  // User provides EGL environment.
+  auto user_gpu_env = UserGpuEnvironment::Create();
+
+  // TensorBuffer::CreateManaged() is usually used with CompiledModel which
+  // initializes the GPU environment. If there is no CompiledModel, user needs
+  // to provide the GPU environment via LiteRtEnvironment.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer tensor_buffer,
-      TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
-                                  RankedTensorType(kTestTensorType),
-                                  sizeof(kTensorData)));
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeGlBuffer,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer::GlBuffer gl_buffer,
                               tensor_buffer.GetGlBuffer());
   EXPECT_THAT(gl_buffer.target, Eq(GL_SHADER_STORAGE_BUFFER));
@@ -628,7 +747,13 @@ TEST(TensorBuffer, CreateManagedGlBuffer) {
 }
 
 TEST(TensorBuffer, ClBufferFromGlBuffer) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  // User provides EGL environment.
+  auto user_gpu_env = UserGpuEnvironment::Create();
+
+  // TensorBuffer::CreateManaged() is usually used with CompiledModel which
+  // initializes the GPU environment. If there is no CompiledModel, user needs
+  // to provide the GPU environment via LiteRtEnvironment.
+
   // TODO(b/383176413) Add check for GLSharing.
   if (!HasOpenClSupport() || !HasOpenGlSupport()) {
     GTEST_SKIP() << "OpenCL and/or GL are not supported on this platform; "
@@ -637,9 +762,9 @@ TEST(TensorBuffer, ClBufferFromGlBuffer) {
   // Create GL Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer gl_tensor_buffer,
-      TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
-                                  RankedTensorType(kTestTensorType),
-                                  sizeof(kTensorData)));
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeGlBuffer,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(cl_mem cl_buffer,
                               gl_tensor_buffer.GetOpenClMemory());
@@ -648,13 +773,15 @@ TEST(TensorBuffer, ClBufferFromGlBuffer) {
 
 #if LITERT_HAS_AHWB_SUPPORT
 TEST(TensorBuffer, GetGlBufferFromAhwb) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  // User provides EGL environment.
+  auto user_gpu_env = UserGpuEnvironment::Create();
+
   // Create AHWB Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer ahwb_tensor_buffer,
-      TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeAhwb,
-                                  RankedTensorType(kTestTensorType),
-                                  sizeof(kTensorData)));
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeAhwb,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
 
   // Write to AHWB Tensor buffer.
   LITERT_ASSERT_OK(ahwb_tensor_buffer.Write<float>(absl::MakeConstSpan(
@@ -680,22 +807,20 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
 }
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-
-#if LITERT_HAS_OPENCL_SUPPORT
 TEST(TensorBuffer, GetClBufferFromAhwb) {
   if (!HasOpenClSupport() || !HasAhwbSupport()) {
     GTEST_SKIP() << "OpenCL and/or AHWB are not supported on this platform; "
                     "skipping the "
                     "test";
   }
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  // User provides EGL environment.
+  auto user_gpu_env = UserGpuEnvironment::Create();
   // Create AHWB Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer ahwb_tensor_buffer,
-      TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeAhwb,
-                                  RankedTensorType(kTestTensorType),
-                                  sizeof(kTensorData)));
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeAhwb,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
 
   // Write to AHWB Tensor buffer.
   LITERT_ASSERT_OK(ahwb_tensor_buffer.Write<float>(absl::MakeConstSpan(
@@ -710,15 +835,14 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   // TensorBuffer. ClBuffer::Unlock currently writes to CL buffer.
 
   tflite::gpu::cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  tflite::gpu::cl::CLCommandQueue* queue = gpu_env->getCommandQueue();
+
+  tflite::gpu::cl::CLCommandQueue* queue = user_gpu_env->GetCommandQueue();
   std::vector<float> read_data;
   auto status = cl_buffer_from_ahwb.ReadData(queue, &read_data);
   ASSERT_TRUE(status.ok());
   ASSERT_EQ(std::memcmp(read_data.data(), kTensorData, sizeof(kTensorData)), 0);
 }
-#endif  // LITERT_HAS_OPENCL_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 TEST(TensorBuffer, GetAhwb) {
   if (!HasAhwbSupport()) {

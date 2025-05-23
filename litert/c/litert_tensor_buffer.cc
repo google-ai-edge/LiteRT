@@ -54,15 +54,16 @@ LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
 
 #if LITERT_HAS_AHWB_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
-    const LiteRtRankedTensorType* tensor_type, AHardwareBuffer* ahwb,
-    size_t ahwb_offset, LiteRtAhwbDeallocator deallocator,
-    LiteRtTensorBuffer* tensor_buffer) {
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    AHardwareBuffer* ahwb, size_t ahwb_offset,
+    LiteRtAhwbDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
   if (!tensor_type || !ahwb || !tensor_buffer) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
-                          LiteRtTensorBufferT::CreateFromAhwb(
-                              *tensor_type, ahwb, ahwb_offset, deallocator));
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromAhwb(env, *tensor_type, ahwb, ahwb_offset,
+                                          deallocator));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }

@@ -23,6 +23,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -31,13 +32,11 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/model/model.h"
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
@@ -53,6 +52,17 @@ using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 using ::testing::litert::IsError;
+
+Expected<LiteRtEnvironment> CreateGpuEnabledEnvironment() {
+  LiteRtEnvironment env;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env,
+                          litert::internal::GpuEnvironment::Create(env));
+  LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
+  return env;
+}
 
 // Creates a tensor buffer of the given tensor, buffer type, and size.
 Expected<LiteRtTensorBufferT*> CreateBufferOfType(
@@ -449,10 +459,11 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
     GTEST_SKIP() << "OpenCL memory is not supported on this platform; "
                     "skipping the test";
   }
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
   // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
-                              LiteRtEnvironmentT::CreateWithOptions({}));
-  LiteRtEnvironmentT* env_ptr = env.release();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_ptr, CreateGpuEnabledEnvironment());
 
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);

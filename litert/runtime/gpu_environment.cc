@@ -16,7 +16,6 @@
 
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
@@ -87,8 +86,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   return options;
 }
 
-Expected<void> GpuEnvironmentSingleton::Initialize(
-    LiteRtEnvironmentT* environment) {
+Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   // Set up OpenCL.
   LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
       << "Failed to load OpenCL for LiteRT.";
@@ -159,6 +157,8 @@ Expected<void> GpuEnvironmentSingleton::Initialize(
       options_.egl_display = egl_env_->display();
       options_.egl_context = egl_env_->context().context();
       LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
+#else
+      LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
     }
     if (options_.IsGlAware() && properties_.is_gl_sharing_supported) {
@@ -196,8 +196,6 @@ Expected<void> GpuEnvironmentSingleton::Initialize(
   }
   return {};
 }
-
-GpuEnvironmentSingleton* GpuEnvironmentSingleton::instance_ = nullptr;
 
 }  // namespace internal
 }  // namespace litert

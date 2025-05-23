@@ -95,6 +95,12 @@ class TensorBuffer
       const RankedTensorType& tensor_type, AHardwareBuffer* ahwb,
       size_t ahwb_offset);
 
+  // The same as above, with additional parameter `env`. Users should use this
+  // API if they want to create a GPU buffer from the created AHardwareBuffer.
+  static Expected<TensorBuffer> CreateFromAhwb(
+      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      AHardwareBuffer* ahwb, size_t ahwb_offset);
+
   static Expected<TensorBuffer> CreateFromClBuffer(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <any>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -24,6 +25,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -41,6 +43,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include <CL/cl.h>
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/cl/cl_device.h"
@@ -149,6 +152,52 @@ TEST_P(CompiledModelGpuTest, Basic2nd) {
   // Run the test twice to verify that the CL environment is shared between
   // instances.
   BasicTest(CompiledModelGpuTest::GetParam());
+}
+
+TEST_P(CompiledModelGpuTest, GpuEnvironment) {
+  // MSAN does not support GPU tests.
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options, CreateGpuOptions(CompiledModelGpuTest::GetParam()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(*env, model, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env->GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto opencl_device_id,
+      env_options.GetOption(kLiteRtEnvOptionTagOpenClDeviceId));
+  ABSL_LOG(INFO) << "OpenCL device id: "
+                 << reinterpret_cast<cl_device_id>(
+                        std::any_cast<int64_t>(opencl_device_id));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto opencl_platform_id,
+      env_options.GetOption(kLiteRtEnvOptionTagOpenClPlatformId));
+  ABSL_LOG(INFO) << "OpenCL platform id: "
+                 << reinterpret_cast<cl_platform_id>(
+                        std::any_cast<int64_t>(opencl_platform_id));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto opencl_context,
+      env_options.GetOption(kLiteRtEnvOptionTagOpenClContext));
+  ABSL_LOG(INFO) << "OpenCL context: "
+                 << reinterpret_cast<cl_context>(
+                        std::any_cast<int64_t>(opencl_context));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto opencl_command_queue,
+      env_options.GetOption(kLiteRtEnvOptionTagOpenClCommandQueue));
+  ABSL_LOG(INFO) << "OpenCL command queue: "
+                 << reinterpret_cast<cl_command_queue>(
+                        std::any_cast<int64_t>(opencl_command_queue));
 }
 
 TEST_P(CompiledModelGpuTest, Async) {

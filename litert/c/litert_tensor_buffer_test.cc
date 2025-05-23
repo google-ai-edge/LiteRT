@@ -14,14 +14,19 @@
 
 #include "litert/c/litert_tensor_buffer.h"
 
+#include <any>
+#include <array>
 #include <cstdint>
 #include <cstring>
 
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_any.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/runtime/ahwb_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/dmabuf_buffer.h"  // IWYU pragma: keep
@@ -375,9 +380,20 @@ TEST(TensorBuffer, OpenCL) {
                     "skipping the test";
   }
 
+  // Create an option with opencl device id zero. This trick initializes the
+  // OpenCL environment at the LiteRtEnvironment creation time.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny null_deivce_id,
+                              litert::ToLiteRtAny(std::any(INT64_C(0))));
+  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagOpenClDeviceId,
+          /*.value=*/null_deivce_id,
+      },
+  };
   LiteRtEnvironment env;
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
+                                           environment_options.data(), &env));
+
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
   LiteRtTensorBuffer tensor_buffer;
   ASSERT_EQ(
@@ -436,9 +452,20 @@ TEST(TensorBuffer, GlBuffer) {
                     "skipping the test";
   }
 
+  // Create an option with opengl display id zero. This trick initializes the
+  // OpenGL environment at the LiteRtEnvironment creation time.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny null_display_id,
+                              litert::ToLiteRtAny(std::any(INT64_C(0))));
+  const std::array<LiteRtEnvOption, 1> environment_options = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagEglDisplay,
+          /*.value=*/null_display_id,
+      },
+  };
   LiteRtEnvironment env;
-  LITERT_ASSERT_OK(
-      LiteRtCreateEnvironment(/*num_options=*/0, /*options=*/nullptr, &env));
+  LITERT_ASSERT_OK(LiteRtCreateEnvironment(environment_options.size(),
+                                           environment_options.data(), &env));
+
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeGlBuffer;
 
   LiteRtTensorBuffer tensor_buffer;

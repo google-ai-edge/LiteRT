@@ -120,6 +120,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/runtime:accelerator_registry",
+        "//litert/runtime:gpu_environment_header",
         "@com_google_absl//absl/types:span",
     ],
 )

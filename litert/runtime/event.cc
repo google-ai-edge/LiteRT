@@ -25,13 +25,14 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/environment.h"
+#include "litert/runtime/gpu_environment.h"
 
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
 #include <poll.h>
 #include <unistd.h>
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
-#include "litert/runtime/gpu_environment.h"
 #include <CL/cl.h>
 #include <CL/cl_platform.h>
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
@@ -105,20 +106,8 @@ LiteRtEventT::~LiteRtEventT() {
              type == LiteRtEventTypeEglNativeSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
 
-    auto env_expected =
-        litert::internal::GpuEnvironmentSingleton::GetInstance();
-    if (!env_expected) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Cannot destroy EGL sync: Failed to get GPU environment");
-      return;
-    }
-    litert::internal::GpuEnvironmentSingleton* env = *env_expected;
-    if (env->getEglEnvironment() == nullptr) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Cannot destroy EGL sync: EGL environment is null");
-      return;
-    }
-    EGLDisplay display = env->getEglEnvironment()->display();
+    auto gpu_env = env->GetGpuEnvironment();
+    EGLDisplay display = (*gpu_env)->getEglDisplay();
     if (display == EGL_NO_DISPLAY) {
       LITERT_LOG(LITERT_ERROR,
                  "Cannot destroy EGL sync: EGL display is EGL_NO_DISPLAY");
@@ -184,8 +173,7 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
                                                     LiteRtEventType type) {
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    LITERT_ASSIGN_OR_RETURN(
-        auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
     cl_int res;
     cl_event user_event = tflite::gpu::cl::clCreateUserEvent(
         gpu_env->getContext()->context(), &res);
@@ -206,11 +194,8 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
 #endif
   } else if (type == LiteRtEventTypeEglSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
-    LITERT_ASSIGN_OR_RETURN(
-        auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(gpu_env->getEglEnvironment() != nullptr)
-        << "Failed to get EGL environment";
-    EGLDisplay display = gpu_env->getEglEnvironment()->display();
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
+    EGLDisplay display = gpu_env->getEglDisplay();
     LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY,
                            litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                               "Failed to get EGL display"));
@@ -240,11 +225,8 @@ Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   } else if (type == LiteRtEventTypeEglNativeSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
-    LITERT_ASSIGN_OR_RETURN(
-        auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(gpu_env->getEglEnvironment() != nullptr)
-        << "Failed to get EGL environment";
-    EGLDisplay display = gpu_env->getEglEnvironment()->display();
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
+    EGLDisplay display = gpu_env->getEglDisplay();
     LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY,
                            litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                               "Failed to get EGL display"));
@@ -324,11 +306,8 @@ Expected<int> LiteRtEventT::DupFd() const {
 #endif  // LITERT_HAS_SYNC_FENCE_SUPPORT
   } else if (type == LiteRtEventTypeEglNativeSyncFence) {
 #if LITERT_HAS_OPENGL_SUPPORT
-    LITERT_ASSIGN_OR_RETURN(
-        auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(env->getEglEnvironment() != nullptr)
-        << "Failed to get EGL environment";
-    EGLDisplay display = env->getEglEnvironment()->display();
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
+    EGLDisplay display = gpu_env->getEglDisplay();
     static auto* egl_dup_native_fence_fd_android =
         reinterpret_cast<decltype(&eglDupNativeFenceFDANDROID)>(
             eglGetProcAddress("eglDupNativeFenceFDANDROID"));
@@ -357,11 +336,9 @@ litert::Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
                                                           EGLSyncKHR egl_sync) {
 #if LITERT_HAS_OPENGL_SUPPORT
   LITERT_RETURN_IF_ERROR(egl_sync != EGL_NO_SYNC_KHR);
-  LITERT_ASSIGN_OR_RETURN(
-      auto gpu_env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  LITERT_RETURN_IF_ERROR(gpu_env->getEglEnvironment() != nullptr)
-      << "Failed to get EGL environment";
-  EGLDisplay display = gpu_env->getEglEnvironment()->display();
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment());
+  EGLDisplay display = gpu_env->getEglDisplay();
+  LITERT_RETURN_IF_ERROR(display != EGL_NO_DISPLAY);
   static auto* egl_get_sync_attrib_khr =
       reinterpret_cast<decltype(&eglGetSyncAttribKHR)>(
           eglGetProcAddress("eglGetSyncAttribKHR"));

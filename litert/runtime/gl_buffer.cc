@@ -30,6 +30,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/gpu_environment.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include <EGL/egl.h>
@@ -37,7 +38,6 @@
 #include <GLES3/gl31.h>
 #include <GLES3/gl32.h>
 
-#include "litert/runtime/gpu_environment.h"
 #include "tflite/delegates/gpu/gl/egl_environment.h"
 #include "tflite/delegates/gpu/gl/gl_buffer.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -65,14 +65,12 @@ bool IsAhwbToGlBufferInteropSupported() {
 
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
-Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
+Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
+                                                 AhwbBuffer& ahwb_buffer) {
 #if LITERT_HAS_AHWB_SUPPORT
-  LITERT_ASSIGN_OR_RETURN(
-      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  tflite::gpu::gl::EglEnvironment* egl_env = env->getEglEnvironment();
-  LITERT_RETURN_IF_ERROR(egl_env != nullptr,
-                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                    "Failed to get EGL environment"));
+  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+                         litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                            "Failed to get EGL display"));
   LITERT_RETURN_IF_ERROR(
       IsAhwbToGlBufferInteropSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -129,8 +127,10 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(AhwbBuffer& ahwb_buffer) {
 #endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
-GlBuffer::GlBuffer(LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes,
-                   size_t offset, LiteRtGlBufferDeallocator deallocator) {
+GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
+                   LiteRtGLuint id, size_t size_bytes, size_t offset,
+                   LiteRtGlBufferDeallocator deallocator) {
+  gpu_env_ = gpu_env;
 #if LITERT_HAS_OPENGL_SUPPORT
   size_bytes_ = size_bytes;
 
@@ -149,6 +149,7 @@ GlBuffer::GlBuffer(LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes,
 }
 
 GlBuffer::GlBuffer(GlBuffer&& other) {
+  gpu_env_ = other.gpu_env_;
 #if LITERT_HAS_OPENGL_SUPPORT
   tflite_gl_buffer_ = std::move(other.tflite_gl_buffer_);
   deallocator_ = std::move(other.deallocator_);
@@ -214,14 +215,11 @@ size_t GlBuffer::offset() const {
 #endif
 }
 
-Expected<GlBuffer> GlBuffer::Alloc(size_t size_bytes) {
+Expected<GlBuffer> GlBuffer::Alloc(GpuEnvironment* gpu_env, size_t size_bytes) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  LITERT_ASSIGN_OR_RETURN(
-      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  tflite::gpu::gl::EglEnvironment* egl_env = env->getEglEnvironment();
-  LITERT_RETURN_IF_ERROR(egl_env != nullptr,
-                         Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                    "Failed to get EGL environment"));
+  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+                         litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                            "Failed to get EGL display"));
   tflite::gpu::gl::GlBuffer tflite_gl_buffer;
 
   if (!tflite::gpu::gl::CreateReadWriteShaderStorageBuffer<std::byte>(

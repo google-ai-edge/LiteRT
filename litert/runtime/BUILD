@@ -32,6 +32,7 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:environment",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/strings:str_format",
         "@opencl_headers",
@@ -86,6 +87,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_utils",
         "//litert/cc/internal:litert_event",
+        "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
         "//tflite/delegates/gpu/cl:buffer",
@@ -121,13 +123,34 @@ cc_library(
 )
 
 cc_library(
+    name = "gpu_environment_header",
+    hdrs = ["gpu_environment.h"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:cl_device",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
+        "@opencl_headers",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/cl:gl_interop",
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
     name = "gpu_environment",
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
-    visibility = [
-        "//litert:__subpackages__",
-        "//litert/c:__subpackages__",
-    ],
+    linkopts = gles_linkopts(),
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -166,9 +189,9 @@ cc_library(
 #         "@ml_drift//ml_drift/cl:environment",
 #         "@ml_drift//ml_drift/cl:opencl_wrapper",
 #         "//litert/c:litert_any",
-#         "//litert/c:litert_environment",
 #         "//litert/c:litert_environment_options",
 #         "//litert/cc:litert_any",
+#         "//litert/core:environment",
 #         "//litert/test:matchers",
 #     ],
 # )
@@ -304,7 +327,6 @@ cc_test(
         ":tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
-        "//litert/c:litert_model",
         "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -320,6 +342,7 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -400,12 +423,7 @@ litert_device_exec(
 #         "//litert/cc:litert_layout",
 #         "//litert/core:environment",
 #         "//litert/test:matchers",
-#     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
-#             "//tflite/delegates/gpu/gl:egl_environment",
-#         ],
-#         "//conditions:default": [],
-#     }),
+#     ],
 # )
 # copybara:uncomment_end
 

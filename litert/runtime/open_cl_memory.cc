@@ -70,9 +70,7 @@ Expected<T*> OpenClMemory::Lock() {
     }
   }
   if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-    LITERT_ASSIGN_OR_RETURN(auto cl_env,
-                            GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
+    LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
                                ->EnqueueReadBuffer(GetMemoryPtr(),
                                                    cpu_buffer_size_, data_,
                                                    /*async=*/false)
@@ -80,8 +78,9 @@ Expected<T*> OpenClMemory::Lock() {
   } else {
     // Use the GPU Delegate API to download the data from the OpenCL buffer
     // to the aligned memory.
-    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryDownload(
-        &tensor_type_, buffer_type_, cpu_buffer_size_, GetMemoryPtr(), data_));
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGpuMemoryDownload(gpu_env_, &tensor_type_, buffer_type_,
+                                cpu_buffer_size_, GetMemoryPtr(), data_));
   }
   return Expected<T*>(static_cast<T*>(data_));
 }
@@ -90,9 +89,7 @@ template <typename T>
 Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
   if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-    LITERT_ASSIGN_OR_RETURN(auto cl_env,
-                            GpuEnvironmentSingleton::GetInstance());
-    LITERT_RETURN_IF_ERROR(cl_env->getCommandQueue()
+    LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
                                ->EnqueueWriteBuffer(GetMemoryPtr(),
                                                     cpu_buffer_size_, data_,
                                                     /*async=*/true)
@@ -102,8 +99,9 @@ Expected<void> OpenClMemory::Unlock() {
     // underlying H/W buffer has a stride. This conversion is done by
     // LiteRtGpuMemoryUpload().
     // TODO b/413449050 - Update behavior to upload raw H/W buffer as it is.
-    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(
-        &tensor_type_, buffer_type_, cpu_buffer_size_, data_, GetMemoryPtr()));
+    LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryUpload(gpu_env_, &tensor_type_,
+                                                 buffer_type_, cpu_buffer_size_,
+                                                 data_, GetMemoryPtr()));
   }
   return Expected<void>();
 }
@@ -114,29 +112,30 @@ bool OpenClMemory::IsSupported() {
 }
 
 Expected<OpenClMemory> OpenClMemory::Alloc(
-    const LiteRtRankedTensorType& tensor_type,
+    GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
-  LITERT_RETURN_IF_ERROR(
-      IsSupported(),
-      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
+  if (gpu_env == nullptr) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "OpenCL is not supported");
+  }
 
   if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
     tflite::gpu::cl::Buffer buffer;
-    LITERT_ASSIGN_OR_RETURN(auto cl_env,
-                            GpuEnvironmentSingleton::GetInstance());
     LITERT_RETURN_IF_ERROR(tflite::gpu::cl::CreateReadWriteBuffer(
-                               bytes_size, cl_env->getContext(), &buffer)
+                               bytes_size, gpu_env->getContext(), &buffer)
                                .ok());
-    return Expected<OpenClMemory>(tensor_type, buffer_type, std::move(buffer));
+    return Expected<OpenClMemory>(gpu_env, tensor_type, buffer_type,
+                                  std::move(buffer));
   }
 
   cl_mem cl_memory;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGpuMemoryCreate(&tensor_type, buffer_type, bytes_size, &cl_memory));
+  LITERT_RETURN_IF_ERROR(LiteRtGpuMemoryCreate(
+      gpu_env, &tensor_type, buffer_type, bytes_size, &cl_memory));
 
   tflite::gpu::cl::Buffer buffer(cl_memory, bytes_size);
 
-  return Expected<OpenClMemory>(tensor_type, buffer_type, std::move(buffer));
+  return Expected<OpenClMemory>(gpu_env, tensor_type, buffer_type,
+                                std::move(buffer));
 }
 
 bool IsAhwbToClInteropSupported() {
@@ -144,7 +143,8 @@ bool IsAhwbToClInteropSupported() {
 }
 
 Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
-    const LiteRtRankedTensorType& tensor_type, AhwbBuffer& ahwb_buffer) {
+    GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+    AhwbBuffer& ahwb_buffer) {
   cl_int error = CL_SUCCESS;
   const cl_import_properties_arm properties[] = {
       CL_IMPORT_TYPE_ARM,
@@ -152,9 +152,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
       0,
   };
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  cl_context context = env->getContext()->context();
+  cl_context context = gpu_env->getContext()->context();
   LITERT_RETURN_IF_ERROR(IsAhwbToClInteropSupported(),
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "clImportMemoryARM is not supported"));
@@ -172,15 +170,14 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 
   tflite::gpu::cl::Buffer cl_buffer(buffer, size_bytes);
 
-  return OpenClMemory(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
+  return OpenClMemory(gpu_env, tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
                       std::move(cl_buffer), ahwb_buffer.ahwb);
 }
 
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
-    const LiteRtRankedTensorType& tensor_type, GlBuffer& gl_buffer) {
-  LITERT_ASSIGN_OR_RETURN(
-      auto env, litert::internal::GpuEnvironmentSingleton::GetInstance());
-  tflite::gpu::cl::CLContext* context = env->getContext();
+    GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+    GlBuffer& gl_buffer) {
+  tflite::gpu::cl::CLContext* context = gpu_env->getContext();
   cl_int error;
   cl_mem buffer = tflite::gpu::cl::clCreateFromGLBuffer(
       context->context(), CL_MEM_READ_WRITE, gl_buffer.id(), &error);
@@ -191,7 +188,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
                               tflite::gpu::cl::CLErrorCodeToString(error))));
 
   tflite::gpu::cl::Buffer cl_buffer(buffer, gl_buffer.size_bytes());
-  return OpenClMemory(tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
+  return OpenClMemory(gpu_env, tensor_type, kLiteRtTensorBufferTypeOpenClBuffer,
                       std::move(cl_buffer));
 }
 

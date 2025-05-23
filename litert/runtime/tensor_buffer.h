@@ -44,6 +44,10 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+namespace litert::internal {
+class GpuEnvironment;
+}  // namespace litert::internal
+
 class LiteRtTensorBufferT {
  public:
   using Ptr = std::unique_ptr<LiteRtTensorBufferT>;
@@ -63,8 +67,9 @@ class LiteRtTensorBufferT {
       LiteRtHostMemoryDeallocator deallocator = nullptr);
 
   static litert::Expected<Ptr> CreateFromAhwb(
-      const LiteRtRankedTensorType& tensor_type, AHardwareBuffer* ahwb,
-      size_t ahwb_offset, LiteRtAhwbDeallocator deallocator = nullptr);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      AHardwareBuffer* ahwb, size_t ahwb_offset,
+      LiteRtAhwbDeallocator deallocator = nullptr);
 
   static litert::Expected<Ptr> CreateFromIonBuffer(
       const LiteRtRankedTensorType& tensor_type, void* ion_buffer_addr,
@@ -210,7 +215,8 @@ class LiteRtTensorBufferT {
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedAhwbBuffer(
-      const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedIonBuffer(
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);

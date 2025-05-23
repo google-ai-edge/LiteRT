@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -35,6 +36,10 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "tflite/delegates/gpu/gl/egl_environment.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
 namespace {
@@ -275,11 +280,21 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
            "GoogleTensor eTPU";
   }
 
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> gl_env;
+  ASSERT_OK(tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&gl_env));
   // Environment setup.
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
           kDispatchLibraryDir,
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::EglDisplay,
+          reinterpret_cast<int64_t>(gl_env->display()),
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::EglContext,
+          reinterpret_cast<int64_t>(gl_env->context().context()),
       },
   };
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env,

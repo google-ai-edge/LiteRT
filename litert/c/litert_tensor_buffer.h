@@ -84,9 +84,9 @@ LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
-    const LiteRtRankedTensorType* tensor_type, AHardwareBuffer* ahwb,
-    size_t ahwb_offset, LiteRtAhwbDeallocator deallocator,
-    LiteRtTensorBuffer* buffer);
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    AHardwareBuffer* ahwb, size_t ahwb_offset,
+    LiteRtAhwbDeallocator deallocator, LiteRtTensorBuffer* buffer);
 
 // Return an error if the backing buffer is not an AhardwareBuffer.
 LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,

@@ -20,10 +20,13 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment_options.h"
 #include "litert/runtime/accelerator_registry.h"
+#include "litert/runtime/gpu_environment.h"
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {
@@ -46,13 +49,41 @@ class LiteRtEnvironmentT {
   LiteRtEnvironmentOptionsT& GetOptions() { return options_; }
   const LiteRtEnvironmentOptionsT& GetOptions() const { return options_; }
 
+  // Adds options to the existing environment.
+  litert::Expected<void> AddOptions(absl::Span<const LiteRtEnvOption> options);
+
   litert::internal::AcceleratorRegistry& GetAcceleratorRegistry() {
     return accelerators_;
   }
 
+  // Sets the GPU environment. The owner of the GPU environment is transferred
+  // to the environment.
+  litert::Expected<void> SetGpuEnvironment(
+      std::unique_ptr<litert::internal::GpuEnvironment> gpu_env) {
+    if (gpu_env_) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "GPU environment is already set.");
+    }
+    gpu_env_ = std::move(gpu_env);
+    return {};
+  }
+
+  // Returns the GPU environment object.
+  litert::Expected<litert::internal::GpuEnvironment*> GetGpuEnvironment() {
+    if (!HasGpuEnvironment()) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "GPU environment is not set.");
+    }
+    return gpu_env_.get();
+  }
+
+  // Returns true if the GPU environment is set.
+  bool HasGpuEnvironment() { return gpu_env_ != nullptr; }
+
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   LiteRtEnvironmentOptionsT options_;
+  std::unique_ptr<litert::internal::GpuEnvironment> gpu_env_;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_ENVIRONMENT_H_
