@@ -1020,7 +1020,7 @@ litert_device_test(
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
 #         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/cc/options:accelerator_options",
+#         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",

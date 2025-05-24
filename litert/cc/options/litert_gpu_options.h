@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_ACCELERATOR_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_ACCELERATOR_OPTIONS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GPU_OPTIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GPU_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -21,10 +21,9 @@
 
 namespace litert {
 
-// Builds an option object that can be passed to LiteRT model compilation.
+// Builds a GPU option object that can be passed to LiteRT CompiledModel
+// creation.
 //
-// ```cpp
-// ```
 class GpuOptions : public litert::OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
@@ -48,4 +47,4 @@ class GpuOptions : public litert::OpaqueOptions {
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_GPU_ACCELERATOR_OPTIONS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GPU_OPTIONS_H_

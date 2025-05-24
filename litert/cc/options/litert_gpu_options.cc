@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/options/accelerator_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"

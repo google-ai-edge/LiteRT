@@ -42,7 +42,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/cc/options/accelerator_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.

@@ -118,7 +118,7 @@ cc_library(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
-        "//litert/cc/options:accelerator_options",
+        "//litert/cc/options:litert_gpu_options",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",

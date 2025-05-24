@@ -39,7 +39,7 @@
 #include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
-#include "litert/cc/options/accelerator_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
