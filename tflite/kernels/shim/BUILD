@@ -80,6 +80,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
@@ -95,6 +96,7 @@ tf_cc_test(
         ":tf_tensor_view",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//third_party/protobuf",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([
@@ -191,7 +193,9 @@ cc_library(
         "//tflite:string_util",
         "//tflite/core/c:common",
         "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
     ],
@@ -241,6 +245,7 @@ cc_library(
         "//tflite:type_to_tflitetype",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:compatibility",
+        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/strings",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
