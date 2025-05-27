@@ -1,7 +1,8 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
-load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_library")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 
@@ -474,7 +475,9 @@ pytype_strict_library(
         "@org_tensorflow//tensorflow/python/framework:tensor_shape",
         "@org_tensorflow//tensorflow/python/util:deprecation",
         "@org_tensorflow//tensorflow/python/util:tf_export",
-    ],
+    ] + if_pywrap(
+        if_true = [":pywrap_tflite"],
+    ),
 )
 
 py_strict_library(
@@ -515,7 +518,9 @@ pytype_strict_contrib_test(
         "@org_tensorflow//tensorflow/python/ops:math_ops",
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
         "@org_tensorflow//third_party/py/numpy",
-    ],
+    ] + if_pywrap(
+        if_true = [":pywrap_tflite"],
+    ),
 )
 
 py_strict_library(
@@ -631,5 +636,23 @@ py_strict_test(
         "@org_tensorflow//tensorflow/python/platform:client_testlib",
         "@org_tensorflow//tensorflow/python/platform:resource_loader",
         "@org_tensorflow//tensorflow/python/trackable:autotrackable",
+    ],
+)
+
+pywrap_library(
+    name = "pywrap_tflite",
+    common_lib_versions = {
+        "framework": "2",
+    },
+    pywrap_count = 7,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//tflite/python/analyzer_wrapper:_pywrap_analyzer_wrapper",
+        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper",
+        "//tflite/python/metrics:_pywrap_tensorflow_lite_metrics_wrapper",
+        "//tflite/python/optimize:_pywrap_tensorflow_lite_calibration_wrapper",
+        "//tflite/testing:_pywrap_string_util",
+        "//tflite/tools/optimize/python:_pywrap_modify_model_interface",
+        "//tflite/tools/optimize/sparsity:format_converter_wrapper_pybind11",
     ],
 )
