@@ -233,6 +233,10 @@ class LiteRtCompiledModelT {
   std::unique_ptr<::tflite::FlatBufferModel> fb_model_;
   litert::OwningBufferRef<uint8_t> model_buf_;
   std::vector<const std::string*> signature_keys_;
+  // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
+  // incoming literal model. If JIT compilation has happened, the fd belongs to
+  // a newly serialized flatbuffer owned by the compiled model.
+  int fb_model_fd_ = -1;
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the
