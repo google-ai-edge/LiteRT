@@ -1,4 +1,28 @@
+# Build objects and artifacts
+*.pyc
+*.pyo
+*.log
+*.proto.h
+*.proto.cc
+*.pb.h
+*.pb.cc
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+.vscode
+
+.idea/
+cmake-build-debug/
+
 /.bazelrc.user
 /bazel-*
 .vscode/
 *.whl
+/.tf_configure.bazelrc
