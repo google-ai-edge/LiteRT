@@ -216,3 +216,28 @@ exports_files(srcs = [
     "testdata/simple_model_qualcomm.bin",
     "testdata/simple_quantized_ops.tflite",
 ])
+
+# Memory safety test for unowned buffer API
+cc_binary(
+    name = "unowned_buffer_memory_test",
+    testonly = 1,
+    srcs = ["unowned_buffer_memory_test.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_model",
+    ],
+    # Can be run with: bazel run --config=asan //litert/test:unowned_buffer_memory_test
+)
+
+# Verification test to demonstrate no-copy behavior
+cc_binary(
+    name = "verify_no_copy_test",
+    testonly = 1,
+    srcs = ["verify_no_copy_test.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+    ],
+)

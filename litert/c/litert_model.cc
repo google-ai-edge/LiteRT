@@ -64,6 +64,21 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCreateModelFromUnownedBuffer(const void* buffer_addr,
+                                                size_t buffer_size,
+                                                LiteRtModel* model) {
+  if (!buffer_addr || !buffer_size || !model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromUnownedBuffer(
+          litert::BufferRef<uint8_t>(buffer_addr, buffer_size)));
+  *model = new_model.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
                                         LiteRtParamIndex* num_subgraphs) {
   if (model == nullptr) {

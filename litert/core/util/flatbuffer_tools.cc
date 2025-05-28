@@ -308,6 +308,23 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
       OwningBufferRef<uint8_t>(buffer.Data(), buffer.Size()));
 }
 
+Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromUnownedBuffer(
+    BufferRef<uint8_t> buffer) {
+  static constexpr size_t k2GiB = 2e+9;
+  if (buffer.Size() < k2GiB &&
+      !VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
+    return Error(kLiteRtStatusErrorInvalidFlatbuffer, "Invalid flatbuffer");
+  }
+  
+  // Create allocation without copying the buffer
+  auto alloc = MakeAllocation(buffer);
+  LITERT_ASSIGN_OR_ABORT(auto wrapper,
+                         (CreateFromAllocation(std::move(alloc))));
+  // Don't store the buffer since we don't own it
+  // wrapper->model_buf_ remains empty
+  return wrapper;
+}
+
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
     absl::string_view path) {
   auto error_reporter = tflite::DefaultErrorReporter();
