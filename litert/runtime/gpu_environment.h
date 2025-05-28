@@ -22,10 +22,13 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
 #include "tflite/delegates/gpu/cl/cl_context.h"
 #include "tflite/delegates/gpu/cl/cl_device.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/gl/egl_environment.h"
@@ -50,10 +53,12 @@ struct GpuEnvironmentProperties {
 struct GpuEnvironmentOptions {
   // If any of these objects are set, created environment will use them instead
   // of creating/choosing own instances.
+#if LITERT_HAS_OPENCL_SUPPORT
   cl_device_id device_id = nullptr;
   cl_platform_id platform_id = nullptr;
   cl_context context = nullptr;
   cl_command_queue command_queue = nullptr;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Whenever input and/or output is GL object, EGL display and context must be
   // set to create GL aware OpenCL context. Do not set these variables whenever
@@ -77,9 +82,11 @@ class GpuEnvironment {
   GpuEnvironment& operator=(const GpuEnvironment&) = delete;
   GpuEnvironment() = default;
   ~GpuEnvironment() = default;
+#if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
   tflite::gpu::cl::CLContext* getContext() { return &context_; }
   tflite::gpu::cl::CLCommandQueue* getCommandQueue() { return &command_queue_; }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   EGLDisplay getEglDisplay() { return options_.egl_display; }
   EGLContext getEglContext() { return options_.egl_context; }
 
@@ -97,9 +104,12 @@ class GpuEnvironment {
   // available. Otherwise, create the default device, context and command queue.
   Expected<void> Initialize(LiteRtEnvironment environment);
 
+#if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice device_;
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
 #if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
 #endif  // LITERT_HAS_OPENGL_SUPPORT

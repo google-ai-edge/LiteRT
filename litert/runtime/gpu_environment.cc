@@ -21,11 +21,14 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
 #include "tflite/delegates/gpu/cl/cl_context.h"
 #include "tflite/delegates/gpu/cl/cl_device.h"
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/cl/gl_interop.h"
@@ -42,6 +45,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
     return options;
   }
 
+#if LITERT_HAS_OPENCL_SUPPORT
   auto device_option =
       environment->GetOption(kLiteRtEnvOptionTagOpenClDeviceId);
   if (device_option.has_value() && device_option->type == kLiteRtAnyTypeInt) {
@@ -67,6 +71,8 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
     options.command_queue =
         reinterpret_cast<cl_command_queue>(command_queue_option->int_value);
   }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
 #if LITERT_HAS_OPENGL_SUPPORT
   auto egl_display_option =
       environment->GetOption(kLiteRtEnvOptionTagEglDisplay);
@@ -87,14 +93,17 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 }
 
 Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up OpenCL.
   LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
       << "Failed to load OpenCL for LiteRT.";
   properties_.is_opencl_available = true;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Set up options.
   options_ = CreateGpuEnvironmentOptions(environment);
 
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up device.
   if (options_.device_id && options_.platform_id) {
     device_ =
@@ -108,6 +117,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
         << "Failed to create default OpenCL device";
     LITERT_LOG(LITERT_INFO, "Created default OpenCL device.");
   }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Set up remaining properties.
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -119,6 +129,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up context.
   if (options_.context) {
     if (options_.IsGlAware()) {
@@ -194,6 +205,10 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
         << "Failed to create OpenCL command queue";
     LITERT_LOG(LITERT_INFO, "Created OpenCL command queue.");
   }
+#else
+  LITERT_LOG(LITERT_INFO, "Failed to create OpenCL context.");
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
   return {};
 }
 
