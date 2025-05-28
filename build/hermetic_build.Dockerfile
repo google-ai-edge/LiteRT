@@ -122,8 +122,13 @@ RUN echo '#!/bin/bash\n\
 git config --global --add safe.directory /litert_build\n\
 git config --global --add safe.directory /litert_build/third_party/tensorflow\n\
 \n\
-# Initialize git submodules if .gitmodules file exists\n\
-if [ -f ".gitmodules" ]; then\n\
+# Check if third_party/tensorflow exists before trying git operations\n\
+if [ -d "third_party/tensorflow" ] && [ -f "third_party/tensorflow/WORKSPACE" ]; then\n\
+  echo "TensorFlow submodule already present. Skipping git submodule initialization."\n\
+elif [ -f ".git" ]; then\n\
+  echo "Detected git worktree. Please initialize submodules manually before running Docker."\n\
+  echo "Run: git submodule init && git submodule update --remote"\n\
+elif [ -f ".gitmodules" ] && [ -d ".git" ]; then\n\
   echo "Initializing git submodules..."\n\
   git submodule init && git submodule update --remote\n\
   if [ $? -ne 0 ]; then\n\
@@ -132,7 +137,7 @@ if [ -f ".gitmodules" ]; then\n\
     echo "Git submodules initialized successfully."\n\
   fi\n\
 else\n\
-  echo "No .gitmodules file found. Skipping git submodule initialization."\n\
+  echo "No .gitmodules file found or not a git repository. Skipping git submodule initialization."\n\
 fi\n\
 \n\
 # Generate .tf_configure.bazelrc with necessary environment variables\n\
