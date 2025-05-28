@@ -31,6 +31,12 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
 )
 
 cc_test(
@@ -155,6 +161,12 @@ cc_library(
     hdrs = [
         "litert_logging.h",
     ],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
     deps = [
         ":litert_common",
         "//tflite:minimal_logging",
