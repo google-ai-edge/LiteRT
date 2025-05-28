@@ -55,7 +55,14 @@ CompiledModelWrapper::CompiledModelWrapper(litert::Environment env,
       compiled_model_(std::move(compiled)) {}
 
 // Destructor for CompiledModelWrapper.
-CompiledModelWrapper::~CompiledModelWrapper() = default;
+CompiledModelWrapper::~CompiledModelWrapper() {
+  // Release Python buffer reference if we're holding one
+  // Check Py_IsInitialized to handle destruction during Python shutdown
+  if (model_buffer_ && Py_IsInitialized()) {
+    Py_DECREF(model_buffer_);
+    model_buffer_ = nullptr;
+  }
+}
 
 // Reports an error by setting a Python exception.
 PyObject* CompiledModelWrapper::ReportError(const std::string& msg) {
@@ -175,8 +182,12 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
     return nullptr;
   }
 
-  return new CompiledModelWrapper(std::move(env), std::move(model),
-                                  std::move(*compiled_or));
+  auto* wrapper = new CompiledModelWrapper(std::move(env), std::move(model),
+                                           std::move(*compiled_or));
+  // Keep the Python buffer alive for the lifetime of the wrapper
+  Py_INCREF(model_data);
+  wrapper->model_buffer_ = model_data;
+  return wrapper;
 }
 
 // Returns a dictionary of all signatures in the model.

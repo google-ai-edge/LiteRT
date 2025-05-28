@@ -261,7 +261,8 @@ class FlatbufferWrapper {
   // fields are unique_ptrs. Load flatbuffer from file.
   static Expected<Ptr> CreateFromTflFile(absl::string_view path);
 
-  // Load flatbuffer from allocated buffer that will be copied.
+  // The caller must ensure that the buffer remains valid for the lifetime of
+  // the model.
   static Expected<Ptr> CreateFromBuffer(BufferRef<uint8_t> buffer);
 
   // Load flatbuffer from allocated buffer and take ownership.

@@ -272,7 +272,7 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
-  OwningBufferRef<uint8_t>&& buffer) {
+    BufferRef<uint8_t> buffer) {
   static constexpr size_t k2GiB = 2e+9;
   if (buffer.Size() < k2GiB &&
       !VerifyFlatbuffer(buffer.Data(), buffer.Size())) {
@@ -281,8 +281,6 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
   auto alloc = MakeAllocation(buffer);
   LITERT_ASSIGN_OR_ABORT(auto wrapper,
                            (CreateFromAllocation(std::move(alloc))));
-  // Keep the buffer alive for the lifetime of the wrapper.
-  wrapper->model_buf_ = std::move(buffer);
   return wrapper;
 }
 
@@ -303,9 +301,11 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromAllocation(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
-    BufferRef<uint8_t> buffer) {
-  return FlatbufferWrapper::CreateFromBuffer(
-      OwningBufferRef<uint8_t>(buffer.Data(), buffer.Size()));
+    OwningBufferRef<uint8_t>&& buffer) {
+  LITERT_ASSIGN_OR_ABORT(auto wrapper, (CreateFromBuffer(buffer)));
+  // Keep the buffer alive for the lifetime of the wrapper.
+  wrapper->model_buf_ = std::move(buffer);
+  return wrapper;
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
