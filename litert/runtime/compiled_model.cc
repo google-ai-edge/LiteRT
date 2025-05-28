@@ -542,13 +542,15 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           status != kLiteRtStatusOk) {
         return Unexpected(status, "Failed to lock the tensor buffer");
       }
-      locked_buffers.push_back(buffer);
       TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
       if (is_input) {
         runner->SetCustomAllocationForInputTensor(tensor_name,
                                                   custom_allocation,
                                                   /*flags=*/0);
+        // TODO: b/419350199 - Ad-hoc solution to unlock input buffers.
+        LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(buffer));
       } else {
+        locked_buffers.push_back(buffer);
         runner->SetCustomAllocationForOutputTensor(tensor_name,
                                                    custom_allocation,
                                                    /*flags=*/0);
