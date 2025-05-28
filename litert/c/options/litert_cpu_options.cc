@@ -15,24 +15,24 @@
 #include "litert/c/options/litert_cpu_options.h"
 
 #include <stdint.h>
+
 #include <memory>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/litert_cpu_options.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
-
-struct LiteRtCpuOptionsT {
-  TfLiteXNNPackDelegateOptions xnn = TfLiteXNNPackDelegateOptionsDefault();
-};
 
 LiteRtStatus LiteRtCreateCpuOptions(LiteRtOpaqueOptions* options) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  auto options_data = std::make_unique<LiteRtCpuOptionsT>();
+  auto options_data = std::make_unique<litert::internal::LiteRtCpuOptionsT>();
   LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
       LiteRtGetCpuOptionsIdentifier(), options_data.get(),
-      [](void* payload) { delete reinterpret_cast<LiteRtCpuOptions>(payload); },
+      [](void* payload) {
+        delete reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(payload);
+      },
       options));
   options_data.release();
   return kLiteRtStatusOk;
@@ -56,18 +56,20 @@ LiteRtStatus LiteRtSetCpuOptionsNumThread(LiteRtCpuOptions options,
                                           int num_threads) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  options->xnn.num_threads = num_threads;
+  reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)
+      ->xnn.num_threads = num_threads;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
+LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptions options,
                                           int* const num_threads) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
   LITERT_RETURN_IF_ERROR(num_threads,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "num_threads is null.";
-  *num_threads = options->xnn.num_threads;
+  *num_threads = reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)
+                     ->xnn.num_threads;
   return kLiteRtStatusOk;
 }
 
@@ -75,17 +77,19 @@ LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
                                              uint32_t flags) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  options->xnn.flags = flags;
+  reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)->xnn.flags =
+      flags;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
+LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
                                              uint32_t* const flags) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
   LITERT_RETURN_IF_ERROR(flags, litert::ErrorStatusBuilder::InvalidArgument())
       << "flags is null.";
-  *flags = options->xnn.flags;
+  *flags = reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)
+               ->xnn.flags;
   return kLiteRtStatusOk;
 }
 
@@ -93,16 +97,18 @@ LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
                                                        const char* path) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  options->xnn.weight_cache_file_path = path;
+  reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)
+      ->xnn.weight_cache_file_path = path;
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
-    LiteRtCpuOptionsConst options, const char** const path) {
+    LiteRtCpuOptions options, const char** const path) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
   LITERT_RETURN_IF_ERROR(path, litert::ErrorStatusBuilder::InvalidArgument())
       << "path is null.";
-  *path = options->xnn.weight_cache_file_path;
+  *path = reinterpret_cast<litert::internal::LiteRtCpuOptionsT*>(options)
+              ->xnn.weight_cache_file_path;
   return kLiteRtStatusOk;
 }

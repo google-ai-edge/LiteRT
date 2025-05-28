@@ -25,6 +25,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/runtime:litert_cpu_options",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
     ],
 )
