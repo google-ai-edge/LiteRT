@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <list>
+#include <string_view>
 #include <vector>
 
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -16,31 +17,44 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
-
+static const char* kQnnSuffix = "_qnn";
 class TensorPool {
  public:
   TensorPool();
-
-  TensorWrapper& CreateInputTensor(
+  // id: Number of tensors in TensorPool, used for ensure uniqueness of tensor
+  // name Tensors directly converted from framework: <id>_suffix_from_framework
+  // Tensors created by builder: <id>_qnn
+  TensorWrapper& CreateInputTensorWithSuffix(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions, std::string_view suffix);
 
-  TensorWrapper& CreateOutpuTensor(
+  TensorWrapper& CreateOutpuTensorWithSuffix(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
-      const std::vector<std::uint32_t>& dimentions);
+      const std::vector<std::uint32_t>& dimentions, std::string_view suffix);
 
   TensorWrapper& CreateNativeTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimentions);
 
+  TensorWrapper& CreateNativeTensorWithSuffix(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, std::string_view suffix);
+
   TensorWrapper& CreateStaticTensor(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
       const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
       const void* data);
+
+  TensorWrapper& CreateStaticTensorWithSuffix(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, std::string_view suffix,
+      std::uint32_t bytes, const void* data);
 
   TensorWrapper& CloneNativeTensorFrom(const TensorWrapper& src);
 
@@ -142,12 +156,12 @@ TensorWrapper* TensorPool::ConvertStaticTensorFrom(
   if (!fill_result) {
     return nullptr;
   }
-
   const auto id = tensor_wrappers_.size();
+  auto tensor_name = std::to_string(id) + kQnnSuffix;
   auto& back = tensor_wrappers_.emplace_back(
-      id, QNN_TENSOR_TYPE_STATIC, GetQnnDataType<T>(src_tensor.IsQuant()),
-      src_tensor.GetQuantParams(), src_tensor.GetDims(),
-      sizeof(T) * dst_data.size(), dst_data.data());
+      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
+      GetQnnDataType<T>(src_tensor.IsQuant()), src_tensor.GetQuantParams(),
+      src_tensor.GetDims(), sizeof(T) * dst_data.size(), dst_data.data());
   return &back;
 }
 
