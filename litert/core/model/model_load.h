@@ -31,6 +31,11 @@ Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromBuffer(
     BufferRef<uint8_t> buffer);
 
+// Load model from an unowned buffer. The caller must ensure the buffer
+// outlives the returned model.
+Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromUnownedBuffer(
+    BufferRef<uint8_t> buffer);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_LOAD_H_

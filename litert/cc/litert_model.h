@@ -360,6 +360,18 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return CreateFromOwnedHandle(model);
   }
 
+  // Create a model from an unowned buffer. The caller must ensure that the
+  // buffer remains valid for the lifetime of the model.
+  static Expected<Model> CreateFromUnownedBuffer(BufferRef<uint8_t> buffer) {
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromUnownedBuffer(
+            buffer.Data(), buffer.Size(), &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to load model from unowned buffer");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
   Expected<absl::Span<const uint8_t>> Metadata(
       const std::string& metadata_key) const {
     const void* buffer;
