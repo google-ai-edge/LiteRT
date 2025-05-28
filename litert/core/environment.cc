@@ -21,6 +21,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/runtime/gpu_environment.h"
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
@@ -44,12 +45,13 @@ litert::Expected<void> LiteRtEnvironmentT::AddOptions(
 }
 
 // C API to workaround Windows build issue.
-extern "C" litert::Expected<litert::internal::GpuEnvironment*>
-LiteRtGetGpuEnvironment(LiteRtEnvironment env) {
+// This function is only used in tensor_buffer.cc.
+extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
+    LiteRtEnvironment env) {
   if (env == nullptr) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        "Can't get GPU environment from null LiteRtEnvironment");
+    return nullptr;
   }
-  return env->GetGpuEnvironment();
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, env->GetGpuEnvironment(), nullptr);
+
+  return gpu_env;
 }

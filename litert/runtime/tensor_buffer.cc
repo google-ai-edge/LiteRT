@@ -67,8 +67,18 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
 
 // C API defined in environment.cc to workaround Windows build issue.
 // Lexan Windows linker makes an error when we include core/environment.h.
-extern "C" litert::Expected<litert::internal::GpuEnvironment*>
-LiteRtGetGpuEnvironment(LiteRtEnvironment env);
+extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
+    LiteRtEnvironment env);
+
+Expected<litert::internal::GpuEnvironment*> GetGpuEnvironment(
+    LiteRtEnvironment env) {
+  auto gpu_env = LiteRtGetGpuEnvironment(env);
+  if (!gpu_env) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Can't get GPU environment");
+  }
+  return gpu_env;
+}
 
 LiteRtTensorBufferT::LiteRtTensorBufferT(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
@@ -352,7 +362,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromOpenClMemory(
     LiteRtOpenClDeallocator deallocator) {
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env));
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
   tensor_buffer->buffer_.emplace<litert::internal::OpenClMemory>(
       gpu_env, tensor_type, buffer_type, buffer, buffer_size, deallocator);
   return tensor_buffer;
@@ -362,7 +372,7 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env));
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
   LITERT_ASSIGN_OR_RETURN(auto buffer,
                           litert::internal::OpenClMemory::Alloc(
                               gpu_env, tensor_type, buffer_type, buffer_size));
@@ -380,7 +390,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
     LiteRtGlBufferDeallocator deallocator) {
   Ptr tensor_buffer(new LiteRtTensorBufferT(
       env, tensor_type, kLiteRtTensorBufferTypeGlBuffer, size_bytes));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env));
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
   tensor_buffer->buffer_.emplace<litert::internal::GlBuffer>(
       gpu_env, target, id, size_bytes, offset, deallocator);
   return tensor_buffer;
@@ -389,7 +399,7 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env));
+  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
   auto buffer = litert::internal::GlBuffer::Alloc(gpu_env, buffer_size);
   if (!buffer) {
     return Unexpected(buffer.Error());
@@ -572,7 +582,7 @@ LiteRtTensorBufferT::GetOpenClMemory() {
     litert::internal::AhwbBuffer ahwb_buffer = {
         .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
 
-    LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env_));
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
     LITERT_ASSIGN_OR_RETURN(litert::internal::OpenClMemory cl_buffer_from_ahwb,
                             litert::internal::OpenClMemory::AllocFromAhwbBuffer(
                                 gpu_env, tensor_type_, ahwb_buffer));
@@ -595,7 +605,7 @@ LiteRtTensorBufferT::GetOpenClMemory() {
     // Create a new CL buffer from the GL buffer if not found.
     litert::internal::GlBuffer& gl_buffer =
         std::get<litert::internal::GlBuffer>(buffer_);
-    LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env_));
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
     LITERT_ASSIGN_OR_RETURN(
         litert::internal::OpenClMemory cl_buffer_from_gl_buffer,
         litert::internal::OpenClMemory::AllocFromGlBuffer(gpu_env, tensor_type_,
@@ -640,7 +650,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
     litert::internal::AhwbBuffer ahwb_buffer = {
         .ahwb = std::get<AhwbBuffer>(buffer_).ahwb};
 
-    LITERT_ASSIGN_OR_RETURN(auto gpu_env, LiteRtGetGpuEnvironment(env_));
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env_));
     LITERT_ASSIGN_OR_RETURN(
         litert::internal::GlBuffer gl_buffer_from_ahwb,
         litert::internal::GlBuffer::AllocFromAhwbBuffer(gpu_env, ahwb_buffer));
