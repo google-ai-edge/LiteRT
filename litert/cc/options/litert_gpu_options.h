@@ -43,6 +43,7 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
   LiteRtStatus EnableNoImmutableExternalTensorsMode(bool enabled);
+  LiteRtStatus AddExternalTensorPattern(const char* pattern);
 };
 
 }  // namespace litert
