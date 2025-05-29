@@ -4,6 +4,9 @@
 #include <vector>
 #include <string>
 
+#ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
+#define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
+
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 
 #include "litert/c/litert_logging.h"
@@ -132,3 +135,5 @@ private:
 
 }  // namespace openvino
 }  // namespace litert
+
+#endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
