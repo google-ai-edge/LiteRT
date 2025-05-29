@@ -1,6 +1,9 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
+#define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
+
 #include <vector>
 #include <string>
 
@@ -132,3 +135,5 @@ private:
 
 }  // namespace openvino
 }  // namespace litert
+
+#endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
