@@ -191,8 +191,8 @@ DecoderOperation::DecoderOperation(
       litert_op_(litert_op.Get()),
       litert_op_code_(litert_op.Code()) {
     op_type_ = GetOvOpType(litert_op_code_);
-    LITERT_LOG(LITERT_VERBOSE, "op type %s", op_type_.c_str());
-    op_name_ = op_type_ + "_" + std::to_string(node_index);
+    op_name_ = op_type_ + "_id_" + std::to_string(node_index);
+    LITERT_LOG(LITERT_VERBOSE, "op_type(%s) op_name(%s)", op_type_.c_str(), op_name_.c_str());
 }
 
 #define DECODER_CHECK_STATUS(status, attr)                                                       \

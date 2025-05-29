@@ -167,6 +167,7 @@ struct LiteRtCompilerPluginT {
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin *compiler_plugin,
                                         LiteRtEnvironmentOptions env, LiteRtOptions options) {
+    LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
     auto *plugin = new LiteRtCompilerPluginT;
     plugin->env = env;
     plugin->options = options;
@@ -226,6 +227,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
                 std::make_shared<litert::openvino::GraphIteratorDelegate>(
                     &expected_subgraph.Value());
             auto input_model = tflite_fe->load(graph_delegate);
+            LITERT_LOG(LITERT_INFO, "Model loaded");
             auto model = tflite_fe->convert(input_model);
 
             // TODO: pass the device string from env options
@@ -233,6 +235,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
             std::ostringstream oss;
             auto compiled_model = core.compile_model(model, device);
             compiled_model.export_model(oss);
+            LITERT_LOG(LITERT_INFO, "Model export done");
             result->byte_code[partition_idx] = oss.str();
 
             result->graph_names.emplace_back(graph_name);
