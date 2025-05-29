@@ -1,14 +1,14 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <openvino/frontend/tensorflow_lite/frontend.hpp>
 #include <string>
 
-#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"
-
-#include <openvino/frontend/tensorflow_lite/frontend.hpp>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
