@@ -56,8 +56,6 @@ LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
 LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
 
-// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
-
 // neuron_adapter_peformance_mode
 
 // Configures MTK devices to optimize for performance or power efficiency.

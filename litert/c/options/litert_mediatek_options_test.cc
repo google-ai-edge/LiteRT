@@ -110,9 +110,10 @@ TEST(LiteRtMediatekOptionsTest, PerformanceMode) {
   // Check default value
   LITERT_ASSERT_OK(
       LiteRtMediatekOptionsGetPerformanceMode(options_data, &performance_mode));
+
   ASSERT_EQ(
       performance_mode,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
 
   // Set to LowPower
   LITERT_ASSERT_OK(LiteRtMediatekOptionsSetPerformanceMode(
@@ -123,15 +124,15 @@ TEST(LiteRtMediatekOptionsTest, PerformanceMode) {
   ASSERT_EQ(performance_mode,
             kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
 
-  // Set to SustainedSpeed
+  // Set to FastSingleAnswer
   LITERT_ASSERT_OK(LiteRtMediatekOptionsSetPerformanceMode(
       options_data,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed));
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer));
   LITERT_ASSERT_OK(
       LiteRtMediatekOptionsGetPerformanceMode(options_data, &performance_mode));
   ASSERT_EQ(
       performance_mode,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
 
   LiteRtDestroyOpaqueOptions(options);
 }
@@ -200,16 +201,16 @@ TEST(MediatekOptionsTest, CppApi) {
   // Test Performance Mode
   EXPECT_EQ(
       options->GetPerformanceMode(),
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
   options->SetPerformanceMode(
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
   EXPECT_EQ(options->GetPerformanceMode(),
             kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
   options->SetPerformanceMode(
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
   EXPECT_EQ(
       options->GetPerformanceMode(),
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
 }
 
 }  // namespace

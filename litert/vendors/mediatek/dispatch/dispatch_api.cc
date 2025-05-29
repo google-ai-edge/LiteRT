@@ -16,6 +16,8 @@
 #include <optional>
 #include <string>
 
+#include "litert/vendors/cc/options_helper.h"
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif
@@ -68,10 +70,19 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
   static_environment_options = environment_options;
   static_options = options;
 
+  auto [env, opts, opq_opts, mediatek_opts] =
+      litert::ParseOptions<litert::mediatek::MediatekOptions>(
+          environment_options, options);
+
+  if (!mediatek_opts) {
+    LITERT_ASSIGN_OR_RETURN(mediatek_opts,
+                            ::litert::mediatek::MediatekOptions::Create());
+  }
+
   auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
 
-  if (auto neuron_adapter_api =
-          litert::mediatek::NeuronAdapterApi::Create(shared_library_dir_opt);
+  if (auto neuron_adapter_api = litert::mediatek::NeuronAdapterApi::Create(
+          shared_library_dir_opt, mediatek_opts);
       neuron_adapter_api) {
     static_neuron_adapter = neuron_adapter_api->release();
   } else {

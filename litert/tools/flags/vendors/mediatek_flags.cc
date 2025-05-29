@@ -59,10 +59,10 @@ ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
 ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
           "Whether to enable Gemma Mediatek compiler optimizations.");
 
-ABSL_FLAG(
-    LiteRtMediatekNeuronAdapterPerformanceMode, mediatek_performance_mode_type,
-    kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer,
-    "Performance mode for Mediatek Inference.");
+ABSL_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+          mediatek_performance_mode_type,
+          kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed,
+          "Performance mode for Mediatek Inference.");
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekNeuronAdapterPerformanceMode* options,

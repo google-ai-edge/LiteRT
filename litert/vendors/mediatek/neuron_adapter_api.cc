@@ -45,20 +45,11 @@ NeuronAdapterApi::NeuronAdapterApi() : api_(new Api) {}
 
 litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
     std::optional<std::string> shared_library_dir,
-    absl::optional<LiteRtOpaqueOptions> options) {
+    ::litert::Expected<litert::mediatek::MediatekOptions>& options) {
   std::unique_ptr<NeuronAdapterApi> neuron_adapter_api(new NeuronAdapterApi);
 
-  LiteRtMediatekOptionsNeronSDKVersionType sdk_version =
-      kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
-  if (options.has_value()) {
-    ::litert::OpaqueOptions opq_opts(options.value(), ::litert::OwnHandle::kNo);
-    auto mediatek_options =
-        ::litert::FindOpaqueOptions<::litert::mediatek::MediatekOptions>(
-            opq_opts);
-    sdk_version = mediatek_options->GetNeronSDKVersionType();
-  }
-  if (auto status =
-          neuron_adapter_api->LoadSymbols(shared_library_dir, sdk_version);
+  if (auto status = neuron_adapter_api->LoadSymbols(
+          shared_library_dir, options->GetNeronSDKVersionType());
       !status) {
     LITERT_LOG(LITERT_ERROR, "Failed to load NeuronAdapter shared library: %s",
                status.Error().Message().c_str());

@@ -21,13 +21,15 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    std::optional<std::string> soc_model) {
+    std::optional<std::string> soc_model,
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts) {
 #if defined(__ANDROID__)
   if (soc_model) {
     return Error(kLiteRtStatusErrorInvalidArgument,
@@ -43,13 +45,17 @@ Expected<NeuronCompilationPtr> CompileModel(
   // The code below takes care of those conditions.
 
   // NOLINTBEGIN
-  const auto compile_options =
+  auto compile_options =
 #if __ANDROID__
       std::string(neuron_adapter_api.JitCompileOptions());
 #else
       std::string(neuron_adapter_api.AotCompileOptions());
 #endif
   // NOLINTEND
+
+  if (mediatek_opts->GetEnableGemmaCompilerOptimizations()) {
+    compile_options = "--option-bundle=gemma";
+  }
 
   // This is needed in order to support FP32 acativations since TFLite doesn't
   // contain support for FP16 activations currently.
@@ -78,27 +84,27 @@ Expected<NeuronCompilationPtr> CompileModel(
                  "Failed to set compilation priority");
   }
 
+  LITERT_LOG(LITERT_INFO,
+             "NeuronCompilation_setPreference being set with value: %d",
+             mediatek_opts->GetPerformanceMode());
+
   if (neuron_adapter_api.api().compilation_set_preference(
-          compilation->get(), NEURON_PREFER_SUSTAINED_SPEED) !=
+          compilation->get(), mediatek_opts->GetPerformanceMode()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation preference");
   }
 
-#if __ANDROID__
-  if (!compile_options.empty()) {
-    if (auto status =
-            neuron_adapter_api.api().compilation_set_optimization_string(
-                compilation->get(), compile_options.c_str());
-        status != NEURON_NO_ERROR) {
-      LITERT_LOG(LITERT_INFO,
-                 "NeuronCompilation_setOptimizationString failed with error %d",
-                 status);
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "Failed to set optimization string");
-    }
+  if (auto status =
+          neuron_adapter_api.api().compilation_set_optimization_string(
+              compilation->get(), compile_options.c_str());
+      status != NEURON_NO_ERROR) {
+    LITERT_LOG(LITERT_INFO,
+               "NeuronCompilation_setOptimizationString failed with error %d",
+               status);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to set optimization string");
   }
-#endif
 
   if (auto status =
           neuron_adapter_api.api().compilation_finish(compilation->get());

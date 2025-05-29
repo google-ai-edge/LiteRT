@@ -28,7 +28,7 @@ struct LiteRtMediatekOptionsT {
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
   bool gemma_compiler_optimizations = false;
   LiteRtMediatekNeuronAdapterPerformanceMode performance_mode =
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer;
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -109,7 +109,6 @@ LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
   return kLiteRtStatusOk;
 }
 
-// DISPATCH OPTIONS /////////////////////////////////////////////////////////
 // performance_mode -------------------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
     LiteRtMediatekOptions options,

@@ -59,7 +59,7 @@ class NeuronAdapterApi {
 
   static Expected<Ptr> Create(
       std::optional<std::string> shared_library_dir,
-      std::optional<LiteRtOpaqueOptions> opaque_options = std::nullopt);
+      ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_options);
 
   const Api& api() const { return *api_; }
 

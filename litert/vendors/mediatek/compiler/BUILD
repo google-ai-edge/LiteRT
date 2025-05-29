@@ -98,15 +98,9 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
+        "//litert/cc/options:litert_mediatek_options",
         "//litert/vendors/mediatek:neuron_adapter_api",
-        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
-        "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )

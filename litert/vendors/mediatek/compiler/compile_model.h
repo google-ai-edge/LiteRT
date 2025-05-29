@@ -19,13 +19,15 @@
 #include <string>
 
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 namespace litert::mediatek {
 
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
-    std::optional<std::string> soc_model);
+    std::optional<std::string> soc_model,
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts);
 
 }  // namespace litert::mediatek
 

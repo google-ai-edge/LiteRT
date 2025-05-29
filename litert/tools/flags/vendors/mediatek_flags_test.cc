@@ -67,7 +67,7 @@ TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
   EXPECT_EQ(
       options.Value().GetPerformanceMode(),
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetFlagToVersion7) {
@@ -110,7 +110,7 @@ TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(
       &FLAGS_mediatek_performance_mode_type,
-      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
+      kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
 }
 TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {
   std::string error;

@@ -313,7 +313,8 @@ namespace {
 
 Expected<std::vector<uint8_t>> CompilePartition(
     NeuronAdapterApi& neuron_adapter_api, const litert::Subgraph& partition,
-    const std::string& graph_name, std::optional<std::string> soc_model) {
+    const std::string& graph_name, std::optional<std::string> soc_model,
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts) {
   auto model = neuron_adapter_api.CreateModel();
   if (!model) {
     return model.Error();
@@ -322,7 +323,8 @@ Expected<std::vector<uint8_t>> CompilePartition(
   LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
                                      model->get(), &operand_map));
 
-  auto compilation = CompileModel(neuron_adapter_api, model->get(), soc_model);
+  auto compilation =
+      CompileModel(neuron_adapter_api, model->get(), soc_model, mediatek_opts);
   if (!compilation) {
     return compilation.Error();
   }
@@ -389,22 +391,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  // Resolve custom mediatek options.
-  LiteRtOpaqueOptions opaque_options = {};
-  if (!compiler_plugin->GetOpaqueOptions()) {
-    LITERT_LOG(LITERT_INFO,
-               "No custom mediatek options found, creating default options");
-    LITERT_ASSIGN_OR_RETURN(auto mediatek_opts,
+  if (!compiler_plugin->GetMediatekOptions()) {
+    LITERT_ASSIGN_OR_RETURN(compiler_plugin->GetMediatekOptions(),
                             ::litert::mediatek::MediatekOptions::Create());
-    opaque_options = mediatek_opts.Release();
-  } else {
-    LITERT_LOG(LITERT_INFO, "Using custom mediatek options");
-    opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
   }
 
-  // Initialize SDK and load mediatek shared libraries.
-  auto api = NeuronAdapterApi::Create(
-      /*shared_library_dir=*/std::nullopt, opaque_options);
+  auto api = NeuronAdapterApi::Create(/*shared_library_dir=*/std::nullopt,
+                                      compiler_plugin->GetMediatekOptions());
   if (!api) {
     rmdir(dla_directory_name);
     return api.Error().Status();
@@ -415,8 +408,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
-    auto bytecode =
-        CompilePartition(**api, subgraph, graph_name, opt_soc_model);
+    auto bytecode = CompilePartition(**api, subgraph, graph_name, opt_soc_model,
+                                     compiler_plugin->GetMediatekOptions());
     rmdir(dla_directory_name);
     if (!bytecode) {
       LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
