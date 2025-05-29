@@ -112,16 +112,16 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(LiteRtCompilerPlugin compi
 // Compiled Result Definition
 /// \brief Define storage of compiled result object for OV compiler plugin
 struct LiteRtCompiledResultT {
-    std::vector<std::stringstream> byte_code;
-    // TODO: Revisit this to check if we need this or subgraph data
+    std::vector<std::string> byte_code;
     std::vector<std::string> graph_names;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(LiteRtCompiledResult compiled_result,
                                              LiteRtParamIndex byte_code_idx, const void **byte_code,
                                              size_t *byte_code_size) {
-    *byte_code = compiled_result->byte_code.data();
-    *byte_code_size = compiled_result->byte_code.size();
+    const char *raw_data_ptr = compiled_result->byte_code[byte_code_idx].data();
+    *byte_code = static_cast<void *>(const_cast<char *>(raw_data_ptr));
+    *byte_code_size = compiled_result->byte_code[byte_code_idx].length();
     return kLiteRtStatusOk;
 }
 
@@ -136,6 +136,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(LiteRtCompiledResult compiled_resul
     auto &graph_name = compiled_result->graph_names[call_idx];
     *call_info = graph_name.data();
     *call_info_size = graph_name.size();
+    *byte_code_idx = call_idx;
 
     return kLiteRtStatusOk;
 }
@@ -218,7 +219,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
     // TODO: Update this hard coded path to an env option passed from LiteRT framework
     ov::Core core;
     for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
-        std::string subgraph_name = "Partition_" + partition_idx;
+        auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
         litert::Expected<litert::Subgraph> expected_subgraph = model.Subgraph(partition_idx);
         if (expected_subgraph.HasValue()) {
             std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator> graph_delegate =
@@ -229,10 +230,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
 
             // TODO: pass the device string from env options
             std::string device = "NPU";
+            std::ostringstream oss;
             auto compiled_model = core.compile_model(model, device);
+            compiled_model.export_model(oss);
+            result->byte_code[partition_idx] = oss.str();
 
-            compiled_model.export_model(result->byte_code[partition_idx]);
-            result->graph_names[partition_idx].append(subgraph_name.c_str());
+            result->graph_names.emplace_back(graph_name);
         } else {
             LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
             return kLiteRtStatusErrorCompilation;

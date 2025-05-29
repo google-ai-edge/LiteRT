@@ -1,6 +1,9 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
 
+#ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
+#define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
+
 #include <unordered_set>
 #include <vector>
 #include <memory>
@@ -17,6 +20,7 @@
 
 using namespace litert;
 
+namespace {
 ov::element::Type MapLiteTypeToOV(const ElementType element_type) {
     ov::element::Type ov_type;
     switch (element_type) {
@@ -88,7 +92,7 @@ LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
     }
     return kLiteRtStatusOk;
 }
-
+}  // namespace
 namespace litert {
 namespace openvino {
 
@@ -159,3 +163,5 @@ private:
 
 }  // namespace openvino
 }  // namespace litert
+
+#endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_GRAPH_ITERATOR_H_
