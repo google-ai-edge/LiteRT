@@ -424,11 +424,11 @@ cc_library(
     deps = [
         ":litert_expected",
         ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "@com_google_absl//absl/debugging:leak_check",
+        # copybara:uncomment "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
     ],
 )
 
