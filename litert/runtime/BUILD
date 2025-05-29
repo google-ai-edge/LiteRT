@@ -476,3 +476,26 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_library(
+    name = "profiler",
+    srcs = ["profiler.cc"],
+    hdrs = ["profiler.h"],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "//tflite/profiling:profile_buffer",
+    ],
+)
+
+cc_test(
+    name = "profiler_test",
+    srcs = ["profiler_test.cc"],
+    deps = [
+        ":profiler",
+        "//litert/c:litert_logging",
+        "//tflite/core/api",
+        "@com_google_absl//absl/time",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
