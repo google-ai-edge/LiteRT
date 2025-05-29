@@ -22,8 +22,7 @@
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_op_options.h"
 #include "litert/core/insert_order_map.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_graph.h"
@@ -326,6 +325,151 @@ std::vector<std::vector<LiteRtOp>> GroupPartitions(
 LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
                           std::vector<LiteRtOp>& partition) {
   return GraphSlicer::SlicePartitionFromGraph(root, slice, partition);
+}
+//===----------------------------------------------------------------------===//
+// Inline decomposition.
+// This is a helper function to inline the decomposition of a composite op.
+// The decomposition is stored in a separate subgraph. This function clones
+// the ops and tensors from the decomposition subgraph into the main subgraph,
+// and then restore the topology of the decomposition subgraph to the main
+// subgraph.
+//
+// WARNING: The decomposition subgraph is not removed from the model. The caller
+// should remove it if needed.
+//===----------------------------------------------------------------------===//
+void InlineDecomposition(LiteRtModelT& model, LiteRtOpT& op,
+                         LiteRtSubgraph main_subgraph,
+                         LiteRtSubgraph decomp_subgraph) {
+  auto info = GetOptionsAs<CompositeOptions>(&op);
+  if (!info) {
+    return;
+  }
+
+  // Maps of cloned tensors and ops in main subgraph.
+  InsertOrderMap</*original*/ LiteRtTensor, /*cloned*/ LiteRtTensor>
+      tensor_map_;
+  InsertOrderMap</*original*/ LiteRtOp, /*cloned*/ LiteRtOp> op_map_;
+
+  // Copy all ops from decomp subgraph to main subgraph. The new ops are
+  // inserted after the composite op to maintain topological order.
+  int op_index = 0;
+  for (auto& op_to_match : main_subgraph->Ops()) {
+    op_index++;
+    if (op_to_match == &op) {
+      break;
+    }
+  }
+  for (auto& decomp_op : decomp_subgraph->Ops()) {
+    auto& new_op = main_subgraph->EmplaceOpAt(op_index++);
+    CloneTo(*decomp_op, new_op);
+    op_map_.InsertOrAssign(decomp_op, &new_op);
+  }
+
+  // Copy all tensors from decomp subgraph to main subgraph.
+  for (auto& decomp_tensor : decomp_subgraph->Tensors()) {
+    auto& new_tensor = main_subgraph->EmplaceTensor();
+    CloneTo(*decomp_tensor, new_tensor);
+    tensor_map_.InsertOrAssign(decomp_tensor, &new_tensor);
+  }
+
+  // Restore the topology of the decomp subgraph to the main subgraph.
+  for (auto& decomp_op : decomp_subgraph->Ops()) {
+    auto cloned_op = op_map_.Find(decomp_op)->get().second;
+    for (auto& decomp_input : decomp_op->Inputs()) {
+      auto cloned_input = tensor_map_.Find(decomp_input)->get().second;
+      if (!cloned_input) {
+        continue;
+      }
+      cloned_op->Inputs().push_back(cloned_input);
+      // Restore the user list of the cloned input tensor. Note: this only needs
+      // to be done once when swiping through the input.
+      cloned_input->Users().push_back(cloned_op);
+      cloned_input->UserArgInds().push_back(cloned_op->Inputs().size() - 1);
+    }
+
+    for (auto& decomp_output : decomp_op->Outputs()) {
+      auto cloned_output = tensor_map_.Find(decomp_output)->get().second;
+      if (!cloned_output) {
+        continue;
+      }
+      cloned_op->Outputs().push_back(cloned_output);
+    }
+  }
+
+  // Reroute input of the composite op to output of decomp subgraphInput
+  // output.
+  for (int input_ind = 0; input_ind < op.Inputs().size(); ++input_ind) {
+    auto& decomp_input_tensor = decomp_subgraph->Input(input_ind);
+    auto users = decomp_input_tensor.Users();
+    auto user_args = decomp_input_tensor.UserArgInds();
+    for (int user_ind = 0; user_ind < users.size(); ++user_ind) {
+      auto& cloned_op = op_map_.Find(users.at(user_ind))->get().second;
+      cloned_op->Inputs().at(user_args.at(user_ind)) = &op.Input(input_ind);
+      // For each input tensor of the original composite op, remove
+      // the use of the original composite op input. Since the composite op will
+      // be removed.
+      for (int input_user_ind = 0;
+           input_user_ind < op.Input(input_ind).NumUses(); ++input_user_ind) {
+        if (op.Input(input_ind).Users().at(input_user_ind) == &op) {
+          op.Input(input_ind).RemoveUse(input_user_ind);
+        }
+      }
+      // Update the user list of the original composite op input tensors.
+      op.Input(input_ind).Users().push_back(cloned_op);
+      op.Input(input_ind).UserArgInds().push_back(user_args.at(user_ind));
+    }
+  }
+
+  // We need to clean up the cloned GraphInput tensors of the decomp subgraph,
+  // since all input tensors were reused from the main subgraph.
+  for (auto& decomp_input : decomp_subgraph->Inputs()) {
+    auto& cloned_input = tensor_map_.Find(decomp_input)->get().second;
+    cloned_input->Users().clear();
+    cloned_input->UserArgInds().clear();
+    cloned_input->ClearDefiningOp();
+    main_subgraph->RemoveTensorIf([cloned_input](const LiteRtTensorT& tensor) {
+      return &tensor == cloned_input;
+    });
+  }
+
+  // Reroute the cloned tensor to the original output of the composite op.
+  for (int output_ind = 0; output_ind < op.Outputs().size(); ++output_ind) {
+    auto& decomp_output_tensor = decomp_subgraph->Output(output_ind);
+    auto& cloned_tensor = tensor_map_.Find(&decomp_output_tensor)->get().second;
+    auto& composite_output_tensor = op.Output(output_ind);
+    auto users = composite_output_tensor.Users();
+    auto user_args = composite_output_tensor.UserArgInds();
+
+    for (int user_ind = 0; user_ind < users.size(); ++user_ind) {
+      users.at(user_ind)->Inputs().at(user_args.at(user_ind)) = cloned_tensor;
+      cloned_tensor->Users().push_back(users.at(user_ind));
+      cloned_tensor->UserArgInds().push_back(user_args.at(user_ind));
+    }
+
+    // In case of the output of the original composite op is in GraphOutputs,
+    // we need to replace it with the cloned tensor.
+    for (auto& graph_output : main_subgraph->Outputs()) {
+      if (graph_output == &composite_output_tensor) {
+        graph_output = cloned_tensor;
+      }
+    }
+  }
+
+  // Clear the output of original composite op, they are not used anymore. Those
+  // tensor will be removed by DCE.
+  for (auto original_output : op.Outputs()) {
+    original_output->Users().clear();
+    original_output->UserArgInds().clear();
+    original_output->ClearDefiningOp();
+  }
+
+  // Clear the input/ouput tensor of the original composite op, so the composite
+  // op will be removed by DCE.
+  op.Inputs().clear();
+  op.Outputs().clear();
+
+  // Clean up the subgraph.
+  DCE(*main_subgraph);
 }
 
 }  // namespace litert::internal
