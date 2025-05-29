@@ -53,19 +53,21 @@ class NpuAccelerator final
 
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
                                      LiteRtOptions options, void** delegate) {
-    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Delegate pointer is null.");
-    LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator handle is invalid.");
-    LITERT_ENSURE(accelerator->env != nullptr,
-                  kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator is not registered to an environment.");
+    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Delegate pointer is null.";
+    LITERT_RETURN_IF_ERROR(accelerator != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator handle is invalid.";
+    LITERT_RETURN_IF_ERROR(accelerator->env != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator is not registered to an environment.";
 
     auto dispatch_delegate = litert::CreateDispatchDelegatePtr(
         &accelerator->env->GetOptions(), options);
-    LITERT_ENSURE(dispatch_delegate != nullptr,
-                  kLiteRtStatusErrorRuntimeFailure,
-                  "Dispatch delegate failed to be created.");
+    LITERT_RETURN_IF_ERROR(dispatch_delegate != nullptr,
+                           ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
+        << "Dispatch delegate failed to be created.";
 
     *delegate = dispatch_delegate.release();
     return kLiteRtStatusOk;
@@ -73,10 +75,12 @@ class NpuAccelerator final
 
   // Starts collection of HW-specific metrics at a specific level of detail.
   static LiteRtStatus StartMetricsCollection(void* delegate, int detail_level) {
-    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Delegate pointer is null.");
-    LITERT_ENSURE(detail_level >= 0, kLiteRtStatusErrorInvalidArgument,
-                  "Detail level must be >= 0.");
+    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Delegate pointer is null.";
+    LITERT_RETURN_IF_ERROR(detail_level >= 0,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Detail level must be >= 0.";
     LITERT_LOG(LITERT_INFO, "Dispatch delegate started metrics collection.");
     return LiteRtDispatchDelegateStartMetricsCollection(
         reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), detail_level);
@@ -85,10 +89,12 @@ class NpuAccelerator final
   // Stops collection of HW-specific metrics and report the collected metrics.
   static LiteRtStatus StopMetricsCollection(void* delegate,
                                             LiteRtMetrics metrics) {
-    LITERT_ENSURE(delegate != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Delegate pointer is null.");
-    LITERT_ENSURE(metrics != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Metrics pointer is null.");
+    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Delegate pointer is null.";
+    LITERT_RETURN_IF_ERROR(metrics != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Metrics pointer is null.";
     LITERT_LOG(LITERT_INFO, "Dispatch delegate stopped metrics collection.");
     return LiteRtDispatchDelegateStopMetricsCollection(
         reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), metrics);
@@ -105,12 +111,13 @@ class NpuAccelerator final
 extern "C" {
 
 LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
-  LITERT_ENSURE(environment != nullptr, kLiteRtStatusErrorInvalidArgument,
-                "environment handle is null");
-  LITERT_ENSURE(
+  LITERT_RETURN_IF_ERROR(environment != nullptr,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "environment handle is null";
+  LITERT_RETURN_IF_ERROR(
       environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir).has_value(),
-      kLiteRtStatusErrorInvalidArgument,
-      "Dispatch library directory is not set.");
+      litert::ErrorStatusBuilder::InvalidArgument())
+      << "Dispatch library directory is not set.";
 
   LiteRtAccelerator accelerator_handle;
   LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));

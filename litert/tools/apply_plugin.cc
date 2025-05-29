@@ -282,9 +282,10 @@ LiteRtStatus Noop(Context& ctx) {
   if (!serialized) {
     return serialized.Error().Status();
   }
-  LITERT_ENSURE(VerifyFlatbuffer(serialized->Span()),
-                kLiteRtStatusErrorInvalidFlatbuffer,
-                "Failed to invalidate flatbuffer");
+  LITERT_RETURN_IF_ERROR(
+      VerifyFlatbuffer(serialized->Span()),
+      ErrorStatusBuilder(kLiteRtStatusErrorInvalidFlatbuffer))
+      << "Failed to invalidate flatbuffer";
   serialized->WriteStr(ctx.Out());
   return kLiteRtStatusOk;
 }
@@ -336,9 +337,10 @@ LiteRtStatus Partition(Context& ctx) {
   ctx.Dump().Done();
 
   ctx.Dump().Start("Verifying flatbuffer");
-  LITERT_ENSURE(VerifyFlatbuffer(serialized->Span()),
-                kLiteRtStatusErrorInvalidFlatbuffer,
-                "Failed to invalidate flatbuffer");
+  LITERT_RETURN_IF_ERROR(
+      VerifyFlatbuffer(serialized->Span()),
+      ErrorStatusBuilder(kLiteRtStatusErrorInvalidFlatbuffer))
+      << "Failed to invalidate flatbuffer";
   ctx.Dump().Done();
 
   ctx.Dump().Start("Writing to out");
@@ -454,9 +456,10 @@ LiteRtStatus Apply(Context& ctx) {
   ctx.Dump().Done();
 
   ctx.Dump().Start("Verifying flatbuffer");
-  LITERT_ENSURE(VerifyFlatbuffer(serialized->Span()),
-                kLiteRtStatusErrorInvalidFlatbuffer,
-                "Failed to invalidate flatbuffer");
+  LITERT_RETURN_IF_ERROR(
+      VerifyFlatbuffer(serialized->Span()),
+      ErrorStatusBuilder(kLiteRtStatusErrorInvalidFlatbuffer))
+      << "Failed to invalidate flatbuffer";
   ctx.Dump().Done();
 
   ctx.Dump().Start("Writing to out");

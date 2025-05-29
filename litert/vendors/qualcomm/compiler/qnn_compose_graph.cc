@@ -249,9 +249,10 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
                                               dimentions);
     tensor_wrapper = &res;
   } else if (litert_tensor.IsConstant()) {
-    LITERT_ENSURE(litert_tensor.HasWeights(),
-                  kLiteRtStatusErrorInvalidLegalization,
-                  "Empty weights for constant tensor.");
+    LITERT_RETURN_IF_ERROR(
+        litert_tensor.HasWeights(),
+        ErrorStatusBuilder(kLiteRtStatusErrorInvalidLegalization))
+        << "Empty weights for constant tensor.";
     auto& res = tensor_pool.CreateStaticTensor(
         qnn_data_type, quantize_params, dimentions,
         litert_tensor.Weights().Bytes().size(),
@@ -878,10 +879,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   GraphToGraphTransform(graph_op_wrappers);
 
   if (options.GetUseQint16AsQuint16()) {
-    tensor_pool.ForEach(
-        [](::qnn::TensorWrapper& tensor_wrapper) {
-          tensor_wrapper.ConvertQint16ToQuint16();
-        });
+    tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
+      tensor_wrapper.ConvertQint16ToQuint16();
+    });
   }
 
   // Insert all tensors into Qnn graph and update the id of Qnn_Tensor_t inside.

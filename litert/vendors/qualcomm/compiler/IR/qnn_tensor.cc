@@ -46,8 +46,8 @@ LiteRtStatus LegalizeShapeInfo(const litert::Layout& src, Qnn_Tensor_t& dest) {
   dest.v2.dimensions = new uint32_t[dest.v2.rank];
   for (int i = 0; i < dest.v2.rank; ++i) {
     const auto src_dim = src.Dimensions()[i];
-    LITERT_ENSURE(src_dim >= 1, kLiteRtStatusErrorInvalidArgument,
-                  "Cannot pass dim < 1 to QNN Tensor.");
+    LITERT_RETURN_IF_ERROR(src_dim >= 1, ErrorStatusBuilder::InvalidArgument())
+        << "Cannot pass dim < 1 to QNN Tensor.";
 
     dest.v2.dimensions[i] = src.Dimensions()[i];
   }
@@ -217,14 +217,16 @@ LiteRtStatus LegalizeTensor(const litert::Tensor& src, Qnn_Tensor_t& dest) {
   const bool is_subgraph_out = src.IsSubgraphOutput();
   const bool is_constant = src.IsConstant();
 
-  LITERT_ENSURE(!(is_subgraph_in && is_subgraph_out),
-                kLiteRtStatusErrorInvalidArgument,
-                "Malformed tensor, cannot be both subgraph in and out.");
+  LITERT_RETURN_IF_ERROR(!(is_subgraph_in && is_subgraph_out),
+                         ErrorStatusBuilder::InvalidArgument())
+      << "Malformed tensor, cannot be both subgraph in and out.";
   if (is_constant) {
     LITERT_LOG(LITERT_INFO, "Adding constant tensor %s to qnn graph",
                dest.v2.name);
-    LITERT_ENSURE(src.HasWeights(), kLiteRtStatusErrorInvalidLegalization,
-                  "Empty weights for constant tensor.");
+    LITERT_RETURN_IF_ERROR(
+        src.HasWeights(),
+        ErrorStatusBuilder(kLiteRtStatusErrorInvalidLegalization))
+        << "Empty weights for constant tensor.";
     Qnn_ClientBuffer_t client_buf = BuildDefaultClientBuffer();
     client_buf.data = (void*)src.Weights().Bytes().data();
     client_buf.dataSize = src.Weights().Bytes().size();

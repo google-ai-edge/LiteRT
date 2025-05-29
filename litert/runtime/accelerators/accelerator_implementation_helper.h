@@ -53,7 +53,6 @@ Expected<void> SetAcceleratorBoilerplateFunctions(
   return {};
 }
 
-
 // Helps accelerator implementation by providing a lot of the boilerplate
 // needed.
 //
@@ -107,10 +106,12 @@ class AcceleratorImplementationHelper {
   // Returns the accelerator's name by setting `name`.
   static LiteRtStatus GetName(LiteRtAccelerator accelerator,
                               const char** name) {
-    LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator handle is invalid.");
-    LITERT_ENSURE(name != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Name pointer is null.");
+    LITERT_RETURN_IF_ERROR(accelerator != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator handle is invalid.";
+    LITERT_RETURN_IF_ERROR(name != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Name pointer is null.";
     *name = kName.data();
     return kLiteRtStatusOk;
   }
@@ -118,10 +119,12 @@ class AcceleratorImplementationHelper {
   // Returns the accelerator's version by setting `version`.
   static LiteRtStatus GetVersion(LiteRtAccelerator accelerator,
                                  LiteRtApiVersion* version) {
-    LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator handle is invalid.");
-    LITERT_ENSURE(version != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Version pointer is null.");
+    LITERT_RETURN_IF_ERROR(accelerator != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator handle is invalid.";
+    LITERT_RETURN_IF_ERROR(version != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Version pointer is null.";
     *version = kVersion;
     return kLiteRtStatusOk;
   }
@@ -129,10 +132,12 @@ class AcceleratorImplementationHelper {
   // Returns the accelerator's hardware support by setting `hw_set`.
   static LiteRtStatus GetHardwareSupport(LiteRtAccelerator accelerator,
                                          LiteRtHwAcceleratorSet* hw_set) {
-    LITERT_ENSURE(accelerator != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Accelerator handle is invalid.");
-    LITERT_ENSURE(hw_set != nullptr, kLiteRtStatusErrorInvalidArgument,
-                  "Hardware support pointer is null.");
+    LITERT_RETURN_IF_ERROR(accelerator != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Accelerator handle is invalid.";
+    LITERT_RETURN_IF_ERROR(hw_set != nullptr,
+                           ErrorStatusBuilder::InvalidArgument())
+        << "Hardware support pointer is null.";
     *hw_set = kHwSupport;
     return kLiteRtStatusOk;
   }

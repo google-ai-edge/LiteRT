@@ -134,8 +134,9 @@ absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic() {
 LiteRtStatus GraphMapper::AssignTensorName(Qnn_Tensor_t& qnn_tensor) {
   char* name = nullptr;
   const int written = asprintf(&name, "Tensor_%d", cur_tensor_num_++);
-  LITERT_ENSURE(written != -1 && name != nullptr, kLiteRtStatusErrorNotFound,
-                "Failed to make tensor name");
+  LITERT_RETURN_IF_ERROR(written != -1 && name != nullptr,
+                         ErrorStatusBuilder(kLiteRtStatusErrorNotFound))
+      << "Failed to make tensor name";
   qnn_tensor.v2.name = name;
   return kLiteRtStatusOk;
 }
