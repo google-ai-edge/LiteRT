@@ -60,6 +60,10 @@ cc_test(
     srcs = [
         "dispatch_api_openvino_test.cc",
     ],
+    #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
+    #data = [
+    #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
+    #],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -77,10 +81,12 @@ cc_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
+	"//litert/cc:litert_environment",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
+	"//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/cc:litert_dispatch_delegate",
