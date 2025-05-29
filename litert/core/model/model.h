@@ -617,6 +617,13 @@ class LiteRtSubgraphT {
     return ops_.EmplaceBack(std::forward<Args>(args)...);
   }
 
+  // Construct a new op which will be owned by this subgraph and get a
+  // reference to it.
+  template <class... Args>
+  LiteRtOpT& EmplaceOpAt(int index, Args&&... args) {
+    return ops_.EmplaceAt(index, std::forward<Args>(args)...);
+  }
+
   // De-allocates ops that pass given predicate. Returns number of ops removed.
   size_t RemoveOpIf(std::function<bool(const LiteRtOpT& op)> pred) {
     return ops_.RemoveIf(pred);

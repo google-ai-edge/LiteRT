@@ -17,7 +17,7 @@
 
 #include <vector>
 
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 
 namespace litert::internal {
@@ -33,6 +33,13 @@ std::vector<std::vector<LiteRtOp>> GroupPartitions(
 // tfl.custom_op in "root". A reference to that op is returned.
 LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
                           std::vector<LiteRtOp>& partition);
+
+// Inline the decomposition subgraph into the root subgraph. Replace the
+// composite op with all all ops in the decomp subgraph. Remove the decomp
+// subgraph, and the composite op in main subgraph.
+void InlineDecomposition(LiteRtModelT& model, LiteRtOpT& op,
+                        LiteRtSubgraph main_subgraph,
+                        LiteRtSubgraph decomp_subgraph);
 
 }  // namespace litert::internal
 
