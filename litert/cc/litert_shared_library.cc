@@ -77,7 +77,9 @@ void dlclose(void*) {}
 
 void* dlsym(void*, const char*) { return NULL; }
 
+#if defined(RTLD_DI_LMID) || defined(RTLD_DI_LINKMAP)
 int dlinfo(void*, int, void*) { return -1; }
+#endif
 
 #define RTLD_NEXT (void*)-1;
 #define RTLD_DEFAULT (void*)0;
