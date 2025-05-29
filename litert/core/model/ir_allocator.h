@@ -47,6 +47,21 @@ class IrAllocator {
     return emp;
   }
 
+  template <class... Args>
+  Ir& EmplaceAt(int index, Args&&... args) {
+    auto storage_it = storage_.begin();
+    std::advance(storage_it, index);
+
+    auto emp_iter = storage_.emplace(storage_it, std::forward<Args>(args)...);
+
+    auto refs_it = refs_->begin();
+    std::advance(refs_it, index);
+
+    refs_->insert(refs_it, &(*emp_iter));
+
+    return *emp_iter;
+  }
+
   // Get the array of (stable) pointers to underlying elements. Suitable
   // for passing through c-like interface. Consituent pointers are always
   // guarateed to be stable (unless explicitly erased). The array of pointers
