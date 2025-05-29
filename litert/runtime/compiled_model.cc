@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "tflite/interpreter_options.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -91,7 +92,10 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  tflite::InterpreterBuilder(*fb_model_, resolver)(&interp_);
+  tflite::InterpreterOptions interpreter_options;
+  interpreter_options.SetUseSignatureTensorNames(true);
+  tflite::InterpreterBuilder(*fb_model_, resolver,
+                             &interpreter_options)(&interp_);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");
