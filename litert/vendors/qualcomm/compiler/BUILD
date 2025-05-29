@@ -15,7 +15,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -27,7 +27,9 @@ package(
 
 litert_dynamic_lib(
     name = "qnn_compiler_plugin",
-    srcs = ["qnn_compiler_plugin.cc"],
+    srcs = [
+        "qnn_compiler_plugin.cc",
+    ],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     copts = [
         "-Os",
@@ -85,6 +87,14 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
@@ -105,7 +115,6 @@ litert_test(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
