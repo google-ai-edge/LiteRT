@@ -173,6 +173,12 @@ cc_test(
 cc_library(
     name = "litert_source_location",
     hdrs = ["litert_source_location.h"],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
     visibility = [
         "//litert:litert_public",
     ],
@@ -191,6 +197,12 @@ cc_library(
     name = "litert_macros",
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_public",
@@ -241,6 +253,12 @@ cc_library(
 cc_library(
     name = "litert_expected",
     hdrs = ["litert_expected.h"],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_public",
@@ -272,6 +290,12 @@ cc_test(
 cc_library(
     name = "litert_detail",
     hdrs = ["litert_detail.h"],
+    # copybara:uncomment_begin(google-only)
+    # compatible_with = [
+    # "//buildenv/target:non_prod",
+    # "//buildenv/target:prod",
+    # ],
+    # copybara:uncomment_end
     visibility = [
         "//litert:litert_public",
     ],
