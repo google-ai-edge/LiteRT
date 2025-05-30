@@ -21,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_common.h"
 #include "tflite/profiling/profile_buffer.h"  // IWYU pragma: keep
 
 namespace litert {

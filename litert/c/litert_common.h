@@ -18,6 +18,111 @@
 #include <stddef.h>
 
 #ifdef __cplusplus
+// =========================================================================
+//  C++ DEFINITION: Visible only to C++ compilers
+// =========================================================================
+#include <cstdint>
+
+#include "tflite/core/api/profiler.h"
+#include "tflite/profiling/memory_info.h"
+
+// The original C++ struct definition is kept here.
+struct ProfiledEventData {
+  const char* tag;  // The tag of the event. The tag is copied and owned by the
+              // profiler, the caller does not need to keep the string alive.
+  tflite::Profiler::EventType event_type;
+  uint64_t start_timestamp_us;
+  uint64_t elapsed_time_us;
+  tflite::profiling::memory::MemoryUsage begin_mem_usage;
+  tflite::profiling::memory::MemoryUsage end_mem_usage;
+  uint64_t event_metadata1;
+  uint64_t event_metadata2;
+  enum class Source {
+    LITERT,
+    TFLITE_INTERPRETER,
+    TFLITE_DELEGATE,
+  };
+  Source event_source;
+};
+
+#else
+// =========================================================================
+//  C DEFINITION: Visible only to C compilers
+// =========================================================================
+#include <stdint.h>
+
+// C-compatible version of 'tflite::Profiler::EventType'
+typedef enum LiteRtProfilerEventType {
+  // Default event type, the metadata field has no special significance.
+  DEFAULT = 1,
+
+  // The event is an operator invocation and the event_metadata field is the
+  // index of operator node.
+  OPERATOR_INVOKE_EVENT = 1 << 1,
+
+  // The event is an invocation for an internal operator of a TFLite delegate.
+  // The event_metadata field is the index of operator node that's specific to
+  // the delegate.
+  DELEGATE_OPERATOR_INVOKE_EVENT = 1 << 2,
+
+  // A delegate op invoke event that profiles a delegate op in the
+  // Operator-wise Profiling section and not in the Delegate internal section.
+  DELEGATE_PROFILED_OPERATOR_INVOKE_EVENT = 1 << 3,
+
+  // The event is a recording of runtime instrumentation such as the overall
+  // TFLite runtime status, the TFLite delegate status (if a delegate
+  // is applied), and the overall model inference latency etc.
+  // Note, the delegate status and overall status are stored as separate
+  // event_metadata fields. In particular, the delegate status is encoded
+  // as DelegateStatus::full_status().
+  GENERAL_RUNTIME_INSTRUMENTATION_EVENT = 1 << 4,
+
+  // Telemetry events. Users and code instrumentations should invoke Telemetry
+  // calls instead of using the following types directly.
+  // See experimental/telemetry:profiler for definition of each metadata.
+  //
+  // A telemetry event that reports model and interpreter level events.
+  TELEMETRY_EVENT = 1 << 5,
+  // A telemetry event that reports model and interpreter level settings.
+  TELEMETRY_REPORT_SETTINGS = 1 << 6,
+  // A telemetry event that reports delegate level events.
+  TELEMETRY_DELEGATE_EVENT = 1 << 7,
+  // A telemetry event that reports delegate settings.
+  TELEMETRY_DELEGATE_REPORT_SETTINGS = 1 << 8,
+} LiteRtProfilerEventType;
+
+// C-compatible version of 'tflite::profiling::memory::MemoryUsage'
+// We define a C struct that matches the memory layout of the C++ one.
+typedef struct LiteRtMemoryUsage {
+  int64_t total_rss_kb;
+  int64_t total_hoard_kb;
+} LiteRtMemoryUsage;
+
+// C-compatible version of 'Source'
+typedef enum LiteRtProfilerSource {
+  LITERT,
+  TFLITE_INTERPRETER,
+  TFLITE_DELEGATE,
+} LiteRtProfilerSource;
+
+// The C version of the struct uses only pure C types.
+typedef struct ProfiledEventData {
+  const char* tag;  // The tag of the event. The tag is copied and owned by the
+                    // profiler, the caller does not need to keep the string
+                    // alive.
+  LiteRtProfilerEventType event_type;
+  uint64_t start_timestamp_us;
+  uint64_t elapsed_time_us;
+  LiteRtMemoryUsage begin_mem_usage;
+  LiteRtMemoryUsage end_mem_usage;
+  uint64_t event_metadata1;
+  uint64_t event_metadata2;
+  LiteRtProfilerSource event_source;
+} ProfiledEventData;
+
+#endif  // __cplusplus
+
+#ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
@@ -66,6 +171,10 @@ LITERT_DEFINE_HANDLE(LiteRtOptions);
 LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
 // LiteRT TensorBufferRequirements object. (litert_tensor_buffer_requirements.h)
 LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
+// LiteRT Profiler object. (litert_profiler.h)
+LITERT_DEFINE_HANDLE(LiteRtProfiler);
+// LiteRT Profiler event object. (litert_profiler.h)
+LITERT_DEFINE_HANDLE(LiteRtProfilerEvent);
 
 #if __ANDROID_API__ >= 26
 #define LITERT_HAS_AHWB_SUPPORT 1
