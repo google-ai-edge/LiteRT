@@ -1,1 +1,1 @@
-FROM us-central1-docker.pkg.dev/tensorflow-sigs/tensorflow/ml-build-arm64:latest
+FROM us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build-arm64:latest:latest
