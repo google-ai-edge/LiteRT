@@ -54,8 +54,6 @@ androidx-material2 = { group = "androidx.compose.material", name = "material", v
 androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraCore" }
 
 litert = { group = "com.google.ai.edge.litert", name = "litert", version.ref = "litert" }
-litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litert" }
-litert-gpu-api = { group = "com.google.ai.edge.litert", name = "litert-gpu-api", version.ref = "litert" }
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraCore" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraCore" }
 androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraCore" }
