@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts")
+
+# copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
+load("//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -31,6 +33,10 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+    ],
 )
 
 cc_test(
@@ -555,6 +561,27 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_profiler",
+    srcs = ["litert_profiler.cc"],
+    hdrs = ["litert_profiler.h"],
+    deps = [
+        ":litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:profiler",
+    ],
+)
+
+cc_test(
+    name = "litert_profiler_test",
+    srcs = ["litert_profiler_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_profiler",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 filegroup(
     name = "litert_model_srcs",
     srcs = ["litert_model.cc"],
@@ -657,6 +684,8 @@ cc_library(
         "//tflite/c:tensorflowlite_c_impl_hdrs_filegroup",
     ],  # Export all header files (.h) in this directory
     deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
         "@opencl_headers",
     ],
 )
@@ -686,6 +715,9 @@ cc_library(
         # only depend on headers
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "//tflite/profiling:profile_buffer",
     ] + gles_headers(),
 )
 

@@ -487,8 +487,8 @@ cc_library(
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
     deps = [
+        "//litert/c:litert_common",
         "//tflite/core/api",
-        "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
     ],
 )
