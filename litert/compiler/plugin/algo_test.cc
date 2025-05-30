@@ -14,16 +14,19 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_model_predicates.h"
 #include "litert/core/model/graph_validation.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/test/common.h"
 
 namespace litert::internal {
@@ -298,6 +301,25 @@ TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
       EXPECT_TRUE(ops_in_partition.contains(selected_ops.at(i).first));
     }
   }
+}
+
+TEST(TestCompositeInlining, inlineSimpleComposite) {
+  auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 1);
+
+  auto& main_subgraph = model.Subgraph(0);
+  auto& decomp_subgraph = model.Subgraph(1);
+  auto& decomp_op = main_subgraph.Op(0);
+  EXPECT_EQ(main_subgraph.Ops().size(), 1);
+  EXPECT_EQ(decomp_subgraph.Ops().size(), 8);
+
+  InlineDecomposition(model, decomp_op, &main_subgraph, &decomp_subgraph);
+  EXPECT_EQ(model.MainSubgraph()->Ops().size(), 8);
+  EXPECT_EQ(model.NumSubgraphs(), 2);
+  auto serialized = SerializeModel(std::move(model));
+  EXPECT_TRUE(serialized);
 }
 
 }  // namespace
