@@ -684,6 +684,7 @@ cc_test(
         "//tflite:framework",
         "//tflite/core:cc_api_stable",
         "//tflite/core/c:common",
+        "@com_google_absl//absl/log",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
