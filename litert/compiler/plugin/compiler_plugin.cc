@@ -440,6 +440,37 @@ Expected<PartitionResult> PartitionModel(
     if (!selected_ops) {
       return selected_ops.Error();
     }
+    // Find all composite ops (except npu_calls) that are not selected.
+    std::vector<LiteRtOp> ops_to_inline;
+    for (auto& op : subgraph->Ops()) {
+      auto info = GetOptionsAs<CompositeOptions>(op);
+      if (!info) {
+        continue;
+      }
+      auto is_composite_selected =
+          std::any_of(selected_ops->begin(), selected_ops->end(),
+                      [&op](const LiteRtOpWithPartitionIndex& selected_op) {
+                        return selected_op.first == op;
+                      });
+      if (!is_composite_selected) {
+        ops_to_inline.push_back(op);
+      }
+    }
+
+    // Inline all composite ops that are not selected.
+    for (auto& op : ops_to_inline) {
+      auto info = GetOptionsAs<CompositeOptions>(op);
+      InlineDecomposition(model, *op, subgraph,
+                          model.Subgraphs()[info->subgraph]);
+      // Now the decomposition subgraph is inlined into the main subgraph,
+      // therefore its also "selected".
+      selected_composite_subgraph_indexes.push_back(info->subgraph);
+    }
+
+    // Re-do partitioning
+    selected_ops->clear();
+    selected_ops = compiler_plugin.Partition(subgraph, soc_model);
+
     // Record all decomposition subgraph indexes, where its compositie op will
     // be compiled without relying on the decomposition body.
     for (auto& op : *selected_ops) {
@@ -454,7 +485,6 @@ Expected<PartitionResult> PartitionModel(
     }
     auto num_selected_ops = selected_ops->size();
     auto num_ops = subgraph->Ops().size();
-
     auto num_partitions = dispatch_ops.size();
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
                                              *subgraph, dispatch_ops, model));
