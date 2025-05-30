@@ -15,6 +15,8 @@
 #include "litert/c/options/litert_gpu_options.h"
 
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -53,6 +55,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Set to true to run in no immutable external tensors mode. This prevents GPU
   // Accelerator from using immutable external tensors.
   bool experimental_no_immutable_external_tensors_mode = false;
+  // List of external tensor patterns which are not affected by the no immutable
+  // external tensors mode.
+  std::vector<std::string> external_tensor_patterns;
 };
 
 namespace litert {
@@ -119,6 +124,14 @@ LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->experimental_no_immutable_external_tensors_mode = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
+    LiteRtOpaqueOptions gpu_options, const char* pattern) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->external_tensor_patterns.push_back(std::string(pattern));
   return kLiteRtStatusOk;
 }
 
@@ -319,5 +332,28 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *serialize_external_tensors = payload->serialize_external_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
+    int* num_patterns, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_patterns, ErrorStatusBuilder::InvalidArgument())
+      << "`num_patterns` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_patterns = payload->external_tensor_patterns.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
+    const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(external_tensor_pattern,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`external_tensor_pattern` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *external_tensor_pattern =
+      payload->external_tensor_patterns[pattern_index].c_str();
   return kLiteRtStatusOk;
 }
