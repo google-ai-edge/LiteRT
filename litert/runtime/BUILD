@@ -478,6 +478,11 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_runtime_options",
+    hdrs = ["litert_runtime_options.h"],
+)
+
+cc_library(
     name = "profiler",
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],

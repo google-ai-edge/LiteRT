@@ -40,5 +40,6 @@
 #include "litert/c/options/litert_gpu_options.h"  // NOLINT
 #include "litert/c/options/litert_mediatek_options.h"  // NOLINT
 #include "litert/c/options/litert_qualcomm_options.h"  // NOLINT
+#include "litert/c/options/litert_runtime_options.h"  // NOLINT
 
 int main(void) { return 0; }

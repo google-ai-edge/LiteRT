@@ -137,6 +137,33 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_runtime_options",
+    srcs = ["litert_runtime_options.cc"],
+    hdrs = ["litert_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:litert_runtime_options",
+    ],
+)
+
+cc_test(
+    name = "litert_runtime_options_test",
+    srcs = ["litert_runtime_options_test.cc"],
+    deps = [
+        ":litert_runtime_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "litert_mediatek_options_test",
     srcs = ["litert_mediatek_options_test.cc"],

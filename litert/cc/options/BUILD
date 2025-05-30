@@ -159,6 +159,44 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "litert_runtime_options",
+    srcs = ["litert_runtime_options.cc"],
+    hdrs = ["litert_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_runtime_options"],
+        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_runtime_options"],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_test(
+    name = "litert_runtime_options_test",
+    srcs = ["litert_runtime_options_test.cc"],
+    deps = [
+        ":litert_runtime_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",
