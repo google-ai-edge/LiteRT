@@ -30,6 +30,8 @@
 #include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
 #endif
 
+#include <unordered_map>
+
 #include <gmock/gmock.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -80,6 +82,14 @@ static constexpr absl::string_view kSimpleMultiSubgraph =
 static constexpr absl::string_view kCstMultiSubgraph =
     "cst_multi_subgraph.tflite";
 
+// Store buffers to ensure they outlive the models in tests
+static std::unordered_map<std::string, OwningBufferRef<uint8_t>>&
+GetTestBufferCache() {
+  static std::unordered_map<std::string, OwningBufferRef<uint8_t>>* cache =
+      new std::unordered_map<std::string, OwningBufferRef<uint8_t>>();
+  return *cache;
+}
+
 // Load a model, then serialize and re-load. Used to test serialization.
 Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
   auto model = Model::CreateFromFile(GetTestFilePath(filename));
@@ -94,10 +104,15 @@ Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
   LITERT_RETURN_IF_ERROR(LiteRtSerializeModel(model->Release(), &data, &size,
                                               &offset, true, opts));
 
-  // Reload model.
+  // Store buffer in cache to keep it alive
+  std::string key(filename);
+  GetTestBufferCache()[key] = std::move(buf);
+
+  // Reload model using the cached buffer
   LiteRtModel result = nullptr;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtCreateModelFromBuffer(buf.Data(), buf.Size(), &result));
+  auto& cached_buf = GetTestBufferCache()[key];
+  LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
+      cached_buf.Data(), cached_buf.Size(), &result));
 
   return Model::CreateFromOwnedHandle(result);
 }

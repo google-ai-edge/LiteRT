@@ -82,6 +82,13 @@ class CompiledModelWrapper {
 
   ~CompiledModelWrapper();
 
+  // Disable copy semantics to prevent double-free of Python buffer reference
+  CompiledModelWrapper(const CompiledModelWrapper&) = delete;
+  CompiledModelWrapper& operator=(const CompiledModelWrapper&) = delete;
+  // Disable move semantics
+  CompiledModelWrapper(CompiledModelWrapper&&) = delete;
+  CompiledModelWrapper& operator=(CompiledModelWrapper& s) = delete;
+
   // Returns a Python object containing the model's signatures.
   PyObject* GetSignatureList();
 
@@ -141,6 +148,9 @@ class CompiledModelWrapper {
   litert::Environment environment_;
   litert::Model model_;
   litert::CompiledModel compiled_model_;
+
+  // Python buffer object to keep it alive for models created from buffer
+  PyObject* model_buffer_ = nullptr;
 };
 
 }  // namespace compiled_model_wrapper
