@@ -12,7 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
+load(
+    "@org_tensorflow//tensorflow:strict.default.bzl",
+    "py_strict_library",
+    # copybara:uncomment "py_strict_test",
+)
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 
 package(

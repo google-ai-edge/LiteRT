@@ -156,7 +156,7 @@ tqdm()
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
-    name = "maven",
+    name = "litert_maven",
     artifacts = [
         "androidx.lifecycle:lifecycle-common:2.8.7",
         "com.google.android.play:ai-delivery:0.1.1-alpha01",
@@ -166,9 +166,12 @@ maven_install(
         "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.10.1",
     ],
     repositories = [
+        "https://jcenter.bintray.com",
         "https://maven.google.com",
+        "https://dl.google.com/dl/android/maven2",
         "https://repo1.maven.org/maven2",
     ],
+    version_conflict_policy = "pinned",
 )
 
 # Kotlin rules
