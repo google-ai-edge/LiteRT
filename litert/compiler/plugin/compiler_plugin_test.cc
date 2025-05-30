@@ -401,6 +401,24 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_EQ(model.NumSubgraphs(), 1);
 }
 
+TEST(PartitionTest, InlineDecomposition) {
+  auto model_wrap = testing::LoadTestFileModel("unsupported_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+  // One new subgraph for the consumed composite op only, decomp not consumed.
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto main_subgraph = partition_result->second.MainSubgraph();
+  ASSERT_EQ(main_subgraph->Ops().size(), 3);
+  ASSERT_EQ(main_subgraph->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(1).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(2).OpCode(), kLiteRtOpCodeTflMul);
+}
+
 TEST(PartitionTest, SimpleNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("simple_composite.tflite");
   ASSERT_TRUE(model_wrap);
