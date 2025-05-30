@@ -23,6 +23,11 @@
 #include <utility>
 #include <vector>
 
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/runtime/litert_cpu_options.h"
+#include "litert/runtime/litert_runtime_options.h"
+
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
 #endif
@@ -64,6 +69,7 @@
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
+#include "tflite/interpreter_options.h"
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
 
@@ -74,6 +80,8 @@ using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
 using ::litert::internal::ExternalLiteRtBufferContext;
 using ::litert::internal::GetTensorBufferTypeName;
+using ::litert::internal::LiteRtCpuOptionsT;
+using ::litert::internal::LiteRtRuntimeOptionsT;
 using ::litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
@@ -91,7 +99,39 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  tflite::InterpreterBuilder(*fb_model_, resolver)(&interp_);
+  tflite::InterpreterOptions interpreter_options;
+  int num_threads = 1;
+  if (jit_compilation_options) {
+    litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
+    LITERT_ASSIGN_OR_RETURN(Expected<litert::OpaqueOptions> opaque_options,
+                            cc_options.GetOpaqueOptions());
+
+    void* options_data = nullptr;
+    LITERT_ASSIGN_OR_RETURN(
+        options_data,
+        litert::FindOpaqueData<void>(*opaque_options,
+                                     LiteRtRuntimeOptionsT::Identifier()));
+
+    LiteRtRuntimeOptionsT* runtime_opaque_options =
+        reinterpret_cast<LiteRtRuntimeOptionsT*>(options_data);
+
+    void* cpu_options_data = nullptr;
+    LITERT_ASSIGN_OR_RETURN(
+        cpu_options_data,
+        litert::FindOpaqueData<void>(*opaque_options,
+                                     LiteRtCpuOptionsT::Identifier()));
+    LiteRtCpuOptionsT* cpu_opaque_options =
+        reinterpret_cast<LiteRtCpuOptionsT*>(cpu_options_data);
+
+    interpreter_options.SetShloCompositeInlining(
+        runtime_opaque_options->shlo_composite_inlining);
+    num_threads = cpu_opaque_options->xnn.num_threads;
+  }
+
+  tflite::InterpreterBuilder builder(*fb_model_, resolver,
+                                     &interpreter_options);
+  builder(&interp_);
+  interp_->SetNumThreads(num_threads);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");

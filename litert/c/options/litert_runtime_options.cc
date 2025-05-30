@@ -24,11 +24,13 @@
 LiteRtStatus LiteRtCreateRuntimeOptions(LiteRtOpaqueOptions* options) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  auto options_data = std::make_unique<LiteRtRuntimeOptionsT>();
+  auto options_data =
+      std::make_unique<litert::internal::LiteRtRuntimeOptionsT>();
   LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
       LiteRtGetRuntimeOptionsIdentifier(), options_data.get(),
       [](void* payload) {
-        delete reinterpret_cast<LiteRtRuntimeOptions>(payload);
+        delete reinterpret_cast<litert::internal::LiteRtRuntimeOptionsT*>(
+            payload);
       },
       options));
   options_data.release();
@@ -53,7 +55,8 @@ LiteRtStatus LiteRtSetRuntimeOptionsShloCompositeInlining(
     LiteRtRuntimeOptions options, bool shlo_composite_inlining) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
-  options->shlo_composite_inlining = shlo_composite_inlining;
+  reinterpret_cast<litert::internal::LiteRtRuntimeOptionsT*>(options)
+      ->shlo_composite_inlining = shlo_composite_inlining;
   return kLiteRtStatusOk;
 }
 
@@ -64,6 +67,8 @@ LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
   LITERT_RETURN_IF_ERROR(shlo_composite_inlining,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "shlo_composite_inlining is null.";
-  *shlo_composite_inlining = options->shlo_composite_inlining;
+  *shlo_composite_inlining =
+      reinterpret_cast<litert::internal::LiteRtRuntimeOptionsT*>(options)
+          ->shlo_composite_inlining;
   return kLiteRtStatusOk;
 }

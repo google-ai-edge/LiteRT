@@ -41,7 +41,7 @@ LiteRtStatus LiteRtSetCpuOptionsNumThread(LiteRtCpuOptions options,
                                           int num_threads);
 
 // Gets the number of CPU threads used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptionsConst options,
+LiteRtStatus LiteRtGetCpuOptionsNumThread(LiteRtCpuOptions options,
                                           int* num_threads);
 
 // Sets the XNNPack flags used by the CPU accelerator.
@@ -49,7 +49,7 @@ LiteRtStatus LiteRtSetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
                                              uint32_t flags);
 
 // Gets the XNNPack flags used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptionsConst options,
+LiteRtStatus LiteRtGetCpuOptionsXNNPackFlags(LiteRtCpuOptions options,
                                              uint32_t* flags);
 
 // Sets the XNNPack weight cache file path used by the CPU accelerator.
@@ -57,8 +57,8 @@ LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
                                                        const char* path);
 
 // Gets the XNNPack weight cache file path used by the CPU accelerator.
-LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
-    LiteRtCpuOptionsConst options, const char** path);
+LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
+                                                       const char** path);
 
 #ifdef __cplusplus
 }  // extern "C"
