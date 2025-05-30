@@ -26,10 +26,15 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_java/releases/download/5.3.5/rules_java-5.3.5.tar.gz",
 )
 
-# TensorFlow
-local_repository(
+# TensorFlow - using http_archive instead of git submodule
+# Commit: c204725a855d2d00ec5927943f482af6dfa2fd46 (2025-05-27)
+http_archive(
     name = "org_tensorflow",
-    path = "third_party/tensorflow",
+    sha256 = "3067c9da846ed78b249da0a2d69c94c57668cb4c5c309cc98c6136963fd35ade",
+    strip_prefix = "tensorflow-c204725a855d2d00ec5927943f482af6dfa2fd46",
+    urls = [
+        "https://github.com/tensorflow/tensorflow/archive/c204725a855d2d00ec5927943f482af6dfa2fd46.tar.gz",
+    ],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
