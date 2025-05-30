@@ -49,6 +49,11 @@ LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
 LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
+// Add a pattern to match external tensors. External tensors won't be affected
+// by the no immutable external tensors mode.
+LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
+    LiteRtOpaqueOptions gpu_options, const char* pattern);
+
 // This enables dynamic range quantization of the input tensor for large sized
 // fully connected and convolution operations, if the device supports it. This
 // will result in accuracy loss, since the input tensor will be quantized to
@@ -150,6 +155,13 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache(
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     bool* serialize_external_tensors, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
+    int* num_patterns, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
+    const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"
