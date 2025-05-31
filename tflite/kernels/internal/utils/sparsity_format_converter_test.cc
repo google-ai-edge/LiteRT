@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/internal/utils/sparsity_format_converter.h"
 
+#include <vector>
+
 #include <gtest/gtest.h>
 #include "tflite/c/common.h"
 
