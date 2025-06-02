@@ -27,6 +27,10 @@ limitations under the License.
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/op_macros.h"
 
+#ifdef __ARM_NEON
+#include <arm_neon.h>
+#endif
+
 namespace tflite {
 namespace ops {
 namespace builtin {
