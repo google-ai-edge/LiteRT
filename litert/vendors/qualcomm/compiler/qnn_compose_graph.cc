@@ -189,7 +189,13 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
   } else {
     dimentions.resize(litert_layout.Rank());
     for (size_t i = 0; i < dimentions.size(); ++i) {
-      dimentions[i] = litert_layout.Dimensions()[i];
+      // TODO(jiunkaiy): Integrate QNN dynamic dimension.
+      // If any dimension sizes are unknown, they are indicated with -1.
+      if (litert_layout.Dimensions()[i] == -1) {
+        dimentions[i] = 1;
+      } else {
+        dimentions[i] = litert_layout.Dimensions()[i];
+      }
     }
   }
 

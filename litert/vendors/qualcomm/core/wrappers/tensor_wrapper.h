@@ -293,20 +293,20 @@ class TensorWrapper final {
   template <typename T>
   std::optional<absl::Span<const T>> GetStaticTensorData() const;
 
-  void ConvertAxisScaleOffsetToScaleOffset() {
-    if (!std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
-            quantize_params_)) {
-      return;
-    }
-
-    quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(0.0, 0);
-  }
+  void ConvertAxisScaleOffsetToScaleOffset();
 
   size_t GetTensorBytes() const;
 
   void ConvertQint16ToQuint16();
 
  private:
+  void UpdateQnnQuantParams() {
+    std::visit(
+        [this](auto&& quantize_params) -> void {
+          quantize_params.CloneTo(qnn_tensor_.v2.quantizeParams);
+        },
+        quantize_params_);
+  }
   Qnn_TensorType_t GetTensorType() const;
 
   void SetDataType(Qnn_DataType_t data_type) {
