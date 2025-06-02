@@ -61,6 +61,9 @@ LiteRtStatus LiteRtSetMinLoggerSeverity(LiteRtLogger logger,
 LiteRtStatus LiteRtLoggerLog(LiteRtLogger logger, LiteRtLogSeverity severity,
                              const char* format, ...);
 
+// Returns the identifier of the logger.
+// The returned string pointer is owned by the logger. It becomes invalid when
+// the LiteRtLogger is destroyed.
 LiteRtStatus LiteRtGetLoggerIdentifier(LiteRtLoggerConst logger,
                                        const char** identifier);
 
@@ -77,6 +80,8 @@ LiteRtStatus LiteRtCreateSinkLogger(LiteRtLogger* logger);
 LiteRtStatus LiteRtGetSinkLoggerSize(LiteRtLogger logger, size_t* size);
 
 // Returns the idx_th log in the sink logger.
+// The returned string pointer is owned by the sink logger. It becomes invalid
+// when the LiteRtLogger is destroyed.
 LiteRtStatus LiteRtGetSinkLoggerMessage(LiteRtLogger logger, size_t idx,
                                         const char** message);
 

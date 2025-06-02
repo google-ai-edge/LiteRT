@@ -76,9 +76,13 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation(
 
 // output_dir ------------------------------------------------------------------
 
+// Sets the output directory for the generated files.
+// The `output_dir` string is copied and stored in the `options` object.
 LiteRtStatus LiteRtGoogleTensorOptionsSetOutputDir(
     LiteRtGoogleTensorOptions options, const char* output_dir);
 
+// Returns the output directory for the generated files.
+// The `output_dir` string is owned by the `options` object.
 LiteRtStatus LiteRtGoogleTensorOptionsGetOutputDir(
     LiteRtGoogleTensorOptions options, const char** output_dir);
 

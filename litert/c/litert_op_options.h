@@ -211,6 +211,10 @@ LiteRtStatus LiteRtGetSplitNumSplitsOption(LiteRtOp op, int32_t* num_splits);
 // - decomposition_subgraph_index : int32_t
 //
 //==============================================================================
+
+// Returns the name of the SHLO composite op.
+// The returned string pointer is owned by the LiteRtModel to which the given
+// LiteRtOp belongs. It becomes invalid when the LiteRtModel is destroyed.
 LiteRtStatus LiteRtGetSHLOCompositeOpName(LiteRtOp op, const char** name);
 LiteRtStatus LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(
     LiteRtOp op, int32_t* decomposition_subgraph_index);

@@ -18,7 +18,7 @@
 #include <stdbool.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -82,7 +82,8 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights(
 //
 // NOTE: Users should ensure that this directory is private to the app to
 // avoid data access issues.
-// Delegate copies the string and doesn't take ownership of the memory.
+// Delegate stores the pointer to the string and doesn't take ownership of the
+// memory. The string memory must outlive the `gpu_accelerator_options` object.
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
     LiteRtOpaqueOptions gpu_accelerator_options, const char* serialization_dir);
 
@@ -93,7 +94,8 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir(
 // StrFingerprint() in lite/delegates/serialization.h.
 //
 // Set to nullptr implies the delegate will not try serialization.
-// Delegate copies the string and doesn't take ownership of the memory.
+// Delegate stores the pointer to the string and doesn't take ownership of the
+// memory. The string memory must outlive the `gpu_accelerator_options` object.
 LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey(
     LiteRtOpaqueOptions gpu_accelerator_options, const char* model_cache_key);
 
@@ -139,9 +141,15 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType(
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights(
     bool* prefer_texture_weights, LiteRtGpuOptionsPayload payload);
 
+// Returns serialization directory.
+// The returned string pointer is owned by the user of
+// LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir() API.
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir(
     const char** serialization_dir, LiteRtGpuOptionsPayload payload);
 
+// Returns model cache key.
+// The returned string pointer is owned by the user of
+// LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey() API.
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey(
     const char** model_cache_key, LiteRtGpuOptionsPayload payload);
 
