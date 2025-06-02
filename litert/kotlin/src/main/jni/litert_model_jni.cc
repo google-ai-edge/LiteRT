@@ -37,11 +37,13 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
+#include "litert/kotlin/src/main/jni/litert_model_wrapper.h"
 
 namespace {
 using litert::ElementType;
 using litert::Layout;
 using litert::Model;
+using litert::jni::ModelWrapper;
 using litert::jni::ThrowLiteRtException;
 
 // Converts a C++ ElementType to a Java ElementType object.
@@ -184,8 +186,13 @@ jobject GetTensorType(JNIEnv* env, bool is_input, jlong handle, jstring name,
                       jstring signature) {
   AUTO_CLEANUP_JNI_STRING(env, name);
   AUTO_CLEANUP_JNI_STRING(env, signature);
-  auto model =
-      Model::CreateFromNonOwnedHandle(reinterpret_cast<LiteRtModel>(handle));
+  auto* wrapper = reinterpret_cast<ModelWrapper*>(handle);
+  if (!wrapper || !wrapper->model) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorInvalidArgument,
+                         "Invalid model handle");
+    return nullptr;
+  }
+  auto model = Model::CreateFromNonOwnedHandle(wrapper->model);
   auto subgraph =
       signature_str ? model.Subgraph(signature_str) : model.MainSubgraph();
   if (!subgraph) {
@@ -253,8 +260,9 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Model_nativeLoadAsset(
     ThrowLiteRtException(env, status, "Failed to create model from asset.");
     return 0;
   }
-
-  return reinterpret_cast<jlong>(model);
+  // Create wrapper to keep buffer alive
+  auto* wrapper = new ModelWrapper(model, std::move(buffer));
+  return reinterpret_cast<jlong>(wrapper);
 }
 #endif  // __ANDROID__
 
@@ -268,12 +276,15 @@ JNIEXPORT jlong JNICALL Java_com_google_ai_edge_litert_Model_nativeLoadFile(
     ThrowLiteRtException(env, status, "Failed to create model from file.");
     return 0;
   }
-  return reinterpret_cast<jlong>(model);
+  // Create wrapper for consistency (no buffer needed for file-based models)
+  auto* wrapper = new ModelWrapper(model);
+  return reinterpret_cast<jlong>(wrapper);
 }
 
 JNIEXPORT void JNICALL Java_com_google_ai_edge_litert_Model_nativeDestroy(
     JNIEnv* env, jclass clazz, jlong handle) {
-  LiteRtDestroyModel(reinterpret_cast<LiteRtModel>(handle));
+  auto* wrapper = reinterpret_cast<ModelWrapper*>(handle);
+  delete wrapper;  // Destructor will call LiteRtDestroyModel
 }
 
 JNIEXPORT jobject JNICALL

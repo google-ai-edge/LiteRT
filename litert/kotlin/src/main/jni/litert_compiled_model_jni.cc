@@ -37,9 +37,11 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
+#include "litert/kotlin/src/main/jni/litert_model_wrapper.h"
 
 namespace {
 
+using ::litert::jni::ModelWrapper;
 using ::litert::jni::ThrowLiteRtException;
 
 // Keys for CPU options, the values should match the ones in Kotlin.
@@ -105,12 +107,14 @@ LiteRtDelegateBufferStorageType ToLiteRtDelegateBufferStorageType(
 // The handles are not owned by the returned CompiledModel.
 litert::CompiledModel CreateCompileModel(jlong compiled_model_handle,
                                          jlong model_handle) {
-  auto c_model = reinterpret_cast<LiteRtModel>(model_handle);
-  ABSL_CHECK(c_model != nullptr);
+  // Extract the actual model from the wrapper
+  auto* wrapper = reinterpret_cast<ModelWrapper*>(model_handle);
+  ABSL_CHECK(wrapper != nullptr);
+  ABSL_CHECK(wrapper->model != nullptr);
   auto c_compiled_model =
       reinterpret_cast<LiteRtCompiledModel>(compiled_model_handle);
   ABSL_CHECK(c_compiled_model != nullptr);
-  return litert::CompiledModel(c_model, c_compiled_model,
+  return litert::CompiledModel(wrapper->model, c_compiled_model,
                                litert::OwnHandle::kNo);
 }
 
@@ -334,8 +338,12 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreate(
 
   auto litert_env = reinterpret_cast<LiteRtEnvironment>(env_handle);
   ABSL_CHECK(litert_env != nullptr);
-  auto model = reinterpret_cast<LiteRtModel>(model_handle);
-  ABSL_CHECK(model != nullptr);
+  // Extract the actual model from the wrapper
+  auto* wrapper = reinterpret_cast<ModelWrapper*>(model_handle);
+  ABSL_CHECK(wrapper != nullptr);
+  ABSL_CHECK(wrapper->model != nullptr);
+  auto model = wrapper->model;
+
   LiteRtCompiledModel compiled_model = nullptr;
   status = LiteRtCreateCompiledModel(
       litert_env, model, std::move(compilation_options), &compiled_model);

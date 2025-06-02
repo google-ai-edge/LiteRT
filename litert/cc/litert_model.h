@@ -350,6 +350,8 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return CreateFromOwnedHandle(model);
   }
 
+  // The caller must ensure that the buffer remains valid for the lifetime of
+  // the model.
   static Expected<Model> CreateFromBuffer(BufferRef<uint8_t> buffer) {
     LiteRtModel model;
     if (auto status =

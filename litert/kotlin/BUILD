@@ -66,7 +66,10 @@ cc_library(
 cc_library(
     name = "litert_model_jni",
     srcs = ["src/main/jni/litert_model_jni.cc"],
-    hdrs = ["src/main/jni/litert_model_jni.h"],
+    hdrs = [
+        "src/main/jni/litert_model_jni.h",
+        "src/main/jni/litert_model_wrapper.h",
+    ],
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -90,6 +93,7 @@ cc_library(
     hdrs = ["src/main/jni/litert_compiled_model_jni.h"],
     deps = [
         ":litert_jni_common",
+        ":litert_model_jni",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_handle",
