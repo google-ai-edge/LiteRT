@@ -17,7 +17,7 @@ jobs:
     name: "experimental_presubmit_test (py ${{ matrix.docker-python-version }} on linux-x86-n2-16)"
     runs-on: Linux_runner_8_core
     container:
-      image: us-central1-docker.pkg.dev/tensorflow-sigs/tensorflow/ml-build:latest
+      image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
     if: |
       github.event.pull_request.user.type == 'Bot' ||
       github.event.pull_request.user.type == 'Organization' ||

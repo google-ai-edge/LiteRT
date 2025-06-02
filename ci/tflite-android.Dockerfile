@@ -1,4 +1,4 @@
-FROM us-central1-docker.pkg.dev/tensorflow-sigs/tensorflow/ml-build:latest
+FROM us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build:latest
 
 ENV ANDROID_DEV_HOME /android
 RUN mkdir -p ${ANDROID_DEV_HOME}
