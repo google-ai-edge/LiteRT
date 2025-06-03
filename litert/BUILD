@@ -57,7 +57,8 @@ package_group(
         "//litert/vendors/cc/...",
         "//litert/vendors/qualcomm/...",
         # When litert_lm_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
+        # Also some helper libraries are used by litert_lm.
+        "//third_party/odml/litert_lm/...",
     ],
 )
 
