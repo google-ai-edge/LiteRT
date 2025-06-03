@@ -90,7 +90,8 @@ litert::Expected<std::string> GetSharedLibraryPath(
   litert::internal::FindLiteRtDispatchSharedLibs(
       std::any_cast<const char*>(dispatch_lib_dir), dispatch_lib_paths);
   if (dispatch_lib_paths.empty()) {
-    LITERT_LOG(LITERT_ERROR, "No dispatch library found");
+    LITERT_LOG(LITERT_ERROR, "No dispatch library found in %s",
+               std::any_cast<const char*>(dispatch_lib_dir));
     return litert::Error(kLiteRtStatusErrorRuntimeFailure);
   }
   if (dispatch_lib_paths.size() > 1) {

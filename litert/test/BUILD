@@ -214,5 +214,6 @@ exports_files(srcs = [
     "testdata/simple_model_mtk.bin",
     "testdata/simple_model_npu_google_tensor_precompiled.tflite",
     "testdata/simple_model_qualcomm.bin",
+    "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
     "testdata/simple_quantized_ops.tflite",
 ])

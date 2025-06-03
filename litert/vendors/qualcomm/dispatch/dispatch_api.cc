@@ -25,6 +25,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -260,14 +261,16 @@ LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
 LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // Nothing to do here.
+  LITERT_RETURN_IF_ERROR(
+      invocation_context->DetachInput(graph_input_index, tensor_buffer_handle));
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // Nothing to do here.
+  LITERT_RETURN_IF_ERROR(invocation_context->DetachOutput(
+      graph_output_index, tensor_buffer_handle));
   return kLiteRtStatusOk;
 }
 

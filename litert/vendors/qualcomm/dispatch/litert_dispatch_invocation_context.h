@@ -52,8 +52,12 @@ class LiteRtDispatchInvocationContextT {
 
   litert::Expected<void> AttachInput(
       int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
   litert::Expected<void> AttachOutput(
+      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
+
+  litert::Expected<void> DetachInput(
+      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
+  litert::Expected<void> DetachOutput(
       int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<void> Execute();
@@ -72,6 +76,9 @@ class LiteRtDispatchInvocationContextT {
       Qnn_GraphHandle_t graph_handle);
 
   litert::Expected<void> AttachBuffer(
+      Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
+
+  litert::Expected<void> DetachBuffer(
       Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<void> ConvertToUint16(

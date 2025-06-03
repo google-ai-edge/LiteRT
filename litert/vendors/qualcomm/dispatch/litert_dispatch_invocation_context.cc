@@ -235,6 +235,24 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
   return AttachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
 }
 
+Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  auto& tensor = inputs_[graph_input_index];
+  LITERT_RETURN_IF_ERROR(
+      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  input_buffer_handles_[graph_input_index] = -1;
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  auto& tensor = outputs_[graph_output_index];
+  LITERT_RETURN_IF_ERROR(
+      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  output_buffer_handles_[graph_output_index] = -1;
+  return {};
+}
+
 Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto tensor_buffer = device_context_.GetTensorBuffer(tensor_buffer_handle);
@@ -263,6 +281,13 @@ Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Unsupported QNN tensor version");
   }
+  return {};
+}
+
+Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
+    Qnn_Tensor_t& tensor, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  LITERT_RETURN_IF_ERROR(
+      device_context_.UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
 }
 

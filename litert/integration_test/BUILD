@@ -257,6 +257,7 @@ litert_device_test(
 #     "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_qualcomm_test",
 #     "//litert/runtime/compiler:jit_compilation_qualcomm_test",
 #     "//litert/runtime:gl_buffer_device_test",
+#     "//litert/cc:litert_compiled_model_qualcomm_test",
 # ]
 #
 # guitar_workflow_test(

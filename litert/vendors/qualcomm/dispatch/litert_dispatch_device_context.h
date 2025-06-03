@@ -42,6 +42,10 @@ class LiteRtDispatchDeviceContextT {
     return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
   }
 
+  litert::Expected<void> UnregisterTensorBuffer(
+      LiteRtTensorBufferHandle tensor_buffer_handle,
+      const Qnn_Tensor_t& tensor);
+
   litert::Expected<LiteRtTensorBuffer> GetTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 

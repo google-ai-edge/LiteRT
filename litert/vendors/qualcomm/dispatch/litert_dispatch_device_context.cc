@@ -18,10 +18,13 @@
 #include <cstdint>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
@@ -73,6 +76,7 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::GetMemHandle(
 
 Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
     LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor) {
+  LITERT_LOG(LITERT_DEBUG, "Registering tensor buffer %p", tensor_buffer);
   LiteRtTensorBufferType tensor_buffer_type;
   if (auto status =
           LiteRtGetTensorBufferType(tensor_buffer, &tensor_buffer_type);
@@ -176,8 +180,10 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   if (auto status = qnn_manager_.Api()->memRegister(
           context_handle, &mem_descriptor, 1UL, &mem_handle);
       status != QNN_SUCCESS) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to register tensor buffer");
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat("Failed to register tensor buffer, QNN error code: %d",
+                        status));
   }
 
   if (!mem_handle) {
@@ -186,4 +192,23 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   }
 
   return mem_handle;
+}
+
+litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
+    LiteRtTensorBufferHandle tensor_buffer_handle, const Qnn_Tensor_t& tensor) {
+  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
+                          GetTensorBuffer(tensor_buffer_handle));
+  LITERT_LOG(LITERT_DEBUG, "Unregistering tensor buffer %p", tensor_buffer);
+  LITERT_RETURN_IF_ERROR(
+      tensor_buffer_registry_.Unregister(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(auto mem_handle,
+                          GetMemHandle(tensor_buffer_handle, tensor));
+  if (auto status = qnn_manager_.Api()->memDeRegister(&mem_handle, 1UL);
+      status != QNN_SUCCESS) {
+    return Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrFormat(
+            "Failed to unregister tensor buffer, QNN error code: %d", status));
+  }
+  return {};
 }
