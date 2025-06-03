@@ -4,10 +4,15 @@
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 #include <cstddef>
+#include <functional>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "litert/vendors/qualcomm/core/op_code.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -20,7 +25,10 @@ OpWrapper::OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
 OpWrapper::OpWrapper(const OpWrapper& other) = default;
 
 OpWrapper& OpWrapper::operator=(const OpWrapper& other) {
-  new (this) OpWrapper(other);
+  if (this != &other) {
+    this->~OpWrapper();
+    new (this) OpWrapper(other);
+  }
   return *this;
 }
 
@@ -89,6 +97,8 @@ Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   return qnn_op;
 }
 
+QnnOpCode OpWrapper::GetOpCode() const { return op_code_; }
+
 bool OpWrapper::IsOpCode(QnnOpCode op_code) const {
   return op_code_ == op_code;
 }
@@ -101,8 +111,49 @@ const qnn::TensorWrapper& OpWrapper::GetOutputTensor(size_t i) const {
   return output_tensors_[i].get();
 }
 
-void OpWrapper::StealOutputs(const OpWrapper& other) {
-  this->output_tensors_ = other.output_tensors_;
+const qnn::TensorParamWrapper& OpWrapper::GetTensorPararm(size_t i) const {
+  return tensor_params_[i];
 }
+
+void OpWrapper::SwapOutputs(OpWrapper& other) {
+  this->output_tensors_.swap(other.output_tensors_);
+}
+
+void OpWrapper::ClearTensorParams() { tensor_params_.clear(); }
+
+void OpWrapper::UpdateTensors(
+    const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
+    const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs) {
+  if (inputs.size() != input_tensors_.size() ||
+      outputs.size() != output_tensors_.size()) {
+    QNN_LOG_WARNING("UpdateTensors skipped due to incorrect tensor count.");
+    return;
+  }
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    if (inputs[i].has_value()) {
+      input_tensors_[i] = inputs[i].value();
+    }
+  }
+  for (size_t i = 0; i < outputs.size(); ++i) {
+    if (outputs[i].has_value()) {
+      output_tensors_[i] = outputs[i].value();
+    }
+  }
+}
+
+std::vector<std::reference_wrapper<TensorWrapper>> OpWrapper::GetAllTensors() {
+  std::vector<std::reference_wrapper<TensorWrapper>> ret;
+  ret.reserve(input_tensors_.size());
+  for (auto& tensor_ref : input_tensors_) {
+    ret.emplace_back(const_cast<TensorWrapper&>(tensor_ref.get()));
+  }
+  for (auto& tensor_ref : output_tensors_) {
+    ret.emplace_back(const_cast<TensorWrapper&>(tensor_ref.get()));
+  }
+  for (const auto& param : tensor_params_) {
+    ret.emplace_back(const_cast<TensorWrapper&>(param.GetTensor()));
+  }
+  return ret;
+};
 
 }  // namespace qnn

@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -42,13 +43,25 @@ class OpWrapper final {
 
   Qnn_OpConfig_t GetOpConfig();
 
+  QnnOpCode GetOpCode() const;
+
   bool IsOpCode(QnnOpCode op_code) const;
 
   const qnn::TensorWrapper& GetInputTensor(size_t i) const;
 
   const qnn::TensorWrapper& GetOutputTensor(size_t i) const;
 
-  void StealOutputs(const OpWrapper& other);
+  const qnn::TensorParamWrapper& GetTensorPararm(size_t i) const;
+
+  std::vector<std::reference_wrapper<TensorWrapper>> GetAllTensors();
+
+  void SwapOutputs(OpWrapper& other);
+
+  void UpdateTensors(
+      const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
+      const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs);
+
+  void ClearTensorParams();
 
  private:
   const char* type_name_{nullptr};

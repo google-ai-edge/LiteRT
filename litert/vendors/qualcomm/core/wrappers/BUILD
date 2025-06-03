@@ -46,9 +46,10 @@ cc_library(
     srcs = ["op_wrapper.cc"],
     hdrs = ["op_wrapper.h"],
     deps = [
+        ":param_wrapper",
+        ":tensor_wrapper",
         "//litert/vendors/qualcomm/core:op_code",
-        "//litert/vendors/qualcomm/core/wrappers:param_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "//litert/vendors/qualcomm/core/utils:log",
         "@qairt//:qnn_lib_headers",
     ],
 )

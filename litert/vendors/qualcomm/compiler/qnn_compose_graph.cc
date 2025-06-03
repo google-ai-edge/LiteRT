@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -810,6 +811,20 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
   return kLiteRtStatusOk;
 }
 
+void AddTensorToQnn(
+    const QnnApi* qnn_api, Qnn_GraphHandle_t& graph_handle,
+    ::qnn::TensorWrapper& tensor,
+    absl::flat_hash_set<const ::qnn::TensorWrapper*>& created_tensors,
+    bool use_qint16_as_quint16) {
+  if (!created_tensors.count(&tensor)) {
+    if (use_qint16_as_quint16) {
+      tensor.ConvertQint16ToQuint16();
+    }
+    qnn_api->tensorCreateGraphTensor(graph_handle, &(tensor.GetQnnTensor()));
+    created_tensors.emplace(&tensor);
+  }
+}
+
 LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                       LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
                       const ::qnn::Options& options) {
@@ -824,12 +839,14 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   ::qnn::TensorPool tensor_pool;
   absl::flat_hash_map<LiteRtTensor, ::qnn::TensorWrapper*>
       litert_tensor_to_wrapper;
-
+  absl::flat_hash_set<const ::qnn::TensorWrapper*> created_tensors;
   for (const auto& subgraph_input : graph_mapper.Graph().Inputs()) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
     LITERT_RETURN_IF_ERROR(
         ConvertTensor(subgraph_input, tensor_pool, tensor_wrapper));
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
+    AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(), *tensor_wrapper,
+                   created_tensors, options.GetUseQint16AsQuint16());
   }
 
   for (const auto& subgraph_output : graph_mapper.Graph().Outputs()) {
@@ -876,22 +893,21 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
               std::back_inserter(graph_op_wrappers));
   }
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
-  GraphToGraphTransform(graph_op_wrappers);
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
+  GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
+                        [api = qnn.Api(), backend = qnn.BackendHandle()](
+                            ::qnn::OpWrapper& op) -> bool {
+                          return QNN_SUCCESS == api->backendValidateOpConfig(
+                                                    backend, op.GetOpConfig());
+                        });
 
-  if (options.GetUseQint16AsQuint16()) {
-    tensor_pool.ForEach([](::qnn::TensorWrapper& tensor_wrapper) {
-      tensor_wrapper.ConvertQint16ToQuint16();
-    });
-  }
-
-  // Insert all tensors into Qnn graph and update the id of Qnn_Tensor_t inside.
-  tensor_pool.ForEach(
-      [&qnn, &graph_mapper](::qnn::TensorWrapper& tensor_wrapper) {
-        qnn.Api()->tensorCreateGraphTensor(graph_mapper.QnnGraph(),
-                                           &tensor_wrapper.GetQnnTensor());
-      });
-  // Then op can be added into Qnn graph after the tensor ids are updated.
+  // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {
+    for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
+      AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
+                     tensor_wrapper_ref.get(), created_tensors,
+                     options.GetUseQint16AsQuint16());
+    }
     qnn.Api()->graphAddNode(graph_mapper.QnnGraph(), op_wrapper.GetOpConfig());
   }
 

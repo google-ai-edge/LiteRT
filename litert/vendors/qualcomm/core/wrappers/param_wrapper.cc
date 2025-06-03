@@ -24,4 +24,6 @@ void TensorParamWrapper::CloneTo(Qnn_Param_t& dst) const {
   tensor_.CloneTo(dst.tensorParam);
 }
 
+const TensorWrapper& TensorParamWrapper::GetTensor() const { return tensor_; }
+
 }  // namespace qnn
