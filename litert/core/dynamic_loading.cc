@@ -125,7 +125,8 @@ LiteRtStatus PutLibOnLdPath(absl::string_view search_path,
   }
 
   const auto lib_dir = std::filesystem::path(results[0]).parent_path().string();
-  absl::string_view ld = getenv(kLdLibraryPath.data());
+  absl::string_view ld =
+      absl::NullSafeStringView(getenv(kLdLibraryPath.data()));
 
   if (EnvPathContains(lib_dir, ld)) {
     LITERT_LOG(LITERT_INFO, "dir already in LD_LIBRARY_PATH");
