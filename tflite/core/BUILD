@@ -530,9 +530,14 @@ cc_library(
     name = "model_building",
     srcs = ["model_building.cc"],
     hdrs = ["model_building.h"],
+    visibility = [
+        "//tflite:__subpackages__",
+    ],
     deps = [
         ":subgraph",
+        "//tflite:array",
         "//tflite:framework",
+        "//tflite:type_to_tflitetype",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core/c:common",
