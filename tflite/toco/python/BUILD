@@ -60,6 +60,7 @@ cc_library(
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
+        "@org_tensorflow//third_party/protobuf",
     ] + select({
         # This is required when running `tflite_convert` from `bazel`.
         # It requires to link with TensorFlow Ops to get the op definitions.
