@@ -160,8 +160,11 @@ adb push "${HOST_TEST_IMAGE_DIR}/image.jpeg" "${DEVICE_TEST_IMAGE_DIR}/"
 echo "Pushed test images."
 
 # Push model files
-adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256.tflite" "${DEVICE_MODEL_DIR}/"
-adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256_SM8750.tflite" "${DEVICE_MODEL_DIR}/"
+if [[ "$ACCELERATOR" == "npu" ]]; then
+    adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256_SM8750.tflite" "${DEVICE_MODEL_DIR}/"
+else
+    adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256.tflite" "${DEVICE_MODEL_DIR}/"
+fi
 echo "Pushed segmentation models."
 
 # Push c api shared library
@@ -171,10 +174,13 @@ echo "Pushed c api shared library."
 
 # Push gpu accelerator shared library
 LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/" 
-adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtGpuAccelerator.so" "${DEVICE_BASE_DIR}/"
+if [[ "$ACCELERATOR" == "gpu" ]]; then
+    adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtGpuAccelerator.so" "${DEVICE_BASE_DIR}/"
+fi
 echo "Pushed gpu accelerator shared library."
 
 # Push NPU dispatch library
+if [[ "$ACCELERATOR" == "npu" ]]; then
 adb push "${NPU_LIBRARY_LOCATION}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU dispatch library."
 
@@ -185,6 +191,7 @@ adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU
 adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 adb push "${HOST_NPU_LIBRARY_DIR}/hexagon-v79/unsigned/libQnnHtpV79Skel.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU libraries."
+fi
 
 # Set execute permissions
 adb shell "chmod +x ${DEVICE_BASE_DIR}/${DEVICE_EXEC_NAME}"
