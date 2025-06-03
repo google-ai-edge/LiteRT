@@ -77,8 +77,6 @@ void dlclose(void*) {}
 
 void* dlsym(void*, const char*) { return NULL; }
 
-int dlinfo(void*, int, void*) { return -1; }
-
 #define RTLD_NEXT (void*)-1;
 #define RTLD_DEFAULT (void*)0;
 
