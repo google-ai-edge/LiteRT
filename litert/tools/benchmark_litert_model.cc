@@ -65,7 +65,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   if (use_gpu) {
     hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu;
     LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
-    // Enable no immutable external tensors mode.
+    // Enable no external tensors mode.
     gpu_options.EnableNoImmutableExternalTensorsMode(/*enabled=*/true);
     // Enable benchmark mode to run clFinish() after each inference.
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);

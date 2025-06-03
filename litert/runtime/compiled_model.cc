@@ -64,6 +64,7 @@
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
+#include "tflite/interpreter_options.h"
 #include "tflite/kernels/register.h"
 #include "tflite/model_builder.h"
 
@@ -91,7 +92,10 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  tflite::InterpreterBuilder(*fb_model_, resolver)(&interp_);
+  tflite::InterpreterOptions interpreter_options;
+  interpreter_options.SetUseSignatureTensorNames(true);
+  tflite::InterpreterBuilder(*fb_model_, resolver,
+                             &interpreter_options)(&interp_);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");

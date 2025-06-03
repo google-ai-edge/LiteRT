@@ -92,4 +92,8 @@ LiteRtStatus GpuOptions::EnableNoImmutableExternalTensorsMode(bool enabled) {
   return LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(Get(), enabled);
 }
 
+LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
+  return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
+}
+
 }  // namespace litert
