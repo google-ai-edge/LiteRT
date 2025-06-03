@@ -494,8 +494,9 @@ cc_library(
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
     deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_profiler_event",
         "//tflite/core/api",
-        "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
     ],
 )
@@ -512,6 +513,7 @@ cc_test(
     deps = [
         ":profiler",
         "//litert/c:litert_logging",
+        "//litert/c:litert_profiler_event",
         "//tflite/core/api",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",

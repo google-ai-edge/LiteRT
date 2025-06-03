@@ -24,6 +24,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_profiler_event.h"
 #include "tflite/core/api/profiler.h"  // For tflite::Profiler::EventType
 
 // Suggested location: tests/litert/profiler_test.cc
@@ -76,7 +77,7 @@ TEST(LiteRTProfiler, NoEventsWhenNotProfiling) {
 TEST(LiteRTProfiler, SingleEventRecording) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
-  profiler.SetCurrentEventSource(ProfiledEventData::Source::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   const char* tag = "SingleEvent";
   int64_t meta1 = 123;
@@ -95,7 +96,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
   ASSERT_EQ(ev.event_type, tflite::Profiler::EventType::DEFAULT);
   ASSERT_EQ(ev.event_metadata1, meta1);
   ASSERT_EQ(ev.event_metadata2, meta2);
-  ASSERT_EQ(ev.event_source, ProfiledEventData::Source::LITERT);
+  ASSERT_EQ(ev.event_source, ProfiledEventSource::LITERT);
   ASSERT_GT(ev.elapsed_time_us, 0);  // Check that some time has passed
 
   std::cout << "TestSingleEventRecording: PASSED" << std::endl;
@@ -104,7 +105,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
 TEST(LiteRTProfiler, MultipleEventRecording) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
-  profiler.SetCurrentEventSource(ProfiledEventData::Source::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   uint32_t h1 =
       profiler.BeginEvent("Event1", tflite::Profiler::EventType::DEFAULT, 1, 0);
@@ -136,7 +137,7 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
   profiler.StartProfiling();
 
   // LITERT source
-  profiler.SetCurrentEventSource(ProfiledEventData::Source::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   uint32_t h1 = profiler.BeginEvent("LiteRT_Event",
                                     tflite::Profiler::EventType::DEFAULT, 0, 0);
   LITERT_LOG(LITERT_INFO, "LiteRT_Event %d", h1);
@@ -144,7 +145,7 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
 
   // TFLITE_INTERPRETER source
   profiler.SetCurrentEventSource(
-      ProfiledEventData::Source::TFLITE_INTERPRETER);
+      ProfiledEventSource::TFLITE_INTERPRETER);
   uint32_t h2 = profiler.BeginEvent(
       "Interpreter_Event", tflite::Profiler::EventType::OPERATOR_INVOKE_EVENT,
       0, 0);
@@ -153,7 +154,7 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
 
   // TFLITE_DELEGATE source (inferred from event type)
   profiler.SetCurrentEventSource(
-      ProfiledEventData::Source::TFLITE_INTERPRETER);  // Hint is interpreter
+      ProfiledEventSource::TFLITE_INTERPRETER);  // Hint is interpreter
   uint32_t h3 = profiler.BeginEvent(
       "Delegate_Event",
       tflite::Profiler::EventType::DELEGATE_OPERATOR_INVOKE_EVENT, 0, 0);
@@ -165,16 +166,16 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
   const auto& events = profiler.GetProfiledEvents();
   ASSERT_EQ(events.size(), 3);
   ASSERT_EQ(strcmp(events[0].tag, "LiteRT_Event"), 0);
-  ASSERT_EQ(events[0].event_source, ProfiledEventData::Source::LITERT);
+  ASSERT_EQ(events[0].event_source, ProfiledEventSource::LITERT);
 
   ASSERT_EQ(strcmp(events[1].tag, "Interpreter_Event"), 0);
   ASSERT_EQ(events[1].event_source,
-            ProfiledEventData::Source::TFLITE_INTERPRETER);
+            ProfiledEventSource::TFLITE_INTERPRETER);
 
   ASSERT_EQ(strcmp(events[2].tag, "Delegate_Event"), 0);
   ASSERT_EQ(
       events[2].event_source,
-      ProfiledEventData::Source::TFLITE_DELEGATE);  // Should be overridden
+      ProfiledEventSource::TFLITE_DELEGATE);  // Should be overridden
 
   std::cout << "TestEventSourceAttribution: PASSED" << std::endl;
 }
@@ -182,7 +183,7 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
 TEST(LiteRTProfiler, ResetFunctionality) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
-  profiler.SetCurrentEventSource(ProfiledEventData::Source::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   uint32_t h1 = profiler.BeginEvent("EventBeforeReset",
                                     tflite::Profiler::EventType::DEFAULT, 0, 0);
   profiler.EndEvent(h1);
@@ -217,7 +218,7 @@ TEST(LiteRTProfiler, MaxEventsHandling) {
   size_t max_events = 2;
   LiteRtProfilerT profiler(max_events);
   profiler.StartProfiling();
-  profiler.SetCurrentEventSource(ProfiledEventData::Source::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   uint32_t h1 =
       profiler.BeginEvent("E1", tflite::Profiler::EventType::DEFAULT, 1, 0);

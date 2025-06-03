@@ -21,13 +21,14 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_profiler_event.h"
 #include "tflite/profiling/profile_buffer.h"  // IWYU pragma: keep
 
 namespace litert {
 
 LiteRtProfilerT::LiteRtProfilerT(size_t max_num_events)
     : profiling_enabled_(false),
-      current_event_source_(ProfiledEventData::Source::LITERT) {
+      current_event_source_(ProfiledEventSource::LITERT) {
   // Initialize the profile buffer with the TFLite metadata version
   // and the maximum number of events.
   profile_buffer_ = std::make_unique<tflite::profiling::ProfileBuffer>(
@@ -55,11 +56,10 @@ uint32_t LiteRtProfilerT::BeginEvent(const char* tag, EventType event_type,
 
   if (event_handle != 0) {
     // Determine the effective source for this specific event
-    ProfiledEventData::Source effective_source =
-        this->current_event_source_;
+    ProfiledEventSource effective_source = this->current_event_source_;
     if (event_type == EventType::DELEGATE_OPERATOR_INVOKE_EVENT ||
         event_type == EventType::DELEGATE_PROFILED_OPERATOR_INVOKE_EVENT) {
-      effective_source = ProfiledEventData::Source::TFLITE_DELEGATE;
+      effective_source = ProfiledEventSource::TFLITE_DELEGATE;
     }
     // Store our determined source associated with the handle
     active_event_sources_map_[event_handle] = effective_source;
@@ -86,7 +86,7 @@ void LiteRtProfilerT::StartProfiling() {
   // Reset previous data if starting a new session without explicit reset
   profile_buffer_->Reset();
   active_event_sources_map_.clear();
-  current_event_source_ = ProfiledEventData::Source::LITERT;
+  current_event_source_ = ProfiledEventSource::LITERT;
 
   profiling_enabled_ = true;
   profile_buffer_->SetEnabled(profiling_enabled_);
@@ -108,8 +108,7 @@ void LiteRtProfilerT::Reset() {
     profile_buffer_->Reset();
   }
   active_event_sources_map_.clear();
-  current_event_source_ =
-      ProfiledEventData::Source::LITERT;  // Reset hint
+  current_event_source_ = ProfiledEventSource::LITERT;  // Reset hint
   // litert_profiling_enabled_ remains as is, Reset just clears data.
 }
 
@@ -142,8 +141,7 @@ if (!profile_buffer_) {
       // This case could happen if an event was somehow incompletely recorded
       // or if handles are reused in a way not perfectly aligned with map
       // clearing. A robust profiler might log this. For now, fallback.
-      ev_data.event_source =
-          ProfiledEventData::Source::LITERT;  // Default fallback
+      ev_data.event_source = ProfiledEventSource::LITERT;  // Default fallback
     }
     result_events.push_back(ev_data);
   }
@@ -162,8 +160,7 @@ if (!profile_buffer_) {
   return result_events;
 }
 
-void LiteRtProfilerT::SetCurrentEventSource(
-    ProfiledEventData::Source source_hint) {
+void LiteRtProfilerT::SetCurrentEventSource(ProfiledEventSource source_hint) {
   this->current_event_source_ = source_hint;
 }
 

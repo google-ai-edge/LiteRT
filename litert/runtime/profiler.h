@@ -23,35 +23,11 @@
 #include <string>
 #include <vector>
 
+#include "litert/c/litert_profiler_event.h"
 #include "tflite/core/api/profiler.h"
-#include "tflite/profiling/memory_info.h"
 #include "tflite/profiling/profile_buffer.h"
 
 namespace litert {
-
-// Structure to hold processed profile event data for retrieval by the user.
-// This can be an extension of what ProfileBuffer might offer internally.
-
-struct ProfiledEventData {
-  const char* tag;  // Event description (e.g., "Conv2D", "LiteRT::Invoke")
-  tflite::Profiler::EventType
-      event_type;               // Type of event (e.g., OPERATOR_INVOKE_EVENT)
-  uint64_t start_timestamp_us;  // Absolute start timestamp in microseconds
-  uint64_t elapsed_time_us;     // Duration of the event in microseconds
-  tflite::profiling::memory::MemoryUsage
-      begin_mem_usage;  // Memory usage at the start of the event
-  tflite::profiling::memory::MemoryUsage
-      end_mem_usage;            // Memory usage at the end of the event
-  int64_t event_metadata1;      // First metadata field (e.g., TFLite op index)
-  int64_t
-      event_metadata2;  // Second metadata field (e.g., TFLite subgraph index)
-  enum class Source {
-    LITERT,              // Event originated from LiteRT instrumentation
-    TFLITE_INTERPRETER,  // Event from TFLite interpreter core
-    TFLITE_DELEGATE      // Event from a TFLite delegate
-  } event_source;
-  // uint32_t thread_id; // Optional: if thread-specific profiling is needed
-};
 
 class LiteRtProfilerT : public tflite::Profiler {
  public:
@@ -63,6 +39,8 @@ class LiteRtProfilerT : public tflite::Profiler {
   // These methods will be called by TFLite internals when this profiler is
   // registered. They will also be used by LiteRT's ScopedProfile
   // macros/helpers.
+  // tag is copied and owned by the profiler, caller does not need to keep
+  // the string alive.
   // event_metadata1 and event_metadata2 are used to pass additional
   // information about the event. For example, the TFLite op index for
   // OPERATOR_INVOKE_EVENT is set for event_metadata1 and the subgraph index for
@@ -101,7 +79,7 @@ class LiteRtProfilerT : public tflite::Profiler {
 
   // Allows LiteRT to hint the source of the next set of events,
   // particularly useful before calling into TFLite interpreter.
-  void SetCurrentEventSource(ProfiledEventData::Source source);
+  void SetCurrentEventSource(ProfiledEventSource source);
 
  private:
   // Collection to own unique copies of tag strings
@@ -114,11 +92,10 @@ class LiteRtProfilerT : public tflite::Profiler {
   std::unique_ptr<tflite::profiling::ProfileBuffer> profile_buffer_;
 
   bool profiling_enabled_ = false;
-  ProfiledEventData::Source current_event_source_ =
-      ProfiledEventData::Source::LITERT;
+  ProfiledEventSource current_event_source_ = ProfiledEventSource::LITERT;
   // Map of event handle to event source. This is used to track the source of
   // the events that are currently active.
-  std::map<uint32_t, ProfiledEventData::Source> active_event_sources_map_;
+  std::map<uint32_t, ProfiledEventSource> active_event_sources_map_;
 };
 
 }  // namespace litert

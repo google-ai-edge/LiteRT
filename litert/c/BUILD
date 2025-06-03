@@ -31,6 +31,10 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+    ],
 )
 
 cc_test(
@@ -555,6 +559,42 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_profiler",
+    srcs = ["litert_profiler.cc"],
+    hdrs = [
+        "litert_profiler.h",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_profiler_event",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:profiler",
+    ],
+)
+
+cc_library(
+    name = "litert_profiler_event",
+    hdrs = [
+        "litert_profiler_event.h",
+    ],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+    ],
+)
+
+cc_test(
+    name = "litert_profiler_test",
+    srcs = ["litert_profiler_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_profiler",
+        ":litert_profiler_event",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 filegroup(
     name = "litert_model_srcs",
     srcs = ["litert_model.cc"],
@@ -584,6 +624,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_model",
     ":litert_op_code",
     ":litert_op_options",
+    ":litert_profiler",
     ":litert_tensor_buffer",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_qualcomm_options",
@@ -599,7 +640,7 @@ cc_test(
     srcs = ["litert_c_api_common_test.c"],
     copts = ["--std=c11"],
     linkopts = ["-ldl"],
-    deps = LITERT_C_API_COMMON_DEPS,
+    deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
 )
 
 # Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
@@ -657,6 +698,8 @@ cc_library(
         "//tflite/c:tensorflowlite_c_impl_hdrs_filegroup",
     ],  # Export all header files (.h) in this directory
     deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
         "@opencl_headers",
     ],
 )
@@ -686,6 +729,9 @@ cc_library(
         # only depend on headers
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "//tflite/profiling:profile_buffer",
     ] + gles_headers(),
 )
 
