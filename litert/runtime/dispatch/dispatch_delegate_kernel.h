@@ -37,6 +37,14 @@ namespace litert::internal {
 
 class ExternalLiteRtBufferContext;
 
+// Forward declarations for node operations
+namespace node_ops {
+class BufferRequirementsOp;
+class TensorAttachmentOp;
+class PortConnectionOp;
+class AsyncEventAttachOp;
+}  // namespace node_ops
+
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
 class DispatchDelegateKernel
@@ -63,6 +71,12 @@ class DispatchDelegateKernel
   Expected<void> StartMetricsCollection(int detail_level);
 
   Expected<LiteRtMetricsT> StopMetricsCollection();
+
+  // Friend classes for node operations to access private members
+  friend class node_ops::BufferRequirementsOp;
+  friend class node_ops::TensorAttachmentOp;
+  friend class node_ops::PortConnectionOp;
+  friend class node_ops::AsyncEventAttachOp;
 
  private:
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
@@ -114,6 +128,11 @@ class DispatchDelegateKernel
 
   Expected<const void*> FindAllocBase() const;
   Expected<int> FindAllocBaseFd() const;
+
+  // Helper method to sync tensor buffers with CPU memory
+  Expected<void> SyncBuffersWithCPU(
+      const std::vector<TfLiteOpaqueTensor*>& tensors,
+      bool copy_to_cpu);
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
