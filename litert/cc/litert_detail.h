@@ -19,13 +19,42 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 
 namespace litert {
+
+template <typename Cond, typename T, typename... Rest>
+struct SelectHelper {
+  using type =
+      std::conditional_t<Cond::value, T, typename SelectHelper<Rest...>::type>;
+};
+
+template <typename Cond, typename T>
+struct SelectHelper<Cond, T> {
+  using type = std::conditional_t<Cond::value, T, std::monostate>;
+};
+
+// Use std::conditional to support sequence of if, if-else..., else
+// std::monostate
+//
+// Example:
+//   using TestVal = int;
+//   using Test = SelectT<std::is_floating_point<TestVal>, double,
+//      std::is_integral<TestVal>, long, std::is_class<TestVal>, std::string>;
+//   static_assert(std::is_same_v<Test, long>);
+template <typename... Branches>
+struct Select {
+  using type = SelectHelper<Branches...>::type;
+};
+
+template <typename... Branches>
+using SelectT = typename Select<Branches...>::type;
 
 // See "std::construct_at" from C++20.
 template <class T, class... Args>
