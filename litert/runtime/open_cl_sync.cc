@@ -83,7 +83,8 @@ absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
   switch (tensor_type->element_type) {
     case kLiteRtElementTypeFloat32:
       data_type = (buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
-                   buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16)
+                   buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+                   buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16)
                       ? DataType::FLOAT16
                       : DataType::FLOAT32;
       break;
@@ -107,6 +108,10 @@ absl::StatusOr<TensorDescriptor> CreateTensorDescriptor(
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
       storage_type = TensorStorageType::TEXTURE_2D;
+      break;
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+      storage_type = TensorStorageType::IMAGE_BUFFER;
       break;
     default:
       return absl::InvalidArgumentError("Unsupported buffer type.");

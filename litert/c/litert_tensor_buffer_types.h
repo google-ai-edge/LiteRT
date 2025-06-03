@@ -27,11 +27,15 @@ typedef enum {
   kLiteRtTensorBufferTypeGlTexture = 7,
 
   // 10-19 are reserved for OpenCL memory objects.
+  // TODO b/421905729 - May consider reorganize the enum values with the next
+  // LiteRT release.
   kLiteRtTensorBufferTypeOpenClBuffer = 10,
   kLiteRtTensorBufferTypeOpenClBufferFp16 = 11,
   kLiteRtTensorBufferTypeOpenClTexture = 12,
   kLiteRtTensorBufferTypeOpenClTextureFp16 = 13,
   kLiteRtTensorBufferTypeOpenClBufferPacked = 14,
+  kLiteRtTensorBufferTypeOpenClImageBuffer = 15,
+  kLiteRtTensorBufferTypeOpenClImageBufferFp16 = 16,
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
 
@@ -40,7 +44,9 @@ inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeOpenClTexture ||
          buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
-         buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked;
+         buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
 }
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_
