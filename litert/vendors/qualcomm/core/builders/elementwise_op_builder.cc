@@ -271,4 +271,49 @@ std::vector<OpWrapper> BuildElementwisePower(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseLessEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddInputTensor(inputs[1]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_LESS_EQUAL);
+
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseNotOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_NOT);
+  for (const auto& input : inputs) {
+    elementwise_op.AddInputTensor(input);
+  }
+  elementwise_op.AddOutputTensor(outputs[0]);
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseGreaterEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_BINARY);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddInputTensor(inputs[1]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  elementwise_op.AddScalarParam<std::uint32_t>(
+      QNN_OP_ELEMENT_WISE_BINARY_PARAM_OPERATION,
+      QNN_OP_ELEMENT_WISE_BINARY_OPERATION_GREATER_EQUAL);
+
+  return res;
+}
+
 }  // namespace qnn

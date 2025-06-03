@@ -802,6 +802,21 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                                  output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflLessEqual: {
+      op_wrappers = ::qnn::BuildElementwiseLessEqualOp(
+          tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflLogicalNot: {
+      op_wrappers = ::qnn::BuildElementwiseNotOp(tensor_pool, input_tensors,
+                                                 output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflGreaterEqual: {
+      op_wrappers = ::qnn::BuildElementwiseGreaterEqualOp(
+          tensor_pool, input_tensors, output_tensors);
+      break;
+    }
     default: {
       LITERT_LOG(LITERT_ERROR,
                  "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",

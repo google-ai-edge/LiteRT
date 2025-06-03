@@ -79,6 +79,15 @@ std::vector<OpWrapper> BuildElementwiseNotEqualOp(
 std::vector<OpWrapper> BuildElementwisePower(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs);
+std::vector<OpWrapper> BuildElementwiseLessEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+std::vector<OpWrapper> BuildElementwiseNotOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
+std::vector<OpWrapper> BuildElementwiseGreaterEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs);
 
 }  // namespace qnn
 
