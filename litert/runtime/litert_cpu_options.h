@@ -12,17 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_CPU_OPTIONS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_CPU_OPTIONS_H_
 
-// Internal LiteRt runtime options struct. This data structure is used to
-// pass runtime options to the interpreter and will be used in the framework
+#include "tflite/delegates/xnnpack/xnnpack_delegate.h"
+
+// Internal LiteRt CPU options struct. This data structure is used to
+// pass CPU options to the interpreter and will be used in the framework
 // code.
-struct LiteRtRuntimeOptionsT {
-  // If true, the interpreter will inline composite ops.
-  bool shlo_composite_inlining = false;
+struct LiteRtCpuOptionsT {
+  TfLiteXNNPackDelegateOptions xnn = TfLiteXNNPackDelegateOptionsDefault();
 
-  static const char* Identifier() { return "runtime"; }
+  static const char* Identifier() { return "xnnpack"; }
 };
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_RUNTIME_OPTIONS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_LITERT_CPU_OPTIONS_H_

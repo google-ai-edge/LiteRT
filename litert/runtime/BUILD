@@ -274,13 +274,18 @@ cc_library(
         "//litert/c:litert_accelerator",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/options:litert_cpu_options",
+        "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_event",
+        "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/cc/internal:litert_tensor_buffer_requirements",
         "//litert/compiler/plugin:compiler_plugin",
@@ -290,6 +295,8 @@ cc_library(
         "//litert/core/model",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/runtime:litert_cpu_options",
+        "//litert/runtime:litert_runtime_options",
         "//litert/runtime/dispatch:dispatch_opaque_options",
         "//tflite:builtin_ops",
         "//tflite:framework",
@@ -491,6 +498,12 @@ cc_library(
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
     ],
+)
+
+cc_library(
+    name = "litert_cpu_options",
+    hdrs = ["litert_cpu_options.h"],
+    deps = ["//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only"],
 )
 
 cc_test(

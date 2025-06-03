@@ -44,6 +44,8 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
@@ -56,6 +58,8 @@
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/litert_cpu_options.h"
+#include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
@@ -94,8 +98,32 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
 
   tflite::InterpreterOptions interpreter_options;
   interpreter_options.SetUseSignatureTensorNames(true);
-  tflite::InterpreterBuilder(*fb_model_, resolver,
-                             &interpreter_options)(&interp_);
+  int num_threads = 1;
+  if (jit_compilation_options) {
+    litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
+    LITERT_ASSIGN_OR_RETURN(Expected<litert::OpaqueOptions> opaque_options,
+                            cc_options.GetOpaqueOptions());
+
+    auto runtime_options_status = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
+        *opaque_options, LiteRtRuntimeOptionsT::Identifier());
+    if (runtime_options_status) {
+      auto runtime_opaque_options = *runtime_options_status;
+      interpreter_options.SetShloCompositeInlining(
+          runtime_opaque_options->shlo_composite_inlining);
+    }
+
+    auto cpu_options_status = litert::FindOpaqueData<LiteRtCpuOptionsT>(
+        *opaque_options, LiteRtCpuOptionsT::Identifier());
+    if (cpu_options_status) {
+      auto cpu_opaque_options = *cpu_options_status;
+      num_threads = cpu_opaque_options->xnn.num_threads;
+    }
+  }
+
+  tflite::InterpreterBuilder builder(*fb_model_, resolver,
+                             &interpreter_options);
+  builder(&interp_);
+  interp_->SetNumThreads(num_threads);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");

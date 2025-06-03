@@ -15,16 +15,14 @@
 #include "litert/c/options/litert_cpu_options.h"
 
 #include <stdint.h>
+
 #include <memory>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/litert_cpu_options.h"
 #include "tflite/delegates/xnnpack/xnnpack_delegate.h"
-
-struct LiteRtCpuOptionsT {
-  TfLiteXNNPackDelegateOptions xnn = TfLiteXNNPackDelegateOptionsDefault();
-};
 
 LiteRtStatus LiteRtCreateCpuOptions(LiteRtOpaqueOptions* options) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
