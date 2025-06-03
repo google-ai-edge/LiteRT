@@ -49,6 +49,9 @@
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library.");
+ABSL_FLAG(
+    std::string, compiler_plugin_library_dir, "",
+    "Path to the compiler plugin library. Only for JIT compilation.");
 ABSL_FLAG(std::string, accelerator, "cpu", "Which backend to use.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
@@ -81,12 +84,22 @@ LiteRtHwAccelerators GetAccelerator() {
 
 Expected<Environment> GetEnvironment() {
   std::vector<litert::Environment::Option> environment_options = {};
+
   const auto dispatch_library_dir = absl::GetFlag(FLAGS_dispatch_library_dir);
   if (!dispatch_library_dir.empty()) {
     environment_options.push_back(litert::Environment::Option{
         litert::Environment::OptionTag::DispatchLibraryDir,
         absl::string_view(dispatch_library_dir)});
-  };
+  }
+
+  const auto compiler_plugin_library_dir =
+      absl::GetFlag(FLAGS_compiler_plugin_library_dir);
+  if (!compiler_plugin_library_dir.empty()) {
+    environment_options.push_back(litert::Environment::Option{
+        litert::Environment::OptionTag::CompilerPluginLibraryDir,
+        absl::string_view(compiler_plugin_library_dir)});
+  }
+
   return Environment::Create(absl::MakeConstSpan(environment_options));
 }
 
