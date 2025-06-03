@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_QUALCOMM_FLAGS_H_
 
 #include <string>
+#include <vector>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -44,6 +45,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
 ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_use_qint16_as_quint16);
+
+ABSL_DECLARE_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids);
 
 #endif
 
