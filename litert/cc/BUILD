@@ -553,6 +553,31 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_rng",
+    srcs = ["litert_rng.cc"],
+    hdrs = ["litert_rng.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_rng_test",
+    srcs = ["litert_rng_test.cc"],
+    deps = [
+        ":litert_rng",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 ### LiteRT C++ APIs which will use libLiteRtRuntimeCApi.so.
 # - litert::Environment
 # - litert::Event
