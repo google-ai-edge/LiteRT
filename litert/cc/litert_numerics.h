@@ -78,6 +78,11 @@ static constexpr T GetOrFlush(T val) {
   return static_cast<T>(0.0f);
 }
 
+// Trait of number-like types that may be values within a tensor.
+template <typename T>
+using NumberLike =
+    std::bool_constant<std::is_floating_point_v<T> || std::is_integral_v<T>>;
+
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_NUMERICS_H_
