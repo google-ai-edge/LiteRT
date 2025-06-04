@@ -148,8 +148,6 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked:
       // internal opencl buffer is auto-disposed by the
       // litert::internal::OpenClMemory destructor.
@@ -444,8 +442,6 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       return CreateManagedOpenClMemory(env, tensor_type, buffer_type,
@@ -715,8 +711,6 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
@@ -759,8 +753,6 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
@@ -809,12 +801,8 @@ absl::string_view GetTensorBufferTypeName(
       return "OpenClTexture";
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
       return "OpenClTextureFp16";
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-      return "OpenClImageBuffer";
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-      return "OpenClImageBufferFp16";
     case kLiteRtTensorBufferTypeOpenClBufferPacked:
-      return "OpenClBufferPacked";
+      return "OpenClImageBufferPacked";
     case kLiteRtTensorBufferTypeGlBuffer:
       return "GlBuffer";
     case kLiteRtTensorBufferTypeGlTexture:
