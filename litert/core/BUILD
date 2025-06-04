@@ -72,20 +72,30 @@ cc_test(
 
 cc_library(
     name = "dynamic_loading",
-    srcs = ["dynamic_loading.cc"],
+    srcs = select({
+        "@org_tensorflow//tensorflow:windows": ["dynamic_loading_dummy.cc"],
+        "//conditions:default": ["dynamic_loading.cc"],
+    }),
     hdrs = ["dynamic_loading.h"],
-    linkopts = ["-ldl"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": ["-ldl"],
+    }),
     # TODO: factor out the logic here that is used by vendors and move to cc/shared_lib utilities.
     # Then, we can remove this visibility.
     visibility = ["//litert:litert_public"],
     deps = [
-        ":filesystem",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",  # buildcleaner: keep
-        "//litert/cc:litert_macros",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": [
+            ":filesystem",
+            "//litert/c:litert_logging",  # buildcleaner: keep
+            "//litert/cc:litert_macros",
+            "@com_google_absl//absl/strings",
+        ],
+    }),
 )
 
 cc_library(

@@ -22,7 +22,18 @@ extern "C" {
 #endif  // __cplusplus
 
 // Declares canonical opaque type.
+
+#ifdef __cplusplus
 #define LITERT_DEFINE_HANDLE(name) \
+  typedef class name##T* name;    \
+  typedef const class name##T* name##Const
+#else  // __cplusplus
+#define LITERT_DEFINE_HANDLE(name) \
+  typedef struct name##T* name;    \
+  typedef const struct name##T* name##Const
+#endif  // __cplusplus
+
+#define LITERT_DEFINE_HANDLE_STRUCT(name) \
   typedef struct name##T* name;    \
   typedef const struct name##T* name##Const
 
@@ -61,7 +72,7 @@ LITERT_DEFINE_HANDLE(LiteRtOp);
 // LiteRtOptions object. (litert_opaque_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOpaqueOptions);
 // The compilation options for the LiteRtCompiledModel. (litert_options.h)
-LITERT_DEFINE_HANDLE(LiteRtOptions);
+LITERT_DEFINE_HANDLE_STRUCT(LiteRtOptions);
 // LiteRT TensorBuffer object. (litert_tensor_buffer.h)
 LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
 // LiteRT TensorBufferRequirements object. (litert_tensor_buffer_requirements.h)

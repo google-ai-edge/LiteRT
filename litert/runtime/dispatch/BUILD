@@ -24,26 +24,31 @@ package(
 # API.
 cc_library(
     name = "dispatch",
-    srcs = [
-        "litert_dispatch.cc",
-    ],
+    srcs = select({
+        "@org_tensorflow//tensorflow:windows": ["litert_dispatch_dummy.cc"],
+        "//conditions:default": ["litert_dispatch.cc"],
+    }),
     hdrs = [
         "//litert/vendors/c:litert_dispatch.h",
         "//litert/vendors/c:litert_dispatch_api.h",
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model",
-        "//litert/cc:litert_environment_options",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
-        "//litert/core:dynamic_loading",
-        "//litert/core:version",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:windows": [],
+        "//conditions:default": [
+            "//litert/c:litert_environment_options",
+            "//litert/c:litert_logging",
+            "//litert/cc:litert_environment_options",
+            "//litert/cc:litert_expected",
+            "//litert/cc:litert_macros",
+            "//litert/cc:litert_shared_library",
+            "//litert/core:dynamic_loading",
+            "//litert/core:version",
+        ],
+    }),
     alwayslink = 1,
 )
 
