@@ -39,6 +39,8 @@ cc_library(
         "//tflite/core/api",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/delegates/utils/experimental/stable_delegate:delegate_loader",
+        "//tflite/delegates/utils/experimental/stable_delegate:tflite_settings_json_parser",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/kernels:reference_ops",
         "//tflite/kernels/internal:compatibility",
