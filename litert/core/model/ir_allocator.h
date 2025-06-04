@@ -42,9 +42,22 @@ class IrAllocator {
   // Emplace a new element onto the list.
   template <class... Args>
   Ir& EmplaceBack(Args&&... args) {
-    auto& emp = storage_.emplace_back(std::forward<Args>(args)...);
-    refs_->push_back(&emp);
-    return emp;
+    return EmplaceAt(Size(), std::forward<Args>(args)...);
+  }
+
+  template <class... Args>
+  Ir& EmplaceAt(int index, Args&&... args) {
+    auto storage_it = storage_.begin();
+    std::advance(storage_it, index);
+
+    auto emp_iter = storage_.emplace(storage_it, std::forward<Args>(args)...);
+
+    auto refs_it = refs_->begin();
+    std::advance(refs_it, index);
+
+    refs_->insert(refs_it, &(*emp_iter));
+
+    return *emp_iter;
   }
 
   // Get the array of (stable) pointers to underlying elements. Suitable

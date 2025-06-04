@@ -136,6 +136,19 @@ TEST(ModelTest, AttachExternalBufferToOp) {
   EXPECT_EQ(op_2_res->first, buf1_id);
 }
 
+TEST(ModelTest, InsertOpAtIndex) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  auto& op2 = subgraph.EmplaceOp();
+  auto& op3 = subgraph.EmplaceOpAt(1);
+
+  EXPECT_EQ(subgraph.Ops().size(), 3);
+  EXPECT_TRUE(&subgraph.Op(0) == &op);
+  EXPECT_TRUE(&subgraph.Op(1) == &op3);
+  EXPECT_TRUE(&subgraph.Op(2) == &op2);
+}
+
 TEST(ModelTest, ExternalBufferNotFound) {
   LiteRtModelT model;
   LiteRtOpT op;
