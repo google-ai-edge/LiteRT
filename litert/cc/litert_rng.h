@@ -123,7 +123,7 @@ class DataGenerator {
       SelectT<std::is_floating_point<D>, double, std::is_integral<D>, int64_t>;
   using Device = RandomDevice<DeviceBase>;
 
-  virtual DataType operator()(RandomDevice<DeviceBase>& rng) = 0;
+  virtual DataType operator()(Device& rng) = 0;
 
   // Bounds of distribution.
   DataType Max() const { return dist_.max(); }
@@ -131,10 +131,10 @@ class DataGenerator {
 
  protected:
   static constexpr Limit Upperbound() {
-    return static_cast<Limit>(std::numeric_limits<D>::max());
+    return static_cast<Limit>(std::numeric_limits<DataType>::max());
   }
   static constexpr Limit Lowerbound() {
-    return static_cast<Limit>(std::numeric_limits<D>::min());
+    return static_cast<Limit>(std::numeric_limits<DataType>::min());
   }
   static constexpr D MakeMax(Limit max) { return std::min(max, Upperbound()); }
   static constexpr D MakeMin(Limit min) { return std::max(min, Lowerbound()); }
@@ -178,7 +178,7 @@ class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
 // around zero and infinities.
 template <typename D, template <typename> typename Dist, typename DeviceBase,
           typename Enable = void>
-class ReinterpretGenerator : public DataGenerator<D, Dist, DeviceBase> {};
+class ReinterpretGenerator final : public DataGenerator<D, Dist, DeviceBase> {};
 
 template <typename D, template <typename> typename Dist, typename DeviceBase>
 class ReinterpretGenerator<D, Dist, DeviceBase,
