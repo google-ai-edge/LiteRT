@@ -177,6 +177,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "rng_fixture",
+    testonly = True,
+    hdrs = ["rng_fixture.h"],
+    deps = [
+        "//litert/cc:litert_rng",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "matchers_test",
     srcs = ["matchers_test.cc"],

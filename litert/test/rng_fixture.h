@@ -1,0 +1,86 @@
+// Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_RNG_FIXTURE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_TEST_RNG_FIXTURE_H_
+
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/cc/litert_rng.h"
+
+// Basic litert rng integration with gtest.
+
+namespace litert::testing {
+
+// Fixture wrapper of the code in cc/litert_rng.h. This will use the seed
+// set from gtest, which can be configured from command line for
+// reproducibility.
+template <template <typename> typename Distribution = Uniform,
+          typename Engine = DefaultEngine>
+class RngTest : public ::testing::Test {
+ private:
+  template <typename T>
+  using Fact = DataGenerators<T, Distribution, Engine>;
+
+ protected:
+  template <typename T, typename... Args>
+  auto Generator(Args&&... args) {
+    return Fact<T>::Generator(std::forward<Args>(args)...);
+  }
+  template <typename T>
+  auto Device() {
+    return TraceSeedInfo(Fact<T>::Device(CurrentSeed()));
+  }
+  template <typename T, typename... Args>
+  auto GeneratorAndDevice(Args&&... generator_args) {
+    return std::make_pair(
+        Fact<T>::Generator(std::forward<Args>(generator_args)...),
+        TraceSeedInfo(Fact<T>::Device(CurrentSeed())));
+  }
+
+ private:
+  using ScopedTrace = ::testing::ScopedTrace;
+  using UnitTest = ::testing::UnitTest;
+
+  UnitTest* GetUnitTest() { return UnitTest::GetInstance(); }
+
+  int CurrentSeed() { return GetUnitTest()->random_seed(); }
+
+  template <typename Device>
+  auto TraceSeedInfo(Device&& device) {
+    const char* file = "<unknown>";
+    int line = -1;
+    const auto* unit_test = GetUnitTest();
+    if (unit_test) {
+      if (const auto* test_info = unit_test->current_test_info()) {
+        file = test_info->file();
+        line = test_info->line();
+      }
+    }
+    traces_.push_back(std::make_unique<ScopedTrace>(
+        file, line,
+        absl::StrFormat("litert_rng %lu{%v}", traces_.size(), device)));
+    return device;
+  }
+
+  std::vector<std::unique_ptr<ScopedTrace>> traces_;
+};
+
+}  // namespace litert::testing
+
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_RNG_FIXTURE_H_
