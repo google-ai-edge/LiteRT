@@ -144,6 +144,20 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   return {};
 }
 
+namespace {
+
+int GetAllocationFd(const tflite::Allocation* allocation) {
+  if (allocation != nullptr &&
+      allocation->type() == tflite::Allocation::Type::kMMap) {
+    auto& mmap_allocation =
+        static_cast<const tflite::MMAPAllocation&>(*allocation);
+    return mmap_allocation.fd();
+  }
+  return -1;
+}
+
+}  // namespace
+
 Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtEnvironmentT& env) {
@@ -180,6 +194,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
         "Flatbuffer model initialized directly from incoming litert model.");
     fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(tfl_buf.StrData(),
                                                          tfl_buf.Size());
+    fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
     return {};
   }
 
@@ -197,6 +212,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     return Unexpected(kLiteRtStatusErrorFileIO,
                       "Failed to build flatbuffer from buffer");
   }
+  fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
 
   return {};
 }
@@ -229,16 +245,6 @@ class ScopedCompilationOptionsModifier {
   litert::OpaqueOptions& accelerator_options_;
   int num_appended_options_ = 0;
 };
-
-int GetAllocationFd(const tflite::Allocation* allocation) {
-  if (allocation != nullptr &&
-      allocation->type() == tflite::Allocation::Type::kMMap) {
-    auto& mmap_allocation =
-        static_cast<const tflite::MMAPAllocation&>(*allocation);
-    return mmap_allocation.fd();
-  }
-  return -1;
-}
 
 }  // namespace
 
@@ -279,8 +285,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
                             DispatchDelegateOptions::Create());
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
-    LITERT_RETURN_IF_ERROR(dispatch_options.SetAllocBaseFd(
-        GetAllocationFd(compiled_model->fb_model_->allocation())));
+    LITERT_RETURN_IF_ERROR(
+        dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
     LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
   }
 
