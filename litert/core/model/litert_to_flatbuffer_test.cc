@@ -49,8 +49,8 @@ TEST(LiteRtToFlatbufferTest, MapPerTensorQuantization) {
 
   auto tfl_q = MapQuantization(q);
   ASSERT_TRUE(tfl_q);
-  EXPECT_THAT(tfl_q->get()->scale, ElementsAreArray({kScale}));
-  EXPECT_THAT(tfl_q->get()->zero_point, ElementsAreArray({kZp}));
+  EXPECT_THAT(tfl_q->scale, ElementsAreArray({kScale}));
+  EXPECT_THAT(tfl_q->zero_point, ElementsAreArray({kZp}));
 }
 
 TEST(LiteRtToFlatbufferTest, MapPerChannelQuantization) {
@@ -68,8 +68,8 @@ TEST(LiteRtToFlatbufferTest, MapPerChannelQuantization) {
 
   auto tfl_q = MapQuantization(q);
   ASSERT_TRUE(tfl_q);
-  EXPECT_THAT(tfl_q->get()->scale, ElementsAreArray(kScales));
-  EXPECT_THAT(tfl_q->get()->zero_point, ElementsAreArray(kZps));
+  EXPECT_THAT(tfl_q->scale, ElementsAreArray(kScales));
+  EXPECT_THAT(tfl_q->zero_point, ElementsAreArray(kZps));
 }
 
 TEST(LiteRtToFlatbufferTest, MapDynamicTensorType) {

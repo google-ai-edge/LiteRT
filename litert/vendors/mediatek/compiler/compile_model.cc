@@ -79,7 +79,7 @@ Expected<NeuronCompilationPtr> CompileModel(
   }
 
   if (neuron_adapter_api.api().compilation_set_priority(
-          compilation->get(), NEURON_PRIORITY_HIGH) != NEURON_NO_ERROR) {
+          compilation.Value().get(), NEURON_PRIORITY_HIGH) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation priority");
   }
@@ -89,7 +89,7 @@ Expected<NeuronCompilationPtr> CompileModel(
              mediatek_opts->GetPerformanceMode());
 
   if (neuron_adapter_api.api().compilation_set_preference(
-          compilation->get(), mediatek_opts->GetPerformanceMode()) !=
+          compilation.Value().get(), mediatek_opts->GetPerformanceMode()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation preference");
@@ -97,7 +97,7 @@ Expected<NeuronCompilationPtr> CompileModel(
 
   if (auto status =
           neuron_adapter_api.api().compilation_set_optimization_string(
-              compilation->get(), compile_options.c_str());
+              compilation.Value().get(), compile_options.c_str());
       status != NEURON_NO_ERROR) {
     LITERT_LOG(LITERT_INFO,
                "NeuronCompilation_setOptimizationString failed with error %d",
@@ -106,8 +106,8 @@ Expected<NeuronCompilationPtr> CompileModel(
                  "Failed to set optimization string");
   }
 
-  if (auto status =
-          neuron_adapter_api.api().compilation_finish(compilation->get());
+  if (auto status = neuron_adapter_api.api().compilation_finish(
+          compilation.Value().get());
       status != NEURON_NO_ERROR) {
     LITERT_LOG(LITERT_INFO, "NeuronCompilation_finish failed with error %d",
                status);

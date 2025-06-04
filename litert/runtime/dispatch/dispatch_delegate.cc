@@ -132,7 +132,7 @@ DispatchDelegate::CreateDelegateKernelInterface() {
   if (kernel) {
     auto* kernel_ptr =
         dynamic_cast<typename litert::internal::DispatchDelegateKernel*>(
-            kernel->get());
+            kernel.Value().get());
     kernels_.push_back(kernel_ptr);
     return std::move(*kernel);
   } else {

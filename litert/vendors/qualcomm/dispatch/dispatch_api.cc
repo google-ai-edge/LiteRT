@@ -135,7 +135,7 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
-    *device_context = context->release();
+    *device_context = context.Value().release();
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
@@ -221,7 +221,7 @@ LiteRtStatus InvocationContextCreate(
                exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size);
     return context.Error().Status();
   }
-  *invocation_context = context->release();
+  *invocation_context = context.Value().release();
   device_context->SetInvocationContext(*invocation_context);
   return kLiteRtStatusOk;
 }

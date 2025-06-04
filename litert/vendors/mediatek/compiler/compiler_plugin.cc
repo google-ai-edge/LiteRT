@@ -319,26 +319,26 @@ Expected<std::vector<uint8_t>> CompilePartition(
   if (!model) {
     return model.Error();
   }
-  OperandMap operand_map(neuron_adapter_api, model->get());
+  OperandMap operand_map(neuron_adapter_api, model.Value().get());
   LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
-                                     model->get(), &operand_map));
+                                     model.Value().get(), &operand_map));
 
-  auto compilation =
-      CompileModel(neuron_adapter_api, model->get(), soc_model, mediatek_opts);
+  auto compilation = CompileModel(neuron_adapter_api, model.Value().get(),
+                                  soc_model, mediatek_opts);
   if (!compilation) {
     return compilation.Error();
   }
 
   size_t bytecode_size;
   if (neuron_adapter_api.api().compilation_get_compiled_network_size(
-          compilation->get(), &bytecode_size) != NEURON_NO_ERROR) {
+          compilation.Value().get(), &bytecode_size) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to get compiled network size");
   }
 
   std::vector<uint8_t> bytecode(bytecode_size);
   if (neuron_adapter_api.api().compilation_store_compiled_network(
-          compilation->get(), bytecode.data(), bytecode.size()) !=
+          compilation.Value().get(), bytecode.data(), bytecode.size()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to get compiled network");

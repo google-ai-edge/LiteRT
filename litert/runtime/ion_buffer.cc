@@ -149,7 +149,7 @@ ABSL_CONST_INIT absl::Mutex TheMutex(absl::kConstInit);
 Expected<void> InitLibraryIfNeededUnlocked() {
   if (!TheIonLibrary) {
     if (auto library = IonLibrary::Create(); library) {
-      TheIonLibrary = library->release();
+      TheIonLibrary = library.Value().release();
     } else {
       return Unexpected(library.Error());
     }

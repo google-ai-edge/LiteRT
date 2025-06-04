@@ -123,7 +123,7 @@ ABSL_CONST_INIT absl::Mutex TheMutex(absl::kConstInit);
 Expected<void> InitLibraryIfNeededUnlocked() {
   if (!TheDmaBufLibrary) {
     if (auto library = DmaBufLibrary::Create(); library) {
-      TheDmaBufLibrary = library->release();
+      TheDmaBufLibrary = library.Value().release();
     } else {
       return Unexpected(library.Error());
     }
