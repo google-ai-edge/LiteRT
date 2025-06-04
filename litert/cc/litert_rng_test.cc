@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_rng.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <random>
 
@@ -24,6 +25,8 @@
 
 namespace litert {
 namespace {
+
+static constexpr size_t kTestIters = 10;
 
 using ::testing::HasSubstr;
 
@@ -63,6 +66,42 @@ TEST(LitertRngTestWithCustomRng, NoSeed) {
   RandomDevice<DummyRng> lite_rng;
   EXPECT_THAT(absl::StrFormat("%v", lite_rng),
               HasSubstr("DummyRng(seed=<default>,"));
+}
+
+TEST(LitertRngDataGenTest, Ints) {
+  auto [gen, device] = DataGenerators<int>::GeneratorAndDevice();
+  for (int i = 0; i < kTestIters; ++i) {
+    EXPECT_LE(gen(device), gen.Max());
+    EXPECT_GE(gen(device), gen.Min());
+  }
+}
+
+TEST(LitertRngDataGenTest, IntsWithRange) {
+  static constexpr auto kMin = 10;
+  static constexpr auto kMax = 20;
+  auto [gen, device] = DataGenerators<int>::GeneratorAndDevice(kMin, kMax);
+  EXPECT_EQ(gen.Max(), kMax);
+  EXPECT_EQ(gen.Min(), kMin);
+  for (int i = 0; i < kTestIters; ++i) {
+    EXPECT_LE(gen(device), kMax);
+    EXPECT_GE(gen(device), kMin);
+  }
+}
+
+TEST(LitertRngDataGenTest, FloatsWithRange) {
+  static constexpr auto kMin = 10;
+  static constexpr auto kMax = 20;
+  auto [gen, device] = DataGenerators<float>::GeneratorAndDevice(kMin, kMax);
+  EXPECT_EQ(gen.Max(), kMax);
+  EXPECT_EQ(gen.Min(), kMin);
+  for (int i = 0; i < kTestIters; ++i) {
+    EXPECT_LE(gen(device), kMax);
+    EXPECT_GE(gen(device), kMin);
+  }
+}
+
+TEST(LitertRngDataGenTest, Reinterpret) {
+  GTEST_SKIP() << "Not implemented yet.";
 }
 
 }  // namespace
