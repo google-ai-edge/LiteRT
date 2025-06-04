@@ -71,8 +71,9 @@ TEST(LitertRngTestWithCustomRng, NoSeed) {
 TEST(LitertRngDataGenTest, Ints) {
   auto [gen, device] = DataGenerators<int>::GeneratorAndDevice();
   for (int i = 0; i < kTestIters; ++i) {
-    EXPECT_LE(gen(device), gen.Max());
-    EXPECT_GE(gen(device), gen.Min());
+    const auto val = gen(device);
+    ASSERT_LE(val, gen.Max());
+    ASSERT_GE(val, gen.Min());
   }
 }
 
@@ -83,8 +84,9 @@ TEST(LitertRngDataGenTest, IntsWithRange) {
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
-    EXPECT_LE(gen(device), kMax);
-    EXPECT_GE(gen(device), kMin);
+    const auto val = gen(device);
+    ASSERT_LE(val, kMax);
+    ASSERT_GE(val, kMin);
   }
 }
 
@@ -95,8 +97,9 @@ TEST(LitertRngDataGenTest, FloatsWithRange) {
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
-    EXPECT_LE(gen(device), kMax);
-    EXPECT_GE(gen(device), kMin);
+    const auto val = gen(device);
+    ASSERT_LE(val, kMax);
+    ASSERT_GE(val, kMin);
   }
 }
 
