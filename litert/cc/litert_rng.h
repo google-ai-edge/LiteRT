@@ -25,6 +25,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_detail.h"
+#include "litert/cc/litert_numerics.h"
 
 // Various utilities and types for random number generation.
 
@@ -119,8 +120,7 @@ template <typename D, template <typename> typename Dist, typename DeviceBase>
 class DataGenerator {
  public:
   using DataType = D;
-  using Limit =
-      SelectT<std::is_floating_point<D>, double, std::is_integral<D>, int64_t>;
+  using Wide = WideType<D>;
   using Device = RandomDevice<DeviceBase>;
 
   virtual DataType operator()(Device& rng) = 0;
@@ -130,13 +130,6 @@ class DataGenerator {
   DataType Min() const { return dist_.min(); }
 
  protected:
-  static constexpr Limit kUpperbound =
-      static_cast<Limit>(std::numeric_limits<DataType>::max());
-  static constexpr Limit kLowerbound =
-      static_cast<Limit>(std::numeric_limits<DataType>::lowest());
-  static constexpr D MakeMax(Limit max) { return std::min(max, kUpperbound); }
-  static constexpr D MakeMin(Limit min) { return std::max(min, kLowerbound); }
-
   Dist<DataType> dist_;
 };
 
@@ -145,19 +138,16 @@ template <typename D, template <typename> typename Dist, typename DeviceBase>
 class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
  private:
   using Base = DataGenerator<D, Dist, DeviceBase>;
-  using Base::kLowerbound;
-  using Base::kUpperbound;
-  using Base::MakeMax;
-  using Base::MakeMin;
 
  public:
   using typename Base::DataType;
   using typename Base::Device;
-  using typename Base::Limit;
+  using typename Base::Wide;
 
   RangedGenerator() = default;
-  RangedGenerator(Limit min, Limit max = kUpperbound) {
-    ConstructAt(&this->dist_, MakeMin(min), MakeMax(max));
+  RangedGenerator(Wide min, Wide max = NumericLimits<D>::Max()) {
+    ConstructAt(&this->dist_, LowerBoundary<DataType>(min),
+                UpperBoundary<DataType>(max));
   }
 
   RangedGenerator(const RangedGenerator&) = default;
@@ -184,28 +174,20 @@ class ReinterpretGenerator<D, Dist, DeviceBase,
   using Base = DataGenerator<D, Dist, DeviceBase>;
 
  public:
-  using Base::kLowerbound;
-  using Base::kUpperbound;
-  using Base::MakeMax;
-  using Base::MakeMin;
   using typename Base::DataType;
   using typename Base::Device;
-  using typename Base::Limit;
+  using typename Base::Wide;
 
   DataType operator()(Device& rng) override {
     DataType res;
     auto bits = rng();
     memcpy(&res, &bits, sizeof(res));
-    if (std::abs(static_cast<float>(res)) <=
-        std::numeric_limits<DataType>::min()) {
-      // Flush denormals and NaN to zero.
-      return static_cast<DataType>(0.0f);
-    }
-    return res;
+    return GetOrFlush(res);
   }
 
   ReinterpretGenerator() {
-    ConstructAt(&this->dist_, MakeMin(kLowerbound), MakeMax(kUpperbound));
+    ConstructAt(&this->dist_, NumericLimits<DataType>::Lowest(),
+                NumericLimits<DataType>::Max());
   }
   ReinterpretGenerator(const ReinterpretGenerator&) = default;
   ReinterpretGenerator& operator=(const ReinterpretGenerator&) = default;
@@ -234,7 +216,7 @@ class DataGenerators {
   using Reinterpret = ReinterpretGenerator<D, Uniform, Engine>;
   using Ranged = RangedGenerator<D, Uniform, Engine>;
   using Dataype = GeneratorBase::DataType;
-  using Limit = GeneratorBase::Limit;
+  using Wide = GeneratorBase::Wide;
   using RandomDevice = GeneratorBase::Device;
 
   DataGenerators() = default;
@@ -244,7 +226,7 @@ class DataGenerators {
   DataGenerators& operator=(DataGenerators&&) = default;
 
   // Create a ranged generator with the given limits.
-  static auto Generator(Limit min, Limit max) { return Ranged(min, max); }
+  static auto Generator(Wide min, Wide max) { return Ranged(min, max); }
 
   // Create a rangeless generator. Floating point types will leverage the
   // reinterpretation generator, which is recommended.
@@ -269,10 +251,10 @@ class DataGenerators {
   static auto GeneratorAndDevice(int seed) {
     return std::make_pair(Generator(), Device(seed));
   }
-  static auto GeneratorAndDevice(Limit min, Limit max) {
+  static auto GeneratorAndDevice(Wide min, Wide max) {
     return std::make_pair(Generator(min, max), Device());
   }
-  static auto GeneratorAndDevice(int seed, Limit min, Limit max) {
+  static auto GeneratorAndDevice(int seed, Wide min, Wide max) {
     return std::make_pair(Generator(min, max), Device(seed));
   }
 };

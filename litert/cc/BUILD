@@ -562,6 +562,7 @@ cc_library(
     ],
     deps = [
         ":litert_detail",
+        ":litert_numerics",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -577,6 +578,15 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
+)
+
+cc_library(
+    name = "litert_numerics",
+    hdrs = ["litert_numerics.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [":litert_detail"],
 )
 
 ### LiteRT C++ APIs which will use libLiteRtRuntimeCApi.so.
