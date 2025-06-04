@@ -34,12 +34,14 @@
 #include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
 
+#if !LITERT_WINDOWS_OS
 // When using an address sanitizer, `RTLD_DEEPBIND` is not supported. When using
 // one, we discard the flag and log an error.
 #if defined(__SANITIZE_ADDRESS__) || \
     defined(__has_feature) &&        \
         (__has_feature(address_sanitizer) || __has_feature(memory_sanitizer))
 #define LITERT_SANITIZER_BUILD 1
+#endif
 #endif
 
 #if LITERT_SANITIZER_BUILD && defined(RTLD_DEEPBIND)
