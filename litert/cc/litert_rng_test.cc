@@ -109,9 +109,7 @@ TEST(LitertRngDataGenTest, FloatsWithRange) {
 TEST(LitertRngDataGenTest, ReinterpretFloat) {
   using Fact = DataGenerators<float>;
   auto [gen, device] = Fact::GeneratorAndDevice();
-  static_assert(
-      std::is_same_v<decltype(gen),
-                     ReinterpretGenerator<float, Fact::Uniform, Fact::Engine>>);
+  static_assert(std::is_same_v<decltype(gen), Fact::Reinterpret>);
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
