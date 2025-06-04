@@ -134,7 +134,7 @@ class DataGenerator {
     return static_cast<Limit>(std::numeric_limits<DataType>::max());
   }
   static constexpr Limit Lowerbound() {
-    return static_cast<Limit>(std::numeric_limits<DataType>::min());
+    return static_cast<Limit>(std::numeric_limits<DataType>::lowest());
   }
   static constexpr D MakeMax(Limit max) { return std::min(max, Upperbound()); }
   static constexpr D MakeMin(Limit min) { return std::max(min, Lowerbound()); }
