@@ -84,7 +84,7 @@ LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
   if (auto neuron_adapter_api = litert::mediatek::NeuronAdapterApi::Create(
           shared_library_dir_opt, mediatek_opts);
       neuron_adapter_api) {
-    static_neuron_adapter = neuron_adapter_api->release();
+    static_neuron_adapter = neuron_adapter_api.Value().release();
   } else {
     LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
                neuron_adapter_api.Error().Message().c_str());
@@ -136,7 +136,7 @@ LiteRtStatus LiteRtDeviceContextCreate(
   if (auto context =
           LiteRtDispatchDeviceContextT::Create(*static_neuron_adapter);
       context) {
-    *device_context = context->release();
+    *device_context = context.Value().release();
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
@@ -225,7 +225,7 @@ LiteRtStatus LiteRtInvocationContextCreate(
                context.Error().Message().c_str());
     return context.Error().Status();
   }
-  *invocation_context = context->release();
+  *invocation_context = context.Value().release();
   return kLiteRtStatusOk;
 }
 

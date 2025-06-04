@@ -67,7 +67,7 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
   auto litert_envt = LiteRtEnvironmentT::CreateWithOptions(environment_options);
   ASSERT_TRUE(litert_envt);
   auto singleton_env =
-      litert::internal::GpuEnvironment::Create(litert_envt->get());
+      litert::internal::GpuEnvironment::Create(litert_envt.Value().get());
   ASSERT_TRUE(singleton_env);
   EXPECT_EQ((*singleton_env)->getContext()->context(), env.context().context());
   EXPECT_EQ((*singleton_env)->getCommandQueue()->queue(), env.queue()->queue());

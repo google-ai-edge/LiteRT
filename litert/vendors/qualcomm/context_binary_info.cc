@@ -186,8 +186,9 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   const QnnSystemContext_BinaryInfo_t* binary_info = nullptr;
   Qnn_ContextBinarySize_t binary_info_size = 0;
   if (auto status = qnn.SystemApi()->systemContextGetBinaryInfo(
-          system_context_handle->get(), const_cast<void*>(exec_bytecode_ptr),
-          exec_bytecode_size, &binary_info, &binary_info_size);
+          system_context_handle.Value().get(),
+          const_cast<void*>(exec_bytecode_ptr), exec_bytecode_size,
+          &binary_info, &binary_info_size);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to get context binary info: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,

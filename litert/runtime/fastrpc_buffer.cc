@@ -109,7 +109,7 @@ ABSL_CONST_INIT absl::Mutex TheMutex(absl::kConstInit);
 Expected<void> InitLibraryIfNeededUnlocked() {
   if (!TheFastRpcMemLibrary) {
     if (auto library = FastRpcMemLibrary::Create(); library) {
-      TheFastRpcMemLibrary = library->release();
+      TheFastRpcMemLibrary = library.Value().release();
     } else {
       return Unexpected(library.Error());
     }

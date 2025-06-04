@@ -31,6 +31,18 @@
 
 namespace litert {
 
+template <class T, class SFINAE = void>
+struct has_arrow_operator : std::false_type {};
+
+template <class T>
+struct has_arrow_operator<T,
+                          std::void_t<decltype(std::declval<T>().operator->())>>
+    : std::true_type {};
+
+template <class T>
+struct has_arrow_operator<T, std::enable_if_t<std::is_pointer_v<T>>>
+    : std::true_type {};
+
 // An "Expected" incapsulates the result of some routine which may have an
 // unexpected result. Unexpected results in this context are a standard
 // LiteRtStatus plus extra usability data such as error messages. This is
@@ -242,14 +254,25 @@ class Expected {
   // Deleted: an Expected should always be checked before accessing its value.
   T&& Value() && = delete;
 
-  const T* operator->() const& {
+  // Returns a pointer to the held value. If the value is a pointer, return it
+  // to allow chaining.
+  decltype(auto) operator->() const& {
     CheckVal();
-    return &value_;
+    if constexpr (has_arrow_operator<T>::value) {
+      return (value_);
+    } else {
+      return &value_;
+    }
   }
 
-  T* operator->() & {
-    CheckVal();
-    return &value_;
+  // Returns a pointer to the held value. If the value is a pointer, return it
+  // to allow chaining.
+  decltype(auto) operator->() & {
+    if constexpr (has_arrow_operator<T>::value) {
+      return (value_);
+    } else {
+      return &value_;
+    }
   }
 
   // Deleted: an Expected should always be checked before accessing its value.

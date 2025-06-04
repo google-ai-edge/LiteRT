@@ -101,27 +101,25 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   int num_threads = 1;
   if (jit_compilation_options) {
     litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
-    LITERT_ASSIGN_OR_RETURN(Expected<litert::OpaqueOptions> opaque_options,
+    LITERT_ASSIGN_OR_RETURN(litert::OpaqueOptions opaque_options,
                             cc_options.GetOpaqueOptions());
 
-    auto runtime_options_status = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
-        *opaque_options, LiteRtRuntimeOptionsT::Identifier());
-    if (runtime_options_status) {
-      auto runtime_opaque_options = *runtime_options_status;
+    if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
+            opaque_options, LiteRtRuntimeOptionsT::Identifier());
+        runtime_options) {
       interpreter_options.SetShloCompositeInlining(
-          runtime_opaque_options->shlo_composite_inlining);
+          (*runtime_options)->shlo_composite_inlining);
     }
 
-    auto cpu_options_status = litert::FindOpaqueData<LiteRtCpuOptionsT>(
-        *opaque_options, LiteRtCpuOptionsT::Identifier());
-    if (cpu_options_status) {
-      auto cpu_opaque_options = *cpu_options_status;
-      num_threads = cpu_opaque_options->xnn.num_threads;
+    if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
+            opaque_options, LiteRtCpuOptionsT::Identifier());
+        cpu_options) {
+      num_threads = (*cpu_options)->xnn.num_threads;
     }
   }
 
   tflite::InterpreterBuilder builder(*fb_model_, resolver,
-                             &interpreter_options);
+                                     &interpreter_options);
   builder(&interp_);
   interp_->SetNumThreads(num_threads);
   if (interp_ == nullptr) {

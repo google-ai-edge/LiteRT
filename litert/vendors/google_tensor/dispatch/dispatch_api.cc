@@ -83,7 +83,7 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                southbound.Error().Message().c_str());
     return southbound.Error().Status();
   } else {
-    TheSouthbound = southbound->release();
+    TheSouthbound = southbound.Value().release();
   }
 
   auto thr_initialize = TheSouthbound->api().thr_initialize;
@@ -133,7 +133,7 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
   if (auto result = LiteRtDispatchDeviceContextT::Create(*TheSouthbound);
       result) {
-    *device_context = result->release();
+    *device_context = result.Value().release();
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
@@ -209,7 +209,7 @@ LiteRtStatus InvocationContextCreate(
           *TheSouthbound, device_context, exec_type, exec_bytecode_buffer,
           function_name, num_inputs, num_outputs);
       result) {
-    *invocation_context = result->release();
+    *invocation_context = result.Value().release();
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %s",
@@ -558,7 +558,7 @@ LiteRtStatus InvocationContextCreateFromGraph(
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
           *TheSouthbound, device_context, graph);
       result) {
-    *invocation_context = result->release();
+    *invocation_context = result.Value().release();
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %s",

@@ -94,7 +94,7 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
   input_op_number.reserve(num_inputs);
   for (auto i = 0; i < num_inputs; i++) {
     if (neuron_adapter_api.api().model_add_operand(
-            model->get(), &fake_io_operand_type) != NEURON_NO_ERROR) {
+            model.Value().get(), &fake_io_operand_type) != NEURON_NO_ERROR) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to add input operand");
     }
@@ -109,7 +109,7 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
 
   int32_t operand_type;
   if (neuron_adapter_api.api().model_get_extension_operand_type(
-          model->get(), kExtensionRestoreCompiledNetwork,
+          model.Value().get(), kExtensionRestoreCompiledNetwork,
           kNetworkOperandRestoreData, &operand_type) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to getextension operand");
@@ -122,14 +122,14 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
       .zeroPoint = 0,
   };
   if (neuron_adapter_api.api().model_add_operand(
-          model->get(), &extension_operand_type) != NEURON_NO_ERROR) {
+          model.Value().get(), &extension_operand_type) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to add extension operand");
   }
   input_op_number.emplace_back(input_op_number.size());
   if (neuron_adapter_api.api().model_set_operand_value(
-          model->get(), input_op_number.back(), bytecode_addr, bytecode_size) !=
-      NEURON_NO_ERROR) {
+          model.Value().get(), input_op_number.back(), bytecode_addr,
+          bytecode_size) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set extension operand value");
   }
@@ -137,7 +137,7 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
   std::vector<uint32_t> output_op_number;
   for (auto i = 0; i < num_outputs; i++) {
     if (neuron_adapter_api.api().model_add_operand(
-            model->get(), &fake_io_operand_type) != NEURON_NO_ERROR) {
+            model.Value().get(), &fake_io_operand_type) != NEURON_NO_ERROR) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to add output operand");
     }
@@ -146,7 +146,7 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
 
   int32_t operation_type;
   if (neuron_adapter_api.api().model_get_extension_operation_type(
-          model->get(), kExtensionRestoreCompiledNetwork,
+          model.Value().get(), kExtensionRestoreCompiledNetwork,
           kRestoreDlaExtensionOperationType,
           &operation_type) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -155,7 +155,7 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
 
   // Add extension operation
   if (neuron_adapter_api.api().model_add_operation(
-          model->get(), static_cast<NeuronOperationType>(operation_type),
+          model.Value().get(), static_cast<NeuronOperationType>(operation_type),
           input_op_number.size(), input_op_number.data(),
           output_op_number.size(),
           output_op_number.data()) != NEURON_NO_ERROR) {
@@ -164,29 +164,30 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
   }
 
   if (neuron_adapter_api.api().model_identify_inputs_and_outputs(
-          model->get(), input_op_number.size() - 1, input_op_number.data(),
-          output_op_number.size(),
+          model.Value().get(), input_op_number.size() - 1,
+          input_op_number.data(), output_op_number.size(),
           output_op_number.data()) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to identify I/Os");
   }
 
-  if (neuron_adapter_api.api().model_finish(model->get()) != NEURON_NO_ERROR) {
+  if (neuron_adapter_api.api().model_finish(model.Value().get()) !=
+      NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to finish model");
   }
 
-  auto compilation = neuron_adapter_api.CreateCompilation(model->get());
+  auto compilation = neuron_adapter_api.CreateCompilation(model.Value().get());
   if (!compilation) {
     return compilation.Error();
   }
 
   if (neuron_adapter_api.api().compilation_set_priority(
-          compilation->get(), NEURON_PRIORITY_HIGH) != NEURON_NO_ERROR) {
+          compilation.Value().get(), NEURON_PRIORITY_HIGH) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation priority");
   }
 
   if (neuron_adapter_api.api().compilation_set_preference(
-          compilation->get(), NEURON_PREFER_SUSTAINED_SPEED) !=
+          compilation.Value().get(), NEURON_PREFER_SUSTAINED_SPEED) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation preference");
@@ -197,13 +198,14 @@ Expected<std::pair<NeuronModelPtr, NeuronCompilationPtr>> LoadFromDlaBytecode(
       std::string(neuron_adapter_api.AotCompileOptions());
   if (!compile_options.empty()) {
     if (neuron_adapter_api.api().compilation_set_optimization_string(
-            compilation->get(), compile_options.c_str()) != NEURON_NO_ERROR) {
+            compilation.Value().get(), compile_options.c_str()) !=
+        NEURON_NO_ERROR) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to set optimization string");
     }
   }
 
-  if (neuron_adapter_api.api().compilation_finish(compilation->get()) !=
+  if (neuron_adapter_api.api().compilation_finish(compilation.Value().get()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to finish compilation");
@@ -274,14 +276,15 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   if (neuron_adapter_api.api().execution_set_boost_hint(
-          execution->get(), 100) != NEURON_NO_ERROR) {
+          execution.Value().get(), 100) != NEURON_NO_ERROR) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to set execution boost hint");
   }
 
   return Ptr(new LiteRtDispatchInvocationContextT(
       neuron_adapter_api, device_context, model.release(),
-      compilation.release(), execution->release(), num_inputs, num_outputs));
+      compilation.release(), execution.Value().release(), num_inputs,
+      num_outputs));
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
