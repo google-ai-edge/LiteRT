@@ -265,3 +265,18 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_library(
+    name = "litert_runtime_options",
+    srcs = ["//litert/cc/options:litert_runtime_options.cc"],
+    hdrs = ["//litert/cc/options:litert_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_runtime_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
