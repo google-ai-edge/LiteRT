@@ -14,9 +14,12 @@
 
 #include "litert/cc/litert_rng.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
+#include <type_traits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -103,8 +106,19 @@ TEST(LitertRngDataGenTest, FloatsWithRange) {
   }
 }
 
-TEST(LitertRngDataGenTest, Reinterpret) {
-  GTEST_SKIP() << "Not implemented yet.";
+TEST(LitertRngDataGenTest, ReinterpretFloat) {
+  using Fact = DataGenerators<float>;
+  auto [gen, device] = Fact::GeneratorAndDevice();
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     ReinterpretGenerator<float, Fact::Uniform, Fact::Engine>>);
+  for (int i = 0; i < kTestIters; ++i) {
+    const auto val = gen(device);
+    ASSERT_FALSE(std::isnan(val));
+    ASSERT_GT(std::abs(val), std::numeric_limits<float>::min());
+    ASSERT_LE(val, gen.Max());
+    ASSERT_GE(val, gen.Min());
+  }
 }
 
 }  // namespace

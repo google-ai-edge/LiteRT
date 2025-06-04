@@ -178,15 +178,39 @@ class ReinterpretGenerator final : public DataGenerator<D, Dist, DeviceBase> {};
 
 template <typename D, template <typename> typename Dist, typename DeviceBase>
 class ReinterpretGenerator<D, Dist, DeviceBase,
-                           std::enable_if_t<std::is_floating_point_v<D>>> {
+                           std::enable_if_t<std::is_floating_point_v<D>>>
+    final : public DataGenerator<D, Dist, DeviceBase> {
+ private:
+  using Base = DataGenerator<D, Dist, DeviceBase>;
+
  public:
-  ReinterpretGenerator() = default;
+  using Base::kLowerbound;
+  using Base::kUpperbound;
+  using Base::MakeMax;
+  using Base::MakeMin;
+  using typename Base::DataType;
+  using typename Base::Device;
+  using typename Base::Limit;
+
+  DataType operator()(Device& rng) override {
+    DataType res;
+    auto bits = rng();
+    memcpy(&res, &bits, sizeof(res));
+    if (std::abs(static_cast<float>(res)) <=
+        std::numeric_limits<DataType>::min()) {
+      // Flush denormals and NaN to zero.
+      return static_cast<DataType>(0.0f);
+    }
+    return res;
+  }
+
+  ReinterpretGenerator() {
+    ConstructAt(&this->dist_, MakeMin(kLowerbound), MakeMax(kUpperbound));
+  }
   ReinterpretGenerator(const ReinterpretGenerator&) = default;
   ReinterpretGenerator& operator=(const ReinterpretGenerator&) = default;
   ReinterpretGenerator(ReinterpretGenerator&&) = default;
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
-
-  // TODO(lukeboyer): Implement this (next change list).
 };
 
 // Factory for creating data generators from just a data type with recommended
