@@ -27,13 +27,13 @@ http_archive(
 )
 
 # TensorFlow - using http_archive instead of git submodule
-# Commit: c204725a855d2d00ec5927943f482af6dfa2fd46 (2025-05-27)
+# Commit: 49908c1e646b87987251a9bd70c7be5b9a2f2649 (2025-06-03)
 http_archive(
     name = "org_tensorflow",
-    sha256 = "3067c9da846ed78b249da0a2d69c94c57668cb4c5c309cc98c6136963fd35ade",
-    strip_prefix = "tensorflow-c204725a855d2d00ec5927943f482af6dfa2fd46",
+    sha256 = "12ee9f1b6fdbfffc3eaf778fda7f8436cf5b853fd458ae7416f58763ddddb991",
+    strip_prefix = "tensorflow-49908c1e646b87987251a9bd70c7be5b9a2f2649",
     urls = [
-        "https://github.com/tensorflow/tensorflow/archive/c204725a855d2d00ec5927943f482af6dfa2fd46.tar.gz",
+        "https://github.com/tensorflow/tensorflow/archive/49908c1e646b87987251a9bd70c7be5b9a2f2649.tar.gz",
     ],
 )
 
