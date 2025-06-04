@@ -419,7 +419,11 @@ cc_library(
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
     visibility = [
-        "//litert:litert_public",
+        # copybara:uncomment_begin(oss)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_expected",
