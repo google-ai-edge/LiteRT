@@ -17,13 +17,13 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <random>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_numerics.h"
 #include "litert/test/rng_fixture.h"
 
 namespace litert {
@@ -115,7 +115,7 @@ TEST_F(LiteRtRngTest, ReinterpretFloat) {
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
-    ASSERT_GT(std::abs(val), std::numeric_limits<float>::min());
+    ASSERT_TRUE(val == 0.0f || std::abs(val) > NumericLimits<float>::Min());
     ASSERT_LE(val, gen.Max());
     ASSERT_GE(val, gen.Min());
   }

@@ -573,6 +573,7 @@ cc_test(
     name = "litert_rng_test",
     srcs = ["litert_rng_test.cc"],
     deps = [
+        ":litert_numerics",
         ":litert_rng",
         "//litert/test:rng_fixture",
         "@com_google_absl//absl/strings:str_format",
