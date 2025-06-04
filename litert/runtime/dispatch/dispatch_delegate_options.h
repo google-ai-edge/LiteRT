@@ -106,9 +106,9 @@ inline litert::Expected<const void*> FindAllocBase(
 inline void AddAllocFdOption(int alloc_fd,
                              LiteRtDispatchDelegateOptions& opts) {
   LiteRtAny opt;
-  opt.type = kLiteRtAnyTypeVoidPtr;
+  opt.type = kLiteRtAnyTypeInt;
   opt.int_value = alloc_fd;
-  opts.AddOption(LiteRtDispatchOption{kAllocBase.data(), opt});
+  opts.AddOption(LiteRtDispatchOption{kAllocFd.data(), opt});
 }
 
 inline litert::Expected<int> FindAllocFd(

@@ -53,6 +53,24 @@ cc_library(
 )
 
 cc_library(
+    name = "node_operations",
+    hdrs = [
+        "node_operations.h",
+        "node_operation_impls.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_event",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api_opaque",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_library(
     name = "dispatch_opaque_options",
     srcs = [
         "dispatch_opaque_options.cc",
@@ -96,6 +114,7 @@ cc_library(
     deps = [
         ":dispatch",
         ":dispatch_opaque_options",
+        ":node_operations",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
         "//litert/c:litert_logging",
