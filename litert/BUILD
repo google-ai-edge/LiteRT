@@ -57,8 +57,7 @@ package_group(
         "//litert/vendors/cc/...",
         "//litert/vendors/qualcomm/...",
         # When litert_lm_link_capi_so=false
-        # Also some helper libraries are used by litert_lm.
-        "//third_party/odml/litert_lm/...",
+        # copybara:uncomment "//third_party/odml/litert_lm/...",
     ],
 )
 
@@ -88,10 +87,14 @@ package_group(
 # All litert users, least restrictive option.
 package_group(
     name = "litert_public",
-    includes = [
-        ":litert_external_users",
-        ":litert_internal_users",
-    ],
+    # copybara:uncomment_begin(oss)
+    # includes = [
+    # ":litert_external_users",
+    # ":litert_internal_users",
+    # ],
+    # copybara:uncomment_end_and_comment_begin
+    packages = ["//..."],
+    # copybara:comment_end
 )
 
 package_group(
