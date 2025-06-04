@@ -19,15 +19,17 @@
 #include <cstdint>
 #include <limits>
 #include <random>
-#include <type_traits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/test/rng_fixture.h"
 
 namespace litert {
 namespace {
+
+using ::litert::testing::RngTest;
 
 static constexpr size_t kTestIters = 10;
 
@@ -71,8 +73,10 @@ TEST(LitertRngTestWithCustomRng, NoSeed) {
               HasSubstr("DummyRng(seed=<default>,"));
 }
 
-TEST(LitertRngDataGenTest, Ints) {
-  auto [gen, device] = DataGenerators<int>::GeneratorAndDevice();
+using LiteRtRngTest = RngTest<>;
+
+TEST_F(LiteRtRngTest, Ints) {
+  auto [gen, device] = GeneratorAndDevice<int>();
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_LE(val, gen.Max());
@@ -80,10 +84,10 @@ TEST(LitertRngDataGenTest, Ints) {
   }
 }
 
-TEST(LitertRngDataGenTest, IntsWithRange) {
+TEST_F(LiteRtRngTest, IntsWithRange) {
   static constexpr auto kMin = 10;
   static constexpr auto kMax = 20;
-  auto [gen, device] = DataGenerators<int>::GeneratorAndDevice(kMin, kMax);
+  auto [gen, device] = GeneratorAndDevice<int>(kMin, kMax);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -93,10 +97,10 @@ TEST(LitertRngDataGenTest, IntsWithRange) {
   }
 }
 
-TEST(LitertRngDataGenTest, FloatsWithRange) {
+TEST_F(LiteRtRngTest, FloatsWithRange) {
   static constexpr auto kMin = 10;
   static constexpr auto kMax = 20;
-  auto [gen, device] = DataGenerators<float>::GeneratorAndDevice(kMin, kMax);
+  auto [gen, device] = GeneratorAndDevice<float>(kMin, kMax);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -106,10 +110,8 @@ TEST(LitertRngDataGenTest, FloatsWithRange) {
   }
 }
 
-TEST(LitertRngDataGenTest, ReinterpretFloat) {
-  using Fact = DataGenerators<float>;
-  auto [gen, device] = Fact::GeneratorAndDevice();
-  static_assert(std::is_same_v<decltype(gen), Fact::Reinterpret>);
+TEST_F(LiteRtRngTest, ReinterpretFloat) {
+  auto [gen, device] = GeneratorAndDevice<float>();
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
