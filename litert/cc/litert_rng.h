@@ -130,14 +130,12 @@ class DataGenerator {
   DataType Min() const { return dist_.min(); }
 
  protected:
-  static constexpr Limit Upperbound() {
-    return static_cast<Limit>(std::numeric_limits<DataType>::max());
-  }
-  static constexpr Limit Lowerbound() {
-    return static_cast<Limit>(std::numeric_limits<DataType>::lowest());
-  }
-  static constexpr D MakeMax(Limit max) { return std::min(max, Upperbound()); }
-  static constexpr D MakeMin(Limit min) { return std::max(min, Lowerbound()); }
+  static constexpr Limit kUpperbound =
+      static_cast<Limit>(std::numeric_limits<DataType>::max());
+  static constexpr Limit kLowerbound =
+      static_cast<Limit>(std::numeric_limits<DataType>::lowest());
+  static constexpr D MakeMax(Limit max) { return std::min(max, kUpperbound); }
+  static constexpr D MakeMin(Limit min) { return std::max(min, kLowerbound); }
 
   Dist<DataType> dist_;
 };
@@ -145,14 +143,12 @@ class DataGenerator {
 // A data generator that generates data within a given range.
 template <typename D, template <typename> typename Dist, typename DeviceBase>
 class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
- public:
-  using Base = DataGenerator<D, Dist, DeviceBase>;
-
  private:
-  using Base::Lowerbound;
+  using Base = DataGenerator<D, Dist, DeviceBase>;
+  using Base::kLowerbound;
+  using Base::kUpperbound;
   using Base::MakeMax;
   using Base::MakeMin;
-  using Base::Upperbound;
 
  public:
   using typename Base::DataType;
@@ -160,7 +156,7 @@ class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
   using typename Base::Limit;
 
   RangedGenerator() = default;
-  RangedGenerator(Limit min, Limit max = Upperbound()) {
+  RangedGenerator(Limit min, Limit max = kUpperbound) {
     ConstructAt(&this->dist_, MakeMin(min), MakeMax(max));
   }
 
