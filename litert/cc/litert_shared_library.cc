@@ -66,21 +66,112 @@ RtldFlags SanitizeFlagsInCaseOfAsan(RtldFlags flags) {
 #endif
 
 #if LITERT_WINDOWS_OS
-// Implement dummy functions from dlfnc.h on Windows.
+#include <windows.h>
+#include <cctype>
+#include <string>
+
+// Windows implementation of dlfcn.h functions
 namespace {
 
-const char* dlerror() {
-  return "Windows is not supported for loading shared libraries.";
+// Thread-local storage for last error message
+thread_local std::string g_last_error;
+
+// Convert Windows error code to string
+std::string GetWindowsErrorString(DWORD error_code) {
+  if (error_code == 0) {
+    return "No error";
+  }
+  
+  LPSTR message_buffer = nullptr;
+  size_t size = FormatMessageA(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+      NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPSTR)&message_buffer, 0, NULL);
+  
+  std::string message(message_buffer, size);
+  LocalFree(message_buffer);
+  
+  // Remove trailing whitespace
+  while (!message.empty() && std::isspace(message.back())) {
+    message.pop_back();
+  }
+  
+  return message;
 }
 
-void* dlopen(const char*, int) { return NULL; }
+const char* dlerror() {
+  return g_last_error.empty() ? nullptr : g_last_error.c_str();
+}
 
-void dlclose(void*) {}
+void* dlopen(const char* filename, int flags) {
+  // Clear previous error
+  g_last_error.clear();
+  
+  if (!filename) {
+    // NULL filename means get handle to main executable
+    return GetModuleHandle(NULL);
+  }
+  
+  // Convert .so extension to .dll if present
+  std::string dll_name(filename);
+  size_t pos = dll_name.rfind(".so");
+  if (pos != std::string::npos && pos == dll_name.length() - 3) {
+    dll_name.replace(pos, 3, ".dll");
+  }
+  
+  // Load the library
+  HMODULE handle = LoadLibraryA(dll_name.c_str());
+  if (!handle) {
+    DWORD error = GetLastError();
+    g_last_error = "Failed to load library '" + dll_name + "': " + GetWindowsErrorString(error);
+  }
+  
+  return handle;
+}
 
-void* dlsym(void*, const char*) { return NULL; }
+void dlclose(void* handle) {
+  if (handle && handle != GetModuleHandle(NULL)) {
+    FreeLibrary(static_cast<HMODULE>(handle));
+  }
+}
 
-#define RTLD_NEXT (void*)-1;
-#define RTLD_DEFAULT (void*)0;
+void* dlsym(void* handle, const char* symbol) {
+  // Clear previous error
+  g_last_error.clear();
+  
+  if (!handle || !symbol) {
+    g_last_error = "Invalid handle or symbol name";
+    return nullptr;
+  }
+  
+  // Handle special pseudo-handles
+  if (handle == ((void*)-1) || handle == ((void*)0)) {
+    // On Windows, we can't easily implement RTLD_NEXT/RTLD_DEFAULT
+    // For now, just search in the main executable
+    handle = GetModuleHandle(NULL);
+  }
+  
+  void* address = GetProcAddress(static_cast<HMODULE>(handle), symbol);
+  if (!address) {
+    DWORD error = GetLastError();
+    g_last_error = "Failed to find symbol '" + std::string(symbol) + "': " + GetWindowsErrorString(error);
+  }
+  
+  return address;
+}
+
+// Define RTLD flags for compatibility
+#define RTLD_LAZY     0x00001
+#define RTLD_NOW      0x00002
+#define RTLD_BINDING_MASK   0x3
+#define RTLD_NOLOAD   0x00004
+#define RTLD_DEEPBIND 0x00008
+#define RTLD_GLOBAL   0x00100
+#define RTLD_LOCAL    0
+#define RTLD_NODELETE 0x01000
+
+#define RTLD_NEXT    ((void*)-1)
+#define RTLD_DEFAULT ((void*)0)
 
 }  // namespace
 #endif
@@ -150,10 +241,10 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
       }
       break;
     case HandleKind::kRtldNext:
-      lib.handle_ = RTLD_NEXT;
+      lib.handle_ = ((void*)-1); // RTLD_NEXT
       break;
     case HandleKind::kRtldDefault:
-      lib.handle_ = RTLD_DEFAULT;
+      lib.handle_ = ((void*)0); // RTLD_DEFAULT
       break;
   }
   lib.handle_kind_ = handle_kind;
