@@ -23,11 +23,11 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_profiler_event.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/profiling/profile_buffer.h"
-
-namespace litert {
 
 class LiteRtProfilerT : public tflite::Profiler {
  public:
@@ -81,6 +81,23 @@ class LiteRtProfilerT : public tflite::Profiler {
   // particularly useful before calling into TFLite interpreter.
   void SetCurrentEventSource(ProfiledEventSource source);
 
+  std::string GetProfiledEventsString() const {
+    std::string result;
+    for (const auto& event : GetProfiledEvents()) {
+      absl::StrAppend(
+          &result, "tag:", event.tag, " type:", event.event_type,
+          " source:", event.event_source,
+          " start time:", event.start_timestamp_us,
+          " elapsed time:", event.elapsed_time_us, " begin mem usage:",
+          absl::StrFormat("%d", event.begin_mem_usage.total_allocated_bytes),
+          " end mem usage:",
+          absl::StrFormat("%d", event.end_mem_usage.total_allocated_bytes),
+          " meta1:", event.event_metadata1, " meta2:", event.event_metadata2,
+          "\n");
+    }
+    return result;
+  }
+
  private:
   // Collection to own unique copies of tag strings
   std::set<std::string> owned_tags_set_;
@@ -97,7 +114,5 @@ class LiteRtProfilerT : public tflite::Profiler {
   // the events that are currently active.
   std::map<uint32_t, ProfiledEventSource> active_event_sources_map_;
 };
-
-}  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_

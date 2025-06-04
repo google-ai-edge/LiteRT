@@ -78,6 +78,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
   profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   const char* tag = "SingleEvent";
   int64_t meta1 = 123;
@@ -97,6 +98,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
   ASSERT_EQ(ev.event_metadata1, meta1);
   ASSERT_EQ(ev.event_metadata2, meta2);
   ASSERT_EQ(ev.event_source, ProfiledEventSource::LITERT);
+  ASSERT_EQ(ev.event_source, ProfiledEventSource::LITERT);
   ASSERT_GT(ev.elapsed_time_us, 0);  // Check that some time has passed
 
   std::cout << "TestSingleEventRecording: PASSED" << std::endl;
@@ -105,6 +107,7 @@ TEST(LiteRTProfiler, SingleEventRecording) {
 TEST(LiteRTProfiler, MultipleEventRecording) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   uint32_t h1 =
@@ -138,14 +141,14 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
 
   // LITERT source
   profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   uint32_t h1 = profiler.BeginEvent("LiteRT_Event",
                                     tflite::Profiler::EventType::DEFAULT, 0, 0);
   LITERT_LOG(LITERT_INFO, "LiteRT_Event %d", h1);
   profiler.EndEvent(h1);
 
   // TFLITE_INTERPRETER source
-  profiler.SetCurrentEventSource(
-      ProfiledEventSource::TFLITE_INTERPRETER);
+  profiler.SetCurrentEventSource(ProfiledEventSource::TFLITE_INTERPRETER);
   uint32_t h2 = profiler.BeginEvent(
       "Interpreter_Event", tflite::Profiler::EventType::OPERATOR_INVOKE_EVENT,
       0, 0);
@@ -167,15 +170,14 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
   ASSERT_EQ(events.size(), 3);
   ASSERT_EQ(strcmp(events[0].tag, "LiteRT_Event"), 0);
   ASSERT_EQ(events[0].event_source, ProfiledEventSource::LITERT);
+  ASSERT_EQ(events[0].event_source, ProfiledEventSource::LITERT);
 
   ASSERT_EQ(strcmp(events[1].tag, "Interpreter_Event"), 0);
-  ASSERT_EQ(events[1].event_source,
-            ProfiledEventSource::TFLITE_INTERPRETER);
+  ASSERT_EQ(events[1].event_source, ProfiledEventSource::TFLITE_INTERPRETER);
 
   ASSERT_EQ(strcmp(events[2].tag, "Delegate_Event"), 0);
-  ASSERT_EQ(
-      events[2].event_source,
-      ProfiledEventSource::TFLITE_DELEGATE);  // Should be overridden
+  ASSERT_EQ(events[2].event_source,
+            ProfiledEventSource::TFLITE_DELEGATE);  // Should be overridden
 
   std::cout << "TestEventSourceAttribution: PASSED" << std::endl;
 }
@@ -183,6 +185,7 @@ TEST(LiteRTProfiler, EventSourceAttribution) {
 TEST(LiteRTProfiler, ResetFunctionality) {
   LiteRtProfilerT profiler;
   profiler.StartProfiling();
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   uint32_t h1 = profiler.BeginEvent("EventBeforeReset",
                                     tflite::Profiler::EventType::DEFAULT, 0, 0);
@@ -218,6 +221,7 @@ TEST(LiteRTProfiler, MaxEventsHandling) {
   size_t max_events = 2;
   LiteRtProfilerT profiler(max_events);
   profiler.StartProfiling();
+  profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
   profiler.SetCurrentEventSource(ProfiledEventSource::LITERT);
 
   uint32_t h1 =

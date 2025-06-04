@@ -31,6 +31,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -296,6 +297,7 @@ TEST(CompiledModelTest, Basic) {
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }
+
 TEST(CompiledModelTest,
      CompilationFailsWhenUnacceleratedOpsRemainWithoutCpuFallback) {
   // Environment setup.
@@ -581,6 +583,136 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
     LiteRtDestroyTensorBuffer(output_buffer);
   }
 
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, WithProfiler) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+  EXPECT_EQ(signature_key, LiteRtSignatureT::kDefaultSignatureKey);
+
+  const std::vector<std::string>& input_names = signatures[0]->InputNames();
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  const std::vector<std::string>& output_names = signatures[0]->OutputNames();
+  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Create profiler.
+  LiteRtProfiler profiler = nullptr;
+  ASSERT_EQ(LiteRtCreateProfiler(100, &profiler), kLiteRtStatusOk);
+  compiled_model->SetProfiler(profiler);
+  ASSERT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
+
+  // Check CompiledModel buffer requirements.
+  // input and output expect host memory.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg0,
+      compiled_model->GetInputBufferRequirements(
+          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*input_index=*/0));
+  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg0 =
+      input_buffer_requirements_arg0->SupportedBufferTypes();
+  EXPECT_THAT(input_buffer_types_arg0,
+              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtTensorBufferRequirementsT * input_buffer_requirements_arg1,
+      compiled_model->GetInputBufferRequirements(
+          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*input_index=*/1));
+  const std::vector<LiteRtTensorBufferType>& input_buffer_types_arg1 =
+      input_buffer_requirements_arg1->SupportedBufferTypes();
+  EXPECT_THAT(input_buffer_types_arg1,
+              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtTensorBufferRequirementsT * output_buffer_requirements,
+      compiled_model->GetOutputBufferRequirements(
+          /*signature_key=*/LiteRtSignatureT::kDefaultSignatureKey,
+          /*output_index=*/0));
+  const std::vector<LiteRtTensorBufferType>& output_buffer_types =
+      output_buffer_requirements->SupportedBufferTypes();
+  EXPECT_THAT(output_buffer_types,
+              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+
+  // Create and fill input and output LiteRtTensorBuffers. Buffers are
+  // created to match CompiledModel's TensorBufferRequirements.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                          *compiled_model));
+
+  LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
+  {
+    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
+  {
+    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  // Execute model.
+  bool async = false;
+  compiled_model->Run(signature_key, input_buffers, output_buffers, async);
+
+  // Check model output.
+  {
+    void* host_mem_addr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    absl::Span<const float> output = absl::MakeSpan(
+        static_cast<const float*>(host_mem_addr), kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(output_buffers[0]), kLiteRtStatusOk);
+  }
+
+  ASSERT_EQ(LiteRtStopProfiler(profiler), kLiteRtStatusOk);
+  ASSERT_GT(profiler->GetNumEvents(), 2);
+  ABSL_LOG(INFO) << "Profiler events: " << profiler->GetProfiledEventsString();
+  // Since Buffers in LiteRtTensorBuffer, we need to destroy them explicitly.
+  for (auto& input_buffer : input_buffers) {
+    LiteRtDestroyTensorBuffer(input_buffer);
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
+
+  LiteRtDestroyProfiler(profiler);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }

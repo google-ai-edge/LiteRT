@@ -24,32 +24,28 @@ LiteRtStatus LiteRtCreateProfiler(int size, LiteRtProfiler* profiler) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
-  *profiler =
-      reinterpret_cast<LiteRtProfiler>(new litert::LiteRtProfilerT(size));
+  *profiler = new LiteRtProfilerT(size);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtDestroyProfiler(LiteRtProfiler profiler) {
+void LiteRtDestroyProfiler(LiteRtProfiler profiler) {
+  LITERT_ABORT_IF_ERROR(profiler != nullptr)<< "profiler is null.";
+  delete profiler;
+}
+
+LiteRtStatus LiteRtStartProfiler(LiteRtProfiler profiler) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
-  delete reinterpret_cast<litert::LiteRtProfilerT*>(profiler);
+  profiler->StartProfiling();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtStartProfiling(LiteRtProfiler profiler) {
+LiteRtStatus LiteRtStopProfiler(LiteRtProfiler profiler) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
-  reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->StartProfiling();
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtStopProfiling(LiteRtProfiler profiler) {
-  LITERT_RETURN_IF_ERROR(profiler,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "profiler is null.";
-  reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->StopProfiling();
+  reinterpret_cast<LiteRtProfilerT*>(profiler)->StopProfiling();
   return kLiteRtStatusOk;
 }
 
@@ -57,46 +53,46 @@ LiteRtStatus LiteRtResetProfiler(LiteRtProfiler profiler) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
-  reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->Reset();
+  profiler->Reset();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetCurrentEventSource(LiteRtProfiler profiler,
-                                         ProfiledEventSource event_source) {
+LiteRtStatus LiteRtSetProfilerCurrentEventSource(
+    LiteRtProfiler profiler, ProfiledEventSource event_source) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
-  reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->SetCurrentEventSource(
-      event_source);
+  profiler->SetCurrentEventSource(event_source);
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetNumEvents(LiteRtProfiler profiler, int* num_events) {
+LiteRtStatus LiteRtGetNumProfilerEvents(LiteRtProfiler profiler,
+                                        int* num_events) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
   LITERT_RETURN_IF_ERROR(num_events,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "num_events is null.";
-  *num_events =
-      reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->GetNumEvents();
+  *num_events = profiler->GetNumEvents();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetEvents(LiteRtProfiler profiler, ProfiledEventData* events,
-                             int* num_events) {
+LiteRtStatus LiteRtGetProfilerEvents(LiteRtProfiler profiler, int num_events,
+                                     ProfiledEventData* events) {
   LITERT_RETURN_IF_ERROR(profiler,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "profiler is null.";
   LITERT_RETURN_IF_ERROR(events, litert::ErrorStatusBuilder::InvalidArgument())
       << "events is null.";
-  LITERT_RETURN_IF_ERROR(num_events,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "num_events is null.";
-  auto internal_events =
-      reinterpret_cast<litert::LiteRtProfilerT*>(profiler)->GetProfiledEvents();
-  *num_events = internal_events.size();
-  for (int i = 0; i < *num_events; ++i) {
+
+  auto internal_events = profiler->GetProfiledEvents();
+  LITERT_RETURN_IF_ERROR(
+      (num_events > 0 && num_events >= internal_events.size()),
+      litert::ErrorStatusBuilder::InvalidArgument())
+          << "the size: " << num_events
+          << " is not enough to hold all events: " << internal_events.size();
+  for (int i = 0; i < internal_events.size(); ++i) {
     events[i] = internal_events[i];
   }
   return kLiteRtStatusOk;
