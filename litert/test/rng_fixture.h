@@ -22,6 +22,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/cc/litert_rng.h"
+#include "litert/test/fuzz.h"
 
 // Basic litert rng integration with gtest.
 
@@ -29,13 +30,23 @@ namespace litert::testing {
 
 // Fixture wrapper of the code in cc/litert_rng.h. This will use the seed
 // set from gtest, which can be configured from command line for
-// reproducibility.
+// reproducibility. It can also be used to set up repeated blocks of code for
+// fuzzing.
 template <template <typename> typename Distribution = Uniform,
           typename Engine = DefaultEngine>
 class RngTest : public ::testing::Test {
  private:
   template <typename T>
   using Fact = DataGenerators<T, Distribution, Engine>;
+
+ public:
+  void TearDown() override {
+    for (const auto& block : fuzz_blocks_) {
+      ASSERT_TRUE(block.ReachedMinIters())
+          << "The minimum number of iterations was not reached in the alloted "
+             "time.";
+    }
+  }
 
  protected:
   template <typename T, typename... Args>
@@ -51,6 +62,11 @@ class RngTest : public ::testing::Test {
     return std::make_pair(
         Fact<T>::Generator(std::forward<Args>(generator_args)...),
         TraceSeedInfo(Fact<T>::Device(CurrentSeed())));
+  }
+
+  template <typename... Args>
+  auto& FuzzBlock(Args&&... args) {
+    return fuzz_blocks_.emplace_back(std::forward<Args>(args)...);
   }
 
  private:
@@ -79,6 +95,7 @@ class RngTest : public ::testing::Test {
   }
 
   std::vector<std::unique_ptr<ScopedTrace>> traces_;
+  std::vector<RepeatedBlock> fuzz_blocks_;
 };
 
 }  // namespace litert::testing

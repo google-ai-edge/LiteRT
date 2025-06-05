@@ -14,6 +14,7 @@
 
 #include "litert/cc/litert_rng.h"
 
+#include <chrono>  // NOLINT
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -116,6 +117,16 @@ TEST_F(LiteRtRngTest, ReinterpretFloat) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
     ASSERT_TRUE(val == 0.0f || std::abs(val) > NumericLimits<float>::Min());
+    ASSERT_LE(val, gen.Max());
+    ASSERT_GE(val, gen.Min());
+  }
+}
+
+TEST_F(LiteRtRngTest, TestWithFuzz) {
+  auto [gen, device] = GeneratorAndDevice<int>();
+  for (auto _ :
+       FuzzBlock(std::chrono::milliseconds(50), kTestIters, kTestIters)) {
+    const auto val = gen(device);
     ASSERT_LE(val, gen.Max());
     ASSERT_GE(val, gen.Min());
   }
