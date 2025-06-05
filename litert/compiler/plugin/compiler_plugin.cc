@@ -381,7 +381,7 @@ Expected<PartitionResult> PartitionModel(
   // decomposition subgraphs. Currently, we deploy the most naive approach to
   // handling composite ops.
   //
-  // There are two cases to consider:
+  // There are a couple cases to consider:
   // 1. The composite op is an "odml.npu_call", in which case it represents a
   // partition which was explicitly requested by the model author.
   //
@@ -393,9 +393,20 @@ Expected<PartitionResult> PartitionModel(
   // * Ensuring the plugin can compile the entire partition, and inlining it if
   // not.
   //
-  // 2. Standard non npu_call composite ops. Currently these are treated as a
-  // regular op, and their decomposition subgraphs are completely ignored in all
-  // phases of plugin application.
+  // 2. Standard non npu_call composite ops.
+  //
+  // 2.1 Composite op is supported by the plugin. Since a plugin is capable of
+  // directly compile the composite op, the composite op will be seleceted
+  // during partitioning. Therefore, all ops in the decomposition subgraph will
+  // be ignored, furthermore, the decomposition subgraph will be removed from
+  // the model.
+  //
+  // 2.2 Composite op is not supported by the plugin. In this case, the
+  // composite op will not be selected during partitioning. To give best effort
+  // compilation, we inline the decomposition subgraph into the main subgraph,
+  // that is, replace the composite op with the ops in the decomposition
+  // subgraph. After re-partitioning, there are chances that the decomposition
+  // Ops are now selected by the plugin.
   //
   // More advanced behavior could include:
   // * Allowing the plugin to compile the decomposition subgraph in the case
@@ -408,6 +419,8 @@ Expected<PartitionResult> PartitionModel(
   // * Standard composite ops ARE allowed to be nested within decompositions of
   // npu_call ops.
   // * No two npu_call ops share the same subgraph.
+  // * Any composite op in a decomposition subgraph will be treated as a regular
+  // op and inlined back into the main subgraph.
 
   // Find decomposition subgraphs and npu_call ops. These will be used to filter
   // subgraphs passed to the plugin and pass on auto-selected npu_call
@@ -440,6 +453,44 @@ Expected<PartitionResult> PartitionModel(
     if (!selected_ops) {
       return selected_ops.Error();
     }
+    // Find all composite ops (except npu_calls) that are not selected.
+    std::vector<LiteRtOp> ops_to_inline;
+    for (auto& op : subgraph->Ops()) {
+      auto info = GetOptionsAs<CompositeOptions>(op);
+      if (!info) {
+        continue;
+      }
+      if (info->name == CompositeOptions::kNpuCall) {
+        continue;
+      }
+      auto is_composite_selected = std::any_of(
+          selected_ops->begin(), selected_ops->end(),
+          [&op](const auto& selected_op) { return selected_op.first == op; });
+      if (!is_composite_selected) {
+        ops_to_inline.push_back(op);
+      }
+    }
+
+    // Inline all composite ops that are not selected.
+    for (auto& op : ops_to_inline) {
+      auto info = GetOptionsAs<CompositeOptions>(op);
+      auto status =
+          InlineSubgraph(model, *op, model.Subgraphs()[info->subgraph]);
+      if (status) {
+        // Now the decomposition subgraph is inlined into the main subgraph,
+        // therefore its also "selected".
+        selected_composite_subgraph_indexes.push_back(info->subgraph);
+      }
+    }
+
+    // Re-do partitioning
+    selected_ops->clear();
+    selected_ops = compiler_plugin.Partition(subgraph, soc_model);
+    LITERT_LOG(
+        LITERT_INFO,
+        "PartitionSubgraph After composite inlining: %d, selected num ops: %lu",
+        i, selected_ops->size());
+
     // Record all decomposition subgraph indexes, where its compositie op will
     // be compiled without relying on the decomposition body.
     for (auto& op : *selected_ops) {
