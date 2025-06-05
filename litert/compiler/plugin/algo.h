@@ -17,7 +17,8 @@
 
 #include <vector>
 
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 
 namespace litert::internal {
@@ -33,6 +34,32 @@ std::vector<std::vector<LiteRtOp>> GroupPartitions(
 // tfl.custom_op in "root". A reference to that op is returned.
 LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
                           std::vector<LiteRtOp>& partition);
+
+// Inline a subgraph to a destination op.
+//
+// This is a helper function to inline the all ops used in a subgraph to a
+// destination op.
+//
+// Use cases:
+// 1. Inline a decomposition subgraph to a composite op: When a composite op can
+// not be directly compiled by a vendor plugin, it is possible that some(all)
+// ops used in the decomposition subgraph can be compiled by the vendor plugin.
+// In this case, we can inline the decomposition subgraph to the composite op,
+// and compile the composite op with the vendor plugin. To give best effort
+// compilation result, we inline the decomposition subgraph to replace the
+// composite op before asking the vendor plugin to partition the main subgraph
+// again.
+//
+// This function clones the ops and tensors from the decomposition subgraph into
+// the main subgraph, and then restore the topology of the decomposition
+// subgraph to the main subgraph.
+//
+// WARNING: The decomposition subgraph is not removed from the model. The caller
+// should remove it if needed.
+//
+// Returns true if the inlining is successful.
+Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
+                              LiteRtSubgraph source_subgraph);
 
 }  // namespace litert::internal
 
