@@ -36,7 +36,7 @@ LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-// sdk_version_type -------------------------------------------------------
+// sdk_version_type ----------------------------------------------------------
 typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7 = 0,
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8 = 1,
@@ -50,17 +50,18 @@ LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     LiteRtMediatekOptions options,
     enum LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
 
+// gemma_compiler_optimizations ----------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool gemma_compiler_optimizations);
 
 LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
 
-// neuron_adapter_peformance_mode
+// neuron_adapter_peformance_mode --------------------------------------------
 
 // Configures MTK devices to optimize for performance or power efficiency.
 // See NeuronAdapterPreferenceCode in mtk_sdk. By default, it
-// will use  Fast Single answer.
+// will use  Sustained Speed answer.
 
 typedef enum LiteRtMediatekNeuronAdapterPerformanceMode {
   /* Prefer executing in a way that minimizes battery drain. */
@@ -80,6 +81,13 @@ LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
 LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
     LiteRtMediatekOptions options,
     LiteRtMediatekNeuronAdapterPerformanceMode* performance_mode);
+
+// l1_cache_optimizations ----------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool l1_cache_optimizations);
+
+LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool* l1_cache_optimizations);
 
 #ifdef __cplusplus
 

@@ -29,6 +29,7 @@ struct LiteRtMediatekOptionsT {
   bool gemma_compiler_optimizations = false;
   LiteRtMediatekNeuronAdapterPerformanceMode performance_mode =
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
+  bool l1_cache_optimizations = false;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -67,9 +68,9 @@ LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
   return kLiteRtStatusOk;
 }
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
-// sdk_version_type -------------------------------------------------------
+// sdk_version_type ----------------------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
-    LiteRtMediatekOptionsT* options,
+    LiteRtMediatekOptions options,
     LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -79,7 +80,7 @@ LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(
 }
 
 LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
-    LiteRtMediatekOptionsT* options,
+    LiteRtMediatekOptions options,
     LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type) {
   if (options == nullptr || sdk_version_type == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -88,6 +89,7 @@ LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
   return kLiteRtStatusOk;
 }
 
+// gemma_compiler_optimizations ---------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool gemma_compiler_optimizations) {
   if (options == nullptr) {
@@ -109,7 +111,7 @@ LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
   return kLiteRtStatusOk;
 }
 
-// performance_mode -------------------------------------------------------
+// neuron_adapter_peformance_mode --------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
     LiteRtMediatekOptions options,
     LiteRtMediatekNeuronAdapterPerformanceMode performance_mode) {
@@ -130,6 +132,28 @@ LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
   }
 
   *performance_mode = options->performance_mode;
+
+  return kLiteRtStatusOk;
+}
+
+// l1_cache_optimizations ----------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool l1_cache_optimizations) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->l1_cache_optimizations = l1_cache_optimizations;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool* l1_cache_optimizations) {
+  if (l1_cache_optimizations == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *l1_cache_optimizations = options->l1_cache_optimizations;
 
   return kLiteRtStatusOk;
 }

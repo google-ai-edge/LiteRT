@@ -158,6 +158,54 @@ TEST(LiteRtMediatekOptionsTest, PerformanceModeInvalidArguments) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtMediatekOptionsTest, L1CacheOptimizations) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  bool l1_cache_optimizations;
+  // Check default value (false)
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetL1CacheOptimizations(
+      options_data, &l1_cache_optimizations));
+  ASSERT_FALSE(l1_cache_optimizations);
+
+  // Set to true
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetL1CacheOptimizations(options_data, true));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetL1CacheOptimizations(
+      options_data, &l1_cache_optimizations));
+  ASSERT_TRUE(l1_cache_optimizations);
+
+  // Set to false
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetL1CacheOptimizations(options_data, false));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetL1CacheOptimizations(
+      options_data, &l1_cache_optimizations));
+  ASSERT_FALSE(l1_cache_optimizations);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, L1CacheOptimizationsInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  bool l1_cache_optimizations;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetL1CacheOptimizations(nullptr, true),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtMediatekOptionsGetL1CacheOptimizations(options_data, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetL1CacheOptimizations(
+                nullptr, &l1_cache_optimizations),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtMediatekOptionsTest, GetWithInvalidArguments) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
@@ -211,6 +259,13 @@ TEST(MediatekOptionsTest, CppApi) {
   EXPECT_EQ(
       options->GetPerformanceMode(),
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);
+
+  // Test L1 Cache Optimizations
+  EXPECT_FALSE(options->GetEnableL1CacheOptimizations());
+  options->SetEnableL1CacheOptimizations(true);
+  EXPECT_TRUE(options->GetEnableL1CacheOptimizations());
+  options->SetEnableL1CacheOptimizations(false);
+  EXPECT_FALSE(options->GetEnableL1CacheOptimizations());
 }
 
 }  // namespace

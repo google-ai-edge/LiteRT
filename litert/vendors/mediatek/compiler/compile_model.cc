@@ -14,6 +14,7 @@
 
 #include "litert/vendors/mediatek/compiler/compile_model.h"
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -93,6 +94,21 @@ Expected<NeuronCompilationPtr> CompileModel(
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to set compilation preference");
+  }
+
+  if (mediatek_opts->GetEnableL1CacheOptimizations()) {
+    uint32_t apu_mem_size = 0;
+    if (neuron_adapter_api.api().get_l1_memory_size_kb(&apu_mem_size) ==
+            NEURON_NO_ERROR &&
+        apu_mem_size > 0) {
+      if (neuron_adapter_api.api().compilation_set_l1_memory_size_kb(
+              compilation->get(), apu_mem_size) != NEURON_NO_ERROR) {
+        LITERT_LOG(LITERT_INFO,
+                   "NeuronCompilation_setL1MemorySizeKb failed with error %d",
+                   neuron_adapter_api.api().compilation_set_l1_memory_size_kb(
+                       compilation->get(), apu_mem_size));
+      }
+    }
   }
 
   if (auto status =

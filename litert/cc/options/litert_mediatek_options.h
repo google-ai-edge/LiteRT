@@ -50,6 +50,10 @@ class MediatekOptions : public OpaqueOptions {
 
   LiteRtMediatekNeuronAdapterPerformanceMode GetPerformanceMode();
 
+  void SetEnableL1CacheOptimizations(bool enable_l1_cache_optimizations);
+
+  bool GetEnableL1CacheOptimizations();
+
  private:
   LiteRtMediatekOptions Data() const;
 };

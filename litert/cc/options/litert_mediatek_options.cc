@@ -91,4 +91,17 @@ MediatekOptions::GetPerformanceMode() {
   return performance_mode;
 }
 
+void MediatekOptions::SetEnableL1CacheOptimizations(
+    bool enable_l1_cache_optimizations) {
+  internal::AssertOk(LiteRtMediatekOptionsSetL1CacheOptimizations, Data(),
+                     enable_l1_cache_optimizations);
+}
+
+bool MediatekOptions::GetEnableL1CacheOptimizations() {
+  bool enable_l1_cache_optimizations;
+  internal::AssertOk(LiteRtMediatekOptionsGetL1CacheOptimizations, Data(),
+                     &enable_l1_cache_optimizations);
+  return enable_l1_cache_optimizations;
+}
+
 }  // namespace litert::mediatek
