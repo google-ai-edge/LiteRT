@@ -73,6 +73,15 @@ class Environment
     }
   }
 
+  bool SupportsClGlSharing() const {
+    bool is_supported = false;
+    if (auto status = LiteRtSupportsClGlSharing(Get(), &is_supported);
+        status != kLiteRtStatusOk) {
+      return false;
+    }
+    return is_supported;
+  }
+
  private:
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {

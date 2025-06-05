@@ -90,6 +90,14 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSupportsClGlSharing(LiteRtEnvironment environment,
+                                       bool* is_supported) {
+  LITERT_RETURN_IF_ERROR(environment != nullptr)
+      << "Environment pointer is null.";
+  *is_supported = environment->SupportsClGlSharing();
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
