@@ -80,6 +80,14 @@ class LiteRtEnvironmentT {
   // Returns true if the GPU environment is set.
   bool HasGpuEnvironment() { return gpu_env_ != nullptr; }
 
+  bool SupportsClGlInterop() {
+    return gpu_env_ != nullptr && gpu_env_->SupportsClGlInterop();
+  }
+
+  bool SupportsAhwbClInterop() {
+    return gpu_env_ != nullptr && gpu_env_->SupportsAhwbClInterop();
+  }
+
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   LiteRtEnvironmentOptionsT options_;
