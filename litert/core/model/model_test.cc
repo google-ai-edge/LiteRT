@@ -23,6 +23,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model.h"
@@ -541,6 +542,30 @@ TEST(CcForEachIrTest, SgF2) {
   ForEachIr(&model,
             [&](LiteRtSubgraph subgraph, int32_t subgraph_index) { count++; });
   EXPECT_EQ(count, 1);
+}
+
+//
+// Printing
+//
+
+TEST(PrintingTest, RankedTensorType) {
+  EXPECT_EQ(absl::StrFormat(
+                "%v", MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 2})),
+            "2d_i32<1x2>");
+}
+
+TEST(PrintingTest, Tensor) {
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>");
+}
+
+TEST(PrintingTest, ConstTensor) {
+  OwningBufferRef<uint8_t> buf(8);
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
 }
 
 }  // namespace
