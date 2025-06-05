@@ -716,7 +716,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              opencl_memory->Lock<float>());
+                              opencl_memory->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -776,3 +776,41 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
   }
 }
+
+namespace litert::internal {
+
+absl::string_view GetTensorBufferTypeName(
+    const LiteRtTensorBufferT& tensor_buffer) {
+  switch (tensor_buffer.buffer_type()) {
+    case kLiteRtTensorBufferTypeUnknown:
+      return "Unknown";
+    case kLiteRtTensorBufferTypeHostMemory:
+      return "HostMemory";
+    case kLiteRtTensorBufferTypeAhwb:
+      return "Ahwb";
+    case kLiteRtTensorBufferTypeIon:
+      return "Ion";
+    case kLiteRtTensorBufferTypeDmaBuf:
+      return "DmaBuf";
+    case kLiteRtTensorBufferTypeFastRpc:
+      return "FastRpc";
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+      return "OpenClBuffer";
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      return "OpenClBufferFp16";
+    case kLiteRtTensorBufferTypeOpenClTexture:
+      return "OpenClTexture";
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      return "OpenClTextureFp16";
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
+      return "OpenClBufferPacked";
+    case kLiteRtTensorBufferTypeGlBuffer:
+      return "GlBuffer";
+    case kLiteRtTensorBufferTypeGlTexture:
+      return "GlTexture";
+    default:
+      return "No type found";
+  }
+}
+
+}  // namespace litert::internal

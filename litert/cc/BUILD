@@ -804,6 +804,7 @@ cc_test(
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
+    tags = ["requires-gpu-nvidia"],
     deps = [
         ":litert_element_type",
         ":litert_environment",
@@ -825,7 +826,6 @@ cc_test(
         "//tflite/delegates/gpu/cl:cl_command_queue",
         "//tflite/delegates/gpu/cl:cl_context",
         "//tflite/delegates/gpu/cl:cl_device",
-        "//tflite/delegates/gpu/cl:environment",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/types:span",
