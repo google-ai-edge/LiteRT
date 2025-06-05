@@ -66,24 +66,131 @@ RtldFlags SanitizeFlagsInCaseOfAsan(RtldFlags flags) {
 #endif
 
 #if LITERT_WINDOWS_OS
-// Implement dummy functions from dlfnc.h on Windows.
+#include <windows.h>
+
+#include <cctype>
+#include <string>
+
+// Windows implementation of dlfcn.h functions
 namespace {
 
-const char* dlerror() {
-  return "Windows is not supported for loading shared libraries.";
+// Thread-local storage for last error message
+thread_local std::string g_last_error;
+
+// Convert Windows error code to string
+std::string GetWindowsErrorString(DWORD error_code) {
+  if (error_code == 0) {
+    return "No error";
+  }
+
+  LPSTR message_buffer = nullptr;
+  size_t size = FormatMessageA(
+      FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
+          FORMAT_MESSAGE_IGNORE_INSERTS,
+      NULL, error_code, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+      (LPSTR)&message_buffer, 0, NULL);
+
+  std::string message(message_buffer, size);
+  LocalFree(message_buffer);
+
+  // Remove trailing whitespace
+  while (!message.empty() && std::isspace(message.back())) {
+    message.pop_back();
+  }
+
+  return message;
 }
 
-void* dlopen(const char*, int) { return NULL; }
+const char* dlerror() {
+  return g_last_error.empty() ? nullptr : g_last_error.c_str();
+}
 
-void dlclose(void*) {}
+void* dlopen(const char* filename, int flags) {
+  // Clear previous error
+  g_last_error.clear();
 
-void* dlsym(void*, const char*) { return NULL; }
+  if (!filename) {
+    // NULL filename means get handle to main executable
+    return GetModuleHandle(NULL);
+  }
 
-#define RTLD_NEXT (void*)-1;
-#define RTLD_DEFAULT (void*)0;
+  // Convert .so extension to .dll if present
+  std::string dll_name(filename);
+  size_t pos = dll_name.rfind(".so");
+  if (pos != std::string::npos && pos == dll_name.length() - 3) {
+    dll_name.replace(pos, 3, ".dll");
+  }
 
+  // Load the library
+  HMODULE handle = LoadLibraryA(dll_name.c_str());
+  if (!handle) {
+    DWORD error = GetLastError();
+    g_last_error = "Failed to load library '" + dll_name +
+                   "': " + GetWindowsErrorString(error);
+  }
+
+  return handle;
+}
+
+void dlclose(void* handle) {
+  if (handle && handle != GetModuleHandle(NULL)) {
+    FreeLibrary(static_cast<HMODULE>(handle));
+  }
+}
+
+void* dlsym(void* handle, const char* symbol) {
+  // Clear previous error
+  g_last_error.clear();
+
+  if (!handle || !symbol) {
+    g_last_error = "Invalid handle or symbol name";
+    return nullptr;
+  }
+
+  // Handle special pseudo-handles
+  if (handle == ((void*)-1) || handle == ((void*)0)) {
+    // On Windows, we can't easily implement RTLD_NEXT/RTLD_DEFAULT
+    // For now, just search in the main executable
+    handle = GetModuleHandle(NULL);
+  }
+
+  void* address = GetProcAddress(static_cast<HMODULE>(handle), symbol);
+  if (!address) {
+    DWORD error = GetLastError();
+    g_last_error = "Failed to find symbol '" + std::string(symbol) +
+                   "': " + GetWindowsErrorString(error);
+  }
+
+  return address;
+}
 }  // namespace
-#endif
+
+// Define RTLD macros for Windows (outside anonymous namespace for visibility)
+// These values are copied directly from POSIX/Linux dlfcn.h for API
+// compatibility. Note: Most of these flags are defined for API compatibility
+// but have no effect on Windows:
+// - RTLD_LAZY/RTLD_NOW: Windows always resolves all symbols at load time
+// - RTLD_GLOBAL/RTLD_LOCAL: Windows doesn't have equivalent symbol visibility
+// control
+// - RTLD_DEEPBIND: Linux-specific, no Windows equivalent
+// - RTLD_NOLOAD: Could be simulated with GetModuleHandle but not implemented
+// - RTLD_NODELETE: Windows uses reference counting but has no direct equivalent
+// - RTLD_BINDING_MASK: Used to extract binding mode (LAZY/NOW) on POSIX, not
+// used on Windows
+#define RTLD_LAZY 0x00001  // No effect on Windows
+#define RTLD_NOW 0x00002   // No effect on Windows (always immediate binding)
+#define RTLD_BINDING_MASK 0x3  // Not used on Windows (would extract LAZY/NOW)
+#define RTLD_NOLOAD 0x00004    // Not implemented on Windows
+#define RTLD_DEEPBIND 0x00008  // No effect on Windows
+#define RTLD_GLOBAL 0x00100    // No effect on Windows
+#define RTLD_LOCAL 0           // No effect on Windows (default visibility)
+#define RTLD_NODELETE 0x01000  // No effect on Windows
+
+// Special pseudo-handles
+#define RTLD_NEXT ((void*)-1)    // Simulated: searches main executable
+#define RTLD_DEFAULT ((void*)0)  // Simulated: searches main executable
+
+#endif  // LITERT_WINDOWS_OS
 
 namespace litert {
 

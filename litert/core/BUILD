@@ -73,7 +73,7 @@ cc_test(
 cc_library(
     name = "dynamic_loading",
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": ["dynamic_loading_dummy.cc"],
+        "@org_tensorflow//tensorflow:windows": ["dynamic_loading_windows.cc"],
         "//conditions:default": ["dynamic_loading.cc"],
     }),
     hdrs = ["dynamic_loading.h"],
@@ -88,7 +88,12 @@ cc_library(
         "//litert/c:litert_common",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:windows": [],
+        "@org_tensorflow//tensorflow:windows": [
+            ":filesystem",
+            "//litert/c:litert_logging",
+            "@com_google_absl//absl/strings",
+            "@com_google_absl//absl/strings:str_format",
+        ],
         "//conditions:default": [
             ":filesystem",
             "//litert/c:litert_logging",  # buildcleaner: keep
