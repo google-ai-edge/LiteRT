@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if LITERT_WINDOWS_OS
 #include <windows.h>
 
 #include <algorithm>
@@ -176,4 +175,3 @@ LiteRtStatus PutLibOnLdPath(absl::string_view search_path,
 }
 
 }  // namespace litert::internal
-#endif  // LITERT_WINDOWS_OS
