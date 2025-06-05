@@ -104,4 +104,18 @@ bool MediatekOptions::GetEnableL1CacheOptimizations() {
   return enable_l1_cache_optimizations;
 }
 
+void MediatekOptions::SetOptimizationHint(
+    LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint) {
+  internal::AssertOk(LiteRtMediatekOptionsSetOptimizationHint, Data(),
+                     optimization_hint);
+}
+
+LiteRtMediatekNeuronAdapterOptimizationHint
+MediatekOptions::GetOptimizationHint() {
+  LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint;
+  internal::AssertOk(LiteRtMediatekOptionsGetOptimizationHint, Data(),
+                     &optimization_hint);
+  return optimization_hint;
+}
+
 }  // namespace litert::mediatek

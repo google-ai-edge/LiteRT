@@ -89,6 +89,31 @@ LiteRtStatus LiteRtMediatekOptionsSetL1CacheOptimizations(
 LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
     LiteRtMediatekOptions options, bool* l1_cache_optimizations);
 
+// neuron_optimization_hints -------------------------------------------------
+
+// Configures MTK devices with optimization hints..
+// By default, it will use NEURON_OPTIMIZATION_NORMAL.
+
+typedef enum LiteRtMediatekNeuronAdapterOptimizationHint {
+  /* Normal optimization. Default Value */
+  kLiteRtMediatekNeuronAdapterOptimizationHintNormal = 0,
+  /* Reduce latency by utilizing as many APU cores as possible.*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency = 1 << 0,
+  /* Reducing DRAM access as more as possible.*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion = 1 << 1,
+  /*Reduce latency by using as many APU cores as possible in batch-dimension.
+   * (For models with batch > 1)*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing = 1 << 2,
+} LiteRtMediatekNeuronAdapterOptimizationHint;
+
+LiteRtStatus LiteRtMediatekOptionsSetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint);
+
+LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint);
+
 #ifdef __cplusplus
 
 }  // extern "C"

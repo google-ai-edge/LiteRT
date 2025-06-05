@@ -161,6 +161,8 @@ struct NeuronAdapterApi::Api {
   decltype(&Neuron_getL1MemorySizeKb) get_l1_memory_size_kb = nullptr;
   decltype(&NeuronCompilation_setL1MemorySizeKb)
       compilation_set_l1_memory_size_kb = nullptr;
+  decltype(&NeuronCompilation_setOptimizationHint)
+      compilation_set_optimization_hint = nullptr;
 };
 
 }  // namespace litert::mediatek

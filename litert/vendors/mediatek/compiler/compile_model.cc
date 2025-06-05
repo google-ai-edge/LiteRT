@@ -111,6 +111,20 @@ Expected<NeuronCompilationPtr> CompileModel(
     }
   }
 
+  if (auto status = neuron_adapter_api.api().compilation_set_optimization_hint(
+          compilation->get(), mediatek_opts->GetOptimizationHint());
+      status != NEURON_NO_ERROR) {
+    LITERT_LOG(LITERT_INFO,
+               "NeuronCompilation_setOptimizationHint failed with error %d",
+               status);
+    LITERT_LOG(LITERT_INFO,
+               "NeuronCompilation_setOptimizationHint failed attempting to set "
+               "optimization hint enum value to %d",
+               mediatek_opts->GetOptimizationHint());
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to set optimization hint");
+  }
+
   if (auto status =
           neuron_adapter_api.api().compilation_set_optimization_string(
               compilation->get(), compile_options.c_str());

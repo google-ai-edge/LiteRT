@@ -54,6 +54,11 @@ class MediatekOptions : public OpaqueOptions {
 
   bool GetEnableL1CacheOptimizations();
 
+  void SetOptimizationHint(
+      LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint);
+
+  LiteRtMediatekNeuronAdapterOptimizationHint GetOptimizationHint();
+
  private:
   LiteRtMediatekOptions Data() const;
 };

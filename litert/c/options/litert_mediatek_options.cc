@@ -30,6 +30,8 @@ struct LiteRtMediatekOptionsT {
   LiteRtMediatekNeuronAdapterPerformanceMode performance_mode =
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed;
   bool l1_cache_optimizations = false;
+  LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint =
+      kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -154,6 +156,31 @@ LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *l1_cache_optimizations = options->l1_cache_optimizations;
+
+  return kLiteRtStatusOk;
+}
+
+// neuron_optimization_hints -------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->optimization_hint = optimization_hint;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint) {
+  if (options == nullptr || optimization_hint == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *optimization_hint = options->optimization_hint;
 
   return kLiteRtStatusOk;
 }

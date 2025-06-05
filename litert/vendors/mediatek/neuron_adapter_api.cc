@@ -167,6 +167,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   LOAD_SYMB(Neuron_getL1MemorySizeKb, api_->get_l1_memory_size_kb);
   LOAD_SYMB(NeuronCompilation_setL1MemorySizeKb,
             api_->compilation_set_l1_memory_size_kb);
+  LOAD_SYMB(NeuronCompilation_setOptimizationHint,
+            api_->compilation_set_optimization_hint);
 
   LITERT_LOG(LITERT_INFO, "NeuronAdapter symbols loaded");
   return {};
