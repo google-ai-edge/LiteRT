@@ -27,6 +27,26 @@ package(
 #### LiteRT C++ APIs which don't use C API calls to framework.
 
 cc_library(
+    name = "litert_c_types_printing",
+    hdrs = ["litert_c_types_printing.h"],
+    deps = [
+        "//litert/c:litert_model",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "litert_c_types_printing_test",
+    srcs = ["litert_c_types_printing_test.cc"],
+    deps = [
+        ":litert_c_types_printing",
+        "//litert/c:litert_model",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
     visibility = [
