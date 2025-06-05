@@ -185,7 +185,9 @@ LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
   if (!compiled_result || !num_byte_code) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *num_byte_code = compiled_result->graph_names.size();
+  // TODO(yunandrew) MTK should have one byte code per call. But now only one
+  // bytecode is created for all partitions.
+  *num_byte_code = 1;
   return kLiteRtStatusOk;
 }
 
@@ -214,8 +216,10 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   auto& graph_name = compiled_result->graph_names[call_idx];
   *call_info = graph_name.data();
   *call_info_size = graph_name.size();
-  // MTK should have one byte code per call.
-  *byte_code_idx = call_idx;
+  // TODO: MTK should have one byte code per call.
+  // Only one bytecode is created for all partitions, so the byte code index is
+  // always 0.
+  *byte_code_idx = 0;
 
   return kLiteRtStatusOk;
 }
