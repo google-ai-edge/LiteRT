@@ -137,7 +137,6 @@ cc_test(
         ":litert_layout",
         ":litert_model",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/core/model",
         "//litert/test:common",
@@ -797,6 +796,8 @@ cc_library(
         # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/google_tensor:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
+        # "//third_party/odml/infra/genai/inference/ml_drift/llm:__pkg__",
+        # "//third_party/odml/infra/genai/inference/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
