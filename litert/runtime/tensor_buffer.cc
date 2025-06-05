@@ -50,6 +50,7 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+using litert::BufferTypeToString;
 using litert::Expected;
 using litert::Unexpected;
 
@@ -106,14 +107,14 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
 // disabling for web platform temporarily to avoid breakages.
 #ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Created tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this).data());
+             BufferTypeToString(buffer_type_).data());
 #endif  // __EMSCRIPTEN__
 }
 
 LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 #ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this).data());
+             BufferTypeToString(buffer_type_).data());
 #endif  // __EMSCRIPTEN__
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeUnknown:
@@ -775,41 +776,3 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
   }
 }
-
-namespace litert::internal {
-
-absl::string_view GetTensorBufferTypeName(
-    const LiteRtTensorBufferT& tensor_buffer) {
-  switch (tensor_buffer.buffer_type()) {
-    case kLiteRtTensorBufferTypeUnknown:
-      return "Unknown";
-    case kLiteRtTensorBufferTypeHostMemory:
-      return "HostMemory";
-    case kLiteRtTensorBufferTypeAhwb:
-      return "Ahwb";
-    case kLiteRtTensorBufferTypeIon:
-      return "Ion";
-    case kLiteRtTensorBufferTypeDmaBuf:
-      return "DmaBuf";
-    case kLiteRtTensorBufferTypeFastRpc:
-      return "FastRpc";
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-      return "OpenClBuffer";
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      return "OpenClBufferFp16";
-    case kLiteRtTensorBufferTypeOpenClTexture:
-      return "OpenClTexture";
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      return "OpenClTextureFp16";
-    case kLiteRtTensorBufferTypeOpenClBufferPacked:
-      return "OpenClImageBufferPacked";
-    case kLiteRtTensorBufferTypeGlBuffer:
-      return "GlBuffer";
-    case kLiteRtTensorBufferTypeGlTexture:
-      return "GlTexture";
-    default:
-      return "No type found";
-  }
-}
-
-}  // namespace litert::internal

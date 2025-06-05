@@ -19,6 +19,8 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
+namespace litert {
+
 std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeUnknown:
@@ -52,3 +54,5 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
              static_cast<int>(buffer_type));
   return "UnexpectedBufferType";
 }
+
+}  // namespace litert

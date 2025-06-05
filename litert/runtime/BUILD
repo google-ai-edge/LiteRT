@@ -285,6 +285,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_tensor_buffer_utils",
         "//litert/cc/internal:litert_event",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",

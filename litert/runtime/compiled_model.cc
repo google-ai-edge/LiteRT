@@ -50,6 +50,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/model.h"
@@ -81,7 +82,6 @@ using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
 using ::litert::internal::ExternalLiteRtBufferContext;
-using ::litert::internal::GetTensorBufferTypeName;
 using ::litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
@@ -508,7 +508,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
     absl::string_view name = tensor_name ? tensor_name : "<unnamed>";
-    auto buffer_type = GetTensorBufferTypeName(*buffer);
+    auto buffer_type = litert::BufferTypeToString(buffer->buffer_type());
     LITERT_LOG(LITERT_DEBUG,
                "Registering %s tensor from TfliteTensor %p to "
                "LiteRtTensorBuffer %p of type %s",
