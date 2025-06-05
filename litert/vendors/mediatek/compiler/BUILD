@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -114,6 +114,14 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
