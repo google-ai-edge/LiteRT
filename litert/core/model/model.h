@@ -1083,6 +1083,36 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
   absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
 }
 
+template <class Sink>
+void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
+  sink.Append("(");
+  for (auto it = tensors.begin(); it < tensors.end() - 1; ++it) {
+    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append(",");
+  }
+  sink.Append(absl::StrFormat("%v", *tensors.back()));
+  sink.Append(")");
+}
+
+// OP PRINTING
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtOpT& op) {
+  static constexpr auto kFmt = "%v%v%v->%v";
+  const auto& opts = ::litert::internal::GetTflOptions(op);
+  if (opts.type != ::tflite::BuiltinOptions_NONE) {
+    absl::Format(&sink, kFmt, op.OpCode(), opts, op.Inputs(), op.Outputs());
+    return;
+  }
+  absl::Format(&sink, kFmt, op.OpCode(), ::litert::internal::GetTflOptions2(op),
+               op.Inputs(), op.Outputs());
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtOpT* op) {
+  absl::Format(&sink, "null");
+}
+
 // OPTIONS PRINTING
 
 namespace litert::internal {
@@ -1137,6 +1167,17 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", add_opts);
       break;
     }
+    default:
+      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
+  // NOTE: Printers for specific options will be added on an as needed basis.
+  const auto type = opts.type;
+  switch (type) {
     default:
       absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
       break;
