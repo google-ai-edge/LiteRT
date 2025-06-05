@@ -20,7 +20,6 @@
 #include <cstring>
 #include <memory>  // NOLINT: Used for OpenCL logic.
 #include <utility>
-#include <vector>  // NOLINT: Used for OpenCL logic.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>  // NOLINT: Need when ANDROID_API_LEVEL >= 26
@@ -42,16 +41,6 @@
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #endif  // LITERT_HAS_AHWB_SUPPORT
-
-#if LITERT_HAS_OPENCL_SUPPORT
-#include <CL/cl.h>  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/buffer.h"  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/cl_command_queue.h"  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/cl_context.h"  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/cl_device.h"  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/environment.h"  // NOLINT: Used for OpenCL logic.
-#include "tflite/delegates/gpu/cl/opencl_wrapper.h"  // NOLINT: Used for OpenCL logic.
-#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/cl/gl_interop.h"
@@ -831,16 +820,20 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   EXPECT_THAT(cl_buffer, Ne(nullptr));
 
   // Read from CL buffer.
-  // TODO(gcarranza): Add ClBuffer ReadLock functionality to LiteRT
-  // TensorBuffer. ClBuffer::Unlock currently writes to CL buffer.
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer cl_buffer_from_ahwb,
+                              TensorBuffer::CreateFromClBuffer(
+                                  env.Get(), RankedTensorType(kTestTensorType),
+                                  kLiteRtTensorBufferTypeOpenClBufferPacked,
+                                  cl_buffer, sizeof(kTensorData)));
 
-  tflite::gpu::cl::Buffer cl_buffer_from_ahwb(cl_buffer, sizeof(kTensorData));
-
-  tflite::gpu::cl::CLCommandQueue* queue = user_gpu_env->GetCommandQueue();
-  std::vector<float> read_data;
-  auto status = cl_buffer_from_ahwb.ReadData(queue, &read_data);
-  ASSERT_TRUE(status.ok());
-  ASSERT_EQ(std::memcmp(read_data.data(), kTensorData, sizeof(kTensorData)), 0);
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        cl_buffer_from_ahwb, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
+        0);
+  }
 }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 

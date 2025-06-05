@@ -722,7 +722,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              opencl_memory->Lock<float>());
+                              opencl_memory->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
