@@ -230,8 +230,7 @@ private constructor(
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    val tbr = nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
-    return TensorBufferRequirements(tbr)
+    return nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
   }
 
   @Throws(LiteRtException::class)
@@ -249,8 +248,7 @@ private constructor(
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    val tbr = nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
-    return TensorBufferRequirements(tbr)
+    return nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
   }
 
   @Throws(LiteRtException::class)
@@ -460,7 +458,7 @@ private constructor(
       modelHandle: Long,
       signature: String?,
       inputName: String,
-    ): Long
+    ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateOutputBuffer(
@@ -476,7 +474,7 @@ private constructor(
       modelHandle: Long,
       signature: String?,
       outputName: String,
-    ): Long
+    ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateInputBuffers(

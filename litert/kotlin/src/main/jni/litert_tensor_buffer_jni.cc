@@ -20,10 +20,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 
 namespace {
@@ -235,70 +233,6 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeDestroy(JNIEnv* env,
                                                           jclass clazz,
                                                           jlong handle) {
   LiteRtDestroyTensorBuffer(reinterpret_cast<LiteRtTensorBuffer>(handle));
-}
-
-// TensorBufferRequirements
-JNIEXPORT jintArray JNICALL
-Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetSupportedTypes(
-    JNIEnv* env, jclass clazz, jlong handle) {
-  auto tb = reinterpret_cast<LiteRtTensorBufferRequirements>(handle);
-  auto tensor_buffer_requirements =
-      litert::TensorBufferRequirements(tb, litert::OwnHandle::kNo);
-  auto supported_types = tensor_buffer_requirements.SupportedTypes();
-  if (!supported_types) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get supported types: %s",
-               supported_types.Error().Message().c_str());
-    ThrowLiteRtException(env, supported_types.Error().Status(),
-                         "Failed to get supported types.");
-    return nullptr;
-  }
-  jintArray result = env->NewIntArray(supported_types->size());
-  // Copy the data to the JVM array.
-  env->SetIntArrayRegion(
-      result, 0, supported_types->size(),
-      // Explicitly cast to jint*
-      reinterpret_cast<const jint*>(supported_types->data()));
-  return result;
-}
-
-JNIEXPORT jint JNICALL
-Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeBufferSize(
-    JNIEnv* env, jclass clazz, jlong handle) {
-  auto tb = reinterpret_cast<LiteRtTensorBufferRequirements>(handle);
-  auto tensor_buffer_requirements =
-      litert::TensorBufferRequirements(tb, litert::OwnHandle::kNo);
-  auto buffer_size = tensor_buffer_requirements.BufferSize();
-  if (!buffer_size) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get buffer size: %s",
-               buffer_size.Error().Message().c_str());
-    ThrowLiteRtException(env, buffer_size.Error().Status(),
-                         "Failed to get buffer size.");
-    return -1;
-  }
-  return buffer_size.Value();
-}
-
-JNIEXPORT jintArray JNICALL
-Java_com_google_ai_edge_litert_TensorBufferRequirements_nativeGetStrides(
-    JNIEnv* env, jclass clazz, jlong handle) {
-  auto tb = reinterpret_cast<LiteRtTensorBufferRequirements>(handle);
-  auto tensor_buffer_requirements =
-      litert::TensorBufferRequirements(tb, litert::OwnHandle::kNo);
-  auto strides = tensor_buffer_requirements.Strides();
-  if (!strides) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get strides: %s",
-               strides.Error().Message().c_str());
-    ThrowLiteRtException(env, strides.Error().Status(),
-                         "Failed to get strides.");
-    return nullptr;
-  }
-  auto num_elements = strides->size();
-  jintArray result = env->NewIntArray(num_elements);
-  // Copy the data to the JVM array.
-  env->SetIntArrayRegion(result, 0, num_elements,
-                         // Explicitly cast to jint*
-                         reinterpret_cast<const jint*>(strides->data()));
-  return result;
 }
 
 #ifdef __cplusplus
