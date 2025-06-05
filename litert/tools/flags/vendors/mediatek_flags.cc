@@ -27,6 +27,26 @@
 // TODO: Move absl parse/unparse function to same file as enum types if
 // it becomes an issue.
 
+ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
+          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8,
+          "Version for neuron sdk for Mediatek.");
+
+ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
+          "Whether to enable Gemma Mediatek compiler optimizations.");
+
+ABSL_FLAG(bool, mediatek_enable_l1_cache_optimizations, false,
+          "Whether to enable L1 cache optimizations.");
+
+ABSL_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+          mediatek_performance_mode_type,
+          kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed,
+          "Performance mode for Mediatek Inference.");
+
+ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
+          mediatek_optimization_hint,
+          kLiteRtMediatekNeuronAdapterOptimizationHintNormal,
+          "Optimization hint for Mediatek Inference.");
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error) {
@@ -51,18 +71,6 @@ std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options) {
       return "version7";
   }
 }
-
-ABSL_FLAG(LiteRtMediatekOptionsNeronSDKVersionType, mediatek_sdk_version_type,
-          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8,
-          "Version for neuron sdk for Mediatek.");
-
-ABSL_FLAG(bool, mediatek_enable_gemma_compiler_optimizations, false,
-          "Whether to enable Gemma Mediatek compiler optimizations.");
-
-ABSL_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
-          mediatek_performance_mode_type,
-          kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed,
-          "Performance mode for Mediatek Inference.");
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekNeuronAdapterPerformanceMode* options,
@@ -107,6 +115,44 @@ std::string AbslUnparseFlag(
   }
 }
 
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtMediatekNeuronAdapterOptimizationHint* options,
+                   std::string* error) {
+  if (text == "normal") {
+    *options = kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+    return true;
+  }
+  if (text == "low_latency") {
+    *options = kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency;
+    return true;
+  }
+  if (text == "deep_fusion") {
+    *options = kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion;
+    return true;
+  }
+  if (text == "batch_processing") {
+    *options = kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing;
+    return true;
+  }
+
+  *error = "Unknown mediatek optimization hint type";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    LiteRtMediatekNeuronAdapterOptimizationHint options) {
+  switch (options) {
+    case kLiteRtMediatekNeuronAdapterOptimizationHintNormal:
+      return "normal";
+    case kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency:
+      return "low_latency";
+    case (kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion):
+      return "deep_fusion";
+    case kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing:
+      return "batch_processing";
+  }
+}
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::mediatek {
@@ -119,6 +165,9 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
       absl::GetFlag(FLAGS_mediatek_enable_gemma_compiler_optimizations));
   options.SetPerformanceMode(
       absl::GetFlag(FLAGS_mediatek_performance_mode_type));
+  options.SetEnableL1CacheOptimizations(
+      absl::GetFlag(FLAGS_mediatek_enable_l1_cache_optimizations));
+  options.SetOptimizationHint(absl::GetFlag(FLAGS_mediatek_optimization_hint));
   return options;
 }
 
