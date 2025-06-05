@@ -14,6 +14,7 @@
 
 load("//litert/build_common:special_rule.bzl", "gles_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
+load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -29,9 +30,15 @@ package(
 cc_library(
     name = "litert_c_types_printing",
     hdrs = ["litert_c_types_printing.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -40,6 +47,7 @@ cc_test(
     srcs = ["litert_c_types_printing_test.cc"],
     deps = [
         ":litert_c_types_printing",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",

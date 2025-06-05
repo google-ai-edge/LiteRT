@@ -16,8 +16,10 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 
+namespace litert {
 namespace {
 
 TEST(LitertCTypesPrintingTest, LiteRtElementType) {
@@ -25,4 +27,31 @@ TEST(LitertCTypesPrintingTest, LiteRtElementType) {
   EXPECT_EQ(absl::StrFormat("%v", kLiteRtElementTypeFloat32), "f32");
 }
 
+TEST(LitertCTypesPrintingTest, LiteRtLayoutScalar) {
+  LiteRtLayout layout = {0, false, {}, {}};
+  EXPECT_EQ(absl::StrFormat("%v", layout), "<>");
+}
+
+TEST(LitertCTypesPrintingTest, LiteRtLayoutMultiDim) {
+  LiteRtLayout layout = {2, false, {1, 2}, {}};
+  EXPECT_EQ(absl::StrFormat("%v", layout), "<1x2>");
+}
+
+TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeScalar) {
+  LiteRtRankedTensorType type = {
+      kLiteRtElementTypeInt32,
+      {0, false, {}, {}},
+  };
+  EXPECT_EQ(absl::StrFormat("%v", type), "0d_i32<>");
+}
+
+TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeMultiDim) {
+  LiteRtRankedTensorType type = {
+      kLiteRtElementTypeFloat32,
+      {2, false, {1, 2}, {}},
+  };
+  EXPECT_EQ(absl::StrFormat("%v", type), "2d_f32<1x2>");
+}
+
 }  // namespace
+}  // namespace litert
