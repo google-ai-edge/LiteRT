@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "litert/c/options/litert_mediatek_options.h"
+#include <climits>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -205,6 +206,71 @@ TEST(LiteRtMediatekOptionsTest, L1CacheOptimizationsInvalidArguments) {
 
   LiteRtDestroyOpaqueOptions(options);
 }
+TEST(LiteRtMediatekOptionsTest, SubgraphIndex) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  int subgraph_index;
+  // Check default value
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetSubgraphIndex(options_data, &subgraph_index));
+  ASSERT_EQ(subgraph_index, 0);
+
+  // Set to a new value
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetSubgraphIndex(options_data, 5));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetSubgraphIndex(options_data, &subgraph_index));
+  ASSERT_EQ(subgraph_index, 5);
+
+  // Set to another value
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetSubgraphIndex(options_data, 12));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetSubgraphIndex(options_data, &subgraph_index));
+  ASSERT_EQ(subgraph_index, 12);
+
+  // Set to max value
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetSubgraphIndex(options_data, INT_MAX));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetSubgraphIndex(options_data, &subgraph_index));
+  ASSERT_EQ(subgraph_index, INT_MAX);
+
+  // Set to min value
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetSubgraphIndex(options_data, 0));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetSubgraphIndex(options_data, &subgraph_index));
+  ASSERT_EQ(subgraph_index, 0);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, SubgraphIndexInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  int subgraph_index;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetSubgraphIndex(nullptr, 5),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtMediatekOptionsGetSubgraphIndex(options_data, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetSubgraphIndex(nullptr, &subgraph_index),
+            kLiteRtStatusErrorInvalidArgument);
+  // Test invalid values
+  EXPECT_EQ(LiteRtMediatekOptionsSetSubgraphIndex(options_data, -1),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsSetSubgraphIndex(options_data, -5),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsSetSubgraphIndex(options_data, -INT_MAX),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtMediatekOptionsTest, OptimizationHint) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
@@ -344,6 +410,17 @@ TEST(MediatekOptionsTest, CppApi) {
       kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
   EXPECT_EQ(options->GetOptimizationHint(),
             kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
+
+  // Test Subgraph Index
+  EXPECT_EQ(options->GetSubgraphIndex(), 0);
+  options->SetSubgraphIndex(7);
+  EXPECT_EQ(options->GetSubgraphIndex(), 7);
+  options->SetSubgraphIndex(21);
+  EXPECT_EQ(options->GetSubgraphIndex(), 21);
+  options->SetSubgraphIndex(0);
+  EXPECT_EQ(options->GetSubgraphIndex(), 0);
+  options->SetSubgraphIndex(INT_MAX);
+  EXPECT_EQ(options->GetSubgraphIndex(), INT_MAX);
 }
 
 }  // namespace

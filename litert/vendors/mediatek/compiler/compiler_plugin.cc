@@ -412,6 +412,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+    compiler_plugin->GetMediatekOptions()->SetSubgraphIndex(i);
     auto bytecode = CompilePartition(**api, subgraph, graph_name, opt_soc_model,
                                      compiler_plugin->GetMediatekOptions());
     rmdir(dla_directory_name);
