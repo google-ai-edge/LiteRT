@@ -114,6 +114,13 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
     LiteRtMediatekOptions options,
     LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint);
 
+// subgraph index ----------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetSubgraphIndex(
+    LiteRtMediatekOptions options, int subgraph_index);
+
+LiteRtStatus LiteRtMediatekOptionsGetSubgraphIndex(
+    LiteRtMediatekOptions options, int* subgraph_index);
+
 #ifdef __cplusplus
 
 }  // extern "C"

@@ -59,6 +59,10 @@ class MediatekOptions : public OpaqueOptions {
 
   LiteRtMediatekNeuronAdapterOptimizationHint GetOptimizationHint();
 
+  void SetSubgraphIndex(int subgraph_index);
+
+  int GetSubgraphIndex();
+
  private:
   LiteRtMediatekOptions Data() const;
 };

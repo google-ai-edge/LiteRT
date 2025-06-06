@@ -32,6 +32,7 @@ struct LiteRtMediatekOptionsT {
   bool l1_cache_optimizations = false;
   LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint =
       kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+  int subgraph_index = 0;
 };
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {
@@ -182,5 +183,26 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
 
   *optimization_hint = options->optimization_hint;
 
+  return kLiteRtStatusOk;
+}
+
+// subgraph index ----------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetSubgraphIndex(
+    LiteRtMediatekOptions options, int subgraph_index) {
+  if (options == nullptr || subgraph_index < 0) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->subgraph_index = subgraph_index;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetSubgraphIndex(
+    LiteRtMediatekOptions options, int* subgraph_index) {
+  if (subgraph_index == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *subgraph_index = options->subgraph_index;
   return kLiteRtStatusOk;
 }
