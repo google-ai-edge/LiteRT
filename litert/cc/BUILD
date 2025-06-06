@@ -977,6 +977,7 @@ cc_library(
         ":litert_macros",
         ":litert_model",
         ":litert_options",
+        ":litert_profiler",
         ":litert_tensor_buffer",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -1000,6 +1001,7 @@ cc_test(
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_model",
+        ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
@@ -1098,6 +1100,7 @@ litert_device_test(
 #         ":litert_model",
 #         ":litert_options",
 #         ":litert_platform_support",
+#         ":litert_profiler",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/debugging:leak_check",
@@ -1108,6 +1111,7 @@ litert_device_test(
 #         "//litert/c:litert_environment_options",
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
+#         "//litert/c:litert_profiler_event",
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
@@ -1162,6 +1166,27 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
+)
+
+cc_library(
+    name = "litert_profiler",
+    hdrs = ["litert_profiler.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_external_users",
+        # "//litert:litert_internal_users_with_public_cc",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_profiler_event",
+    ],
 )
 
 exports_files(glob([

@@ -36,6 +36,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -398,6 +399,11 @@ class CompiledModel
   Expected<Environment> GetEnvironment() const {
     return Environment(env_, OwnHandle::kNo);
   }
+
+  // Sets the profiler for the model. Caller owns the profiler,Profiler needs
+  // to be maintained during the model execution, the caller is responsible for
+  // disposing the profiler after the model execution.
+  Expected<bool> SetProfiler(Profiler& profiler);
 
  private:
   // Returns the signature input index for the given input tensor name.
