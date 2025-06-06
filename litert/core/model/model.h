@@ -35,10 +35,13 @@
 #include "litert/c/litert_model.h"  // IWYU pragma: export
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_logging.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/schema/schema_generated.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal LiteRtIR
@@ -1052,5 +1055,163 @@ void ForEachIr(LiteRtModel model, F func) {
     }
   }
 }
+
+//
+// Printing
+//
+
+// TODO(@lukeboyer): Migrate dump.h to use absl printing.
+
+// TENSOR PRINTING
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TensorType& type) {
+  const auto& [id, detail] = type;
+  if (id == kLiteRtRankedTensorType) {
+    absl::Format(&sink, "%v", detail.ranked_tensor_type);
+  } else {
+    absl::Format(&sink, "%s", ::litert::kNoPrinterTag);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
+  auto weights = tensor.Weights().Buffer();
+  std::string weights_str = "";
+  if (weights.Size() > 0) {
+    weights_str = absl::StrFormat("_cst[%s]",
+                                  ::litert::HumanReadableSize(weights.Size()));
+  }
+  absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
+  sink.Append("(");
+  for (auto it = tensors.begin(); it < tensors.end() - 1; ++it) {
+    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append(",");
+  }
+  sink.Append(absl::StrFormat("%v", *tensors.back()));
+  sink.Append(")");
+}
+
+// OPTIONS PRINTING
+
+namespace litert::internal {
+
+// Since options have a common structure, we provide this builder to format
+// sets of options in a consistent manner.
+template <typename Sink>
+struct OptionStrBuilder {
+  OptionStrBuilder(Sink& sink) : sink_(sink) { sink_.Append("{"); }
+
+  template <typename Val>
+  void operator()(const auto& key, const Val& value) {
+    if (num_opts_++ > 0) {
+      sink_.Append(",");
+    }
+    if constexpr (std::is_convertible_v<Val, absl::string_view>) {
+      absl::Format(&sink_, "%s=%s", key, value);
+    } else {
+      absl::Format(&sink_, "%s=%v", key, value);
+    }
+  }
+
+  ~OptionStrBuilder() { sink_.Append("}"); }
+
+ private:
+  size_t num_opts_ = 0;
+  Sink& sink_;
+};
+template <typename Sink>
+OptionStrBuilder(Sink& sink) -> OptionStrBuilder<Sink>;
+
+template <typename Sink, typename Options>
+void PrintNullableOpts(Sink& sink, const Options* opts) {
+  if (!opts) {
+    absl::Format(&sink, "{null}");
+    return;
+  }
+  absl::Format(&sink, "%v", *opts);
+}
+
+}  // namespace litert::internal
+
+namespace tflite {
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
+  // NOTE: Printers for specific options will be added on an as needed basis.
+  const auto type = opts.type;
+  switch (type) {
+    case tflite::BuiltinOptions_AddOptions: {
+      const auto* add_opts = opts.AsAddOptions();
+      absl::Format(&sink, "%v", add_opts);
+      break;
+    }
+    default:
+      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
+  // NOTE: Printers for specific options will be added on an as needed basis.
+  const auto type = opts.type;
+  switch (type) {
+    default:
+      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+// AddOptionsT
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const ActivationFunctionType& type) {
+  switch (type) {
+    case ActivationFunctionType_NONE:
+      sink.Append("NONE");
+      break;
+    case ActivationFunctionType_RELU6:
+      sink.Append("RELU6");
+      break;
+    case ActivationFunctionType_RELU:
+      sink.Append("RELU");
+      break;
+    case ActivationFunctionType_RELU_N1_TO_1:
+      sink.Append("RELU_N1_TO_1");
+      break;
+    case ActivationFunctionType_TANH:
+      sink.Append("TANH");
+      break;
+    case ActivationFunctionType_SIGN_BIT:
+      sink.Append("SIGN_BIT");
+      break;
+    default:
+      sink.Append(::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const AddOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pot = opts.pot_scale_int16;
+  if (pot) {
+    b("pot", pot);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const AddOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+}  // namespace tflite
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_
