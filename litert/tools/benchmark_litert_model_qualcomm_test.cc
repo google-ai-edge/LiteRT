@@ -30,7 +30,7 @@ TEST(BenchmarkLiteRtModelQualcommTest, NPUAcceleration) {
   params.Set<bool>("use_cpu", false);
   params.Set<bool>("require_full_delegation", true);
   params.Set<std::string>(
-      "qnn_dispatch_library_path",
+      "dispatch_library_path",
       "/data/local/tmp/runfiles/litert/");
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
 
