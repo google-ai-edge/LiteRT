@@ -23,6 +23,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model.h"
@@ -541,6 +542,72 @@ TEST(CcForEachIrTest, SgF2) {
   ForEachIr(&model,
             [&](LiteRtSubgraph subgraph, int32_t subgraph_index) { count++; });
   EXPECT_EQ(count, 1);
+}
+
+//
+// Printing
+//
+
+TEST(PrintingTest, RankedTensorType) {
+  EXPECT_EQ(absl::StrFormat(
+                "%v", MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 2})),
+            "2d_i32<1x2>");
+}
+
+TEST(PrintingTest, Tensor) {
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>");
+}
+
+TEST(PrintingTest, ConstTensor) {
+  OwningBufferRef<uint8_t> buf(8);
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
+}
+
+TEST(PrintingTest, TflOptions) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_AddOptions;
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU;
+  add_opts.pot_scale_int16 = false;
+  opts.Set(std::move(add_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{fa=RELU}");
+}
+
+TEST(PrintingTest, TflOptionsNoPrinter) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_SubOptions;
+  ::tflite::SubOptionsT add_opts;
+  opts.Set(std::move(add_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+}
+
+TEST(PrintingTest, FusedActivationFunction) {
+  EXPECT_EQ(absl::StrFormat("%v", ::tflite::ActivationFunctionType_RELU),
+            "RELU");
+}
+
+TEST(PrintingTest, TflNullOptions) {
+  ::tflite::AddOptionsT* add_opts = nullptr;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{null}");
+}
+
+TEST(PrintingTest, TflAddOptions) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflAddOptionsPointer) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
 }
 
 }  // namespace
