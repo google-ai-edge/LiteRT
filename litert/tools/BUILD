@@ -490,6 +490,7 @@ litert_device_test(
     srcs = ["benchmark_litert_model_qualcomm_test.cc"],
     backend_id = "qualcomm",
     data = [
+        "//litert/test:testdata/simple_add_op.tflite",
         "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
     ],
     deps = [
