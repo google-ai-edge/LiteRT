@@ -78,11 +78,10 @@ class OpenClMemory {
         buffer_type_(buffer_type),
         deallocator_(deallocator),
         size_(size) {
-    if (deallocator_ != nullptr) {
-      buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
-    } else {  // The buffer will be deallocated automatically.
-      buffer_ = tflite::gpu::cl::Buffer(buffer, size);
-    }
+    // CreateBufferShared creates a buffer that is not owned by
+    // tflite::gpu::cl::Buffer (OpenClMemory determines ownership). Null
+    // deallocator means that the buffer is not owned by OpenClMemory.
+    buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
   }
 
   ~OpenClMemory() {

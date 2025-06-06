@@ -219,6 +219,7 @@ litert_device_test(
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
 #     "//litert/runtime:gl_buffer_device_test",
+#     "//litert/cc:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
@@ -258,6 +259,7 @@ litert_device_test(
 #     "//litert/runtime/compiler:jit_compilation_qualcomm_test",
 #     "//litert/runtime:gl_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_qualcomm_test",
+#     "//litert/cc:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
