@@ -19,6 +19,7 @@ cc_test(
         ":graph_to_graph",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:cast_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "//litert/vendors/qualcomm/core/builders:matmul_op_builder",
@@ -46,6 +47,7 @@ cc_library(
         "nobuilder",
     ],
     deps = [
+        ":mask",
         ":matmul_convert",
         ":mha_to_sha",
         "//litert/vendors/qualcomm/core:op_code",
@@ -86,6 +88,23 @@ cc_library(
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "mask",
+    srcs = ["mask.cc"],
+    hdrs = ["mask.h"],
+    tags = [
+        # Don't build/test in OS until qnn is available.
+        "nobuilder",
+    ],
+    deps = [
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/builders:select_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
