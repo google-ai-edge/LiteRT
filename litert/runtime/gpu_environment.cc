@@ -31,6 +31,8 @@
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
+#include <EGL/egl.h>
+
 #include "tflite/delegates/gpu/cl/gl_interop.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
@@ -92,6 +94,35 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   return options;
 }
 
+bool SupportsAhwbClInterop(tflite::gpu::cl::CLDevice device) {
+  return device.GetInfo().SupportsExtension("cl_arm_import_memory") &&
+         ::tflite::gpu::cl::clImportMemoryARM != nullptr;
+}
+
+namespace {
+#if LITERT_HAS_OPENGL_SUPPORT
+PFNGLBUFFERSTORAGEEXTERNALEXTPROC glBufferStorageExternalEXT;
+PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC eglGetNativeClientBufferANDROID;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+bool SupportsAhwbGlInterop() {
+#if LITERT_HAS_OPENGL_SUPPORT
+  static const bool extensions_allowed = [] {
+    eglGetNativeClientBufferANDROID =
+        reinterpret_cast<PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC>(
+            eglGetProcAddress("eglGetNativeClientBufferANDROID"));
+    glBufferStorageExternalEXT =
+        reinterpret_cast<PFNGLBUFFERSTORAGEEXTERNALEXTPROC>(
+            eglGetProcAddress("glBufferStorageExternalEXT"));
+    return eglGetNativeClientBufferANDROID && glBufferStorageExternalEXT;
+  }();
+  return extensions_allowed;
+#else
+  return false;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+}
+}  // namespace
+
 Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up OpenCL.
@@ -128,6 +159,10 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+  properties_.is_ahwb_cl_interop_supported =
+      ::litert::internal::SupportsAhwbClInterop(device_);
+  properties_.is_ahwb_gl_interop_supported =
+      ::litert::internal::SupportsAhwbGlInterop();
 
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up context.
