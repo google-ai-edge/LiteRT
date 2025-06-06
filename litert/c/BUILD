@@ -205,6 +205,21 @@ cc_library(
     ],
 )
 
+# Headers only lib for users who require only types and want to avoid
+# potential circular dependencies.
+cc_library(
+    name = "litert_model_types",
+    hdrs = [
+        "litert_model.h",
+    ],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        ":litert_op_code",
+        "//tflite/core/c:private_c_api_types",
+    ],
+)
+
 cc_test(
     name = "litert_model_test",
     srcs = ["litert_model_test.cc"],
