@@ -35,7 +35,14 @@ constructor(val elementType: ElementType, val layout: Layout? = null) {
   /** Layout of a tensor. */
   data class Layout
   @JvmOverloads
-  constructor(val dimensions: IntArray, val strides: IntArray = intArrayOf()) {
+  constructor(val dimensions: List<Int>, val strides: List<Int> = listOf()) {
+
+    @JvmOverloads
+    constructor(
+      dimensions: IntArray,
+      strides: IntArray = intArrayOf(),
+    ) : this(dimensions.toList(), strides.toList()) {}
+
     val rank: Int
       get() = dimensions.size
 
