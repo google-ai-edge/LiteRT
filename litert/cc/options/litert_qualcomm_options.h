@@ -23,6 +23,7 @@
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "absl/strings/string_view.h"  // from @com_google_absl
 
 namespace litert::qualcomm {
 
@@ -60,6 +61,9 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
+
+  void SetIrJsonDir(const std::string& profiling);
+  absl::string_view GetIrJsonDir();
 
  private:
   LiteRtQualcommOptions Data() const;

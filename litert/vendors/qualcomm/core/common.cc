@@ -58,6 +58,12 @@ std::vector<std::int32_t> Options::GetDumpTensorIds() const {
   return dump_tensor_ids_;
 }
 
+const absl::string_view Options::GetIrJsonDir() const { return ir_json_dir_; }
+
+void Options::SetIrJsonDir(absl::string_view ir_json_dir) {
+  ir_json_dir_ = ir_json_dir;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -68,14 +74,15 @@ UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
 HtpPerformanceMode: %d\n\
-DumpTensorIds: %s\n";  // NOLINT
+DumpTensorIds: %s\n\
+IrJsonDir: %s\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
                          enable_weight_sharing_, htp_performance_mode_,
-                         dump_tensor_ids);
+                         dump_tensor_ids, ir_json_dir_);
 }
 
 }  // namespace qnn
