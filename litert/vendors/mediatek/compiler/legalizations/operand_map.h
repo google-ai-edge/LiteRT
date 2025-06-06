@@ -263,6 +263,12 @@ class OperandMap {
     }
   }
 
+  Expected<size_t> RegisterExtraData(size_t bytes) {
+    return extra_data_mgr_.Register(bytes);
+  }
+
+  uint8_t* GetExtraData(size_t index) { return extra_data_mgr_.Get(index); }
+
  private:
   Expected<uint32_t> Register(const Tensor& t, int32_t tensor_flags = 0);
   Expected<uint32_t> Register(const NeuronOperandType& operand_type);
