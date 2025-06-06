@@ -17,6 +17,9 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+#include <cstdint>
+#include <vector>
+
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -54,6 +57,9 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetProfiling(LiteRtQualcommOptionsProfiling profiling);
   LiteRtQualcommOptionsProfiling GetProfiling();
+
+  void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
+  std::vector<std::int32_t> GetDumpTensorIds();
 
  private:
   LiteRtQualcommOptions Data() const;
