@@ -136,6 +136,17 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
   return dump_ids;
 }
 
+void QualcommOptions::SetIrJsonDir(const std::string& ir_json_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetIrJsonDir, Data(),
+                     ir_json_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetIrJsonDir() {
+  const char* ir_json_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetIrJsonDir, Data(), &ir_json_dir);
+  return absl::string_view(ir_json_dir);
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
