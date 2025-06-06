@@ -18,6 +18,7 @@ load(
     # copybara:uncomment "py_strict_test",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -79,7 +80,11 @@ py_strict_library(
     deps = [
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
         "@org_tensorflow//third_party/py/numpy:headers",
-    ],
+    ] + if_pywrap(
+        if_true = [
+            "//litert/python:pywrap_litert",
+        ],
+    ),
 )
 
 # copybara:uncomment_begin(google-only)
