@@ -65,6 +65,7 @@ typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromHostMemory(
     const LiteRtRankedTensorType* tensor_type, void* host_buffer_addr,
     size_t host_buffer_size, LiteRtHostMemoryDeallocator deallocator,
@@ -83,6 +84,7 @@ LiteRtStatus LiteRtGetTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromAhwb(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     AHardwareBuffer* ahwb, size_t ahwb_offset,
@@ -103,6 +105,7 @@ LiteRtStatus LiteRtGetTensorBufferAhwb(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromIonBuffer(
     const LiteRtRankedTensorType* tensor_type, void* ion_buffer_addr,
     int ion_buffer_fd, size_t ion_buffer_size, size_t ion_buffer_offset,
@@ -124,6 +127,7 @@ LiteRtStatus LiteRtGetTensorBufferIonBuffer(LiteRtTensorBuffer buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromDmaBufBuffer(
     const LiteRtRankedTensorType* tensor_type, void* dmabuf_buffer_addr,
     int dmabuf_buffer_fd, size_t dmabuf_buffer_size,
@@ -147,6 +151,7 @@ LiteRtStatus LiteRtGetTensorBufferDmaBufBuffer(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
     const LiteRtRankedTensorType* tensor_type, void* fastrpc_buffer_addr,
     int fastrpc_fd, size_t fastrpc_buffer_size, size_t fastrpc_buffer_offset,
@@ -164,6 +169,7 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem cl_mem_addr,
@@ -179,6 +185,7 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the buffer is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -193,6 +200,7 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
 // calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the texture is not owned by the tensor buffer.
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
