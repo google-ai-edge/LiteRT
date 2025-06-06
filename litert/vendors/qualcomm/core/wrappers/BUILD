@@ -50,6 +50,7 @@ cc_library(
         ":tensor_wrapper",
         "//litert/vendors/qualcomm/core:op_code",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
 )

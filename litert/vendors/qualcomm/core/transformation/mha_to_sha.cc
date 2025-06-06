@@ -189,6 +189,17 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   return add_final_output;
 }
 
+void CloneNamespace(OpWrapper& source, std::vector<OpWrapper>& ops) {
+  std::string_view start_op_name = source.GetOpConfig().v1.name;
+  size_t pos = start_op_name.rfind("/");
+  if (pos == std::string_view::npos) {
+    return;
+  }
+  for (auto& op : ops) {
+    op.AddNamespace(start_op_name.substr(0, pos));
+  }
+}
+
 std::vector<OpWrapper> TransformToSHA(
     std::vector<OpWrapper>& ops, size_t start_index, TensorPool& tensor_pool,
     const qnn::TensorWrapper& mha_input, const qnn::TensorWrapper& mha_output,
@@ -214,6 +225,7 @@ std::vector<OpWrapper> TransformToSHA(
   auto split = BuildSplitOp(
       tensor_pool, {split_axis, const_cast<::qnn::TensorWrapper&>(mha_input)},
       sha_inputs, num_heads);
+  CloneNamespace(ops[start_index], split);
   std::move(split.begin(), split.end(), std::back_inserter(new_ops));
   // Prepare outputs for num_heads SHAs.
   std::vector<::qnn::TensorWrapperRef> sha_outputs;
@@ -232,12 +244,14 @@ std::vector<OpWrapper> TransformToSHA(
       tensor_pool.CloneNativeTensorFrom(mha_output, concat_dims);
   auto concat_final =
       BuildConcatenationOp(tensor_pool, sha_outputs, {concat_output}, 3);
+  CloneNamespace(ops[start_index], concat_final);
   std::move(concat_final.begin(), concat_final.end(),
             std::back_inserter(new_ops));
   // Reshape
   auto reshape =
       BuildReshapeOp(tensor_pool, {concat_output},
                      {const_cast<::qnn::TensorWrapper&>(mha_output)});
+  CloneNamespace(ops[start_index], reshape);
   std::move(reshape.begin(), reshape.end(), std::back_inserter(new_ops));
   return new_ops;
 }
@@ -311,6 +325,10 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
                            validate_op_config(op_wrapper);
                   });
   if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AppendName("qcg2g_" + std::to_string(i));
+    }
     // Replace the matched pattern with a newly generated subgraph.
     size_t step_size = new_ops.size();
     ops.insert(ops.begin() + start_index + pattern_size,
@@ -370,6 +388,10 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
                            validate_op_config(op_wrapper);
                   });
   if (is_valid) {
+    // Adjust the name to avoid a name collision in the Qnn JSON dump.
+    for (size_t i = 0; i < new_ops.size(); ++i) {
+      new_ops[i].AppendName("qcg2g_" + std::to_string(i));
+    }
     // Replace the matched pattern with a newly generated subgraph.
     size_t step_size = new_ops.size();
     ops.insert(ops.begin() + start_index + pattern_size,
