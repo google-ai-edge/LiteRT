@@ -156,6 +156,12 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
 
+LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char* ir_json_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char** ir_json_dir);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
