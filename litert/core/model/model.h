@@ -35,7 +35,9 @@
 #include "litert/c/litert_model.h"  // IWYU pragma: export
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_logging.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -1051,6 +1053,33 @@ void ForEachIr(LiteRtModel model, F func) {
       }
     }
   }
+}
+
+//
+// Printing
+//
+
+// TODO(@lukeboyer): Migrate dump.h to use absl printing.
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TensorType& type) {
+  const auto& [id, detail] = type;
+  if (id == kLiteRtRankedTensorType) {
+    absl::Format(&sink, "%v", detail.ranked_tensor_type);
+  } else {
+    absl::Format(&sink, "%s", ::litert::kNoPrinterTag);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
+  auto weights = tensor.Weights().Buffer();
+  std::string weights_str = "";
+  if (weights.Size() > 0) {
+    weights_str = absl::StrFormat("_cst[%s]",
+                                  ::litert::HumanReadableSize(weights.Size()));
+  }
+  absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
 }
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_
