@@ -78,30 +78,28 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
       if (tensor_type.ElementType() == ElementType::Int4) {
         // Unpack Int4 into Int8
         new_bytes = num_element * sizeof(int8_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx,
-                                extra_data_mgr_.Register(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
         LITERT_LOG(LITERT_INFO, "\nUnpack Int4 into Int8, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(UnpackDenseInt4IntoInt8(
             reinterpret_cast<const int8_t*>(weights.data()), num_element,
-            reinterpret_cast<int8_t*>(extra_data_mgr_.Get(extra_data_idx))));
+            reinterpret_cast<int8_t*>(GetExtraData(extra_data_idx))));
       } else if (tensor_type.ElementType() == ElementType::Int64) {
         // Cast Int64 into Int32
         new_bytes = num_element * sizeof(int32_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx,
-                                extra_data_mgr_.Register(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
         LITERT_LOG(LITERT_INFO, "\nCast Int64 into Int32, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(CastInt64IntoInt32(
             reinterpret_cast<const int64_t*>(weights.data()), num_element,
-            reinterpret_cast<int32_t*>(extra_data_mgr_.Get(extra_data_idx))));
+            reinterpret_cast<int32_t*>(GetExtraData(extra_data_idx))));
       } else {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Failed to set value for some tensor type.");
       }
 
       if (neuron_adapter_api_.api().model_set_operand_value(
-              model_, *operand_index, extra_data_mgr_.Get(extra_data_idx),
+              model_, *operand_index, GetExtraData(extra_data_idx),
               new_bytes) != NEURON_NO_ERROR) {
         return Error(kLiteRtStatusErrorRuntimeFailure,
                      "Failed to set value of tensor weights for special case: "
