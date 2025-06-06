@@ -344,10 +344,10 @@ class LiteRtTensorT {
   void SetName(std::string name) { name_ = std::move(name); }
 
   // Get tensor index associated with this tensor.
-  std::uint32_t TensorIndex() const { return tensor_index_; }
+  uint32_t TensorIndex() const { return tensor_index_; }
 
   // Update the index associated with this tensor.
-  void SetTensorIndex(std::uint32_t tensor_index) {
+  void SetTensorIndex(uint32_t tensor_index) {
     tensor_index_ = tensor_index;
   }
 
