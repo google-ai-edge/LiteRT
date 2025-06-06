@@ -18,6 +18,9 @@
 #include <string>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 
 // AbslStringify specializations for types in the litert c api.
@@ -67,6 +70,13 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
   }
 
   absl::Format(&sink, "%s", dtype_str);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtLayout& layout) {
+  absl::Format(
+      &sink, "<%s>",
+      absl::StrJoin(absl::MakeConstSpan(layout.dimensions, layout.rank), "x"));
 }
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_
