@@ -118,4 +118,16 @@ MediatekOptions::GetOptimizationHint() {
   return optimization_hint;
 }
 
+void MediatekOptions::SetSubgraphIndex(int subgraph_index) {
+  internal::AssertOk(LiteRtMediatekOptionsSetSubgraphIndex, Data(),
+                     subgraph_index);
+}
+
+int MediatekOptions::GetSubgraphIndex() {
+  int subgraph_index;
+  internal::AssertOk(LiteRtMediatekOptionsGetSubgraphIndex, Data(),
+                     &subgraph_index);
+  return subgraph_index;
+}
+
 }  // namespace litert::mediatek

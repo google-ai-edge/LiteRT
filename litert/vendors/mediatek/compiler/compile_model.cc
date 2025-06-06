@@ -55,7 +55,12 @@ Expected<NeuronCompilationPtr> CompileModel(
   // NOLINTEND
 
   if (mediatek_opts->GetEnableGemmaCompilerOptimizations()) {
-    compile_options = "--option-bundle=gemma";
+    if (mediatek_opts->GetSubgraphIndex() == 0) {
+      compile_options = " --option-bundle=gemma-prefill";
+    }
+    if (mediatek_opts->GetSubgraphIndex() == 1) {
+      compile_options = " --option-bundle=gemma-decode";
+    }
   }
 
   // This is needed in order to support FP32 acativations since TFLite doesn't
