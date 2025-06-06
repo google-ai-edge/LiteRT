@@ -115,6 +115,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+  qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }

@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
@@ -155,5 +157,13 @@ std::vector<std::reference_wrapper<TensorWrapper>> OpWrapper::GetAllTensors() {
   }
   return ret;
 };
+
+void OpWrapper::AddPrefixToName(absl::string_view prefix) {
+  name_ = absl::StrCat(prefix, name_);
+}
+
+void OpWrapper::AddSuffixToName(absl::string_view suffix) {
+  name_ = absl::StrCat(name_, suffix);
+}
 
 }  // namespace qnn
