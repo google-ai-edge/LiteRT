@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -194,7 +193,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
                       "Failed to allocate aligned memory");
   }
 
-  LiteRtHostMemoryDeallocator deallocator = ::free;
+  LiteRtHostMemoryDeallocator deallocator = litert_aligned_free;
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferT::Ptr tensor_buffer,
       CreateFromHostMemory(

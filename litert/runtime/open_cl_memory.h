@@ -90,7 +90,7 @@ class OpenClMemory {
       deallocator_(buffer_.GetMemoryPtr());
     }
     if (data_ != nullptr) {
-      free(data_);
+      litert_aligned_free(data_);
     };
   }
 

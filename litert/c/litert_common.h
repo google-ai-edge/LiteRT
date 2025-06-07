@@ -210,7 +210,18 @@ typedef size_t LiteRtParamIndex;
 
 #define posix_memalign(p, a, s) \
   (((*(p)) = _aligned_malloc((s), (a))), *(p) ? 0 : errno)
-#endif  // defined(_WIN32)
+
+// Memory allocated by _aligned_malloc() on Windows needs to be freed by
+// _aligned_free(). Use aligned_free() instead of free() for the memory
+// allocated by posix_memalign() for cross-platform compatibility.
+// https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/aligned-malloc?view=msvc-170
+// litert_ prefix is added to avoid name conflicts with one defined in
+// base/port.h, for example, included in unittests.
+#define litert_aligned_free _aligned_free
+
+#else  // _WIN32
+#define litert_aligned_free free
+#endif  // _WIN32
 
 #ifdef __cplusplus
 }

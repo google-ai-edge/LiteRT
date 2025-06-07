@@ -175,7 +175,7 @@ GlBuffer::~GlBuffer() {
     deallocator_(reinterpret_cast<void*>(tflite_gl_buffer_.id()));
   }
   if (data_ != nullptr) {
-    free(data_);
+    litert_aligned_free(data_);
   }
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::~GlBuffer() is not supported");

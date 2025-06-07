@@ -509,7 +509,7 @@ TEST(TensorBuffer, CreateFromExternalHostMemory) {
                         sizeof(kTensorData)),
             0);
 
-  free(host_memory_ptr);
+  litert_aligned_free(host_memory_ptr);
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
