@@ -65,6 +65,7 @@ cc_library(
     deps = [
         ":util",
         "//tflite:string_util",
+        "//tflite/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/experimental/resource",
     ] + if_mobile([

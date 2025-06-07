@@ -24,9 +24,8 @@ limitations under the License.
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/typed_allocator.h"
 #include "tensorflow/core/framework/types.pb.h"
-#include "tensorflow/core/platform/status.h"
+#include "tflite/c/c_api_types.h"
 #include "tflite/delegates/flex/util.h"
-#include "tflite/experimental/resource/resource_variable.h"
 #include "tflite/string_util.h"
 
 namespace tflite {
@@ -138,7 +137,8 @@ StringTfLiteTensorBuffer::StringTfLiteTensorBuffer(const TfLiteTensor* tensor,
 absl::Status SetTfTensorFromTfLite(const TfLiteTensor* tensor,
                                    tensorflow::Tensor* tf_tensor,
                                    bool allow_reusing) {
-  if (resource::IsBuiltinResource(tensor)) {
+  if (tensor->type == kTfLiteResource &&
+      tensor->bytes != kTensorflowResourceTensorBytes) {
     // If this is native TF Lite resource variable, then we create a TF resource
     // tensor where the tensor handle encodes the identifier of the TF Lite
     // resource.
