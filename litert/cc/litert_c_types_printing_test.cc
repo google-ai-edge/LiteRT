@@ -37,5 +37,21 @@ TEST(LitertCTypesPrintingTest, LiteRtLayoutMultiDim) {
   EXPECT_EQ(absl::StrFormat("%v", layout), "<1x2>");
 }
 
+TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeScalar) {
+  LiteRtRankedTensorType type = {
+      kLiteRtElementTypeInt32,
+      {0, false, {}, {}},
+  };
+  EXPECT_EQ(absl::StrFormat("%v", type), "0d_i32<>");
+}
+
+TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeMultiDim) {
+  LiteRtRankedTensorType type = {
+      kLiteRtElementTypeFloat32,
+      {2, false, {1, 2}, {}},
+  };
+  EXPECT_EQ(absl::StrFormat("%v", type), "2d_f32<1x2>");
+}
+
 }  // namespace
 }  // namespace litert

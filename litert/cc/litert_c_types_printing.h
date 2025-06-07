@@ -79,4 +79,10 @@ void AbslStringify(Sink& sink, const LiteRtLayout& layout) {
       absl::StrJoin(absl::MakeConstSpan(layout.dimensions, layout.rank), "x"));
 }
 
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtRankedTensorType& type) {
+  const auto& layout = type.layout;
+  absl::Format(&sink, "%ud_%v%v", layout.rank, type.element_type, layout);
+}
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_
