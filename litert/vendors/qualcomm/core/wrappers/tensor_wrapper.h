@@ -118,6 +118,26 @@ class TensorWrapper final {
 
   Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
 
+  const uint32_t GetQnnTensorID() const { return qnn_tensor_.v1.id; }
+
+  const Qnn_TensorType_t GetQnnTensorType() const {
+    return qnn_tensor_.v1.type;
+  }
+
+  const Qnn_DataType_t GetQnnTensorDataType() const {
+    return qnn_tensor_.v1.dataType;
+  }
+
+  const Qnn_TensorDataFormat_t GetQnnTensorDataFormat() const {
+    return qnn_tensor_.v1.dataFormat;
+  }
+
+  const Qnn_QuantizeParams_t& GetQnnTensorQuantParams() const {
+    return qnn_tensor_.v1.quantizeParams;
+  }
+
+  const char* GetName() const { return qnn_tensor_.v1.name; }
+
   std::uint32_t GetRank() const;
 
   std::uint32_t GetDim(size_t index) const;
