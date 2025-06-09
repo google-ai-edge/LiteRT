@@ -50,7 +50,7 @@ struct SelectHelper<Cond, T> {
 //   static_assert(std::is_same_v<Test, long>);
 template <typename... Branches>
 struct Select {
-  using type = SelectHelper<Branches...>::type;
+  using type = typename SelectHelper<Branches...>::type;
 };
 
 template <typename... Branches>
