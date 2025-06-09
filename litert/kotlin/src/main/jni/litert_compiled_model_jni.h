@@ -33,7 +33,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring input_name);
 
-JNIEXPORT jlong JNICALL
+JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring input_name);
@@ -43,7 +43,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring output_name);
 
-JNIEXPORT jlong JNICALL
+JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring output_name);
