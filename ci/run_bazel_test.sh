@@ -77,6 +77,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/core/experimental/acceleration/mini_benchmark/c:c_api_test"
         "-//tflite/testing/..."
         "-//tflite/toco/..."
+        "-//tflite/experimental/acceleration/..."
 )
 
 LITERT_EXCLUDED_TARGETS=(
