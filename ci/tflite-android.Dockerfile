@@ -7,14 +7,14 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends default-jdk
 
 # Install Android SDK.
-ENV ANDROID_SDK_FILENAME commandlinetools-linux-6858069_latest.zip
+ENV ANDROID_SDK_FILENAME commandlinetools-linux-13114758_latest.zip
 ENV ANDROID_SDK_URL https://dl.google.com/android/repository/${ANDROID_SDK_FILENAME}
-ENV ANDROID_API_LEVEL 23
-ENV ANDROID_NDK_API_LEVEL 21
-ENV ANDROID_SDK_API_LEVEL 26
+ENV ANDROID_API_LEVEL 35
+ENV ANDROID_NDK_API_LEVEL 26
+ENV ANDROID_SDK_API_LEVEL 35
 
 # Build Tools Version liable to change.
-ENV ANDROID_BUILD_TOOLS_VERSION 31.0.0
+ENV ANDROID_BUILD_TOOLS_VERSION 35.0.1
 ENV ANDROID_SDK_HOME ${ANDROID_DEV_HOME}/sdk
 RUN mkdir -p ${ANDROID_SDK_HOME}/cmdline-tools
 ENV PATH ${PATH}:${ANDROID_SDK_HOME}/cmdline-tools/latest/bin:${ANDROID_SDK_HOME}/platform-tools
