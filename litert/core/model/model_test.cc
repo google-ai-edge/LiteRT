@@ -554,5 +554,19 @@ TEST(PrintingTest, RankedTensorType) {
             "2d_i32<1x2>");
 }
 
+TEST(PrintingTest, Tensor) {
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>");
+}
+
+TEST(PrintingTest, ConstTensor) {
+  OwningBufferRef<uint8_t> buf(8);
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
+}
+
 }  // namespace
 }  // namespace litert::internal

@@ -42,6 +42,7 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_logging",
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/core/c:private_c_api_types",

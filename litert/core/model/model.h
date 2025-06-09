@@ -37,6 +37,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_logging.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -1068,6 +1069,17 @@ void AbslStringify(Sink& sink, const TensorType& type) {
   } else {
     absl::Format(&sink, "%s", "TENSORTYPE?");
   }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
+  auto weights = tensor.Weights().Buffer();
+  std::string weights_str = "";
+  if (weights.Size() > 0) {
+    weights_str = absl::StrFormat("_cst[%s]",
+                                  ::litert::HumanReadableSize(weights.Size()));
+  }
+  absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
 }
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_
