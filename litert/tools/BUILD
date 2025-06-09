@@ -87,16 +87,14 @@ litert_bin(
         # copybara:uncomment_begin(google-only)
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
         # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         # copybara:uncomment_end
+        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/examples:example_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
-        # copybara:uncomment_begin(no-oss-yet)
-        # "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-        # "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
-        # copybara:uncomment_end
+        "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+        "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
     ],
     export_litert_only = 1,
     linkstatic = 1,
@@ -177,7 +175,7 @@ litert_bin(
 test_suite(
     name = "apply_vendor_plugin_tests",
     tests = [
-        # copybara:uncomment ":apply_vendor_plugin_test_mediatek_mt6991",
+        ":apply_vendor_plugin_test_mediatek_mt6991",
         ":apply_vendor_plugin_test_qualcomm_SA8295",
     ],
 )
