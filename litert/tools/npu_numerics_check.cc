@@ -14,8 +14,8 @@
 
 #include <cmath>
 #include <functional>
-#include <string>
 #include <iostream>
+#include <string>
 #include <utility>
 #include <vector>
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
@@ -55,6 +55,8 @@ ABSL_FLAG(std::string, dispatch_library_dir, "",
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(float, epsilon, 1e-4f,
           "Threshold value for npu / cpu inference comparison");
+ABSL_FLAG(bool, check_element_type, false,
+          "Whether to check the element type of the output buffers.");
 
 namespace litert {
 namespace {
@@ -167,32 +169,84 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_type, cpu_buffer.TensorType());
   LITERT_ASSIGN_OR_RETURN(auto npu_type, npu_buffer.TensorType());
+  if (absl::GetFlag(FLAGS_check_element_type)) {
+    if (cpu_type.ElementType() != npu_type.ElementType()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Element type mismatch between CPU and NPU.");
+    }
+    LITERT_ASSIGN_OR_RETURN(size_t cpu_size, cpu_buffer.Size());
+    LITERT_ASSIGN_OR_RETURN(size_t npu_size, npu_buffer.Size());
+    if (cpu_size != npu_size) {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrFormat("Size mismatch for output buffer %d", buffer_index));
+    }
+  }
 
-  if (cpu_type.ElementType() != npu_type.ElementType()) {
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 absl::StrFormat("Element type mismatch for output buffer %d",
-                                 buffer_index));
-  }
-  LITERT_ASSIGN_OR_RETURN(size_t cpu_size, cpu_buffer.Size());
-  LITERT_ASSIGN_OR_RETURN(size_t npu_size, npu_buffer.Size());
-  if (cpu_size != npu_size) {
-    return Error(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("Size mismatch for output buffer %d", buffer_index));
-  }
+  // Calculate the total number of elements from dimensions and check that the
+  // dimensions are the same.
   size_t total_elements = 1;
-  const auto& layout = cpu_type.Layout();
-  for (size_t d = 0; d < layout.Rank(); ++d) {
-    total_elements *= layout.Dimensions()[d];
+  const auto& cpu_layout = cpu_type.Layout();
+  const auto& npu_layout = npu_type.Layout();
+  for (size_t d = 0; d < cpu_layout.Rank(); ++d) {
+    total_elements *= cpu_layout.Dimensions()[d];
+    if (cpu_layout.Dimensions()[d] != npu_layout.Dimensions()[d]) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   absl::StrFormat("Dimension mismatch for output buffer %d",
+                                   buffer_index));
+    }
   }
 
   ABSL_LOG(INFO) << "Comparing output buffer " << buffer_index << ":";
 
+  auto get_val = [&](TensorBuffer& buffer,
+                     std::vector<float>& buffer_data) -> Expected<void> {
+    auto tensor_type = buffer.TensorType();
+    if (!tensor_type.HasValue()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Tensor type is not available.");
+    }
+    auto element_type = tensor_type->ElementType();
+    auto copy_data_and_return = [&](auto& dst, auto& src,
+                                    size_t size) -> Expected<void> {
+      for (size_t i = 0; i < size; ++i) {
+        dst[i] = src[i];
+      }
+      return {};
+    };
+    if (element_type == ElementType::Float32) {
+      std::vector<float> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<float>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    if (element_type == ElementType::Int32) {
+      std::vector<int32_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<int32_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    if (element_type == ElementType::Int16) {
+      std::vector<int16_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<int16_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    if (element_type == ElementType::Int8) {
+      std::vector<int8_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<int8_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    if (element_type == ElementType::UInt8) {
+      std::vector<uint8_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<uint8_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Unsupported element type for reading tensor.");
+  };
+
   std::vector<float> cpu_data(total_elements);
   std::vector<float> npu_data(total_elements);
-  LITERT_RETURN_IF_ERROR(cpu_buffer.Read<float>(absl::MakeSpan(cpu_data)));
-  LITERT_RETURN_IF_ERROR(npu_buffer.Read<float>(absl::MakeSpan(npu_data)));
-
+  get_val(cpu_buffer, cpu_data);
+  get_val(npu_buffer, npu_data);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     const float abs_diff =
         fabs(cpu_data[element_index] - npu_data[element_index]);
@@ -229,13 +283,10 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
 
   for (int ii = 0; ii < kMaxPrint && ii < all_diffs.size(); ++ii) {
     const int reversed_index = all_diffs.size() - ii - 1;
-    std::cout << "Top " << ii
-              << " diff: " << all_diffs[reversed_index].first
+    std::cout << "Top " << ii << " diff: " << all_diffs[reversed_index].first
               << " @ element #: " << all_diffs[reversed_index].second
-              << ", CPU val: "
-              << cpu_data[all_diffs[reversed_index].second]
-              << " , NPU val: "
-              << npu_data[all_diffs[reversed_index].second]
+              << ", CPU val: " << cpu_data[all_diffs[reversed_index].second]
+              << " , NPU val: " << npu_data[all_diffs[reversed_index].second]
               << std::endl;
   }
 
