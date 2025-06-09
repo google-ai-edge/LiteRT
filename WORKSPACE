@@ -26,15 +26,11 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_java/releases/download/5.3.5/rules_java-5.3.5.tar.gz",
 )
 
-# TensorFlow - using http_archive instead of git submodule
-# Commit: c97f994d6fd435231d43d5da9849bc6022c2026f (2025-06-05)
-http_archive(
+# TensorFlow
+# TODO(ecalubaquib): Revert this to http_archive once tflite is fully separated from tensorflow.
+local_repository(
     name = "org_tensorflow",
-    sha256 = "b6e1551d463f24e68fbc6acdac331ef7ef0a51d0700f18f3eb681d8bd399957a",
-    strip_prefix = "tensorflow-c97f994d6fd435231d43d5da9849bc6022c2026f",
-    urls = [
-        "https://github.com/tensorflow/tensorflow/archive/c97f994d6fd435231d43d5da9849bc6022c2026f.tar.gz",
-    ],
+    path = "third_party/tensorflow",
 )
 
 # Initialize the TensorFlow repository and all dependencies.
