@@ -29,9 +29,12 @@ package(
 cc_library(
     name = "litert_c_types_printing",
     hdrs = ["litert_c_types_printing.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
     deps = [
         "//litert/c:litert_layout",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
