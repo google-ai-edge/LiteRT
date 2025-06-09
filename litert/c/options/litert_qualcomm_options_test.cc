@@ -14,8 +14,10 @@
 
 #include "litert/c/options/litert_qualcomm_options.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -151,6 +153,29 @@ TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDumpTensorIds(
+      qualcomm_options, kDumpTensorIds.data(), kDumpTensorIds.size()));
+
+  std::int32_t* ids;
+  std::uint32_t number_of_ids;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDumpTensorIds(qualcomm_options, &ids,
+                                                         &number_of_ids));
+  EXPECT_EQ(number_of_ids, kDumpTensorIds.size());
+  for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
+    EXPECT_EQ(kDumpTensorIds[i], ids[i]);
+  }
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(QualcommOptionsTest, CppApi) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
@@ -180,6 +205,14 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingOff);
   options->SetProfiling(kLiteRtQualcommProfilingDetailed);
   EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingDetailed);
+
+  const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
+  EXPECT_TRUE(options->GetDumpTensorIds().empty());
+  options->SetDumpTensorIds(kDumpTensorIds);
+  auto ids = options->GetDumpTensorIds();
+  for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
+    EXPECT_EQ(ids[i], kDumpTensorIds[i]);
+  }
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

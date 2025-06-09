@@ -67,10 +67,10 @@ std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
 TensorWrapper::TensorWrapper() = default;
 
 TensorWrapper::TensorWrapper(
-    std::uint32_t id, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
     const std::vector<std::uint32_t>& dimentions)
-    : name_{std::to_string(id)},
+    : name_{std::move(name)},
       dimentions_{dimentions},
       quantize_params_{quantize_params} {
   qnn_tensor_.v2.name = name_.c_str();
@@ -93,11 +93,12 @@ void TensorWrapper::ConvertAxisScaleOffsetToScaleOffset() {
 }
 
 TensorWrapper::TensorWrapper(
-    std::uint32_t id, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
+    std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
     const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
     const void* data)
-    : TensorWrapper(id, tensor_type, data_type, quantize_params, dimentions) {
+    : TensorWrapper(std::move(name), tensor_type, data_type, quantize_params,
+                    dimentions) {
   // Use QNN_DATATYPE_SFIXED_POINT_8 for 4 bit quantization
   if (data_type == QNN_DATATYPE_SFIXED_POINT_4) {
     QNN_LOG_DEBUG("4bit Qunat, converting 4bit data to 8bit for QNN.");

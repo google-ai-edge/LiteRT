@@ -16,6 +16,10 @@
 
 #include "litert/cc/options/litert_qualcomm_options.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
@@ -109,6 +113,27 @@ LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
   LiteRtQualcommOptionsProfiling profiling;
   internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
   return profiling;
+}
+
+void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
+  internal::AssertOk(LiteRtQualcommOptionsSetDumpTensorIds, Data(), ids.data(),
+                     ids.size());
+}
+
+std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
+  std::vector<std::int32_t> dump_ids;
+  std::int32_t* ids = nullptr;
+  std::uint32_t number_of_ids = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetDumpTensorIds, Data(), &ids,
+                     &number_of_ids);
+  if (ids == nullptr) {
+    return dump_ids;
+  }
+  dump_ids.reserve(number_of_ids);
+  for (size_t i = 0; i < number_of_ids; i++) {
+    dump_ids.emplace_back(ids[i]);
+  }
+  return dump_ids;
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
