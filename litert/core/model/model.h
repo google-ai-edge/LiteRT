@@ -35,6 +35,7 @@
 #include "litert/c/litert_model.h"  // IWYU pragma: export
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
@@ -1050,6 +1051,22 @@ void ForEachIr(LiteRtModel model, F func) {
         }
       }
     }
+  }
+}
+
+//
+// Printing
+//
+
+// TODO(@lukeboyer): Migrate dump.h to use absl printing.
+
+template <class Sink>
+void AbslStringify(Sink& sink, const TensorType& type) {
+  const auto& [id, detail] = type;
+  if (id == kLiteRtRankedTensorType) {
+    absl::Format(&sink, "%v", detail.ranked_tensor_type);
+  } else {
+    absl::Format(&sink, "%s", "TENSORTYPE?");
   }
 }
 

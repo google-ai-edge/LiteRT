@@ -23,6 +23,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model.h"
@@ -541,6 +542,16 @@ TEST(CcForEachIrTest, SgF2) {
   ForEachIr(&model,
             [&](LiteRtSubgraph subgraph, int32_t subgraph_index) { count++; });
   EXPECT_EQ(count, 1);
+}
+
+//
+// Printing
+//
+
+TEST(PrintingTest, RankedTensorType) {
+  EXPECT_EQ(absl::StrFormat(
+                "%v", MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 2})),
+            "2d_i32<1x2>");
 }
 
 }  // namespace
