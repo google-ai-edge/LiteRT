@@ -22,6 +22,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_op_code.h"
 
 // AbslStringify specializations for types in the litert c api.
 // TODO: lukeboyer - Migrate code in tools/dump.h to leverage the abseil
@@ -83,6 +84,164 @@ template <class Sink>
 void AbslStringify(Sink& sink, const LiteRtRankedTensorType& type) {
   const auto& layout = type.layout;
   absl::Format(&sink, "%ud_%v%v", layout.rank, type.element_type, layout);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
+  std::string op_code_str;
+  switch (code) {
+    case kLiteRtOpCodeTflAdd:
+      op_code_str = "tfl.add";
+      break;
+    case kLiteRtOpCodeTflMul:
+      op_code_str = "tfl.mul";
+      break;
+    case kLiteRtOpCodeTflCustom:
+      op_code_str = "tfl.custom_op";
+      break;
+    case kLiteRtOpCodeTflSlice:
+      op_code_str = "tfl.slice";
+      break;
+    case kLiteRtOpCodeTflDiv:
+      op_code_str = "tfl.div";
+      break;
+    case kLiteRtOpCodeTflRsqrt:
+      op_code_str = "tfl.rsqrt";
+      break;
+    case kLiteRtOpCodeTflTanh:
+      op_code_str = "tfl.tanh";
+      break;
+    case kLiteRtOpCodeTflSub:
+      op_code_str = "tfl.sub";
+      break;
+    case kLiteRtOpCodeTflReshape:
+      op_code_str = "tfl.reshape";
+      break;
+    case kLiteRtOpCodeTflBatchMatmul:
+      op_code_str = "tfl.batch_matmul";
+      break;
+    case kLiteRtOpCodeTflSum:
+      op_code_str = "tfl.sum";
+      break;
+    case kLiteRtOpCodeTflConcatenation:
+      op_code_str = "tfl.concatenation";
+      break;
+    case kLiteRtOpCodeTflSoftmax:
+      op_code_str = "tfl.softmax";
+      break;
+    case kLiteRtOpCodeTflCast:
+      op_code_str = "tfl.cast";
+      break;
+    case kLiteRtOpCodeTflTranspose:
+      op_code_str = "tfl.transpose";
+      break;
+    case kLiteRtOpCodeTflSin:
+      op_code_str = "tfl.sin";
+      break;
+    case kLiteRtOpCodeTflCos:
+      op_code_str = "tfl.cos";
+      break;
+    case kLiteRtOpCodeTflSelect:
+      op_code_str = "tfl.select";
+      break;
+    case kLiteRtOpCodeTflSelectV2:
+      op_code_str = "tfl.select_v2";
+      break;
+    case kLiteRtOpCodeTflFullyConnected:
+      op_code_str = "tfl.fully_connected";
+      break;
+    case kLiteRtOpCodeTflEmbeddingLookup:
+      op_code_str = "tfl.embedding_lookup";
+      break;
+    case kLiteRtOpCodeTflLogicalAnd:
+      op_code_str = "tfl.logical_and";
+      break;
+    case kLiteRtOpCodeTflLess:
+      op_code_str = "tfl.less";
+      break;
+    case kLiteRtOpCodeTflGreater:
+      op_code_str = "tfl.greater";
+      break;
+    case kLiteRtOpCodeTflGelu:
+      op_code_str = "tfl.gelu";
+      break;
+    case kLiteRtOpCodeTflDynamicUpdateSlice:
+      op_code_str = "tfl.dynamic_update_slice";
+      break;
+    case kLiteRtOpCodeTflPack:
+      op_code_str = "tfl.pack";
+      break;
+    case kLiteRtOpCodeTflQuantize:
+      op_code_str = "tfl.quantize";
+      break;
+    case kLiteRtOpCodeTflLeakyRelu:
+      op_code_str = "tfl.leaky_relu";
+      break;
+    case kLiteRtOpCodeTflHardSwish:
+      op_code_str = "tfl.hard_swish";
+      break;
+    case kLiteRtOpCodeTflAveragePool2d:
+      op_code_str = "tfl.average_pool2d";
+      break;
+    case kLiteRtOpCodeTflMaxPool2d:
+      op_code_str = "tfl.max_pool2d";
+      break;
+    case kLiteRtOpCodeTflDepthwiseConv2d:
+      op_code_str = "tfl.depthwise_conv2d";
+      break;
+    case kLiteRtOpCodeTflSpaceToDepth:
+      op_code_str = "tfl.space_to_depth";
+      break;
+    case kLiteRtOpCodeTflDepthToSpace:
+      op_code_str = "tfl.depth_to_space";
+      break;
+    case kLiteRtOpCodeTflConv2d:
+      op_code_str = "tfl.conv2d";
+      break;
+    case kLiteRtOpCodeTflResizeBilinear:
+      op_code_str = "tfl.resize_bilinear";
+      break;
+    case kLiteRtOpCodeTflMinimum:
+      op_code_str = "tfl.minimum";
+      break;
+    case kLiteRtOpCodeTflMaximum:
+      op_code_str = "tfl.maximum";
+      break;
+    case kLiteRtOpCodeTflResizeNearestNeighbor:
+      op_code_str = "tfl.resize_nearest_neighbor";
+      break;
+    case kLiteRtOpCodeTflRelu:
+      op_code_str = "tfl.relu";
+      break;
+    case kLiteRtOpCodeTflRelu6:
+      op_code_str = "tfl.relu6";
+      break;
+    case kLiteRtOpCodeTflLogistic:
+      op_code_str = "tfl.logistic";
+      break;
+    case kLiteRtOpCodeTflFloorDiv:
+      op_code_str = "tfl.floor_div";
+      break;
+    case kLiteRtOpCodeTflNotEqual:
+      op_code_str = "tfl.not_equal";
+      break;
+    case kLiteRtOpCodeTflPad:
+      op_code_str = "tfl.pad";
+      break;
+    case kLiteRtOpCodeTflPadv2:
+      op_code_str = "tfl.pad_v2";
+      break;
+    case kLiteRtOpCodeTflGatherNd:
+      op_code_str = "tfl.gather_nd";
+      break;
+    case kLiteRtOpCodeTflCumsum:
+      op_code_str = "tfl.cumsum";
+      break;
+    default:
+      op_code_str = std::to_string(code);
+      break;
+  }
+  absl::Format(&sink, "%s", op_code_str);
 }
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_

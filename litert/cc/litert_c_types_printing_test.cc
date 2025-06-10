@@ -18,6 +18,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_op_code.h"
 
 namespace litert {
 namespace {
@@ -51,6 +52,12 @@ TEST(LitertCTypesPrintingTest, LiteRtRankedTensorTypeMultiDim) {
       {2, false, {1, 2}, {}},
   };
   EXPECT_EQ(absl::StrFormat("%v", type), "2d_f32<1x2>");
+}
+
+TEST(LitertCTypesPrintingTest, LiteRtOpCode) {
+  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflAdd), "tfl.add");
+  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflMul), "tfl.mul");
+  EXPECT_EQ(absl::StrFormat("%v", kLiteRtOpCodeTflCustom), "tfl.custom_op");
 }
 
 }  // namespace

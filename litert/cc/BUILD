@@ -35,6 +35,7 @@ cc_library(
     deps = [
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -48,6 +49,7 @@ cc_test(
         ":litert_c_types_printing",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest_main",
     ],
