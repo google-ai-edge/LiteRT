@@ -23,6 +23,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_logging.h"
 
 // AbslStringify specializations for types in the litert c api.
 // TODO: lukeboyer - Migrate code in tools/dump.h to leverage the abseil
@@ -66,7 +67,7 @@ void AbslStringify(Sink& sink, const LiteRtElementType& type) {
       dtype_str = "i1";
       break;
     default:
-      dtype_str = "UNKNOWN_ELEMENT_TYPE";
+      dtype_str = ::litert::kNoPrinterTag;
       break;
   }
 
@@ -238,7 +239,7 @@ void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
       op_code_str = "tfl.cumsum";
       break;
     default:
-      op_code_str = std::to_string(code);
+      op_code_str = ::litert::kNoPrinterTag;
       break;
   }
   absl::Format(&sink, "%s", op_code_str);

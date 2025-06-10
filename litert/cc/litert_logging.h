@@ -24,6 +24,9 @@
 
 namespace litert {
 
+// Indicates specialization of absl::Stringify has yet to be implemented.
+static constexpr auto kNoPrinterTag = "!no_printer";
+
 // Detects whether the current build is debug or not.
 inline constexpr bool IsDbg() {
 #ifdef NDEBUG

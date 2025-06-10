@@ -33,6 +33,7 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_logging",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",

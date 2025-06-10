@@ -1065,7 +1065,7 @@ void AbslStringify(Sink& sink, const TensorType& type) {
   if (id == kLiteRtRankedTensorType) {
     absl::Format(&sink, "%v", detail.ranked_tensor_type);
   } else {
-    absl::Format(&sink, "%s", "TENSORTYPE?");
+    absl::Format(&sink, "%s", ::litert::kNoPrinterTag);
   }
 }
 
