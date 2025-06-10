@@ -15,8 +15,11 @@
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_
 
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
@@ -59,10 +62,16 @@ inline Expected<uint32_t> AddZeroBiasForConvBase(const Tensor& input_tensor,
                               ? NEURON_TENSOR_FLOAT32
                               : NEURON_TENSOR_INT32;
   auto bias_data_size =
-      (input_type == ElementType::Float32) ? sizeof(float) : sizeof(int32_t);
-  std::vector<uint8_t> bias_data(num_element * bias_data_size, 0);
-  return operand_map.AddTensorByType(bias_neuron_type, bias_shape,
-                                     bias_data.data(), bias_data.size());
+      num_element *
+      ((input_type == ElementType::Float32) ? sizeof(float) : sizeof(int32_t));
+
+  int32_t bias_extra_data_idx = -1;
+  LITERT_ASSIGN_OR_RETURN(bias_extra_data_idx,
+                          operand_map.RegisterExtraData(bias_data_size));
+  memset(operand_map.GetExtraData(bias_extra_data_idx), 0, bias_data_size);
+  return operand_map.AddTensorByType(
+      bias_neuron_type, bias_shape,
+      operand_map.GetExtraData(bias_extra_data_idx), bias_data_size);
 }
 
 //==============================================================================
@@ -316,13 +325,12 @@ inline Expected<uint32_t> AddAveragePool2dFilterHOption(
 //==============================================================================
 // kLiteRtOpCodeTflMaxPool2d
 //==============================================================================
-inline Expected<uint32_t> AddMaxPool2dPaddingOption(
-    const litert::Op& op, OperandMap& operand_map) {
+inline Expected<uint32_t> AddMaxPool2dPaddingOption(const litert::Op& op,
+                                                    OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_MAX_POOL_2D.
   uint32_t padding = 0;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetMaxPool2dPaddingOption(op.Get(), &padding))
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dPaddingOption(op.Get(), &padding))
       << "Fails to get MaxPool2dPadding";
   NeuronAdapterPaddingCode neuron_padding = NEURON_PADDING_SAME;
   LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, neuron_padding))
@@ -330,30 +338,28 @@ inline Expected<uint32_t> AddMaxPool2dPaddingOption(
   return operand_map.AddScalarInt32(neuron_padding);
 }
 
-inline Expected<uint32_t> AddMaxPool2dStrideWOption(
-    const litert::Op& op, OperandMap& operand_map) {
+inline Expected<uint32_t> AddMaxPool2dStrideWOption(const litert::Op& op,
+                                                    OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_MAX_POOL_2D.
   int32_t stride_w = 0;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetMaxPool2dStrideWOption(op.Get(), &stride_w))
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideWOption(op.Get(), &stride_w))
       << "Fails to get MaxPool2dStrideW";
   return operand_map.AddScalarInt32(stride_w);
 }
 
-inline Expected<uint32_t> AddMaxPool2dStrideHOption(
-    const litert::Op& op, OperandMap& operand_map) {
+inline Expected<uint32_t> AddMaxPool2dStrideHOption(const litert::Op& op,
+                                                    OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_MAX_POOL_2D.
   int32_t stride_h = 0;
-  LITERT_RETURN_IF_ERROR(
-      LiteRtGetMaxPool2dStrideHOption(op.Get(), &stride_h))
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideHOption(op.Get(), &stride_h))
       << "Fails to get MaxPool2dStrideH";
   return operand_map.AddScalarInt32(stride_h);
 }
 
-inline Expected<uint32_t> AddMaxPool2dFilterWOption(
-    const litert::Op& op, OperandMap& operand_map) {
+inline Expected<uint32_t> AddMaxPool2dFilterWOption(const litert::Op& op,
+                                                    OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_MAX_POOL_2D.
   int32_t filter_w = 0;
@@ -363,8 +369,8 @@ inline Expected<uint32_t> AddMaxPool2dFilterWOption(
   return operand_map.AddScalarInt32(filter_w);
 }
 
-inline Expected<uint32_t> AddMaxPool2dFilterHOption(
-    const litert::Op& op, OperandMap& operand_map) {
+inline Expected<uint32_t> AddMaxPool2dFilterHOption(const litert::Op& op,
+                                                    OperandMap& operand_map) {
   // Note that return type should be same as the NEURON parameters needs for
   // NEURON_MAX_POOL_2D.
   int32_t filter_h = 0;

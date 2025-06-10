@@ -349,9 +349,7 @@ class LiteRtTensorT {
   uint32_t TensorIndex() const { return tensor_index_; }
 
   // Update the index associated with this tensor.
-  void SetTensorIndex(uint32_t tensor_index) {
-    tensor_index_ = tensor_index;
-  }
+  void SetTensorIndex(uint32_t tensor_index) { tensor_index_ = tensor_index; }
 
   // Get quantization information for this tensor.
   const Quantization& Qparams() const { return quantization_; }
