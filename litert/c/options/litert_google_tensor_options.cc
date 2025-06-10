@@ -28,18 +28,7 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
-
-struct LiteRtGoogleTensorOptionsT {
-  LiteRtGoogleTensorOptionsTruncationType float_truncation_type =
-      kLiteRtGoogleTensorFloatTruncationTypeUnspecified;
-  bool int64_to_int32_truncation = false;
-  std::string output_dir = "";
-  bool dump_op_timings = false;
-  bool enable_large_model_support = false;
-  LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
-      kLiteRtGoogleTensorShardingIntensityMinimal;
-  std::vector<std::vector<std::string>> testing_flags = {};
-};
+#include "litert/runtime/litert_google_tensor.h"
 
 LiteRtStatus LiteRtGoogleTensorOptionsCreate(LiteRtOpaqueOptions* options) {
   if (options == nullptr) {

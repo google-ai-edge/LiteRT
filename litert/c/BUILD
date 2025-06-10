@@ -647,6 +647,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_gpu_options",
     "//litert/c/options:litert_runtime_options",
+    "//litert/c/options:litert_google_tensor_options_type",
 ]
 
 # This test verifies that the C API header files can build via C compiler.

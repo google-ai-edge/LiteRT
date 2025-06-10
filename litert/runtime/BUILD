@@ -517,6 +517,12 @@ cc_library(
     deps = ["//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only"],
 )
 
+cc_library(
+    name = "litert_google_tensor",
+    hdrs = ["litert_google_tensor.h"],
+    deps = ["//litert/c/options:litert_google_tensor_options_type"],
+)
+
 cc_test(
     name = "profiler_test",
     srcs = ["profiler_test.cc"],
