@@ -1,8 +1,8 @@
 // Copyright (c) Qualcomm Innovation Center, Inc.
 // All Rights Reserved.
 
-#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REDUCE_OP_BUILDER_H_
-#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REDUCE_OP_BUILDER_H_
+#ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REVERSE_OP_BUILDER_H_
+#define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REVERSE_OP_BUILDER_H_
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
@@ -11,10 +11,10 @@
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildReduceOp(
+std::vector<OpWrapper> BuildReverseOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool keep_dims,
-    const char* qnn_op);
+    const std::vector<TensorWrapperRef>& outputs);
+
 }  // namespace qnn
 
-#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REDUCE_OP_BUILDER_H_
+#endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BUILDERS_REVERSE_OP_BUILDER_H_
