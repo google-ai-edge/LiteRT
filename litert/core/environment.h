@@ -84,6 +84,10 @@ class LiteRtEnvironmentT {
     return gpu_env_ != nullptr && gpu_env_->SupportsClGlInterop();
   }
 
+  bool SupportsAhwbClInterop() {
+    return gpu_env_ != nullptr && gpu_env_->SupportsAhwbClInterop();
+  }
+
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   LiteRtEnvironmentOptionsT options_;

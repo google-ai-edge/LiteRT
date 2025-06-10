@@ -955,14 +955,25 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
 }
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 TEST(TensorBuffer, GetClBufferFromAhwb) {
   if (!HasOpenClSupport() || !HasAhwbSupport()) {
     GTEST_SKIP() << "OpenCL and/or AHWB are not supported on this platform; "
                     "skipping the "
                     "test";
   }
-  // User provides EGL environment.
-  auto user_gpu_env = UserGpuEnvironment::Create();
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+  ASSERT_TRUE(user_gpu_env != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
+  bool is_ahwb_cl_interop_supported = false;
+  ASSERT_EQ(LiteRtSupportsAhwbClInterop(user_gpu_env->GetEnvironment(),
+                                        &is_ahwb_cl_interop_supported),
+            kLiteRtStatusOk);
+  if (!is_ahwb_cl_interop_supported) {
+    GTEST_SKIP() << "AHWB/CL interop is not supported on this platform; "
+                    "skipping the test";
+  }
   // Create AHWB Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer ahwb_tensor_buffer,
@@ -979,11 +990,12 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   EXPECT_THAT(cl_buffer, Ne(nullptr));
 
   // Read from CL buffer.
-  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer cl_buffer_from_ahwb,
-                              TensorBuffer::CreateFromClBuffer(
-                                  env.Get(), RankedTensorType(kTestTensorType),
-                                  kLiteRtTensorBufferTypeOpenClBufferPacked,
-                                  cl_buffer, sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer cl_buffer_from_ahwb,
+      TensorBuffer::CreateFromClBuffer(
+          user_gpu_env->GetEnvironment(), RankedTensorType(kTestTensorType),
+          kLiteRtTensorBufferTypeOpenClBufferPacked, cl_buffer,
+          sizeof(kTensorData)));
 
   {
     auto lock_and_addr = TensorBufferScopedLock::Create(
@@ -994,7 +1006,6 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
         0);
   }
 }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 TEST(TensorBuffer, GetAhwb) {
   if (!HasAhwbSupport()) {

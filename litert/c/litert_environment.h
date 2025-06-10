@@ -53,6 +53,10 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
 LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
                                        bool* is_supported);
 
+// Returns whether the environment supports AHWB/CL interop.
+LiteRtStatus LiteRtSupportsAhwbClInterop(LiteRtEnvironment environment,
+                                         bool* is_supported);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

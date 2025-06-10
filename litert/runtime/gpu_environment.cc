@@ -92,6 +92,17 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   return options;
 }
 
+#if LITERT_HAS_OPENCL_SUPPORT
+bool SupportsAhwbClInteropHelper(tflite::gpu::cl::CLDevice device) {
+#if LITERT_HAS_AHWB_SUPPORT
+  return device.GetInfo().SupportsExtension("cl_arm_import_memory") &&
+         ::tflite::gpu::cl::clImportMemoryARM != nullptr;
+#else   // LITERT_HAS_AHWB_SUPPORT
+  return false;
+#endif  // LITERT_HAS_AHWB_SUPPORT
+}
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
 Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up OpenCL.
@@ -128,6 +139,10 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
+  properties_.is_ahwb_cl_interop_supported =
+      SupportsAhwbClInteropHelper(device_);
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
   // Set up context.

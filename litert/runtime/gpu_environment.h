@@ -48,6 +48,9 @@ struct GpuEnvironmentProperties {
 
   // Indicates whether fast CL->GL synchronization is supported.
   bool is_cl_to_gl_fast_sync_supported = false;
+
+  // Indicates whether AHWB->CL interop is supported.
+  bool is_ahwb_cl_interop_supported = false;
 };
 
 struct GpuEnvironmentOptions {
@@ -100,6 +103,10 @@ class GpuEnvironment {
   }
 
   bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
+
+  bool SupportsAhwbClInterop() {
+    return properties_.is_ahwb_cl_interop_supported;
+  }
 
  private:
   // Load the OpenCL device, context and command queue from the environment if
