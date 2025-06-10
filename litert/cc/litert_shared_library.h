@@ -37,9 +37,9 @@ struct RtldFlags {
   int flags;
 
   static constexpr struct NextTag {
-  } kNext;
+  } kNext = {};
   static constexpr struct DefaultTag {
-  } kDefault;
+  } kDefault = {};
 
   // NOLINTNEXTLINE(*-explicit-constructor): we want this to be passed as flags.
   operator int() { return flags; }
