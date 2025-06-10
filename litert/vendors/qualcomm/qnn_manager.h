@@ -223,6 +223,8 @@ class QnnManager::ContextHandle {
         free_fn_(free_fn),
         profile_free_fn_(profile_free_fn) {}
 
+  ContextHandle() = default;
+
   ~ContextHandle() {
     if (profile_ && profile_free_fn_) {
       if (auto status = profile_free_fn_(profile_); status != QNN_SUCCESS) {
