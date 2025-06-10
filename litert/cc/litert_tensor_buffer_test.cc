@@ -27,6 +27,7 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_element_type.h"
@@ -810,6 +811,40 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
   }
 }
 
+TEST(TensorBuffer, ClBufferFromGlBuffer) {
+  if (!HasOpenClSupport() || !HasOpenGlSupport()) {
+    GTEST_SKIP() << "OpenCL and/or GL are not supported on this platform; "
+                    "skipping the test";
+  }
+  // User provides CL-GL environment.
+  auto user_gpu_env = UserGpuEnvironment::Create();
+  ASSERT_TRUE(user_gpu_env != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
+  bool is_cl_gl_sharing_supported = false;
+  ASSERT_EQ(LiteRtSupportsClGlInterop(user_gpu_env->GetEnvironment(),
+                                      &is_cl_gl_sharing_supported),
+            kLiteRtStatusOk);
+
+  if (!is_cl_gl_sharing_supported) {
+    GTEST_SKIP() << "CL/GL sharing is not supported on this platform; "
+                    "skipping the test";
+  }
+
+  // Create GL Tensor buffer.
+  // TensorBuffer::CreateManaged() is usually used with CompiledModel which
+  // initializes the GPU environment. If there is no CompiledModel, user needs
+  // to provide the GPU environment via LiteRtEnvironment.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer gl_tensor_buffer,
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeGlBuffer,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cl_buffer,
+                              gl_tensor_buffer.GetOpenClMemory());
+  EXPECT_THAT(cl_buffer, Ne(nullptr));
+}
+
 #if LITERT_HAS_OPENGL_SUPPORT
 TEST(TensorBuffer, CreateFromGlTexture) {
   // User provides EGL environment.
@@ -882,31 +917,6 @@ TEST(TensorBuffer, CreateManagedGlBuffer) {
   EXPECT_THAT(gl_buffer.id, Ne(0));
   EXPECT_THAT(gl_buffer.size_bytes, Eq(sizeof(kTensorData)));
   EXPECT_THAT(gl_buffer.offset, Eq(0));
-}
-
-TEST(TensorBuffer, ClBufferFromGlBuffer) {
-  // User provides EGL environment.
-  auto user_gpu_env = UserGpuEnvironment::Create();
-
-  // TensorBuffer::CreateManaged() is usually used with CompiledModel which
-  // initializes the GPU environment. If there is no CompiledModel, user needs
-  // to provide the GPU environment via LiteRtEnvironment.
-
-  // TODO(b/383176413) Add check for GLSharing.
-  if (!HasOpenClSupport() || !HasOpenGlSupport()) {
-    GTEST_SKIP() << "OpenCL and/or GL are not supported on this platform; "
-                    "skipping the test";
-  }
-  // Create GL Tensor buffer.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBuffer gl_tensor_buffer,
-      TensorBuffer::CreateManaged(
-          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeGlBuffer,
-          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(cl_mem cl_buffer,
-                              gl_tensor_buffer.GetOpenClMemory());
-  EXPECT_THAT(cl_buffer, Ne(nullptr));
 }
 
 #if LITERT_HAS_AHWB_SUPPORT

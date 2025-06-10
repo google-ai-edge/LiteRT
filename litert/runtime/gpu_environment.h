@@ -99,6 +99,8 @@ class GpuEnvironment {
     return std::unique_ptr<GpuEnvironment>(instance);
   }
 
+  bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
+
  private:
   // Load the OpenCL device, context and command queue from the environment if
   // available. Otherwise, create the default device, context and command queue.

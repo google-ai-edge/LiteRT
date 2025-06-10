@@ -49,6 +49,10 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         int num_options,
                                         const LiteRtEnvOption* options);
 
+// Returns whether the environment supports CL/GL interop.
+LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
+                                       bool* is_supported);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
