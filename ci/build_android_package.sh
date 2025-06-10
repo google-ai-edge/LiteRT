@@ -182,6 +182,13 @@ BUILD_FLAGS=("-c" "opt" \
 # Merge extra config flags from the environment
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
 
+if [[ "$BUILD_LITERT_KOTLIN_API" == "true" ]]; then
+  echo "Building Litert Kotlin API."
+  bazel build "${BUILD_FLAGS[@]}" //litert/kotlin:litert_kotlin_api
+else
+  echo "Skipping building Litert Kotlin API."
+fi
+
 bazel build "${BUILD_FLAGS[@]}" \
     //tflite/java:tensorflow-lite-api \
     //tflite/java:tensorflow-lite \
