@@ -20,11 +20,17 @@
 #include <ostream>
 #include <random>
 #include <type_traits>
+#include <variant>
+#include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_numerics.h"
 
 // Various utilities and types for random number generation.
@@ -112,18 +118,15 @@ class RandomDevice {
   static constexpr ResultType max() { return Max(); }
 };
 
-// TENSOR DATA GENERATOR ///////////////////////////////////////////////////////
+// PRIMITIVE DATA GENERATORS ///////////////////////////////////////////////////
 
 // Abstract base class for generating data of a certain type from a given rng
 // device, e.g. populating tensors and the like.
-template <typename D, template <typename> typename Dist, typename DeviceBase>
+template <typename D, template <typename> typename Dist>
 class DataGenerator {
  public:
   using DataType = D;
   using Wide = WideType<D>;
-  using Device = RandomDevice<DeviceBase>;
-
-  virtual DataType operator()(Device& rng) = 0;
 
   // Bounds of distribution.
   DataType Max() const { return dist_.max(); }
@@ -134,14 +137,13 @@ class DataGenerator {
 };
 
 // A data generator that generates data within a given range.
-template <typename D, template <typename> typename Dist, typename DeviceBase>
-class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
+template <typename D, template <typename> typename Dist>
+class RangedGenerator final : public DataGenerator<D, Dist> {
  private:
-  using Base = DataGenerator<D, Dist, DeviceBase>;
+  using Base = DataGenerator<D, Dist>;
 
  public:
   using typename Base::DataType;
-  using typename Base::Device;
   using typename Base::Wide;
 
   RangedGenerator() = default;
@@ -155,30 +157,32 @@ class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
   RangedGenerator(RangedGenerator&&) = default;
   RangedGenerator& operator=(RangedGenerator&&) = default;
 
-  DataType operator()(Device& rng) override { return this->dist_(rng); }
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return this->dist_(rng);
+  }
 };
 
 // A rangeless float generator that casts random bits to the given float type.
 // This generally produces higher quality floats more repersentative of the
 // target distribution than a ranged generator. Particularly covers more values
 // around zero and infinities.
-template <typename D, template <typename> typename Dist, typename DeviceBase,
-          typename Enable = void>
-class ReinterpretGenerator final : public DataGenerator<D, Dist, DeviceBase> {};
+template <typename D, template <typename> typename Dist, typename Enable = void>
+class ReinterpretGenerator final : public DataGenerator<D, Dist> {};
 
-template <typename D, template <typename> typename Dist, typename DeviceBase>
-class ReinterpretGenerator<D, Dist, DeviceBase,
+template <typename D, template <typename> typename Dist>
+class ReinterpretGenerator<D, Dist,
                            std::enable_if_t<std::is_floating_point_v<D>>>
-    final : public DataGenerator<D, Dist, DeviceBase> {
+    final : public DataGenerator<D, Dist> {
  private:
-  using Base = DataGenerator<D, Dist, DeviceBase>;
+  using Base = DataGenerator<D, Dist>;
 
  public:
   using typename Base::DataType;
-  using typename Base::Device;
   using typename Base::Wide;
 
-  DataType operator()(Device& rng) override {
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
     DataType res;
     auto bits = rng();
     memcpy(&res, &bits, sizeof(res));
@@ -195,70 +199,85 @@ class ReinterpretGenerator<D, Dist, DeviceBase,
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
 
-// Recommended distribution for data generators.
-template <typename T>
-using Uniform =
-    SelectT<std::is_floating_point<T>, std::uniform_real_distribution<T>,
-            std::is_integral<T>, std::uniform_int_distribution<T>>;
+// DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
-// Recommended engine for data generators.
-using DefaultEngine = std::mt19937_64;
+template <typename D>
+using DefaultGenerator =
+    SelectT<std::is_floating_point<D>,
+            ReinterpretGenerator<D, std::uniform_real_distribution>,
+            std::is_integral<D>,
+            RangedGenerator<D, std::uniform_int_distribution>>;
 
-// Factory for creating data generators from just a data type with recommended
-// defaults.
-template <typename D, template <typename> typename Distribution = Uniform,
-          typename Engine = DefaultEngine>
-class DataGenerators {
-  // Exotic types not yet supported (e.g. quant, complex, half-precision etc).
-  static_assert(std::is_floating_point_v<D> || std::is_integral_v<D>);
+template <typename D>
+using DefaultRangedGenerator =
+    SelectT<std::is_floating_point<D>,
+            RangedGenerator<D, std::uniform_real_distribution>,
+            std::is_integral<D>,
+            RangedGenerator<D, std::uniform_int_distribution>>;
 
+using DefaultDevice = RandomDevice<std::mt19937>;
+
+// RANDOM TENSOR TYPES /////////////////////////////////////////////////////////
+
+// This class composes the primitive data generators above to support
+// generating randomized tensor types (and shapes).
+class RandomTensorType {
  private:
-  using GeneratorBase = DataGenerator<D, Distribution, Engine>;
+  using DimSize = uint32_t;
+  using DimGenerator = DefaultRangedGenerator<DimSize>;
+  using ElementTypeInt = uint8_t;
+  using ElementTypeGenerator = DefaultRangedGenerator<ElementTypeInt>;
 
  public:
-  using Reinterpret = ReinterpretGenerator<D, Uniform, Engine>;
-  using Ranged = RangedGenerator<D, Uniform, Engine>;
-  using Dataype = GeneratorBase::DataType;
-  using Wide = GeneratorBase::Wide;
-  using RandomDevice = GeneratorBase::Device;
+  using DimRange = std::pair<DimSize, DimSize>;
+  using DimSpec = std::variant<DimSize, DimRange>;
+  using ElementTypeSpec = std::vector<LiteRtElementType>;
 
-  DataGenerators() = default;
-  DataGenerators(const DataGenerators&) = default;
-  DataGenerators& operator=(const DataGenerators&) = default;
-  DataGenerators(DataGenerators&&) = default;
-  DataGenerators& operator=(DataGenerators&&) = default;
+  static constexpr auto kMinDim = NumericLimits<DimSize>::Lowest();
+  static constexpr auto kMaxDim = NumericLimits<DimSize>::Max();
 
-  // Create a ranged generator with the given limits.
-  static auto Generator(Wide min, Wide max) { return Ranged(min, max); }
+  template <typename Rng>
+  Expected<LiteRtRankedTensorType> Generate(
+      Rng& rng,
+      const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
+                                     kLiteRtElementTypeFloat32},
+      const std::vector<std::optional<DimSpec>>& shape_spec = {}) {
+    const auto rank = shape_spec.size();
+    if (rank > LITERT_TENSOR_MAX_RANK) {
+      return Error(kLiteRtStatusErrorInvalidArgument, "Rank too large");
+    }
+    LiteRtRankedTensorType res;
+    res.layout.rank = rank;
+    res.element_type = GenerateElementType(rng, type);
+    for (auto i = 0; i < rank; ++i) {
+      res.layout.dimensions[i] = GenerateDim(rng, shape_spec[i]);
+    }
+    return res;
+  }
 
-  // Create a rangeless generator. Floating point types will leverage the
-  // reinterpretation generator, which is recommended.
-  static auto Generator() {
-    if constexpr (std::is_floating_point_v<D>) {
-      return Reinterpret();
+ private:
+  template <typename Rng>
+  DimSize GenerateDim(Rng& rng, const std::optional<DimSpec>& dim) {
+    if (!dim) {
+      DimGenerator gen;
+      return gen(rng);
+    } else if (std::holds_alternative<DimSize>(*dim)) {
+      auto d = std::get<DimSize>(*dim);
+      return d;
     } else {
-      return Ranged();
+      auto d = std::get<DimRange>(*dim);
+      DimGenerator gen(d.first, d.second);
+      return gen(rng);
     }
   }
 
-  // Initialize a random device with the proper types to work with generators.
-  template <typename... Args>
-  static auto Device(Args&&... args) {
-    return RandomDevice(std::forward<Args>(args)...);
-  }
-
-  // Convenience method(s) to create a generator and device in a pair.
-  static auto GeneratorAndDevice() {
-    return std::make_pair(Generator(), Device());
-  }
-  static auto GeneratorAndDevice(int seed) {
-    return std::make_pair(Generator(), Device(seed));
-  }
-  static auto GeneratorAndDevice(Wide min, Wide max) {
-    return std::make_pair(Generator(min, max), Device());
-  }
-  static auto GeneratorAndDevice(int seed, Wide min, Wide max) {
-    return std::make_pair(Generator(min, max), Device(seed));
+  template <typename Rng>
+  LiteRtElementType GenerateElementType(Rng& rng, const ElementTypeSpec& type) {
+    if (type.size() == 1) {
+      return type.front();
+    }
+    ElementTypeGenerator gen(0, type.size() - 1);
+    return type[gen(rng)];
   }
 };
 
