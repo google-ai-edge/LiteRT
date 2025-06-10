@@ -295,7 +295,7 @@ class TensorWrapper final {
   }
 
   template <typename T>
-  std::optional<absl::Span<const T>> GetStaticTensorData() const;
+  std::optional<absl::Span<const T>> GetTensorData() const;
 
   void ConvertAxisScaleOffsetToScaleOffset();
 
@@ -354,16 +354,16 @@ class TensorWrapper final {
 using TensorWrapperRef = std::reference_wrapper<TensorWrapper>;
 
 template <typename T>
-std::optional<absl::Span<const T>> TensorWrapper::GetStaticTensorData() const {
-  if (!IsTensorStatic()) {
+std::optional<absl::Span<const T>> TensorWrapper::GetTensorData() const {
+  if (!IsTensorStatic() && !IsSubgraphOutput()) {
     QNN_LOG_ERROR(
-        "Cannot GetStaticTensorData() on a non-static tensor, tensor type %d.",
+        "Cannot GetTensorData() on a non-static tensor, tensor type %d.",
         GetTensorType());
     return std::nullopt;
   }
 
   if (GetDataType() != GetQnnDataType<T>(IsQuant())) {
-    QNN_LOG_ERROR("GetStaticTensorData() with incorrect template type.");
+    QNN_LOG_ERROR("GetTensorData() with incorrect template type.");
     return std::nullopt;
   }
 
