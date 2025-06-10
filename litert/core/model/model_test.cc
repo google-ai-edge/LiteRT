@@ -573,5 +573,23 @@ TEST(PrintingTest, FusedActivationFunction) {
             "RELU");
 }
 
+TEST(PrintingTest, TflNullOptions) {
+  ::tflite::AddOptionsT* add_opts = nullptr;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{null}");
+}
+
+TEST(PrintingTest, TflAddOptions) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflAddOptionsPointer) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
+}
 }  // namespace
 }  // namespace litert::internal

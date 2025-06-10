@@ -1085,6 +1085,46 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
 
 // OPTIONS PRINTING
 
+namespace litert::internal {
+
+// Since options have a common structure, we provide this builder to format
+// sets of options in a consistent manner.
+template <typename Sink>
+struct OptionStrBuilder {
+  OptionStrBuilder(Sink& sink) : sink_(sink) { sink_.Append("{"); }
+
+  template <typename Val>
+  void operator()(const std::string& key, const Val& value) {
+    if (num_opts_++ > 0) {
+      sink_.Append(",");
+    }
+    if constexpr (std::is_convertible_v<Val, absl::string_view>) {
+      absl::Format(&sink_, "%s=%s", key, value);
+    } else {
+      absl::Format(&sink_, "%s=%v", key, value);
+    }
+  }
+
+  ~OptionStrBuilder() { sink_.Append("}"); }
+
+ private:
+  size_t num_opts_ = 0;
+  Sink& sink_;
+};
+template <typename Sink>
+OptionStrBuilder(Sink& sink) -> OptionStrBuilder<Sink>;
+
+template <typename Sink, typename Options>
+void PrintNullableOpts(Sink& sink, const Options* opts) {
+  if (!opts) {
+    absl::Format(&sink, "{null}");
+    return;
+  }
+  absl::Format(&sink, "%v", *opts);
+}
+
+}  // namespace litert::internal
+
 namespace tflite {
 // AddOptionsT
 
@@ -1115,5 +1155,20 @@ void AbslStringify(Sink& sink, const ActivationFunctionType& type) {
   }
 }
 
+template <class Sink>
+void AbslStringify(Sink& sink, const AddOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pot = opts.pot_scale_int16;
+  if (pot) {
+    b("pot", pot);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const AddOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
 }  // namespace tflite
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_
