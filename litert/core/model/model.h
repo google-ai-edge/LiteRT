@@ -41,6 +41,7 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/schema/schema_generated.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal LiteRtIR
@@ -1059,6 +1060,8 @@ void ForEachIr(LiteRtModel model, F func) {
 
 // TODO(@lukeboyer): Migrate dump.h to use absl printing.
 
+// TENSOR PRINTING
+
 template <class Sink>
 void AbslStringify(Sink& sink, const TensorType& type) {
   const auto& [id, detail] = type;
@@ -1080,4 +1083,37 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
   absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
 }
 
+// OPTIONS PRINTING
+
+namespace tflite {
+// AddOptionsT
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const ActivationFunctionType& type) {
+  switch (type) {
+    case ActivationFunctionType_NONE:
+      sink.Append("NONE");
+      break;
+    case ActivationFunctionType_RELU6:
+      sink.Append("RELU6");
+      break;
+    case ActivationFunctionType_RELU:
+      sink.Append("RELU");
+      break;
+    case ActivationFunctionType_RELU_N1_TO_1:
+      sink.Append("RELU_N1_TO_1");
+      break;
+    case ActivationFunctionType_TANH:
+      sink.Append("TANH");
+      break;
+    case ActivationFunctionType_SIGN_BIT:
+      sink.Append("SIGN_BIT");
+      break;
+    default:
+      sink.Append(::litert::kNoPrinterTag);
+      break;
+  }
+}
+
+}  // namespace tflite
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_

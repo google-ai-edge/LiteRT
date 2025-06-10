@@ -568,5 +568,10 @@ TEST(PrintingTest, ConstTensor) {
   EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
 }
 
+TEST(PrintingTest, FusedActivationFunction) {
+  EXPECT_EQ(absl::StrFormat("%v", ::tflite::ActivationFunctionType_RELU),
+            "RELU");
+}
+
 }  // namespace
 }  // namespace litert::internal

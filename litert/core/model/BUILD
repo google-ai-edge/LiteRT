@@ -46,6 +46,7 @@ cc_library_with_testonly_vis(
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/core/c:private_c_api_types",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
