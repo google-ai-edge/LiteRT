@@ -58,7 +58,7 @@ std::vector<OpWrapper> BuildConv2dOp(
   if (filter_tensor.IsTensorStatic() &&
       filter_tensor.GetDataType() ==
           Qnn_DataType_t::QNN_DATATYPE_SFIXED_POINT_8) {
-    auto filter_data = filter_tensor.GetStaticTensorData<std::int8_t>();
+    auto filter_data = filter_tensor.GetTensorData<std::int8_t>();
     std::vector<int8_t> transpose_weight_int8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_int8);
@@ -68,7 +68,7 @@ std::vector<OpWrapper> BuildConv2dOp(
   } else if (filter_tensor.IsTensorStatic() &&
              filter_tensor.GetDataType() ==
                  Qnn_DataType_t::QNN_DATATYPE_UFIXED_POINT_8) {
-    auto filter_data = filter_tensor.GetStaticTensorData<std::uint8_t>();
+    auto filter_data = filter_tensor.GetTensorData<std::uint8_t>();
     std::vector<uint8_t> transpose_weight_uint8;
     TransposeFromOHWIToHWIO(filter_data.value(), filters_dims,
                             transpose_weight_uint8);

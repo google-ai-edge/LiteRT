@@ -87,7 +87,7 @@ namespace {
 
 template <typename Src, typename Dst>
 bool FillData(const TensorWrapper& src_tensor, std::vector<Dst>& dst_data) {
-  const auto src_data = src_tensor.GetStaticTensorData<Src>();
+  const auto src_data = src_tensor.GetTensorData<Src>();
   if (!src_data.has_value()) {
     QNN_LOG_ERROR("Failed to get static tensor data when filling data.");
     return false;

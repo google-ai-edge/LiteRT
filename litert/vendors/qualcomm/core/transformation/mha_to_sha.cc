@@ -119,7 +119,7 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   // Create StridedSlice param ranges.
   auto mha_slice1_param =
       ops[start_index + kSlice1Index].GetTensorPararm(0).GetTensor();
-  auto mha_slice1_param_data = mha_slice1_param.GetStaticTensorData<int32_t>();
+  auto mha_slice1_param_data = mha_slice1_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice1_ranges(mha_slice1_param_data.value().begin(),
                                      mha_slice1_param_data.value().end());
   slice1_ranges[kSlice3rdAxisEndIndex] /= num_heads;
@@ -152,7 +152,7 @@ TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
   // Create StridedSlice param ranges.
   auto mha_slice2_param =
       ops[start_index + kSlice2Index].GetTensorPararm(0).GetTensor();
-  auto mha_slice2_param_data = mha_slice2_param.GetStaticTensorData<int32_t>();
+  auto mha_slice2_param_data = mha_slice2_param.GetTensorData<int32_t>();
   std::vector<int32_t> slice2_ranges(mha_slice2_param_data.value().begin(),
                                      mha_slice2_param_data.value().end());
   slice2_ranges[kSlice3rdAxisEndIndex] /= num_heads;

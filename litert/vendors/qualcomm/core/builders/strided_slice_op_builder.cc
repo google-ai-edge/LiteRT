@@ -47,10 +47,10 @@ std::vector<OpWrapper> BuildStridedSliceOp(
     return {};
   }
 
-  const auto opt_begin_data = begin_tensor.GetStaticTensorData<std::int32_t>();
-  const auto opt_end_data = end_tensor.GetStaticTensorData<std::int32_t>();
+  const auto opt_begin_data = begin_tensor.GetTensorData<std::int32_t>();
+  const auto opt_end_data = end_tensor.GetTensorData<std::int32_t>();
   const auto opt_strides_data =
-      strides_tensor.GetStaticTensorData<std::int32_t>();
+      strides_tensor.GetTensorData<std::int32_t>();
   if (!opt_begin_data.has_value() || !opt_end_data.has_value() ||
       !opt_strides_data.has_value()) {
     QNN_LOG_ERROR(

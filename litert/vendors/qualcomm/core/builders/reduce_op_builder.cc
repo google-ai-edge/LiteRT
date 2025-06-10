@@ -34,7 +34,7 @@ std::vector<OpWrapper> BuildReduceOp(
 
   TensorWrapper& input_tensor = inputs[0];
 
-  auto axis_data = axis_tensor.GetStaticTensorData<std::int32_t>();
+  auto axis_data = axis_tensor.GetTensorData<std::int32_t>();
   if (!axis_data.has_value()) {
     QNN_LOG_ERROR("Get axis_data failed.");
     return {};

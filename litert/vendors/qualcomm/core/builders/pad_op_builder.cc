@@ -58,7 +58,7 @@ std::vector<OpWrapper> BuildPadOp(
     std::int32_t pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetStaticTensorData<std::int32_t>();
+          inputs[kPadConstValueIndex].get().GetTensorData<std::int32_t>();
       if (!pad_const_data.has_value()) {
         QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
@@ -84,7 +84,7 @@ std::vector<OpWrapper> BuildPadOp(
     float pad_const_value = 0;
     if (inputs.size() >= kPadConstValueIndex + 1) {
       const auto pad_const_data =
-          inputs[kPadConstValueIndex].get().GetStaticTensorData<float>();
+          inputs[kPadConstValueIndex].get().GetTensorData<float>();
       if (!pad_const_data.has_value()) {
         QNN_LOG_ERROR("Failed to get pad const value data.");
         return {};
