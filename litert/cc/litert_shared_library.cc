@@ -37,9 +37,11 @@
 #if !LITERT_WINDOWS_OS
 // When using an address sanitizer, `RTLD_DEEPBIND` is not supported. When using
 // one, we discard the flag and log an error.
+#ifndef __has_feature       // Optional of course.
+#define __has_feature(x) 0  // Compatibility with non-clang compilers.
+#endif
 #if defined(__SANITIZE_ADDRESS__) || \
-    defined(__has_feature) &&        \
-        (__has_feature(address_sanitizer) || __has_feature(memory_sanitizer))
+    (__has_feature(address_sanitizer) || __has_feature(memory_sanitizer))
 #define LITERT_SANITIZER_BUILD 1
 #endif
 #endif
