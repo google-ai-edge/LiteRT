@@ -59,9 +59,9 @@ inline Expected<LiteRtAny> ToLiteRtAny(const std::any& any) {
     result.type = kLiteRtAnyTypeNone;
     return result;
 
-  } else if (any.type() == typeid(LiteRtAny::bool_value)) {
+  } else if (any.type() == typeid(LiteRtAny{}.bool_value)) {
     result.type = kLiteRtAnyTypeBool;
-    result.bool_value = std::any_cast<decltype(LiteRtAny::bool_value)>(any);
+    result.bool_value = std::any_cast<decltype(LiteRtAny{}.bool_value)>(any);
     return result;
 
   } else if (any.type() == typeid(int8_t)) {
@@ -94,9 +94,9 @@ inline Expected<LiteRtAny> ToLiteRtAny(const std::any& any) {
     result.real_value = std::any_cast<double>(any);
     return result;
 
-  } else if (any.type() == typeid(LiteRtAny::str_value)) {
+  } else if (any.type() == typeid(LiteRtAny{}.str_value)) {
     result.type = kLiteRtAnyTypeString;
-    result.str_value = std::any_cast<decltype(LiteRtAny::str_value)>(any);
+    result.str_value = std::any_cast<decltype(LiteRtAny{}.str_value)>(any);
     return result;
 
   } else if (any.type() == typeid(absl::string_view)) {
@@ -104,9 +104,9 @@ inline Expected<LiteRtAny> ToLiteRtAny(const std::any& any) {
     result.str_value = std::any_cast<absl::string_view>(any).data();
     return result;
 
-  } else if (any.type() == typeid(LiteRtAny::ptr_value)) {
+  } else if (any.type() == typeid(LiteRtAny{}.ptr_value)) {
     result.type = kLiteRtAnyTypeVoidPtr;
-    result.ptr_value = std::any_cast<decltype(LiteRtAny::ptr_value)>(any);
+    result.ptr_value = std::any_cast<decltype(LiteRtAny{}.ptr_value)>(any);
     return result;
 
   } else {
