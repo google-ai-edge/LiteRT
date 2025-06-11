@@ -80,7 +80,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+  LITERT_ASSIGN_OR_RETURN(
+      ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
@@ -90,7 +91,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+  LITERT_ASSIGN_OR_RETURN(
+      ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
@@ -101,7 +103,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   infer_request_.start_async();
   if (!infer_request_.wait_for(std::chrono::milliseconds(kInferRequestTimeout)))
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to execute inference request due to timeout");
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Failed to execute inference request due to timeout");
   return {};
 }

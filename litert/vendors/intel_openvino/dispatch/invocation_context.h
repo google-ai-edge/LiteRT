@@ -61,7 +61,7 @@ class LiteRtDispatchInvocationContextT {
       : infer_request_(infer_request), device_context_(device_context) {}
   LiteRtDispatchDeviceContextT &device_context_;
   ov::InferRequest infer_request_;
-  //Timeout is in milliseconds
+  // Timeout is in milliseconds
   static constexpr int kInferRequestTimeout = 10000;
 };
 

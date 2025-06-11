@@ -70,7 +70,8 @@ TEST(OpenVino, DispatchApi) {
 #if defined(__linux__)
   auto model_file_name = std::string("./") + kOpenvinoModelBlobFileName;
 #else
-  auto model_file_name = litert::testing::GetTestFilePath(kOpenvinoModelBlobFileName);
+  auto model_file_name =
+      litert::testing::GetTestFilePath(kOpenvinoModelBlobFileName);
 #endif
 
   ABSL_LOG(INFO) << "Model file is " << model_file_name.c_str();
