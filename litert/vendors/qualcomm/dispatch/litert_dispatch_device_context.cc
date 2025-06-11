@@ -164,7 +164,13 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
 
   Qnn_MemDescriptor_t mem_descriptor = {};
-  mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
+  // QNN does not support 0-dimensional tensors.
+  std::array<uint32_t, 1> dim{1};
+  if (tensor_rank == 0) {
+    mem_descriptor.memShape = {1, dim.data(), nullptr};
+  } else {
+    mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
+  }
   mem_descriptor.dataType = tensor_data_type;
   mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
   mem_descriptor.customInfo = &mem_htp_descriptor;
