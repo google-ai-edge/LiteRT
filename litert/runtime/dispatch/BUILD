@@ -90,6 +90,8 @@ cc_library(
     ],
     hdrs = [
         "dispatch_delegate_kernel.h",
+        "dispatch_node_operation_impls.h",
+        "dispatch_node_operations.h",
         "//litert/c:litert_dispatch_delegate.h",
         "//litert/cc:litert_dispatch_delegate.h",
     ],
@@ -107,6 +109,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_tflite_error_status_builder",
+        "//litert/cc/internal:litert_event",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/core:build_stamp",
