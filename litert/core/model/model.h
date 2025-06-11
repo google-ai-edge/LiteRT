@@ -1126,6 +1126,23 @@ void PrintNullableOpts(Sink& sink, const Options* opts) {
 }  // namespace litert::internal
 
 namespace tflite {
+
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
+  // NOTE: Printers for specific options will be added on an as needed basis.
+  const auto type = opts.type;
+  switch (type) {
+    case tflite::BuiltinOptions_AddOptions: {
+      const auto* add_opts = opts.AsAddOptions();
+      absl::Format(&sink, "%v", add_opts);
+      break;
+    }
+    default:
+      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      break;
+  }
+}
+
 // AddOptionsT
 
 template <typename Sink>
@@ -1170,5 +1187,7 @@ template <class Sink>
 void AbslStringify(Sink& sink, const AddOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
+
 }  // namespace tflite
+
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_H_

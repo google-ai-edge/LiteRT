@@ -568,6 +568,24 @@ TEST(PrintingTest, ConstTensor) {
   EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
 }
 
+TEST(PrintingTest, TflOptions) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_AddOptions;
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU;
+  add_opts.pot_scale_int16 = false;
+  opts.Set(std::move(add_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{fa=RELU}");
+}
+
+TEST(PrintingTest, TflOptionsNoPrinter) {
+  TflOptions opts;
+  opts.type = ::tflite::BuiltinOptions_SubOptions;
+  ::tflite::SubOptionsT add_opts;
+  opts.Set(std::move(add_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+}
+
 TEST(PrintingTest, FusedActivationFunction) {
   EXPECT_EQ(absl::StrFormat("%v", ::tflite::ActivationFunctionType_RELU),
             "RELU");
@@ -591,5 +609,6 @@ TEST(PrintingTest, TflAddOptionsPointer) {
   add_opts.pot_scale_int16 = true;
   EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
 }
+
 }  // namespace
 }  // namespace litert::internal
