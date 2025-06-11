@@ -17,6 +17,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_C_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_common.h"
 
 // User-facing options for Qualcomm. This is not built as part of
@@ -147,6 +149,30 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char* custom_op_package_path,
+    uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char** custom_op_package_path,
+    uint32_t* length);
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char* custom_op_package_target,
+    uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char** custom_op_package_target,
+    uint32_t* length);
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char* custom_op_package_interface_provider, uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char** custom_op_package_interface_provider, uint32_t* length);
 
 #ifdef __cplusplus
 }  // extern "C"

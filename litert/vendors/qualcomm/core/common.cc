@@ -46,6 +46,17 @@ HtpPerformanceMode Options::GetHtpPerformanceMode() const {
   return htp_performance_mode_;
 }
 
+void Options::SetCustomOpPackage(std::string_view path, std::string_view target,
+                                 std::string_view interface_provider) {
+  custom_op_package_.path = path;
+  custom_op_package_.target = target;
+  custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage &Options::GetCustomOpPackage() const {
+  return custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -55,11 +66,19 @@ Profiling: %d\n\
 UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
-HtpPerformanceMode: %d\n";
+HtpPerformanceMode: %d\n\
+CustomOpPackage: {\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}\n\
+";
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, htp_performance_mode_);
+                         enable_weight_sharing_, htp_performance_mode_,
+                         custom_op_package_.path, custom_op_package_.target,
+                         custom_op_package_.interface_provider);
 }
 
 }  // namespace qnn

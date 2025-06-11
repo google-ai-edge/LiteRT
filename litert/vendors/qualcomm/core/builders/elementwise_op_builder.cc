@@ -19,7 +19,10 @@ std::vector<OpWrapper> BuildElementwiseAddOp(
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
 
-  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_ADD);
+  // TODO(Alen): should not merge, it is only for test.
+  auto& elementwise_op =
+      res.emplace_back("custom_add", "LiteRtQualcommOpPackage",
+                       "ElementWiseAdd", QnnOpCode::kElementWiseAdd);
   for (const auto& input : inputs) {
     elementwise_op.AddInputTensor(input);
   }

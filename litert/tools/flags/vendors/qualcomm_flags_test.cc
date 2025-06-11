@@ -251,6 +251,10 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             kLiteRtQualcommHtpPerformanceModeBurst);
+
+  EXPECT_EQ(options.Value().GetCustomOpPackagePath(), "");
+  EXPECT_EQ(options.Value().GetCustomOpPackageTarget(), "");
+  EXPECT_EQ(options.Value().GetCustomOpPackageInterfaceProvider(), "");
 }
 
 }  // namespace

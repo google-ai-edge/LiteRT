@@ -103,6 +103,10 @@ LiteRtStatus InitQnnOptions(
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
+  qnn_options.SetCustomOpPackage(
+      qualcomm_options.GetCustomOpPackagePath(),
+      qualcomm_options.GetCustomOpPackageTarget(),
+      qualcomm_options.GetCustomOpPackageInterfaceProvider());
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }

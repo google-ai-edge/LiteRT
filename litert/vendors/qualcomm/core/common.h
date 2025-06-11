@@ -5,6 +5,7 @@
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_COMMON_H_
 
 #include <string>
+#include <string_view>
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -33,6 +34,12 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+struct CustomOpPackage {
+  std::string path = "";
+  std::string target = "";
+  std::string interface_provider = "";
+};
+
 class Options {
  public:
   Options() = default;
@@ -55,6 +62,10 @@ class Options {
   void SetHtpPerformanceMode(const HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
+  void SetCustomOpPackage(std::string_view path, std::string_view target,
+                          std::string_view interface_provider);
+  const CustomOpPackage &GetCustomOpPackage() const;
+
   std::string Dump() const;
 
  private:
@@ -64,6 +75,7 @@ class Options {
   bool use_qint16_as_quint16_ = false;
   bool enable_weight_sharing_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
+  CustomOpPackage custom_op_package_;
 };
 
 }  // namespace qnn
