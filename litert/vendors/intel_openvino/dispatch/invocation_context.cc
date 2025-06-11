@@ -1,5 +1,17 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
@@ -80,7 +92,8 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+  LITERT_ASSIGN_OR_RETURN(
+      ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
@@ -90,7 +103,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+  LITERT_ASSIGN_OR_RETURN(
+      ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
@@ -100,8 +114,9 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   infer_request_.start_async();
-  if (!infer_request_.wait_for(std::chrono::milliseconds(kInferRequestTimeout)))
-    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                              "Failed to execute inference request due to timeout");
+  if (!infer_request_.wait_for(std::chrono::milliseconds(kInferRequestTimeoutMs)))
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Failed to execute inference request due to timeout");
   return {};
 }
