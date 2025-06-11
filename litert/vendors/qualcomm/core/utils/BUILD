@@ -31,6 +31,7 @@ cc_library(
     deps = [
         ":log",
         "@com_google_absl//absl/types:span",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
     ],
 )
 
