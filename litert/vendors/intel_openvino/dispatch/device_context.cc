@@ -1,14 +1,31 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
+#include <string.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <openvino/runtime/intel_npu/level_zero/level_zero.hpp>
 #include <openvino/runtime/remote_context.hpp>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 
@@ -16,6 +33,51 @@ litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(ov::Core core) {
   return Ptr(new LiteRtDispatchDeviceContextT(core));
 }
+
+#if LITERT_HAS_AHWB_SUPPORT
+litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer *ahwb) {
+  int socks[2];
+  if (socketpair(AF_UNIX, SOCK_SEQPACKET, 0, socks) != 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to create socket pair");
+  }
+
+  auto socket_cleaup = absl::Cleanup([&socks] {
+    close(socks[0]);
+    close(socks[1]);
+  });
+
+  if (AHardwareBuffer_sendHandleToUnixSocket(ahwb, socks[0]) != 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to send handle to unix socket");
+  }
+  // Receives a fd(an int) over the unix socket, sets up control buffer to
+  // receive an int
+  char payload_byte;
+  struct iovec io = {.iov_base = &payload_byte,
+                     .iov_len = sizeof(payload_byte)};
+
+  // Buffer for receiving fd
+  char control_buf[CMSG_SPACE(sizeof(int))];
+
+  struct msghdr msg = {.msg_iov = &io,
+                       .msg_iovlen = 1,
+                       .msg_control = control_buf,
+                       .msg_controllen = sizeof(control_buf)};
+
+  if (recvmsg(socks[1], &msg, 0) < 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to receive socket message");
+  }
+  int fd = -1;
+  struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+  if (cmsg && cmsg->cmsg_level == SOL_SOCKET && cmsg->cmsg_type == SCM_RIGHTS) {
+    memcpy(&fd, CMSG_DATA(cmsg), sizeof(int));
+  }
+
+  return fd;
+}
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 litert::Expected<LiteRtTensorBufferHandle>
 LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
@@ -49,82 +111,80 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Tensor strides are not supported"));
 
-  int buffer_fd;
-
   switch (tensor_buffer_type) {
-    case kLiteRtTensorBufferTypeDmaBuf:
+    case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
+      int buffer_fd;
       void *buffer_host_addr;
       LITERT_RETURN_IF_ERROR(
           LiteRtGetTensorBufferDmaBufBuffer(tensor_buffer, &buffer_host_addr,
                                             &buffer_fd),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get DMA-BUF buffer"));
+
+      auto mmap_handle = mmap(NULL, tensor_buffer_size, PROT_WRITE | PROT_READ,
+                              MAP_SHARED, buffer_fd, tensor_buffer_offset);
+
+      if (mmap_handle == MAP_FAILED)
+        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                  "MMAP failed for tensor buffer");
+
+      auto context = core_.get_default_context("NPU")
+                         .as<ov::intel_npu::level_zero::ZeroContext>();
+      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+      for (int i = 0; i < ov_shape_vec.size(); i++)
+        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+
+      // TODO: change f32 to ov_element_type fetched from TensorType
+      auto remote_tensor = context.create_tensor(
+          ov::element::f32, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
+          buffer_fd);
+      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
+                                 remote_tensor);
+      return (uint64_t)next_handle_++;
+
 #else
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 "DmaBuf support is missing on this platform");
 #endif  // LRT_HAS_DMABUF_SUPPORT
       break;
-    case kLiteRtTensorBufferTypeAhwb:
+    }
+    case kLiteRtTensorBufferTypeAhwb: {
 #if LITERT_HAS_AHWB_SUPPORT
       AHardwareBuffer *ahwb;
       LITERT_RETURN_IF_ERROR(
           LiteRtGetTensorBufferAhwb(tensor_buffer, &ahwb),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                              "Failed to get LiteRT Tensor Buffer for AHWB"));
-      AHardwareBuffer_acquire(ahwb);
-      if (ahwb == NULL)
-        return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                  "Failed to acquire AHWB");
 
-        // TODO: Change below APIs to use AHardwareBuffer_lock
-        /*    const native_handle_t *buffer_handle =
-           AHardwareBuffer_getNativeHandle(ahwb); if (buffer_handle == nullptr)
-                return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                          "Native handle for AHWB is NULL");
-            if (buffer_handle->numFds != 1)
-                return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                          "AHWB cannot be mapped");
+      auto fd_exp = GetFdFromUnixHandle(ahwb);
+      int fd = fd_exp.Value();
+      LITERT_RETURN_IF_ERROR(
+          fd != -1, litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                       "Failed to get FD from unix handle"));
 
-            buffer_fd = buffer_handle->data[0];
-            if (buffer_fd == -1)
-                return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                          "Failed to get file descriptor for
-           AHWB buffer");
-         */
+      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+      for (int i = 0; i < ov_shape_vec.size(); i++)
+        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+      auto context = core_.get_default_context("NPU")
+                         .as<ov::intel_npu::level_zero::ZeroContext>();
+      ov::RemoteTensor remote_tensor = context.create_tensor(
+          ov::element::f32, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
+          fd);
+      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_, remote_tensor);
+      return (uint64_t)next_handle_++;
 
 #else
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 "AHWB support is missing on this platform");
 #endif  // LITERT_HAS_AHWB_SUPPORT
       break;
+    }
 
     default:
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 "Unsupported tensor buffer type");
   }
-
-  auto mmap_handle = mmap(NULL, tensor_buffer_size, PROT_WRITE | PROT_READ,
-                          MAP_SHARED, buffer_fd, tensor_buffer_offset);
-
-  LITERT_RETURN_IF_ERROR(mmap_handle == MAP_FAILED,
-                         litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                                            "MMAP failed for tensor buffer"));
-
-  auto context = core_.get_default_context("NPU")
-                     .as<ov::intel_npu::level_zero::ZeroContext>();
-  std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
-  for (int i = 0; i < ov_shape_vec.size(); i++)
-    ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-
-  // TODO: change f32 to ov_element_type fetched from TensorType
-  auto remote_tensor = context.create_tensor(
-      ov::element::f32, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
-      buffer_fd);
-  tensor_handle_map_.emplace((LiteRtTensorBufferHandle)mmap_handle,
-                             remote_tensor);
-
-  return (uint64_t)mmap_handle;
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(

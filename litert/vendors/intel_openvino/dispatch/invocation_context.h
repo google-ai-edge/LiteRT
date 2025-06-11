@@ -1,5 +1,17 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
@@ -61,8 +73,8 @@ class LiteRtDispatchInvocationContextT {
       : infer_request_(infer_request), device_context_(device_context) {}
   LiteRtDispatchDeviceContextT &device_context_;
   ov::InferRequest infer_request_;
-  //Timeout is in milliseconds
-  static constexpr int kInferRequestTimeout = 10000;
+  // Timeout is in milliseconds
+  static constexpr int kInferRequestTimeoutMs = 10000;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
