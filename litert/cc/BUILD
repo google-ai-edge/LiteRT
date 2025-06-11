@@ -804,6 +804,7 @@ cc_library(
         # "//third_party/odml/infra/genai/inference/executor/google_tensor:__pkg__",
         # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
         # "//third_party/odml/infra/genai/inference/ml_drift/llm:__pkg__",
+        # "//third_party/odml/infra/genai/inference/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
