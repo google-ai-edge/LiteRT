@@ -93,6 +93,16 @@ class Environment
     return is_supported;
   }
 
+  // Returns whether the environment supports AHWB/GL interop.
+  bool SupportsAhwbGlInterop() const {
+    bool is_supported = false;
+    if (auto status = LiteRtSupportsAhwbGlInterop(Get(), &is_supported);
+        status != kLiteRtStatusOk) {
+      return false;
+    }
+    return is_supported;
+  }
+
  private:
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {

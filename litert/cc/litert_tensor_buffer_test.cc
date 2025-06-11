@@ -919,10 +919,25 @@ TEST(TensorBuffer, CreateManagedGlBuffer) {
   EXPECT_THAT(gl_buffer.offset, Eq(0));
 }
 
-#if LITERT_HAS_AHWB_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
 TEST(TensorBuffer, GetGlBufferFromAhwb) {
+  if (!HasOpenGlSupport() || !HasAhwbSupport()) {
+    GTEST_SKIP() << "OpenGl and/or AHWB are not supported on this platform; "
+                    "skipping the test";
+  }
   // User provides EGL environment.
   auto user_gpu_env = UserGpuEnvironment::Create();
+  ASSERT_TRUE(user_gpu_env != nullptr);
+  ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
+  bool is_ahwb_gl_interop_supported = false;
+  ASSERT_EQ(LiteRtSupportsAhwbGlInterop(user_gpu_env->GetEnvironment(),
+                                        &is_ahwb_gl_interop_supported),
+            kLiteRtStatusOk);
+  if (!is_ahwb_gl_interop_supported) {
+    GTEST_SKIP() << "AHWB/GL interop is not supported on this platform; "
+                    "skipping the test";
+  }
 
   // Create AHWB Tensor buffer.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -937,25 +952,24 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer::GlBuffer gl_buffer,
                               ahwb_tensor_buffer.GetGlBuffer());
+#if LITERT_HAS_OPENGL_SUPPORT
   EXPECT_THAT(gl_buffer.target, Eq(GL_SHADER_STORAGE_BUFFER));
+#endif  // LITERT_HAS_OPENGL_SUPPORT
   EXPECT_THAT(gl_buffer.id, Ne(0));
   EXPECT_THAT(gl_buffer.size_bytes, Eq(sizeof(kTensorData)));
   EXPECT_THAT(gl_buffer.offset, Eq(0));
 
   // Read from GL buffer.
-  // TODO(gcarranza): Add GlBuffer ReadLock functionality to LiteRT
-  // TensorBuffer. GlBuffer::Unlock currently writes to GL buffer.
-  tflite::gpu::gl::GlBuffer gl_buffer_from_ahwb(
-      gl_buffer.target, gl_buffer.id, gl_buffer.size_bytes, gl_buffer.offset,
-      /*has_ownership=*/false);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer gl_buffer_from_ahwb,
+      TensorBuffer::CreateFromGlBuffer(user_gpu_env->GetEnvironment(),
+                                       RankedTensorType(kTestTensorType),
+                                       gl_buffer.target, gl_buffer.id,
+                                       gl_buffer.size_bytes, gl_buffer.offset));
   float read_data[sizeof(kTensorData) / sizeof(kTensorData[0])];
-  auto status = gl_buffer_from_ahwb.Read<float>(absl::MakeSpan(read_data));
-  ASSERT_TRUE(status.ok());
+  LITERT_ASSERT_OK(gl_buffer_from_ahwb.Read<float>(absl::MakeSpan(read_data)));
   ASSERT_EQ(std::memcmp(read_data, kTensorData, sizeof(kTensorData)), 0);
 }
-#endif  // LITERT_HAS_AHWB_SUPPORT
-
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 TEST(TensorBuffer, GetClBufferFromAhwb) {
   if (!HasOpenClSupport() || !HasAhwbSupport()) {
