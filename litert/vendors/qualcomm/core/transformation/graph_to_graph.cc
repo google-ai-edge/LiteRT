@@ -9,6 +9,7 @@
 
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/transformation/mask.h"
 #include "litert/vendors/qualcomm/core/transformation/matmul_convert.h"
 #include "litert/vendors/qualcomm/core/transformation/mha_to_sha.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -154,5 +155,13 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
     Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
               OptimizeMHAPrefill);
   }
+  const std::vector<QnnOpCode> gemma3_mask = {
+      QnnOpCode::kElementWiseNot,
+      QnnOpCode::kCast,
+      QnnOpCode::kQuantize,
+      QnnOpCode::kElementWiseMultiply,
+  };
+  Transform(validate_op_config, ops, tensor_pool, gemma3_mask,
+            TransformQuantizeInMask);
 }
 }  // namespace qnn
