@@ -38,7 +38,7 @@
 namespace litert::internal {
 
 // Name and index of byte code.
-using CallInfo = std::pair<absl::string_view, LiteRtParamIndex>;
+using CallInformation = std::pair<absl::string_view, LiteRtParamIndex>;
 
 // Wraps vendor compiled result. Must be outlived by the CompilerPlugin
 // the generated it.
@@ -56,7 +56,7 @@ class CompiledResult {
 
   // Get information regarding the "ith" entry points in the compiled module.
   // There will be oe entry point for each subgraph compiled for.
-  Expected<CallInfo> CallInfo(LiteRtParamIndex call_idx) const;
+  Expected<CallInformation> CallInfo(LiteRtParamIndex call_idx) const;
 
   // Get the number of entry points in the compiled module. This will be equal
   // to the number of subgraphs passed to the compilation step.

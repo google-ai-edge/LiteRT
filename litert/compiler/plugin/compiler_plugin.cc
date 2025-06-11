@@ -81,7 +81,8 @@ Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
   return num_calls;
 }
 
-Expected<CallInfo> CompiledResult::CallInfo(LiteRtParamIndex call_idx) const {
+Expected<CallInformation> CompiledResult::CallInfo(
+    LiteRtParamIndex call_idx) const {
   const void* data;
   size_t size;
   LiteRtParamIndex byte_code_idx;
@@ -90,7 +91,7 @@ Expected<CallInfo> CompiledResult::CallInfo(LiteRtParamIndex call_idx) const {
       compiled_result_handle_, call_idx, &data, &size, &byte_code_idx));
 
   absl::string_view call_info_str(reinterpret_cast<const char*>(data), size);
-  return ::litert::internal::CallInfo(call_info_str, byte_code_idx);
+  return ::litert::internal::CallInformation(call_info_str, byte_code_idx);
 }
 
 CompiledResult::~CompiledResult() {
