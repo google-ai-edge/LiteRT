@@ -425,6 +425,15 @@ Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   return UnpackModel(std::move(**flatbuffer));
 }
 
+Expected<LiteRtModelT::Ptr> LoadModelFromUnownedBuffer(
+    BufferRef<uint8_t> buffer) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromUnownedBuffer(buffer);
+  if (!flatbuffer) {
+    return flatbuffer.Error();
+  }
+  return UnpackModel(std::move(**flatbuffer));
+}
+
 Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename) {
   auto flatbuffer = FlatbufferWrapper::CreateFromTflFile(filename);
   if (!flatbuffer) {
