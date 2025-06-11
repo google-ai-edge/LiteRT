@@ -217,17 +217,12 @@ litert_lib(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
-        "//litert/vendors/qualcomm/compiler/IR:qnn_op",
-        "//litert/vendors/qualcomm/compiler/IR:qnn_tensor",
-        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )
