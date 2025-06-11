@@ -6,6 +6,7 @@ load(
     "tf_features_nolayering_check_if_ios",
 )
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load(
     "//tflite:build_def.bzl",
     "tflite_custom_android_library",
@@ -170,7 +171,6 @@ py_strict_library(
     name = "zip_test_utils",
     srcs = ["zip_test_utils.py"],
     deps = [
-        ":_pywrap_string_util",
         ":generate_examples_report",
         "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
@@ -179,7 +179,14 @@ py_strict_library(
         "@org_tensorflow//tensorflow/python/framework:convert_to_constants",
         "@org_tensorflow//tensorflow/python/saved_model:signature_constants",
         "@org_tensorflow//third_party/py/numpy",
-    ],
+    ] + if_pywrap(
+        if_false = [
+            ":_pywrap_string_util",
+        ],
+        if_true = [
+            "//tflite/python:pywrap_tflite",
+        ],
+    ),
 )
 
 py_strict_binary(
@@ -697,6 +704,9 @@ pybind_extension(
     hdrs = ["string_util.h"],
     additional_stubgen_deps = [
         "@org_tensorflow//third_party/py/numpy:numpy",
+    ],
+    common_lib_packages = [
+        "tflite/python",
     ],
     enable_stub_generation = True,
     features = ["-use_header_modules"],

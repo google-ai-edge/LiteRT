@@ -87,16 +87,14 @@ litert_bin(
         # copybara:uncomment_begin(google-only)
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
         # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        # "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         # copybara:uncomment_end
+        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/examples:example_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
-        # copybara:uncomment_begin(no-oss-yet)
-        # "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-        # "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
-        # copybara:uncomment_end
+        "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+        "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
     ],
     export_litert_only = 1,
     linkstatic = 1,
@@ -177,7 +175,7 @@ litert_bin(
 test_suite(
     name = "apply_vendor_plugin_tests",
     tests = [
-        # copybara:uncomment ":apply_vendor_plugin_test_mediatek_mt6991",
+        ":apply_vendor_plugin_test_mediatek_mt6991",
         ":apply_vendor_plugin_test_qualcomm_SA8295",
     ],
 )
@@ -382,6 +380,39 @@ cc_binary(
 )
 
 cc_binary(
+    name = "npu_numerics_check",
+    srcs = ["npu_numerics_check.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_options",
+        "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:mediatek_flags",
+        "//litert/tools/flags/vendors:qualcomm_flags",
+        "//tflite/profiling:time",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            # copybara:uncomment_begin(google-only)
+            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # copybara:uncomment_end
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_binary(
     name = "analyze_model_main",
     srcs = ["analyze_model_main.cc"],
     deps = [
@@ -457,6 +488,7 @@ litert_device_test(
     srcs = ["benchmark_litert_model_qualcomm_test.cc"],
     backend_id = "qualcomm",
     data = [
+        "//litert/test:testdata/simple_add_op.tflite",
         "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
     ],
     deps = [

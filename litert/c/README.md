@@ -13,7 +13,7 @@ compatible and run smoothly even when using different versions of the runtime.
 Function names follow this pattern:
 
 - LiteRtCreate`<Object>`
-  - e.g., `LiteRtCreateTensorBuffer(*tensor_buffer)`
+  - e.g., `LiteRtCreateTensorBuffer(&tensor_buffer)`
 - LiteRtDestroy`<Object>`
   - e.g., `LiteRtDestroyTensorBuffer(tensor_buffer)`
 - LiteRt`<Get/Set><Object><Field>`

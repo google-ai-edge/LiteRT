@@ -35,7 +35,14 @@ constructor(val elementType: ElementType, val layout: Layout? = null) {
   /** Layout of a tensor. */
   data class Layout
   @JvmOverloads
-  constructor(val dimensions: IntArray, val strides: IntArray = intArrayOf()) {
+  constructor(val dimensions: List<Int>, val strides: List<Int> = listOf()) {
+
+    @JvmOverloads
+    constructor(
+      dimensions: IntArray,
+      strides: IntArray = intArrayOf(),
+    ) : this(dimensions.toList(), strides.toList()) {}
+
     val rank: Int
       get() = dimensions.size
 
@@ -230,8 +237,7 @@ private constructor(
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    val tbr = nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
-    return TensorBufferRequirements(tbr)
+    return nativeGetInputBufferRequirements(handle, model.handle, signature, inputName)
   }
 
   @Throws(LiteRtException::class)
@@ -249,8 +255,7 @@ private constructor(
   ): TensorBufferRequirements {
     assertNotDestroyed()
 
-    val tbr = nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
-    return TensorBufferRequirements(tbr)
+    return nativeGetOutputBufferRequirements(handle, model.handle, signature, outputName)
   }
 
   @Throws(LiteRtException::class)
@@ -460,7 +465,7 @@ private constructor(
       modelHandle: Long,
       signature: String?,
       inputName: String,
-    ): Long
+    ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateOutputBuffer(
@@ -476,7 +481,7 @@ private constructor(
       modelHandle: Long,
       signature: String?,
       outputName: String,
-    ): Long
+    ): TensorBufferRequirements
 
     @JvmStatic
     private external fun nativeCreateInputBuffers(

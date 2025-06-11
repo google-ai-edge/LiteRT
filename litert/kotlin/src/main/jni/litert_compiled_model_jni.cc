@@ -26,16 +26,14 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
-#include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 #include "litert/kotlin/src/main/jni/litert_model_wrapper.h"
 
@@ -253,6 +251,89 @@ LiteRtStatus CreateGpuOptions(JNIEnv* env, LiteRtOpaqueOptions* gpu_options,
   return kLiteRtStatusOk;
 }
 
+// Creates a Java TensorBufferRequirements object from the given C++ object.
+jobject CreateJavaTensorBufferRequirements(
+    JNIEnv* env, const litert::TensorBufferRequirements& requirements) {
+  // Get the TensorBufferRequirements class and constructor.
+  jclass requirements_class =
+      env->FindClass("com/google/ai/edge/litert/TensorBufferRequirements");
+  if (requirements_class == nullptr) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to find TensorBufferRequirements class.");
+    return nullptr;
+  }
+  jmethodID constructor =
+      env->GetMethodID(requirements_class, "<init>", "([II[I)V");
+  if (constructor == nullptr) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to get TensorBufferRequirements constructor.");
+    return nullptr;
+  }
+
+  // Convert supported types to int array.
+  auto supported_types = requirements.SupportedTypes();
+  if (!supported_types) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get supported types: %s",
+               supported_types.Error().Message().c_str());
+    ThrowLiteRtException(env, supported_types.Error().Status(),
+                         supported_types.Error().Message());
+    return nullptr;
+  }
+  jintArray supported_types_array = env->NewIntArray(supported_types->size());
+  if (supported_types_array == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to allocate int array.");
+    ThrowLiteRtException(env, kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to allocate int array.");
+    return nullptr;
+  }
+  env->SetIntArrayRegion(
+      supported_types_array, 0, supported_types->size(),
+      reinterpret_cast<const jint*>(supported_types->data()));
+
+  // Convert strides to int array.
+  auto strides = requirements.Strides();
+  if (!strides) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get strides: %s",
+               strides.Error().Message().c_str());
+    ThrowLiteRtException(env, strides.Error().Status(),
+                         strides.Error().Message());
+    return nullptr;
+  }
+  jintArray strides_array = env->NewIntArray(strides->size());
+  if (strides_array == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to allocate int array.");
+    ThrowLiteRtException(env, kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to create strides array.");
+    return nullptr;
+  }
+  env->SetIntArrayRegion(strides_array, 0, strides->size(),
+                         reinterpret_cast<const jint*>(strides->data()));
+
+  auto buffer_size = requirements.BufferSize();
+  if (!buffer_size) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get buffer size: %s",
+               buffer_size.Error().Message().c_str());
+    ThrowLiteRtException(env, buffer_size.Error().Status(),
+                         buffer_size.Error().Message());
+    return nullptr;
+  }
+  // Create and return the Java object.
+  jobject java_object =
+      env->NewObject(requirements_class, constructor, supported_types_array,
+                     *buffer_size, strides_array);
+
+  env->DeleteLocalRef(requirements_class);
+  env->DeleteLocalRef(supported_types_array);
+  env->DeleteLocalRef(strides_array);
+
+  if (java_object == nullptr) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to create TensorBufferRequirements object.");
+    return nullptr;
+  }
+  return java_object;
+}
+
 }  // namespace
 
 #ifdef __cplusplus
@@ -377,7 +458,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateInputBuffer(
   return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
 }
 
-JNIEXPORT jlong JNICALL
+JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring input_name) {
@@ -395,9 +476,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetInputBufferRequirements(
                requirements.Error().Message().c_str());
     ThrowLiteRtException(env, requirements.Error().Status(),
                          requirements.Error().Message());
-    return 0;
+    return nullptr;
   }
-  return reinterpret_cast<jlong>(std::move(requirements->Release()));
+  return CreateJavaTensorBufferRequirements(env, *requirements);
 }
 
 JNIEXPORT jlong JNICALL
@@ -422,7 +503,7 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeCreateOutputBuffer(
   return reinterpret_cast<jlong>(std::move(tensor_buffer->Release()));
 }
 
-JNIEXPORT jlong JNICALL
+JNIEXPORT jobject JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle, jlong model_handle,
     jstring signature, jstring output_name) {
@@ -440,9 +521,9 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetOutputBufferRequirements(
                requirements.Error().Message().c_str());
     ThrowLiteRtException(env, requirements.Error().Status(),
                          requirements.Error().Message());
-    return 0;
+    return nullptr;
   }
-  return reinterpret_cast<jlong>(std::move(requirements->Release()));
+  return CreateJavaTensorBufferRequirements(env, *requirements);
 }
 
 JNIEXPORT jlongArray JNICALL

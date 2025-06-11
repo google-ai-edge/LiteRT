@@ -114,6 +114,7 @@ litert_test(
         ":qnn_manager",
         "//litert/test:common",
         "//litert/test:matchers_oss",
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/tools:dump",
     ],
 )

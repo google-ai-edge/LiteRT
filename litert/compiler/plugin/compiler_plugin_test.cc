@@ -396,9 +396,101 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_TRUE(partition_result);
   // One new subgraph for the consumed composite op only, decomp not consumed.
   ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
-  // Examople plugin will select RMS norm composite op during partitioning. only
+  // Example plugin will select RMS norm composite op during partitioning. only
   // 1 subgraph should remain in the model.
   ASSERT_EQ(model.NumSubgraphs(), 1);
+}
+
+TEST(PartitionTest, InlineDecomposition) {
+  auto model_wrap = testing::LoadTestFileModel("unsupported_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+  // One new subgraph for the consumed composite op only, decomp not consumed.
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto main_subgraph = partition_result->second.MainSubgraph();
+  ASSERT_EQ(main_subgraph->Ops().size(), 3);
+  ASSERT_EQ(main_subgraph->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(1).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(2).OpCode(), kLiteRtOpCodeTflMul);
+}
+
+TEST(PartitionTest,
+     InlineDecompositionWithUnsupportedOpInDecompositionSubgraph) {
+  auto model_wrap =
+      testing::LoadTestFileModel("unsupported_composite_2.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+  // One new subgraph for the consumed composite op only, decomp not consumed.
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto main_subgraph = partition_result->second.MainSubgraph();
+  // There should be 2 ops selected partition
+  ASSERT_EQ(main_subgraph->Ops().size(), 2);
+  ASSERT_EQ(main_subgraph->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(1).OpCode(), kLiteRtOpCodeTflMul);
+  // There should be 2 ops in the main subgraph
+  ASSERT_EQ(model.Subgraph(0).Ops().size(), 2);
+  ASSERT_EQ(model.Subgraph(0).Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+  ASSERT_EQ(model.Subgraph(0).Op(1).OpCode(), kLiteRtOpCodeTflDiv);
+}
+
+TEST(PartitionTest, InlineDecompositionWithProducerConsumer) {
+  auto model_wrap =
+      testing::LoadTestFileModel("unsupported_composite_3.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+  // One new subgraph for the consumed composite op only, decomp not consumed.
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto main_subgraph = partition_result->second.MainSubgraph();
+  // There should be 2 ops selected partition
+  ASSERT_EQ(main_subgraph->Ops().size(), 5);
+  ASSERT_EQ(main_subgraph->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(1).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(2).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(3).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(4).OpCode(), kLiteRtOpCodeTflMul);
+  // There should be 1 op in the main subgraph
+  ASSERT_EQ(model.Subgraph(0).Ops().size(), 1);
+  ASSERT_EQ(model.Subgraph(0).Op(0).OpCode(), kLiteRtOpCodeTflCustom);
+}
+
+TEST(PartitionTest, InlineDecompositionWithUnsupportedProducerConsumer) {
+  auto model_wrap =
+      testing::LoadTestFileModel("unsupported_composite_4.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+  // One new subgraph for the consumed composite op only, decomp not consumed.
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+  auto main_subgraph = partition_result->second.MainSubgraph();
+  // There should be 2 ops selected partition
+  ASSERT_EQ(main_subgraph->Ops().size(), 3);
+  ASSERT_EQ(main_subgraph->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(1).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(main_subgraph->Op(2).OpCode(), kLiteRtOpCodeTflMul);
+  // There should be 1 op in the main subgraph
+  ASSERT_EQ(model.Subgraph(0).Ops().size(), 3);
+  ASSERT_EQ(model.Subgraph(0).Op(0).OpCode(), kLiteRtOpCodeTflDiv);
+  ASSERT_EQ(model.Subgraph(0).Op(1).OpCode(), kLiteRtOpCodeTflCustom);
+  ASSERT_EQ(model.Subgraph(0).Op(2).OpCode(), kLiteRtOpCodeTflDiv);
 }
 
 TEST(PartitionTest, SimpleNpuCallComposite) {
@@ -429,7 +521,6 @@ TEST(PartitionTest, MultiNpuCallComposite) {
 
   ASSERT_EQ(model.NumSubgraphs(), 4);
   auto* decomp1 = model.Subgraphs()[1];
-  auto* non_npu_call_decomop = model.Subgraphs()[2];
   auto* decomp2 = model.Subgraphs()[3];
 
   {
@@ -457,12 +548,7 @@ TEST(PartitionTest, MultiNpuCallComposite) {
   {
     // Subgraphs to be compiled will be moved to the result from the model.
     // Non-npu-call decompositions will be reindexed.
-    ASSERT_EQ(model.NumSubgraphs(), 2);
-    ASSERT_EQ(model.Subgraphs()[1], non_npu_call_decomop);
-    auto non_npu_call_op_0_option =
-        GetOptionsAs<CompositeOptions>(model.Subgraph(0).Ops()[1]);
-    ASSERT_TRUE(non_npu_call_op_0_option);
-    ASSERT_EQ(non_npu_call_op_0_option->subgraph, 1);
+    ASSERT_EQ(model.NumSubgraphs(), 1);
   }
 
   {

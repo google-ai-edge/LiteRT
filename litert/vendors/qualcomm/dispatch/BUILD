@@ -72,6 +72,7 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm:context_binary_info",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core/utils:miscs",
+        "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],

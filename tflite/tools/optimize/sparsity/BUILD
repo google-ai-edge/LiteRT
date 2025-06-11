@@ -1,5 +1,6 @@
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -12,6 +13,9 @@ package(
 pybind_extension(
     name = "format_converter_wrapper_pybind11",
     srcs = ["format_converter_wrapper_pybind11.cc"],
+    common_lib_packages = [
+        "tflite/python",
+    ],
     copts = [
         "-fexceptions",
         "-fno-strict-aliasing",
@@ -37,5 +41,7 @@ py_strict_test(
         "@absl_py//absl/testing:absltest",
         #internal proto upb dep
         "@org_tensorflow//third_party/py/numpy",
-    ],
+    ] + if_pywrap(
+        if_true = ["//tflite/python:pywrap_tflite"],
+    ),
 )

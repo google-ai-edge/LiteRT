@@ -36,7 +36,7 @@ LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
-// sdk_version_type -------------------------------------------------------
+// sdk_version_type ----------------------------------------------------------
 typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7 = 0,
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8 = 1,
@@ -50,17 +50,18 @@ LiteRtStatus LiteRtMediatekOptionsGetNeronSDKVersionType(
     LiteRtMediatekOptions options,
     enum LiteRtMediatekOptionsNeronSDKVersionType* sdk_version_type);
 
+// gemma_compiler_optimizations ----------------------------------------------
 LiteRtStatus LiteRtMediatekOptionsSetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool gemma_compiler_optimizations);
 
 LiteRtStatus LiteRtMediatekOptionsGetGemmaCompilerOptimizations(
     LiteRtMediatekOptions options, bool* gemma_compiler_optimizations);
 
-// neuron_adapter_peformance_mode
+// neuron_adapter_peformance_mode --------------------------------------------
 
 // Configures MTK devices to optimize for performance or power efficiency.
 // See NeuronAdapterPreferenceCode in mtk_sdk. By default, it
-// will use  Fast Single answer.
+// will use  Sustained Speed answer.
 
 typedef enum LiteRtMediatekNeuronAdapterPerformanceMode {
   /* Prefer executing in a way that minimizes battery drain. */
@@ -80,6 +81,38 @@ LiteRtStatus LiteRtMediatekOptionsSetPerformanceMode(
 LiteRtStatus LiteRtMediatekOptionsGetPerformanceMode(
     LiteRtMediatekOptions options,
     LiteRtMediatekNeuronAdapterPerformanceMode* performance_mode);
+
+// l1_cache_optimizations ----------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool l1_cache_optimizations);
+
+LiteRtStatus LiteRtMediatekOptionsGetL1CacheOptimizations(
+    LiteRtMediatekOptions options, bool* l1_cache_optimizations);
+
+// neuron_optimization_hints -------------------------------------------------
+
+// Configures MTK devices with optimization hints..
+// By default, it will use NEURON_OPTIMIZATION_NORMAL.
+
+typedef enum LiteRtMediatekNeuronAdapterOptimizationHint {
+  /* Normal optimization. Default Value */
+  kLiteRtMediatekNeuronAdapterOptimizationHintNormal = 0,
+  /* Reduce latency by utilizing as many APU cores as possible.*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency = 1 << 0,
+  /* Reducing DRAM access as more as possible.*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion = 1 << 1,
+  /*Reduce latency by using as many APU cores as possible in batch-dimension.
+   * (For models with batch > 1)*/
+  kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing = 1 << 2,
+} LiteRtMediatekNeuronAdapterOptimizationHint;
+
+LiteRtStatus LiteRtMediatekOptionsSetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint);
+
+LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
+    LiteRtMediatekOptions options,
+    LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint);
 
 #ifdef __cplusplus
 

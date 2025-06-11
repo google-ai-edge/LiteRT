@@ -411,5 +411,18 @@ TEST(LiteRtOpListTest, PushOps) {
   ASSERT_EQ(vec.size(), 1);
   EXPECT_EQ(vec.front().first, &op);
 }
+TEST(LiteRtModelTest, TestCheckSameUnrankedType) {
+  LiteRtUnrankedTensorType type1;
+  type1.element_type = kLiteRtElementTypeFloat32;
+  LiteRtUnrankedTensorType type2;
+  type2.element_type = kLiteRtElementTypeFloat32;
+  EXPECT_TRUE(LiteRtIsSameUnrankedTensorType(&type1, &type2));
+
+  LiteRtUnrankedTensorType type3;
+  type3.element_type = kLiteRtElementTypeFloat32;
+  LiteRtUnrankedTensorType type4;
+  type4.element_type = kLiteRtElementTypeFloat16;
+  EXPECT_FALSE(LiteRtIsSameUnrankedTensorType(&type3, &type4));
+}
 
 }  // namespace

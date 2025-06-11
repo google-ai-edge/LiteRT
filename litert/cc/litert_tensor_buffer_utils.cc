@@ -19,6 +19,8 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
+namespace litert {
+
 std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeUnknown:
@@ -45,6 +47,10 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "OpenClTexture";
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
       return "OpenClTextureFp16";
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      return "OpenClImageBuffer";
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+      return "OpenClImageBufferFp16";
     case kLiteRtTensorBufferTypeOpenClBufferPacked:
       return "OpenClBufferPacked";
   }
@@ -52,3 +58,5 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
              static_cast<int>(buffer_type));
   return "UnexpectedBufferType";
 }
+
+}  // namespace litert

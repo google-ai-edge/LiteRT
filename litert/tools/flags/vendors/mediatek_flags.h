@@ -19,6 +19,7 @@
 
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
@@ -31,22 +32,38 @@ ABSL_DECLARE_FLAG(LiteRtMediatekOptionsNeronSDKVersionType,
 
 ABSL_DECLARE_FLAG(bool, mediatek_enable_gemma_compiler_optimizations);
 
+ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
+                  mediatek_performance_mode_type);
+
+ABSL_DECLARE_FLAG(bool, mediatek_enable_l1_cache_optimizations);
+
+ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
+                  mediatek_optimization_hint);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options);
 
-// DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtMediatekNeuronAdapterPerformanceMode* options,
+                   std::string* error);
 
-ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterPerformanceMode,
-                  mediatek_performance_mode_type);
+std::string AbslUnparseFlag(LiteRtMediatekNeuronAdapterPerformanceMode options);
 
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekNeuronAdapterPerformanceMode* options,
                    std::string* error);
 
 std::string AbslUnparseFlag(LiteRtMediatekNeuronAdapterPerformanceMode options);
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtMediatekNeuronAdapterOptimizationHint* options,
+                   std::string* error);
+
+std::string AbslUnparseFlag(
+    LiteRtMediatekNeuronAdapterOptimizationHint options);
 
 #endif
 

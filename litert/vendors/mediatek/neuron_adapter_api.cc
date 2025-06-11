@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -163,6 +164,11 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
   LOAD_SYMB(Neuron_getVersion, api_->get_version);
   LOAD_SYMB(NeuronModel_relaxComputationFloat32toFloat16,
             api_->relax_fp32_to_fp16);
+  LOAD_SYMB(Neuron_getL1MemorySizeKb, api_->get_l1_memory_size_kb);
+  LOAD_SYMB(NeuronCompilation_setL1MemorySizeKb,
+            api_->compilation_set_l1_memory_size_kb);
+  LOAD_SYMB(NeuronCompilation_setOptimizationHint,
+            api_->compilation_set_optimization_hint);
 
   LITERT_LOG(LITERT_INFO, "NeuronAdapter symbols loaded");
   return {};

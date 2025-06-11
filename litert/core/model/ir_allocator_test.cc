@@ -42,6 +42,20 @@ TEST(IrAllocatorTest, EmplaceBack) {
   EXPECT_EQ(ops.Elements().at(0)->OpCode(), kCustomOpCode);
 }
 
+TEST(IrAllocatorTest, EmplaceBackWithIndex) {
+  IrAllocator<LiteRtOpT> ops;
+
+  LiteRtOpT my_op;
+  LiteRtOpT my_op1;
+  my_op.SetOpCode(kCustomOpCode);
+  my_op1.SetOpCode(kNonCustomOpCode);
+
+  ops.EmplaceBack(std::move(my_op));
+  ops.EmplaceAt(0, std::move(my_op1));
+  ASSERT_EQ(ops.Elements().size(), 2);
+  EXPECT_EQ(ops.Elements().at(0)->OpCode(), kNonCustomOpCode);
+}
+
 TEST(IrAllocatorTest, RemoveIf) {
   IrAllocator<LiteRtOpT> ops;
 

@@ -25,7 +25,6 @@
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
@@ -50,6 +49,7 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+using litert::BufferTypeToString;
 using litert::Expected;
 using litert::Unexpected;
 
@@ -106,14 +106,14 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
 // disabling for web platform temporarily to avoid breakages.
 #ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Created tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this).data());
+             BufferTypeToString(buffer_type_).data());
 #endif  // __EMSCRIPTEN__
 }
 
 LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 #ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
-             ::litert::internal::GetTensorBufferTypeName(*this).data());
+             BufferTypeToString(buffer_type_).data());
 #endif  // __EMSCRIPTEN__
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeUnknown:
@@ -148,6 +148,8 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked:
       // internal opencl buffer is auto-disposed by the
       // litert::internal::OpenClMemory destructor.
@@ -191,7 +193,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
                       "Failed to allocate aligned memory");
   }
 
-  LiteRtHostMemoryDeallocator deallocator = ::free;
+  LiteRtHostMemoryDeallocator deallocator = litert_aligned_free;
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferT::Ptr tensor_buffer,
       CreateFromHostMemory(
@@ -442,6 +444,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       return CreateManagedOpenClMemory(env, tensor_type, buffer_type,
@@ -711,11 +715,13 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_ABORT(auto opencl_memory, GetOpenClMemory());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              opencl_memory->Lock<float>());
+                              opencl_memory->Lock<float>(mode));
       return host_memory_ptr;
 #else
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -753,6 +759,8 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeOpenClBufferFp16:
     case kLiteRtTensorBufferTypeOpenClTexture:
     case kLiteRtTensorBufferTypeOpenClTextureFp16:
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
     case kLiteRtTensorBufferTypeOpenClBufferPacked: {
 #if LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(auto opencl_buffer, GetOpenClMemory());
@@ -775,41 +783,3 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
   }
 }
-
-namespace litert::internal {
-
-absl::string_view GetTensorBufferTypeName(
-    const LiteRtTensorBufferT& tensor_buffer) {
-  switch (tensor_buffer.buffer_type()) {
-    case kLiteRtTensorBufferTypeUnknown:
-      return "Unknown";
-    case kLiteRtTensorBufferTypeHostMemory:
-      return "HostMemory";
-    case kLiteRtTensorBufferTypeAhwb:
-      return "Ahwb";
-    case kLiteRtTensorBufferTypeIon:
-      return "Ion";
-    case kLiteRtTensorBufferTypeDmaBuf:
-      return "DmaBuf";
-    case kLiteRtTensorBufferTypeFastRpc:
-      return "FastRpc";
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-      return "OpenClBuffer";
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-      return "OpenClBufferFp16";
-    case kLiteRtTensorBufferTypeOpenClTexture:
-      return "OpenClTexture";
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-      return "OpenClTextureFp16";
-    case kLiteRtTensorBufferTypeOpenClBufferPacked:
-      return "OpenClImageBufferPacked";
-    case kLiteRtTensorBufferTypeGlBuffer:
-      return "GlBuffer";
-    case kLiteRtTensorBufferTypeGlTexture:
-      return "GlTexture";
-    default:
-      return "No type found";
-  }
-}
-
-}  // namespace litert::internal

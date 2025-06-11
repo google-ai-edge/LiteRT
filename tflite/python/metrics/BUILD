@@ -36,7 +36,7 @@ pybind_extension(
     pytype_srcs = [
         "_pywrap_tensorflow_lite_metrics_wrapper.pyi",
     ],
-    visibility = ["__subpackages__"],
+    visibility = ["//visibility:public"],
     deps = [
         ":metrics_wrapper_lib",
         "@com_google_protobuf//:protobuf",

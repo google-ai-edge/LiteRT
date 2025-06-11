@@ -19,6 +19,10 @@
 
 #include "litert/c/litert_tensor_buffer_types.h"
 
+namespace litert {
+
 std::string BufferTypeToString(LiteRtTensorBufferType buffer_type);
+
+}  // namespace litert
 
 #endif  // ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_UTILS_H_

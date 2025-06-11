@@ -26,27 +26,30 @@ extern "C" {
 LiteRtStatus LiteRtCreateProfiler(int size, LiteRtProfiler* profiler);
 
 // Destroys a compilation option object.
-LiteRtStatus LiteRtDestroyProfiler(LiteRtProfiler profiler);
+void LiteRtDestroyProfiler(LiteRtProfiler profiler);
 
 // Starts profiling.
-LiteRtStatus LiteRtStartProfiling(LiteRtProfiler profiler);
+LiteRtStatus LiteRtStartProfiler(LiteRtProfiler profiler);
 
 // Stops profiling.
-LiteRtStatus LiteRtStopProfiling(LiteRtProfiler profiler);
+LiteRtStatus LiteRtStopProfiler(LiteRtProfiler profiler);
 
 // Resets the profiler.
 LiteRtStatus LiteRtResetProfiler(LiteRtProfiler profiler);
 
 // Sets the current event source.
-LiteRtStatus LiteRtSetCurrentEventSource(LiteRtProfiler profiler,
-                                         ProfiledEventSource event_source);
+LiteRtStatus LiteRtSetProfilerCurrentEventSource(
+    LiteRtProfiler profiler, ProfiledEventSource event_source);
 
 // Gets the number of events.
-LiteRtStatus LiteRtGetNumEvents(LiteRtProfiler profiler, int* num_events);
+LiteRtStatus LiteRtGetNumProfilerEvents(LiteRtProfiler profiler,
+                                        int* num_events);
 
-// Get events.
-LiteRtStatus LiteRtGetEvents(LiteRtProfiler profiler, ProfiledEventData* events,
-                             int* num_events);
+// Get events. The events are copied to the provided buffer, caller is
+// responsible to allocate the buffer and provide the size of the buffer
+// (num_events).
+LiteRtStatus LiteRtGetProfilerEvents(LiteRtProfiler profiler, int num_events,
+                                     ProfiledEventData* events);
 
 #ifdef __cplusplus
 }

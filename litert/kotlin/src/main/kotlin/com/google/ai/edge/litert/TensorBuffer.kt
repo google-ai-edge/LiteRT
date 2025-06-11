@@ -123,7 +123,9 @@ enum class TensorBufferType(private val type: Int) {
   OpenClBufferFp16(11),
   OpenClTexture(12),
   OpenClTextureFp16(13),
-  OpenClBufferPacked(14);
+  OpenClBufferPacked(14),
+  OpenClImageBuffer(15),
+  OpenClImageBufferFp16(16);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 
@@ -135,39 +137,19 @@ enum class TensorBufferType(private val type: Int) {
 }
 
 /** Requirements for allocating a TensorBuffer. */
-class TensorBufferRequirements internal constructor(handle: Long) : JniHandle(handle) {
-  override fun destroy() {
-    // The object is owned by the compiled model.
-  }
-
-  /** Returns all the types supported by the tensor buffer requirements. */
-  @Throws(LiteRtException::class)
-  fun supportedTypes(): List<TensorBufferType> {
-    val types = nativeGetSupportedTypes(handle)
-    return types.map { TensorBufferType.of(it) }
-  }
-
-  /** Returns the size of the tensor buffer requirements in bytes. */
-  @Throws(LiteRtException::class)
-  fun bufferSize(): Int {
-    return nativeBufferSize(handle)
-  }
-
-  /** Returns the strides of the tensor buffer requirements. */
-  @Throws(LiteRtException::class)
-  fun strides(): IntArray {
-    return nativeGetStrides(handle)
-  }
-
-  companion object {
-    init {
-      System.loadLibrary("litert_jni")
-    }
-
-    @JvmStatic private external fun nativeGetSupportedTypes(handle: Long): IntArray
-
-    @JvmStatic private external fun nativeBufferSize(handle: Long): Int
-
-    @JvmStatic private external fun nativeGetStrides(handle: Long): IntArray
-  }
+data class TensorBufferRequirements
+constructor(
+  val supportedTypes: List<TensorBufferType>,
+  val bufferSize: Int,
+  val strides: List<Int>,
+) {
+  /**
+   * Alternate constructor for creating a TensorBufferRequirements, which takes int array for
+   * supportedTypes, and strides.
+   */
+  constructor(
+    supportedTypes: IntArray,
+    bufferSize: Int,
+    strides: IntArray,
+  ) : this(supportedTypes.map { TensorBufferType.of(it) }, bufferSize, strides.toList())
 }

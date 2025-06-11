@@ -73,6 +73,12 @@ typedef struct {
   LiteRtElementType element_type;
 } LiteRtUnrankedTensorType;
 
+inline bool LiteRtIsSameUnrankedTensorType(
+    const LiteRtUnrankedTensorType* type1,
+    const LiteRtUnrankedTensorType* type2) {
+  return type1->element_type == type2->element_type;
+}
+
 // Tensor whose rank is static but dimensions may be dynamic.
 typedef struct {
   // The primitive element type of the constituent data.

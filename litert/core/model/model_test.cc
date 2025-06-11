@@ -23,6 +23,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_model.h"
@@ -134,6 +135,19 @@ TEST(ModelTest, AttachExternalBufferToOp) {
   ASSERT_TRUE(op_2_res);
   EXPECT_EQ(op_2_res->second, kOp2Name);
   EXPECT_EQ(op_2_res->first, buf1_id);
+}
+
+TEST(ModelTest, InsertOpAtIndex) {
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
+  auto& op2 = subgraph.EmplaceOp();
+  auto& op3 = subgraph.EmplaceOpAt(1);
+
+  EXPECT_EQ(subgraph.Ops().size(), 3);
+  EXPECT_TRUE(&subgraph.Op(0) == &op);
+  EXPECT_TRUE(&subgraph.Op(1) == &op3);
+  EXPECT_TRUE(&subgraph.Op(2) == &op2);
 }
 
 TEST(ModelTest, ExternalBufferNotFound) {
@@ -530,5 +544,52 @@ TEST(CcForEachIrTest, SgF2) {
   EXPECT_EQ(count, 1);
 }
 
+//
+// Printing
+//
+
+TEST(PrintingTest, RankedTensorType) {
+  EXPECT_EQ(absl::StrFormat(
+                "%v", MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 2})),
+            "2d_i32<1x2>");
+}
+
+TEST(PrintingTest, Tensor) {
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>");
+}
+
+TEST(PrintingTest, ConstTensor) {
+  OwningBufferRef<uint8_t> buf(8);
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
+  EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
+}
+
+TEST(PrintingTest, FusedActivationFunction) {
+  EXPECT_EQ(absl::StrFormat("%v", ::tflite::ActivationFunctionType_RELU),
+            "RELU");
+}
+
+TEST(PrintingTest, TflNullOptions) {
+  ::tflite::AddOptionsT* add_opts = nullptr;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{null}");
+}
+
+TEST(PrintingTest, TflAddOptions) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", add_opts), "{fa=RELU6,pot=true}");
+}
+
+TEST(PrintingTest, TflAddOptionsPointer) {
+  ::tflite::AddOptionsT add_opts;
+  add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU6;
+  add_opts.pot_scale_int16 = true;
+  EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
+}
 }  // namespace
 }  // namespace litert::internal

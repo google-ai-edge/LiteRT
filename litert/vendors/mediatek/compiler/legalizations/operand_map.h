@@ -15,14 +15,23 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_OPERAND_MAP_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_OPERAND_MAP_H_
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
-#include <map>
+#include <cstdlib>
+#include <functional>
+#include <iterator>
 #include <numeric>
+#include <optional>
+#include <string>
+#include <utility>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/extra_data_mgr.h"
@@ -168,7 +177,7 @@ class OperandType : public NeuronOperandType {
 };
 
 // This class takes care of registering Tensors and scalars with a given
-// NeuronModel and returing their "operand index", which is how the MTK SDK
+// NeuronModel and returning their "operand index", which is how the MTK SDK
 // handles them.
 class OperandMap {
  public:
@@ -262,6 +271,12 @@ class OperandMap {
       return Register(t, tensor_flags);
     }
   }
+
+  Expected<size_t> RegisterExtraData(size_t bytes) {
+    return extra_data_mgr_.Register(bytes);
+  }
+
+  uint8_t* GetExtraData(size_t index) { return extra_data_mgr_.Get(index); }
 
  private:
   Expected<uint32_t> Register(const Tensor& t, int32_t tensor_flags = 0);

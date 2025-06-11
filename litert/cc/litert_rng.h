@@ -195,22 +195,25 @@ class ReinterpretGenerator<D, Dist, DeviceBase,
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
 
+// Recommended distribution for data generators.
+template <typename T>
+using Uniform =
+    SelectT<std::is_floating_point<T>, std::uniform_real_distribution<T>,
+            std::is_integral<T>, std::uniform_int_distribution<T>>;
+
+// Recommended engine for data generators.
+using DefaultEngine = std::mt19937_64;
+
 // Factory for creating data generators from just a data type with recommended
 // defaults.
-template <typename D>
+template <typename D, template <typename> typename Distribution = Uniform,
+          typename Engine = DefaultEngine>
 class DataGenerators {
   // Exotic types not yet supported (e.g. quant, complex, half-precision etc).
   static_assert(std::is_floating_point_v<D> || std::is_integral_v<D>);
 
- public:
-  using Engine = std::mt19937_64;
-  template <typename T>
-  using Uniform =
-      SelectT<std::is_floating_point<T>, std::uniform_real_distribution<T>,
-              std::is_integral<T>, std::uniform_int_distribution<T>>;
-
  private:
-  using GeneratorBase = DataGenerator<D, Uniform, Engine>;
+  using GeneratorBase = DataGenerator<D, Distribution, Engine>;
 
  public:
   using Reinterpret = ReinterpretGenerator<D, Uniform, Engine>;

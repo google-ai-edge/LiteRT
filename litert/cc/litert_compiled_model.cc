@@ -31,6 +31,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -246,5 +247,13 @@ Expected<bool> CompiledModel::IsFullyAccelerated() {
   LITERT_RETURN_IF_ERROR(LiteRtCompiledModelIsFullyAccelerated(
       Get(), &fully_accelerated));
   return fully_accelerated;
+}
+
+Expected<bool> CompiledModel::SetProfiler(Profiler& profiler) {
+  if (auto status = LiteRtCompiledModelSetProfiler(Get(), profiler.Get());
+      status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to set profiler");
+  }
+  return true;
 }
 }  // namespace litert

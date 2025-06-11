@@ -32,6 +32,12 @@
 
 namespace litert::internal {
 
+enum class LockState {
+  kUnlocked = 0,
+  kRead = 1,
+  kWrite = 2,
+  kReadWrite = 3,
+};
 /**
  * The OpenCL memory class that provides GPU memory allocation and two-way sync
  * between the CPU memory and the GPU OpenCL buffer.
@@ -84,7 +90,7 @@ class OpenClMemory {
       deallocator_(buffer_.GetMemoryPtr());
     }
     if (data_ != nullptr) {
-      free(data_);
+      litert_aligned_free(data_);
     };
   }
 
@@ -92,7 +98,7 @@ class OpenClMemory {
   // Allocates a CPU memory and conducts a copy from the OpenCL buffer to the
   // CPU memory.
   template <typename T>
-  Expected<T*> Lock();
+  Expected<T*> Lock(LiteRtTensorBufferLockMode mode);
 
   // Writes the data from the CPU memory to the OpenCL buffer.
   template <typename T>
@@ -127,6 +133,7 @@ class OpenClMemory {
   // The size of the CPU memory buffer in bytes. It's doubled for fp16 buffers.
   size_t cpu_buffer_size_ = 0;
   AHardwareBuffer* ahwb_ = nullptr;
+  LockState lock_state_ = LockState::kUnlocked;
 };
 
 }  // namespace litert::internal

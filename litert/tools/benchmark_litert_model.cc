@@ -82,15 +82,22 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 }
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {
-  auto qnn_dispatch_library_path =
-      params.Get<std::string>("qnn_dispatch_library_path");
-  LITERT_LOG(LITERT_INFO, "qnn_dispatch_library_path: %s",
-             qnn_dispatch_library_path.c_str());
+  auto dispatch_library_path = params.Get<std::string>("dispatch_library_path");
+  LITERT_LOG(LITERT_INFO, "dispatch_library_path: %s",
+             dispatch_library_path.c_str());
+  auto compiler_plugin_library_path =
+      params.Get<std::string>("compiler_plugin_library_path");
+  LITERT_LOG(LITERT_INFO, "compiler_plugin_library_path: %s",
+             compiler_plugin_library_path.c_str());
 
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
-          qnn_dispatch_library_path.c_str(),
+          dispatch_library_path.c_str(),
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerPluginLibraryDir,
+          compiler_plugin_library_path.c_str(),
       },
   };
   return litert::Environment::Create(absl::MakeConstSpan(environment_options));

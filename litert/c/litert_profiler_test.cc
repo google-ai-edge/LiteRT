@@ -26,23 +26,23 @@ TEST(LiteRtProfilerTest, CreateAndDestroy) {
   // SetUp and TearDown handle the basic creation and destruction.
   // This test just verifies that the profiler handle is not null after SetUp.
   EXPECT_NE(profiler, nullptr);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, GetInitialNumEvents) {
   EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
   int num_events = -1;
-  EXPECT_EQ(LiteRtGetNumEvents(profiler, &num_events), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtGetNumProfilerEvents(profiler, &num_events), kLiteRtStatusOk);
   EXPECT_EQ(num_events, 0);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, StartAndStopProfiling) {
   EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
   // Just test that the calls succeed.
-  EXPECT_EQ(LiteRtStartProfiling(profiler), kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtStopProfiling(profiler), kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStopProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, ResetProfiler) {
@@ -50,23 +50,24 @@ TEST(LiteRtProfilerTest, ResetProfiler) {
   // A simple test to ensure the Reset call succeeds. A more complex test
   // would involve adding events, resetting, and then checking if the count is
   // 0.
-  EXPECT_EQ(LiteRtStartProfiling(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
   // In a real scenario, events would be added here.
-  EXPECT_EQ(LiteRtStopProfiling(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtStopProfiler(profiler), kLiteRtStatusOk);
   EXPECT_EQ(LiteRtResetProfiler(profiler), kLiteRtStatusOk);
 
   int num_events = -1;
-  EXPECT_EQ(LiteRtGetNumEvents(profiler, &num_events), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtGetNumProfilerEvents(profiler, &num_events), kLiteRtStatusOk);
   EXPECT_EQ(num_events, 0);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, SetEventSource) {
   EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
   // This test just verifies that the call succeeds.
-  EXPECT_EQ(LiteRtSetCurrentEventSource(profiler, ProfiledEventSource::LITERT),
+  EXPECT_EQ(LiteRtSetProfilerCurrentEventSource(profiler,
+                                                ProfiledEventSource::LITERT),
             kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, GetEventsWhenEmpty) {
@@ -74,9 +75,9 @@ TEST(LiteRtProfilerTest, GetEventsWhenEmpty) {
   int num_events = 1;  // Set to a non-zero value initially
   // We expect num_events to be updated to 0.
   ProfiledEventData events[1];  // Dummy buffer
-  EXPECT_EQ(LiteRtGetEvents(profiler, events, &num_events), kLiteRtStatusOk);
-  EXPECT_EQ(num_events, 0);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtGetProfilerEvents(profiler, num_events, events),
+            kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 // --- Error Handling Tests ---
@@ -91,15 +92,16 @@ TEST(LiteRtProfilerErrorTest, PassNullToFunctions) {
   int num_events;
   ProfiledEventData events[1];
 
-  EXPECT_NE(LiteRtDestroyProfiler(nullptr), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtStartProfiling(nullptr), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtStopProfiling(nullptr), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtStartProfiler(nullptr), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtStopProfiler(nullptr), kLiteRtStatusOk);
   EXPECT_NE(LiteRtResetProfiler(nullptr), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtSetCurrentEventSource(nullptr, ProfiledEventSource::LITERT),
+  EXPECT_NE(
+      LiteRtSetProfilerCurrentEventSource(nullptr, ProfiledEventSource::LITERT),
+      kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetNumProfilerEvents(nullptr, &num_events), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetProfilerEvents(nullptr, num_events, events),
             kLiteRtStatusOk);
-  EXPECT_NE(LiteRtGetNumEvents(nullptr, &num_events), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtGetEvents(nullptr, events, &num_events), kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 
 TEST(LiteRtProfilerTest, PassNullToOutputPointers) {
@@ -108,9 +110,11 @@ TEST(LiteRtProfilerTest, PassNullToOutputPointers) {
   ProfiledEventData events[1];
   int num_events = 1;
 
-  EXPECT_NE(LiteRtGetNumEvents(profiler, nullptr), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtGetEvents(profiler, nullptr, &num_events), kLiteRtStatusOk);
-  EXPECT_NE(LiteRtGetEvents(profiler, events, nullptr), kLiteRtStatusOk);
-  EXPECT_EQ(LiteRtDestroyProfiler(profiler), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetNumProfilerEvents(profiler, nullptr), kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetProfilerEvents(profiler, num_events, nullptr),
+            kLiteRtStatusOk);
+  EXPECT_NE(LiteRtGetProfilerEvents(profiler, -1, events),
+            kLiteRtStatusOk);
+  LiteRtDestroyProfiler(profiler);
 }
 }  // namespace

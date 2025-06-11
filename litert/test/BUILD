@@ -177,6 +177,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "rng_fixture",
+    testonly = True,
+    hdrs = ["rng_fixture.h"],
+    deps = [
+        ":fuzz",
+        "//litert/cc:litert_rng",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "matchers_test",
     srcs = ["matchers_test.cc"],
@@ -202,6 +214,11 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],
+)
+
+cc_library(
+    name = "fuzz",
+    hdrs = ["fuzz.h"],
 )
 
 exports_files(srcs = [

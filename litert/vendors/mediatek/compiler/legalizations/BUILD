@@ -33,12 +33,14 @@ cc_library(
         ":neuron_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 

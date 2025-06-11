@@ -112,6 +112,38 @@ TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
       &FLAGS_mediatek_performance_mode_type,
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
 }
+
+TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, true);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_TRUE(options.Value().GetEnableL1CacheOptimizations());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
+  // Explicitly set to false (even though it's the default) to ensure it's
+  // picked up
+  absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_FALSE(options.Value().GetEnableL1CacheOptimizations());
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
+  absl::SetFlag(&FLAGS_mediatek_optimization_hint,
+                kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_EQ(options.Value().GetOptimizationHint(),
+            kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_optimization_hint,
+                kLiteRtMediatekNeuronAdapterOptimizationHintNormal);
+}
+
 TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {
   std::string error;
   LiteRtMediatekNeuronAdapterPerformanceMode value;
@@ -157,6 +189,53 @@ TEST(NeuronAdapterPerformanceModeFlagTest, Parse) {
     EXPECT_EQ(kMode, absl::UnparseFlag(value));
   }
 }
+
+TEST(NeuronAdapterOptimizationHintFlagTest, Malformed) {
+  std::string error;
+  LiteRtMediatekNeuronAdapterOptimizationHint value;
+
+  EXPECT_FALSE(absl::ParseFlag("not", &value, &error));
+  EXPECT_FALSE(absl::ParseFlag("a real", &value, &error));
+  EXPECT_FALSE(absl::ParseFlag("flag", &value, &error));
+}
+
+TEST(NeuronAdapterOptimizationHintFlagTest, Parse) {
+  std::string error;
+  LiteRtMediatekNeuronAdapterOptimizationHint value;
+  {
+    static constexpr absl::string_view kMode = "normal";
+    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
+        kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+    EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, absl::UnparseFlag(value));
+  }
+  {
+    static constexpr absl::string_view kMode = "low_latency";
+    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
+        kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency;
+    EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, absl::UnparseFlag(value));
+  }
+  {
+    static constexpr absl::string_view kMode = "deep_fusion";
+    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
+        kLiteRtMediatekNeuronAdapterOptimizationHintDeepFusion;
+    EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, absl::UnparseFlag(value));
+  }
+  {
+    static constexpr absl::string_view kMode = "batch_processing";
+    static constexpr LiteRtMediatekNeuronAdapterOptimizationHint kModeEnum =
+        kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing;
+    EXPECT_TRUE(absl::ParseFlag(kMode, &value, &error));
+    EXPECT_EQ(value, kModeEnum);
+    EXPECT_EQ(kMode, absl::UnparseFlag(value));
+  }
+}
+
 }  // namespace
 
 }  // namespace litert::mediatek

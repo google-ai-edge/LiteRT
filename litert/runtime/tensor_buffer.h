@@ -256,13 +256,4 @@ class LiteRtTensorBufferT {
   bool is_locked_ = false;
 };
 
-namespace litert::internal {
-
-// TODO: Also add ability to get tensor shape/dtype info, and forward to
-// the public c api.
-absl::string_view GetTensorBufferTypeName(
-    const LiteRtTensorBufferT& tensor_buffer);
-
-}  // namespace litert::internal
-
 #endif  // ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_H_

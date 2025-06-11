@@ -18,11 +18,11 @@
 namespace litert {
 namespace benchmark {
 
-static constexpr char kModelPath[] =
-    "/data/local/tmp/runfiles/litert/"
-    "test/testdata/simple_add_op_qc_v75_precompiled.tflite";
-
 TEST(BenchmarkLiteRtModelQualcommTest, NPUAcceleration) {
+  static constexpr char kModelPath[] =
+      "/data/local/tmp/runfiles/litert/"
+      "test/testdata/simple_add_op_qc_v75_precompiled.tflite";
+
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);
   params.Set<bool>("use_npu", true);
@@ -30,7 +30,29 @@ TEST(BenchmarkLiteRtModelQualcommTest, NPUAcceleration) {
   params.Set<bool>("use_cpu", false);
   params.Set<bool>("require_full_delegation", true);
   params.Set<std::string>(
-      "qnn_dispatch_library_path",
+      "dispatch_library_path",
+      "/data/local/tmp/runfiles/litert/");
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+
+  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+}
+
+TEST(BenchmarkLiteRtModelQualcommTest, NPUAcceleration_JIT) {
+  static constexpr char kModelPath[] =
+      "/data/local/tmp/runfiles/litert/"
+      "test/testdata/simple_add_op.tflite";
+
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<bool>("use_npu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("use_cpu", false);
+  params.Set<bool>("require_full_delegation", true);
+  params.Set<std::string>(
+      "dispatch_library_path",
+      "/data/local/tmp/runfiles/litert/");
+  params.Set<std::string>(
+      "compiler_plugin_library_path",
       "/data/local/tmp/runfiles/litert/");
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
 

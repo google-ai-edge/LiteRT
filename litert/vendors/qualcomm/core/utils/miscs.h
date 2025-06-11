@@ -6,7 +6,9 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -39,5 +41,9 @@ void ConvertDataFromUInt16toInt16(absl::Span<const std::uint16_t> src,
 
 void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
                                size_t num_bytes);
+
+bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
+
+bool IsStrEndsWith(std::string_view str, std::string_view suffix);
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

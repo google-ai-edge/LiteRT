@@ -24,8 +24,6 @@
 #include "litert/c/litert_profiler_event.h"
 #include "tflite/profiling/profile_buffer.h"  // IWYU pragma: keep
 
-namespace litert {
-
 LiteRtProfilerT::LiteRtProfilerT(size_t max_num_events)
     : profiling_enabled_(false),
       current_event_source_(ProfiledEventSource::LITERT) {
@@ -74,8 +72,7 @@ void LiteRtProfilerT::EndEvent(uint32_t event_handle) {
   profile_buffer_->EndEvent(event_handle);
   // The source associated with event_handle in active_event_sources_map_
   // will be used when GetProfiledEvents is called.
-  // We don't remove from active_event_sources_map_ here; it's cleared on Reset
-  // or when GetProfiledEvents is called if designed to be a consuming read.
+  // We don't remove from active_event_sources_map_ here; it's cleared on Reset.
 }
 
 void LiteRtProfilerT::StartProfiling() {
@@ -146,17 +143,8 @@ if (!profile_buffer_) {
     result_events.push_back(ev_data);
   }
 
-  // Design decision: Does GetProfiledEvents also clear the buffer?
-  // Often, profiling data is retrieved once and then the profiler is reset
-  // for the next session. If GetProfiledEvents should be non-consuming,
-  // then active_event_sources_map_ should also not be cleared here.
-  // If it's consuming, then:
-  // profile_buffer_->Reset(); // if also consuming from profile_buffer
-  // active_event_sources_map_.clear();
-
-  // For this design, let's assume GetProfiledEvents is non-consuming.
-  // Reset() is the explicit way to clear data.
-
+  // GetProfiledEvents is non-consuming, Reset() is the explicit way to clear
+  // data.
   return result_events;
 }
 
@@ -167,5 +155,3 @@ void LiteRtProfilerT::SetCurrentEventSource(ProfiledEventSource source_hint) {
 size_t LiteRtProfilerT::GetNumEvents() const {
   return profile_buffer_->Size();
 }
-
-}  // namespace litert

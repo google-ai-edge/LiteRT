@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,6 +37,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -48,6 +50,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/model.h"
@@ -65,6 +68,7 @@
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
+#include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
@@ -78,7 +82,6 @@ using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
 using ::litert::internal::ExternalLiteRtBufferContext;
-using ::litert::internal::GetTensorBufferTypeName;
 using ::litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
@@ -505,7 +508,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
     absl::string_view name = tensor_name ? tensor_name : "<unnamed>";
-    auto buffer_type = GetTensorBufferTypeName(*buffer);
+    auto buffer_type = litert::BufferTypeToString(buffer->buffer_type());
     LITERT_LOG(LITERT_DEBUG,
                "Registering %s tensor from TfliteTensor %p to "
                "LiteRtTensorBuffer %p of type %s",
@@ -624,6 +627,12 @@ Expected<void> LiteRtCompiledModelT::Run(
     absl::string_view signature_key,
     const std::vector<LiteRtTensorBuffer>& input_buffers,
     const std::vector<LiteRtTensorBuffer>& output_buffers, bool& async) {
+  uint64_t event_handle = std::numeric_limits<uint64_t>::max();
+  if (profiler_ && profiler_->IsProfiling()) {
+    profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
+    event_handle = profiler_->BeginEvent("LiteRT::Run[buffer registration]",
+                          tflite::Profiler::EventType::DEFAULT, 0, 0);
+  }
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
     return Unexpected(kLiteRtStatusErrorNotFound,
@@ -687,6 +696,11 @@ Expected<void> LiteRtCompiledModelT::Run(
                        res.Error().Message()));
     }
   }
+  if (profiler_ && profiler_->IsProfiling() &&
+      event_handle != std::numeric_limits<uint64_t>::max()) {
+    profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
+    profiler_->EndEvent(event_handle);
+  }
 
   if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -700,9 +714,15 @@ Expected<void> LiteRtCompiledModelT::Run(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
 
+  if (profiler_ && profiler_->IsProfiling()) {
+    profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
+    event_handle = profiler_->BeginEvent("LiteRT::Run[Buffer sync]",
+                          tflite::Profiler::EventType::DEFAULT, 0, 0);
+  }
+
   if (async) {
-    // If the caller requested async execution, then set async to true if any of
-    // the output buffers have been assigned a synchronization event.
+    // If the caller requested async execution, then set async to true if any
+    // of the output buffers have been assigned a synchronization event.
     async = false;
     for (auto& tb : output_buffers) {
       async |= tb->HasEvent();
@@ -720,6 +740,11 @@ Expected<void> LiteRtCompiledModelT::Run(
         }
       }
     }
+  }
+  if (profiler_ && profiler_->IsProfiling() &&
+      event_handle != std::numeric_limits<uint64_t>::max()) {
+    profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
+    profiler_->EndEvent(event_handle);
   }
 
   return {};

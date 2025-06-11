@@ -126,6 +126,7 @@ def export_lrt_only_script():
     return select({
         "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
         "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_ONLY_SCRIPT_LINUX],
         "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
         "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
@@ -135,6 +136,7 @@ def export_lrt_only_linkopt():
     return select({
         "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_ONLY_LINKOPT_LINUX],
         "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],
@@ -156,6 +158,7 @@ def export_lrt_runtime_only_script():
     return select({
         "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
         "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_LINUX],
         "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
         "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_RUNTIME_ONLY_SCRIPT_DARWIN],
         "//conditions:default": [],
@@ -168,6 +171,7 @@ def export_lrt_runtime_only_linkopt():
             "-Wl,-z,max-page-size=16384",
             _EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX,
         ],
+        "@org_tensorflow//tensorflow:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_LINUX],
         "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_RUNTIME_ONLY_LINKOPT_DARWIN],
         "//conditions:default": [],

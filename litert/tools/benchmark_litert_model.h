@@ -66,7 +66,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("use_cpu", BenchmarkParam::Create<bool>(true));
     default_params.AddParam("use_gpu", BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_npu", BenchmarkParam::Create<bool>(false));
-    default_params.AddParam("qnn_dispatch_library_path",
+    default_params.AddParam("dispatch_library_path",
+                            BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("compiler_plugin_library_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("require_full_delegation",
                             BenchmarkParam::Create<bool>(true));
@@ -165,7 +167,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_npu", &params_, "Whether to use NPU accelerator."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
-        "qnn_dispatch_library_path", &params_, "QNN dispatch library path."));
+        "dispatch_library_path", &params_, "Dispatch library path."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "compiler_plugin_library_path", &params_,
+        "Compiler plugin library path. Only for JIT compilation."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,
         "Whether to require full delegation."));
