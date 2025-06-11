@@ -21,6 +21,8 @@ class OpWrapper final {
  public:
   explicit OpWrapper(std::string name, const char* op_type, QnnOpCode op_code);
 
+  explicit OpWrapper(std::string name, const char* package_name, const char* op_type, QnnOpCode op_code);
+
   OpWrapper(const OpWrapper& other);
 
   OpWrapper& operator=(const OpWrapper& other);
@@ -64,6 +66,7 @@ class OpWrapper final {
   void ClearTensorParams();
 
  private:
+  const char* package_name_{nullptr};
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name
   std::vector<std::reference_wrapper<const TensorWrapper>> input_tensors_{};

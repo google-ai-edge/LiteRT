@@ -80,6 +80,18 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options) {
   }
 }
 
+ABSL_FLAG(
+    std::string, qualcomm_custom_op_package_path, "",
+    "Path to the custom op package, e.g. libQnnLiteRtQualcommOpPackage.so");
+
+ABSL_FLAG(std::string, qualcomm_custom_op_package_target, "",
+          "The target platform on which the backend register the op package.");
+
+ABSL_FLAG(
+    std::string, qualcomm_custom_op_package_interface_provider, "",
+    "Symbol name of the interface provider in the custom op package, e.g. "
+    "LiteRtQualcommOpPackageInterfaceProvider");
+
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
           "platforms.");
@@ -244,6 +256,20 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
                   int32_ids.push_back(std::stoi(id));
                 });
   opts.SetDumpTensorIds(int32_ids);
+
+  const auto custom_op_package_path =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_path);
+  opts.SetCustomOpPackagePath(std::string_view(custom_op_package_path.data(),
+                                               custom_op_package_path.size()));
+  const auto custom_op_package_target =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_target);
+  opts.SetCustomOpPackageTarget(std::string_view(
+      custom_op_package_target.data(), custom_op_package_target.size()));
+  const auto custom_op_package_interface_provider =
+      absl::GetFlag(FLAGS_qualcomm_custom_op_package_interface_provider);
+  opts.SetCustomOpPackageInterfaceProvider(
+      std::string_view(custom_op_package_interface_provider.data(),
+                       custom_op_package_interface_provider.size()));
 
   return opts;
 }
