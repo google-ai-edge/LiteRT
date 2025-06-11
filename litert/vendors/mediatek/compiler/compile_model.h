@@ -27,7 +27,8 @@ namespace litert::mediatek {
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts);
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+     int subgraph_index);
 
 }  // namespace litert::mediatek
 

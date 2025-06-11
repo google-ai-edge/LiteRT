@@ -27,10 +27,14 @@
 
 namespace litert::mediatek {
 
+constexpr int kDecodePartitionIndex = 0;
+constexpr int kPrefillPartitionIndex = 1;
+
 Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts) {
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    const int subgraph_index) {
   // LITERT_USE_JIT is automatically defined based on the build target.
   // It is defined on devices with MediaTek hardwares.
 #if LITERT_USE_JIT
@@ -57,7 +61,13 @@ Expected<NeuronCompilationPtr> CompileModel(
   // NOLINTEND
 
   if (mediatek_opts->GetEnableGemmaCompilerOptimizations()) {
-    compile_options = "--option-bundle=gemma";
+    if (subgraph_index == kDecodePartitionIndex) {
+      compile_options = " --option-bundle=gemma-decode";
+    }
+
+    if (subgraph_index == kPrefillPartitionIndex) {
+      compile_options = " --option-bundle=gemma-prefill";
+    }
   }
 
   // This is needed in order to support FP32 acativations since TFLite doesn't

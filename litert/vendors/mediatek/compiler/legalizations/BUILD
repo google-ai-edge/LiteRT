@@ -76,11 +76,13 @@ cc_library(
     ],
     deps = [
         ":operand_map",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 

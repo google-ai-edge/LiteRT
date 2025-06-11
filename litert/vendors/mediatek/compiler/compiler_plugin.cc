@@ -257,6 +257,9 @@ class LiteRtCompilerPluginT {
 
   ::litert::Expected<litert::OpaqueOptions>& GetOpaqueOptions() { return opq_; }
 
+  void SetSubgraphIndex(int index) { subgraph_index_ = index; }
+  int GetSubgraphIndex() const { return subgraph_index_; }
+
  private:
   litert::Expected<litert::EnvironmentOptions> env_ = litert::Error(
       kLiteRtStatusErrorInvalidArgument, "Null environment options");
@@ -267,6 +270,7 @@ class LiteRtCompilerPluginT {
   litert::Expected<litert::mediatek::MediatekOptions> mediatek_opts_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument,
                     "Null google tensor options");
+  int subgraph_index_ = 0;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
@@ -318,7 +322,8 @@ namespace {
 Expected<std::vector<uint8_t>> CompilePartition(
     NeuronAdapterApi& neuron_adapter_api, const litert::Subgraph& partition,
     const std::string& graph_name, std::optional<std::string> soc_model,
-    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts) {
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    const int subgraph_index) {
   auto model = neuron_adapter_api.CreateModel();
   if (!model) {
     return model.Error();
@@ -327,8 +332,8 @@ Expected<std::vector<uint8_t>> CompilePartition(
   LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
                                      model->get(), &operand_map));
 
-  auto compilation =
-      CompileModel(neuron_adapter_api, model->get(), soc_model, mediatek_opts);
+  auto compilation = CompileModel(neuron_adapter_api, model->get(), soc_model,
+                                  mediatek_opts, subgraph_index);
   if (!compilation) {
     return compilation.Error();
   }
@@ -412,8 +417,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   for (auto i = 0; i < num_partitions; ++i) {
     auto graph_name = absl::StrFormat("Partition_%d", i);
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+    // TODO(b/424234937): Remove this once the bug is fixed.
+    compiler_plugin->SetSubgraphIndex(i);
     auto bytecode = CompilePartition(**api, subgraph, graph_name, opt_soc_model,
-                                     compiler_plugin->GetMediatekOptions());
+                                     compiler_plugin->GetMediatekOptions(),
+                                     compiler_plugin->GetSubgraphIndex());
     rmdir(dla_directory_name);
     if (!bytecode) {
       LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
