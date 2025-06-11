@@ -1003,6 +1003,61 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
   ASSERT_EQ(std::memcmp(read_data, kTensorData, sizeof(kTensorData)), 0);
 }
 
+TEST(TensorBuffer, CreateManagedClBuffer) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP()
+        << "OpenCL is not supported on this platform; skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  // TensorBuffer::CreateManaged() is usually used with CompiledModel which
+  // initializes the GPU environment. If there is no CompiledModel, user needs
+  // to provide the GPU environment via LiteRtEnvironment.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer tensor_buffer,
+      TensorBuffer::CreateManaged(
+          user_gpu_env->GetEnvironment(), kLiteRtTensorBufferTypeOpenClBuffer,
+          RankedTensorType(kTestTensorType), sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cl_buffer, tensor_buffer.GetOpenClMemory());
+  EXPECT_THAT(cl_buffer, Ne(nullptr));
+}
+
+TEST(TensorBuffer, CreateFromClBuffer) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer, TensorBuffer::CreateManaged(
+                              user_gpu_env->GetEnvironment(), kTensorBufferType,
+                              kTensorType, sizeof(kTensorData)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cl_buffer, tensor_buffer.GetOpenClMemory());
+
+  // Create a new tensor buffer with the same memory.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer_2,
+      TensorBuffer::CreateFromClBuffer(user_gpu_env->GetEnvironment(),
+                                       kTensorType, kTensorBufferType,
+                                       cl_buffer, sizeof(kTensorData)));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto cl_buffer_2,
+                              tensor_buffer_2.GetOpenClMemory());
+  EXPECT_THAT(cl_buffer_2, Ne(nullptr));
+  EXPECT_THAT(cl_buffer_2, Eq(cl_buffer));
+}
+
 TEST(TensorBuffer, GetClBufferFromAhwb) {
   if (!HasOpenClSupport() || !HasAhwbSupport()) {
     GTEST_SKIP() << "OpenCL and/or AHWB are not supported on this platform; "
