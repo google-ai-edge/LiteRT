@@ -95,6 +95,11 @@ cc_library(
     name = "compile_model",
     srcs = ["compile_model.cc"],
     hdrs = ["compile_model.h"],
+    local_defines = select({
+        "@org_tensorflow//tensorflow:android": ["LITERT_USE_JIT=1"],
+        "@org_tensorflow//tensorflow:chromiumos": ["LITERT_USE_JIT=1"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",

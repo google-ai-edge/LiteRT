@@ -31,7 +31,9 @@ Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model,
     ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts) {
-#if defined(__ANDROID__)
+  // LITERT_USE_JIT is automatically defined based on the build target.
+  // It is defined on devices with MediaTek hardwares.
+#if LITERT_USE_JIT
   if (soc_model) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "JIT compilation for a specific SoC is not supported");
@@ -47,7 +49,7 @@ Expected<NeuronCompilationPtr> CompileModel(
 
   // NOLINTBEGIN
   auto compile_options =
-#if __ANDROID__
+#if LITERT_USE_JIT
       std::string(neuron_adapter_api.JitCompileOptions());
 #else
       std::string(neuron_adapter_api.AotCompileOptions());
@@ -70,7 +72,7 @@ Expected<NeuronCompilationPtr> CompileModel(
   }
 
   auto compilation =
-#if __ANDROID__
+#if LITERT_USE_JIT
       neuron_adapter_api.CreateCompilation(model);
 #else
       neuron_adapter_api.CreateCompilation(model, compile_options);
