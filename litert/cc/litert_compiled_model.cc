@@ -24,6 +24,7 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_metrics.h"
@@ -146,8 +147,8 @@ Expected<void> CompiledModel::RunCApiHelper(LiteRtParamIndex signature_index,
 }
 
 Expected<void> CompiledModel::RunHelper(
-    size_t signature_index, const std::vector<TensorBuffer>& input_buffers,
-    const std::vector<TensorBuffer>& output_buffers, bool& async) const {
+    size_t signature_index, absl::Span<const TensorBuffer> input_buffers,
+    absl::Span<const TensorBuffer> output_buffers, bool& async) const {
   auto input_buffers_ptr =
       std::make_unique<LiteRtTensorBuffer[]>(input_buffers.size());
   for (int i = 0; i < input_buffers.size(); ++i) {
