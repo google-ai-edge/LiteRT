@@ -44,6 +44,17 @@ bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
     return false;
   }
 
+  if (op.Code() == kLiteRtOpCodeShloComposite) {
+    const char* op_name;
+    if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) != kLiteRtStatusOk) {
+      return false;
+    }
+    if (std::string(op_name) == "odml.rms_norm") {
+      return true;
+    }
+    return false;
+  }
+
   return true;
 }
 

@@ -103,7 +103,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflPadv2,
     kLiteRtOpCodeTflHardSwish,
-    kLiteRtOpCodeTflAveragePool2d
+    kLiteRtOpCodeTflAveragePool2d,
+    kLiteRtOpCodeShloComposite,
 };
 // clang-format on
 

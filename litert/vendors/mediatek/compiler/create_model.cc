@@ -37,6 +37,7 @@
 #include "litert/vendors/mediatek/compiler/legalizations/reshape_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_bilinear_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_nearest_neighbor_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/rms_norm_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/rsqrt_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/softmax_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/squared_difference_op_legalization.h"
@@ -222,6 +223,11 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
       case kLiteRtOpCodeTflPadv2:
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_PAD_V2);
+        break;
+      case kLiteRtOpCodeShloComposite:
+        // TODO(MTK): Check if the op name is odml.rms_norm,
+        // LiteRtGetSHLOCompositeOpName currently returns an error.
+        status = LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
         break;
       default:
         return Error(kLiteRtStatusErrorRuntimeFailure, "Unsupported op");
