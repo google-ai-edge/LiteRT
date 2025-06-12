@@ -80,6 +80,7 @@ cc_library(
         "//litert/vendors/mediatek/compiler/legalizations:reshape_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:resize_bilinear_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:resize_nearest_neighbor_op_legalization",
+        "//litert/vendors/mediatek/compiler/legalizations:rms_norm_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:rsqrt_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:softmax_op_legalization",
         "//litert/vendors/mediatek/compiler/legalizations:squared_difference_op_legalization",
