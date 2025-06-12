@@ -64,6 +64,7 @@ cc_test(
     deps = [
         ":buffer_manager",
         ":model",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core:build_stamp",
