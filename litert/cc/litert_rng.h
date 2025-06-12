@@ -116,14 +116,11 @@ class RandomDevice {
 
 // Abstract base class for generating data of a certain type from a given rng
 // device, e.g. populating tensors and the like.
-template <typename D, template <typename> typename Dist, typename DeviceBase>
+template <typename D, template <typename> typename Dist>
 class DataGenerator {
  public:
   using DataType = D;
   using Wide = WideType<D>;
-  using Device = RandomDevice<DeviceBase>;
-
-  virtual DataType operator()(Device& rng) = 0;
 
   // Bounds of distribution.
   DataType Max() const { return dist_.max(); }
@@ -134,14 +131,13 @@ class DataGenerator {
 };
 
 // A data generator that generates data within a given range.
-template <typename D, template <typename> typename Dist, typename DeviceBase>
-class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
+template <typename D, template <typename> typename Dist>
+class RangedGenerator final : public DataGenerator<D, Dist> {
  private:
-  using Base = DataGenerator<D, Dist, DeviceBase>;
+  using Base = DataGenerator<D, Dist>;
 
  public:
   using typename Base::DataType;
-  using typename Base::Device;
   using typename Base::Wide;
 
   RangedGenerator() = default;
@@ -155,30 +151,32 @@ class RangedGenerator final : public DataGenerator<D, Dist, DeviceBase> {
   RangedGenerator(RangedGenerator&&) = default;
   RangedGenerator& operator=(RangedGenerator&&) = default;
 
-  DataType operator()(Device& rng) override { return this->dist_(rng); }
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return this->dist_(rng);
+  }
 };
 
 // A rangeless float generator that casts random bits to the given float type.
 // This generally produces higher quality floats more repersentative of the
 // target distribution than a ranged generator. Particularly covers more values
 // around zero and infinities.
-template <typename D, template <typename> typename Dist, typename DeviceBase,
-          typename Enable = void>
-class ReinterpretGenerator final : public DataGenerator<D, Dist, DeviceBase> {};
+template <typename D, template <typename> typename Dist, typename Enable = void>
+class ReinterpretGenerator final : public DataGenerator<D, Dist> {};
 
-template <typename D, template <typename> typename Dist, typename DeviceBase>
-class ReinterpretGenerator<D, Dist, DeviceBase,
+template <typename D, template <typename> typename Dist>
+class ReinterpretGenerator<D, Dist,
                            std::enable_if_t<std::is_floating_point_v<D>>>
-    final : public DataGenerator<D, Dist, DeviceBase> {
+    final : public DataGenerator<D, Dist> {
  private:
-  using Base = DataGenerator<D, Dist, DeviceBase>;
+  using Base = DataGenerator<D, Dist>;
 
  public:
   using typename Base::DataType;
-  using typename Base::Device;
   using typename Base::Wide;
 
-  DataType operator()(Device& rng) override {
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
     DataType res;
     auto bits = rng();
     memcpy(&res, &bits, sizeof(res));
@@ -195,72 +193,23 @@ class ReinterpretGenerator<D, Dist, DeviceBase,
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
 
-// Recommended distribution for data generators.
-template <typename T>
-using Uniform =
-    SelectT<std::is_floating_point<T>, std::uniform_real_distribution<T>,
-            std::is_integral<T>, std::uniform_int_distribution<T>>;
+// DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
-// Recommended engine for data generators.
-using DefaultEngine = std::mt19937_64;
+template <typename D>
+using DefaultGenerator =
+    SelectT<std::is_floating_point<D>,
+            ReinterpretGenerator<D, std::uniform_real_distribution>,
+            std::is_integral<D>,
+            RangedGenerator<D, std::uniform_int_distribution>>;
 
-// Factory for creating data generators from just a data type with recommended
-// defaults.
-template <typename D, template <typename> typename Distribution = Uniform,
-          typename Engine = DefaultEngine>
-class DataGenerators {
-  // Exotic types not yet supported (e.g. quant, complex, half-precision etc).
-  static_assert(std::is_floating_point_v<D> || std::is_integral_v<D>);
+template <typename D>
+using DefaultRangedGenerator =
+    SelectT<std::is_floating_point<D>,
+            RangedGenerator<D, std::uniform_real_distribution>,
+            std::is_integral<D>,
+            RangedGenerator<D, std::uniform_int_distribution>>;
 
- private:
-  using GeneratorBase = DataGenerator<D, Distribution, Engine>;
-
- public:
-  using Reinterpret = ReinterpretGenerator<D, Uniform, Engine>;
-  using Ranged = RangedGenerator<D, Uniform, Engine>;
-  using Dataype = GeneratorBase::DataType;
-  using Wide = GeneratorBase::Wide;
-  using RandomDevice = GeneratorBase::Device;
-
-  DataGenerators() = default;
-  DataGenerators(const DataGenerators&) = default;
-  DataGenerators& operator=(const DataGenerators&) = default;
-  DataGenerators(DataGenerators&&) = default;
-  DataGenerators& operator=(DataGenerators&&) = default;
-
-  // Create a ranged generator with the given limits.
-  static auto Generator(Wide min, Wide max) { return Ranged(min, max); }
-
-  // Create a rangeless generator. Floating point types will leverage the
-  // reinterpretation generator, which is recommended.
-  static auto Generator() {
-    if constexpr (std::is_floating_point_v<D>) {
-      return Reinterpret();
-    } else {
-      return Ranged();
-    }
-  }
-
-  // Initialize a random device with the proper types to work with generators.
-  template <typename... Args>
-  static auto Device(Args&&... args) {
-    return RandomDevice(std::forward<Args>(args)...);
-  }
-
-  // Convenience method(s) to create a generator and device in a pair.
-  static auto GeneratorAndDevice() {
-    return std::make_pair(Generator(), Device());
-  }
-  static auto GeneratorAndDevice(int seed) {
-    return std::make_pair(Generator(), Device(seed));
-  }
-  static auto GeneratorAndDevice(Wide min, Wide max) {
-    return std::make_pair(Generator(min, max), Device());
-  }
-  static auto GeneratorAndDevice(int seed, Wide min, Wide max) {
-    return std::make_pair(Generator(min, max), Device(seed));
-  }
-};
+using DefaultDevice = RandomDevice<std::mt19937>;
 
 }  // namespace litert
 
