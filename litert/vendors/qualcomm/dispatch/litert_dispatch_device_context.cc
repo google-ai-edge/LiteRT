@@ -14,15 +14,17 @@
 
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -30,9 +32,7 @@
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpMem.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
 #include "QnnMem.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
@@ -164,7 +164,13 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
 
   Qnn_MemDescriptor_t mem_descriptor = {};
-  mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
+  // QNN does not support 0-dimensional tensors.
+  std::array<uint32_t, 1> dim{1};
+  if (tensor_rank == 0) {
+    mem_descriptor.memShape = {1, dim.data(), nullptr};
+  } else {
+    mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
+  }
   mem_descriptor.dataType = tensor_data_type;
   mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
   mem_descriptor.customInfo = &mem_htp_descriptor;
