@@ -26,7 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
@@ -94,9 +94,9 @@ class DispatchDelegateKernel
   Expected<LiteRtDispatchInvocationContext> CreateNodeInvocationContext(
       TfLiteOpaqueContext* context, TfLiteOpaqueNode* node);
 
-  Expected<TensorBufferRequirements> GetBufferRequirements(
-      int node_idx, TfLiteOpaqueTensor* io_tfl_tensor, int io_tensor_index,
-      bool is_input) const;
+  Expected<litert::internal::LiteRtTensorBufferRequirementsPtr>
+  GetBufferRequirements(int node_idx, TfLiteOpaqueTensor* io_tfl_tensor,
+                        int io_tensor_index, bool is_input) const;
 
   Expected<void> ComputeRequirements(TfLiteOpaqueContext* context);
   Expected<void> ComputeTensorPortConnections(TfLiteOpaqueContext* context);

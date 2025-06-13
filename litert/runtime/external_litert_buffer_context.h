@@ -15,18 +15,37 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 #define ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
+#include <memory>
 #include <unordered_map>
 #include <utility>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
 namespace litert::internal {
+
+// Custom deleter for LiteRtTensorBufferRequirementsT. Used for pointers
+// acquired from C API handles.
+struct LiteRtTensorBufferRequirementsDeleter {
+  void operator()(LiteRtTensorBufferRequirementsT* requirements) const {
+    if (requirements) {
+      LiteRtDestroyTensorBufferRequirements(requirements);
+    }
+  }
+};
+
+// Used for cases when we want to assume ownership of a buffer
+// requirement that was created by calling C API function that returns
+// LiteRtTensorBufferRequirements handle (i.e.
+// LiteRtTensorBufferRequirementsT*).
+using LiteRtTensorBufferRequirementsPtr =
+    std::unique_ptr<LiteRtTensorBufferRequirementsT,
+                    LiteRtTensorBufferRequirementsDeleter>;
 
 class ExternalLiteRtBufferContext : public TfLiteExternalContext {
  public:
@@ -54,31 +73,23 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
   // DelegateKernel only when these requirements are needed.
   LiteRtStatus RegisterBufferRequirements(
       const TfLiteOpaqueTensor* tensor,
-      TensorBufferRequirements&& buffer_requirements);
+      LiteRtTensorBufferRequirementsPtr buffer_requirements);
 
   inline LiteRtStatus RegisterBufferRequirements(
       const TfLiteTensor* tensor,
-      TensorBufferRequirements&& buffer_requirements) {
+      LiteRtTensorBufferRequirementsPtr buffer_requirements) {
     return RegisterBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor),
         std::move(buffer_requirements));
   }
 
-  inline LiteRtStatus RegisterLiteRtBufferRequirements(
-      const TfLiteTensor* tensor,
-      LiteRtTensorBufferRequirements& litert_buffer_requirements) {
-    return RegisterBufferRequirements(
-        reinterpret_cast<const TfLiteOpaqueTensor*>(tensor),
-        TensorBufferRequirements(litert_buffer_requirements, OwnHandle::kYes));
-  }
-
   // Gets a registered tensor buffer requirements for the given tensor.
   // The returned TensorBufferRequirements object is still owned by
   // ExternalLiteRtBufferContext.
-  litert::Expected<const TensorBufferRequirements*> GetBufferRequirements(
-      const TfLiteOpaqueTensor* tensor);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetBufferRequirements(const TfLiteOpaqueTensor* tensor);
 
-  inline litert::Expected<const TensorBufferRequirements*>
+  inline litert::Expected<const LiteRtTensorBufferRequirementsT*>
   GetBufferRequirements(const TfLiteTensor* tensor) {
     return GetBufferRequirements(
         reinterpret_cast<const TfLiteOpaqueTensor*>(tensor));
@@ -132,7 +143,8 @@ class ExternalLiteRtBufferContext : public TfLiteExternalContext {
 
  private:
   LiteRtEnvironment env_;
-  std::unordered_map<const TfLiteOpaqueTensor*, TensorBufferRequirements>
+  std::unordered_map<const TfLiteOpaqueTensor*,
+                     LiteRtTensorBufferRequirementsPtr>
       buffer_requirements_;
   std::unordered_map<const TfLiteOpaqueTensor*, TensorBuffer> tensor_buffers_;
 
