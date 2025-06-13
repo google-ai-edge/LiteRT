@@ -18,10 +18,23 @@
 
 namespace qnn {
 
-std::vector<OpWrapper> BuildReduceSumOp(
+std::vector<OpWrapper> BuildReduceOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const bool keep_dims) {
+    const std::vector<TensorWrapperRef>& outputs, const bool keep_dims,
+    const char* qnn_op) {
   std::vector<OpWrapper> res;
+  const char* axes_param = nullptr;
+  const char* keep_dims_param = nullptr;
+
+  if (qnn_op == QNN_OP_REDUCE_SUM) {
+    axes_param = QNN_OP_REDUCE_SUM_PARAM_AXES;
+    keep_dims_param = QNN_OP_REDUCE_SUM_PARAM_KEEP_DIMS;
+  } else if (qnn_op == QNN_OP_REDUCE_MAX) {
+    axes_param = QNN_OP_REDUCE_MAX_PARAM_AXES;
+    keep_dims_param = QNN_OP_REDUCE_MAX_PARAM_KEEP_DIMS;
+  } else {
+    QNN_LOG_ERROR("Unsupported QNN OP %s.", qnn_op);
+  }
 
   TensorWrapper& axis_tensor = inputs[1];
   if (!axis_tensor.IsTensorStatic() || axis_tensor.GetRank() != 1) {
@@ -54,11 +67,11 @@ std::vector<OpWrapper> BuildReduceSumOp(
       sizeof(std::uint32_t) * adjusted_axis_data.size(),
       adjusted_axis_data.data());
 
-  OpWrapper& reduce_op = CreateOpWrapper(res, QNN_OP_REDUCE_SUM);
+  OpWrapper& reduce_op = CreateOpWrapper(res, qnn_op);
   reduce_op.AddInputTensor(input_tensor);
   reduce_op.AddOutputTensor(outputs[0]);
-  reduce_op.AddTensorParam(QNN_OP_REDUCE_SUM_PARAM_AXES, adjusted_axis_tensor);
-  reduce_op.AddScalarParam<bool>(QNN_OP_REDUCE_SUM_PARAM_KEEP_DIMS, keep_dims);
+  reduce_op.AddTensorParam(axes_param, adjusted_axis_tensor);
+  reduce_op.AddScalarParam<bool>(keep_dims_param, keep_dims);
 
   return res;
 }

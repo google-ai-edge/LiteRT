@@ -258,7 +258,7 @@ std::vector<OpWrapper> BuildElementwiseNotEqualOp(
   return res;
 }
 
-std::vector<OpWrapper> BuildElementwisePower(
+std::vector<OpWrapper> BuildElementwisePowerOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
     const std::vector<TensorWrapperRef>& outputs) {
   std::vector<OpWrapper> res;
@@ -316,4 +316,48 @@ std::vector<OpWrapper> BuildElementwiseGreaterEqualOp(
   return res;
 }
 
+std::vector<OpWrapper> BuildElementwiseExpOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_EXP);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseEqualOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_EQUAL);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddInputTensor(inputs[1]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseLogOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_LOG);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  return res;
+}
+
+std::vector<OpWrapper> BuildElementwiseAbsOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs) {
+  std::vector<OpWrapper> res;
+
+  auto& elementwise_op = CreateOpWrapper(res, QNN_OP_ELEMENT_WISE_ABS);
+  elementwise_op.AddInputTensor(inputs[0]);
+  elementwise_op.AddOutputTensor(outputs[0]);
+  return res;
+}
 }  // namespace qnn
