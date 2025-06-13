@@ -46,6 +46,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -201,8 +202,8 @@ TEST(DispatchDelegate, HwBuffer) {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto* input_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                input_buffer_requirements->SupportedTypes());
+    const auto& supported_types =
+        input_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer,
@@ -224,8 +225,8 @@ TEST(DispatchDelegate, HwBuffer) {
         auto* output_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
     ASSERT_NE(output_buffer_requirements, nullptr);
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                output_buffer_requirements->SupportedTypes());
+    const auto& supported_types =
+        output_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,
