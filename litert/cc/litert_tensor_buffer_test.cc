@@ -1108,6 +1108,95 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   }
 }
 
+TEST(TensorBuffer, ClBufferWriteOnReadLockIsNoOp) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer, TensorBuffer::CreateManaged(
+                              user_gpu_env->GetEnvironment(), kTensorBufferType,
+                              kTensorType, sizeof(kTensorData)));
+
+  // Write to the buffer with a read lock (should be no-op).
+  float tensor_data[] = {0, 0, 0, 0};
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    // Keep a copy of the data before writing.
+    std::memcpy(tensor_data, lock_and_addr->second, sizeof(tensor_data));
+    // Write to the buffer. This should not update the underlying buffer due to
+    // LockMode::kRead.
+    std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
+  }
+
+  // We expect the buffer to be unchanged due to write on read lock.
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_EQ(
+        std::memcmp(lock_and_addr->second, tensor_data, sizeof(tensor_data)),
+        0);
+  }
+}
+
+TEST(TensorBuffer, ClBufferReadOnWriteLockIsInvalid) {
+  if (!HasOpenClSupport()) {
+    GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
+                    "skipping the test";
+  }
+  if (!CanLoadOpenCl()) {
+    GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+  }
+
+  auto user_gpu_env = UserGpuEnvironment::Create(/*create_gl_env=*/false);
+
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeOpenClBuffer;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer, TensorBuffer::CreateManaged(
+                              user_gpu_env->GetEnvironment(), kTensorBufferType,
+                              kTensorType, sizeof(kTensorData)));
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kWrite);
+    ASSERT_TRUE(lock_and_addr);
+    std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto memory, tensor_buffer.GetOpenClMemory());
+
+  // Create a new tensor buffer with the same memory.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer_2,
+      TensorBuffer::CreateFromClBuffer(user_gpu_env->GetEnvironment(),
+                                       kTensorType, kTensorBufferType, memory,
+                                       sizeof(kTensorData)));
+
+  // Read on write lock is invalid, meaning that GPU memory that was previously
+  // written to is not downloaded to host.
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer_2, TensorBuffer::LockMode::kWrite);
+    ASSERT_TRUE(lock_and_addr);
+    ASSERT_NE(
+        std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)),
+        0);
+  }
+}
+
 TEST(TensorBuffer, GetAhwb) {
   if (!HasAhwbSupport()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
