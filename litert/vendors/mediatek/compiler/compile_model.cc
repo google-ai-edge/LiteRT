@@ -62,11 +62,11 @@ Expected<NeuronCompilationPtr> CompileModel(
 
   if (mediatek_opts->GetEnableGemmaCompilerOptimizations()) {
     if (subgraph_index == kDecodePartitionIndex) {
-      compile_options = " --option-bundle=gemma-decode";
+      compile_options = " --option-bundle=gemma-decode-accuracy";
     }
 
     if (subgraph_index == kPrefillPartitionIndex) {
-      compile_options = " --option-bundle=gemma-prefill";
+      compile_options = " --option-bundle=gemma-prefill-accuracy";
     }
   }
 
