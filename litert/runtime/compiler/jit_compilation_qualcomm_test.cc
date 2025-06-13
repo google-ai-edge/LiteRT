@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cstddef>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -81,7 +82,8 @@ TEST(JitCompilation, Qualcomm) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(/*signature_index=*/0, input_buffers, output_buffers);
+  compiled_model.Run(/*signature_index=*/static_cast<size_t>(0), input_buffers,
+                     output_buffers);
 
   // Check model output.
   {
