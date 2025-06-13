@@ -97,7 +97,7 @@ class CompiledModel
   // automatically which means the provided `compilation_options` are
   // meaningless.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, litert::Model& model,
+      litert::Environment& env, const litert::Model& model,
       const Options& jit_compilation_options) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
@@ -114,7 +114,7 @@ class CompiledModel
   // is used automatically which means the provided `hardware_accelerator` is
   // meaningless.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, litert::Model& model,
+      litert::Environment& env, const litert::Model& model,
       LiteRtHwAccelerators hardware_accelerator) {
     LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
     jit_compilation_options.SetHardwareAccelerators(hardware_accelerator);
