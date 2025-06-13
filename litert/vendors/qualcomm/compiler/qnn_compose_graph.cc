@@ -36,6 +36,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/core/builders/broadcast_to_op_builder.h"
@@ -580,10 +581,16 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeShloComposite: {
-      // TODO(yunandrew): Support custom epsilon for RMS Norm.
-      float epsilon = 9.99999997E-7;
-      op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
-                                          output_tensors, epsilon);
+      auto info = GetOptionsAs<CompositeOptions>(litert_op.Get());
+      if (!info) {
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      if (info->name == CompositeOptions::kRmsNorm) {
+        // TODO(yunandrew): Support custom epsilon for RMS Norm.
+        float epsilon = 9.99999997E-7;
+        op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
+                                            output_tensors, epsilon);
+      }
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflConv2d: {

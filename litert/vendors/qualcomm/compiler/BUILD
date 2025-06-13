@@ -152,6 +152,7 @@ litert_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//litert/cc:litert_op_options",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
