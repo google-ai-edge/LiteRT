@@ -14,6 +14,8 @@
 
 """Common LiteRT Build Utilities."""
 
+load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
+
 ####################################################################################################
 # Util
 
@@ -343,6 +345,13 @@ def litert_dynamic_lib(
         srcs = [":" + shared_lib_name],
         visibility = vis,
     )
+
+register_extension_info(
+    extension = litert_dynamic_lib,
+    label_regex_map = {
+        "deps": "deps:{extension_name}",
+    },
+)
 
 def copy_file(name, src, target, visibility = None):
     input_path = "$(location %s)" % src
