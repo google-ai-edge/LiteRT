@@ -210,7 +210,7 @@ bool SegmentationModel::RunSegmentation(bool run_async) {
     }
   } else {
     auto execution_result =
-        compiled_model_.Run(0, input_buffers_, output_buffers_);
+        compiled_model_.Run(input_buffers_, output_buffers_);
     std::cout << "SegmentationModel: Sync execution LiteRT model." << std::endl;
     if (!execution_result.HasValue()) {
       std::cerr << "SegmentationModel: Failed to execute LiteRT model."

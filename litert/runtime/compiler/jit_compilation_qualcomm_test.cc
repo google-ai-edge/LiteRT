@@ -65,14 +65,12 @@ TEST(JitCompilation, Qualcomm) {
                               litert::CompiledModel::Create(
                                   environment, model, kLiteRtHwAcceleratorNpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers,
-      compiled_model.CreateInputBuffers(/*signature_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
   EXPECT_EQ(input_buffers.size(), 2);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers,
-      compiled_model.CreateOutputBuffers(/*signature_index=*/0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
   EXPECT_EQ(output_buffers.size(), 1);
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -81,7 +79,7 @@ TEST(JitCompilation, Qualcomm) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(/*signature_index=*/0, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
   {
