@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <vector>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -35,6 +36,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
+  std::string qnn_json_path;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -241,6 +243,28 @@ LiteRtStatus LiteRtQualcommOptionsGetProfiling(
   }
 
   *profiling = options->profiling;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetQnnJsonPath(LiteRtQualcommOptions options,
+                                                 const char* qnn_json_path) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->qnn_json_path = qnn_json_path;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetQnnJsonPath(LiteRtQualcommOptions options,
+                                                 const char** qnn_json_path) {
+  if (options == nullptr || qnn_json_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *qnn_json_path = options->qnn_json_path.data();
 
   return kLiteRtStatusOk;
 }

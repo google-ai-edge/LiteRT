@@ -209,6 +209,11 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsProfiling options) {
       return "linting";
   }
 }
+
+ABSL_FLAG(std::string, qualcomm_qnn_json_path, "",
+          "Qnn JSON path. If provided, you can obtain Qnn IR in Qnn JSON "
+          "format.");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -244,6 +249,9 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
                   int32_ids.push_back(std::stoi(id));
                 });
   opts.SetDumpTensorIds(int32_ids);
+
+  const auto qnn_json_path = absl::GetFlag(FLAGS_qualcomm_qnn_json_path);
+  opts.SetQnnJsonPath(qnn_json_path.c_str());
 
   return opts;
 }

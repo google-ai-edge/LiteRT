@@ -78,6 +78,7 @@
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -935,6 +936,18 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
                                      tensor_pool, input_tensors, output_tensors,
                                      op_wrappers));
+    // TODO(jiunkaiy): Change to the op namespace if the literal op contains
+    // this information.
+    if (op.Outputs().size() > 0 && !op.Outputs()[0].Name().empty()) {
+      // Add op namespace based on the first output tensor name.
+      for (auto& op_wrapper : op_wrappers) {
+        size_t pos = op.Outputs()[0].Name().find(";");
+        if (pos != std::string_view::npos) {
+          op_wrapper.AddNamespace(op.Outputs()[0].Name().substr(0, pos));
+        }
+      }
+    }
+    // Move op_wrappers to graph_op_wrappers.
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
@@ -955,6 +968,13 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                      options.GetUseQint16AsQuint16());
     }
     qnn.Api()->graphAddNode(graph_mapper.QnnGraph(), op_wrapper.GetOpConfig());
+  }
+
+  // Dump Qnn Json to understand Qnn IR.
+  if (!options.GetQnnJsonPath().empty()) {
+    QNN_LOG_INFO("Qnn Json Path: %s", options.GetQnnJsonPath().data());
+    ::qnn::DumpQnnJson(created_tensors, graph_op_wrappers,
+                       options.GetQnnJsonPath().data());
   }
 
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(graph_mapper.Finalize());

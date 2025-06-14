@@ -3,6 +3,8 @@
 
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -10,12 +12,11 @@
 #include <utility>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -196,6 +197,15 @@ TEST(OpWrapperTest, SwapOutputsTest) {
   EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_2);
   op_wrapper_1.SwapOutputs(op_wrapper_2);
   EXPECT_EQ(op_wrapper_1.GetOutputTensor(0), output_1);
+}
+
+TEST(OpWrapperTest, ChangeOpName) {
+  OpWrapper op_wrapper_1{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "name");
+  op_wrapper_1.AddNamespace("namespace");
+  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name");
+  op_wrapper_1.AppendName("new");
+  EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
 }  // namespace
