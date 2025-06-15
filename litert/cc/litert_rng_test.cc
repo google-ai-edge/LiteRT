@@ -18,12 +18,15 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <random>
+#include <type_traits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_numerics.h"
 #include "litert/test/rng_fixture.h"
 
@@ -74,10 +77,14 @@ TEST(LitertRngTestWithCustomRng, NoSeed) {
               HasSubstr("DummyRng(seed=<default>,"));
 }
 
-using LiteRtRngTest = RngTest<>;
+using LiteRtRngTest = RngTest;
 
 TEST_F(LiteRtRngTest, Ints) {
-  auto [gen, device] = GeneratorAndDevice<int>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>();
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<int, std::uniform_int_distribution>>);
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_LE(val, gen.Max());
@@ -88,7 +95,11 @@ TEST_F(LiteRtRngTest, Ints) {
 TEST_F(LiteRtRngTest, IntsWithRange) {
   static constexpr auto kMin = 10;
   static constexpr auto kMax = 20;
-  auto [gen, device] = GeneratorAndDevice<int>(kMin, kMax);
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>(kMin, kMax);
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<int, std::uniform_int_distribution>>);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -99,9 +110,13 @@ TEST_F(LiteRtRngTest, IntsWithRange) {
 }
 
 TEST_F(LiteRtRngTest, FloatsWithRange) {
-  static constexpr auto kMin = 10;
-  static constexpr auto kMax = 20;
-  auto [gen, device] = GeneratorAndDevice<float>(kMin, kMax);
+  static constexpr auto kMin = 10.0f;
+  static constexpr auto kMax = 20.0f;
+  auto device = TracedDevice();
+  auto gen = DefaultRangedGenerator<float>(kMin, kMax);
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<float, std::uniform_real_distribution>>);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -112,7 +127,11 @@ TEST_F(LiteRtRngTest, FloatsWithRange) {
 }
 
 TEST_F(LiteRtRngTest, ReinterpretFloat) {
-  auto [gen, device] = GeneratorAndDevice<float>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<float>();
+  static_assert(std::is_same_v<
+                decltype(gen),
+                ReinterpretGenerator<float, std::uniform_real_distribution>>);
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
@@ -123,7 +142,8 @@ TEST_F(LiteRtRngTest, ReinterpretFloat) {
 }
 
 TEST_F(LiteRtRngTest, TestWithFuzz) {
-  auto [gen, device] = GeneratorAndDevice<int>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>();
   for (auto _ :
        FuzzBlock(std::chrono::milliseconds(50), kTestIters, kTestIters)) {
     const auto val = gen(device);
@@ -132,6 +152,44 @@ TEST_F(LiteRtRngTest, TestWithFuzz) {
   }
 }
 
-}  // namespace
+TEST_F(LiteRtRngTest, FullySpecifiedRandomTensorType) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type = type.Generate(
+      device, {kLiteRtElementTypeFloat32},
+      {RandomTensorType::DimSpec(2u), RandomTensorType::DimSpec(2u)});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(tensor_type->layout.dimensions[0], 2);
+  EXPECT_EQ(tensor_type->layout.dimensions[1], 2);
+}
 
+TEST_F(LiteRtRngTest, RandomElementType) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type = type.Generate(
+      device, {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt32});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_TRUE(tensor_type->element_type == kLiteRtElementTypeFloat32 ||
+              tensor_type->element_type == kLiteRtElementTypeInt32);
+}
+
+TEST_F(LiteRtRngTest, RandomTensorShape) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type =
+      type.Generate(device, {kLiteRtElementTypeFloat32},
+                    {RandomTensorType::DimRange(1u, 3u), std::nullopt});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(tensor_type->layout.rank, 2);
+  const auto dim1 = tensor_type->layout.dimensions[0];
+  EXPECT_GE(dim1, 1u);
+  EXPECT_LE(dim1, 3u);
+  const auto dim2 = tensor_type->layout.dimensions[1];
+  EXPECT_GE(dim2, 0u);
+  EXPECT_LE(dim2, NumericLimits<uint32_t>::Max());
+}
+
+}  // namespace
 }  // namespace litert

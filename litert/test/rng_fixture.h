@@ -32,13 +32,7 @@ namespace litert::testing {
 // set from gtest, which can be configured from command line for
 // reproducibility. It can also be used to set up repeated blocks of code for
 // fuzzing.
-template <template <typename> typename Distribution = Uniform,
-          typename Engine = DefaultEngine>
 class RngTest : public ::testing::Test {
- private:
-  template <typename T>
-  using Fact = DataGenerators<T, Distribution, Engine>;
-
  public:
   void TearDown() override {
     for (const auto& block : fuzz_blocks_) {
@@ -49,19 +43,9 @@ class RngTest : public ::testing::Test {
   }
 
  protected:
-  template <typename T, typename... Args>
-  auto Generator(Args&&... args) {
-    return Fact<T>::Generator(std::forward<Args>(args)...);
-  }
-  template <typename T>
-  auto Device() {
-    return TraceSeedInfo(Fact<T>::Device(CurrentSeed()));
-  }
-  template <typename T, typename... Args>
-  auto GeneratorAndDevice(Args&&... generator_args) {
-    return std::make_pair(
-        Fact<T>::Generator(std::forward<Args>(generator_args)...),
-        TraceSeedInfo(Fact<T>::Device(CurrentSeed())));
+  template <typename Device = DefaultDevice>
+  auto TracedDevice() {
+    return TraceSeedInfo(Device(CurrentSeed()));
   }
 
   template <typename... Args>
