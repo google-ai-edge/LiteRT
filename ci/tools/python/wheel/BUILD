@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
@@ -83,16 +84,21 @@ py_wheel(
         ":fixed_protos",
         ":fixed_pydeps",
         "//litert/c:libLiteRtRuntimeCApi.so",
-        "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper.so",
+        "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
-        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper.so",
+        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
-        "//tflite/experimental/genai:pywrap_genai_ops.so",
+        "//tflite/experimental/genai:pywrap_genai_ops",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
-        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper.so",
+        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper",
         "//tflite/python/metrics:metrics_interface",
-    ],
+    ] + if_pywrap(
+        if_true = [
+            "//tflite/python:pywrap_tflite",
+            "//litert/python:pywrap_litert",
+        ],
+    ),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),
