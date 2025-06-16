@@ -8,9 +8,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <variant>
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
@@ -687,6 +689,100 @@ TEST(MHAConvertTest, Gemma3Decode) {
   }
   ASSERT_EQ(op_wrappers[45].GetOpCode(), QnnOpCode::kConcat);
   ASSERT_EQ(op_wrappers[46].GetOpCode(), QnnOpCode::kReshape);
+}
+
+TEST(MaskTransformTest, Gemma3) {
+  // G2G Test case:
+  //
+  // ----- Before -----
+  //       In0
+  //        |
+  //     E-wise Not
+  //        |
+  //       Cast
+  //        |
+  //      Quant
+  //        |
+  //       Mul
+  //        |
+  //       Out0
+  //
+  // ----- After -----
+  //       In0
+  //        |
+  //     E-wise Select
+  //        |
+  //       Out0
+  //
+
+  static const std::vector<uint32_t> kDims{1, 1, 128, 1408};
+  std::vector<OpWrapper> op_wrappers;
+  TensorPool tensor_pool;
+
+  QuantizeParamsWrapperVariant bool_quant_param;
+  bool_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(1.0f, 0);
+
+  // not op
+  auto& pattern_input = tensor_pool.CreateNativeTensor(QNN_DATATYPE_BOOL_8,
+                                                       bool_quant_param, kDims);
+  auto& logic_not_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, bool_quant_param, kDims);
+
+  auto not_ops =
+      BuildElementwiseNotOp(tensor_pool, {pattern_input}, {logic_not_output});
+  std::move(not_ops.begin(), not_ops.end(), std::back_inserter(op_wrappers));
+
+  // cast op
+  auto& cast_output =
+      tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {}, kDims);
+  auto cast_ops = BuildCastOp(tensor_pool, {logic_not_output}, {cast_output});
+  std::move(cast_ops.begin(), cast_ops.end(), std::back_inserter(op_wrappers));
+
+  // quant op
+  QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(3.05185e-05f, 0);
+  auto& quant_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims);
+  auto quant_ops = BuildQuantizeOp(tensor_pool, {cast_output}, {quant_output});
+  std::move(quant_ops.begin(), quant_ops.end(),
+            std::back_inserter(op_wrappers));
+
+  // mul op
+  QuantizeParamsWrapperVariant mul_quant_param;
+  constexpr float mul_scale = 0.00305185f;
+  constexpr int32_t mul_zero_point = 0;
+  mul_quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(mul_scale,
+                                                            mul_zero_point);
+  auto& pattern_output = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_SFIXED_POINT_16, mul_quant_param, kDims);
+
+  static const std::array<int16_t, 1 * 1 * 128 * 1408> mul_val{-32767};
+  auto& mul_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_16, mul_quant_param, {mul_val.size()},
+      mul_val.size() * sizeof(mul_val[0]), mul_val.data());
+  auto mul_ops = BuildElementwiseMulOp(tensor_pool, {cast_output, mul_const},
+                                       {pattern_output});
+  std::move(mul_ops.begin(), mul_ops.end(), std::back_inserter(op_wrappers));
+
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
+  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+  ASSERT_EQ(op_wrappers.size(), 1);
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseSelect));
+  auto& in_1 = op_wrappers[0].GetInputTensor(1);
+  auto& in_2 = op_wrappers[0].GetInputTensor(2);
+  ASSERT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+      in_1.GetQuantParams()));
+  ASSERT_TRUE(std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+      in_2.GetQuantParams()));
+  auto quant_param_1 =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(in_1.GetQuantParams());
+  ASSERT_EQ(quant_param_1.GetScale(), mul_scale);
+  ASSERT_EQ(quant_param_1.GetZeroPoint(), mul_zero_point);
+  auto quant_param_2 =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(in_2.GetQuantParams());
+  ASSERT_EQ(quant_param_2.GetScale(), mul_scale);
+  ASSERT_EQ(quant_param_2.GetZeroPoint(), mul_zero_point);
 }
 
 }  // namespace
