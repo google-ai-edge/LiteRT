@@ -89,7 +89,7 @@ TEST(LiteRtProfilerErrorTest, CreateWithNullProfiler) {
 TEST(LiteRtProfilerErrorTest, PassNullToFunctions) {
   EXPECT_EQ(LiteRtCreateProfiler(10, &profiler), kLiteRtStatusOk);
   // Test that all functions handle a null profiler handle gracefully.
-  int num_events;
+  int num_events = 0;
   ProfiledEventData events[1];
 
   EXPECT_NE(LiteRtStartProfiler(nullptr), kLiteRtStatusOk);
