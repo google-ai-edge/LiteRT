@@ -131,12 +131,12 @@ void OpWrapper::UpdateTensors(
   }
   for (size_t i = 0; i < inputs.size(); ++i) {
     if (inputs[i].has_value()) {
-      input_tensors_[i] = inputs[i].value();
+      input_tensors_[i] = inputs[i].value().get();
     }
   }
   for (size_t i = 0; i < outputs.size(); ++i) {
     if (outputs[i].has_value()) {
-      output_tensors_[i] = outputs[i].value();
+      output_tensors_[i] = outputs[i].value().get();
     }
   }
 }
