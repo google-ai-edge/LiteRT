@@ -206,7 +206,7 @@ Expected<TensorBuffer> CustomOpDispatcher::GetTensorBuffer(
       // Duplicate the tensor buffer to avoid the lifetime issue.
       // The original tensor buffer is owned by the buffer context, and it
       // might be deallocated after the invoke.
-      return tensor_buffer->Duplicate();
+      return TensorBuffer(*tensor_buffer, OwnHandle::kNo).Duplicate();
     }
   }
   return CreateHostTensorBufferFromTflTensor(context, tfl_opaque_tensor);

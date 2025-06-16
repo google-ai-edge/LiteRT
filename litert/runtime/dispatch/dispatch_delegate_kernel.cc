@@ -27,6 +27,7 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_set.h"  // from @com_google_absl
+#include "absl/memory/memory.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -515,7 +516,7 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
           auto buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/true));
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
-          tfl_tensor, std::move(buffer_requirements)));
+          tfl_tensor, absl::WrapUnique(buffer_requirements.Release())));
     }
 
     auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
@@ -528,7 +529,7 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
           auto buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/false));
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
-          tfl_tensor, std::move(buffer_requirements)));
+          tfl_tensor, absl::WrapUnique(buffer_requirements.Release())));
     }
   }
 
@@ -567,7 +568,7 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
 
       LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
                               buffer_context_->GetTensorBuffer(tfl_tensor));
-      if (tensor_buffer == tensor_buffer_info.tensor_buffer) {
+      if (tensor_buffer == tensor_buffer_info.tensor_buffer.Get()) {
         return {};
       }
 
@@ -599,9 +600,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
       unused_buffer_handles.insert(tensor_buffer_info.buffer_handle);
 
       // Register the tensor buffer with the dispatch API.
-      auto litert_tensor_buffer = tensor_buffer.Get();
       LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
-          tfl_tensor, TensorBuffer(litert_tensor_buffer, OwnHandle::kNo)));
+          tfl_tensor, TensorBuffer(tensor_buffer, OwnHandle::kNo)));
 
       return {};
     }
@@ -613,13 +613,13 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
     LiteRtTensorBuffer litert_tensor_buffer = nullptr;
     if (auto tensor_buffer = buffer_context_->GetTensorBuffer(tfl_tensor);
         tensor_buffer) {
-      litert_tensor_buffer = tensor_buffer->Get();
+      litert_tensor_buffer = *tensor_buffer;
     } else {
       LITERT_ASSIGN_OR_RETURN(auto new_tensor_buffer,
                               AllocateTensorBuffer(tfl_tensor));
       litert_tensor_buffer = new_tensor_buffer.Get();
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterTensorBuffer(
-          tfl_tensor, std::move(new_tensor_buffer)));
+          tfl_tensor, new_tensor_buffer.Get()));
       size_t tfl_tensor_size = TfLiteOpaqueTensorByteSize(tfl_tensor);
       tensor_buffer_info.MarkAsMaybeSyncWithCpu(tfl_tensor_size);
     }
@@ -680,8 +680,7 @@ Expected<TensorBuffer> DispatchDelegateKernel::AllocateTensorBuffer(
     TfLiteOpaqueTensor* tfl_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto requirements_ptr,
                           buffer_context_->GetBufferRequirements(tfl_tensor));
-  LITERT_ASSIGN_OR_RETURN(auto supported_types,
-                          requirements_ptr->SupportedTypes());
+  auto supported_types = requirements_ptr->SupportedBufferTypes();
   if (supported_types.empty()) {
     return Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
@@ -690,7 +689,7 @@ Expected<TensorBuffer> DispatchDelegateKernel::AllocateTensorBuffer(
 
   LiteRtTensorBufferType buffer_type = supported_types[0];
   LITERT_ASSIGN_OR_RETURN(auto tensor_type, ConvertTensorType(tfl_tensor));
-  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, requirements_ptr->BufferSize());
+  size_t buffer_size = requirements_ptr->BufferSize();
 
   LITERT_ASSIGN_OR_RETURN(
       auto tensor_buffer,
