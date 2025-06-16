@@ -176,6 +176,57 @@ TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, CustomOpPackage) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  const std::string custom_op_package_path = "path";
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetCustomOpPackagePath(
+      qualcomm_options, custom_op_package_path.data(),
+      custom_op_package_path.size()));
+
+  const char* custom_op_package_path_ptr = nullptr;
+  uint32_t custom_op_package_path_length = 0;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetCustomOpPackagePath(
+      qualcomm_options, &custom_op_package_path_ptr,
+      &custom_op_package_path_length));
+  EXPECT_EQ(custom_op_package_path, std::string(custom_op_package_path_ptr,
+                                                custom_op_package_path_length));
+
+  const std::string custom_op_package_target = "target";
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetCustomOpPackageTarget(
+      qualcomm_options, custom_op_package_target.data(),
+      custom_op_package_target.size()));
+
+  const char* custom_op_package_target_ptr = nullptr;
+  uint32_t custom_op_package_target_length = 0;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetCustomOpPackageTarget(
+      qualcomm_options, &custom_op_package_target_ptr,
+      &custom_op_package_target_length));
+  EXPECT_EQ(custom_op_package_target,
+            std::string(custom_op_package_target_ptr,
+                        custom_op_package_target_length));
+
+  const std::string custom_op_package_interface_provider = "interface_provider";
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+      qualcomm_options, custom_op_package_interface_provider.data(),
+      custom_op_package_interface_provider.size()));
+
+  const char* custom_op_package_interface_provider_ptr = nullptr;
+  uint32_t custom_op_package_interface_provider_length = 0;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+      qualcomm_options, &custom_op_package_interface_provider_ptr,
+      &custom_op_package_interface_provider_length));
+  EXPECT_EQ(custom_op_package_interface_provider,
+            std::string(custom_op_package_interface_provider_ptr,
+                        custom_op_package_interface_provider_length));
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(QualcommOptionsTest, CppApi) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
@@ -213,6 +264,19 @@ TEST(QualcommOptionsTest, CppApi) {
   for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
     EXPECT_EQ(ids[i], kDumpTensorIds[i]);
   }
+
+  EXPECT_EQ(options->GetCustomOpPackagePath(), "");
+  options->SetCustomOpPackagePath("path");
+  EXPECT_EQ(options->GetCustomOpPackagePath(), "path");
+
+  EXPECT_EQ(options->GetCustomOpPackageTarget(), "");
+  options->SetCustomOpPackageTarget("target");
+  EXPECT_EQ(options->GetCustomOpPackageTarget(), "target");
+
+  EXPECT_EQ(options->GetCustomOpPackageInterfaceProvider(), "");
+  options->SetCustomOpPackageInterfaceProvider("interface_provider");
+  EXPECT_EQ(options->GetCustomOpPackageInterfaceProvider(),
+            "interface_provider");
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

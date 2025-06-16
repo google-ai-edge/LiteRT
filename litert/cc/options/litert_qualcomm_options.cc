@@ -136,7 +136,48 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
   return dump_ids;
 }
 
-Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
+void QualcommOptions::SetCustomOpPackagePath(std::string_view path) {
+  internal::AssertOk(LiteRtQualcommOptionsSetCustomOpPackagePath, Data(),
+                     path.data(), path.size());
+}
+
+std::string_view QualcommOptions::GetCustomOpPackagePath() {
+  const char *path = nullptr;
+  uint32_t length = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetCustomOpPackagePath, Data(), &path,
+                     &length);
+  return std::string_view(path, length);
+}
+
+void QualcommOptions::SetCustomOpPackageTarget(std::string_view target) {
+  internal::AssertOk(LiteRtQualcommOptionsSetCustomOpPackageTarget, Data(),
+                     target.data(), target.size());
+}
+
+std::string_view QualcommOptions::GetCustomOpPackageTarget() {
+  const char *target = nullptr;
+  uint32_t length = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetCustomOpPackageTarget, Data(),
+                     &target, &length);
+  return std::string_view(target, length);
+}
+
+void QualcommOptions::SetCustomOpPackageInterfaceProvider(
+    std::string_view interface_provider) {
+  internal::AssertOk(LiteRtQualcommOptionsSetCustomOpPackageInterfaceProvider,
+                     Data(), interface_provider.data(),
+                     interface_provider.size());
+}
+
+std::string_view QualcommOptions::GetCustomOpPackageInterfaceProvider() {
+  const char *interface_provider = nullptr;
+  uint32_t length = 0;
+  internal::AssertOk(LiteRtQualcommOptionsGetCustomOpPackageInterfaceProvider,
+                     Data(), &interface_provider, &length);
+  return std::string_view(interface_provider, length);
+}
+
+Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions &options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
     return Error(kLiteRtStatusErrorInvalidArgument);

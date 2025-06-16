@@ -35,6 +35,9 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
+  std::string custom_op_package_path = "";
+  std::string custom_op_package_target = "";
+  std::string custom_op_package_interface_provider = "";
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -242,5 +245,74 @@ LiteRtStatus LiteRtQualcommOptionsGetProfiling(
 
   *profiling = options->profiling;
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char* custom_op_package_path,
+    uint32_t length) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->custom_op_package_path = std::string(custom_op_package_path, length);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char** custom_op_package_path,
+    uint32_t* length) {
+  if (options == nullptr || custom_op_package_path == nullptr ||
+      length == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *custom_op_package_path = options->custom_op_package_path.data();
+  *length = options->custom_op_package_path.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char* custom_op_package_target,
+    uint32_t length) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->custom_op_package_target =
+      std::string(custom_op_package_target, length);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char** custom_op_package_target,
+    uint32_t* length) {
+  if (options == nullptr || custom_op_package_target == nullptr ||
+      length == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *custom_op_package_target = options->custom_op_package_target.data();
+  *length = options->custom_op_package_target.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char* custom_op_package_interface_provider, uint32_t length) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->custom_op_package_interface_provider =
+      std::string(custom_op_package_interface_provider, length);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char** custom_op_package_interface_provider, uint32_t* length) {
+  if (options == nullptr || custom_op_package_interface_provider == nullptr ||
+      length == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *custom_op_package_interface_provider =
+      options->custom_op_package_interface_provider.data();
+  *length = options->custom_op_package_interface_provider.size();
   return kLiteRtStatusOk;
 }

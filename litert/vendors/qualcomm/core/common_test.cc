@@ -110,6 +110,15 @@ TEST(QnnOptionTest, EnableWeightSharing) {
   EXPECT_EQ(options.GetEnableWeightSharing(), false);
 }
 
+TEST(QnnOptionTest, CustomOpPackage) {
+  Options options;
+  options.SetCustomOpPackage("path", "target", "interface_provider");
+  const auto custom_op_package = options.GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.path, "path");
+  EXPECT_EQ(custom_op_package.target, "target");
+  EXPECT_EQ(custom_op_package.interface_provider, "interface_provider");
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -118,6 +127,10 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetUseQint16AsQuint16());
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
+  const auto custom_op_package = options.GetCustomOpPackage();
+  EXPECT_EQ(custom_op_package.path, "");
+  EXPECT_EQ(custom_op_package.target, "");
+  EXPECT_EQ(custom_op_package.interface_provider, "");
 }
 
 }  // namespace
