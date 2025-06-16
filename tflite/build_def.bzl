@@ -195,7 +195,7 @@ def tflite_linkopts_no_undefined():
 def tflite_pagesize_linkopts():
     """Defines linker flags for setting the page size."""
     return select({
-        clean_dep("@org_tensorflow//tensorflow:android_arm64"): [
+        clean_dep("@org_tensorflow//tensorflow:android"): [
             "-Wl,-z,max-page-size=16384",
         ],
         "//conditions:default": [],
