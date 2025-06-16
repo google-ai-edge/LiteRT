@@ -23,6 +23,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
@@ -283,16 +284,16 @@ class CompiledModel
   // Runs the model of the given signature index synchronously with the provided
   // input/output TensorBuffers.
   Expected<void> Run(size_t signature_index,
-                     const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers) const {
+                     absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers) const {
     bool async = false;
     return RunHelper(signature_index, input_buffers, output_buffers, async);
   }
 
   // Runs the model of the default signature synchronously with the provided
   // input/output TensorBuffers.
-  Expected<void> Run(const std::vector<TensorBuffer>& input_buffers,
-                     const std::vector<TensorBuffer>& output_buffers) const {
+  Expected<void> Run(absl::Span<const TensorBuffer> input_buffers,
+                     absl::Span<const TensorBuffer> output_buffers) const {
     bool async = false;
     return RunHelper(/*signature_index=*/0, input_buffers, output_buffers,
                      async);
@@ -446,8 +447,8 @@ class CompiledModel
                                bool& async) const;
 
   Expected<void> RunHelper(size_t signature_index,
-                           const std::vector<TensorBuffer>& input_buffers,
-                           const std::vector<TensorBuffer>& output_buffers,
+                           absl::Span<const TensorBuffer> input_buffers,
+                           absl::Span<const TensorBuffer> output_buffers,
                            bool& async) const;
 
   Expected<void> RunMapHelper(
