@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -35,7 +35,33 @@
 
 namespace litert::internal {
 
+struct SyncOperation {
+  enum class Direction {
+    kBufferToCpu,  // Copy data from buffer to CPU memory
+    kCpuToBuffer   // Copy data from CPU memory to buffer
+  };
+
+  Direction direction;
+  TensorBuffer::LockMode lock_mode;
+
+  static SyncOperation BufferToCpu() {
+    return {Direction::kBufferToCpu, TensorBuffer::LockMode::kRead};
+  }
+
+  static SyncOperation CpuToBuffer() {
+    return {Direction::kCpuToBuffer, TensorBuffer::LockMode::kWrite};
+  }
+};
+
 class ExternalLiteRtBufferContext;
+
+// Forward declarations for node operations
+namespace node_ops {
+class BufferRequirementsOp;
+class TensorAttachmentOp;
+class PortConnectionOp;
+class AsyncEventAttachOp;
+}  // namespace node_ops
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
@@ -63,6 +89,12 @@ class DispatchDelegateKernel
   Expected<void> StartMetricsCollection(int detail_level);
 
   Expected<LiteRtMetricsT> StopMetricsCollection();
+
+  // Friend classes for node operations to access private members
+  friend class node_ops::BufferRequirementsOp;
+  friend class node_ops::TensorAttachmentOp;
+  friend class node_ops::PortConnectionOp;
+  friend class node_ops::AsyncEventAttachOp;
 
  private:
   DispatchDelegateKernel(LiteRtEnvironmentOptions environment_options,
@@ -114,6 +146,11 @@ class DispatchDelegateKernel
 
   Expected<const void*> FindAllocBase() const;
   Expected<int> FindAllocBaseFd() const;
+
+  // Helper method to sync tensor buffers with CPU memory
+  Expected<void> SyncBuffersWithCPU(
+      const std::vector<TfLiteOpaqueTensor*>& tensors,
+      SyncOperation sync_operation);
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
