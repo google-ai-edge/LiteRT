@@ -19,52 +19,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GEN_DIR="gen"
 ROOT_DIR="${SCRIPT_DIR}/.."
 
-if [ ! -d /root_dir ]; then
+if [ ! -d /litert_build ]; then
   # Running on host.
   cd ${SCRIPT_DIR}
   rm -fr ${GEN_DIR}
 
-  docker build . -t tflite-builder -f tflite-android.Dockerfile
+  docker build ${ROOT_DIR}/build -t tflite-builder -f hermetic_build.Dockerfile
 
   docker run -v ${SCRIPT_DIR}/../third_party/tensorflow:/third_party_tensorflow \
-    -v ${ROOT_DIR}:/root_dir \
+    -v ${ROOT_DIR}:/litert_build \
     -v ${SCRIPT_DIR}:/script_dir \
     -e RELEASE_VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}" \
     -e BAZEL_CONFIG_FLAGS="${BAZEL_CONFIG_FLAGS}" \
     -e BUILD_LITERT_KOTLIN_API="${BUILD_LITERT_KOTLIN_API}" \
-    --entrypoint /script_dir/build_maven_with_docker.sh tflite-builder
+    -w /litert_build \
+    tflite-builder /script_dir/build_maven_with_docker.sh
 
   echo "Output can be found here:"
   ls -lR ${GEN_DIR}/*
 
   exit 0
 else
-  # Running inside docker container, download the SDK first.
-  licenses=('y' 'y' 'y' 'y' 'y' 'y' 'y')
-  printf '%s\n' "${licenses[@]}" | sdkmanager --licenses
-  sdkmanager \
-    "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
-    "platform-tools" \
-    "platforms;android-${ANDROID_API_LEVEL}"
-
-  cd /third_party_tensorflow
-
-  # Run configure.
-  configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
-    'N'
-    'N'
-    'Y'
-    '/usr/lib/llvm-18/bin/clang'
-    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'y'
-    '/android/sdk'
-  )
-  printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
-
-  cd /root_dir
+  # Running inside docker container
+  # hermetic_build.Dockerfile already has Android SDK/NDK configured
+  # and generates .tf_configure.bazelrc automatically via entrypoint
+  
+  cd /litert_build
   bash /script_dir/build_android_package.sh
 
   # Bundle the Maven package

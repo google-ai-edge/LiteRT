@@ -20,6 +20,11 @@ services:
     build:
       context: .
       dockerfile: hermetic_build.Dockerfile
+    container_name: litert_build_container
     volumes:
-      - .:/litert_build
+      - ..:/litert_build
+    user: "${UID}:${GID}"
+    environment:
+      - HOME=/litert_build
+      - USER=${USER}
     command: bash -c "bazel build //litert/runtime:metrics"

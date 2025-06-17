@@ -14,56 +14,91 @@
 
 #include "litert/c/litert_common.h"
 
+#include <array>
+#include <string_view>
+#include <tuple>
+
+namespace {
+
+// Compile-time status string lookup
+struct StatusStringEntry {
+  LiteRtStatus status;
+  std::string_view name;
+};
+
+constexpr std::array<StatusStringEntry, 22> kStatusStrings = {{
+    {kLiteRtStatusOk, "kLiteRtStatusOk"},
+    {kLiteRtStatusErrorInvalidArgument, "kLiteRtStatusErrorInvalidArgument"},
+    {kLiteRtStatusErrorMemoryAllocationFailure,
+     "kLiteRtStatusErrorMemoryAllocationFailure"},
+    {kLiteRtStatusErrorRuntimeFailure, "kLiteRtStatusErrorRuntimeFailure"},
+    {kLiteRtStatusErrorMissingInputTensor,
+     "kLiteRtStatusErrorMissingInputTensor"},
+    {kLiteRtStatusErrorUnsupported, "kLiteRtStatusErrorUnsupported"},
+    {kLiteRtStatusErrorNotFound, "kLiteRtStatusErrorNotFound"},
+    {kLiteRtStatusErrorTimeoutExpired, "kLiteRtStatusErrorTimeoutExpired"},
+    {kLiteRtStatusErrorWrongVersion, "kLiteRtStatusErrorWrongVersion"},
+    {kLiteRtStatusErrorUnknown, "kLiteRtStatusErrorUnknown"},
+    {kLiteRtStatusErrorFileIO, "kLiteRtStatusErrorFileIO"},
+    {kLiteRtStatusErrorInvalidFlatbuffer,
+     "kLiteRtStatusErrorInvalidFlatbuffer"},
+    {kLiteRtStatusErrorDynamicLoading, "kLiteRtStatusErrorDynamicLoading"},
+    {kLiteRtStatusErrorSerialization, "kLiteRtStatusErrorSerialization"},
+    {kLiteRtStatusErrorCompilation, "kLiteRtStatusErrorCompilation"},
+    {kLiteRtStatusErrorIndexOOB, "kLiteRtStatusErrorIndexOOB"},
+    {kLiteRtStatusErrorInvalidIrType, "kLiteRtStatusErrorInvalidIrType"},
+    {kLiteRtStatusErrorInvalidGraphInvariant,
+     "kLiteRtStatusErrorInvalidGraphInvariant"},
+    {kLiteRtStatusErrorGraphModification,
+     "kLiteRtStatusErrorGraphModification"},
+    {kLiteRtStatusErrorInvalidToolConfig,
+     "kLiteRtStatusErrorInvalidToolConfig"},
+    {kLiteRtStatusLegalizeNoMatch, "kLiteRtStatusLegalizeNoMatch"},
+    {kLiteRtStatusErrorInvalidLegalization,
+     "kLiteRtStatusErrorInvalidLegalization"},
+}};
+
+constexpr std::string_view kUnknownStatus = "Unknown";
+
+// Compile-time binary search for status string
+constexpr std::string_view FindStatusString(LiteRtStatus status) {
+  for (const auto& entry : kStatusStrings) {
+    if (entry.status == status) {
+      return entry.name;
+    }
+  }
+  return kUnknownStatus;
+}
+
+}  // namespace
+
 extern "C" {
 
 const char* LiteRtGetStatusString(LiteRtStatus status) {
-  switch (status) {
-    // NOLINTNEXTLINE(preprocessor-macros)
-#define LITERT_STATUS_STR_CASE(STATUS) \
-  case STATUS:                         \
-    return #STATUS;
-    LITERT_STATUS_STR_CASE(kLiteRtStatusOk);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidArgument);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorMemoryAllocationFailure);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorRuntimeFailure);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorMissingInputTensor);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnsupported);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorNotFound);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorTimeoutExpired);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorFileIO);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidFlatbuffer);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorDynamicLoading);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorSerialization);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorCompilation);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorIndexOOB);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidIrType);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidGraphInvariant);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorGraphModification);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidToolConfig);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusLegalizeNoMatch);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorInvalidLegalization);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorWrongVersion);
-    LITERT_STATUS_STR_CASE(kLiteRtStatusErrorUnknown);
-#undef LITERT_STATUS_STR_CASE
+  // Use compile-time lookup for known statuses
+  constexpr auto max_known_status =
+      static_cast<LiteRtStatus>(kLiteRtStatusErrorInvalidLegalization);
+
+  if (status >= kLiteRtStatusOk && status <= max_known_status) {
+    for (const auto& entry : kStatusStrings) {
+      if (entry.status == status) {
+        return entry.name.data();
+      }
+    }
   }
+
+  return kUnknownStatus.data();
 }
 
 int LiteRtCompareApiVersion(LiteRtApiVersion version,
                             LiteRtApiVersion reference) {
-  if (version.major > reference.major) {
-    return 1;
-  } else if (version.major == reference.major) {
-    if (version.minor > reference.minor) {
-      return 1;
-    } else if (version.minor == reference.minor) {
-      if (version.patch > reference.patch) {
-        return 1;
-      } else if (version.patch == reference.patch) {
-        return 0;
-      }
-    }
-  }
-  return -1;
+  const auto v_tuple = std::tie(version.major, version.minor, version.patch);
+  const auto r_tuple =
+      std::tie(reference.major, reference.minor, reference.patch);
+
+  if (v_tuple > r_tuple) return 1;
+  if (v_tuple < r_tuple) return -1;
+  return 0;
 }
 
 }  // extern "C"
