@@ -170,6 +170,7 @@ cc_library(
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/cl:gl_interop",
             "//tflite/delegates/gpu/gl:egl_environment",
+            "//third_party/GL:EGL_headers",
         ],
         "//conditions:default": [],
     }),

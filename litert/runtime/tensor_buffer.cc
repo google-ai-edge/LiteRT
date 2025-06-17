@@ -57,10 +57,7 @@ namespace {
 
 template <typename T>
 void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
-  vec.clear();
-  vec.reserve(array_size);
-  std::copy(array, array + array_size, std::back_inserter(vec));
-  array = vec.data();
+  vec.assign(array, array + array_size);
 }
 
 }  // namespace
