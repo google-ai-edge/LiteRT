@@ -424,7 +424,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
     auto requirements = buffer_context_->GetBufferRequirements(tensor);
     if (requirements) {
-      return (*requirements)->Get();
+      return const_cast<LiteRtTensorBufferRequirements>(*requirements);
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
@@ -519,18 +519,15 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   auto requirements = buffer_context_->GetBufferRequirements(tensor);
   if (requirements) {
-    auto supported_types = (*requirements)->SupportedTypes();
-    if (!supported_types) {
-      return supported_types.Error();
-    }
+    const auto& supported_types = (*requirements)->SupportedBufferTypes();
 
-    for (auto& type : *supported_types) {
+    for (auto& type : supported_types) {
       if (type == buffer->buffer_type()) {
         // Register tensor buffer if it can be used by the backend.
         buffer->Duplicate();
         TensorBuffer duplicated_buffer(buffer, litert::OwnHandle::kYes);
         if (auto status = buffer_context_->RegisterTensorBuffer(
-                tensor, std::move(duplicated_buffer));
+                tensor, duplicated_buffer.Get());
             status != kLiteRtStatusOk) {
           return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Failed to register tensor buffer");
