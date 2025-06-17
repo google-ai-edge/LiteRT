@@ -164,12 +164,29 @@ Expected<Qnn_MemHandle_t> LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       QnnHtpMem_SharedBufferConfig_t{buffer_fd, tensor_buffer_offset};
 
   Qnn_MemDescriptor_t mem_descriptor = {};
-  // QNN does not support 0-dimensional tensors.
-  std::array<uint32_t, 1> dim{1};
+  std::vector<uint32_t> dims;
   if (tensor_rank == 0) {
-    mem_descriptor.memShape = {1, dim.data(), nullptr};
+    // QNN does not support 0-dimensional tensors.
+    // Set to dimension = [1] if it is 0-dimensional.
+    dims.emplace_back(1);
+    mem_descriptor.memShape = {1, dims.data(), nullptr};
   } else {
-    mem_descriptor.memShape = {tensor_rank, tensor_dimensions, nullptr};
+    // QNN does not support a dimension of -1.
+    // Set the dimension to 1 if it is -1.
+    dims.reserve(tensor_rank);
+    for (size_t i = 0; i < tensor_rank; ++i) {
+      int32_t dim = tensor_type.layout.dimensions[i];
+      if (dim == -1) {
+        LITERT_LOG(LITERT_INFO, "Change dimension from -1 to 1.");
+        dims.emplace_back(1);
+      } else if (dim >= 1) {
+        dims.emplace_back(static_cast<uint32_t>(dim));
+      } else {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Invalid dimension");
+      }
+    }
+    mem_descriptor.memShape = {tensor_rank, dims.data(), nullptr};
   }
   mem_descriptor.dataType = tensor_data_type;
   mem_descriptor.memType = QNN_MEM_TYPE_CUSTOM;
