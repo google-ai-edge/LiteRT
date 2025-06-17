@@ -263,11 +263,6 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   LITERT_RETURN_IF_ERROR(LiteRtGetOptionsHardwareAccelerators(
       jit_compilation_options, &hardware_accelerators));
 
-  if (hardware_accelerators == kLiteRtHwAcceleratorNone) {
-    return litert::ErrorStatusBuilder::InvalidArgument()
-           << "No acceleration provided.";
-  }
-
   LITERT_RETURN_IF_ERROR(
       compiled_model->InitializeModel(*model, hardware_accelerators, *env));
 
