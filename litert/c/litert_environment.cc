@@ -14,6 +14,8 @@
 
 #include "litert/c/litert_environment.h"
 
+#include <algorithm>
+#include <array>
 #include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -33,30 +35,31 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
                                      LiteRtEnvironment* environment) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
-  LITERT_ASSIGN_OR_RETURN(auto env, LiteRtEnvironmentT::CreateWithOptions(
-                                        absl::MakeSpan(options, num_options)));
+
+  auto options_span = absl::MakeSpan(options, num_options);
+  LITERT_ASSIGN_OR_RETURN(auto env,
+                          LiteRtEnvironmentT::CreateWithOptions(options_span));
   litert::TriggerAcceleratorAutomaticRegistration(*env);
 
-  bool has_gpu_options = false;
-  for (int i = 0; i < num_options; ++i) {
-    switch (options[i].tag) {
-      case kLiteRtEnvOptionTagOpenClDeviceId:
-      case kLiteRtEnvOptionTagOpenClPlatformId:
-      case kLiteRtEnvOptionTagOpenClContext:
-      case kLiteRtEnvOptionTagOpenClCommandQueue:
-      case kLiteRtEnvOptionTagEglContext:
-      case kLiteRtEnvOptionTagEglDisplay:
-        has_gpu_options = true;
-        break;
-      default:
-        break;
-    }
-  }
+  // Check if any GPU-related options are present using modern C++ algorithms
+  constexpr std::array<LiteRtEnvOptionTag, 6> kGpuOptionTags = {
+      kLiteRtEnvOptionTagOpenClDeviceId, kLiteRtEnvOptionTagOpenClPlatformId,
+      kLiteRtEnvOptionTagOpenClContext,  kLiteRtEnvOptionTagOpenClCommandQueue,
+      kLiteRtEnvOptionTagEglContext,     kLiteRtEnvOptionTagEglDisplay};
+
+  const bool has_gpu_options = std::any_of(
+      options_span.begin(), options_span.end(),
+      [&kGpuOptionTags](const LiteRtEnvOption& option) {
+        return std::find(kGpuOptionTags.begin(), kGpuOptionTags.end(),
+                         option.tag) != kGpuOptionTags.end();
+      });
+
   if (has_gpu_options) {
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_env, litert::internal::GpuEnvironment::Create(env.get()));
     LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
   }
+
   *environment = env.release();
   return kLiteRtStatusOk;
 }
