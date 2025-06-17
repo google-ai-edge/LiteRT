@@ -154,8 +154,8 @@ void LiteRtModelT::TransferSubgraphTo(LiteRtSubgraphT::Alloc& dest,
         if (decomp_ind != -1) {
           const auto new_ind = new_inds[decomp_ind];
           decomp_ind = new_ind;
-          litert::internal::SetTflOptions2(*op, std::move(opts));
         }
+        litert::internal::SetTflOptions2(*op, std::move(opts));
       });
   subgraphs_.TransferTo(dest, std::move(indices));
 }
