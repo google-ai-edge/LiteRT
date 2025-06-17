@@ -122,6 +122,18 @@ class CompiledModel
     return Create(env, model, jit_compilation_options);
   }
 
+  // Version of Create() that only works with fully AOT compiled models.
+  // With the fully AOT compiled models, no additional JIT compilation is
+  // needed.
+  //
+  // Note: If the model is not fully AOT compiled, this function will fail.
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        const litert::Model& model) {
+    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
+    jit_compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorNone);
+    return Create(env, model, jit_compilation_options);
+  }
+
   // Get input buffer requirements for the given signature and input name.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
       absl::string_view signature_name, absl::string_view input_name) {

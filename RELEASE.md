@@ -21,6 +21,8 @@
 
 ### Bug Fixes and Other Changes
 
+* Fixed CompiledModel::Create() can accept `kLiteRtHwAcceleratorNone`
+* Added CompiledModel::Create() for fully AOT compiled models
 * <SIMILAR TO ABOVE SECTION, BUT FOR OTHER IMPORTANT CHANGES / BUG FIXES>
 * <IF A CHANGE CLOSES A GITHUB ISSUE, IT SHOULD BE DOCUMENTED HERE>
 * <NOTES SHOULD BE GROUPED PER AREA>

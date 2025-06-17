@@ -96,9 +96,8 @@ TEST(DispatchDelegate, CompiledModel) {
       auto env,
       litert::Environment::Create(absl::MakeConstSpan(environment_options)));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
+                              CompiledModel::Create(env, model));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb and DmaBuf.
