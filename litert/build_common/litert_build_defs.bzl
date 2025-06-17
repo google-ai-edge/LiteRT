@@ -14,6 +14,10 @@
 
 """Common LiteRT Build Utilities."""
 
+# copybara:uncomment_begin(google-only)
+# load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
+# copybara:uncomment_end
+
 ####################################################################################################
 # Util
 
@@ -343,6 +347,15 @@ def litert_dynamic_lib(
         srcs = [":" + shared_lib_name],
         visibility = vis,
     )
+
+# copybara:uncomment_begin(google-only)
+# register_extension_info(
+#     extension = litert_dynamic_lib,
+#     label_regex_map = {
+#         "deps": "deps:{extension_name}",
+#     },
+# )
+# copybara:uncomment_end
 
 def copy_file(name, src, target, visibility = None):
     input_path = "$(location %s)" % src

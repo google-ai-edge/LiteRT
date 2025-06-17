@@ -36,6 +36,7 @@ bzl_library(
     name = "litert_build_defs_bzl",
     srcs = ["litert_build_defs.bzl"],
     visibility = ["//visibility:private"],
+    deps = ["//devtools/build_cleaner/skylark:build_defs_lib"],
 )
 
 bzl_library(

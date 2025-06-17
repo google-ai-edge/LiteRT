@@ -19,6 +19,7 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
 
 # copybara:uncomment_begin(google-only)
+# load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
 # load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
 # load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar")
 #
@@ -487,6 +488,15 @@ def litert_device_test(
         exec_args = exec_args,
         exec_env_vars = exec_env_vars,
     )
+
+# copybara:uncomment_begin(google-only)
+# register_extension_info(
+#     extension = litert_device_test,
+#     label_regex_map = {
+#         "deps": "deps:_{extension_name}",
+#     },
+# )
+# copybara:uncomment_end
 
 def litert_integration_test(
         name,
