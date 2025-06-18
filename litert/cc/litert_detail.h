@@ -32,12 +32,13 @@ namespace litert {
 template <typename Cond, typename T, typename... Rest>
 struct SelectHelper {
   using type =
-      std::conditional_t<Cond::value, T, typename SelectHelper<Rest...>::type>;
+      typename std::conditional_t<Cond::value, T,
+                                  typename SelectHelper<Rest...>::type>;
 };
 
 template <typename Cond, typename T>
 struct SelectHelper<Cond, T> {
-  using type = std::conditional_t<Cond::value, T, std::monostate>;
+  using type = typename std::conditional_t<Cond::value, T, std::monostate>;
 };
 
 // Use std::conditional to support sequence of if, if-else..., else
