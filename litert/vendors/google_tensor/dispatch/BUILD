@@ -20,6 +20,15 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
+# copybara:uncomment_begin(google-only)
+# genrule(
+#     name = "sb_api_h",
+#     srcs = ["//third_party/odml/infra/southbound:sb_api.h"],
+#     outs = ["sb_api.h"],
+#     cmd = "cp $< $@",
+# )
+# copybara:uncomment_end
+
 litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
@@ -35,8 +44,8 @@ litert_dynamic_lib(
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",
         "litert_dispatch_metrics.h",
+        "sb_api.h",
         "southbound.h",
-        # copybara:uncomment "//third_party/odml/infra/southbound:sb_api.h",
     ],
     copts = [
         "-Os",

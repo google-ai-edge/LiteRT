@@ -24,7 +24,6 @@
 #include <android/hardware_buffer.h>
 #endif
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
@@ -37,6 +36,7 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 namespace {

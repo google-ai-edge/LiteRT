@@ -19,10 +19,10 @@
 #include <memory>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 class LiteRtDispatchDeviceContextT {
