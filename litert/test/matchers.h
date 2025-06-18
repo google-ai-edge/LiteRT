@@ -51,10 +51,21 @@
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR) \
   auto&& litert_expected_value_or_error_##LINE = (EXPR);      \
   LITERT_ASSERT_OK(litert_expected_value_or_error_##LINE);    \
-  DECL = std::move(litert_expected_value_or_error_##LINE.Value());
+  _LITERT_STRIP_PARENS(DECL) =                                \
+      std::move(litert_expected_value_or_error_##LINE.Value());
 
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER2(LINE, DECL, EXPR) \
   LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR)
+
+// TODO: b/?????? - Deduplicate this from litert_macros.h when a common folder
+// has been decided.
+#ifndef _LITERT_STRIP_PARENS
+#define _LITERT_STRIP_PARENS(X) _LITERT_ESC(_LITERT_ISH X)
+#define _LITERT_ISH(...) _LITERT_ISH __VA_ARGS__
+#define _LITERT_ESC(...) _LITERT_ESC_(__VA_ARGS__)
+#define _LITERT_ESC_(...) _LITERT_VAN##__VA_ARGS__
+#define _LITERT_VAN_LITERT_ISH
+#endif
 
 namespace testing::litert {
 

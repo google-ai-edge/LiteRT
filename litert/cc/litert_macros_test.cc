@@ -15,6 +15,7 @@
 #include "litert/cc/litert_macros.h"
 
 #include <sstream>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -209,6 +210,17 @@ TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
   EXPECT_EQ(canary_value, 0);
 }
 
+TEST(LiteRtAssignOrReturnTest, AllowsStructuredBindings) {
+  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  auto Function = [&]() -> Expected<std::pair<int, const char*>> {
+    LITERT_ASSIGN_OR_RETURN((auto [i, c]), e);
+    EXPECT_EQ(i, e.Value().first);
+    EXPECT_EQ(c, e.Value().second);
+    return e;
+  };
+  LITERT_EXPECT_OK(Function());
+}
+
 TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
   LITERT_ABORT_IF_ERROR(kLiteRtStatusOk);
   LITERT_ABORT_IF_ERROR(true);
@@ -230,6 +242,13 @@ TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
 TEST(LiteRtAssignOrAbortTest, WorksWithValidExpected) {
   LITERT_ASSIGN_OR_ABORT(int v, Expected<int>(3));
   EXPECT_EQ(v, 3);
+}
+
+TEST(LiteRtAssignOrAbortTest, AllowsStructuredBindings) {
+  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  LITERT_ASSIGN_OR_ABORT((auto [i, c]), e);
+  EXPECT_EQ(i, e.Value().first);
+  EXPECT_EQ(c, e.Value().second);
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithError) {

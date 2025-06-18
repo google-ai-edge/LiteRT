@@ -15,6 +15,7 @@
 #include "litert/test/matchers.h"
 
 #include <type_traits>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest-spi.h>
@@ -169,6 +170,13 @@ TEST(AssertOkAndAssign, AssignAVariableWorks) {
   [[maybe_unused]] MoveOnly move_only;
   LITERT_ASSERT_OK_AND_ASSIGN(copy_only, Expected<CopyOnly>(CopyOnly()));
   LITERT_ASSERT_OK_AND_ASSIGN(move_only, Expected<MoveOnly>(MoveOnly()));
+}
+
+TEST(AssertOkAndAssign, AssignStructuredBindingsWorks) {
+  const Expected<std::pair<int, char>> e(std::pair(3, 'a'));
+  LITERT_ASSERT_OK_AND_ASSIGN((auto [a, b]), e);
+  EXPECT_EQ(a, e.Value().first);
+  EXPECT_EQ(b, e.Value().second);
 }
 
 void TestAssertOkAndAssignFailure() {

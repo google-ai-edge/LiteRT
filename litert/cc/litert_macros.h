@@ -295,7 +295,7 @@ class LogBeforeAbort {
     [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));    \
     return RETURN_VALUE;                                                    \
   }                                                                         \
-  DECL = std::move(TMP_VAR.Value());
+  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value());
 
 #define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
                                                       ...)                  \
@@ -313,13 +313,44 @@ class LogBeforeAbort {
     ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                      \
     ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                   \
   }                                                                          \
-  DECL = std::move(TMP_VAR.Value());
+  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value());
 
 #define _CONCAT_NAME_IMPL(x, y) x##y
 
 #define _CONCAT_NAME(x, y) _CONCAT_NAME_IMPL(x, y)
 
 #define _RETURN_VAL(val) return val
+
+// Removes outer parentheses from X if there are some.
+//
+// This is useful to allow macros parameters to have commas by putting them
+// inside parentheses by stripping those when expanding the macro.
+//
+// For instance, WITHOUT USING THIS, the following is an error.
+// ```
+// LITERT_ASSIGN_OR_RETURN(auto [a, b], SomeFunction());
+//                                ^   ^
+//          The above commas make it such that the macro has 3 arguments
+// ```
+// Using this, the following works:
+// ```
+// LITERT_ASSIGN_OR_RETURN((auto [a, b]), SomeFunction());
+//                         ^           ^
+//          These surround a comma, preventing it to be used as the macro
+//          argument separator. They are stripped internally by the macro.
+//
+// LITERT_ASSIGN_OR_RETURN(auto a, SomeFunction());
+//                         ^^^^^^
+//         There is no parentheses surrounding the parameter and the macro still
+//         works.
+// ```
+#ifndef _LITERT_STRIP_PARENS
+#define _LITERT_STRIP_PARENS(X) _LITERT_ESC(_LITERT_ISH X)
+#define _LITERT_ISH(...) _LITERT_ISH __VA_ARGS__
+#define _LITERT_ESC(...) _LITERT_ESC_(__VA_ARGS__)
+#define _LITERT_ESC_(...) _LITERT_VAN##__VA_ARGS__
+#define _LITERT_VAN_LITERT_ISH
+#endif
 
 #define LITERT_CHECK_STATUS_HAS_CODE(expr, code) ABSL_CHECK(expr == code);
 
