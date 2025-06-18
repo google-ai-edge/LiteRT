@@ -26,11 +26,16 @@ http_archive(
     url = "https://github.com/bazelbuild/rules_java/releases/download/5.3.5/rules_java-5.3.5.tar.gz",
 )
 
-# TensorFlow
-# TODO(ecalubaquib): Revert this to http_archive once tflite is fully separated from tensorflow.
-local_repository(
+# Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
+load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
+
+tensorflow_source_repo(
     name = "org_tensorflow",
-    path = "third_party/tensorflow",
+    sha256 = "5c123aa5ee0b7af8cfea78a8b98c582a404c4aa0d13c961efda9ced349a03c83",
+    strip_prefix = "tensorflow-8b9e9ab51e950d2bd7fa32796388b24f90550b46",
+    urls = [
+        "https://github.com/tensorflow/tensorflow/archive/8b9e9ab51e950d2bd7fa32796388b24f90550b46.tar.gz",
+    ],
 )
 
 # Initialize the TensorFlow repository and all dependencies.

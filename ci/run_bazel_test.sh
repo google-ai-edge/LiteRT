@@ -24,6 +24,7 @@ TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
     "--config=disable_tf_lite_py"
+    "--config=use_local_tf"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
     "--keep_going"
     "--repo_env=USE_PYWRAP_RULES=True"
