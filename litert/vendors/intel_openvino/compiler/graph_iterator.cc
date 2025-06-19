@@ -16,82 +16,10 @@
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
 
 #include <string>
+#include "utils.h"
 
 namespace litert {
 namespace openvino {
-
-ov::element::Type MapLiteTypeToOV(const litert::ElementType element_type) {
-  ov::element::Type ov_type;
-  switch (element_type) {
-    case litert::ElementType::Bool:
-      ov_type = ov::element::boolean;
-      break;
-    case litert::ElementType::Int4:
-      ov_type = ov::element::i4;
-      break;
-    case litert::ElementType::Int8:
-      ov_type = ov::element::i8;
-      break;
-    case litert::ElementType::Int16:
-      ov_type = ov::element::i16;
-      break;
-    case litert::ElementType::Int32:
-      ov_type = ov::element::i32;
-      break;
-    case litert::ElementType::Int64:
-      ov_type = ov::element::i64;
-      break;
-    case litert::ElementType::UInt8:
-      ov_type = ov::element::u8;
-      break;
-    case litert::ElementType::UInt16:
-      ov_type = ov::element::u16;
-      break;
-    case litert::ElementType::UInt32:
-      ov_type = ov::element::u32;
-      break;
-    case litert::ElementType::UInt64:
-      ov_type = ov::element::u64;
-      break;
-    case litert::ElementType::Float16:
-      ov_type = ov::element::f16;
-      break;
-    case litert::ElementType::Float32:
-      ov_type = ov::element::f32;
-      break;
-    case litert::ElementType::Float64:
-      ov_type = ov::element::f64;
-      break;
-    case litert::ElementType::BFloat16:
-      ov_type = ov::element::bf16;
-      break;
-    default:
-      ov_type = ov::element::undefined;
-  }
-  return ov_type;
-}
-
-LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
-                              std::vector<int64_t>& ov_shape_vec) {
-  if (litert_tensor.TypeId() != kLiteRtRankedTensorType)
-    return kLiteRtStatusErrorInvalidArgument;
-
-  const auto ranked_tensor_type = litert_tensor.RankedTensorType();
-  if (!ranked_tensor_type) {
-    LITERT_LOG(LITERT_ERROR, "%s", ranked_tensor_type.Error().Message().data());
-    return ranked_tensor_type.Error().Status();
-  }
-
-  const auto tensor_layout = ranked_tensor_type->Layout();
-  if (tensor_layout.Rank() == 0) {
-    return kLiteRtStatusErrorUnsupported;
-  } else {
-    ov_shape_vec.resize(tensor_layout.Rank());
-    for (int i = 0; i < ov_shape_vec.size(); i++)
-      ov_shape_vec[i] = tensor_layout.Dimensions()[i];
-  }
-  return kLiteRtStatusOk;
-}
 
 size_t GraphIteratorDelegate::size() const {
   return iterator_indices_.input_index_ + iterator_indices_.output_index_ +

@@ -65,6 +65,11 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflCast,
     kLiteRtOpCodeTflDiv,
     kLiteRtOpCodeTflCumsum,
+    kLiteRtOpCodeTflSub,
+    kLiteRtOpCodeTflGelu,
+    kLiteRtOpCodeTflGatherNd,
+    kLiteRtOpCodeTflSum,
+    kLiteRtOpCodeTflReduceMax,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -90,7 +95,13 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflFloorDiv,
     kLiteRtOpCodeTflCos,
     kLiteRtOpCodeTflMinimum,
-
+    kLiteRtOpCodeTflSquaredDifference,
+    kLiteRtOpCodeTflRsqrt,
+    kLiteRtOpCodeTflAbs,
+    kLiteRtOpCodeTflLess,
+    kLiteRtOpCodeTflSelect,
+    kLiteRtOpCodeTflSelectV2,
+    kLiteRtOpCodeTflHardSwish,
 };
 // clang format on
 

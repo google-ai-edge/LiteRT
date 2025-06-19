@@ -56,7 +56,10 @@ litert_dynamic_lib(
 litert_lib(
     name = "graph_iterator",
     srcs = ["graph_iterator.cc"],
-    hdrs = ["graph_iterator.h"],
+    hdrs = [
+        "graph_iterator.h",
+        "utils.h"
+        ],
     tags = [
         "nobuilder",
         "notap",
@@ -77,7 +80,10 @@ litert_lib(
 litert_lib(
     name = "decoder",
     srcs = ["decoder.cc"],
-    hdrs = ["decoder.h"],
+    hdrs = [
+        "decoder.h",
+        "utils.h"
+        ],
     tags = [
         "nobuilder",
         "notap",

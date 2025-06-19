@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_op_options.h"
 #include "litert/tools/dump.h"
+#include "utils.h"
 
 namespace litert {
 namespace openvino {
@@ -724,6 +725,59 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetCumsumReverseOption(litert_op_, &reverse),
             ERROR_LOG_STR("reverse", op_name_.c_str()));
         return reverse;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflSub:
+      if (name == "fused_activation_function") {
+        uint32_t fused_activation;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSubFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
+        return tflite::EnumNameActivationFunctionType(
+            static_cast<tflite::ActivationFunctionType>(fused_activation));
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflGelu:
+      if (name == "approximate") {
+        bool approximate;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetGeluApproximateOption(litert_op_, &approximate),
+            ERROR_LOG_STR("approximate", op_name_.c_str()));
+        return approximate;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflGatherNd:
+      if (name == "batch_dims") {
+        // No information available in litert_options.
+        return 0;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflSum:
+      if (name == "keep_dims") {
+        bool keep_dims;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSumKeepDimsOption(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
+        return keep_dims;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceMax:
+      if (name == "keep_dims") {
+        bool keep_dims;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetReduceMaxKeepDimsOption(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
+        return keep_dims;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
         return nullptr;
