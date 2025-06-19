@@ -77,7 +77,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_any",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_macros",

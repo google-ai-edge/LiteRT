@@ -493,7 +493,7 @@ litert_device_test(
     ],
     deps = [
         ":benchmark_litert_model",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api",
         "//litert/cc:litert_model",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",

@@ -59,7 +59,7 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api",
         "//litert/c:litert_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -93,7 +93,7 @@ litert_device_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment",

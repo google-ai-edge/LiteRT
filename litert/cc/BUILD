@@ -707,7 +707,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -764,7 +764,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -830,7 +830,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -905,7 +905,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -947,7 +947,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -1003,10 +1003,11 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ] + select({
+        # TODO(gcarranza) Get rid of this after more thorough testing.
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
@@ -1183,7 +1184,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api",
         ],
     }),
 )
