@@ -104,6 +104,7 @@ cc_test(
         ":binary_no_bcast",
         ":common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "//tflite/schema:schema_fbs",
