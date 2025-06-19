@@ -338,6 +338,12 @@ def litert_dynamic_lib(
         tags = tags,
         visibility = vis,
         deps = [lib_target_ref],
+        features = select({
+            # Allow unresolved symbols which will be defined in the executable. There are no
+            # linker flags to allow unresolved symbols only of a given pattern like LiteRt*.
+            "//litert/c:resolve_symbols_in_exec": ["-no_undefined"],
+            "//conditions:default": [],
+        }),
     )
 
     # Workaround needed because `xeno_mobile_test` conflates target names with target output

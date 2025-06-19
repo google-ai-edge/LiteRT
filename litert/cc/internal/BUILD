@@ -233,6 +233,7 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ],
+    alwayslink = True,
 )
 
 cc_library(
@@ -249,6 +250,7 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ],
+    alwayslink = True,
 )
 
 cc_library(
@@ -266,6 +268,7 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ],
+    alwayslink = True,
 )
 
 cc_library(
