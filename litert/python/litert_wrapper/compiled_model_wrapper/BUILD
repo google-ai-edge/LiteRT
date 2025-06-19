@@ -93,15 +93,13 @@ py_strict_library(
 # py_strict_test(
 #     name = "compiled_model_unit_test",
 #     srcs = ["compiled_model_unit_test.py"],
-#     # Static linking is required because this loads a cc_binary as a shared
-#     # library, which would otherwise create ODR violations.
-#     linking_mode = "static",
 #     tags = [
 #         "no_oss",  # TODO(b/190842754): Enable test in OSS.
 #     ],
 #     deps = [
 #         ":_pywrap_litert_compiled_model_wrapper",
 #         ":compiled_model",
+#         "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
 #         "//third_party/py/google/protobuf:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
 #     ],
 # )

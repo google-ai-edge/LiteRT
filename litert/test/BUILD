@@ -283,6 +283,7 @@ cc_test(
         ":matchers",
         ":rng_fixture",
         ":simple_buffer",
+        "//litert/c:litert_runtime_c_api_import_so",  #buildcleaner: keep
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_model",
         "//litert/cc:litert_rng",

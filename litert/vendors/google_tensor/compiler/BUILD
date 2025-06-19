@@ -49,12 +49,13 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc/options:litert_google_tensor_options",

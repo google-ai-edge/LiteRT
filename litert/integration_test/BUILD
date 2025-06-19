@@ -58,6 +58,7 @@ cc_test(
     deps = [
         ":gen_device_test_lib",
         "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
         "//litert/test:common",
