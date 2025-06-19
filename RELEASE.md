@@ -6,8 +6,11 @@
 
 ### Breaking Changes
 
-* <DOCUMENT BREAKING CHANGES HERE>
-* <THIS SECTION SHOULD CONTAIN API, ABI AND BEHAVIORAL BREAKING CHANGES>
+* `com.google.ai.edge.litert.TensorBufferRequirements`
+  * It becomes a data class, so all fields could be accessed directly without getter methods.
+  * The type of field `strides` changes from `IntArry` to `List<Int>` to be immutable.
+* `com.google.ai.edge.litert.Layout`
+  * The type of field `dimensions` and `strides` changes from `IntArry` to `List<Int>` to be immutable.
 
 ### Known Caveats
 
