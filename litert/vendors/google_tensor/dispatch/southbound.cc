@@ -20,10 +20,10 @@
 #include <optional>
 #include <string>
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 #define Load(H, S)                                                 \
   H = reinterpret_cast<decltype(&S)>(::dlsym(dlib_handle_, #S));   \
