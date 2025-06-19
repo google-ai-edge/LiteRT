@@ -154,6 +154,7 @@ cc_library(
         "//tflite/core/kernels:builtin_ops",
         "//tflite/delegates/nnapi:acceleration_test_util",
         "//tflite/delegates/nnapi:nnapi_delegate",
+        "//tflite/kernels/internal:tensor_ctypes",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/kernels/internal/utils:sparsity_format_converter",
         "//tflite/nnapi:nnapi_implementation",
@@ -163,6 +164,7 @@ cc_library(
         "//tflite/tools:logging",
         "//tflite/tools/optimize:quantization_utils",
         "//tflite/tools/versioning",
+        "@FP16",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/types:span",
@@ -816,6 +818,7 @@ cc_library(
     ],
     deps = BUILTIN_KERNEL_DEPS + [
         ":variable_op_kernels",
+        "@FP16",
         "@fft2d",
         "@ruy//ruy/profiler:instrumentation",
         "//tflite/c:c_api_types",
