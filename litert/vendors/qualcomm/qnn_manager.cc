@@ -273,6 +273,20 @@ LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
     return kLiteRtStatusOk;
   }
 
+  // TODO(Alen): Unblock op validation for quantize op.
+  if (strcmp(op_config.v1.typeName, QNN_OP_QUANTIZE) == 0 &&
+      op_config.v1.inputTensors[0].v2.dataType == QNN_DATATYPE_FLOAT_32 &&
+      op_config.v1.outputTensors[0].v2.dataType ==
+          QNN_DATATYPE_SFIXED_POINT_16) {
+    return kLiteRtStatusOk;
+  }
+  if (strcmp(op_config.v1.typeName, QNN_OP_DEQUANTIZE) == 0 &&
+      op_config.v1.inputTensors[0].v2.dataType ==
+          QNN_DATATYPE_SFIXED_POINT_16 &&
+      op_config.v1.outputTensors[0].v2.dataType == QNN_DATATYPE_FLOAT_32) {
+    return kLiteRtStatusOk;
+  }
+
   if (Qnn_ErrorHandle_t error =
           Api()->backendValidateOpConfig(BackendHandle(), op_config);
       QNN_SUCCESS != error) {
