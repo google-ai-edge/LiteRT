@@ -62,6 +62,9 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflBatchMatmul,
     kLiteRtOpCodeTflLeakyRelu,
     kLiteRtOpCodeTflPack,
+    kLiteRtOpCodeTflCast,
+    kLiteRtOpCodeTflDiv,
+    kLiteRtOpCodeTflCumsum,
     // These ops donot call get_attribute
     kLiteRtOpCodeTflDequantize,
     kLiteRtOpCodeTflLogistic,
@@ -71,6 +74,23 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflTranspose,
     kLiteRtOpCodeTflSlice,
     kLiteRtOpCodeTflQuantize,
+    kLiteRtOpCodeTflRange,
+    kLiteRtOpCodeTflBroadcastTo,
+    kLiteRtOpCodeTflPadv2,
+    kLiteRtOpCodeTflEqual,
+    kLiteRtOpCodeTflNotEqual,
+    kLiteRtOpCodeTflExp,
+    kLiteRtOpCodeTflReverseV2,
+    kLiteRtOpCodeTflMaximum,
+    kLiteRtOpCodeTflLogicalOr,
+    kLiteRtOpCodeTflExpandDims,
+    kLiteRtOpCodeTflLog,
+    kLiteRtOpCodeTflSin,
+    kLiteRtOpCodeTflPow,
+    kLiteRtOpCodeTflFloorDiv,
+    kLiteRtOpCodeTflCos,
+    kLiteRtOpCodeTflMinimum,
+
 };
 // clang format on
 

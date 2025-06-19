@@ -692,6 +692,42 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
         return nullptr;
       }
+    case LiteRtOpCode::kLiteRtOpCodeTflCast:
+      if (name == "DstT") {
+        return output_tensor_info_[0].m_element_type;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflDiv:
+      if (name == "fused_activation_function") {
+        uint32_t fused_activation;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDivFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
+        return tflite::EnumNameActivationFunctionType(
+            static_cast<tflite::ActivationFunctionType>(fused_activation));
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
+    case LiteRtOpCode::kLiteRtOpCodeTflCumsum:
+      if (name == "exclusive") {
+        bool exclusive;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetCumsumExclusiveOption(litert_op_, &exclusive),
+            ERROR_LOG_STR("exclusive", op_name_.c_str()));
+        return exclusive;
+      } else if (name == "reverse") {
+        bool reverse;
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetCumsumReverseOption(litert_op_, &reverse),
+            ERROR_LOG_STR("reverse", op_name_.c_str()));
+        return reverse;
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+        return nullptr;
+      }
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return nullptr;
