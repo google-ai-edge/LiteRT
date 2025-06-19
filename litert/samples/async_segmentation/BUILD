@@ -56,7 +56,7 @@ cc_binary(
         ":model_files",
         ":shader_files",
         ":test_images",
-        "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
+        "//litert/c:litert_runtime_c_api",  # buildcleaner: keep
         "//litert/vendors/qualcomm/dispatch:dispatch_api_so",  # buildcleaner: keep
         "@litert_gpu//:jni/arm64-v8a/libLiteRtGpuAccelerator.so",  # copybara:comment
         # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",

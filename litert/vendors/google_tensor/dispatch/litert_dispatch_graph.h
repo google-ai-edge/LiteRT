@@ -18,10 +18,10 @@
 #include <cstddef>
 #include <map>
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 class LiteRtDispatchGraphT {
