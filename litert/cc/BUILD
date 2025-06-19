@@ -610,6 +610,7 @@ cc_test(
         ":litert_environment_options",
         ":litert_expected",
         "//litert/c:litert_environment_options",
+        "//litert/c:litert_runtime_c_api_import_so",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -740,7 +741,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -762,6 +763,7 @@ cc_test(
         ":litert_options",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/test:common",
@@ -798,7 +800,7 @@ cc_library(
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_common",
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -813,10 +815,11 @@ cc_test(
         "//conditions:default": [],
     }) + gles_linkopts(),
     deps = [
+        ":litert_environment",
         ":litert_event",
         ":litert_platform_support",
         "//litert/c:litert_event_type",
-        "//litert/cc:litert_environment",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -865,7 +868,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -891,6 +894,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_model",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/runtime:tensor_buffer",
@@ -941,7 +945,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -984,7 +988,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -1004,6 +1008,7 @@ cc_test(
         ":litert_expected",
         ":litert_model",
         "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1044,7 +1049,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -1064,6 +1069,7 @@ cc_test(
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/options:litert_runtime_options",
@@ -1099,6 +1105,7 @@ litert_device_test(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1130,6 +1137,7 @@ litert_device_test(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1173,6 +1181,7 @@ litert_device_test(
 #         "//litert/c:litert_event",
 #         "//litert/c:litert_event_type",
 #         "//litert/c:litert_profiler_event",
+#         "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/cc/options:litert_runtime_options",
@@ -1226,7 +1235,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -1251,7 +1260,7 @@ cc_library(
         "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -1268,7 +1277,7 @@ cc_library(
         ":litert_handle",
         ":litert_macros",
         ":litert_tensor_buffer",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//tflite/c:common",
     ],
 )

@@ -318,6 +318,7 @@ cc_test(
             "@com_google_googletest//:gtest_main",
             # copybara:uncomment_begin(google-only)
             # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+            # "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
             # copybara:uncomment_end
             "//tflite/core/c:private_c_api_types",
             "//tflite/tools/benchmark:benchmark_model_lib",
@@ -452,6 +453,7 @@ cc_binary(
     name = "benchmark_model",
     deps = [
         ":benchmark_model_main",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             # copybara:uncomment_begin(google-only)
@@ -495,7 +497,7 @@ litert_device_test(
     ],
     deps = [
         ":benchmark_litert_model",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_model",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
