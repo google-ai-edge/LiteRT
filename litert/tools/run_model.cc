@@ -21,6 +21,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <numeric>
 #include <filesystem>
 #include <fstream>
@@ -66,6 +68,8 @@ ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
 ABSL_FLAG(std::string, dump_output_folder, "",
           "Specify a folder path to store all output tensors.");
+ABSL_FLAG(std::string, input_dir, "",
+          "Path to the folder where raw input tensors inside.");
 
 namespace litert {
 namespace {
@@ -257,17 +261,65 @@ Expected<void> RunModel() {
 
   ABSL_LOG(INFO) << "Prepare input buffers";
 
-  LITERT_ASSIGN_OR_RETURN(auto input_buffers,
-                          compiled_model.CreateInputBuffers(signature_index));
+  std::string input_dir = absl::GetFlag(FLAGS_input_dir);
+  std::vector<TensorBuffer> input_buffers;
+  if (input_dir.empty()) {
+    LITERT_ASSIGN_OR_RETURN(auto local_input_buffers,
+                            compiled_model.CreateInputBuffers(signature_index));
+    // Fill input buffers with sample data
+    for (size_t i = 0; i < local_input_buffers.size(); ++i) {
+      auto& buffer = local_input_buffers[i];
+      LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
 
-  // Fill input buffers with sample data
-  for (size_t i = 0; i < input_buffers.size(); ++i) {
-    auto& buffer = input_buffers[i];
-    LITERT_RETURN_IF_ERROR(FillInputBuffer(buffer));
+      // Print tensor info and data if requested
+      if (absl::GetFlag(FLAGS_print_tensors)) {
+        LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
+      }
+    }
+    std::move(local_input_buffers.begin(), local_input_buffers.end(),
+              std::back_inserter(input_buffers));
+  } else {
+    const auto signature_key = signatures[signature_index].Key();
+    ABSL_LOG(INFO) << "Read input files for signature_key: " << signature_key;
 
-    // Print tensor info and data if requested
-    if (absl::GetFlag(FLAGS_print_tensors)) {
-      LITERT_RETURN_IF_ERROR(PrintTensorBuffer(buffer, "Input", i));
+    const auto input_names = signatures[signature_index].InputNames();
+    for (const auto input_name : input_names) {
+      LITERT_ASSIGN_OR_RETURN(
+          TensorBuffer input_buffer,
+          compiled_model.CreateInputBuffer(signature_key, input_name));
+      const auto input_file_name = std::string(input_name.data()) + ".raw";
+      const auto input_file_path =
+          std::filesystem::path(input_dir) / input_file_name;
+
+      std::ifstream file(input_file_path, std::ios::binary);
+      if (!file.is_open()) {
+        return Unexpected(
+            kLiteRtStatusErrorNotFound,
+            "Failed to find input file " + input_file_path.string());
+      }
+      std::vector<char> input_data(std::filesystem::file_size(input_file_path));
+      file.read(input_data.data(), input_data.size());
+
+      LITERT_ASSIGN_OR_RETURN(auto type, input_buffer.TensorType());
+      if (type.ElementType() == ElementType::Float32) {
+        input_buffer.Write<float>(
+            absl::Span<float>(reinterpret_cast<float*>(input_data.data()),
+                              input_data.size() / sizeof(float)));
+        input_buffers.emplace_back(std::move(input_buffer));
+      } else if (type.ElementType() == ElementType::Int16) {
+        input_buffer.Write<int16_t>(
+            absl::Span<int16_t>(reinterpret_cast<int16_t*>(input_data.data()),
+                                input_data.size() / sizeof(int16_t)));
+        input_buffers.emplace_back(std::move(input_buffer));
+      } else if (type.ElementType() == ElementType::Int8) {
+        input_buffer.Write<int8_t>(
+            absl::Span<int8_t>(reinterpret_cast<int8_t*>(input_data.data()),
+                               input_data.size() / sizeof(int8_t)));
+        input_buffers.emplace_back(std::move(input_buffer));
+      } else {
+        return Unexpected(kLiteRtStatusErrorUnsupported,
+                          "Unsupported element type when fill input data");
+      }
     }
   }
 
