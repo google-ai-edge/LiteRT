@@ -14,6 +14,7 @@ pybind_extension(
     name = "format_converter_wrapper_pybind11",
     srcs = ["format_converter_wrapper_pybind11.cc"],
     common_lib_packages = [
+        "litert/python",
         "tflite/python",
     ],
     copts = [
@@ -25,6 +26,7 @@ pybind_extension(
     ],
     enable_stub_generation = True,
     features = ["-use_header_modules"],
+    wrap_py_init = True,
     deps = [
         "//tflite/core/c:common",
         "//tflite/kernels/internal/utils:sparsity_format_converter",

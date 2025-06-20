@@ -706,6 +706,7 @@ pybind_extension(
         "@org_tensorflow//third_party/py/numpy:numpy",
     ],
     common_lib_packages = [
+        "litert/python",
         "tflite/python",
     ],
     enable_stub_generation = True,
@@ -713,6 +714,7 @@ pybind_extension(
     pytype_srcs = [
         "_pywrap_string_util.pyi",
     ],
+    wrap_py_init = True,
     deps = [
         ":string_util_lib",
         "//tflite/python/interpreter_wrapper:numpy",
