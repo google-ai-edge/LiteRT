@@ -96,7 +96,9 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
     Copy(tensor_type_.layout.rank, tensor_type_.layout.strides, strides_);
   }
   auto packed_size = litert::internal::GetNumPackedBytes(tensor_type_);
-  if (!packed_size) {
+  if (tensor_type_.layout.rank == 0) {
+    packed_buffer_size_ = 1;
+  } else if (!packed_size) {
     packed_buffer_size_ = 0;
     LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
   } else {
@@ -472,8 +474,8 @@ Expected<void> LiteRtTensorBufferT::IsValid() {
   // Check for static dimensions.
   for (auto i = 0; i < tensor_type_.layout.rank; ++i) {
     if (tensor_type_.layout.dimensions[i] <= 0) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "TensorBuffer must have all static dimensions");
+      LITERT_LOG(LITERT_WARNING,
+                 "TensorBuffer should have positive dimensions");
     }
   }
 
