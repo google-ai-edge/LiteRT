@@ -80,18 +80,16 @@ PACKAGE_DATA = [
 py_wheel(
     name = "litert_wheel",
     srcs = [
-        ":fixed_protos",
+        #":fixed_protos", # TODO(vam): Re-enable this once the proto is fixed.
+        "//tflite/profiling/proto:model_runtime_info_py",
         ":fixed_pydeps",
         "//litert/c:libLiteRtRuntimeCApi.so",
-        "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper.so",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
-        "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper.so",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
-        "//tflite/experimental/genai:pywrap_genai_ops.so",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
-        "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper.so",
         "//tflite/python/metrics:metrics_interface",
+        "//litert/python:pywrap_litert_binaries",
     ],
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
