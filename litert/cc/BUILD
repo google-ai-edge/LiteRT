@@ -143,6 +143,7 @@ cc_test(
         ":litert_layout",
         ":litert_model",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/core/model",

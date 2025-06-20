@@ -44,7 +44,7 @@ namespace litert {
 // LiteRtRankedTensorType.
 class RankedTensorType {
  public:
-  RankedTensorType(enum ElementType element_type, class Layout&& layout)
+  RankedTensorType(ElementType element_type, Layout&& layout)
       : element_type_(element_type), layout_(std::move(layout)) {}
   explicit RankedTensorType(const LiteRtRankedTensorType& type)
       : element_type_(static_cast<enum ElementType>(type.element_type)),
@@ -61,9 +61,9 @@ class RankedTensorType {
     return ElementType() == other.ElementType() && Layout() == other.Layout();
   }
 
-  enum ElementType ElementType() const { return element_type_; }
+  ElementType ElementType() const { return element_type_; }
 
-  const class Layout& Layout() const { return layout_; }
+  const Layout& Layout() const { return layout_; }
 
  private:
   enum ElementType element_type_;
@@ -95,7 +95,7 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
   explicit Tensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
 
-  enum ElementType ElementType() const {
+  ElementType ElementType() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType())
       return static_cast<enum ElementType>(tensor_type.element_type);
@@ -122,7 +122,7 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     return unranked_tensor_type;
   }
 
-  Expected<class RankedTensorType> RankedTensorType() const {
+  Expected<RankedTensorType> RankedTensorType() const {
     if (TypeId() != kLiteRtRankedTensorType) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Not a ranked tensor type");
@@ -163,7 +163,7 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     return !weights.Bytes().empty();
   }
 
-  class Weights Weights() const {
+  Weights Weights() const {
     LiteRtWeights weights;
     internal::AssertOk(LiteRtGetTensorWeights, Get(), &weights);
     return litert::Weights(weights);
@@ -196,11 +196,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
 
     const enum ElementType ty = ranked_tensor_type->ElementType();
     if (ty != GetElementType<T>()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
     if (!HasWeights()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
     const absl::Span<const uint8_t> weights = Weights().Bytes();
 
@@ -210,11 +210,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     }
     auto byte_width = GetByteWidth(ty);
     if (!byte_width.has_value()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
     if (byte_width.value() * *num_elements != weights.size()) {
-      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument);
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
 
     return absl::MakeConstSpan(reinterpret_cast<const T*>(weights.data()),
@@ -228,9 +228,8 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
                        &defining_op);
     if (has_defining_op) {
       return defining_op;
-    } else {
-      return std::nullopt;
     }
+    return std::nullopt;
   }
 
   bool IsSubgraphOutput() const;
@@ -244,7 +243,7 @@ using OpOutputs = absl::InlinedVector<Tensor, kExpectedMaxNumOfOpOutputs>;
 // Operator. C++ equivalent of LiteRtOp.
 class Op : public internal::NonOwnedHandle<LiteRtOp> {
  public:
-  explicit Op(LiteRtOp op) : internal::NonOwnedHandle<LiteRtOp>(op) {}
+  explicit Op(LiteRtOp op) : NonOwnedHandle<LiteRtOp>(op) {}
 
   LiteRtOpCode Code() const {
     LiteRtOpCode opcode;
@@ -373,7 +372,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
 
-  Expected<class Subgraph> MainSubgraph() const {
+  Expected<Subgraph> MainSubgraph() const {
     LiteRtParamIndex main_subgraph_index;
     internal::AssertOk(LiteRtGetMainModelSubgraphIndex, Get(),
                        &main_subgraph_index);
@@ -386,7 +385,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return num_subgraphs;
   }
 
-  Expected<class Subgraph> Subgraph(size_t subgraph_index) const {
+  Expected<Subgraph> Subgraph(size_t subgraph_index) const {
     LiteRtSubgraph subgraph;
     if (LiteRtGetModelSubgraph(Get(), subgraph_index, &subgraph) !=
         kLiteRtStatusOk) {
@@ -410,10 +409,10 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the list of signatures defined in the model.
-  Expected<std::vector<class Signature>> GetSignatures() const {
+  Expected<std::vector<Signature>> GetSignatures() const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
-    std::vector<class Signature> signatures;
+    std::vector<Signature> signatures;
     signatures.reserve(num_signatures);
     for (int i = 0; i < num_signatures; ++i) {
       LiteRtSignature lite_rt_signature;
@@ -425,7 +424,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the signature at the given index.
-  Expected<class Signature> GetSignature(size_t signature_index) const {
+  Expected<Signature> GetSignature(size_t signature_index) const {
     LiteRtSignature lite_rt_signature;
     internal::AssertOk(LiteRtGetModelSignature, Get(), signature_index,
                        &lite_rt_signature);
@@ -449,7 +448,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the Signature object for the given signature key.
-  Expected<class Signature> FindSignature(
+  Expected<Signature> FindSignature(
       absl::string_view signature_key) const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);

@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 #define ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 
-#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -58,7 +57,7 @@ bool MatchOpType(
 
 // Does this tensor contain weights whose values match expected_data.
 template <typename T>
-inline bool MatchWeights(const Tensor& tensor,
+bool MatchWeights(const Tensor& tensor,
                          absl::Span<const T> expected_data) {
   auto weights = tensor.WeightsData<T>();
   return weights.HasValue() && *weights == expected_data;

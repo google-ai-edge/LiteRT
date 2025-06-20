@@ -24,6 +24,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_element_type.h"
@@ -37,19 +38,16 @@ namespace litert {
 
 namespace {
 
-static constexpr const int32_t kTensorDimensions[] = {1, 2, 3};
+constexpr int32_t kTensorDimensions[] = {1, 2, 3};
 
-static constexpr const auto kRank =
-    sizeof(kTensorDimensions) / sizeof(kTensorDimensions[0]);
+constexpr uint32_t kTensorStrides[] = {6, 3, 1};
 
-static constexpr const uint32_t kTensorStrides[] = {6, 3, 1};
+constexpr LiteRtLayout kLayout = BuildLayout(kTensorDimensions);
 
-static constexpr const LiteRtLayout kLayout = BuildLayout(kTensorDimensions);
-
-static constexpr const LiteRtLayout kLayoutWithStrides =
+constexpr LiteRtLayout kLayoutWithStrides =
     BuildLayout(kTensorDimensions, kTensorStrides);
 
-static constexpr const LiteRtRankedTensorType kTensorType = {
+constexpr LiteRtRankedTensorType kTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32,
     /*.layout=*/kLayout,
 };
@@ -149,19 +147,19 @@ TEST(CcLayoutTest, WithStrides) {
 }
 
 TEST(CcLayoutTest, Equal) {
-  Layout layout1(litert::Dimensions({2, 2}));
-  Layout layout2(litert::Dimensions({2, 2}));
+  Layout layout1(Dimensions({2, 2}));
+  Layout layout2(Dimensions({2, 2}));
   ASSERT_TRUE(layout1 == layout2);
 }
 
 TEST(CcLayoutTest, NotEqual) {
-  Layout layout1(litert::Dimensions({2, 2}));
-  Layout layout2(litert::Dimensions({2, 2}), litert::Strides({6, 3, 1}));
+  Layout layout1(Dimensions({2, 2}));
+  Layout layout2(Dimensions({2, 2}), litert::Strides({6, 3, 1}));
   ASSERT_FALSE(layout1 == layout2);
 }
 
 TEST(CcLayoutTest, NumElements) {
-  Layout layout(litert::Dimensions({2, 2, 3}));
+  Layout layout(Dimensions({2, 2, 3}));
   auto num_elements = layout.NumElements();
   ASSERT_TRUE(num_elements);
   EXPECT_EQ(*num_elements, 12);
@@ -249,7 +247,7 @@ TEST(CcTensorTest, WeightsData) {
 }
 
 TEST(CcTensorTest, Name) {
-  static constexpr absl::string_view kName = "foo";
+  constexpr absl::string_view kName = "foo";
   LiteRtTensorT tensor;
   tensor.SetName(std::string(kName));
 
@@ -258,7 +256,7 @@ TEST(CcTensorTest, Name) {
 }
 
 TEST(CcTensorTest, Index) {
-  static constexpr std::uint32_t kIndex = 1;
+  constexpr std::uint32_t kIndex = 1;
   LiteRtTensorT tensor;
   tensor.SetTensorIndex(kIndex);
 
@@ -276,8 +274,8 @@ TEST(CcTensorTest, QuantizationNone) {
 }
 
 TEST(CcTensorTest, QuantizationPerTensor) {
-  static constexpr auto kScale = 1.0;
-  static constexpr auto kZeroPoint = 1;
+  constexpr auto kScale = 1.0;
+  constexpr auto kZeroPoint = 1;
 
   LiteRtTensorT litert_tensor;
   litert_tensor.SetQarams(MakePerTensorQuantization(kScale, kZeroPoint));
@@ -292,10 +290,10 @@ TEST(CcTensorTest, QuantizationPerTensor) {
 }
 
 TEST(CcTensorTest, QuantizationPerChannel) {
-  static constexpr auto kNumChannels = 2;
-  static constexpr auto kQuantizedDimension = 0;
-  static constexpr float kScales[kNumChannels] = {1.0, 2.0};
-  static constexpr int64_t kZeroPoints[kNumChannels] = {0, 0};
+  constexpr auto kNumChannels = 2;
+  constexpr auto kQuantizedDimension = 0;
+  constexpr float kScales[kNumChannels] = {1.0, 2.0};
+  constexpr int64_t kZeroPoints[kNumChannels] = {0, 0};
 
   LiteRtTensorT litert_tensor;
   auto per_channel = MakePerChannelQuantization(

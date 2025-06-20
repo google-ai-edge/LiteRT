@@ -29,7 +29,7 @@ namespace litert {
 
 namespace {
 
-using ::litert::testing::LoadTestFileModel;
+using testing::LoadTestFileModel;
 
 TEST(MatchRankedTensorTypeTest, HasAll) {
   auto litert_model = LoadTestFileModel("one_mul.tflite");

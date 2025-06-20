@@ -43,13 +43,13 @@ bool Tensor::IsConstant() const {
 
 Tensor::TensorUses Tensor::Uses() const {
   LiteRtParamIndex num_uses;
-  litert::internal::AssertOk(LiteRtGetNumTensorUses, Get(), &num_uses);
+  internal::AssertOk(LiteRtGetNumTensorUses, Get(), &num_uses);
 
   TensorUses uses;
   for (auto i = 0; i < num_uses; ++i) {
     LiteRtOp user;
     LiteRtParamIndex user_arg_index;
-    litert::internal::AssertOk(LiteRtGetTensorUse, Get(), i, &user,
+    internal::AssertOk(LiteRtGetTensorUse, Get(), i, &user,
                                &user_arg_index);
     uses.emplace_back(TensorUse{Op(user), user_arg_index});
   }
@@ -147,7 +147,7 @@ std::vector<Op> Subgraph::Ops() const {
   std::vector<Op> ops;
   for (auto i = 0; i < num_ops; ++i) {
     LiteRtOp op;
-    litert::internal::AssertOk(LiteRtGetSubgraphOp, Get(), i, &op);
+    internal::AssertOk(LiteRtGetSubgraphOp, Get(), i, &op);
     ops.emplace_back(Op(op));
   }
   return ops;

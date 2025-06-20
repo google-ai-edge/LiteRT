@@ -27,7 +27,8 @@ namespace litert {
 namespace {
 
 template <typename T>
-bool Any(absl::Span<const T> vals, std::function<bool(const T&)> unary_pred) {
+bool Any(absl::Span<const T> vals,
+         const std::function<bool(const T&)>& unary_pred) {
   for (const auto& val : vals) {
     if (unary_pred(val)) {
       return true;
