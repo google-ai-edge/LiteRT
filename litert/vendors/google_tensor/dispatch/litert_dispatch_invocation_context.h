@@ -21,13 +21,13 @@
 #include <optional>
 #include <string>
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 class LiteRtDispatchInvocationContextT {

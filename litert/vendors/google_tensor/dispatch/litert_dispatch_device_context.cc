@@ -21,7 +21,6 @@
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -29,6 +28,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 using litert::Error;
 using litert::Expected;

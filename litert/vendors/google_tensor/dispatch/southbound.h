@@ -19,8 +19,8 @@
 #include <optional>
 #include <string>
 
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace litert::google_tensor {
 

@@ -17,7 +17,6 @@
 #include <cstddef>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "third_party/odml/infra/southbound/sb_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_logging.h"
@@ -30,6 +29,7 @@
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_metrics.h"
+#include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 using litert::Error;
