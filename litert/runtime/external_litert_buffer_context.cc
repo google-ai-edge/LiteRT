@@ -37,16 +37,14 @@ LiteRtStatus ExternalLiteRtBufferContext::RegisterBufferRequirements(
     const TfLiteOpaqueTensor* tensor,
     TensorBufferRequirements&& buffer_requirements) {
   assert(buffer_requirements.IsOwned());
-  auto iter = buffer_requirements_.find(tensor);
-  if (iter == buffer_requirements_.end()) {
-    buffer_requirements_.insert(
-        iter, std::make_pair(tensor, std::move(buffer_requirements)));
-  } else {
+  auto [iter, inserted] =
+      buffer_requirements_.try_emplace(tensor, std::move(buffer_requirements));
+  if (!inserted) {
     auto joined_tensor = Join(iter->second, buffer_requirements);
     if (!joined_tensor) {
       return joined_tensor.Error().Status();
     }
-    buffer_requirements_[tensor] = std::move(*joined_tensor);
+    iter->second = std::move(*joined_tensor);
   }
   return kLiteRtStatusOk;
 }

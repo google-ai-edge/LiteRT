@@ -301,6 +301,12 @@ class Expected {
   void CheckVal() const { ABSL_CHECK(HasValue()); }
 };
 
+template <class T>
+Expected(const T&) -> Expected<T>;
+
+template <class T>
+Expected(T&&) -> Expected<T>;
+
 namespace internal {
 template <class T>
 struct CanBeAbslFormated {
