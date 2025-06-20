@@ -1,0 +1,107 @@
+// Copyright (C) 2025 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+#include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/core/util/tensor_type_util.h"
+#include "litert/vendors/c/litert_dispatch.h"
+
+litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
+LiteRtDispatchInvocationContextT::Create(
+    ov::Core core, LiteRtDispatchDeviceContextT &device_context,
+    LiteRtDispatchExecutableType exec_type,
+    const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
+    int num_inputs, int num_outputs) {
+  const void *exec_bytecode_ptr =
+      static_cast<const uint8_t *>(exec_bytecode_buffer->base_addr) +
+      exec_bytecode_buffer->offset;
+  auto exec_bytecode_size = exec_bytecode_buffer->size;
+
+  std::string bytecode_buffer(reinterpret_cast<const char *>(exec_bytecode_ptr),
+                              exec_bytecode_size);
+  std::istringstream model_stream(bytecode_buffer);
+  if (!model_stream) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to open model bytecode stream");
+  }
+  ov::CompiledModel compiled_model = core.import_model(model_stream, "NPU");
+  auto infer_request = compiled_model.create_infer_request();
+  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
+  // TODO: add support for loading cached model
+  return Ptr(new LiteRtDispatchInvocationContextT(infer_request, device_context,
+                                                  num_inputs, num_outputs));
+}
+
+litert::Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
+    const LiteRtRankedTensorType &tensor_type) {
+  LiteRtTensorBufferType supported_tensor_buffer_types[] = {
+      kLiteRtTensorBufferTypeAhwb,
+      kLiteRtTensorBufferTypeDmaBuf,
+  };
+
+  int num_supported_tensor_buffer_types =
+      sizeof(supported_tensor_buffer_types) /
+      sizeof(supported_tensor_buffer_types[0]);
+
+  auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
+  if (!buffer_size) {
+    return litert::Unexpected(buffer_size.Error());
+  }
+
+  LiteRtTensorBufferRequirements requirements;
+  auto status = LiteRtCreateTensorBufferRequirements(
+      num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+      *buffer_size, 0, /*strides=*/nullptr, &requirements);
+  if (status != kLiteRtStatusOk)
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to get buffer requirements");
+
+  return requirements;
+}
+
+litert::Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetInputRequirements(
+    int input_index, const LiteRtRankedTensorType &tensor_type) {
+  return GetTensorBufferRequirements(tensor_type);
+}
+
+litert::Expected<LiteRtTensorBufferRequirements>
+LiteRtDispatchInvocationContextT::GetOutputRequirements(
+    int output_index, const LiteRtRankedTensorType &tensor_type) {
+  return GetTensorBufferRequirements(tensor_type);
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+      device_context_.getRemoteTensor(tensor_buffer_handle));
+  // TODO: visit this if need to maintain graph indices for inputs and outputs
+  // in dispatch_api
+  infer_request_.set_input_tensor(graph_input_index, remote_tensor);
+  return {};
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  LITERT_ASSIGN_OR_RETURN(ov::RemoteTensor remote_tensor,
+      device_context_.getRemoteTensor(tensor_buffer_handle));
+  // TODO: visit this if need to maintain graph indices for inputs and outputs
+  // in dispatch_api
+  infer_request_.set_output_tensor(graph_output_index, remote_tensor);
+  return {};
+}
+
+litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+  infer_request_.start_async();
+  if (!infer_request_.wait_for(std::chrono::milliseconds(kInferRequestTimeout)))
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to execute inference request due to timeout");
+  return {};
+}
