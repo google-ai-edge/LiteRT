@@ -32,22 +32,44 @@ namespace {
 
 Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
   switch (litert_element_type) {
-    case kLiteRtElementTypeFloat32:
-      return tflite::TensorType_FLOAT32;
-    case kLiteRtElementTypeFloat16:
-      return tflite::TensorType_FLOAT16;
+    case kLiteRtElementTypeBool:
+      return tflite::TensorType_BOOL;
+    case kLiteRtElementTypeInt4:
+      return tflite::TensorType_INT4;
+    case kLiteRtElementTypeInt8:
+      return tflite::TensorType_INT8;
+    case kLiteRtElementTypeInt16:
+      return tflite::TensorType_INT16;
     case kLiteRtElementTypeInt32:
       return tflite::TensorType_INT32;
     case kLiteRtElementTypeInt64:
       return tflite::TensorType_INT64;
-    case kLiteRtElementTypeBool:
-      return tflite::TensorType_BOOL;
-    case kLiteRtElementTypeInt16:
-      return tflite::TensorType_INT16;
-    case kLiteRtElementTypeInt8:
-      return tflite::TensorType_INT8;
-    case kLiteRtElementTypeInt4:
-      return tflite::TensorType_INT4;
+    case kLiteRtElementTypeUInt8:
+      return tflite::TensorType_UINT8;
+    case kLiteRtElementTypeUInt16:
+      return tflite::TensorType_UINT16;
+    case kLiteRtElementTypeUInt32:
+      return tflite::TensorType_UINT32;
+    case kLiteRtElementTypeUInt64:
+      return tflite::TensorType_UINT64;
+    case kLiteRtElementTypeFloat16:
+      return tflite::TensorType_FLOAT16;
+    case kLiteRtElementTypeBFloat16:
+      return tflite::TensorType_BFLOAT16;
+    case kLiteRtElementTypeFloat32:
+      return tflite::TensorType_FLOAT32;
+    case kLiteRtElementTypeFloat64:
+      return tflite::TensorType_FLOAT64;
+    case kLiteRtElementTypeComplex64:
+      return tflite::TensorType_COMPLEX64;
+    case kLiteRtElementTypeComplex128:
+      return tflite::TensorType_COMPLEX128;
+    case kLiteRtElementTypeTfResource:
+      return tflite::TensorType_RESOURCE;
+    case kLiteRtElementTypeTfString:
+      return tflite::TensorType_STRING;
+    case kLiteRtElementTypeTfVariant:
+      return tflite::TensorType_VARIANT;
     default:
       return Error(kLiteRtStatusErrorUnsupported);
   }
