@@ -14,6 +14,8 @@
 
 #include "litert/c/litert_common.h"
 
+#include <tuple>
+
 extern "C" {
 
 const char* LiteRtGetStatusString(LiteRtStatus status) {
@@ -50,20 +52,13 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
 
 int LiteRtCompareApiVersion(LiteRtApiVersion version,
                             LiteRtApiVersion reference) {
-  if (version.major > reference.major) {
-    return 1;
-  } else if (version.major == reference.major) {
-    if (version.minor > reference.minor) {
-      return 1;
-    } else if (version.minor == reference.minor) {
-      if (version.patch > reference.patch) {
-        return 1;
-      } else if (version.patch == reference.patch) {
-        return 0;
-      }
-    }
-  }
-  return -1;
+  const auto v_tuple = std::tie(version.major, version.minor, version.patch);
+  const auto r_tuple =
+      std::tie(reference.major, reference.minor, reference.patch);
+
+  if (v_tuple > r_tuple) return 1;
+  if (v_tuple < r_tuple) return -1;
+  return 0;
 }
 
 }  // extern "C"
