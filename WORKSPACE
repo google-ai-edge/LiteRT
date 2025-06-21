@@ -98,8 +98,19 @@ load(
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
 
+# Toolchains for ML projects hermetic builds.
+# Details: https://github.com/google-ml-infra/rules_ml_toolchain
+http_archive(
+    name = "rules_ml_toolchain",
+    sha256 = "bc436537e01d0abfeac8bfe45f514cf98f59c043f314736e30b3f6e9818ed43d",
+    strip_prefix = "rules_ml_toolchain-41f43208545330c69f0fa40d3b2fc4f56e7c16c2",
+    urls = [
+        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/41f43208545330c69f0fa40d3b2fc4f56e7c16c2.zip",
+    ],
+)
+
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
     "cuda_json_init_repository",
 )
 
@@ -111,7 +122,7 @@ load(
     "CUDNN_REDISTRIBUTIONS",
 )
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
     "cuda_redist_init_repositories",
     "cudnn_redist_init_repository",
 )
@@ -125,25 +136,36 @@ cudnn_redist_init_repository(
 )
 
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
     "cuda_configure",
 )
 
 cuda_configure(name = "local_config_cuda")
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
     "nccl_redist_init_repository",
 )
 
 nccl_redist_init_repository()
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_configure.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_configure.bzl",
     "nccl_configure",
 )
 
 nccl_configure(name = "local_config_nccl")
+
+load(
+    "@rules_ml_toolchain//cc_toolchain/deps:cc_toolchain_deps.bzl",
+    "cc_toolchain_deps",
+)
+
+cc_toolchain_deps()
+
+register_toolchains("@rules_ml_toolchain//cc_toolchain:lx64_lx64")
+
+register_toolchains("@rules_ml_toolchain//cc_toolchain:lx64_lx64_cuda")
 
 load("//third_party/tqdm:workspace.bzl", tqdm = "repo")
 
