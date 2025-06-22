@@ -332,6 +332,19 @@ LiteRtStatus LiteRtGetSumKeepDimsOption(LiteRtOp op, bool* keepdims) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceMax) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceMax OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis) {
   if (op->OpCode() != kLiteRtOpCodeTflPack) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -492,6 +505,107 @@ LiteRtStatus LiteRtGetConv2dDilationHOption(LiteRtOp op,
     return kLiteRtStatusErrorInvalidArgument;
   }
   *dilation_h_factor = opts.AsConv2DOptions()->dilation_h_factor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dPaddingOption(LiteRtOp op, uint32_t* padding) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *padding = opts.AsConv3DOptions()->padding;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dStrideDOption(LiteRtOp op, int32_t* stride_d) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_d = opts.AsConv3DOptions()->stride_d;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dStrideWOption(LiteRtOp op, int32_t* stride_w) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_w = opts.AsConv3DOptions()->stride_w;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dStrideHOption(LiteRtOp op, int32_t* stride_h) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *stride_h = opts.AsConv3DOptions()->stride_h;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *fused_activation_function =
+      opts.AsConv3DOptions()->fused_activation_function;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dDilationDOption(LiteRtOp op,
+                                            int32_t* dilation_d_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_d_factor = opts.AsConv3DOptions()->dilation_d_factor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dDilationWOption(LiteRtOp op,
+                                            int32_t* dilation_w_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_w_factor = opts.AsConv3DOptions()->dilation_w_factor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetConv3dDilationHOption(LiteRtOp op,
+                                            int32_t* dilation_h_factor) {
+  if (op->OpCode() != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dilation_h_factor = opts.AsConv3DOptions()->dilation_h_factor;
   return kLiteRtStatusOk;
 }
 

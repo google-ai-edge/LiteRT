@@ -245,7 +245,7 @@ std::vector<QnnHtpPerfInfrastructure_PowerConfig_t> SetVotePowerConfig(
 
   dcvs_v3.setSleepLatency = 1;  // true
 
-  dcvs_v3.setBusParams = 1;   // true
+  dcvs_v3.setBusParams = 1;  // true
   dcvs_v3.setCoreParams = 1;  // true
 
   // Check DownVote before performance mode

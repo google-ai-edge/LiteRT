@@ -231,6 +231,19 @@ TEST(GetOpOptionTest, TestGetSumOptions) {
   ASSERT_EQ(keepdims, true);
 }
 
+TEST(GetOpOptionTest, TestGetMaxOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reducemax_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceMaxKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
 TEST(GetOpOptionTest, TestGetPackOptions) {
   auto model = litert::testing::LoadTestFileModel("simple_pack_op.tflite");
   auto subgraph = model.MainSubgraph();
@@ -313,6 +326,41 @@ TEST(GetOpOptionTest, TestGetConv2dOptions) {
   ASSERT_EQ(dilation_w_factor, 1);
   int32_t dilation_h_factor;
   LITERT_ASSERT_OK(LiteRtGetConv2dDilationWOption(op, &dilation_h_factor));
+  ASSERT_EQ(dilation_h_factor, 1);
+}
+
+TEST(GetOpOptionTest, TestGetConv3dOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_conv_3d_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  uint32_t padding;
+  LITERT_ASSERT_OK(LiteRtGetConv3dPaddingOption(op, &padding));
+  ASSERT_EQ(padding, 0);
+  int32_t stride_d;
+  LITERT_ASSERT_OK(LiteRtGetConv3dStrideDOption(op, &stride_d));
+  ASSERT_EQ(stride_d, 1);
+  int32_t stride_w;
+  LITERT_ASSERT_OK(LiteRtGetConv3dStrideWOption(op, &stride_w));
+  ASSERT_EQ(stride_w, 1);
+  int32_t stride_h;
+  LITERT_ASSERT_OK(LiteRtGetConv3dStrideHOption(op, &stride_h));
+  ASSERT_EQ(stride_h, 1);
+  uint32_t fused_activation_function;
+  LITERT_ASSERT_OK(
+      LiteRtGetConv3dFusedActivationOption(op, &fused_activation_function));
+  ASSERT_EQ(fused_activation_function, 0);
+  int32_t dilation_d_factor;
+  LITERT_ASSERT_OK(LiteRtGetConv3dDilationDOption(op, &dilation_d_factor));
+  ASSERT_EQ(dilation_d_factor, 1);
+  int32_t dilation_w_factor;
+  LITERT_ASSERT_OK(LiteRtGetConv3dDilationWOption(op, &dilation_w_factor));
+  ASSERT_EQ(dilation_w_factor, 1);
+  int32_t dilation_h_factor;
+  LITERT_ASSERT_OK(LiteRtGetConv3dDilationHOption(op, &dilation_h_factor));
   ASSERT_EQ(dilation_h_factor, 1);
 }
 
