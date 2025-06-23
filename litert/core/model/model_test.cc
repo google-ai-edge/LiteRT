@@ -26,6 +26,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -566,6 +567,17 @@ TEST(PrintingTest, ConstTensor) {
   tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
   SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
   EXPECT_EQ(absl::StrFormat("%v", tensor), "3d_i32<2x2x2>_cst[8B]");
+}
+
+TEST(PrintingTest, TensoVector) {
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+
+  LiteRtTensorT tensor2;
+  tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+
+  std::vector<LiteRtTensor> tensors = {&tensor, &tensor2};
+  EXPECT_EQ(absl::StrFormat("%v", tensors), "(3d_i32<2x2x2>,3d_i32<2x2x2>)");
 }
 
 TEST(PrintingTest, TflOptions) {

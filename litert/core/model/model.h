@@ -1083,6 +1083,17 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
   absl::Format(&sink, "%v%s", tensor.Type(), weights_str);
 }
 
+template <class Sink>
+void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
+  sink.Append("(");
+  for (auto it = tensors.begin(); it < tensors.end() - 1; ++it) {
+    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append(",");
+  }
+  sink.Append(absl::StrFormat("%v", *tensors.back()));
+  sink.Append(")");
+}
+
 // OPTIONS PRINTING
 
 namespace litert::internal {
