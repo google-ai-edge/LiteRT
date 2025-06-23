@@ -232,6 +232,7 @@ build:android --copt=-w
 build:ios --copt=-w
 build:linux --host_copt=-w
 build:macos --copt=-w
+# Suppress all C++ compiler warnings on Windows
 build:windows --copt=/W0
 build:windows --host_copt=/W0
 
@@ -243,6 +244,11 @@ build:linux --copt="-Wno-deprecated"
 build:linux --copt="-Wno-deprecated-declarations"
 build:linux --copt="-Wno-ignored-attributes"
 build:linux --copt="-Wno-array-bounds"
+
+# Windows-specific Python configuration
+build --repo_env=HERMETIC_PYTHON_VERSION=3.11
+build --action_env=PYTHON_BIN_PATH="C:/Program Files/Python311/python.exe"
+build --python_path="C:/Program Files/Python311/python.exe"
 
 # Add unused-result as an error on Linux.
 build:linux --copt="-Wunused-result"
@@ -263,6 +269,19 @@ build:release_cpu_linux --repo_env=TF_SYSROOT="/dt9"
 
 # Linux ARM64 specific options
 build:linux_arm64 --copt="-mtune=generic" --copt="-march=armv8-a" --copt="-O3"
+
+# Windows pthreadpool configuration
+# On Windows, set /std:c11 and /experimental:c11atomics for pthreadpool.
+build:windows --conlyopt=/std:c11
+build:windows --host_conlyopt=/std:c11
+build:windows --copt=/experimental:c11atomics
+build:windows --conlyopt=/experimental:c11atomics
+build:windows --host_conlyopt=/experimental:c11atomics
+build:windows --per_file_copt=external/pthreadpool/.*@-std=c11
+build:windows --per_file_copt=external/pthreadpool/_*@/D_CRT_SECURE_NO_WARNINGS
+
+# Force include MSVC compatibility header for litert files
+build:windows --per_file_copt=external/litert/.*@/FI"C:/BuildTools/LiteRT-LM/msvc_compat.h"
 
 
 # On Windows, `__cplusplus` is wrongly defined without this switch
@@ -347,12 +366,27 @@ build:windows --host_linkopt=/OPT:REF
 build:windows --linkopt=/OPT:ICF
 build:windows --host_linkopt=/OPT:ICF
 
+# Force local execution for genrules on Windows
+build:windows --strategy=Genrule=local
+build:windows --genrule_strategy=local
+build:windows --spawn_strategy=local
+
+# Use Git Bash for genrules
+build:windows --shell_executable="C:/Program Files/Git/bin/bash.exe"
+
 # Verbose failure logs when something goes wrong
 build:windows --verbose_failures
 
 # Work around potential issues with large command lines on windows.
 # See: https://github.com/bazelbuild/bazel/issues/5163
 build:windows --features=compiler_param_file
+
+# Disable problematic features on Windows
+build:windows --define=tflite_with_xnnpack=false
+
+# Minimal build configuration
+build:windows --define=build_with_mkl=false
+build:windows --define=build_with_openmp=false
 
 # Do not risk cache corruption. See:
 # https://github.com/bazelbuild/bazel/issues/3360
