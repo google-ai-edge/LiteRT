@@ -1143,6 +1143,17 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
   }
 }
 
+template <class Sink>
+void AbslStringify(Sink& sink, const ::litert::internal::TflOptions2& opts) {
+  // NOTE: Printers for specific options will be added on an as needed basis.
+  const auto type = opts.type;
+  switch (type) {
+    default:
+      absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
+      break;
+  }
+}
+
 // AddOptionsT
 
 template <typename Sink>

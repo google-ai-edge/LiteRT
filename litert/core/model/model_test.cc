@@ -586,6 +586,14 @@ TEST(PrintingTest, TflOptionsNoPrinter) {
   EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
 }
 
+TEST(PrintingTest, TflOptions2NoPrinter) {
+  TflOptions2 opts;
+  opts.type = ::tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  ::tflite::StableHLOCompositeOptionsT comp_opts;
+  opts.Set(std::move(comp_opts));
+  EXPECT_EQ(absl::StrFormat("%v", opts), "{!no_printer}");
+}
+
 TEST(PrintingTest, FusedActivationFunction) {
   EXPECT_EQ(absl::StrFormat("%v", ::tflite::ActivationFunctionType_RELU),
             "RELU");
