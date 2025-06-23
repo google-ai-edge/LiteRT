@@ -21,11 +21,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
+#include <numeric>
+#include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
@@ -58,6 +63,23 @@ class SimpleBuffer {
   }
 
  public:
+  using Ref = std::reference_wrapper<SimpleBuffer>;
+  using CRef = std::reference_wrapper<const SimpleBuffer>;
+
+  template <typename T>
+  struct View {
+    absl::Span<T> data;
+    absl::Span<const Layout::Dim> dimensions;
+    using Type = std::remove_const_t<T>;
+    Layout::Dim NumElements() const {
+      return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
+                         std::multiplies<Layout::Dim>());
+    }
+  };
+
+  template <typename T>
+  using CView = View<const T>;
+
   // Create a buffer with the given tensor type.
   static Expected<SimpleBuffer> Create(RankedTensorType tensor_type) {
     LITERT_ASSIGN_OR_RETURN(const size_t bytes, tensor_type.Bytes());
@@ -68,18 +90,35 @@ class SimpleBuffer {
   }
 
   // Create buffer with the given shape and type.
+  template <typename T, typename Shape>
+  static Expected<SimpleBuffer> Create(const Shape& dimensions) {
+    return Create(MakeRankedTensorType<T>(dimensions));
+  }
+
+  // Create buffer with the given shape and type.
   template <typename T>
   static Expected<SimpleBuffer> Create(
       std::initializer_list<Layout::Dim> dimensions) {
-    return Create(MakeRankedTensorType<T>(std::move(dimensions)));
+    LITERT_ASSIGN_OR_RETURN(auto helper,
+                            Create<T>(Dimensions(std::move(dimensions))));
+    return helper;
   }
 
-  // Create a new buffer with the provided type information and data.
+  // Create a new buffer with the provided type information and literal data.
+  template <typename T, typename Shape>
+  static Expected<SimpleBuffer> Create(const Shape& dimensions,
+                                       std::initializer_list<T> data) {
+    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(dimensions));
+    LITERT_RETURN_IF_ERROR(helper.Write(std::move(data)));
+    return helper;
+  }
+
+  // Create a new buffer with the provided type information and literal data.
   template <typename T>
   static Expected<SimpleBuffer> Create(
       std::initializer_list<Layout::Dim> dimensions,
       std::initializer_list<T> data) {
-    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(std::move(dimensions)));
+    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(dimensions));
     LITERT_RETURN_IF_ERROR(helper.Write(std::move(data)));
     return helper;
   }
@@ -103,6 +142,21 @@ class SimpleBuffer {
     return helper;
   }
 
+  // Create a buffer with same size and type information as the provided
+  // tensor buffer, and fill it with random data. Data generation is dictated
+  // by the traits template.
+  // TODO: Add visit type pattern to allow skipping explicitly specializing
+  // by data type.
+  template <typename T, template <typename> typename RngTraits, typename Rng>
+  Expected<void> WriteRandom(Rng& rng, size_t start = 0,
+                             std::optional<size_t> num_elements = {}) {
+    using Gen = RngTraits<T>::Gen;
+    Gen gen;
+    const auto num_elements_to_write =
+        num_elements ? *num_elements : TypedNumElements<T>() - start;
+    return gen(rng, Span<T>().subspan(start, num_elements_to_write));
+  }
+
   // Returns a span of const values from the buffer.
   template <typename T = uint8_t>
   absl::Span<const T> Span() const {
@@ -115,6 +169,18 @@ class SimpleBuffer {
   absl::Span<T> Span() {
     return absl::MakeSpan(reinterpret_cast<T*>(buffer_.get()),
                           TypedNumElements<T>());
+  }
+
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  CView<T> AsView() const {
+    return {Span<T>(), Type().Layout().Dimensions()};
+  }
+
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  View<T> AsView() {
+    return {Span<T>(), Type().Layout().Dimensions()};
   }
 
   // Writes the the provided data into the contained buffer.
@@ -143,7 +209,7 @@ class SimpleBuffer {
 
   // Create a new native tensor buffer from this buffer which points to the
   // underlying host memory.
-  Expected<TensorBuffer> SpawnTensorBuffer() {
+  Expected<TensorBuffer> SpawnTensorBuffer() const {
     return TensorBuffer::CreateFromHostMemory(tensor_type_, buffer_.get(),
                                               size_in_bytes_);
   }

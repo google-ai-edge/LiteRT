@@ -22,6 +22,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_model.h"
 #include "litert/test/matchers.h"
+#include "litert/test/rng_fixture.h"
 
 namespace litert {
 namespace testing {
@@ -145,6 +146,46 @@ TEST(TensorBufferHelperTest, WriteOffset) {
   LITERT_ASSERT_OK(buf.Write({4, 3}, 2));
   EXPECT_EQ(buf.TypedNumElements<int32_t>(), 4);
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 2, 4, 3));
+}
+
+using RngTensorBufferHelperTest = RngTest;
+template <typename T>
+using TestRng = DummyRandomTensorBufferTraits<T>;
+
+TEST_F(RngTensorBufferHelperTest, WriteRandom) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buf, SimpleBuffer::Create<int32_t>({2, 2}, {1, 2, 3, 4}));
+  const auto& type = buf.Type();
+  EXPECT_EQ(type.ElementType(), ElementType::Int32);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
+  EXPECT_EQ(num_elements, 4);
+  auto device = this->TracedDevice();
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device)));
+  EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(0, 1, 2, 3));
+}
+
+TEST_F(RngTensorBufferHelperTest, WriteRandomOffset) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buf, SimpleBuffer::Create<int32_t>({2, 2}, {1, 2, 3, 4}));
+  const auto& type = buf.Type();
+  EXPECT_EQ(type.ElementType(), ElementType::Int32);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
+  EXPECT_EQ(num_elements, 4);
+  auto device = this->TracedDevice();
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device, 2)));
+  EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 2, 0, 1));
+}
+
+TEST_F(RngTensorBufferHelperTest, WriteRandomSubArray) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buf, SimpleBuffer::Create<int32_t>({2, 2}, {1, 2, 3, 4}));
+  const auto& type = buf.Type();
+  EXPECT_EQ(type.ElementType(), ElementType::Int32);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
+  EXPECT_EQ(num_elements, 4);
+  auto device = this->TracedDevice();
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device, 1, 2)));
+  EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 0, 1, 4));
 }
 
 }  // namespace
