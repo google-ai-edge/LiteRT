@@ -38,8 +38,17 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-echo "Running build in Docker container..."
-docker run --rm --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un)  -v $(pwd)/..:/litert_build litert_build_env
+CONTAINER_NAME="litert_build_container"
+
+# Check if container already exists
+if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  echo "Using existing container: ${CONTAINER_NAME}"
+  echo "To remove it and start fresh, run: docker rm -f ${CONTAINER_NAME}"
+  docker start -ai ${CONTAINER_NAME}
+else
+  echo "Running build in new Docker container..."
+  docker run --name ${CONTAINER_NAME} --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v $(pwd)/..:/litert_build litert_build_env
+fi
 
 if [ $? -ne 0 ]; then
   echo "Error: Build failed inside Docker container."
@@ -47,3 +56,10 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Build completed successfully!"
+echo ""
+echo "Container '${CONTAINER_NAME}' is preserved with all build outputs."
+echo "You can:"
+echo "  - Access build outputs: docker exec -it ${CONTAINER_NAME} bash"
+echo "  - Copy files out: docker cp ${CONTAINER_NAME}:/litert_build/bazel-bin/<path> ."
+echo "  - Or directly access the artifact from bazel-bin/ (or bazel-out)."
+echo "  - Remove container: docker rm -f ${CONTAINER_NAME}"
