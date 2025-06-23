@@ -35,7 +35,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -106,6 +108,27 @@ LiteRtStatus InitQnnOptions(
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
+}
+
+bool SkipValidationOfQuantizeOp(const litert::Op& op) {
+  const auto op_input_0 = op.Inputs()[0].RankedTensorType();
+  if (!op_input_0) {
+    LITERT_LOG(LITERT_ERROR, "%s", op_input_0.Error().Message().data());
+    return false;
+  }
+  const auto op_output_0 = op.Outputs()[0].RankedTensorType();
+  if (!op_output_0) {
+    LITERT_LOG(LITERT_ERROR, "%s", op_output_0.Error().Message().data());
+    return false;
+  }
+
+  if (op_input_0->ElementType() == litert::ElementType::Float32 &&
+      op_output_0->ElementType() == litert::ElementType::Int16 &&
+      op.Code() == kLiteRtOpCodeTflQuantize) {
+    LITERT_LOG(LITERT_INFO, "[G2G] Skip validation of quant op in Gemma3 mask");
+    return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -317,7 +340,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
-    if (std::all_of(
+    if (SkipValidationOfQuantizeOp(op) ||
+        std::all_of(
             op_wrappers.begin(), op_wrappers.end(),
             [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
               return kLiteRtStatusOk ==
