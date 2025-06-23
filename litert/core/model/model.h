@@ -1094,6 +1094,25 @@ void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
   sink.Append(")");
 }
 
+// OP PRINTING
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtOpT& op) {
+  static constexpr auto kFmt = "%v%v%v->%v";
+  const auto& opts = ::litert::internal::GetTflOptions(op);
+  if (opts.type != ::tflite::BuiltinOptions_NONE) {
+    absl::Format(&sink, kFmt, op.OpCode(), opts, op.Inputs(), op.Outputs());
+    return;
+  }
+  absl::Format(&sink, kFmt, op.OpCode(), ::litert::internal::GetTflOptions2(op),
+               op.Inputs(), op.Outputs());
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const LiteRtOpT* op) {
+  absl::Format(&sink, "null");
+}
+
 // OPTIONS PRINTING
 
 namespace litert::internal {

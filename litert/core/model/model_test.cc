@@ -580,6 +580,36 @@ TEST(PrintingTest, TensoVector) {
   EXPECT_EQ(absl::StrFormat("%v", tensors), "(3d_i32<2x2x2>,3d_i32<2x2x2>)");
 }
 
+TEST(PrintingTest, Op) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+  {
+    ::tflite::AddOptionsT add_opts;
+    add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU;
+    add_opts.pot_scale_int16 = false;
+    TflOptions opts;
+    opts.type = ::tflite::BuiltinOptions_AddOptions;
+    opts.Set(std::move(add_opts));
+    litert::internal::SetTflOptions(op, std::move(opts));
+  }
+
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  op.Inputs().push_back(&tensor);
+
+  LiteRtTensorT tensor2;
+  tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+  op.Inputs().push_back(&tensor2);
+
+  LiteRtTensorT tensor3;
+  tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+  op.Outputs().push_back(&tensor3);
+
+  EXPECT_EQ(absl::StrFormat("%v", op),
+            "tfl.add{fa=RELU}(3d_i32<2x2x2>,1d_i32<2>)->(3d_i32<2x2x2>)");
+}
+
 TEST(PrintingTest, TflOptions) {
   TflOptions opts;
   opts.type = ::tflite::BuiltinOptions_AddOptions;
