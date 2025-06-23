@@ -178,14 +178,6 @@ class SerializationContext {
   size_t bytecode_alignment_ = 0;
 };
 
-void SetOptions(const LiteRtOpT& litert_op, TflOp& tfl_op) {
-  tfl_op.builtin_options = litert::internal::GetTflOptions(litert_op);
-  if (litert_op.CustomOptions().Size() != 0) {
-    tfl_op.custom_options = litert_op.CustomOptions().ToVec();
-    tfl_op.custom_options_format = tflite::CustomOptionsFormat_FLEXBUFFERS;
-  }
-}
-
 LiteRtStatus PackOp(SerializationContext& builder, LiteRtOpT& litert_op,
                     TflOp& tfl_op, const TensorMap& tensor_map) {
   // Get index of the op code in the tfl model.
@@ -209,6 +201,7 @@ LiteRtStatus PackOp(SerializationContext& builder, LiteRtOpT& litert_op,
 
   // Set generic options.
   tfl_op.builtin_options = litert::internal::GetTflOptions(litert_op);
+  tfl_op.builtin_options_2 = litert::internal::GetTflOptions2(litert_op);
 
   return kLiteRtStatusOk;
 }
