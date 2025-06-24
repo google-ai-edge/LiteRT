@@ -61,6 +61,10 @@ class RankedTensorType {
     return ElementType() == other.ElementType() && Layout() == other.Layout();
   }
 
+  bool operator!=(const RankedTensorType& other) const {
+    return !(*this == other);
+  }
+
   ElementType ElementType() const { return element_type_; }
 
   const Layout& Layout() const { return layout_; }
@@ -103,6 +107,16 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType())
       return tensor_type.ElementType();
     }
+  }
+
+  bool HasType(const RankedTensorType& type) const {
+    auto t = RankedTensorType();
+    return t && *t == type;
+  }
+
+  bool HasType(const LiteRtRankedTensorType& type) const {
+    auto t = RankedTensorType();
+    return t && *t == ::litert::RankedTensorType(type);
   }
 
   LiteRtTensorTypeId TypeId() const {

@@ -209,6 +209,15 @@ class TensorBuffer
     return RankedTensorType(tensor_type);
   }
 
+  bool HasType(const RankedTensorType& type) const {
+    auto t = TensorType();
+    return t && *t == type;
+  }
+
+  bool HasType(const LiteRtRankedTensorType& type) const {
+    auto t = TensorType();
+    return t && *t == ::litert::RankedTensorType(type);
+  }
   // Returns the size of the underlying H/W tensor buffer. This size can be
   // different to the PackedSize() if there is stride and padding exists.
   Expected<size_t> Size() const {
