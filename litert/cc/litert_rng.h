@@ -233,15 +233,16 @@ class RandomTensorType {
   using DimSpec = std::variant<DimSize, DimRange>;
   using ElementTypeSpec = std::vector<LiteRtElementType>;
 
-  static constexpr auto kMinDim = NumericLimits<DimSize>::Lowest();
-  static constexpr auto kMaxDim = NumericLimits<DimSize>::Max();
+  // Max value of a random dimension.
+  static constexpr auto kMaxDim = 1024;
 
+  // Generate a random tensor type with a pre-determined rank given
+  // in `shape_spec`.
   template <typename Rng>
   Expected<LiteRtRankedTensorType> Generate(
-      Rng& rng,
+      Rng& rng, const std::vector<std::optional<DimSpec>>& shape_spec,
       const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
-                                     kLiteRtElementTypeFloat32},
-      const std::vector<std::optional<DimSpec>>& shape_spec = {}) {
+                                     kLiteRtElementTypeFloat32}) {
     const auto rank = shape_spec.size();
     if (rank > LITERT_TENSOR_MAX_RANK) {
       return Error(kLiteRtStatusErrorInvalidArgument, "Rank too large");
@@ -255,12 +256,24 @@ class RandomTensorType {
     return res;
   }
 
+  // Generate a random tensor type with a random rank.
+  template <typename Rng>
+  Expected<LiteRtRankedTensorType> Generate(
+      Rng& rng, size_t max_rank = LITERT_TENSOR_MAX_RANK,
+      const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
+                                     kLiteRtElementTypeFloat32}) {
+    DimGenerator rank_gen(0, max_rank);
+    std::vector<std::optional<DimSpec>> shape_spec(rank_gen(rng), std::nullopt);
+    return Generate(rng, shape_spec, type);
+  }
+
  private:
   template <typename Rng>
   DimSize GenerateDim(Rng& rng, const std::optional<DimSpec>& dim) {
     if (!dim) {
-      DimGenerator gen;
-      return gen(rng);
+      DimGenerator gen(0, kMaxDim);
+      const auto res = gen(rng);
+      return res;
     } else if (std::holds_alternative<DimSize>(*dim)) {
       auto d = std::get<DimSize>(*dim);
       return d;

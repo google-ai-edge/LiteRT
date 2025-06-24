@@ -156,8 +156,8 @@ TEST_F(LiteRtRngTest, FullySpecifiedRandomTensorType) {
   auto device = TracedDevice();
   RandomTensorType type;
   auto tensor_type = type.Generate(
-      device, {kLiteRtElementTypeFloat32},
-      {RandomTensorType::DimSpec(2u), RandomTensorType::DimSpec(2u)});
+      device, {RandomTensorType::DimSpec(2u), RandomTensorType::DimSpec(2u)},
+      {kLiteRtElementTypeFloat32});
   ASSERT_TRUE(tensor_type);
   EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
   EXPECT_EQ(tensor_type->layout.dimensions[0], 2);
@@ -168,7 +168,7 @@ TEST_F(LiteRtRngTest, RandomElementType) {
   auto device = TracedDevice();
   RandomTensorType type;
   auto tensor_type = type.Generate(
-      device, {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt32});
+      device, {}, {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt32});
   ASSERT_TRUE(tensor_type);
   EXPECT_TRUE(tensor_type->element_type == kLiteRtElementTypeFloat32 ||
               tensor_type->element_type == kLiteRtElementTypeInt32);
@@ -178,8 +178,8 @@ TEST_F(LiteRtRngTest, RandomTensorShape) {
   auto device = TracedDevice();
   RandomTensorType type;
   auto tensor_type =
-      type.Generate(device, {kLiteRtElementTypeFloat32},
-                    {RandomTensorType::DimRange(1u, 3u), std::nullopt});
+      type.Generate(device, {RandomTensorType::DimRange(1u, 3u), std::nullopt},
+                    {kLiteRtElementTypeFloat32});
   ASSERT_TRUE(tensor_type);
   EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
   EXPECT_EQ(tensor_type->layout.rank, 2);
@@ -188,7 +188,15 @@ TEST_F(LiteRtRngTest, RandomTensorShape) {
   EXPECT_LE(dim1, 3u);
   const auto dim2 = tensor_type->layout.dimensions[1];
   EXPECT_GE(dim2, 0u);
-  EXPECT_LE(dim2, NumericLimits<uint32_t>::Max());
+  EXPECT_LE(dim2, RandomTensorType::kMaxDim);
+}
+
+TEST_F(LiteRtRngTest, RandomTensorShapeWithRandomRank) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type = type.Generate(device, /*max_rank=*/4);
+  ASSERT_TRUE(tensor_type);
+  EXPECT_LE(tensor_type->layout.rank, 4);
 }
 
 }  // namespace
