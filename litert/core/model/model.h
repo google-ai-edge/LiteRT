@@ -1113,6 +1113,19 @@ void AbslStringify(Sink& sink, const LiteRtOpT* op) {
   absl::Format(&sink, "null");
 }
 
+namespace absl {
+
+template <class Sink>
+void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+  for (auto it = ops.begin(); it < ops.end() - 1; ++it) {
+    sink.Append(absl::StrFormat("%v", **it));
+    sink.Append("/");
+  }
+  sink.Append(absl::StrFormat("%v", *ops.back()));
+}
+
+}  // namespace absl
+
 // OPTIONS PRINTING
 
 namespace litert::internal {

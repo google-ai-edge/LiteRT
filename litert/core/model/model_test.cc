@@ -660,5 +660,65 @@ TEST(PrintingTest, TflAddOptionsPointer) {
   EXPECT_EQ(absl::StrFormat("%v", &add_opts), "{fa=RELU6,pot=true}");
 }
 
+TEST(PrintingTest, Subgraph) {
+  LiteRtSubgraphT subgraph;
+
+  {
+    auto& op = subgraph.EmplaceOp();
+
+    op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+    ::tflite::AddOptionsT add_opts;
+    add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU;
+    add_opts.pot_scale_int16 = false;
+    TflOptions opts;
+    opts.type = ::tflite::BuiltinOptions_AddOptions;
+    opts.Set(std::move(add_opts));
+    litert::internal::SetTflOptions(op, std::move(opts));
+
+    auto& tensor = subgraph.EmplaceTensor();
+    tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+    op.Inputs().push_back(&tensor);
+
+    auto& tensor2 = subgraph.EmplaceTensor();
+    tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+    op.Inputs().push_back(&tensor2);
+
+    auto& tensor3 = subgraph.EmplaceTensor();
+    tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+    op.Outputs().push_back(&tensor3);
+  }
+
+  {
+    auto& op = subgraph.EmplaceOp();
+
+    op.SetOpCode(kLiteRtOpCodeTflAdd);
+
+    ::tflite::AddOptionsT add_opts;
+    add_opts.fused_activation_function = ::tflite::ActivationFunctionType_RELU;
+    add_opts.pot_scale_int16 = false;
+    TflOptions opts;
+    opts.type = ::tflite::BuiltinOptions_AddOptions;
+    opts.Set(std::move(add_opts));
+    litert::internal::SetTflOptions(op, std::move(opts));
+
+    auto& tensor = subgraph.EmplaceTensor();
+    tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+    op.Inputs().push_back(&tensor);
+
+    auto& tensor2 = subgraph.EmplaceTensor();
+    tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+    op.Inputs().push_back(&tensor2);
+
+    auto& tensor3 = subgraph.EmplaceTensor();
+    tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}));
+    op.Outputs().push_back(&tensor3);
+  }
+
+  EXPECT_EQ(absl::StrFormat("%v", subgraph.Ops()),
+            "tfl.add{fa=RELU}(3d_i32<2x2x2>,1d_i32<2>)->(3d_i32<2x2x2>)/"
+            "tfl.add{fa=RELU}(3d_i32<2x2x2>,1d_i32<2>)->(3d_i32<2x2x2>)");
+}
+
 }  // namespace
 }  // namespace litert::internal
