@@ -66,6 +66,7 @@ else
   cp .tf_configure.bazelrc /root_dir
 
   export HERMETIC_PYTHON_VERSION=${DOCKER_PYTHON_VERSION}
+  export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
 
   cd /root_dir
   bash /script_dir/run_bazel_test.sh

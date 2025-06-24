@@ -16,6 +16,7 @@
 set -ex
 
 # Run this script under the root directory.
+export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:"$(pwd)/third_party/tensorflow"}
 
 ARCH="$(uname -m)"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
@@ -30,25 +31,28 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-march=armv7-a --copt=-mfpu=neon-vfpv4
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
       --define tensorflow_mkldnn_contraction_kernel=0
-      --define=raspberry_pi_with_neon=true"
+      --define=raspberry_pi_with_neon=true
+      --config=use_local_tf"
     ;;
   rpi0)
     BAZEL_FLAGS="--config=elinux_armhf
       --copt=-march=armv6 -mfpu=vfp -mfloat-abi=hard
-      --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
+      --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissivec
       --define tensorflow_mkldnn_contraction_kernel=0
-      --define=raspberry_pi_with_neon=true"
+      --define=raspberry_pi_with_neon=true
+      --config=use_local_tf"
     ;;
   aarch64)
     BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
-      --copt=-O3"
+      --copt=-O3
+      --config=use_local_tf"
     ;;
   native)
-    BAZEL_FLAGS="--copt=-O3 --copt=-march=native"
+    BAZEL_FLAGS="--copt=-O3 --copt=-march=native --config=use_local_tf"
     ;;
   *)
-    BAZEL_FLAGS="--copt=-O3"
+    BAZEL_FLAGS="--copt=-O3 --config=use_local_tf"
     ;;
 esac
 

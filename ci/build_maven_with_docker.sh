@@ -65,6 +65,7 @@ else
   cp .tf_configure.bazelrc /root_dir
 
   cd /root_dir
+  export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
   bash /script_dir/build_android_package.sh
 
   # Bundle the Maven package

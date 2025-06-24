@@ -48,6 +48,7 @@ if [ ! -d /root_dir ]; then
 else
   export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
+  export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
 
   # Running inside docker container
   cd /third_party_tensorflow

@@ -177,7 +177,8 @@ BUILD_FLAGS=("-c" "opt" \
     "--define=android_dexmerger_tool=d8_dexmerger" \
     "--define=android_incremental_dexing_tool=d8_dexbuilder" \
     "--repo_env=HERMETIC_PYTHON_VERSION=3.11" \
-    "--show_timestamps")
+    "--show_timestamps"
+    "--config=use_local_tf")
 
 # Merge extra config flags from the environment
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
