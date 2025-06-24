@@ -31,13 +31,12 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
-namespace litert {
-namespace tensor_buffer_wrapper {
+namespace litert::tensor_buffer_wrapper {
 
 namespace {
 // A deallocator that performs no operation, used when the memory is managed
 // externally.
-static void NoopDeallocator(void*) {}
+void NoopDeallocator(void*) {}
 
 // Converts a Python list of numeric values to a std::vector<float>.
 // Returns true on success, false on failure with error message populated.
@@ -182,7 +181,7 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
   // Create a LiteRtRankedTensorType for 1-D shape
   LiteRtRankedTensorType dummy_type;
   dummy_type.layout.rank = 1;
-  dummy_type.layout.dimensions[0] = (int32_t)num_elements;
+  dummy_type.layout.dimensions[0] = static_cast<int32_t>(num_elements);
   dummy_type.layout.has_strides = false;
 
   // Set the element type based on the dtype string
@@ -225,11 +224,11 @@ PyObject* TensorBufferWrapper::CreateFromHostMemory(PyObject* py_data,
     litert_wrapper_utils::DestroyTensorBufferFromCapsule(capsule);
 
     // Clean up the capsule context
-    auto* ctx = static_cast<CapsuleContext*>(PyCapsule_GetContext(capsule));
-    if (ctx) {
-      PyBuffer_Release(&ctx->py_buf);
-      Py_DECREF(ctx->py_obj);
-      delete ctx;
+    auto* context = static_cast<CapsuleContext*>(PyCapsule_GetContext(capsule));
+    if (context) {
+      PyBuffer_Release(&context->py_buf);
+      Py_DECREF(context->py_obj);
+      delete context;
     }
   };
 
@@ -261,7 +260,7 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
   if (!ptr) {
     return ReportError("WriteTensor: null pointer in capsule");
   }
-  litert::TensorBuffer tb((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+  TensorBuffer tb(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
 
   // Convert the Python list to a C++ vector based on the data type
   std::string error;
@@ -270,31 +269,30 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
     if (!ConvertPyListToFloatVector(data_list, &host_data, &error)) {
       if (!error.empty()) return ReportError(error);
     }
-    auto status = tb.Write<float>(absl::MakeConstSpan(host_data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
+    if (auto status = tb.Write<float>(absl::MakeConstSpan(host_data)); !status)
+      return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
-
-  } else if (dtype == "int32") {
+  }
+  if (dtype == "int32") {
     std::vector<int32_t> host_data;
     if (!ConvertPyListToInt32Vector(data_list, &host_data, &error)) {
       if (!error.empty()) return ReportError(error);
     }
-    auto status = tb.Write<int32_t>(absl::MakeConstSpan(host_data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
+    if (auto status = tb.Write<int32_t>(absl::MakeConstSpan(host_data));
+        !status)
+      return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
-
-  } else if (dtype == "int8") {
+  }
+  if (dtype == "int8") {
     std::vector<int8_t> host_data;
     if (!ConvertPyListToInt8Vector(data_list, &host_data, &error)) {
       if (!error.empty()) return ReportError(error);
     }
-    auto status = tb.Write<int8_t>(absl::MakeConstSpan(host_data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
+    if (auto status = tb.Write<int8_t>(absl::MakeConstSpan(host_data)); !status)
+      return ConvertErrorToPyExc(status.Error());
     Py_RETURN_NONE;
-
-  } else {
-    return ReportError("WriteTensor: unsupported dtype '" + dtype + "'");
   }
+  return ReportError("WriteTensor: unsupported dtype '" + dtype + "'");
 }
 
 // Reads data from a TensorBuffer into a Python list.
@@ -310,29 +308,27 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
   if (!ptr) {
     return ReportError("ReadTensor: null pointer in capsule");
   }
-  litert::TensorBuffer tb((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+  TensorBuffer tb(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
 
   if (dtype == "float32") {
-    std::vector<float> data(num_elements, 0.f);
-    auto status = tb.Read<float>(absl::MakeSpan(data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
+    std::vector data(num_elements, 0.f);
+    if (auto status = tb.Read<float>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
     return BuildPyListFromFloat(data);
-
-  } else if (dtype == "int32") {
-    std::vector<int32_t> data(num_elements, 0);
-    auto status = tb.Read<int32_t>(absl::MakeSpan(data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
-    return BuildPyListFromInt32(data);
-
-  } else if (dtype == "int8") {
-    std::vector<int8_t> data(num_elements, 0);
-    auto status = tb.Read<int8_t>(absl::MakeSpan(data));
-    if (!status) return ConvertErrorToPyExc(status.Error());
-    return BuildPyListFromInt8(data);
-
-  } else {
-    return ReportError("ReadTensor: unsupported dtype '" + dtype + "'");
   }
+  if (dtype == "int32") {
+    std::vector data(num_elements, 0);
+    if (auto status = tb.Read<int32_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromInt32(data);
+  }
+  if (dtype == "int8") {
+    std::vector<int8_t> data(num_elements, 0);
+    if (auto status = tb.Read<int8_t>(absl::MakeSpan(data)); !status)
+      return ConvertErrorToPyExc(status.Error());
+    return BuildPyListFromInt8(data);
+  }
+  return ReportError("ReadTensor: unsupported dtype '" + dtype + "'");
 }
 
 // Explicitly destroys a TensorBuffer and releases associated resources.
@@ -350,12 +346,11 @@ PyObject* TensorBufferWrapper::ReportError(const std::string& msg) {
 }
 
 // Converts a LiteRT Error to a Python exception.
-PyObject* TensorBufferWrapper::ConvertErrorToPyExc(const litert::Error& error) {
+PyObject* TensorBufferWrapper::ConvertErrorToPyExc(const Error& error) {
   PyErr_Format(PyExc_RuntimeError,
                "TensorBufferWrapper error: code=%d, message=%s",
                static_cast<int>(error.Status()), error.Message().c_str());
   return nullptr;
 }
 
-}  // namespace tensor_buffer_wrapper
-}  // namespace litert
+}  // namespace litert::tensor_buffer_wrapper

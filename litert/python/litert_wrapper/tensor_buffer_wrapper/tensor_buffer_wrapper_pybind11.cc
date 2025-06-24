@@ -18,7 +18,6 @@
 #include <vector>
 
 #include "litert/python/litert_wrapper/tensor_buffer_wrapper/tensor_buffer_wrapper.h"
-#include "pybind11/functional.h"  // from @pybind11
 #include "pybind11/pybind11.h"  // from @pybind11
 #include "pybind11/stl.h"  // from @pybind11
 
@@ -49,7 +48,7 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
   // Writes data to an existing TensorBuffer.
   // The data is copied from the provided Python list into the TensorBuffer.
   m.def("WriteTensor",
-        [](py::object capsule, py::object data_list, std::string dtype) {
+        [](py::object capsule, py::object data_list, const std::string& dtype) {
           PyObject* res = TensorBufferWrapper::WriteTensor(
               capsule.ptr(), data_list.ptr(), dtype);
           if (!res) throw py::error_already_set();
@@ -59,7 +58,7 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
   // Reads data from a TensorBuffer into a Python list.
   // The data is copied from the TensorBuffer into a new Python list.
   m.def("ReadTensor",
-        [](py::object capsule, int num_elements, std::string dtype) {
+        [](py::object capsule, int num_elements, const std::string& dtype) {
           PyObject* res = TensorBufferWrapper::ReadTensor(capsule.ptr(),
                                                           num_elements, dtype);
           if (!res) throw py::error_already_set();
@@ -69,8 +68,9 @@ PYBIND11_MODULE(_pywrap_litert_tensor_buffer_wrapper, m) {
   // Destroys a TensorBuffer and releases associated resources.
   // This should be called when the TensorBuffer is no longer needed.
   m.def("DestroyTensorBuffer", [](py::object capsule) {
-    PyObject* res = TensorBufferWrapper::DestroyTensorBuffer(capsule.ptr());
-    if (!res) throw py::error_already_set();
+    if (PyObject* res = TensorBufferWrapper::DestroyTensorBuffer(capsule.ptr());
+        !res)
+      throw py::error_already_set();
     // No return value needed
   });
 }

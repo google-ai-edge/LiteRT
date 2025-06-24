@@ -22,8 +22,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
-namespace litert {
-namespace tensor_buffer_wrapper {
+namespace litert::tensor_buffer_wrapper {
 
 /**
  * Wrapper class for LiteRtTensorBuffer operations exposed to Python.
@@ -92,7 +91,7 @@ class TensorBufferWrapper {
    * @param error The LiteRT error to convert.
    * @return nullptr after setting the Python exception.
    */
-  static PyObject* ConvertErrorToPyExc(const litert::Error& error);
+  static PyObject* ConvertErrorToPyExc(const Error& error);
 
  private:
   /**
@@ -104,7 +103,6 @@ class TensorBufferWrapper {
   static size_t ByteWidthOfDType(const std::string& dtype);
 };
 
-}  // namespace tensor_buffer_wrapper
-}  // namespace litert
+}  // namespace litert::tensor_buffer_wrapper
 
 #endif  // LITERT_PYTHON_LITERT_WRAPPER_TENSOR_BUFFER_WRAPPER_TENSOR_BUFFER_WRAPPER_H_

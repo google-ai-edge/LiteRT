@@ -136,7 +136,7 @@ class CompiledModelWrapper {
 
  private:
   // Returns the size in bytes of a single element of the given data type.
-  size_t ByteWidthOfDType(const std::string& dtype);
+  static size_t ByteWidthOfDType(const std::string& dtype);
 
   // Reports an error to Python and returns nullptr.
   static PyObject* ReportError(const std::string& msg);

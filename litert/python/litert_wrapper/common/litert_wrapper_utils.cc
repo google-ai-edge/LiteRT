@@ -20,8 +20,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
-namespace litert {
-namespace litert_wrapper_utils {
+namespace litert::litert_wrapper_utils {
 
 void DestroyTensorBufferFromCapsule(PyObject* capsule) {
   // TODO(b/414622532): Remove this check, using PyCapsule_GetPointer default
@@ -37,10 +36,9 @@ void DestroyTensorBufferFromCapsule(PyObject* capsule) {
   }
 }
 
-PyObject* MakeTensorBufferCapsule(litert::TensorBuffer& buffer) {
+PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer) {
   return PyCapsule_New(buffer.Release(), kLiteRtTensorBufferName.data(),
                        &DestroyTensorBufferFromCapsule);
 }
 
-}  // namespace litert_wrapper_utils
-}  // namespace litert
+}  // namespace litert::litert_wrapper_utils

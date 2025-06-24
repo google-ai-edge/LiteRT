@@ -20,8 +20,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_tensor_buffer.h"
 
-namespace litert {
-namespace litert_wrapper_utils {
+namespace litert::litert_wrapper_utils {
 
 // The name used for LiteRtTensorBuffer capsules
 constexpr absl::string_view kLiteRtTensorBufferName = "LiteRtTensorBuffer";
@@ -30,10 +29,9 @@ constexpr absl::string_view kLiteRtTensorBufferName = "LiteRtTensorBuffer";
 // to prevent double destruction. Returns true if successful.
 void DestroyTensorBufferFromCapsule(PyObject* capsule);
 
-// Creates a PyCapsule for a TensorBuffer with appropriate destructor.
-PyObject* MakeTensorBufferCapsule(litert::TensorBuffer& buffer);
+// Creates a PyCapsule for a TensorBuffer with the appropriate destructor.
+PyObject* MakeTensorBufferCapsule(TensorBuffer& buffer);
 
-}  // namespace litert_wrapper_utils
-}  // namespace litert
+}  // namespace litert::litert_wrapper_utils
 
 #endif  // LITERT_PYTHON_LITERT_WRAPPER_COMMON_LITERT_WRAPPER_UTILS_H_

@@ -35,8 +35,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
-namespace litert {
-namespace compiled_model_wrapper {
+namespace litert::compiled_model_wrapper {
 
 // Returns the byte width of a data type.
 size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
@@ -47,9 +46,8 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
 }
 
 // Constructor for CompiledModelWrapper.
-CompiledModelWrapper::CompiledModelWrapper(litert::Environment env,
-                                           litert::Model model,
-                                           litert::CompiledModel compiled)
+CompiledModelWrapper::CompiledModelWrapper(Environment env, Model model,
+                                           CompiledModel compiled)
     : environment_(std::move(env)),
       model_(std::move(model)),
       compiled_model_(std::move(compiled)) {}
@@ -71,8 +69,7 @@ PyObject* CompiledModelWrapper::ReportError(const std::string& msg) {
 }
 
 // Converts a LiteRT error to a Python exception.
-PyObject* CompiledModelWrapper::ConvertErrorToPyExc(
-    const litert::Error& error) {
+PyObject* CompiledModelWrapper::ConvertErrorToPyExc(const Error& error) {
   PyErr_Format(PyExc_RuntimeError, "CompiledModel error: code=%d, message=%s",
                static_cast<int>(error.Status()), error.Message().c_str());
   return nullptr;
@@ -83,36 +80,36 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
     const char* model_path, const char* compiler_plugin_path,
     const char* dispatch_library_path, int hardware_accel,
     std::string* out_error) {
-  // Create environment with options
-  std::vector<litert::Environment::Option> options;
+  // Create an environment with options
+  std::vector<Environment::Option> options;
   if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::CompilerPluginLibraryDir,
-        std::string(compiler_plugin_path)});
+    options.push_back(
+        Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,
+                            std::string(compiler_plugin_path)});
   }
   if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
-        std::string(dispatch_library_path)});
+    options.push_back(
+        Environment::Option{Environment::OptionTag::DispatchLibraryDir,
+                            std::string(dispatch_library_path)});
   }
-  auto env_or = litert::Environment::Create(options);
+  auto env_or = Environment::Create(options);
   if (!env_or) {
     if (out_error) *out_error = env_or.Error().Message();
     return nullptr;
   }
-  litert::Environment env = std::move(*env_or);
+  Environment env = std::move(*env_or);
 
-  // Load model from file
-  auto model_or = litert::Model::CreateFromFile(model_path);
+  // Load model from a file
+  auto model_or = Model::CreateFromFile(model_path);
   if (!model_or) {
     if (out_error) *out_error = model_or.Error().Message();
     return nullptr;
   }
-  litert::Model model = std::move(*model_or);
+  Model model = std::move(*model_or);
 
-  // Create compiled model
-  auto compiled_or = litert::CompiledModel::Create(
-      env, model, (LiteRtHwAccelerators)hardware_accel);
+  // Create a compiled model
+  auto compiled_or = CompiledModel::Create(
+      env, model, static_cast<LiteRtHwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
@@ -145,37 +142,37 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   }
 
   // Create environment with options
-  std::vector<litert::Environment::Option> options;
+  std::vector<Environment::Option> options;
   if (compiler_plugin_path && *compiler_plugin_path) {
-    options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::CompilerPluginLibraryDir,
-        std::string(compiler_plugin_path)});
+    options.push_back(
+        Environment::Option{Environment::OptionTag::CompilerPluginLibraryDir,
+                            std::string(compiler_plugin_path)});
   }
   if (dispatch_library_path && *dispatch_library_path) {
-    options.push_back(litert::Environment::Option{
-        litert::Environment::OptionTag::DispatchLibraryDir,
-        std::string(dispatch_library_path)});
+    options.push_back(
+        Environment::Option{Environment::OptionTag::DispatchLibraryDir,
+                            std::string(dispatch_library_path)});
   }
 
-  auto env_or = litert::Environment::Create(options);
+  auto env_or = Environment::Create(options);
   if (!env_or) {
     if (out_error) *out_error = env_or.Error().Message();
     return nullptr;
   }
-  litert::Environment env = std::move(*env_or);
+  Environment env = std::move(*env_or);
 
   // Create model from buffer
-  litert::BufferRef<uint8_t> ref(reinterpret_cast<uint8_t*>(buf),
-                                 static_cast<size_t>(length));
-  auto model_or = litert::Model::CreateFromBuffer(ref);
+  BufferRef<uint8_t> ref(reinterpret_cast<uint8_t*>(buf),
+                         static_cast<size_t>(length));
+  auto model_or = Model::CreateFromBuffer(ref);
   if (!model_or) {
     if (out_error) *out_error = model_or.Error().Message();
     return nullptr;
   }
-  litert::Model model = std::move(*model_or);
+  Model model = std::move(*model_or);
 
-  // Create compiled model
-  auto compiled_or = litert::CompiledModel::Create(
+  // Create a compiled model
+  auto compiled_or = CompiledModel::Create(
       env, model, static_cast<LiteRtHwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
@@ -266,7 +263,7 @@ PyObject* CompiledModelWrapper::GetSignatureByIndex(int signature_index) {
 // Returns the number of signatures in the model.
 PyObject* CompiledModelWrapper::GetNumSignatures() {
   auto num = model_.GetNumSignatures();
-  return PyLong_FromLong((int64_t)num);
+  return PyLong_FromLong(static_cast<int64_t>(num));
 }
 
 // Returns the index of a signature by key.
@@ -296,7 +293,8 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
     Py_DECREF(dict);
     return ConvertErrorToPyExc(size_or.Error());
   }
-  PyDict_SetItemString(dict, "buffer_size", PyLong_FromLong((int64_t)*size_or));
+  PyDict_SetItemString(dict, "buffer_size",
+                       PyLong_FromLong(static_cast<int64_t>(*size_or)));
 
   // Add supported types
   auto types_or = req.SupportedTypes();
@@ -305,7 +303,7 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
     return ConvertErrorToPyExc(types_or.Error());
   }
   auto types = std::move(*types_or);
-  PyObject* py_list = PyList_New((Py_ssize_t)types.size());
+  PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
     PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
   }
@@ -319,7 +317,7 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
 PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
                                                             int output_index) {
   auto req_or = compiled_model_.GetOutputBufferRequirements(
-      (size_t)signature_index, (size_t)output_index);
+      static_cast<size_t>(signature_index), static_cast<size_t>(output_index));
   if (!req_or) {
     return ConvertErrorToPyExc(req_or.Error());
   }
@@ -333,7 +331,8 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
     Py_DECREF(dict);
     return ConvertErrorToPyExc(size_or.Error());
   }
-  PyDict_SetItemString(dict, "buffer_size", PyLong_FromLong((int64_t)*size_or));
+  PyDict_SetItemString(dict, "buffer_size",
+                       PyLong_FromLong(static_cast<int64_t>(*size_or)));
 
   auto types_or = req.SupportedTypes();
   if (!types_or) {
@@ -341,7 +340,7 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
     return ConvertErrorToPyExc(types_or.Error());
   }
   auto types = std::move(*types_or);
-  PyObject* py_list = PyList_New((Py_ssize_t)types.size());
+  PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
     PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
   }
@@ -377,7 +376,8 @@ PyObject* CompiledModelWrapper::CreateOutputBufferByName(
 }
 
 PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
-  auto buffers_or = compiled_model_.CreateInputBuffers((size_t)signature_index);
+  auto buffers_or =
+      compiled_model_.CreateInputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
     return ConvertErrorToPyExc(buffers_or.Error());
   }
@@ -387,14 +387,14 @@ PyObject* CompiledModelWrapper::CreateInputBuffers(int signature_index) {
     // Python owns them. Destroy on capsule destructor.
     PyObject* capsule =
         litert_wrapper_utils::MakeTensorBufferCapsule(buffers[i]);
-    PyList_SetItem(py_list, i, capsule);  // steals ref
+    PyList_SetItem(py_list, i, capsule);  // steal ref
   }
   return py_list;
 }
 
 PyObject* CompiledModelWrapper::CreateOutputBuffers(int signature_index) {
   auto buffers_or =
-      compiled_model_.CreateOutputBuffers((size_t)signature_index);
+      compiled_model_.CreateOutputBuffers(static_cast<size_t>(signature_index));
   if (!buffers_or) {
     return ConvertErrorToPyExc(buffers_or.Error());
   }
@@ -415,8 +415,8 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
     return ReportError("RunByName expects input_map & output_map as dict");
   }
 
-  absl::flat_hash_map<absl::string_view, litert::TensorBuffer> in_map;
-  absl::flat_hash_map<absl::string_view, litert::TensorBuffer> out_map;
+  absl::flat_hash_map<absl::string_view, TensorBuffer> in_map;
+  absl::flat_hash_map<absl::string_view, TensorBuffer> out_map;
 
   PyObject* key;
   PyObject* val;
@@ -436,7 +436,7 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
       return ReportError("capsule missing pointer in input_map");
     }
     in_map[nm] =
-        litert::TensorBuffer((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
   pos = 0;
@@ -455,11 +455,11 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
       return ReportError("capsule missing pointer in output_map");
     }
     out_map[nm] =
-        litert::TensorBuffer((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
-  auto run_or = compiled_model_.Run(signature_key, in_map, out_map);
-  if (!run_or) {
+  if (auto run_or = compiled_model_.Run(signature_key, in_map, out_map);
+      !run_or) {
     return ConvertErrorToPyExc(run_or.Error());
   }
   Py_RETURN_NONE;
@@ -474,8 +474,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
   if (!PyList_Check(output_caps_list)) {
     return ReportError("RunByIndex output_caps_list not list");
   }
-  std::vector<litert::TensorBuffer> inputs;
-  std::vector<litert::TensorBuffer> outputs;
+  std::vector<TensorBuffer> inputs;
+  std::vector<TensorBuffer> outputs;
 
   Py_ssize_t n_in = PyList_Size(input_caps_list);
   inputs.reserve(n_in);
@@ -489,7 +489,7 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in input capsule");
     }
-    inputs.emplace_back((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+    inputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
   Py_ssize_t n_out = PyList_Size(output_caps_list);
@@ -504,15 +504,15 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in output capsule");
     }
-    outputs.emplace_back((LiteRtTensorBuffer)ptr, litert::OwnHandle::kNo);
+    outputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
-  auto run_or = compiled_model_.Run((size_t)signature_index, inputs, outputs);
-  if (!run_or) {
+  if (auto run_or = compiled_model_.Run(static_cast<size_t>(signature_index),
+                                        inputs, outputs);
+      !run_or) {
     return ConvertErrorToPyExc(run_or.Error());
   }
   Py_RETURN_NONE;
 }
 
-}  // namespace compiled_model_wrapper
-}  // namespace litert
+}  // namespace litert::compiled_model_wrapper
