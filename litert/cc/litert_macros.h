@@ -357,11 +357,14 @@ class LogBeforeAbort {
 #define LITERT_CHECK_STATUS_OK(expr) \
   LITERT_CHECK_STATUS_HAS_CODE(expr, kLiteRtStatusOk);
 
-#define LITERT_ENSURE_SUPPORTED(cond, msg) \
-  if (!(cond)) {                           \
-    LITERT_LOG(LITERT_ERROR, "%s", msg);   \
-    return kLiteRtStatusErrorUnsupported;  \
+#define LITERT_ENSURE(cond, status, msg) \
+  if (!(cond)) {                         \
+    LITERT_LOG(LITERT_ERROR, "%s", msg); \
+    return status;                       \
   }
+
+#define LITERT_ENSURE_SUPPORTED(cond, msg) \
+  LITERT_ENSURE(cond, kLiteRtStatusErrorUnsupported, msg);
 
 #define LITERT_RETURN_IF_ERROR_OR_NOT_MATCHED(expr)                          \
   if (LiteRtStatus status = expr;                                            \
