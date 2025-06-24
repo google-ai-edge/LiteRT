@@ -18,6 +18,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <random>
 #include <type_traits>
 
@@ -25,6 +26,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_numerics.h"
 #include "litert/test/rng_fixture.h"
 
@@ -148,6 +150,45 @@ TEST_F(LiteRtRngTest, TestWithFuzz) {
     ASSERT_LE(val, gen.Max());
     ASSERT_GE(val, gen.Min());
   }
+}
+
+TEST_F(LiteRtRngTest, FullySpecifiedRandomTensorType) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type = type.Generate(
+      device, {kLiteRtElementTypeFloat32},
+      {RandomTensorType::DimSpec(2u), RandomTensorType::DimSpec(2u)});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(tensor_type->layout.dimensions[0], 2);
+  EXPECT_EQ(tensor_type->layout.dimensions[1], 2);
+}
+
+TEST_F(LiteRtRngTest, RandomElementType) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type = type.Generate(
+      device, {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt32});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_TRUE(tensor_type->element_type == kLiteRtElementTypeFloat32 ||
+              tensor_type->element_type == kLiteRtElementTypeInt32);
+}
+
+TEST_F(LiteRtRngTest, RandomTensorShape) {
+  auto device = TracedDevice();
+  RandomTensorType type;
+  auto tensor_type =
+      type.Generate(device, {kLiteRtElementTypeFloat32},
+                    {RandomTensorType::DimRange(1u, 3u), std::nullopt});
+  ASSERT_TRUE(tensor_type);
+  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(tensor_type->layout.rank, 2);
+  const auto dim1 = tensor_type->layout.dimensions[0];
+  EXPECT_GE(dim1, 1u);
+  EXPECT_LE(dim1, 3u);
+  const auto dim2 = tensor_type->layout.dimensions[1];
+  EXPECT_GE(dim2, 0u);
+  EXPECT_LE(dim2, NumericLimits<uint32_t>::Max());
 }
 
 }  // namespace

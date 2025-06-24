@@ -20,11 +20,17 @@
 #include <ostream>
 #include <random>
 #include <type_traits>
+#include <variant>
+#include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_numerics.h"
 
 // Various utilities and types for random number generation.
@@ -112,7 +118,7 @@ class RandomDevice {
   static constexpr ResultType max() { return Max(); }
 };
 
-// TENSOR DATA GENERATOR ///////////////////////////////////////////////////////
+// PRIMITIVE DATA GENERATORS ///////////////////////////////////////////////////
 
 // Abstract base class for generating data of a certain type from a given rng
 // device, e.g. populating tensors and the like.
@@ -210,6 +216,70 @@ using DefaultRangedGenerator =
             RangedGenerator<D, std::uniform_int_distribution>>;
 
 using DefaultDevice = RandomDevice<std::mt19937>;
+
+// RANDOM TENSOR TYPES /////////////////////////////////////////////////////////
+
+// This class composes the primitive data generators above to support
+// generating randomized tensor types (and shapes).
+class RandomTensorType {
+ private:
+  using DimSize = uint32_t;
+  using DimGenerator = DefaultRangedGenerator<DimSize>;
+  using ElementTypeInt = uint8_t;
+  using ElementTypeGenerator = DefaultRangedGenerator<ElementTypeInt>;
+
+ public:
+  using DimRange = std::pair<DimSize, DimSize>;
+  using DimSpec = std::variant<DimSize, DimRange>;
+  using ElementTypeSpec = std::vector<LiteRtElementType>;
+
+  static constexpr auto kMinDim = NumericLimits<DimSize>::Lowest();
+  static constexpr auto kMaxDim = NumericLimits<DimSize>::Max();
+
+  template <typename Rng>
+  Expected<LiteRtRankedTensorType> Generate(
+      Rng& rng,
+      const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
+                                     kLiteRtElementTypeFloat32},
+      const std::vector<std::optional<DimSpec>>& shape_spec = {}) {
+    const auto rank = shape_spec.size();
+    if (rank > LITERT_TENSOR_MAX_RANK) {
+      return Error(kLiteRtStatusErrorInvalidArgument, "Rank too large");
+    }
+    LiteRtRankedTensorType res;
+    res.layout.rank = rank;
+    res.element_type = GenerateElementType(rng, type);
+    for (auto i = 0; i < rank; ++i) {
+      res.layout.dimensions[i] = GenerateDim(rng, shape_spec[i]);
+    }
+    return res;
+  }
+
+ private:
+  template <typename Rng>
+  DimSize GenerateDim(Rng& rng, const std::optional<DimSpec>& dim) {
+    if (!dim) {
+      DimGenerator gen;
+      return gen(rng);
+    } else if (std::holds_alternative<DimSize>(*dim)) {
+      auto d = std::get<DimSize>(*dim);
+      return d;
+    } else {
+      auto d = std::get<DimRange>(*dim);
+      DimGenerator gen(d.first, d.second);
+      return gen(rng);
+    }
+  }
+
+  template <typename Rng>
+  LiteRtElementType GenerateElementType(Rng& rng, const ElementTypeSpec& type) {
+    if (type.size() == 1) {
+      return type.front();
+    }
+    ElementTypeGenerator gen(0, type.size() - 1);
+    return type[gen(rng)];
+  }
+};
 
 }  // namespace litert
 

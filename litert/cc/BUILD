@@ -597,7 +597,11 @@ cc_library(
     ],
     deps = [
         ":litert_detail",
+        ":litert_expected",
         ":litert_numerics",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -610,6 +614,7 @@ cc_test(
     deps = [
         ":litert_numerics",
         ":litert_rng",
+        "//litert/c:litert_model_types",
         "//litert/test:rng_fixture",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
