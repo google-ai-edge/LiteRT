@@ -14,9 +14,9 @@
 // limitations under the License.
 
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
+#include "litert/vendors/intel_openvino/utils.h"
 
 #include <string>
-#include "utils.h"
 
 namespace litert {
 namespace openvino {
@@ -42,7 +42,7 @@ bool fill_tensor_meta(
     const litert::Tensor& litert_tensor) {
   std::vector<int64_t> shape_vec;
   const ElementType type = litert_tensor.ElementType();
-  ov::element::Type ov_element_type = MapLiteTypeToOV(type);
+  ov::element::Type ov_element_type = MapLiteTypeToOV(static_cast<LiteRtElementType>(type));
   if (GetOVTensorShape(litert_tensor, shape_vec) != kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "Unsupported tensor element shape");
   }

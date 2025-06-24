@@ -58,7 +58,7 @@ litert_lib(
     srcs = ["graph_iterator.cc"],
     hdrs = [
         "graph_iterator.h",
-        "utils.h"
+        "//litert/vendors/intel_openvino:utils.h"
         ],
     tags = [
         "nobuilder",
@@ -82,7 +82,7 @@ litert_lib(
     srcs = ["decoder.cc"],
     hdrs = [
         "decoder.h",
-        "utils.h"
+        "//litert/vendors/intel_openvino:utils.h"
         ],
     tags = [
         "nobuilder",

@@ -16,3 +16,7 @@
 package(
     default_visibility = ["//litert:__subpackages__"],
 )
+
+exports_files([
+    "utils.h",
+])

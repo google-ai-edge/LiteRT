@@ -9,49 +9,49 @@
 #include "litert/cc/litert_model.h"
 
 using namespace litert;
-static const ov::element::Type MapLiteTypeToOV(const ElementType element_type) {
+static const ov::element::Type MapLiteTypeToOV(const LiteRtElementType element_type) {
     ov::element::Type ov_type;
     switch (element_type) {
-        case ElementType::Bool:
+        case kLiteRtElementTypeBool:
             ov_type = ov::element::boolean;
             break;
-        case ElementType::Int4:
+        case kLiteRtElementTypeInt4:
             ov_type = ov::element::i4;
             break;
-        case ElementType::Int8:
+        case kLiteRtElementTypeInt8:
             ov_type = ov::element::i8;
             break;
-        case ElementType::Int16:
+        case kLiteRtElementTypeInt16:
             ov_type = ov::element::i16;
             break;
-        case ElementType::Int32:
+        case kLiteRtElementTypeInt32:
             ov_type = ov::element::i32;
             break;
-        case ElementType::Int64:
+        case kLiteRtElementTypeInt64:
             ov_type = ov::element::i64;
             break;
-        case ElementType::UInt8:
+        case kLiteRtElementTypeUInt8:
             ov_type = ov::element::u8;
             break;
-        case ElementType::UInt16:
+        case kLiteRtElementTypeUInt16:
             ov_type = ov::element::u16;
             break;
-        case ElementType::UInt32:
+        case kLiteRtElementTypeUInt32:
             ov_type = ov::element::u32;
             break;
-        case ElementType::UInt64:
+        case kLiteRtElementTypeUInt64:
             ov_type = ov::element::u64;
             break;
-        case ElementType::Float16:
+        case kLiteRtElementTypeFloat16:
             ov_type = ov::element::f16;
             break;
-        case ElementType::Float32:
+        case kLiteRtElementTypeFloat32:
             ov_type = ov::element::f32;
             break;
-        case ElementType::Float64:
+        case kLiteRtElementTypeFloat64:
             ov_type = ov::element::f64;
             break;
-        case ElementType::BFloat16:
+        case kLiteRtElementTypeBFloat16:
             ov_type = ov::element::bf16;
             break;
         default:

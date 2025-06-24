@@ -19,7 +19,7 @@
 
 #include "litert/c/litert_op_options.h"
 #include "litert/tools/dump.h"
-#include "utils.h"
+#include "litert/vendors/intel_openvino/utils.h"
 
 namespace litert {
 namespace openvino {
