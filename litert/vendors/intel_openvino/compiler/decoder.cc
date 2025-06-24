@@ -259,10 +259,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d:
       if (name == "strides") {
         int32_t stride_w;
@@ -307,10 +305,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
         return 0;
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflSplit:
       if (name == "num_split") {
         int32_t num_split;
@@ -318,10 +314,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetSplitNumSplitsOption(litert_op_, &num_split),
             ERROR_LOG_STR("num_split", op_name_.c_str()));
         return static_cast<int64_t>(num_split);
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflFullyConnected:
       if (name == "weights_format") {
         uint32_t weights_format;
@@ -345,10 +339,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflAdd:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
@@ -357,10 +349,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflReshape:
       if (name == "new_shape") {
         const int32_t* reshape_new_shape;
@@ -374,10 +364,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
           new_shape[i] = reshape_new_shape[i];
         }
         return new_shape;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflMean:
       if (name == "keep_dims") {
         bool keep_dims;
@@ -385,10 +373,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetMeanKeepDimsOption(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return keep_dims;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear:
       if (name == "align_corners") {
         bool align_corners;
@@ -404,10 +390,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
                                                          &half_pixel_centers),
             ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return half_pixel_centers;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor:
       if (name == "align_corners") {
         bool align_corners;
@@ -423,10 +407,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
                 litert_op_, &half_pixel_centers),
             ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return half_pixel_centers;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflConcatenation:
       if (name == "axis") {
         int32_t axis;
@@ -434,10 +416,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetConcatenationAxisOption(litert_op_, &axis),
             ERROR_LOG_STR("axis", op_name_.c_str()));
         return axis;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d:
       if (name == "strides") {
         int32_t stride_w;
@@ -476,10 +456,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d:
       if (name == "strides") {
         int32_t stride_w;
@@ -519,10 +497,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflMul:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
@@ -531,10 +507,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflTransposeConv:
       if (name == "strides") {
         int32_t stride_w;
@@ -567,29 +541,23 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflSoftmax:
       if (name == "beta") {
         float beta;
         LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(litert_op_, &beta),
                                ERROR_LOG_STR("beta", op_name_.c_str()));
         return beta;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflMirrorPad:
       if (name == "mode") {
         // TODO: Currently litert_options doesn't provide an option for this.
         // Hence hardcoding to "REFLECT" mode.
         return std::string("REFLECT");
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflStridedSlice:
       if (name == "begin_mask") {
         int32_t begin_mask;
@@ -622,10 +590,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
                                                       &shrink_axis_mask),
             ERROR_LOG_STR("shrink_axis_mask", op_name_.c_str()));
         return shrink_axis_mask;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace:
       if (name == "block_size") {
         int32_t block_size;
@@ -635,10 +601,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
         return block_size;
       } else if (name == "data_format") {
         return "NHWC";
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflGather:
       if (name == "axis") {
         int32_t axis;
@@ -651,10 +615,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetGatherBatchDimsOption(litert_op_, &batch_dims),
             ERROR_LOG_STR("batch_dims", op_name_.c_str()));
         return batch_dims;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul:
       if (name == "adj_x") {
         bool adj_x;
@@ -668,10 +630,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetBatchMatmulAdjYOption(litert_op_, &adj_y),
             ERROR_LOG_STR("adj_y", op_name_.c_str()));
         return adj_y;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu:
       if (name == "alpha") {
         float alpha;
@@ -679,27 +639,21 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetLeakyReluAlphaOption(litert_op_, &alpha),
             ERROR_LOG_STR("alpha", op_name_.c_str()));
         return alpha;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflPack:
       if (name == "axis") {
         int32_t axis;
         LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op_, &axis),
                                ERROR_LOG_STR("axis", op_name_.c_str()));
         return axis;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflCast:
       if (name == "DstT") {
         return output_tensor_info_[0].m_element_type;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflDiv:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
@@ -708,10 +662,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflCumsum:
       if (name == "exclusive") {
         bool exclusive;
@@ -725,10 +677,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetCumsumReverseOption(litert_op_, &reverse),
             ERROR_LOG_STR("reverse", op_name_.c_str()));
         return reverse;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflSub:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
@@ -737,10 +687,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflGelu:
       if (name == "approximate") {
         bool approximate;
@@ -748,18 +696,14 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetGeluApproximateOption(litert_op_, &approximate),
             ERROR_LOG_STR("approximate", op_name_.c_str()));
         return approximate;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflGatherNd:
       if (name == "batch_dims") {
         // No information available in litert_options.
         return 0;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflSum:
       if (name == "keep_dims") {
         bool keep_dims;
@@ -767,10 +711,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetSumKeepDimsOption(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return keep_dims;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     case LiteRtOpCode::kLiteRtOpCodeTflReduceMax:
       if (name == "keep_dims") {
         bool keep_dims;
@@ -778,14 +720,14 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
             LiteRtGetReduceMaxKeepDimsOption(litert_op_, &keep_dims),
             ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return keep_dims;
-      } else {
-        LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
-        return nullptr;
       }
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported op type %s", op_type_.c_str());
       return nullptr;
   }
+  LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
+  return nullptr;
 }
 
 }  // namespace openvino
