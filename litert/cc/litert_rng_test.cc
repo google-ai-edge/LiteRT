@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <random>
+#include <type_traits>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -74,10 +75,14 @@ TEST(LitertRngTestWithCustomRng, NoSeed) {
               HasSubstr("DummyRng(seed=<default>,"));
 }
 
-using LiteRtRngTest = RngTest<>;
+using LiteRtRngTest = RngTest;
 
 TEST_F(LiteRtRngTest, Ints) {
-  auto [gen, device] = GeneratorAndDevice<int>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>();
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<int, std::uniform_int_distribution>>);
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_LE(val, gen.Max());
@@ -88,7 +93,11 @@ TEST_F(LiteRtRngTest, Ints) {
 TEST_F(LiteRtRngTest, IntsWithRange) {
   static constexpr auto kMin = 10;
   static constexpr auto kMax = 20;
-  auto [gen, device] = GeneratorAndDevice<int>(kMin, kMax);
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>(kMin, kMax);
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<int, std::uniform_int_distribution>>);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -99,9 +108,13 @@ TEST_F(LiteRtRngTest, IntsWithRange) {
 }
 
 TEST_F(LiteRtRngTest, FloatsWithRange) {
-  static constexpr auto kMin = 10;
-  static constexpr auto kMax = 20;
-  auto [gen, device] = GeneratorAndDevice<float>(kMin, kMax);
+  static constexpr auto kMin = 10.0f;
+  static constexpr auto kMax = 20.0f;
+  auto device = TracedDevice();
+  auto gen = DefaultRangedGenerator<float>(kMin, kMax);
+  static_assert(
+      std::is_same_v<decltype(gen),
+                     RangedGenerator<float, std::uniform_real_distribution>>);
   EXPECT_EQ(gen.Max(), kMax);
   EXPECT_EQ(gen.Min(), kMin);
   for (int i = 0; i < kTestIters; ++i) {
@@ -112,7 +125,11 @@ TEST_F(LiteRtRngTest, FloatsWithRange) {
 }
 
 TEST_F(LiteRtRngTest, ReinterpretFloat) {
-  auto [gen, device] = GeneratorAndDevice<float>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<float>();
+  static_assert(std::is_same_v<
+                decltype(gen),
+                ReinterpretGenerator<float, std::uniform_real_distribution>>);
   for (int i = 0; i < kTestIters; ++i) {
     const auto val = gen(device);
     ASSERT_FALSE(std::isnan(val));
@@ -123,7 +140,8 @@ TEST_F(LiteRtRngTest, ReinterpretFloat) {
 }
 
 TEST_F(LiteRtRngTest, TestWithFuzz) {
-  auto [gen, device] = GeneratorAndDevice<int>();
+  auto device = TracedDevice();
+  auto gen = DefaultGenerator<int>();
   for (auto _ :
        FuzzBlock(std::chrono::milliseconds(50), kTestIters, kTestIters)) {
     const auto val = gen(device);
@@ -133,5 +151,4 @@ TEST_F(LiteRtRngTest, TestWithFuzz) {
 }
 
 }  // namespace
-
 }  // namespace litert
