@@ -98,7 +98,7 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb and DmaBuf.

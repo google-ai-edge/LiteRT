@@ -90,36 +90,36 @@ class CompiledModel
   // The model is loaded into memory and the caller takes ownership of the
   // returned CompiledModel object. The caller should keep the model alive
   // until the CompiledModel is destroyed.
-  // The given `compilation_options` is used for JIT compilation of the model.
+  // The given `compilation_options` is used for the compilation of the model.
+  // And compilation_options.hardware_accelerators is used to select the
+  // accelerator to use regardless of whether the model is AOT compiled or
+  // not (JIT).
   //
   // Note: The given environment must outlive the compiled model and any
   // execution running it.
-  // Note: If the model is fully AOT compiled for NPU, NPU accelerator is used
-  // automatically which means the provided `compilation_options` are
-  // meaningless.
-  static Expected<CompiledModel> Create(
-      litert::Environment& env, const litert::Model& model,
-      const Options& jit_compilation_options) {
+  //
+  // Note: Even if the model is fully AOT compiled for NPU, you should specify
+  // NPU accelerator in `hardware_accelerators` to use NPU properly.
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        const litert::Model& model,
+                                        const Options& compilation_options) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;
     LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-        env.Get(), litert_model, jit_compilation_options.Get(),
-        &compiled_model));
+        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
     return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
   }
 
   // Simpler version of Create() that uses the default compilation options.
-  // The provided hardware accelerator is used for JIT compilation of the model.
+  // The provided hardware accelerator is used to select accelerator to use.
   //
-  // Note: If the model is fully AOT compiled for NPU, NPU accelerator
-  // is used automatically which means the provided `hardware_accelerator` is
-  // meaningless.
+  // Note: It should be specified for both JIT and AOT compiled models.
   static Expected<CompiledModel> Create(
       litert::Environment& env, const litert::Model& model,
-      LiteRtHwAccelerators hardware_accelerator) {
-    LITERT_ASSIGN_OR_RETURN(auto jit_compilation_options, Options::Create());
-    jit_compilation_options.SetHardwareAccelerators(hardware_accelerator);
-    return Create(env, model, jit_compilation_options);
+      LiteRtHwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, model, compilation_options);
   }
 
   // Get input buffer requirements for the given signature and input name.

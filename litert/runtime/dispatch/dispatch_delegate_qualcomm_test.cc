@@ -305,7 +305,7 @@ TEST(DispatchDelegate, CompiledModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be FastRpc and DmaBuf.
@@ -400,7 +400,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
