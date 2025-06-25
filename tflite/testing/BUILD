@@ -402,9 +402,9 @@ cc_library(
     name = "util",
     hdrs = ["util.h"],
     deps = [
-        "//tflite:error_reporter",
         "//tflite:string",
         "//tflite/core/api",
+        "@com_google_absl//absl/flags:flag",
         "@local_tsl//tsl/platform:logging",
     ],
 )
