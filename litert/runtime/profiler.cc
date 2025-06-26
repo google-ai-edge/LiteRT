@@ -75,6 +75,21 @@ void LiteRtProfilerT::EndEvent(uint32_t event_handle) {
   // We don't remove from active_event_sources_map_ here; it's cleared on Reset.
 }
 
+void LiteRtProfilerT::AddEvent(const char* tag, EventType event_type,
+                              uint64_t elapsed_time, int64_t event_metadata1,
+                              int64_t event_metadata2) {
+  if (!profiling_enabled_ || !profile_buffer_) {
+    return;
+  }
+  // 1. Convert input tag to std::string and insert into the set to get a
+  // unique, owned string.
+  std::string s_tag(tag);
+  auto [it, inserted] = owned_tags_set_.insert(std::move(s_tag));
+  const char* owned_tag_ptr = it->c_str();
+  profile_buffer_->AddEvent(owned_tag_ptr, event_type, elapsed_time,
+                            event_metadata1, event_metadata2);
+}
+
 void LiteRtProfilerT::StartProfiling() {
   if (!profile_buffer_) {
     // Or handle error: Profiler not properly initialized

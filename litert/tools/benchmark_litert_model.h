@@ -33,6 +33,7 @@ limitations under the License.
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -72,6 +73,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("require_full_delegation",
                             BenchmarkParam::Create<bool>(true));
+    default_params.AddParam("use_profiler",
+                            BenchmarkParam::Create<bool>(false));
 
     return default_params;
   }
@@ -153,7 +156,14 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return kTfLiteOk;
   }
 
-  TfLiteStatus ResetInputsAndOutputs() override { return kTfLiteOk; }
+  TfLiteStatus ResetInputsAndOutputs() override {
+    if (profiler_) {
+      profiler_->StopProfiling();
+      profiler_->Reset();
+      profiler_->StartProfiling();
+    }
+    return kTfLiteOk;
+  }
   std::vector<tflite::Flag> GetFlags() override {
     std::vector<tflite::Flag> flags = BenchmarkModel::GetFlags();
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
@@ -174,6 +184,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,
         "Whether to require full delegation."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "use_profiler", &params_, "Whether to use profiler."));
     return flags;
   }
 
@@ -186,6 +198,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<litert::CompiledModel> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
+  std::unique_ptr<litert::Profiler> profiler_;
 };
 
 }  // namespace benchmark

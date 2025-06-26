@@ -51,9 +51,10 @@ class LiteRtProfilerT : public tflite::Profiler {
 
   void EndEvent(uint32_t event_handle) override;
 
-  // Optional: Override if custom logic is needed for events added with
-  // duration. void AddEvent(const char* tag, EventType event_type, uint64_t
-  // elapsed_time, int64_t event_metadata1, int64_t event_metadata2) override;
+  // tag is copied and owned by the profiler, caller does not need to keep
+  // the string alive.
+  void AddEvent(const char* tag, EventType event_type, uint64_t
+    elapsed_time, int64_t event_metadata1, int64_t event_metadata2) override;
 
   // Enables profiling. Events will start being recorded.
   void StartProfiling();

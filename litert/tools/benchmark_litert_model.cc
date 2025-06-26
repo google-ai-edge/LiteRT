@@ -29,6 +29,7 @@ limitations under the License.
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -130,6 +131,17 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   compiled_model_ =
       std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
+
+  auto use_profiler = params_.Get<bool>("use_profiler");
+  if (use_profiler) {
+    LITERT_ASSIGN_OR_RETURN(auto profiler_result,
+                            litert::Profiler::Create(/*max_num_events=*/2048),
+                            AsTfLiteStatus(_ << "Failed to create profiler."));
+    profiler_ = std::make_unique<litert::Profiler>(std::move(profiler_result));
+    compiled_model_->SetProfiler(*profiler_);
+    profiler_->StartProfiling();
+  }
+
   auto signature = params_.Get<std::string>("signature_to_run_for");
   if (signature.empty()) {
     LITERT_ASSIGN_OR_RETURN(auto s, model_->GetSignature(0), AsTfLiteStatus(_));

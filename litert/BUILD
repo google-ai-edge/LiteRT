@@ -81,6 +81,7 @@ package_group(
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
         "//litert/runtime/...",
         "//litert/samples/...",
+        "//litert/tools/...",
         "//litert/vendors/...",
         # copybara:uncomment "//third_party/odml/litert/llm/...",
     ],
