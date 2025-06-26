@@ -246,9 +246,9 @@ build:linux --copt="-Wno-ignored-attributes"
 build:linux --copt="-Wno-array-bounds"
 
 # Windows-specific Python configuration
-build --repo_env=HERMETIC_PYTHON_VERSION=3.11
-build --action_env=PYTHON_BIN_PATH="C:/Program Files/Python311/python.exe"
-build --python_path="C:/Program Files/Python311/python.exe"
+build:windows --repo_env=HERMETIC_PYTHON_VERSION=3.11
+build:windows --action_env=PYTHON_BIN_PATH="C:/Program Files/Python311/python.exe"
+build:windows --python_path="C:/Program Files/Python311/python.exe"
 
 # Add unused-result as an error on Linux.
 build:linux --copt="-Wunused-result"
