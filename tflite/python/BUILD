@@ -99,6 +99,7 @@ py_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         ":convert",
+        ":lite",
         "//tflite/toco:toco_flags_proto_py",
         "//tflite/toco/logging:gen_html",
         "@absl_py//absl:app",
