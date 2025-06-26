@@ -69,16 +69,16 @@ EXCLUDED_TARGETS=(
         "-//tflite/testing:zip_test_depthwiseconv"
         "-//tflite/tools/optimize/debugging/python:debugger_test"
         "-//tflite/tools:convert_image_to_csv_test"
+        "-//tflite/testing:zip_test_depthwiseconv"
+        "-//tflite/testing:zip_test_depthwiseconv_forward-compat"
+        "-//tflite/testing:zip_test_depthwiseconv_mlir-quant"
+        "-//tflite/testing:zip_test_depthwiseconv_with-flex"
+        "-//tflite/experimental/acceleration/mini_benchmark:blocking_validator_runner_test"
         # Exclude dir which shouldnt run
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
         "-//tflite/delegates/gpu/..."
         # TODO: (b/410925271) - Targets not migrated to pywrap_rules yet
-        "-//tflite/tools/optimize/python:modify_model_interface_lib_test"
-        "-//tflite/core/experimental/acceleration/mini_benchmark/c:c_api_test"
-        "-//tflite/testing/..."
-        "-//tflite/toco/..."
-        "-//tflite/experimental/acceleration/..."
 )
 
 LITERT_EXCLUDED_TARGETS=(
