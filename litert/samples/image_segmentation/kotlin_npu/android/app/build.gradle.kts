@@ -58,6 +58,7 @@ android {
   // AI packs
   assetPacks.add(":ai_pack:selfie_multiclass")
   assetPacks.add(":ai_pack:selfie_multiclass_mtk")
+  assetPacks.add(":ai_pack:selfie_multiclass_google_tensor")
 
   // NPU runtime libraries
   dynamicFeatures.add(":litert_npu_runtime_libraries:mediatek_runtime")
@@ -65,6 +66,7 @@ android {
   dynamicFeatures.add(":litert_npu_runtime_libraries:qualcomm_runtime_v73")
   dynamicFeatures.add(":litert_npu_runtime_libraries:qualcomm_runtime_v75")
   dynamicFeatures.add(":litert_npu_runtime_libraries:qualcomm_runtime_v79")
+  dynamicFeatures.add(":litert_npu_runtime_libraries:google_tensor_runtime")
 
   bundle {
     deviceTargetingConfig = file("device_targeting_configuration.xml")
