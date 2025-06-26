@@ -18,8 +18,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 
 #include "litert/c/litert_model.h"
+#include "litert/cc/litert_detail.h"
 
 namespace litert {
 
@@ -151,6 +153,22 @@ template <>
 inline constexpr ElementType GetElementType<double>() {
   return ElementType::Float64;
 }
+
+// clang format off
+template <ElementType Ty>
+using GetCCType =
+    SelectT<std::bool_constant<Ty == ElementType::Bool>, bool,
+            std::bool_constant<Ty == ElementType::Int8>, int8_t,
+            std::bool_constant<Ty == ElementType::Int16>, int16_t,
+            std::bool_constant<Ty == ElementType::Int32>, int32_t,
+            std::bool_constant<Ty == ElementType::Int64>, int64_t,
+            std::bool_constant<Ty == ElementType::UInt8>, uint8_t,
+            std::bool_constant<Ty == ElementType::UInt16>, uint16_t,
+            std::bool_constant<Ty == ElementType::UInt32>, uint32_t,
+            std::bool_constant<Ty == ElementType::UInt64>, uint64_t,
+            std::bool_constant<Ty == ElementType::Float32>, float,
+            std::bool_constant<Ty == ElementType::Float64>, double>;
+// clang format on
 
 }  // namespace litert
 

@@ -323,7 +323,10 @@ cc_library(
         "//visibility:public",
         # copybara:comment_end
     ],
-    deps = ["//litert/c:litert_model"],
+    deps = [
+        ":litert_detail",
+        "//litert/c:litert_model",
+    ],
 )
 
 cc_test(
