@@ -32,7 +32,7 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 tensorflow_source_repo(
     name = "org_tensorflow",
     sha256 = "",
-    strip_prefix = "",
+    strip_prefix = "tensorflow-master",
     urls = [
         "https://github.com/tensorflow/tensorflow/archive/master.tar.gz",
     ],

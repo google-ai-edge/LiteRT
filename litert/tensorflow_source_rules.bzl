@@ -41,7 +41,7 @@ tensorflow_source_repo = repository_rule(
     local = False,
     attrs = {
         "sha256": attr.string(mandatory = False),
-        "strip_prefix": attr.string(mandatory = False),
+        "strip_prefix": attr.string(mandatory = True),
         "urls": attr.string_list(mandatory = True),
     },
     doc = """
