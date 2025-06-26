@@ -56,5 +56,20 @@ TEST(OpOptionsTest, GetUnsupportedOptions) {
   ASSERT_FALSE(GetOptionsAs<CompositeOptions>(&op));
 }
 
+TEST(OpOptionsTest, GetAddOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  tflite::AddOptionsT options;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_AddOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<AddOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, 0);
+}
+
 }  // namespace
 }  // namespace litert
