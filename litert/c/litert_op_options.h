@@ -167,6 +167,15 @@ LiteRtStatus LiteRtGetSumKeepDimsOption(LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
+// Get option APIs for LiteRt ReduceMax op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt Pack op.
 //  Options:
 // - axisOption : int32_t
@@ -239,6 +248,33 @@ LiteRtStatus LiteRtGetConv2dFusedActivationOption(
 LiteRtStatus LiteRtGetConv2dDilationWOption(LiteRtOp op,
                                             int32_t* dilation_w_factor);
 LiteRtStatus LiteRtGetConv2dDilationHOption(LiteRtOp op,
+                                            int32_t* dilation_h_factor);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt Conv3d op.
+//  Options:
+// - padding : uint32_t
+// - stride_d : int32_t
+// - stride_w : int32_t
+// - stride_h : int32_t
+// - fused_activation_function : uint32_t
+// - dilation_d_factor : int32_t
+// - dilation_w_factor : int32_t
+// - dilation_h_factor : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetConv3dPaddingOption(LiteRtOp op, uint32_t* padding);
+LiteRtStatus LiteRtGetConv3dStrideDOption(LiteRtOp op, int32_t* stride_d);
+LiteRtStatus LiteRtGetConv3dStrideWOption(LiteRtOp op, int32_t* stride_w);
+LiteRtStatus LiteRtGetConv3dStrideHOption(LiteRtOp op, int32_t* stride_h);
+LiteRtStatus LiteRtGetConv3dFusedActivationOption(
+    LiteRtOp op, uint32_t* fused_activation_function);
+LiteRtStatus LiteRtGetConv3dDilationDOption(LiteRtOp op,
+                                            int32_t* dilation_d_factor);
+LiteRtStatus LiteRtGetConv3dDilationWOption(LiteRtOp op,
+                                            int32_t* dilation_w_factor);
+LiteRtStatus LiteRtGetConv3dDilationHOption(LiteRtOp op,
                                             int32_t* dilation_h_factor);
 
 //==============================================================================

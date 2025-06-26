@@ -15,13 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 #define ODML_LITERT_LITERT_CC_LITERT_MODEL_PREDICATES_H_
 
+#include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_model.h"
 
 // Predicates used for matching patterns in the graph. NOTE: All optionals in
@@ -57,8 +60,7 @@ bool MatchOpType(
 
 // Does this tensor contain weights whose values match expected_data.
 template <typename T>
-bool MatchWeights(const Tensor& tensor,
-                         absl::Span<const T> expected_data) {
+bool MatchWeights(const Tensor& tensor, absl::Span<const T> expected_data) {
   auto weights = tensor.WeightsData<T>();
   return weights.HasValue() && *weights == expected_data;
 }

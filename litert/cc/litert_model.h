@@ -15,10 +15,8 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_MODEL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_MODEL_H_
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <optional>
 #include <string>
 #include <utility>
@@ -28,7 +26,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_detail.h"
@@ -462,8 +462,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the Signature object for the given signature key.
-  Expected<Signature> FindSignature(
-      absl::string_view signature_key) const {
+  Expected<Signature> FindSignature(absl::string_view signature_key) const {
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
     for (int i = 0; i < num_signatures; ++i) {
