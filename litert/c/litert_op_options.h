@@ -401,6 +401,24 @@ LiteRtStatus LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
 LiteRtStatus LiteRtGetCumsumExclusiveOption(LiteRtOp op, bool* exclusive);
 LiteRtStatus LiteRtGetCumsumReverseOption(LiteRtOp op, bool* reverse);
 
+//==============================================================================
+//
+// Get option APIs for LiteRt Gelu op.
+//  Options:
+// - approximate : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt Mirror Pad op.
+//  Options:
+// - mode : uint32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

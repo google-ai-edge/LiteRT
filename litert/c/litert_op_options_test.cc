@@ -528,4 +528,31 @@ TEST(GetOpOptionTest, TestGetTransposeConvOptions) {
   ASSERT_EQ(fused_activation_function, 0);
 }
 
+TEST(GetOpOptionTest, TestGetGeluOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_gelu_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool approximate;
+  LITERT_ASSERT_OK(LiteRtGetGeluApproximateOption(op, &approximate));
+  ASSERT_EQ(approximate, false);
+}
+
+TEST(GetOpOptionTest, TestGetMirrorPadOptions) {
+  auto model = litert::testing::LoadTestFileModel(
+      "simple_mirror_pad_symmetric_dynamic_shape.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  uint32_t mode;
+  LITERT_ASSERT_OK(LiteRtGetMirrorPadModeOption(op, &mode));
+  ASSERT_EQ(mode, 1);
+}
+
 }  // namespace

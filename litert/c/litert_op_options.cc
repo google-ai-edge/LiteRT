@@ -932,6 +932,30 @@ LiteRtStatus LiteRtGetCumsumReverseOption(LiteRtOp op, bool* reverse) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate) {
+  if (op->OpCode() != kLiteRtOpCodeTflGelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *approximate = opts.AsGeluOptions()->approximate;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode) {
+  if (op->OpCode() != kLiteRtOpCodeTflMirrorPad) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *mode = opts.AsMirrorPadOptions()->mode;
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
