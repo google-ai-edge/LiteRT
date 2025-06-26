@@ -233,8 +233,10 @@ class RandomTensorType {
   using DimSpec = std::variant<DimSize, DimRange>;
   using ElementTypeSpec = std::vector<LiteRtElementType>;
 
-  // Max value of a random dimension.
-  static constexpr auto kMaxDim = 1024;
+  // Max value of a random dimension. Try to keep tensor data size capped
+  // at 50 megs.
+  static constexpr auto kMaxFlatSize =
+      (NumericLimits<int32_t>::Max() / sizeof(int64_t)) / 20;
 
   // Generate a random tensor type with a pre-determined rank given
   // in `shape_spec`.
@@ -247,11 +249,33 @@ class RandomTensorType {
     if (rank > LITERT_TENSOR_MAX_RANK) {
       return Error(kLiteRtStatusErrorInvalidArgument, "Rank too large");
     }
+
     LiteRtRankedTensorType res;
+
     res.layout.rank = rank;
     res.element_type = GenerateElementType(rng, type);
+
+    DimSize cur_flat_size = 1;
+
     for (auto i = 0; i < rank; ++i) {
-      res.layout.dimensions[i] = GenerateDim(rng, shape_spec[i]);
+      const DimSize max_next_dim = kMaxFlatSize / cur_flat_size;
+      const auto& given_dim_spec = shape_spec[i];
+      DimSpec resolved_dim_spec;
+      if (!given_dim_spec) {
+        resolved_dim_spec = DimRange(1, max_next_dim);
+      } else if (std::holds_alternative<DimSize>(*given_dim_spec)) {
+        resolved_dim_spec = *given_dim_spec;
+      } else {
+        const auto& given_dim_range = std::get<DimRange>(*given_dim_spec);
+        resolved_dim_spec =
+            DimRange(given_dim_range.first,
+                     std::min(given_dim_range.second, max_next_dim));
+      }
+
+      res.layout.dimensions[i] = GenerateDim(rng, resolved_dim_spec);
+      if (res.layout.dimensions[i] != 0) {
+        cur_flat_size *= res.layout.dimensions[i];
+      }
     }
     return res;
   }
@@ -269,16 +293,12 @@ class RandomTensorType {
 
  private:
   template <typename Rng>
-  DimSize GenerateDim(Rng& rng, const std::optional<DimSpec>& dim) {
-    if (!dim) {
-      DimGenerator gen(0, kMaxDim);
-      const auto res = gen(rng);
-      return res;
-    } else if (std::holds_alternative<DimSize>(*dim)) {
-      auto d = std::get<DimSize>(*dim);
+  DimSize GenerateDim(Rng& rng, const DimSpec& dim) {
+    if (std::holds_alternative<DimSize>(dim)) {
+      auto d = std::get<DimSize>(dim);
       return d;
     } else {
-      auto d = std::get<DimRange>(*dim);
+      auto d = std::get<DimRange>(dim);
       DimGenerator gen(d.first, d.second);
       return gen(rng);
     }

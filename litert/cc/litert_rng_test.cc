@@ -188,7 +188,7 @@ TEST_F(LiteRtRngTest, RandomTensorShape) {
   EXPECT_LE(dim1, 3u);
   const auto dim2 = tensor_type->layout.dimensions[1];
   EXPECT_GE(dim2, 0u);
-  EXPECT_LE(dim2, RandomTensorType::kMaxDim);
+  EXPECT_LE(dim2 * dim1, RandomTensorType::kMaxFlatSize);
 }
 
 TEST_F(LiteRtRngTest, RandomTensorShapeWithRandomRank) {
