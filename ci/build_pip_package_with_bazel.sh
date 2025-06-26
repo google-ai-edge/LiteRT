@@ -16,7 +16,7 @@
 set -ex
 
 # Run this script under the root directory.
-export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:"$(pwd)/third_party/tensorflow"}
+export TF_LOCAL_SOURCE_PATH=${TF_LOCAL_SOURCE_PATH:-"$(pwd)/third_party/tensorflow"}
 
 ARCH="$(uname -m)"
 TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-$1}
