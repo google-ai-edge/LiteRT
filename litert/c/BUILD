@@ -253,7 +253,9 @@ cc_library(
         ":litert_common",
         ":litert_op_code",
         "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
         "//tflite/c:c_api_types",
+        "//tflite/schema:schema_fbs",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
@@ -268,6 +270,7 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_op_options",
+        "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",

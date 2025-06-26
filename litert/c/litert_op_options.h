@@ -455,6 +455,15 @@ LiteRtStatus LiteRtGetGeluApproximateOption(LiteRtOp op, bool* approximate);
 //==============================================================================
 LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode);
 
+//==============================================================================
+//
+// Get option APIs for LiteRt ReduceMax op.
+//  Options:
+// - keepdims : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
