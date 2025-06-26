@@ -31,6 +31,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_numerics.h"
 
 // Various utilities and types for random number generation.
@@ -221,98 +222,139 @@ using DefaultDevice = RandomDevice<std::mt19937>;
 
 // This class composes the primitive data generators above to support
 // generating randomized tensor types (and shapes).
+template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
 class RandomTensorType {
  private:
-  using DimSize = uint32_t;
+  using DimSize = int32_t;
   using DimGenerator = DefaultRangedGenerator<DimSize>;
   using ElementTypeInt = uint8_t;
   using ElementTypeGenerator = DefaultRangedGenerator<ElementTypeInt>;
+  static constexpr auto kNumElementTypes = sizeof...(ElementType);
+  static_assert(kNumElementTypes > 0);
+  static constexpr std::array<LiteRtElementType, kNumElementTypes>
+      kElementTypes = {ElementType...};
+  static_assert(Rank < LITERT_TENSOR_MAX_RANK);
+
+  // std::pow not constexpr until c++26 sadly so no constexpr here.
+  static DimSize MaxDimSize() {
+    const double rank = std::max(1lu, Rank);
+    const double exp = 1.0 / rank;
+    const double max_flat = MaxSize;
+    const double max_dim = std::pow(max_flat, exp);
+    return static_cast<DimSize>(std::floor(max_dim));
+  }
 
  public:
+  using RandDim = std::monostate;
   using DimRange = std::pair<DimSize, DimSize>;
-  using DimSpec = std::variant<DimSize, DimRange>;
-  using ElementTypeSpec = std::vector<LiteRtElementType>;
+  using DimSpec = std::variant<DimSize, DimRange, RandDim>;
+  using ShapeSpec = std::array<DimSpec, Rank>;
 
-  // Max value of a random dimension. Try to keep tensor data size capped
-  // at 50 megs.
-  static constexpr auto kMaxFlatSize =
-      (NumericLimits<int32_t>::Max() / sizeof(int64_t)) / 20;
+  // Max number of elements we want a tensor to have.
+  static constexpr size_t kMaxFlatSize = MaxSize;
 
-  // Generate a random tensor type with a pre-determined rank given
-  // in `shape_spec`.
+  // Cap single dimenions at the rankth root of the flat size to respect the
+  // max.
+  static const DimSize kMaxDimSize;
+
+  // TODO: Explore need for 0 valued dims.
+  static constexpr DimSize kMinDimSize = 1;
+
+ public:
+  // Generate a random tensor type from the specification provided. An
+  // element type is taken randomly from the template parameter. The shape
+  // spec must be of same rank as provided by the template parameter (this
+  // is checked at compile time). An element of the shape spec can be an
+  // explicit value, in which case it will not be random, a range, or a RandDim
+  // which signifies a range over all possible values of that dimension.
+  // `shuffle` can be used to permute the dimensions after generation.
   template <typename Rng>
-  Expected<LiteRtRankedTensorType> Generate(
-      Rng& rng, const std::vector<std::optional<DimSpec>>& shape_spec,
-      const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
-                                     kLiteRtElementTypeFloat32}) {
-    const auto rank = shape_spec.size();
-    if (rank > LITERT_TENSOR_MAX_RANK) {
-      return Error(kLiteRtStatusErrorInvalidArgument, "Rank too large");
+  Expected<LiteRtRankedTensorType> operator()(Rng& rng, const ShapeSpec& spec,
+                                              bool shuffle = false) {
+    LITERT_ASSIGN_OR_RETURN(auto layout, Layout(rng, spec, shuffle));
+    return LiteRtRankedTensorType{GenerateElementType(rng), std::move(layout)};
+  }
+
+ private:
+  using ResolvedDimSpec = std::variant<DimSize, DimRange>;
+
+  // LAYOUT ////////////////////////////////////////////////////////////////////
+
+  // Overloads that check the value of the dim spec against the max and
+  // handles any defaults.
+
+  static Expected<ResolvedDimSpec> ResolveDimSpec(DimSize dim) {
+    if (dim < kMinDimSize) {
+      return Error(kLiteRtStatusErrorInvalidArgument, "Dimension must be > 0");
     }
+    if (dim > kMaxDimSize) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Dimension must be <= kMaxDimSize");
+    }
+    return ResolvedDimSpec(dim);
+  }
 
-    LiteRtRankedTensorType res;
+  static Expected<ResolvedDimSpec> ResolveDimSpec(DimRange dim) {
+    LITERT_ASSIGN_OR_RETURN(auto l, ResolveDimSpec(dim.first));
+    LITERT_ASSIGN_OR_RETURN(auto r, ResolveDimSpec(dim.second));
+    if (l >= r) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Left dimension must be < right dimension");
+    }
+    return ResolvedDimSpec(
+        std::make_pair(std::get<DimSize>(l), std::get<DimSize>(r)));
+  }
 
-    res.layout.rank = rank;
-    res.element_type = GenerateElementType(rng, type);
+  static Expected<ResolvedDimSpec> ResolveDimSpec(std::monostate) {
+    return ResolvedDimSpec(std::make_pair(kMinDimSize, kMaxDimSize));
+  }
 
-    DimSize cur_flat_size = 1;
+  // Overloads that produce the final dimension from a resolved dim spec.
 
-    for (auto i = 0; i < rank; ++i) {
-      const DimSize max_next_dim = kMaxFlatSize / cur_flat_size;
-      const auto& given_dim_spec = shape_spec[i];
-      DimSpec resolved_dim_spec;
-      if (!given_dim_spec) {
-        resolved_dim_spec = DimRange(1, max_next_dim);
-      } else if (std::holds_alternative<DimSize>(*given_dim_spec)) {
-        resolved_dim_spec = *given_dim_spec;
-      } else {
-        const auto& given_dim_range = std::get<DimRange>(*given_dim_spec);
-        resolved_dim_spec =
-            DimRange(given_dim_range.first,
-                     std::min(given_dim_range.second, max_next_dim));
-      }
+  template <typename Rng>
+  static DimSize GenerateDim(Rng& rng, DimSize dim) {
+    return dim;
+  }
 
-      res.layout.dimensions[i] = GenerateDim(rng, resolved_dim_spec);
-      if (res.layout.dimensions[i] != 0) {
-        cur_flat_size *= res.layout.dimensions[i];
-      }
+  template <typename Rng>
+  static DimSize GenerateDim(Rng& rng, DimRange dim) {
+    DimGenerator gen(dim.first, dim.second);
+    auto res = gen(rng);
+    return res;
+  }
+
+  template <typename Rng>
+  Expected<LiteRtLayout> Layout(Rng& rng, const ShapeSpec& spec, bool shuffle) {
+    LiteRtLayout res;
+    res.rank = Rank;
+    for (auto i = 0; i < Rank; ++i) {
+      const DimSpec& dim_spec = spec[i];
+      LITERT_ASSIGN_OR_RETURN(
+          auto resolved_dim_spec,
+          std::visit([](auto&& arg) { return ResolveDimSpec(arg); }, dim_spec));
+      res.dimensions[i] =
+          std::visit([&rng](auto&& arg) { return GenerateDim(rng, arg); },
+                     resolved_dim_spec);
+    }
+    if (shuffle) {
+      auto beg = std::begin(res.dimensions);
+      std::shuffle(beg, beg + Rank, rng);
     }
     return res;
   }
 
-  // Generate a random tensor type with a random rank.
-  template <typename Rng>
-  Expected<LiteRtRankedTensorType> Generate(
-      Rng& rng, size_t max_rank = LITERT_TENSOR_MAX_RANK,
-      const ElementTypeSpec& type = {kLiteRtElementTypeInt32,
-                                     kLiteRtElementTypeFloat32}) {
-    DimGenerator rank_gen(0, max_rank);
-    std::vector<std::optional<DimSpec>> shape_spec(rank_gen(rng), std::nullopt);
-    return Generate(rng, shape_spec, type);
-  }
-
- private:
-  template <typename Rng>
-  DimSize GenerateDim(Rng& rng, const DimSpec& dim) {
-    if (std::holds_alternative<DimSize>(dim)) {
-      auto d = std::get<DimSize>(dim);
-      return d;
-    } else {
-      auto d = std::get<DimRange>(dim);
-      DimGenerator gen(d.first, d.second);
-      return gen(rng);
-    }
-  }
+  // ELEMENT TYPE //////////////////////////////////////////////////////////////
 
   template <typename Rng>
-  LiteRtElementType GenerateElementType(Rng& rng, const ElementTypeSpec& type) {
-    if (type.size() == 1) {
-      return type.front();
-    }
-    ElementTypeGenerator gen(0, type.size() - 1);
-    return type[gen(rng)];
+  static LiteRtElementType GenerateElementType(Rng& rng) {
+    ElementTypeGenerator gen(0, kNumElementTypes - 1);
+    return kElementTypes[gen(rng)];
   }
 };
+
+template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
+const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
+    MaxDimSize();
 
 }  // namespace litert
 

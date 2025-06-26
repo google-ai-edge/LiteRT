@@ -18,7 +18,6 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <random>
 #include <type_traits>
 
@@ -26,14 +25,22 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_numerics.h"
+#include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 
 namespace litert {
 namespace {
 
 using ::litert::testing::RngTest;
+using ::testing::AllOf;
+using ::testing::ElementsAre;
+using ::testing::Ge;
+using ::testing::Le;
+using ::testing::UnorderedElementsAre;
 
 static constexpr size_t kTestIters = 10;
 
@@ -152,51 +159,121 @@ TEST_F(LiteRtRngTest, TestWithFuzz) {
   }
 }
 
-TEST_F(LiteRtRngTest, FullySpecifiedRandomTensorType) {
+using RandomTensorTypeTest = RngTest;
+
+TEST_F(RandomTensorTypeTest, FullySpecifiedRandomTensorType) {
   auto device = TracedDevice();
-  RandomTensorType type;
-  auto tensor_type = type.Generate(
-      device, {RandomTensorType::DimSpec(2u), RandomTensorType::DimSpec(2u)},
-      {kLiteRtElementTypeFloat32});
-  ASSERT_TRUE(tensor_type);
-  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
-  EXPECT_EQ(tensor_type->layout.dimensions[0], 2);
-  EXPECT_EQ(tensor_type->layout.dimensions[1], 2);
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 1024, kLiteRtElementTypeFloat32>;
+  R type;
+  EXPECT_THAT(R::kMaxDimSize, Le(std::pow(static_cast<double>(R::kMaxFlatSize),
+                                          1.0 / static_cast<double>(2))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto res, type(device, {2, 2}));
+  EXPECT_EQ(res.element_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(res.layout.rank, 2);
+  EXPECT_THAT(absl::MakeSpan(res.layout.dimensions, 2), ElementsAre(2, 2));
+  size_t num_elements;
+  LITERT_ASSERT_OK(LiteRtGetNumLayoutElements(&res.layout, &num_elements));
+  EXPECT_LE(num_elements, R::kMaxFlatSize);
 }
 
-TEST_F(LiteRtRngTest, RandomElementType) {
+TEST_F(RandomTensorTypeTest, RandomElementType) {
   auto device = TracedDevice();
-  RandomTensorType type;
-  auto tensor_type = type.Generate(
-      device, {}, {kLiteRtElementTypeFloat32, kLiteRtElementTypeInt32});
-  ASSERT_TRUE(tensor_type);
-  EXPECT_TRUE(tensor_type->element_type == kLiteRtElementTypeFloat32 ||
-              tensor_type->element_type == kLiteRtElementTypeInt32);
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 1024, kLiteRtElementTypeFloat32,
+                       kLiteRtElementTypeInt32>;
+  R type;
+  EXPECT_THAT(R::kMaxDimSize, Le(std::pow(static_cast<double>(R::kMaxFlatSize),
+                                          1.0 / static_cast<double>(2))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto res, type(device, {2, 2}));
+  EXPECT_TRUE(res.element_type == kLiteRtElementTypeFloat32 ||
+              res.element_type == kLiteRtElementTypeInt32);
+  EXPECT_EQ(res.layout.rank, 2);
+  EXPECT_THAT(absl::MakeSpan(res.layout.dimensions, 2), ElementsAre(2, 2));
+  size_t num_elements;
+  LITERT_ASSERT_OK(LiteRtGetNumLayoutElements(&res.layout, &num_elements));
+  EXPECT_LE(num_elements, R::kMaxFlatSize);
 }
 
-TEST_F(LiteRtRngTest, RandomTensorShape) {
+TEST_F(RandomTensorTypeTest, RandomDimFromRange) {
   auto device = TracedDevice();
-  RandomTensorType type;
-  auto tensor_type =
-      type.Generate(device, {RandomTensorType::DimRange(1u, 3u), std::nullopt},
-                    {kLiteRtElementTypeFloat32});
-  ASSERT_TRUE(tensor_type);
-  EXPECT_EQ(tensor_type->element_type, kLiteRtElementTypeFloat32);
-  EXPECT_EQ(tensor_type->layout.rank, 2);
-  const auto dim1 = tensor_type->layout.dimensions[0];
-  EXPECT_GE(dim1, 1u);
-  EXPECT_LE(dim1, 3u);
-  const auto dim2 = tensor_type->layout.dimensions[1];
-  EXPECT_GE(dim2, 0u);
-  EXPECT_LE(dim2 * dim1, RandomTensorType::kMaxFlatSize);
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 1024, kLiteRtElementTypeFloat32>;
+  R type;
+  EXPECT_THAT(R::kMaxDimSize, Le(std::pow(static_cast<double>(R::kMaxFlatSize),
+                                          1.0 / static_cast<double>(2))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto res, type(device, {R::DimRange(1, 10), 2}));
+  EXPECT_EQ(res.layout.rank, 2);
+  EXPECT_THAT(absl::MakeSpan(res.layout.dimensions, 2),
+              ElementsAre(AllOf(Ge(1), Le(10)), 2));
+  size_t num_elements;
+  LITERT_ASSERT_OK(LiteRtGetNumLayoutElements(&res.layout, &num_elements));
+  EXPECT_LE(num_elements, R::kMaxFlatSize);
 }
 
-TEST_F(LiteRtRngTest, RandomTensorShapeWithRandomRank) {
+TEST_F(RandomTensorTypeTest, RandomDim) {
   auto device = TracedDevice();
-  RandomTensorType type;
-  auto tensor_type = type.Generate(device, /*max_rank=*/4);
-  ASSERT_TRUE(tensor_type);
-  EXPECT_LE(tensor_type->layout.rank, 4);
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 5, kLiteRtElementTypeFloat32>;
+  R type;
+  EXPECT_THAT(R::kMaxDimSize, Le(std::pow(static_cast<double>(R::kMaxFlatSize),
+                                          1.0 / static_cast<double>(2))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto res, type(device, {2, R::RandDim()}));
+  EXPECT_EQ(res.layout.rank, 2);
+  EXPECT_THAT(absl::MakeSpan(res.layout.dimensions, 2),
+              ElementsAre(2, AllOf(Ge(1), Le(2))));
+  size_t num_elements;
+  LITERT_ASSERT_OK(LiteRtGetNumLayoutElements(&res.layout, &num_elements));
+  EXPECT_LE(num_elements, R::kMaxFlatSize);
+}
+
+TEST_F(RandomTensorTypeTest, Shuffle) {
+  auto device = TracedDevice();
+  using R =
+      RandomTensorType</*Rank*/ 4, /*MaxSize*/ 1024, kLiteRtElementTypeFloat32>;
+  R type;
+  EXPECT_THAT(R::kMaxDimSize, Le(std::pow(static_cast<double>(R::kMaxFlatSize),
+                                          1.0 / static_cast<double>(4))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto res,
+                              type(device, {1, 2, 3, 4}, /*shuffle=*/true));
+  EXPECT_EQ(res.layout.rank, 4);
+  EXPECT_THAT(absl::MakeSpan(res.layout.dimensions, 4),
+              UnorderedElementsAre(1, 2, 3, 4));
+  size_t num_elements;
+  LITERT_ASSERT_OK(LiteRtGetNumLayoutElements(&res.layout, &num_elements));
+  EXPECT_LE(num_elements, R::kMaxFlatSize);
+}
+
+TEST_F(RandomTensorTypeTest, DimSizeTooLarge) {
+  auto device = TracedDevice();
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 5, kLiteRtElementTypeFloat32>;
+  R type;
+  ASSERT_FALSE(type(device, {3, 2}));
+}
+
+TEST_F(RandomTensorTypeTest, DimSizeTooSmall) {
+  auto device = TracedDevice();
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 4, kLiteRtElementTypeFloat32>;
+  R type;
+  ASSERT_FALSE(type(device, {0, 2}));
+}
+
+TEST_F(RandomTensorTypeTest, DimRangeTooLarge) {
+  auto device = TracedDevice();
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 4, kLiteRtElementTypeFloat32>;
+  R type;
+  ASSERT_FALSE(type(device, {R::DimRange(1, 3), 2}));
+}
+
+TEST_F(RandomTensorTypeTest, DimRangeTooSmall) {
+  auto device = TracedDevice();
+  using R =
+      RandomTensorType</*Rank*/ 2, /*MaxSize*/ 4, kLiteRtElementTypeFloat32>;
+  R type;
+  ASSERT_FALSE(type(device, {R::DimRange(0, 1), 2}));
 }
 
 }  // namespace
