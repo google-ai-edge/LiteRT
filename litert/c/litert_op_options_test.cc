@@ -18,7 +18,9 @@
 
 #include <gmock/gmock.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -601,6 +603,38 @@ TEST(GetOpOptionTest, TestGetMirrorPadOptions) {
   uint32_t mode;
   LITERT_ASSERT_OK(LiteRtGetMirrorPadModeOption(op, &mode));
   ASSERT_EQ(mode, 1);
+}
+
+TEST(GetOpOptionTest, TestGetSHLOCompositeOptions) {
+  auto model =
+      litert::testing::LoadTestFileModel("simple_shlo_composite.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Subgraph subgraph, model.MainSubgraph());
+
+  auto ops = subgraph.Ops();
+  auto op = ops.front().Get();
+
+  const char* name = nullptr;
+  LiteRtGetSHLOCompositeOpName(op, &name);
+  ASSERT_STREQ(name, "stablehlo.add_n");
+
+  int32_t version = -1;
+  LITERT_ASSERT_OK(LiteRtGetSHLOCompositeOpVersion(op, &version));
+  ASSERT_EQ(version, 3);
+
+  int32_t subgraph_index = -1;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(op, &subgraph_index));
+  ASSERT_EQ(subgraph_index, 1);
+
+  const uint8_t* attributes = nullptr;
+  int32_t attributes_size = 0;
+  LITERT_ASSERT_OK(
+      LiteRtGetSHLOCompositeOpAttributes(op, &attributes, &attributes_size));
+
+  auto parsed_attributes =
+      flexbuffers::GetRoot(attributes, attributes_size).AsMap();
+  ASSERT_STREQ(parsed_attributes["an_attribute"].AsString().c_str(), "foo");
+  ASSERT_EQ(parsed_attributes["meaning_of_life"].AsInt32(), 42);
 }
 
 }  // namespace

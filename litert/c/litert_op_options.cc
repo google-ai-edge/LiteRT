@@ -19,6 +19,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
+#include "tflite/schema/schema_generated.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -429,6 +430,45 @@ LiteRtStatus LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(
   }
   *subgraph_index =
       opts.AsStableHLOCompositeOptions()->decomposition_subgraph_index;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSHLOCompositeOpAttributes(LiteRtOp op,
+                                                const uint8_t** attributes,
+                                                int32_t* attributes_size) {
+  if (op->OpCode() != kLiteRtOpCodeShloComposite) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions2(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const tflite::StableHLOCompositeOptionsT* stable_hlo_composite_options =
+      opts.AsStableHLOCompositeOptions();
+  if (stable_hlo_composite_options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *attributes = stable_hlo_composite_options->composite_attributes.data();
+  *attributes_size = stable_hlo_composite_options->composite_attributes.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSHLOCompositeOpVersion(LiteRtOp op, int32_t* version) {
+  if (op->OpCode() != kLiteRtOpCodeShloComposite) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions2(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const tflite::StableHLOCompositeOptionsT* stable_hlo_composite_options =
+      opts.AsStableHLOCompositeOptions();
+  if (stable_hlo_composite_options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *version = stable_hlo_composite_options->version;
   return kLiteRtStatusOk;
 }
 

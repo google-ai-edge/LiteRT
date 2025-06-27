@@ -218,6 +218,8 @@ LiteRtStatus LiteRtGetSplitNumSplitsOption(LiteRtOp op, int32_t* num_splits);
 //  Options:
 // - name : string
 // - decomposition_subgraph_index : int32_t
+// - attributes : uint8_t[]
+// - version : int32_t
 //
 //==============================================================================
 
@@ -227,6 +229,10 @@ LiteRtStatus LiteRtGetSplitNumSplitsOption(LiteRtOp op, int32_t* num_splits);
 LiteRtStatus LiteRtGetSHLOCompositeOpName(LiteRtOp op, const char** name);
 LiteRtStatus LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(
     LiteRtOp op, int32_t* decomposition_subgraph_index);
+LiteRtStatus LiteRtGetSHLOCompositeOpAttributes(LiteRtOp op,
+                                                const uint8_t** attributes,
+                                                int32_t* attributes_size);
+LiteRtStatus LiteRtGetSHLOCompositeOpVersion(LiteRtOp op, int32_t* version);
 
 //==============================================================================
 //
