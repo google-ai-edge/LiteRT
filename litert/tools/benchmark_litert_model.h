@@ -159,6 +159,10 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   TfLiteStatus ResetInputsAndOutputs() override {
     if (profiler_) {
       profiler_->StopProfiling();
+      auto events = profiler_->GetEvents();
+      for (const auto& event : *events) {
+        LITERT_LOG(LITERT_INFO, "Event: %s", event.tag);
+      }
       profiler_->Reset();
       profiler_->StartProfiling();
     }
