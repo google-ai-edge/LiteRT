@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <random>
 #include <type_traits>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -37,9 +38,11 @@ namespace {
 
 using ::litert::testing::RngTest;
 using ::testing::AllOf;
+using ::testing::Each;
 using ::testing::ElementsAre;
 using ::testing::Ge;
 using ::testing::Le;
+using ::testing::Types;
 using ::testing::UnorderedElementsAre;
 
 static constexpr size_t kTestIters = 10;
@@ -275,6 +278,89 @@ TEST_F(RandomTensorTypeTest, DimRangeTooSmall) {
   R type;
   ASSERT_FALSE(type(device, {R::DimRange(0, 1), 2}));
 }
+
+template <typename D>
+class RandomTensorDataTest : public RngTest {};
+
+using RandomTensorDataTestTypes = Types<int, float>;
+TYPED_TEST_SUITE(RandomTensorDataTest, RandomTensorDataTestTypes);
+
+TYPED_TEST(RandomTensorDataTest, NoRange) {
+  auto device = this->TracedDevice();
+  RandomTensorData<TypeParam> data;
+  std::vector<TypeParam> buf(10);
+  LITERT_ASSERT_OK(data(device, buf));
+  EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
+  EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
+  EXPECT_THAT(absl::MakeConstSpan(buf),
+              Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+TYPED_TEST(RandomTensorDataTest, NoRangeFromSize) {
+  auto device = this->TracedDevice();
+  RandomTensorData<TypeParam> data;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto buf, data(device, 10));
+  EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
+  EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
+  EXPECT_THAT(absl::MakeConstSpan(buf),
+              Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+TYPED_TEST(RandomTensorDataTest, NoRangeFromLayout) {
+  auto device = this->TracedDevice();
+  RandomTensorData<TypeParam> data;
+  LiteRtLayout layout;
+  layout.rank = 2;
+  layout.dimensions[0] = 3;
+  layout.dimensions[1] = 2;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto buf, data(device, layout));
+  ASSERT_EQ(buf.size(), 6);
+  EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
+  EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
+  EXPECT_THAT(absl::MakeConstSpan(buf),
+              Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+TYPED_TEST(RandomTensorDataTest, ExplicitRange) {
+  auto device = this->TracedDevice();
+  static constexpr int64_t kMin = -10;
+  static constexpr int64_t kMax = 10;
+  RangedRandomTensorData<TypeParam, kMin, kMax> data;
+  std::vector<int> buf(10);
+  LITERT_ASSERT_OK(data(device, buf));
+  EXPECT_EQ(data.High(), 10);
+  EXPECT_EQ(data.Low(), -10);
+  EXPECT_THAT(absl::MakeConstSpan(buf),
+              Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+// using RangedRandomTensorDataTest = RngTest;
+
+// TEST_F(RangedRandomTensorDataTest, ExplicitRangeInt) {
+//   auto device = this->TracedDevice();
+//   static constexpr int64_t kMin = -10;
+//   static constexpr int64_t kMax = 10;
+//   RangedRandomIntTensorData<int, kMin, kMax> data;
+//   std::vector<int> buf(10);
+//   LITERT_ASSERT_OK(data(device, buf));
+//   EXPECT_EQ(data.High(), 10);
+//   EXPECT_EQ(data.Low(), -10);
+//   EXPECT_THAT(absl::MakeConstSpan(buf),
+//               Each(AllOf(Le(data.High()), Ge(data.Low()))));
+// }
+
+// TEST_F(RangedRandomTensorDataTest, ExplicitRangeFp) {
+//   auto device = this->TracedDevice();
+//   static constexpr double kMin = -10.0;
+//   static constexpr double kMax = 10.0;
+//   RangedRandomFpTensorData<float, kMin, kMax> data;
+//   std::vector<float> buf(10);
+//   LITERT_ASSERT_OK(data(device, buf));
+//   EXPECT_EQ(data.High(), 10);
+//   EXPECT_EQ(data.Low(), -10);
+//   EXPECT_THAT(absl::MakeConstSpan(buf),
+//               Each(AllOf(Le(data.High()), Ge(data.Low()))));
+// }
 
 }  // namespace
 }  // namespace litert

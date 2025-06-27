@@ -147,8 +147,8 @@ class RangedGenerator final : public DataGenerator<D, Dist> {
   using typename Base::DataType;
   using typename Base::Wide;
 
-  RangedGenerator() = default;
-  RangedGenerator(Wide min, Wide max = NumericLimits<D>::Max()) {
+  RangedGenerator(Wide min = NumericLimits<D>::Lowest(),
+                  Wide max = NumericLimits<D>::Max()) {
     ConstructAt(&this->dist_, LowerBoundary<DataType>(min),
                 UpperBoundary<DataType>(max));
   }
@@ -355,6 +355,81 @@ class RandomTensorType {
 template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
 const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
     MaxDimSize();
+
+// RANDOM TENSOR DATA //////////////////////////////////////////////////////////
+
+// Base class for generating data for tensors.
+template <typename D, typename Derived, typename Gen>
+class RandomTensorDataBase {
+ private:
+  // TODO: Support on standard types.
+  static_assert(std::is_integral_v<D> || std::is_floating_point_v<D>);
+
+ public:
+  // Fill out the pre-allocated buffer with random data. The buf arg can
+  // be anything that is "spannable".
+  template <
+      typename Rng, typename Buf,
+      typename = std::enable_if_t<!std::is_same_v<Buf, LiteRtLayout>, void>>
+  Expected<void> operator()(Rng& rng, Buf& buf) {
+    auto span = absl::MakeSpan(buf);
+    std::generate(buf.begin(), buf.end(), [&]() { return gen_(rng); });
+    return {};
+  }
+
+  // Allocate a new buffer with size matching the given layout and fill it with
+  // random data.
+  template <typename Rng>
+  Expected<std::vector<D>> operator()(Rng& rng, const LiteRtLayout& layout) {
+    size_t num_elements;
+    LITERT_RETURN_IF_ERROR(LiteRtGetNumLayoutElements(&layout, &num_elements));
+    std::vector<D> res(num_elements);
+    std::generate(res.begin(), res.end(), [&]() { return gen_(rng); });
+    return res;
+  }
+
+  // Allocate a new buffer with the given number of elements and fill it with
+  // random data.
+  template <typename Rng>
+  Expected<std::vector<D>> operator()(Rng& rng, size_t num_elements) {
+    std::vector<D> res(num_elements);
+    std::generate(res.begin(), res.end(), [&]() { return gen_(rng); });
+    return res;
+  }
+
+  D High() const { return gen_.Max(); }
+  D Low() const { return gen_.Min(); }
+
+ private:
+  Gen gen_ = Derived::MakeGen();
+};
+
+// Generates random data for tensors using the implicit entire avaiable range of
+// values. Uses the default data generator types.
+// TODO: Decide if type configurability is useful for this.
+template <typename D>
+class RandomTensorData
+    : public RandomTensorDataBase<D, RandomTensorData<D>, DefaultGenerator<D>> {
+  friend class RandomTensorDataBase<D, RandomTensorData<D>,
+                                    DefaultGenerator<D>>;
+  using Gen = DefaultGenerator<D>;
+  using DataType = D;
+  static Gen MakeGen() { return Gen(); }
+};
+
+// Generates random data for tensors using the explicitly specified range of
+// values.
+template <typename D, int64_t Low = NumericLimits<int64_t>::Lowest(),
+          int64_t High = NumericLimits<int64_t>::Max()>
+class RangedRandomTensorData
+    : public RandomTensorDataBase<D, RangedRandomTensorData<D, Low, High>,
+                                  DefaultRangedGenerator<D>> {
+  friend class RandomTensorDataBase<D, RangedRandomTensorData<D, Low, High>,
+                                    DefaultRangedGenerator<D>>;
+  using Gen = DefaultRangedGenerator<D>;
+  using DataType = D;
+  static Gen MakeGen() { return Gen(Low, High); }
+};
 
 }  // namespace litert
 
