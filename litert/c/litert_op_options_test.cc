@@ -19,6 +19,7 @@
 #include <gmock/gmock.h>  // IWYU pragma: keep
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -601,6 +602,18 @@ TEST(GetOpOptionTest, TestGetMirrorPadOptions) {
   uint32_t mode;
   LITERT_ASSERT_OK(LiteRtGetMirrorPadModeOption(op, &mode));
   ASSERT_EQ(mode, 1);
+}
+
+TEST(GetOpOptionTest, TestGetReduceMaxKeepDimsOption) {
+  auto model = litert::testing::LoadTestFileModel("simple_reduce_max.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Subgraph subgraph, model.MainSubgraph());
+
+  auto ops = subgraph.Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims = true;
+  LITERT_ASSERT_OK(LiteRtGetReduceMaxKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
 }
 
 }  // namespace

@@ -19,6 +19,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/schema/schema_generated.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -1067,6 +1069,23 @@ LiteRtStatus LiteRtGetMirrorPadModeOption(LiteRtOp op, uint32_t* mode) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *mode = opts.AsMirrorPadOptions()->mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceMax) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const litert::internal::TflOptions& opts =
+      litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const tflite::ReducerOptionsT* reducer_options = opts.AsReducerOptions();
+  if (reducer_options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *keepdims = reducer_options->keep_dims;
   return kLiteRtStatusOk;
 }
 
