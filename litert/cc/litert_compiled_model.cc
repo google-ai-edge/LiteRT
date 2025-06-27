@@ -250,11 +250,4 @@ Expected<bool> CompiledModel::IsFullyAccelerated() {
   return fully_accelerated;
 }
 
-Expected<bool> CompiledModel::SetProfiler(Profiler& profiler) {
-  if (auto status = LiteRtCompiledModelSetProfiler(Get(), profiler.Get());
-      status != kLiteRtStatusOk) {
-    return Unexpected(status, "Failed to set profiler");
-  }
-  return true;
-}
 }  // namespace litert
