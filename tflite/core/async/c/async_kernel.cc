@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/c/async_kernel.h"
 
+#include <cstddef>
+
 #include "tflite/core/async/async_kernel_internal.h"
 #include "tflite/core/async/c/types.h"
 
