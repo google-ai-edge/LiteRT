@@ -303,6 +303,12 @@ LiteRtStatus LiteRtCreateModelFromBuffer(const void* buffer_addr,
                                          size_t buffer_size,
                                          LiteRtModel* model);
 
+// Create a model from an unowned buffer. The caller must ensure that the
+// buffer remains valid for the lifetime of the model.
+LiteRtStatus LiteRtCreateModelFromUnownedBuffer(const void* buffer_addr,
+                                                size_t buffer_size,
+                                                LiteRtModel* model);
+
 // Get the metadata buffer associated with given key if it exists.
 LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
                                     const void** metadata_buffer,

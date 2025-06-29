@@ -268,6 +268,10 @@ class FlatbufferWrapper {
   // Load flatbuffer from allocated buffer and take ownership.
   static Expected<Ptr> CreateFromBuffer(OwningBufferRef<uint8_t>&& buffer);
 
+  // Load flatbuffer from unowned buffer. The caller must ensure the buffer
+  // outlives the FlatbufferWrapper instance.
+  static Expected<Ptr> CreateFromUnownedBuffer(BufferRef<uint8_t> buffer);
+
   // Load flatbuffer from TFLite allocation and take ownership.
   static Expected<Ptr> CreateFromAllocation(tflite::Allocation::Ptr alloc);
 

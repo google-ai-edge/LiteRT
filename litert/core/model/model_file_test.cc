@@ -1117,5 +1117,74 @@ INSTANTIATE_TEST_SUITE_P(ModelSerializeQuantizedOpCheckTest,
                          ModelSerializeOpCheckTest,
                          ::testing::ValuesIn(kAllQModels));
 
+TEST(ModelLoadTest, CreateFromUnownedBuffer) {
+  // First, load a model normally to get its buffer
+  LITERT_ASSERT_RESULT_OK_ASSIGN(
+      auto model_path, ::testing::TempDir() + "/model.tflite");
+  ASSERT_TRUE(LoadTestFileModel(kTestModel).HasValue());
+  LITERT_ASSERT_RESULT_OK_ASSIGN(auto model,
+                                 LoadTestFileModel(kTestModel));
+  LITERT_ASSERT_RESULT_OK(SaveModel(model, model_path));
+  
+  // Read the file into a buffer
+  std::ifstream file(model_path, std::ios::binary | std::ios::ate);
+  ASSERT_TRUE(file.is_open());
+  std::streamsize size = file.tellg();
+  file.seekg(0, std::ios::beg);
+  
+  std::vector<uint8_t> buffer(size);
+  ASSERT_TRUE(file.read(reinterpret_cast<char*>(buffer.data()), size));
+  file.close();
+  
+  // Test 1: Create model from unowned buffer using C API
+  {
+    LiteRtModel c_model = nullptr;
+    ASSERT_EQ(LiteRtCreateModelFromUnownedBuffer(buffer.data(), buffer.size(),
+                                                  &c_model),
+              kLiteRtStatusOk);
+    ASSERT_NE(c_model, nullptr);
+    
+    // Verify the model works correctly
+    LiteRtParamIndex num_subgraphs = 0;
+    ASSERT_EQ(LiteRtGetNumModelSubgraphs(c_model, &num_subgraphs),
+              kLiteRtStatusOk);
+    EXPECT_GT(num_subgraphs, 0);
+    
+    LiteRtDestroyModel(c_model);
+  }
+  
+  // Test 2: Create model from unowned buffer using C++ API
+  {
+    litert::BufferRef<uint8_t> buffer_ref(buffer.data(), buffer.size());
+    LITERT_ASSERT_RESULT_OK_ASSIGN(
+        auto cpp_model, litert::Model::CreateFromUnownedBuffer(buffer_ref));
+    
+    // Verify the model works correctly
+    EXPECT_GT(cpp_model.NumSubgraphs(), 0);
+    
+    // Access some model data to ensure it's valid
+    LITERT_ASSERT_RESULT_OK_ASSIGN(auto main_subgraph,
+                                   cpp_model.MainSubgraph());
+    EXPECT_FALSE(main_subgraph.Ops().empty());
+  }
+  
+  // Test 3: Verify buffer must remain valid
+  // This test demonstrates that the buffer must outlive the model
+  {
+    litert::Model cpp_model;
+    {
+      std::vector<uint8_t> temp_buffer = buffer;  // Create a temporary copy
+      litert::BufferRef<uint8_t> buffer_ref(temp_buffer.data(),
+                                             temp_buffer.size());
+      LITERT_ASSERT_RESULT_OK_ASSIGN(
+          cpp_model, litert::Model::CreateFromUnownedBuffer(buffer_ref));
+      // temp_buffer goes out of scope here, but model still references it
+    }
+    // IMPORTANT: In a real scenario, accessing the model here would be
+    // undefined behavior since the buffer is gone. This test just demonstrates
+    // the API usage pattern.
+  }
+}
+
 }  // namespace
 }  // namespace litert::internal
