@@ -240,7 +240,7 @@ cc_library(
     ],
 )
 
-# external_litert_buffer_context target depending on litert_runtime_c_api_shared_lib.
+# external_litert_buffer_context target depending on litert_runtime_c_api.
 cc_library(
     name = "external_litert_buffer_context_runtimecapi",
     srcs = ["external_litert_buffer_context.cc"],
@@ -249,7 +249,7 @@ cc_library(
         ":tfl_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_tensor_buffer",

@@ -15,6 +15,7 @@
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts")
+load("//tools/build_defs/android:rules.bzl", "android_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -474,6 +475,7 @@ cc_test(
 )
 
 # The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
+# TODO(gcarranza) Find another way to test this.
 cc_test(
     name = "litert_compiled_model_shared_lib_test",
     srcs = [
@@ -482,8 +484,9 @@ cc_test(
     data = [
         "//litert/test:testdata/simple_model.tflite",
     ],
+    linkstatic = False,  # Explicitly set to false for clarity, though it's often default.
     deps = [
-        ":litert_runtime_c_api_shared_lib",
+        ":litert_runtime_c_api",
         "//litert/test:common",
         "//litert/test:simple_model",
         "@com_google_absl//absl/log:absl_log",
@@ -663,29 +666,6 @@ cc_test(
     deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
 )
 
-# Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
-cc_shared_library(
-    name = "litert_runtime_c_api_so",
-    additional_linker_inputs = export_lrt_runtime_only_script(),
-    shared_lib_name = "libLiteRtRuntimeCApi.so",
-    user_link_flags = export_lrt_runtime_only_linkopt() + select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-            "-Wl,-soname=libLiteRtRuntimeCApi.so",
-        ],
-        "@org_tensorflow//tensorflow:ios": [],
-        "@org_tensorflow//tensorflow:macos": [],
-        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
-    }),
-    deps = LITERT_C_API_COMMON_DEPS,
-)
-
-# Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
-filegroup(
-    name = "libLiteRtRuntimeCApi.so",
-    srcs = [":litert_runtime_c_api_so"],
-)
-
 cc_library(
     name = "litert_dispatch_headers",
     hdrs = [
@@ -731,34 +711,64 @@ config_setting(
     define_values = {"resolve_symbols_in_exec": "true"},
 )
 
-# This is cc_library target based on `libLiteRtRuntimeCApi.so`.
 cc_library(
-    name = "litert_runtime_c_api_shared_lib",
-    srcs = select({
-        ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_so"],
-    }),
+    name = "litert_runtime_c_api",
+    srcs = [],
     hdrs = glob(["litert_*.h"]) + [
         "//litert/c/options:options_headers",
         "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h
         "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",  # Needed for litert/c/litert_model.h
         "//tflite/core/c:headers_filegroup",
     ],
-    linkstatic = 1,
     deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "//litert/cc:litert_source_location",
         # only depend on headers
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
-    ] + gles_headers(),
+    ] + LITERT_C_API_COMMON_DEPS + gles_headers(),
+)
+
+cc_shared_library(
+    name = "litert_runtime_c_api_so",
+    additional_linker_inputs = export_lrt_runtime_only_script(),
+    shared_lib_name = "libLiteRtRuntimeCApi.so",
+    user_link_flags = export_lrt_runtime_only_linkopt() + select({
+        "@org_tensorflow//tensorflow:android": [
+            "-landroid",
+            "-Wl,-soname=libLiteRtRuntimeCApi.so",
+        ],
+        "@org_tensorflow//tensorflow:ios": [],
+        "@org_tensorflow//tensorflow:macos": [],
+        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
+    }),
+    deps = [":litert_runtime_c_api"],
+)
+
+cc_import(
+    name = "litert_runtime_c_api_so_import",
+    shared_library = ":litert_runtime_c_api_so",
+)
+
+android_library(
+    name = "litert_runtime_c_api_android",
+    exports = [":litert_runtime_c_api_so_import"],
+)
+
+# Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
+filegroup(
+    name = "libLiteRtRuntimeCApi.so",
+    srcs = [":litert_runtime_c_api_so"],
 )
 
 # copybara:uncomment_begin(google-only)
 # # Check that litert runtime doesn't depend on MLIR.
 # check_dependencies(
-#     of = [":litert_runtime_c_api_shared_lib"],
+#     of = [":litert_runtime_c_api"],
 #     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
 # )
 # copybara:uncomment_end

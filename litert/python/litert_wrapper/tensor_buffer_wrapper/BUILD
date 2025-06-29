@@ -90,7 +90,7 @@ py_strict_library(
 #     srcs = ["tensor_buffer_test.py"],
 #     # Static linking is required because this loads a cc_binary as a shared
 #     # library, which would otherwise create ODR violations.
-#     # copybara:uncomment linking_mode = "static",
+#     # copybara:uncomment # linking_mode = "static",
 #     deps = [
 #         ":tensor_buffer",
 #         "@org_tensorflow//third_party/py/numpy:headers",
