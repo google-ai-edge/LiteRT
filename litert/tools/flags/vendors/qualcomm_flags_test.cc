@@ -252,6 +252,9 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             kLiteRtQualcommHtpPerformanceModeBurst);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
+  EXPECT_EQ(options.Value().GetCustomOpPackagePath(), "");
+  EXPECT_EQ(options.Value().GetCustomOpPackageTarget(), "");
+  EXPECT_EQ(options.Value().GetCustomOpPackageInterfaceProvider(), "");
 }
 
 }  // namespace

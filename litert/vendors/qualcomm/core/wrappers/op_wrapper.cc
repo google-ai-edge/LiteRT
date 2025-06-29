@@ -20,7 +20,15 @@
 namespace qnn {
 
 OpWrapper::OpWrapper(std::string name, const char* op_type, QnnOpCode op_code)
-    : type_name_{op_type}, name_{std::move(name)}, op_code_{op_code} {}
+    : OpWrapper(std::move(name), QNN_OP_PACKAGE_NAME_QTI_AISW, op_type,
+                op_code) {}
+
+OpWrapper::OpWrapper(std::string name, const char* package_name,
+                     const char* op_type, QnnOpCode op_code)
+    : package_name_{package_name},
+      type_name_{op_type},
+      name_{std::move(name)},
+      op_code_{op_code} {}
 
 OpWrapper::OpWrapper(const OpWrapper& other) = default;
 
@@ -33,7 +41,8 @@ OpWrapper& OpWrapper::operator=(const OpWrapper& other) {
 }
 
 OpWrapper::OpWrapper(OpWrapper&& other)
-    : type_name_{other.type_name_},
+    : package_name_{other.package_name_},
+      type_name_{other.type_name_},
       name_{std::move(other.name_)},
       input_tensors_{std::move(other.input_tensors_)},
       output_tensors_{std::move(other.output_tensors_)},
@@ -60,7 +69,7 @@ void OpWrapper::AddTensorParam(const char* name, const TensorWrapper& tensor) {
 
 Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   Qnn_OpConfig_t qnn_op = QNN_OPCONFIG_INIT;
-  qnn_op.v1.packageName = QNN_OP_PACKAGE_NAME_QTI_AISW;
+  qnn_op.v1.packageName = package_name_;
   qnn_op.v1.typeName = type_name_;
   qnn_op.v1.name = name_.data();
   // input tensors

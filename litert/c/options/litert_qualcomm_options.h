@@ -156,6 +156,30 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
 
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char* custom_op_package_path,
+    uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackagePath(
+    LiteRtQualcommOptions options, const char** custom_op_package_path,
+    uint32_t* length);
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char* custom_op_package_target,
+    uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageTarget(
+    LiteRtQualcommOptions options, const char** custom_op_package_target,
+    uint32_t* length);
+
+LiteRtStatus LiteRtQualcommOptionsSetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char* custom_op_package_interface_provider, uint32_t length);
+
+LiteRtStatus LiteRtQualcommOptionsGetCustomOpPackageInterfaceProvider(
+    LiteRtQualcommOptions options,
+    const char** custom_op_package_interface_provider, uint32_t* length);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
