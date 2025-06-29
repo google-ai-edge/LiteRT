@@ -51,6 +51,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -72,17 +73,6 @@ constexpr LiteRtParamIndex kDefaultPartitionIndex = 0;
 constexpr LiteRtParamIndex kDefaultPartitionNum = 1;
 
 static constexpr absl::string_view kEntryPointNameFmt = "qnn_partition_%d";
-
-std::optional<::qnn::SocInfo> FindSocModel(absl::string_view soc_model_name) {
-  std::optional<::qnn::SocInfo> soc_model;
-  for (auto i = 0; i < ::qnn::kNumSocInfos; ++i) {
-    if (soc_model_name == ::qnn::kSocInfos[i].soc_name) {
-      soc_model = ::qnn::kSocInfos[i];
-      break;
-    }
-  }
-  return soc_model;
-}
 
 bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #ifdef __ANDROID__
@@ -299,7 +289,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   auto backend_configs = QnnManager::DefaultBackendConfigs();
   auto qnn_manager = QnnManager::Create(
       backend_configs, compiler_plugin->Options(), std::nullopt,
-      soc_model ? FindSocModel(soc_model) : std::nullopt);
+      soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
     return qnn_manager.Error().Status();
@@ -367,7 +357,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
              "Starting QNN Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
 
-  auto opt_soc_model = soc_model ? FindSocModel(soc_model) : std::nullopt;
+  auto opt_soc_model = soc_model ? qnn::FindSocModel(soc_model) : std::nullopt;
   if (opt_soc_model) {
     LITERT_LOG(LITERT_INFO, "Compiling QNN SoC model: %s", soc_model);
   } else if (soc_model) {
