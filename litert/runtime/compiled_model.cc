@@ -49,7 +49,6 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/build_stamp.h"
@@ -65,6 +64,7 @@
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -417,14 +417,15 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
   }
 }
 
-litert::Expected<LiteRtTensorBufferRequirements>
+litert::Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Use the buffer context to get the buffer requirements only if the tensor
   // is not a CPU tensor.
   if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
-    auto requirements = buffer_context_->GetBufferRequirements(tensor);
+    Expected<const LiteRtTensorBufferRequirementsT*> requirements =
+        buffer_context_->GetBufferRequirements(tensor);
     if (requirements) {
-      return (*requirements)->Get();
+      return *requirements;
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
@@ -433,19 +434,16 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
   uint32_t cpu_buffer_strides[] = {0};
-  auto res = LiteRtCreateTensorBufferRequirements(
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
       /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
-      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements);
-  if (res != kLiteRtStatusOk) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Failed to create CPU buffer requirements");
-  }
-  cpu_buffer_requirements_[tensor] = litert::TensorBufferRequirements(
-      litert_cpu_buffer_requirements, litert::OwnHandle::kYes);
+      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
+  cpu_buffer_requirements_[tensor] =
+      litert::internal::LiteRtTensorBufferRequirementsPtr(
+          litert_cpu_buffer_requirements);
   return litert_cpu_buffer_requirements;
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetInputBufferRequirements(
     absl::string_view signature_key, size_t input_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -466,7 +464,7 @@ LiteRtCompiledModelT::GetInputBufferRequirements(
   return GetTensorBufferRequirements(input_tensor);
 }
 
-Expected<LiteRtTensorBufferRequirements>
+Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetOutputBufferRequirements(
     absl::string_view signature_key, size_t output_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -517,14 +515,12 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   bool backend_requires_cpu_buffer = false;
 
-  auto requirements = buffer_context_->GetBufferRequirements(tensor);
+  Expected<const LiteRtTensorBufferRequirementsT*> requirements =
+      buffer_context_->GetBufferRequirements(tensor);
   if (requirements) {
-    auto supported_types = (*requirements)->SupportedTypes();
-    if (!supported_types) {
-      return supported_types.Error();
-    }
+    const auto& supported_types = (*requirements)->SupportedBufferTypes();
 
-    for (auto& type : *supported_types) {
+    for (auto& type : supported_types) {
       if (type == buffer->buffer_type()) {
         // Register tensor buffer if it can be used by the backend.
         buffer->Duplicate();

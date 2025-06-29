@@ -40,11 +40,11 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tfl_utils.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_opaque.h"
@@ -475,7 +475,7 @@ Expected<void> DispatchDelegateKernel::ComputeTensorPortConnections(
   return {};
 }
 
-Expected<TensorBufferRequirements>
+Expected<litert::internal::LiteRtTensorBufferRequirementsPtr>
 DispatchDelegateKernel::GetBufferRequirements(int node_idx,
                                               TfLiteOpaqueTensor* io_tfl_tensor,
                                               int io_tensor_index,
@@ -496,8 +496,7 @@ DispatchDelegateKernel::GetBufferRequirements(int node_idx,
         invocation_context, /*output_index=*/io_tensor_index,
         &litert_tensor_type, &tensor_buffer_requirements));
   }
-
-  return TensorBufferRequirements(tensor_buffer_requirements, OwnHandle::kYes);
+  return LiteRtTensorBufferRequirementsPtr(tensor_buffer_requirements);
 }
 
 Expected<void> DispatchDelegateKernel::ComputeRequirements(
@@ -512,7 +511,7 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
         return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
       }
       LITERT_ASSIGN_OR_RETURN(
-          auto buffer_requirements,
+          LiteRtTensorBufferRequirementsPtr buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/true));
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
           tfl_tensor, std::move(buffer_requirements)));
@@ -525,7 +524,7 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
         return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
       }
       LITERT_ASSIGN_OR_RETURN(
-          auto buffer_requirements,
+          LiteRtTensorBufferRequirementsPtr buffer_requirements,
           GetBufferRequirements(node_idx, tfl_tensor, i, /*is_input=*/false));
       LITERT_RETURN_IF_ERROR(buffer_context_->RegisterBufferRequirements(
           tfl_tensor, std::move(buffer_requirements)));
@@ -680,17 +679,11 @@ Expected<TensorBuffer> DispatchDelegateKernel::AllocateTensorBuffer(
     TfLiteOpaqueTensor* tfl_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto requirements_ptr,
                           buffer_context_->GetBufferRequirements(tfl_tensor));
-  LITERT_ASSIGN_OR_RETURN(auto supported_types,
-                          requirements_ptr->SupportedTypes());
-  if (supported_types.empty()) {
-    return Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        "Found tensor buffer requirements with no supported types");
-  }
+  const auto& supported_types = requirements_ptr->SupportedBufferTypes();
 
   LiteRtTensorBufferType buffer_type = supported_types[0];
   LITERT_ASSIGN_OR_RETURN(auto tensor_type, ConvertTensorType(tfl_tensor));
-  LITERT_ASSIGN_OR_RETURN(size_t buffer_size, requirements_ptr->BufferSize());
+  size_t buffer_size = requirements_ptr->BufferSize();
 
   LITERT_ASSIGN_OR_RETURN(
       auto tensor_buffer,

@@ -55,13 +55,12 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto res = compiled_model->GetInputBufferRequirementsCApi(signature_index,
-                                                            input_index);
-  if (!res) {
-    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
-  }
-  *buffer_requirements = res.Value();
+  LITERT_ASSIGN_OR_RETURN(
+      const LiteRtTensorBufferRequirementsT* buffer_requirements_ptr,
+      compiled_model->GetInputBufferRequirementsCApi(signature_index,
+                                                     input_index));
+  *buffer_requirements =
+      const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
 }
 
@@ -73,13 +72,12 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  auto res = compiled_model->GetOutputBufferRequirementsCApi(signature_index,
-                                                             output_index);
-  if (!res) {
-    LITERT_LOG(LITERT_ERROR, "%s", res.Error().Message().c_str());
-    return res.Error().Status();
-  }
-  *buffer_requirements = res.Value();
+  LITERT_ASSIGN_OR_RETURN(
+      const LiteRtTensorBufferRequirementsT* buffer_requirements_ptr,
+      compiled_model->GetOutputBufferRequirementsCApi(signature_index,
+                                                      output_index));
+  *buffer_requirements =
+      const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
 }
 
