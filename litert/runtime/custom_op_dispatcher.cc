@@ -14,20 +14,20 @@
 
 #include "litert/runtime/custom_op_dispatcher.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
-#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tfl_utils.h"
@@ -40,17 +40,22 @@ namespace litert::internal {
 namespace {
 
 // Creates a TensorBuffer attached to the TFL tensor's data buffer.
-Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
+Expected<LiteRtTensorBufferSharedPtr> CreateHostTensorBufferFromTflTensor(
     TfLiteOpaqueContext* tfl_context,
     const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto tensor_type,
                           ConvertTensorType(tfl_opaque_tensor));
   void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
   size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
-  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                          TensorBuffer::CreateFromHostMemory(
-                              tensor_type, host_mem_addr, buffer_size));
-  return tensor_buffer;
+  absl::Span<uint8_t> host_mem_span(reinterpret_cast<uint8_t*>(host_mem_addr),
+                                    buffer_size);
+  LiteRtRankedTensorType litert_tensor_type =
+      static_cast<LiteRtRankedTensorType>(tensor_type);
+  LiteRtTensorBufferT* tensor_buffer;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+      &litert_tensor_type, host_mem_addr, buffer_size, /*deallocator=*/nullptr,
+      &tensor_buffer));
+  return CreateLiteRtTensorBufferSharedPtr(tensor_buffer);
 }
 
 }  // namespace
@@ -162,39 +167,45 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
   auto& self = *static_cast<CustomOpDispatcher*>(user_data);
 
   auto num_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
-  std::vector<LiteRtTensorBuffer> inputs;
+  std::vector<LiteRtTensorBufferSharedPtr> inputs;
   inputs.reserve(num_inputs);
 
   auto num_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
-  std::vector<LiteRtTensorBuffer> outputs;
+  std::vector<LiteRtTensorBufferSharedPtr> outputs;
   outputs.reserve(num_outputs);
-
-  absl::Cleanup tensor_buffers_cleanup = [&] {
-    std::for_each(inputs.begin(), inputs.end(), LiteRtDestroyTensorBuffer);
-    std::for_each(outputs.begin(), outputs.end(), LiteRtDestroyTensorBuffer);
-  };
 
   for (auto i = 0; i < num_inputs; ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
     LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
                             self.GetTensorBuffer(context, tfl_opaque_tensor));
-    inputs.push_back(tensor_buffer.Release());
+    inputs.push_back(tensor_buffer);
   }
 
   for (auto i = 0; i < num_outputs; ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
     LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
                             self.GetTensorBuffer(context, tfl_opaque_tensor));
-    outputs.push_back(tensor_buffer.Release());
+    outputs.push_back(tensor_buffer);
   }
 
-  self.op_kernel_.Run(self.user_data_, inputs.size(), inputs.data(),
-                      outputs.size(), outputs.data());
+  std::vector<LiteRtTensorBuffer> c_inputs;
+  c_inputs.reserve(inputs.size());
+  for (auto& tensor_buffer : inputs) {
+    c_inputs.push_back(tensor_buffer.get());
+  }
+  std::vector<LiteRtTensorBuffer> c_outputs;
+  c_outputs.reserve(outputs.size());
+  for (auto& tensor_buffer : outputs) {
+    c_outputs.push_back(tensor_buffer.get());
+  }
+
+  self.op_kernel_.Run(self.user_data_, c_inputs.size(), c_inputs.data(),
+                      c_outputs.size(), c_outputs.data());
 
   return {};
 }
 
-Expected<TensorBuffer> CustomOpDispatcher::GetTensorBuffer(
+Expected<LiteRtTensorBufferSharedPtr> CustomOpDispatcher::GetTensorBuffer(
     TfLiteOpaqueContext* context, const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   // If there is already a tensor buffer associated with the TFL tensor, then
   // return a duplicate. Otherwise create a new one attached to the TFL tensor's
@@ -203,10 +214,9 @@ Expected<TensorBuffer> CustomOpDispatcher::GetTensorBuffer(
     if (auto tensor_buffer =
             buffer_context_->GetTensorBuffer(tfl_opaque_tensor);
         tensor_buffer) {
-      // Duplicate the tensor buffer to avoid the lifetime issue.
       // The original tensor buffer is owned by the buffer context, and it
-      // might be deallocated after the invoke.
-      return tensor_buffer->Duplicate();
+      // might be deallocated after the invoke. So we need shared ownership.
+      return tensor_buffer;
     }
   }
   return CreateHostTensorBufferFromTflTensor(context, tfl_opaque_tensor);

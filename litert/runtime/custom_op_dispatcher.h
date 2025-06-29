@@ -18,8 +18,8 @@
 #include <memory>
 
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/options.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "tflite/c/c_api.h"
 #include "tflite/c/c_api_opaque.h"
 
@@ -60,7 +60,7 @@ class CustomOpDispatcher {
                                      TfLiteOpaqueContext* context,
                                      TfLiteOpaqueNode* node);
 
-  Expected<TensorBuffer> GetTensorBuffer(
+  Expected<LiteRtTensorBufferSharedPtr> GetTensorBuffer(
       TfLiteOpaqueContext* context,
       const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
