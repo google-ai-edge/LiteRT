@@ -502,7 +502,6 @@ cc_library(
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
     deps = [
-        "//litert/c:litert_logging",
         "//litert/c:litert_profiler_event",
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",

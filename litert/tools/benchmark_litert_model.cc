@@ -33,6 +33,7 @@ limitations under the License.
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 
@@ -41,11 +42,13 @@ namespace {
 using ::litert::CompiledModel;
 using ::litert::Options;
 using ::litert::TensorBuffer;
+using ::litert::RuntimeOptions;
 
 Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
+  auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
@@ -78,6 +81,13 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   }
 
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
+
+  if (use_profiler) {
+    LITERT_ASSIGN_OR_ABORT(auto runtime_options,
+                           RuntimeOptions::Create());
+    runtime_options.SetEnableProfiling(/*enabled=*/true);
+    compilation_options.AddOpaqueOptions(std::move(runtime_options));
+  }
 
   return compilation_options;
 }

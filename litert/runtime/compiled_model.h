@@ -47,7 +47,12 @@ class LiteRtCompiledModelT {
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
 
   explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env) : env_(env) {}
-  ~LiteRtCompiledModelT() = default;
+  ~LiteRtCompiledModelT() {
+    // If the profiler is owned by the model, delete it here.
+    if (profiler_ != nullptr && profiler_->IsOwned()) {
+      delete profiler_;
+    }
+  };
 
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
   // The model is loaded into memory and the caller takes ownership of the
@@ -125,6 +130,10 @@ class LiteRtCompiledModelT {
     LITERT_RETURN_IF_ERROR(profiler,
                            litert::ErrorStatusBuilder::InvalidArgument())
         << "profiler is null.";
+
+    if (profiler_ != nullptr && profiler_->IsOwned()) {
+      delete profiler_;
+    }
 
     profiler_ = profiler;
     interp_->SetProfiler(profiler_);

@@ -24,9 +24,10 @@
 #include "litert/c/litert_profiler_event.h"
 #include "tflite/profiling/profile_buffer.h"  // IWYU pragma: keep
 
-LiteRtProfilerT::LiteRtProfilerT(size_t max_num_events)
+LiteRtProfilerT::LiteRtProfilerT(size_t max_num_events, bool owned)
     : profiling_enabled_(false),
-      current_event_source_(ProfiledEventSource::LITERT) {
+      current_event_source_(ProfiledEventSource::LITERT),
+      is_owned_(owned) {
   // Initialize the profile buffer with the TFLite metadata version
   // and the maximum number of events.
   profile_buffer_ = std::make_unique<tflite::profiling::ProfileBuffer>(

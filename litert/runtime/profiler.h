@@ -32,7 +32,8 @@
 class LiteRtProfilerT : public tflite::Profiler {
  public:
   // Constructor: max_num_events for the internal buffer.
-  explicit LiteRtProfilerT(size_t max_num_events = 1024 * 10);
+  explicit LiteRtProfilerT(size_t max_num_events = 1024 * 10,
+                           bool owned = false);
   ~LiteRtProfilerT() override;
 
   // --- tflite::Profiler API Implementation ---
@@ -72,6 +73,8 @@ class LiteRtProfilerT : public tflite::Profiler {
 
   // Returns the number of events currently in the buffer.
   size_t GetNumEvents() const;
+
+  bool IsOwned() const { return is_owned_; }
 
   // Retrieves the collected profile events.
   // This might involve transforming data from ProfileBuffer into
@@ -114,6 +117,9 @@ class LiteRtProfilerT : public tflite::Profiler {
   // Map of event handle to event source. This is used to track the source of
   // the events that are currently active.
   std::map<uint32_t, ProfiledEventSource> active_event_sources_map_;
+
+  // Whether the profiler is owned by the caller.
+  bool is_owned_ = false;
 };
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PROFILER_H_
