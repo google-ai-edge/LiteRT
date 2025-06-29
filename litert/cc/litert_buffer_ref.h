@@ -21,6 +21,7 @@
 #include <cstring>
 #include <iostream>
 #include <ostream>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -152,6 +153,12 @@ class BufferRef {
   void Dump(std::ostream& out) const {
     out << absl::StreamFormat("%s[%lu:%lu]\n", TypeName(), start_offset_,
                               end_offset_);
+  }
+
+  // Get info about this buffer as a string.
+  std::string DebugString() const {
+    return absl::StrFormat("%s[%lu:%lu]\n", TypeName(), start_offset_,
+                           end_offset_);
   }
 
   BufferRef(const BufferRef& other) = default;
