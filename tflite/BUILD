@@ -30,7 +30,7 @@ exports_files(glob([
 ])
 
 # Config to keep symbol tables even for optimized builds. Debug builds already
-# preserve symbols.
+# preserve symbols
 config_setting(
     name = "tflite_keep_symbols",
     define_values = {"tflite_keep_symbols": "true"},
