@@ -21,6 +21,7 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/test/common.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert {
@@ -48,12 +49,28 @@ TEST(OpOptionsTest, GetCompositeOptions) {
   ASSERT_TRUE(res);
   EXPECT_EQ(res->name, kName);
   EXPECT_EQ(res->subgraph, kSubgraph);
+  EXPECT_FALSE(res->attributes_map.has_value());
 }
 
 TEST(OpOptionsTest, GetUnsupportedOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloAdd);
   ASSERT_FALSE(GetOptionsAs<CompositeOptions>(&op));
+}
+
+TEST(OpOptionsTest, CompositeOptionsGetNameVersionAndAttributes) {
+  auto model = testing::LoadTestFileModel("simple_shlo_composite.tflite");
+  auto subgraph = model.MainSubgraph();
+  auto rms_norm_composite_op = subgraph->Ops().front().Get();
+  auto info = GetOptionsAs<CompositeOptions>(rms_norm_composite_op);
+  ASSERT_TRUE(info);
+
+  EXPECT_EQ(info->name, "stablehlo.add_n");
+  EXPECT_EQ(info->version, 3);
+  EXPECT_TRUE(info->attributes_map.has_value());
+  EXPECT_STREQ(info->attributes_map.value()["an_attribute"].AsString().c_str(),
+               "foo");
+  EXPECT_EQ(info->attributes_map.value()["meaning_of_life"].AsInt32(), 42);
 }
 
 }  // namespace
