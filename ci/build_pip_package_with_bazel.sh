@@ -32,7 +32,8 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf"
+      --config=use_local_tf
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   rpi0)
     BAZEL_FLAGS="--config=elinux_armhf
@@ -40,19 +41,26 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissivec
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf"
+      --config=use_local_tf
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   aarch64)
     BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
       --copt=-O3
-      --config=use_local_tf"
+      --config=use_local_tf
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   native)
-    BAZEL_FLAGS="--copt=-O3 --copt=-march=native --config=use_local_tf"
+    BAZEL_FLAGS="--copt=-O3
+      --copt=-march=native
+      --config=use_local_tf
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
   *)
-    BAZEL_FLAGS="--copt=-O3 --config=use_local_tf"
+    BAZEL_FLAGS="--copt=-O3
+      --config=use_local_tf
+      --repo_env=USE_PYWRAP_RULES=True"
     ;;
 esac
 
