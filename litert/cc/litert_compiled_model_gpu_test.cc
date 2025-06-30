@@ -42,6 +42,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -174,16 +175,13 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options,
       CreateGpuOptions(/*no_immutable_external_tensors_mode=*/true));
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  options.AddOpaqueOptions(std::move(runtime_options));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(*env, model, options));
 
-  // Create profiler, the profiler needs to be alive during the model execution.
-  // The profiler is owned by the caller, the caller is responsible for
-  // disposing the profiler after the model execution. You can set another
-  // profiler after the model execution.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, Profiler::Create(1024));
-  ASSERT_TRUE(profiler);
-  ASSERT_TRUE(compiled_model.SetProfiler(profiler));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
   ASSERT_TRUE(profiler.StartProfiling());
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
