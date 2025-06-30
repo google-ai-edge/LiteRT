@@ -259,6 +259,19 @@ TEST(GetOpOptionTest, TestGetPackOptions) {
   ASSERT_EQ(axis, 0);
 }
 
+TEST(GetOpOptionTest, TestGetUnpackOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_unpack_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  int32_t axis;
+  LITERT_ASSERT_OK(LiteRtGetUnpackAxisOption(op, &axis));
+  ASSERT_EQ(axis, 2);
+}
+
 TEST(GetOpOptionTest, TestGetGatherOptions) {
   auto model = litert::testing::LoadTestFileModel("simple_gather_op.tflite");
   auto subgraph = model.MainSubgraph();
