@@ -175,5 +175,98 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
+TEST(CompiledModelTest, ResizeInputTensor) {
+  // Use the simple model for testing resize functionality
+  auto path = testing::GetTestFilePath(kModelFileName);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Resize first, then obtain the buffer requirements as the original buffer
+  // requirements.
+  const int original_dims[] = {2, 1, 5, 1};
+  ASSERT_EQ(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                original_dims, /*num_dims=*/4),
+            kLiteRtStatusOk);
+
+  // Get original buffer requirements
+  LiteRtTensorBufferRequirements original_requirements;
+  ASSERT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                &original_requirements),
+            kLiteRtStatusOk);
+
+  size_t original_size;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(original_requirements,
+                                                        &original_size),
+            kLiteRtStatusOk);
+
+  // Resize first input tensor - double the batch size
+  // Original shape is [2, 1, 5, 1], changes to [4, 5, 5, 1]
+  const int new_dims[] = {4, 5, 5, 1};
+  ASSERT_EQ(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                new_dims, /*num_dims=*/4),
+            kLiteRtStatusOk);
+
+  // Get new buffer requirements after resize
+  LiteRtTensorBufferRequirements new_requirements;
+  ASSERT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                &new_requirements),
+            kLiteRtStatusOk);
+
+  size_t new_size;
+  ASSERT_EQ(
+      LiteRtGetTensorBufferRequirementsBufferSize(new_requirements, &new_size),
+      kLiteRtStatusOk);
+
+  // Verify that the size has doubled (batch size doubled)
+  EXPECT_EQ(new_size, original_size * 2 * 5);
+
+  // Test error cases
+  // Invalid signature index
+  EXPECT_NE(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/999, /*input_index=*/0,
+                new_dims, /*num_dims=*/4),
+            kLiteRtStatusOk);
+
+  // Invalid input index
+  EXPECT_NE(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/999,
+                new_dims, /*num_dims=*/4),
+            kLiteRtStatusOk);
+
+  // NULL dims with non-zero num_dims
+  EXPECT_NE(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                nullptr, /*num_dims=*/4),
+            kLiteRtStatusOk);
+
+  // Cleanup
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
 }  // namespace
 }  // namespace litert

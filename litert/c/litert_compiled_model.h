@@ -155,6 +155,31 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 // needed on during the model execution, can be disposed after execution.
 LiteRtStatus LiteRtCompiledModelSetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler profiler);
+
+// Resizes the specified input tensor to support dynamic shapes.
+//
+// This function allows resizing input tensors at runtime, similar to TFLite's
+// ResizeInputTensor API. After calling this function, the compiled model will
+// reallocate internal buffers as needed to accommodate the new tensor shape.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - input_index: the index of the input tensor in the signature (subgraph).
+// - dims: array containing the new dimensions for the input tensor.
+// - num_dims: the number of dimensions in the dims array.
+//
+// Note: After resizing, the previously obtained buffer requirements may be
+// invalidated. Callers should re-query buffer requirements if needed.
+//
+// Returns:
+// - kLiteRtStatusOk: Success.
+// - kLiteRtStatusErrorInvalidArgument: Invalid parameters.
+// - kLiteRtStatusErrorRuntimeFailure: Failed to resize tensor.
+LiteRtStatus LiteRtCompiledModelResizeInputTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, int num_dims);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

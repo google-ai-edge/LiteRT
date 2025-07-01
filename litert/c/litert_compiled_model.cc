@@ -184,6 +184,16 @@ LiteRtStatus LiteRtCompiledModelSetProfiler(LiteRtCompiledModel compiled_model,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelResizeInputTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, int num_dims) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensor(
+      signature_index, input_index, dims, num_dims));
+  return kLiteRtStatusOk;
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
