@@ -112,6 +112,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         runtime_options) {
       interpreter_options.SetShloCompositeInlining(
           (*runtime_options)->shlo_composite_inlining);
+      if ((*runtime_options)->enable_profiling) {
+        profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
+      }
     }
 
     if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
@@ -124,10 +127,14 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   tflite::InterpreterBuilder builder(*fb_model_, resolver,
                                      &interpreter_options);
   builder(&interp_);
-  interp_->SetNumThreads(num_threads);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");
+  }
+  interp_->SetNumThreads(num_threads);
+
+  if (profiler_ != nullptr) {
+    interp_->SetProfiler(profiler_);
   }
 
   signature_keys_ = interp_->signature_keys();
