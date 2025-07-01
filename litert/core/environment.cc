@@ -22,7 +22,9 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#if LITERT_ENABLE_GPU
 #include "litert/runtime/gpu_environment.h"
+#endif
 
 litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
     absl::Span<const LiteRtEnvOption> options) {
@@ -44,6 +46,7 @@ litert::Expected<void> LiteRtEnvironmentT::AddOptions(
   return {};
 }
 
+#if LITERT_ENABLE_GPU
 // C API to workaround Windows build issue.
 // This function is only used in tensor_buffer.cc.
 extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
@@ -55,3 +58,9 @@ extern "C" litert::internal::GpuEnvironment* LiteRtGetGpuEnvironment(
 
   return gpu_env;
 }
+#else
+// Stub implementation when GPU is disabled
+extern "C" void* LiteRtGetGpuEnvironment(LiteRtEnvironment env) {
+  return nullptr;
+}
+#endif

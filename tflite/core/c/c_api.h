@@ -28,6 +28,7 @@ limitations under the License.
 #include "tflite/builtin_ops.h"
 #include "tflite/core/async/c/types.h"
 #include "tflite/core/c/c_api_types.h"  // IWYU pragma: export
+#include "tflite/core/c/common.h"       // For TfLiteQuantizationParams
 #include "tflite/core/c/operator.h"  // IWYU pragma: export
 
 /// C API for TensorFlow Lite.

@@ -22,9 +22,11 @@ limitations under the License.
 namespace tflite {
 
 // An error reporter that simply writes the message to stderr.
+#ifndef TENSORFLOW_COMPILER_MLIR_LITE_CORE_API_ERROR_REPORTER_H_
 struct StderrReporter : public ErrorReporter {
   int Report(const char* format, va_list args) override;
 };
+#endif
 
 // Return the default error reporter (output to stderr).
 ErrorReporter* DefaultErrorReporter();

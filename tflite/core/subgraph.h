@@ -30,6 +30,12 @@ limitations under the License.
 
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/allocation.h"
+
+// Forward declaration
+namespace tensorflow {
+class Allocation;
+}
+using Allocation = tensorflow::Allocation;
 #include "tflite/array.h"
 #include "tflite/c/common_internal.h"
 #include "tflite/core/api/error_reporter.h"

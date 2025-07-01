@@ -1,33 +1,17 @@
-/* Copyright 2019 The TensorFlow Authors. All Rights Reserved.
+#ifndef TFLITE_C_COMMON_H_
+#define TFLITE_C_COMMON_H_
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+#include "tflite/c/c_api_types.h"
 
-    http://www.apache.org/licenses/LICENSE-2.0
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-==============================================================================*/
+// Common TensorFlow Lite definitions for compatibility
+// Note: Types are defined in tflite/core/c/common.h
 
-/// \file
-///
-/// This file defines common C types and APIs for implementing operations,
-/// delegates and other constructs in TensorFlow Lite. The actual operations and
-/// delegates can be defined using C++, but the interface between the
-/// interpreter and the operations are C.
-///
-/// For documentation, see tensorflow/lite/core/c/common.h.
-///
-/// See also c_api_opaque.h which has more ABI-stable variants of some of these
-/// APIs.
+#ifdef __cplusplus
+}
+#endif
 
-#ifndef TENSORFLOW_LITE_C_COMMON_H_
-#define TENSORFLOW_LITE_C_COMMON_H_
-
-#include "tflite/core/c/common.h"
-
-#endif  // TENSORFLOW_LITE_C_COMMON_H_
+#endif  // TFLITE_C_COMMON_H_

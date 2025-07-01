@@ -26,7 +26,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment_options.h"
 #include "litert/runtime/accelerator_registry.h"
+#if LITERT_ENABLE_GPU
 #include "litert/runtime/gpu_environment.h"
+#endif
 
 // A singleton class that contains global LiteRT environment options.
 class LiteRtEnvironmentT {
@@ -56,6 +58,7 @@ class LiteRtEnvironmentT {
     return accelerators_;
   }
 
+#if LITERT_ENABLE_GPU
   // Sets the GPU environment. The owner of the GPU environment is transferred
   // to the environment.
   litert::Expected<void> SetGpuEnvironment(
@@ -91,11 +94,30 @@ class LiteRtEnvironmentT {
   bool SupportsAhwbGlInterop() {
     return gpu_env_ != nullptr && gpu_env_->SupportsAhwbGlInterop();
   }
+#else
+  // Stub implementations when GPU is disabled
+  litert::Expected<void> SetGpuEnvironment(void* gpu_env) {
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "GPU support is disabled.");
+  }
+
+  litert::Expected<void*> GetGpuEnvironment() {
+    return litert::Unexpected(kLiteRtStatusErrorUnsupported,
+                              "GPU support is disabled.");
+  }
+
+  bool HasGpuEnvironment() { return false; }
+  bool SupportsClGlInterop() { return false; }
+  bool SupportsAhwbClInterop() { return false; }
+  bool SupportsAhwbGlInterop() { return false; }
+#endif
 
  private:
   litert::internal::AcceleratorRegistry accelerators_;
   LiteRtEnvironmentOptionsT options_;
+#if LITERT_ENABLE_GPU
   std::unique_ptr<litert::internal::GpuEnvironment> gpu_env_;
+#endif
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_ENVIRONMENT_H_

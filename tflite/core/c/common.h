@@ -469,6 +469,19 @@ enum {
   kTfLiteNullBufferHandle = -1,
 };
 
+/// Dimension type for sparse tensors
+typedef enum TfLiteDimensionType {
+  kTfLiteDimUnknown = 0,
+  kTfLiteDimDense = 1,
+  kTfLiteDimSparseCSR = 2,
+} TfLiteDimensionType;
+
+/// Quantization parameters used in TensorFlow Lite
+typedef struct TfLiteQuantizationParams {
+  float scale;
+  int32_t zero_point;
+} TfLiteQuantizationParams;
+
 /// Metadata to encode each dimension in a sparse tensor.
 typedef struct TfLiteDimensionMetadata {
   TfLiteDimensionType format;

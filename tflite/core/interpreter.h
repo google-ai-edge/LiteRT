@@ -44,6 +44,7 @@ limitations under the License.
 #include "tensorflow/compiler/mlir/lite/experimental/remat/metadata_util.h"
 #include "tflite/allocation.h"
 #include "tflite/core/api/error_reporter.h"
+#include "tflite/core/model_control_dependencies.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/async/async_signature_runner.h"
 #include "tflite/core/c/common.h"  // IWYU pragma: export

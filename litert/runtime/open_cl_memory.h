@@ -25,10 +25,14 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/ahwb_buffer.h"
+#if LITERT_ENABLE_GPU
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gpu_environment.h"
+#endif  // LITERT_ENABLE_GPU
 #include <CL/cl.h>
+#if LITERT_ENABLE_GPU
 #include "tflite/delegates/gpu/cl/buffer.h"
+#endif  // LITERT_ENABLE_GPU
 
 namespace litert::internal {
 
@@ -57,6 +61,7 @@ class OpenClMemory {
     other.ahwb_ = nullptr;
   }
 
+#if LITERT_ENABLE_GPU
   explicit OpenClMemory(GpuEnvironment* gpu_env,
                         const LiteRtRankedTensorType& tensor_type,
                         LiteRtTensorBufferType buffer_type,
@@ -78,22 +83,52 @@ class OpenClMemory {
         buffer_type_(buffer_type),
         deallocator_(deallocator),
         size_(size) {
+#else
+  explicit OpenClMemory(void* gpu_env,
+                        const LiteRtRankedTensorType& tensor_type,
+                        LiteRtTensorBufferType buffer_type,
+                        void* buffer,
+                        AHardwareBuffer* ahwb = nullptr)
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
+        buffer_type_(buffer_type),
+        size_(0),
+        ahwb_(ahwb) {}
+
+  OpenClMemory(void* gpu_env,
+               const LiteRtRankedTensorType& tensor_type,
+               LiteRtTensorBufferType buffer_type, cl_mem buffer, size_t size,
+               LiteRtOpenClDeallocator deallocator)
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
+        buffer_type_(buffer_type),
+        deallocator_(deallocator),
+        size_(size) {
+#endif  // LITERT_ENABLE_GPU
     // CreateBufferShared creates a buffer that is not owned by
     // tflite::gpu::cl::Buffer (OpenClMemory determines ownership). Null
     // deallocator means that the buffer is not owned by OpenClMemory.
+#if LITERT_ENABLE_GPU
     buffer_ = tflite::gpu::cl::CreateBufferShared(buffer);
+#endif  // LITERT_ENABLE_GPU
   }
 
   ~OpenClMemory() {
+#if LITERT_ENABLE_GPU
     if (deallocator_ != nullptr) {
       deallocator_(buffer_.GetMemoryPtr());
     }
+#endif  // LITERT_ENABLE_GPU
     if (data_ != nullptr) {
       litert_aligned_free(data_);
     };
   }
 
+#if LITERT_ENABLE_GPU
   cl_mem GetMemoryPtr() { return buffer_.GetMemoryPtr(); }
+#else
+  cl_mem GetMemoryPtr() { return nullptr; }
+#endif  // LITERT_ENABLE_GPU
   // Allocates a CPU memory and conducts a copy from the OpenCL buffer to the
   // CPU memory.
   template <typename T>
@@ -106,6 +141,7 @@ class OpenClMemory {
   // Returns true if OpenCL is supported.
   // Warning: This is only for TEST.
   static bool IsSupported();
+#if LITERT_ENABLE_GPU
   static Expected<OpenClMemory> Alloc(GpuEnvironment* gpu_env,
                                       const LiteRtRankedTensorType& tensor_type,
                                       LiteRtTensorBufferType buffer_type,
@@ -113,19 +149,38 @@ class OpenClMemory {
   static Expected<OpenClMemory> AllocFromAhwbBuffer(
       GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
       AhwbBuffer& ahwb_buffer);
+#else
+  static Expected<OpenClMemory> Alloc(void* gpu_env,
+                                      const LiteRtRankedTensorType& tensor_type,
+                                      LiteRtTensorBufferType buffer_type,
+                                      size_t bytes_size);
+  static Expected<OpenClMemory> AllocFromAhwbBuffer(
+      void* gpu_env, const LiteRtRankedTensorType& tensor_type,
+      AhwbBuffer& ahwb_buffer);
+#endif  // LITERT_ENABLE_GPU
+#if LITERT_ENABLE_GPU
   static Expected<OpenClMemory> AllocFromGlBuffer(
       GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
       GlBuffer& gl_buffer);
+#endif  // LITERT_ENABLE_GPU
   size_t size_bytes() const { return size_; }
 
  private:
+#if LITERT_ENABLE_GPU
   GpuEnvironment* gpu_env_ = nullptr;
+#else
+  void* gpu_env_ = nullptr;
+#endif  // LITERT_ENABLE_GPU
   const LiteRtRankedTensorType tensor_type_;
   LiteRtTensorBufferType buffer_type_;
   absl::Mutex mutex_;
   // The cpu memory buffer pointer.
   void* data_ = nullptr;
+#if LITERT_ENABLE_GPU
   tflite::gpu::cl::Buffer buffer_;
+#else
+  void* buffer_ = nullptr;
+#endif  // LITERT_ENABLE_GPU
   LiteRtOpenClDeallocator deallocator_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_ = 0;

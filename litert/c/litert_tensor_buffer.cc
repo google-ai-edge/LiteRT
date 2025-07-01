@@ -209,6 +209,7 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 }
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 
+#if LITERT_ENABLE_GPU
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -223,7 +224,9 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }
+#endif  // LITERT_ENABLE_GPU
 
+#if LITERT_ENABLE_GPU
 LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
                                            LiteRtGLenum* target,
                                            LiteRtGLuint* id, size_t* size_bytes,
@@ -240,7 +243,9 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
   *offset = gl_buffer->offset();
   return kLiteRtStatusOk;
 }
+#endif  // LITERT_ENABLE_GPU
 
+#if LITERT_ENABLE_GPU
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
@@ -271,6 +276,7 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
   *layer = gl_texture->layer();
   return kLiteRtStatusOk;
 }
+#endif  // LITERT_ENABLE_GPU
 
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,

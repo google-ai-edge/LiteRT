@@ -1,28 +1,159 @@
-# Build objects and artifacts
-*.pyc
-*.pyo
-*.log
+# =============================================================================
+# CMAKE BUILD ARTIFACTS AND DIRECTORIES
+# =============================================================================
+
+# CMake build directories
+build*/
+build_*/
+cmake-build-*/
+out/
+_build/
+_builds/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+install_manifest.txt
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# =============================================================================
+# BAZEL BUILD ARTIFACTS
+# =============================================================================
+
+# Bazel outputs
+/bazel-*
+/.bazelrc.user
+/.tf_configure.bazelrc
+
+# =============================================================================
+# GENERATED AND COMPILED FILES
+# =============================================================================
+
+# Object files and libraries
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exe
+
+# Generated headers and sources
 *.proto.h
 *.proto.cc
 *.pb.h
 *.pb.cc
+*_generated.h
+*_generated.cc
 
-# System files
+# Python artifacts
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+dist/
+*.whl
+
+# Log files
+*.log
+
+# =============================================================================
+# TEST AND TEMPORARY FILES
+# =============================================================================
+
+# Test binaries and outputs
+*_test
+*_test.exe
+test_*
+*_main
+*_main.exe
+basic_run_model
+minimal_run_model
+simple_test
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Session and debug files
+current_session_*.md
+debug_*
+core.*
+
+# =============================================================================
+# SYSTEM AND EDITOR FILES
+# =============================================================================
+
+# macOS
 .DS_Store
 .DS_Store?
 ._*
 .Spotlight-V100
 .Trashes
+
+# Windows
 ehthumbs.db
 Thumbs.db
-*.swp
-.vscode
+Desktop.ini
 
-.idea/
-cmake-build-debug/
+# Linux
+*~
 
-/.bazelrc.user
-/bazel-*
+# IDE files
 .vscode/
-*.whl
-/.tf_configure.bazelrc
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# =============================================================================
+# THIRD-PARTY AND DEPENDENCIES
+# =============================================================================
+
+# Third-party downloads
+third_party/downloads/
+external/
+
+# Node modules (if any)
+node_modules/
+
+# =============================================================================
+# PLATFORM-SPECIFIC BUILD OUTPUTS
+# =============================================================================
+
+# Android
+*.apk
+*.aab
+local.properties
+
+# iOS
+*.xcworkspace
+*.xcuserdata
+
+# =============================================================================
+# CUSTOM PROJECT ARTIFACTS
+# =============================================================================
+
+# Created stub headers that shouldn't be tracked
+CL/
+tensorflow/compiler/mlir/lite/schema/schema_generated.h
+
+# Custom test programs
+basic_run_model*
+minimal_run_model*
+simple_test*
+*_stub.cpp
+*_stub.cc
+
+# Build scripts artifacts
+*.sh.log
+build_*.log

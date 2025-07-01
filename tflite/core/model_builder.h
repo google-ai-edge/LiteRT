@@ -32,6 +32,7 @@ limitations under the License.
 
 #include "tensorflow/compiler/mlir/lite/core/model_builder_base.h"  // IWYU pragma: export
 #include "tflite/core/api/error_reporter.h"
+#include "tflite/core/flatbuffer_model_base.h"
 #include "tflite/stderr_reporter.h"
 
 namespace tflite {
