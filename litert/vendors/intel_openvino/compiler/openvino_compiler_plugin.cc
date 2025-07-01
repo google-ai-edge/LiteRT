@@ -203,7 +203,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
-    //TODO(rjasuja): Enhance implementation for Partition() call 
+  // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto &op : graph.Ops()) {
     if (!IsOpSupported(op)) {
       LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());

@@ -26,13 +26,8 @@ namespace {
 
 using ::testing::Values;
 
-const auto kSupportedOps =
-                  Values(
-                    "add_simple.tflite"
-                    );
-const auto kSupportedSocModels = Values(
-		"NPU2700"
-);
+const auto kSupportedOps = Values("add_simple.tflite");
+const auto kSupportedSocModels = Values("NPU2700");
 
 TEST(TestOVPlugin, PartitionAddGraph) {
   auto plugin = CreatePlugin();
@@ -54,8 +49,8 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "NPU2700", model.Get(), &compiled));
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "NPU2700",
+                                               model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
@@ -82,4 +77,3 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
 
 }  // namespace
 }  // namespace litert
-

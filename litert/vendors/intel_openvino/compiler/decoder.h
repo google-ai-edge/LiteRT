@@ -4,13 +4,13 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_COMPILER_DECODER_H_
 
-#include <vector>
-#include <string>
-
 #include <openvino/frontend/tensorflow_lite/decoder.hpp>
+#include <string>
+#include <vector>
 
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_macros.h"
 
 namespace litert {
 namespace openvino {
