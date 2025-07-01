@@ -234,3 +234,35 @@ exports_files(srcs = [
     "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
     "testdata/simple_quantized_ops.tflite",
 ])
+
+cc_test(
+    name = "dynamic_shape_test",
+    srcs = ["dynamic_shape_test.cc"],
+    deps = [
+        ":common",
+        ":simple_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_model",
+        "//litert/c:litert_options",
+        "//litert/c:litert_tensor_buffer",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+cc_binary(
+    name = "resize_input_tensor_simple_test",
+    srcs = ["resize_input_tensor_simple_test.cc"],
+    data = [":testdata"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_environment",
+        "//litert/c:litert_model",
+        "//litert/c:litert_options",
+        "//litert/c:litert_tensor_buffer",
+    ],
+)

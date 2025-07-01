@@ -33,23 +33,39 @@ constexpr const char* kGoogleTensorModelFileName =
     "simple_model_google_tensor.bin";
 constexpr const char* kMediaTekModelFileName = "simple_model_mtk.bin";
 
-constexpr const int32_t kTestInput0Dimensions[] = {2};
+constexpr const int32_t kTestInput0Dimensions[] = {2, 5, 5, 1};
 constexpr const int32_t kNumTestInput0Dimensions =
     sizeof(kTestInput0Dimensions) / sizeof(kTestInput0Dimensions[0]);
-constexpr const int32_t kTestInput1Dimensions[] = {2};
+constexpr const int32_t kTestInput1Dimensions[] = {2, 1, 1, 1};
 constexpr const int32_t kNumTestInput1Dimensions =
     sizeof(kTestInput1Dimensions) / sizeof(kTestInput1Dimensions[0]);
-constexpr const int32_t kTestOutputDimensions[] = {2};
+constexpr const int32_t kTestOutputDimensions[] = {2, 5, 5, 1};
 constexpr const int32_t kNumTestOutputDimensions =
     sizeof(kTestOutputDimensions) / sizeof(kTestOutputDimensions[0]);
 
-constexpr const float kTestInput0Tensor[] = {1, 2};
-constexpr const float kTestInput1Tensor[] = {10, 20};
-constexpr const float kTestOutputTensor[] = {11, 22};
+constexpr const float kTestInput0Tensor[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                                             11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+                                             21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+                                             31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+                                             41, 42, 43, 44, 45, 46, 47, 48, 49, 50};
+constexpr const float kTestInput1Tensor[] = {2, 2};
+constexpr const float kTestOutputTensor[] = {1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722,
+                                             1.5486722, 1.5486722, 1.5486722, 1.5486722, 1.5486722};
 
 constexpr const float kTestInput0Tensor_2[] = {10, 20};
 constexpr const float kTestInput1Tensor_2[] = {100, 200};
 constexpr const float kTestOutputTensor_2[] = {110, 220};
+
+constexpr const size_t kTestInputSize = 50;  // 2 * 5 * 5 * 1
+constexpr const size_t kTestOutputSize = 50;  // 2 * 5 * 5 * 1
 
 constexpr const float kTestInput0Tensor_3[] = {0.5, 0.5};
 constexpr const float kTestInput1Tensor_3[] = {0.5, 0.5};
