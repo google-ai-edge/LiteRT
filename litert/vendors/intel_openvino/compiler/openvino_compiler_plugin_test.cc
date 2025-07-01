@@ -1,5 +1,17 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <gtest/gtest.h>
 
@@ -14,7 +26,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_model.h"
-#include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
@@ -26,13 +37,8 @@ namespace {
 
 using ::testing::Values;
 
-const auto kSupportedOps =
-                  Values(
-                    "add_simple.tflite"
-                    );
-const auto kSupportedSocModels = Values(
-		"NPU2700"
-);
+const auto kSupportedOps = Values("add_simple.tflite");
+const auto kSupportedSocModels = Values("NPU2700");
 
 TEST(TestOVPlugin, PartitionAddGraph) {
   auto plugin = CreatePlugin();
@@ -54,8 +60,8 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
   auto model = testing::LoadTestFileModel("add_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "NPU2700", model.Get(), &compiled));
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "NPU2700",
+                                               model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
@@ -82,4 +88,3 @@ TEST(TestOVPlugin, CompileAddSubgraph) {
 
 }  // namespace
 }  // namespace litert
-

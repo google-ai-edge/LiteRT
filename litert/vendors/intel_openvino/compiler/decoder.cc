@@ -1,5 +1,17 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include "decoder.h"
 
@@ -13,174 +25,175 @@ namespace openvino {
 
 // This has been picked from the openvino build:
 // build/src/frontends/tensorflow_lite/src/schema_generated.h
-constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{{
-        {kLiteRtOpCodeTflAdd, "ADD"},
-        {kLiteRtOpCodeTflAveragePool2d, "AVERAGE_POOL_2D"},
-        {kLiteRtOpCodeTflConcatenation, "CONCATENATION"},
-        {kLiteRtOpCodeTflConv2d, "CONV_2D"},
-        {kLiteRtOpCodeTflDepthwiseConv2d, "DEPTHWISE_CONV_2D"},
-        {kLiteRtOpCodeTflDepthToSpace, "DEPTH_TO_SPACE"},
-        {kLiteRtOpCodeTflDequantize, "DEQUANTIZE"},
-        {kLiteRtOpCodeTflEmbeddingLookup, "EMBEDDING_LOOKUP"},
-        {kLiteRtOpCodeTflFloor, "FLOOR"},
-        {kLiteRtOpCodeTflFullyConnected, "FULLY_CONNECTED"},
-        {kLiteRtOpCodeTflHashtableLookup, "HASHTABLE_LOOKUP"},
-        {kLiteRtOpCodeTflL2Normalization, "L2_NORMALIZATION"},
-        {kLiteRtOpCodeTflL2Pool2d, "L2_POOL_2D"},
-        {kLiteRtOpCodeTflLocalResponseNormalization, "LOCAL_RESPONSE_NORMALIZATION"},
-        {kLiteRtOpCodeTflLogistic, "LOGISTIC"},
-        {kLiteRtOpCodeTflLshProjection, "LSH_PROJECTION"},
-        {kLiteRtOpCodeTflLstm, "LSTM"},
-        {kLiteRtOpCodeTflMaxPool2d, "MAX_POOL_2D"},
-        {kLiteRtOpCodeTflMul, "MUL"},
-        {kLiteRtOpCodeTflRelu, "RELU"},
-        {kLiteRtOpCodeTflReluN1To1, "RELU_N1_TO_1"},
-        {kLiteRtOpCodeTflRelu6, "RELU6"},
-        {kLiteRtOpCodeTflReshape, "RESHAPE"},
-        {kLiteRtOpCodeTflResizeBilinear, "RESIZE_BILINEAR"},
-        {kLiteRtOpCodeTflRnn, "RNN"},
-        {kLiteRtOpCodeTflSoftmax, "SOFTMAX"},
-        {kLiteRtOpCodeTflSpaceToDepth, "SPACE_TO_DEPTH"},
-        {kLiteRtOpCodeTflSvdf, "SVDF"},
-        {kLiteRtOpCodeTflTanh, "TANH"},
-        {kLiteRtOpCodeTflConcatEmbeddings, "CONCAT_EMBEDDINGS"},
-        {kLiteRtOpCodeTflSkipGram, "SKIP_GRAM"},
-        {kLiteRtOpCodeTflCall, "CALL"},
-        {kLiteRtOpCodeTflCustom, "CUSTOM"},
-        {kLiteRtOpCodeTflEmbeddingLookupSparse, "EMBEDDING_LOOKUP_SPARSE"},
-        {kLiteRtOpCodeTflPad, "PAD"},
-        {kLiteRtOpCodeTflUnidirectionalSequenceRnn, "UNIDIRECTIONAL_SEQUENCE_RNN"},
-        {kLiteRtOpCodeTflGather, "GATHER"},
-        {kLiteRtOpCodeTflBatchToSpaceNd, "BATCH_TO_SPACE_ND"},
-        {kLiteRtOpCodeTflSpaceToBatchNd, "SPACE_TO_BATCH_ND"},
-        {kLiteRtOpCodeTflTranspose, "TRANSPOSE"},
-        {kLiteRtOpCodeTflMean, "MEAN"},
-        {kLiteRtOpCodeTflSub, "SUB"},
-        {kLiteRtOpCodeTflDiv, "DIV"},
-        {kLiteRtOpCodeTflSqueeze, "SQUEEZE"},
-        {kLiteRtOpCodeTflUnidirectionalSequenceLstm, "UNIDIRECTIONAL_SEQUENCE_LSTM"},
-        {kLiteRtOpCodeTflStridedSlice, "STRIDED_SLICE"},
-        {kLiteRtOpCodeTflBidirectionalSequenceRnn, "BIDIRECTIONAL_SEQUENCE_RNN"},
-        {kLiteRtOpCodeTflExp, "EXP"},
-        {kLiteRtOpCodeTflTopkV2, "TOPK_V2"},
-        {kLiteRtOpCodeTflSplit, "SPLIT"},
-        {kLiteRtOpCodeTflLogSoftmax, "LOG_SOFTMAX"},
-        {kLiteRtOpCodeTflDelegate, "DELEGATE"},
-        {kLiteRtOpCodeTflBidirectionalSequenceLstm, "BIDIRECTIONAL_SEQUENCE_LSTM"},
-        {kLiteRtOpCodeTflCast, "CAST"},
-        {kLiteRtOpCodeTflPrelu, "PRELU"},
-        {kLiteRtOpCodeTflMaximum, "MAXIMUM"},
-        {kLiteRtOpCodeTflArgMax, "ARG_MAX"},
-        {kLiteRtOpCodeTflMinimum, "MINIMUM"},
-        {kLiteRtOpCodeTflLess, "LESS"},
-        {kLiteRtOpCodeTflNeg, "NEG"},
-        {kLiteRtOpCodeTflPadv2, "PADV2"},
-        {kLiteRtOpCodeTflGreater, "GREATER"},
-        {kLiteRtOpCodeTflGreaterEqual, "GREATER_EQUAL"},
-        {kLiteRtOpCodeTflLessEqual, "LESS_EQUAL"},
-        {kLiteRtOpCodeTflSelect, "SELECT"},
-        {kLiteRtOpCodeTflSlice, "SLICE"},
-        {kLiteRtOpCodeTflSin, "SIN"},
-        {kLiteRtOpCodeTflTransposeConv, "TRANSPOSE_CONV"},
-        {kLiteRtOpCodeTflSparseToDense, "SPARSE_TO_DENSE"},
-        {kLiteRtOpCodeTflTile, "TILE"},
-        {kLiteRtOpCodeTflExpandDims, "EXPAND_DIMS"},
-        {kLiteRtOpCodeTflEqual, "EQUAL"},
-        {kLiteRtOpCodeTflNotEqual, "NOT_EQUAL"},
-        {kLiteRtOpCodeTflLog, "LOG"},
-        {kLiteRtOpCodeTflSum, "SUM"},
-        {kLiteRtOpCodeTflSqrt, "SQRT"},
-        {kLiteRtOpCodeTflRsqrt, "RSQRT"},
-        {kLiteRtOpCodeTflShape, "SHAPE"},
-        {kLiteRtOpCodeTflPow, "POW"},
-        {kLiteRtOpCodeTflArgMin, "ARG_MIN"},
-        {kLiteRtOpCodeTflFakeQuant, "FAKE_QUANT"},
-        {kLiteRtOpCodeTflReduceProd, "REDUCE_PROD"},
-        {kLiteRtOpCodeTflReduceMax, "REDUCE_MAX"},
-        {kLiteRtOpCodeTflPack, "PACK"},
-        {kLiteRtOpCodeTflLogicalOr, "LOGICAL_OR"},
-        {kLiteRtOpCodeTflOneHot, "ONE_HOT"},
-        {kLiteRtOpCodeTflLogicalAnd, "LOGICAL_AND"},
-        {kLiteRtOpCodeTflLogicalNot, "LOGICAL_NOT"},
-        {kLiteRtOpCodeTflUnpack, "UNPACK"},
-        {kLiteRtOpCodeTflReduceMin, "REDUCE_MIN"},
-        {kLiteRtOpCodeTflFloorDiv, "FLOOR_DIV"},
-        {kLiteRtOpCodeTflReduceAny, "REDUCE_ANY"},
-        {kLiteRtOpCodeTflSquare, "SQUARE"},
-        {kLiteRtOpCodeTflZerosLike, "ZEROS_LIKE"},
-        {kLiteRtOpCodeTflFill, "FILL"},
-        {kLiteRtOpCodeTflFloorMod, "FLOOR_MOD"},
-        {kLiteRtOpCodeTflRange, "RANGE"},
-        {kLiteRtOpCodeTflResizeNearestNeighbor, "RESIZE_NEAREST_NEIGHBOR"},
-        {kLiteRtOpCodeTflLeakyRelu, "LEAKY_RELU"},
-        {kLiteRtOpCodeTflSquaredDifference, "SQUARED_DIFFERENCE"},
-        {kLiteRtOpCodeTflMirrorPad, "MIRROR_PAD"},
-        {kLiteRtOpCodeTflAbs, "ABS"},
-        {kLiteRtOpCodeTflSplitV, "SPLIT_V"},
-        {kLiteRtOpCodeTflUnique, "UNIQUE"},
-        {kLiteRtOpCodeTflCeil, "CEIL"},
-        {kLiteRtOpCodeTflReverseV2, "REVERSE_V2"},
-        {kLiteRtOpCodeTflAddN, "ADD_N"},
-        {kLiteRtOpCodeTflGatherNd, "GATHER_ND"},
-        {kLiteRtOpCodeTflCos, "COS"},
-        {kLiteRtOpCodeTflWhere, "WHERE"},
-        {kLiteRtOpCodeTflRank, "RANK"},
-        {kLiteRtOpCodeTflElu, "ELU"},
-        {kLiteRtOpCodeTflReverseSequence, "REVERSE_SEQUENCE"},
-        {kLiteRtOpCodeTflMatrixDiag, "MATRIX_DIAG"},
-        {kLiteRtOpCodeTflQuantize, "QUANTIZE"},
-        {kLiteRtOpCodeTflMatrixSetDiag, "MATRIX_SET_DIAG"},
-        {kLiteRtOpCodeTflRound, "ROUND"},
-        {kLiteRtOpCodeTflHardSwish, "HARD_SWISH"},
-        {kLiteRtOpCodeTflIf, "IF"},
-        {kLiteRtOpCodeTflWhile, "WHILE"},
-        {kLiteRtOpCodeTflNonMaxSuppressionV4, "NON_MAX_SUPPRESSION_V4"},
-        {kLiteRtOpCodeTflNonMaxSuppressionV5, "NON_MAX_SUPPRESSION_V5"},
-        {kLiteRtOpCodeTflScatterNd, "SCATTER_ND"},
-        {kLiteRtOpCodeTflSelectV2, "SELECT_V2"},
-        {kLiteRtOpCodeTflDensify, "DENSIFY"},
-        {kLiteRtOpCodeTflSegmentSum, "SEGMENT_SUM"},
-        {kLiteRtOpCodeTflBatchMatmul, "BATCH_MATMUL"},
-        {kLiteRtOpCodeTflPlaceholderForGreaterOpCodeTfls, "PLACEHOLDER_FOR_GREATER_OP_CODES"},
-        {kLiteRtOpCodeTflCumsum, "CUMSUM"},
-        {kLiteRtOpCodeTflCallOnce, "CALL_ONCE"},
-        {kLiteRtOpCodeTflBroadcastTo, "BROADCAST_TO"},
-        {kLiteRtOpCodeTflRfft2d, "RFFT2D"},
-        {kLiteRtOpCodeTflConv3d, "CONV_3D"},
-        {kLiteRtOpCodeTflImag, "IMAG"},
-        {kLiteRtOpCodeTflReal, "REAL"},
-        {kLiteRtOpCodeTflComplexAbs, "COMPLEX_ABS"},
-        {kLiteRtOpCodeTflHashtable, "HASHTABLE"},
-        {kLiteRtOpCodeTflHashtableFind, "HASHTABLE_FIND"},
-        {kLiteRtOpCodeTflHashtableImport, "HASHTABLE_IMPORT"},
-        {kLiteRtOpCodeTflHashtableSize, "HASHTABLE_SIZE"},
-        {kLiteRtOpCodeTflReduceAll, "REDUCE_ALL"},
-        {kLiteRtOpCodeTflConv3dTranspose, "CONV_3D_TRANSPOSE"},
-        {kLiteRtOpCodeTflVarHandle, "VAR_HANDLE"},
-        {kLiteRtOpCodeTflReadVariable, "READ_VARIABLE"},
-        {kLiteRtOpCodeTflAssignVariable, "ASSIGN_VARIABLE"},
-        {kLiteRtOpCodeTflBroadcastArgs, "BROADCAST_ARGS"},
-        {kLiteRtOpCodeTflRandomStandardNormal, "RANDOM_STANDARD_NORMAL"},
-        {kLiteRtOpCodeTflBucketize, "BUCKETIZE"},
-        {kLiteRtOpCodeTflRandomUniform, "RANDOM_UNIFORM"},
-        {kLiteRtOpCodeTflMultinomial, "MULTINOMIAL"},
-        {kLiteRtOpCodeTflGelu, "GELU"},
-        {kLiteRtOpCodeTflDynamicUpdateSlice, "DYNAMIC_UPDATE_SLICE"},
-        {kLiteRtOpCodeTflRelu0To1, "RELU_0_TO_1"},
-        {kLiteRtOpCodeTflUnsortedSegmentProd, "UNSORTED_SEGMENT_PROD"},
-        {kLiteRtOpCodeTflUnsortedSegmentMax, "UNSORTED_SEGMENT_MAX"},
-        {kLiteRtOpCodeTflUnsortedSegmentSum, "UNSORTED_SEGMENT_SUM"},
-        {kLiteRtOpCodeTflAtan2, "ATAN2"},
-        {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
-        {kLiteRtOpCodeTflSign, "SIGN"}
-}};
+constexpr std::array<std::pair<LiteRtOpCode, const char*>, 159> kLitertOvMap{
+    {{kLiteRtOpCodeTflAdd, "ADD"},
+     {kLiteRtOpCodeTflAveragePool2d, "AVERAGE_POOL_2D"},
+     {kLiteRtOpCodeTflConcatenation, "CONCATENATION"},
+     {kLiteRtOpCodeTflConv2d, "CONV_2D"},
+     {kLiteRtOpCodeTflDepthwiseConv2d, "DEPTHWISE_CONV_2D"},
+     {kLiteRtOpCodeTflDepthToSpace, "DEPTH_TO_SPACE"},
+     {kLiteRtOpCodeTflDequantize, "DEQUANTIZE"},
+     {kLiteRtOpCodeTflEmbeddingLookup, "EMBEDDING_LOOKUP"},
+     {kLiteRtOpCodeTflFloor, "FLOOR"},
+     {kLiteRtOpCodeTflFullyConnected, "FULLY_CONNECTED"},
+     {kLiteRtOpCodeTflHashtableLookup, "HASHTABLE_LOOKUP"},
+     {kLiteRtOpCodeTflL2Normalization, "L2_NORMALIZATION"},
+     {kLiteRtOpCodeTflL2Pool2d, "L2_POOL_2D"},
+     {kLiteRtOpCodeTflLocalResponseNormalization,
+      "LOCAL_RESPONSE_NORMALIZATION"},
+     {kLiteRtOpCodeTflLogistic, "LOGISTIC"},
+     {kLiteRtOpCodeTflLshProjection, "LSH_PROJECTION"},
+     {kLiteRtOpCodeTflLstm, "LSTM"},
+     {kLiteRtOpCodeTflMaxPool2d, "MAX_POOL_2D"},
+     {kLiteRtOpCodeTflMul, "MUL"},
+     {kLiteRtOpCodeTflRelu, "RELU"},
+     {kLiteRtOpCodeTflReluN1To1, "RELU_N1_TO_1"},
+     {kLiteRtOpCodeTflRelu6, "RELU6"},
+     {kLiteRtOpCodeTflReshape, "RESHAPE"},
+     {kLiteRtOpCodeTflResizeBilinear, "RESIZE_BILINEAR"},
+     {kLiteRtOpCodeTflRnn, "RNN"},
+     {kLiteRtOpCodeTflSoftmax, "SOFTMAX"},
+     {kLiteRtOpCodeTflSpaceToDepth, "SPACE_TO_DEPTH"},
+     {kLiteRtOpCodeTflSvdf, "SVDF"},
+     {kLiteRtOpCodeTflTanh, "TANH"},
+     {kLiteRtOpCodeTflConcatEmbeddings, "CONCAT_EMBEDDINGS"},
+     {kLiteRtOpCodeTflSkipGram, "SKIP_GRAM"},
+     {kLiteRtOpCodeTflCall, "CALL"},
+     {kLiteRtOpCodeTflCustom, "CUSTOM"},
+     {kLiteRtOpCodeTflEmbeddingLookupSparse, "EMBEDDING_LOOKUP_SPARSE"},
+     {kLiteRtOpCodeTflPad, "PAD"},
+     {kLiteRtOpCodeTflUnidirectionalSequenceRnn, "UNIDIRECTIONAL_SEQUENCE_RNN"},
+     {kLiteRtOpCodeTflGather, "GATHER"},
+     {kLiteRtOpCodeTflBatchToSpaceNd, "BATCH_TO_SPACE_ND"},
+     {kLiteRtOpCodeTflSpaceToBatchNd, "SPACE_TO_BATCH_ND"},
+     {kLiteRtOpCodeTflTranspose, "TRANSPOSE"},
+     {kLiteRtOpCodeTflMean, "MEAN"},
+     {kLiteRtOpCodeTflSub, "SUB"},
+     {kLiteRtOpCodeTflDiv, "DIV"},
+     {kLiteRtOpCodeTflSqueeze, "SQUEEZE"},
+     {kLiteRtOpCodeTflUnidirectionalSequenceLstm,
+      "UNIDIRECTIONAL_SEQUENCE_LSTM"},
+     {kLiteRtOpCodeTflStridedSlice, "STRIDED_SLICE"},
+     {kLiteRtOpCodeTflBidirectionalSequenceRnn, "BIDIRECTIONAL_SEQUENCE_RNN"},
+     {kLiteRtOpCodeTflExp, "EXP"},
+     {kLiteRtOpCodeTflTopkV2, "TOPK_V2"},
+     {kLiteRtOpCodeTflSplit, "SPLIT"},
+     {kLiteRtOpCodeTflLogSoftmax, "LOG_SOFTMAX"},
+     {kLiteRtOpCodeTflDelegate, "DELEGATE"},
+     {kLiteRtOpCodeTflBidirectionalSequenceLstm, "BIDIRECTIONAL_SEQUENCE_LSTM"},
+     {kLiteRtOpCodeTflCast, "CAST"},
+     {kLiteRtOpCodeTflPrelu, "PRELU"},
+     {kLiteRtOpCodeTflMaximum, "MAXIMUM"},
+     {kLiteRtOpCodeTflArgMax, "ARG_MAX"},
+     {kLiteRtOpCodeTflMinimum, "MINIMUM"},
+     {kLiteRtOpCodeTflLess, "LESS"},
+     {kLiteRtOpCodeTflNeg, "NEG"},
+     {kLiteRtOpCodeTflPadv2, "PADV2"},
+     {kLiteRtOpCodeTflGreater, "GREATER"},
+     {kLiteRtOpCodeTflGreaterEqual, "GREATER_EQUAL"},
+     {kLiteRtOpCodeTflLessEqual, "LESS_EQUAL"},
+     {kLiteRtOpCodeTflSelect, "SELECT"},
+     {kLiteRtOpCodeTflSlice, "SLICE"},
+     {kLiteRtOpCodeTflSin, "SIN"},
+     {kLiteRtOpCodeTflTransposeConv, "TRANSPOSE_CONV"},
+     {kLiteRtOpCodeTflSparseToDense, "SPARSE_TO_DENSE"},
+     {kLiteRtOpCodeTflTile, "TILE"},
+     {kLiteRtOpCodeTflExpandDims, "EXPAND_DIMS"},
+     {kLiteRtOpCodeTflEqual, "EQUAL"},
+     {kLiteRtOpCodeTflNotEqual, "NOT_EQUAL"},
+     {kLiteRtOpCodeTflLog, "LOG"},
+     {kLiteRtOpCodeTflSum, "SUM"},
+     {kLiteRtOpCodeTflSqrt, "SQRT"},
+     {kLiteRtOpCodeTflRsqrt, "RSQRT"},
+     {kLiteRtOpCodeTflShape, "SHAPE"},
+     {kLiteRtOpCodeTflPow, "POW"},
+     {kLiteRtOpCodeTflArgMin, "ARG_MIN"},
+     {kLiteRtOpCodeTflFakeQuant, "FAKE_QUANT"},
+     {kLiteRtOpCodeTflReduceProd, "REDUCE_PROD"},
+     {kLiteRtOpCodeTflReduceMax, "REDUCE_MAX"},
+     {kLiteRtOpCodeTflPack, "PACK"},
+     {kLiteRtOpCodeTflLogicalOr, "LOGICAL_OR"},
+     {kLiteRtOpCodeTflOneHot, "ONE_HOT"},
+     {kLiteRtOpCodeTflLogicalAnd, "LOGICAL_AND"},
+     {kLiteRtOpCodeTflLogicalNot, "LOGICAL_NOT"},
+     {kLiteRtOpCodeTflUnpack, "UNPACK"},
+     {kLiteRtOpCodeTflReduceMin, "REDUCE_MIN"},
+     {kLiteRtOpCodeTflFloorDiv, "FLOOR_DIV"},
+     {kLiteRtOpCodeTflReduceAny, "REDUCE_ANY"},
+     {kLiteRtOpCodeTflSquare, "SQUARE"},
+     {kLiteRtOpCodeTflZerosLike, "ZEROS_LIKE"},
+     {kLiteRtOpCodeTflFill, "FILL"},
+     {kLiteRtOpCodeTflFloorMod, "FLOOR_MOD"},
+     {kLiteRtOpCodeTflRange, "RANGE"},
+     {kLiteRtOpCodeTflResizeNearestNeighbor, "RESIZE_NEAREST_NEIGHBOR"},
+     {kLiteRtOpCodeTflLeakyRelu, "LEAKY_RELU"},
+     {kLiteRtOpCodeTflSquaredDifference, "SQUARED_DIFFERENCE"},
+     {kLiteRtOpCodeTflMirrorPad, "MIRROR_PAD"},
+     {kLiteRtOpCodeTflAbs, "ABS"},
+     {kLiteRtOpCodeTflSplitV, "SPLIT_V"},
+     {kLiteRtOpCodeTflUnique, "UNIQUE"},
+     {kLiteRtOpCodeTflCeil, "CEIL"},
+     {kLiteRtOpCodeTflReverseV2, "REVERSE_V2"},
+     {kLiteRtOpCodeTflAddN, "ADD_N"},
+     {kLiteRtOpCodeTflGatherNd, "GATHER_ND"},
+     {kLiteRtOpCodeTflCos, "COS"},
+     {kLiteRtOpCodeTflWhere, "WHERE"},
+     {kLiteRtOpCodeTflRank, "RANK"},
+     {kLiteRtOpCodeTflElu, "ELU"},
+     {kLiteRtOpCodeTflReverseSequence, "REVERSE_SEQUENCE"},
+     {kLiteRtOpCodeTflMatrixDiag, "MATRIX_DIAG"},
+     {kLiteRtOpCodeTflQuantize, "QUANTIZE"},
+     {kLiteRtOpCodeTflMatrixSetDiag, "MATRIX_SET_DIAG"},
+     {kLiteRtOpCodeTflRound, "ROUND"},
+     {kLiteRtOpCodeTflHardSwish, "HARD_SWISH"},
+     {kLiteRtOpCodeTflIf, "IF"},
+     {kLiteRtOpCodeTflWhile, "WHILE"},
+     {kLiteRtOpCodeTflNonMaxSuppressionV4, "NON_MAX_SUPPRESSION_V4"},
+     {kLiteRtOpCodeTflNonMaxSuppressionV5, "NON_MAX_SUPPRESSION_V5"},
+     {kLiteRtOpCodeTflScatterNd, "SCATTER_ND"},
+     {kLiteRtOpCodeTflSelectV2, "SELECT_V2"},
+     {kLiteRtOpCodeTflDensify, "DENSIFY"},
+     {kLiteRtOpCodeTflSegmentSum, "SEGMENT_SUM"},
+     {kLiteRtOpCodeTflBatchMatmul, "BATCH_MATMUL"},
+     {kLiteRtOpCodeTflPlaceholderForGreaterOpCodeTfls,
+      "PLACEHOLDER_FOR_GREATER_OP_CODES"},
+     {kLiteRtOpCodeTflCumsum, "CUMSUM"},
+     {kLiteRtOpCodeTflCallOnce, "CALL_ONCE"},
+     {kLiteRtOpCodeTflBroadcastTo, "BROADCAST_TO"},
+     {kLiteRtOpCodeTflRfft2d, "RFFT2D"},
+     {kLiteRtOpCodeTflConv3d, "CONV_3D"},
+     {kLiteRtOpCodeTflImag, "IMAG"},
+     {kLiteRtOpCodeTflReal, "REAL"},
+     {kLiteRtOpCodeTflComplexAbs, "COMPLEX_ABS"},
+     {kLiteRtOpCodeTflHashtable, "HASHTABLE"},
+     {kLiteRtOpCodeTflHashtableFind, "HASHTABLE_FIND"},
+     {kLiteRtOpCodeTflHashtableImport, "HASHTABLE_IMPORT"},
+     {kLiteRtOpCodeTflHashtableSize, "HASHTABLE_SIZE"},
+     {kLiteRtOpCodeTflReduceAll, "REDUCE_ALL"},
+     {kLiteRtOpCodeTflConv3dTranspose, "CONV_3D_TRANSPOSE"},
+     {kLiteRtOpCodeTflVarHandle, "VAR_HANDLE"},
+     {kLiteRtOpCodeTflReadVariable, "READ_VARIABLE"},
+     {kLiteRtOpCodeTflAssignVariable, "ASSIGN_VARIABLE"},
+     {kLiteRtOpCodeTflBroadcastArgs, "BROADCAST_ARGS"},
+     {kLiteRtOpCodeTflRandomStandardNormal, "RANDOM_STANDARD_NORMAL"},
+     {kLiteRtOpCodeTflBucketize, "BUCKETIZE"},
+     {kLiteRtOpCodeTflRandomUniform, "RANDOM_UNIFORM"},
+     {kLiteRtOpCodeTflMultinomial, "MULTINOMIAL"},
+     {kLiteRtOpCodeTflGelu, "GELU"},
+     {kLiteRtOpCodeTflDynamicUpdateSlice, "DYNAMIC_UPDATE_SLICE"},
+     {kLiteRtOpCodeTflRelu0To1, "RELU_0_TO_1"},
+     {kLiteRtOpCodeTflUnsortedSegmentProd, "UNSORTED_SEGMENT_PROD"},
+     {kLiteRtOpCodeTflUnsortedSegmentMax, "UNSORTED_SEGMENT_MAX"},
+     {kLiteRtOpCodeTflUnsortedSegmentSum, "UNSORTED_SEGMENT_SUM"},
+     {kLiteRtOpCodeTflAtan2, "ATAN2"},
+     {kLiteRtOpCodeTflUnsortedSegmentMin, "UNSORTED_SEGMENT_MIN"},
+     {kLiteRtOpCodeTflSign, "SIGN"}}};
 
 constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
-    for (const auto& entry : kLitertOvMap) {
-        if (entry.first == op_code)
-		return entry.second;
-    }
-    return "";
+  for (const auto& entry : kLitertOvMap) {
+    if (entry.first == op_code) return entry.second;
+  }
+  return "";
 }
 
 DecoderOperation::DecoderOperation(
@@ -193,18 +206,15 @@ DecoderOperation::DecoderOperation(
       output_tensor_info_(output_tensor_info),
       litert_op_(litert_op.Get()),
       litert_op_code_(litert_op.Code()) {
-    op_type_ = GetOvOpType(litert_op_code_);
+  op_type_ = GetOvOpType(litert_op_code_);
   op_name_ = op_type_ + "_id_" + std::to_string(node_index);
   LITERT_LOG(LITERT_VERBOSE, "op_type(%s) op_name(%s)", op_type_.c_str(),
              op_name_.c_str());
 }
 
-#define DECODER_CHECK_STATUS(status, attr)                                \
-  if (status != kLiteRtStatusOk) {                                        \
-    LITERT_LOG(LITERT_ERROR, "Failed(%d) to get %s for %s", status, attr, \
-               op_name_.c_str());                                         \
-    return nullptr;                                                       \
-  }
+#define ERROR_LOG_STR(attr, op_name)                   \
+  litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, \
+                     "Failed to get " + std::string(attr) + " for " + std::string(op_name))
 
 ov::Any DecoderOperation::get_attribute(const std::string& name) const {
   LITERT_LOG(LITERT_VERBOSE, "get_attr %s for %s", name.c_str(),
@@ -213,34 +223,36 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflConv2d:
       if (name == "strides") {
         int32_t stride_w;
-        LiteRtStatus status =
-            LiteRtGetConv2dStrideWOption(litert_op_, &stride_w);
-        DECODER_CHECK_STATUS(status, "stride_w");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
-        status = LiteRtGetConv2dStrideHOption(litert_op_, &stride_h);
-        DECODER_CHECK_STATUS(status, "stride_h");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return std::vector<int64_t>{1, stride_h, stride_w, 1};
       } else if (name == "padding") {
         uint32_t padding;
-        LiteRtStatus status =
-            LiteRtGetConv2dPaddingOption(litert_op_, &padding);
-        DECODER_CHECK_STATUS(status, "padding");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
         return std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
       } else if (name == "dilations") {
         int32_t dilation_w_factor;
-        LiteRtStatus status =
-            LiteRtGetConv2dDilationWOption(litert_op_, &dilation_w_factor);
-        DECODER_CHECK_STATUS(status, "dilation_w_factor");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dDilationWOption(litert_op_, &dilation_w_factor),
+            ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
-        status = LiteRtGetConv2dDilationHOption(litert_op_, &dilation_h_factor);
-        DECODER_CHECK_STATUS(status, "dilation_h_factor");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dDilationHOption(litert_op_, &dilation_h_factor),
+            ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return std::vector<int64_t>{1, dilation_h_factor, dilation_w_factor, 1};
       } else if (name == "activation") {
         uint32_t fused_activation;
-        LiteRtStatus status =
-            LiteRtGetConv2dFusedActivationOption(litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConv2dFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
@@ -252,35 +264,39 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d:
       if (name == "strides") {
         int32_t stride_w;
-        LiteRtStatus status =
-            LiteRtGetDepthwiseConv2dStrideWOption(litert_op_, &stride_w);
-        DECODER_CHECK_STATUS(status, "stride_w");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
-        status = LiteRtGetDepthwiseConv2dStrideHOption(litert_op_, &stride_h);
-        DECODER_CHECK_STATUS(status, "stride_h");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return std::vector<int64_t>{1, stride_h, stride_w, 1};
       } else if (name == "padding") {
         uint32_t padding;
-        LiteRtStatus status =
-            LiteRtGetDepthwiseConv2dPaddingOption(litert_op_, &padding);
-        DECODER_CHECK_STATUS(status, "padding");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
         return std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
       } else if (name == "dilations") {
         int32_t dilation_w_factor;
-        LiteRtStatus status = LiteRtGetDepthwiseConv2dDilationWOption(
-            litert_op_, &dilation_w_factor);
-        DECODER_CHECK_STATUS(status, "dilation_w_factor");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dDilationWOption(litert_op_,
+                                                    &dilation_w_factor),
+            ERROR_LOG_STR("dilation_w_factor", op_name_.c_str()));
         int32_t dilation_h_factor;
-        status = LiteRtGetDepthwiseConv2dDilationHOptions(litert_op_,
-                                                          &dilation_h_factor);
-        DECODER_CHECK_STATUS(status, "dilation_h_factor");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dDilationHOptions(litert_op_,
+                                                     &dilation_h_factor),
+            ERROR_LOG_STR("dilation_h_factor", op_name_.c_str()));
         return std::vector<int64_t>{1, dilation_h_factor, dilation_w_factor, 1};
       } else if (name == "activation") {
         uint32_t fused_activation;
-        LiteRtStatus status = LiteRtGetDepthwiseConv2dFusedActivationOption(
-            litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthwiseConv2dFusedActivationOption(litert_op_,
+                                                          &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "group") {
@@ -296,9 +312,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflSplit:
       if (name == "num_split") {
         int32_t num_split;
-        LiteRtStatus status =
-            LiteRtGetSplitNumSplitsOption(litert_op_, &num_split);
-        DECODER_CHECK_STATUS(status, "num_split");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetSplitNumSplitsOption(litert_op_, &num_split),
+            ERROR_LOG_STR("num_split", op_name_.c_str()));
         return static_cast<int64_t>(num_split);
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -307,21 +323,24 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflFullyConnected:
       if (name == "weights_format") {
         uint32_t weights_format;
-        LiteRtStatus status = LiteRtGetFullyConnectedWeightsFormatOption(
-            litert_op_, &weights_format);
-        DECODER_CHECK_STATUS(status, "weights_format");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetFullyConnectedWeightsFormatOption(litert_op_,
+                                                       &weights_format),
+            ERROR_LOG_STR("weights_format", op_name_.c_str()));
         return static_cast<int8_t>(weights_format);
       } else if (name == "keep_num_dims") {
         bool keep_num_dims;
-        LiteRtStatus status = LiteRtGetFullyConnectedKeepNumDimsOption(
-            litert_op_, &keep_num_dims);
-        DECODER_CHECK_STATUS(status, "keep_num_dims");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetFullyConnectedKeepNumDimsOption(litert_op_,
+                                                     &keep_num_dims),
+            ERROR_LOG_STR("keep_num_dims", op_name_.c_str()));
         return keep_num_dims;
       } else if (name == "fused_activation_function") {
         uint32_t fused_activation;
-        LiteRtStatus status = LiteRtGetFullyConnectedFusedActivationOption(
-            litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetFullyConnectedFusedActivationOption(litert_op_,
+                                                         &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else {
@@ -331,9 +350,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflAdd:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
-        LiteRtStatus status =
-            LiteRtGetAddFusedActivationOption(litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAddFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else {
@@ -344,12 +363,10 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
       if (name == "new_shape") {
         const int32_t* reshape_new_shape;
         int32_t new_shape_size;
-        LiteRtStatus status = LiteRtGetReshapeNewShapeOption(
-            litert_op_, &reshape_new_shape, &new_shape_size);
-        if (status == kLiteRtStatusErrorInvalidArgument) {
-          LITERT_LOG(LITERT_INFO, "New shape unavailable for %s", name.c_str());
-          return {};
-        }
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetReshapeNewShapeOption(litert_op_, &reshape_new_shape,
+                                           &new_shape_size),
+            ERROR_LOG_STR("new_shape", op_name_.c_str()));
         std::vector<int64_t> new_shape(new_shape_size);
         for (int i = 0; i < new_shape_size; ++i) {
           new_shape[i] = reshape_new_shape[i];
@@ -362,9 +379,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflMean:
       if (name == "keep_dims") {
         bool keep_dims;
-        LiteRtStatus status =
-            LiteRtGetMeanKeepDimsOption(litert_op_, &keep_dims);
-        DECODER_CHECK_STATUS(status, "keep_dims");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMeanKeepDimsOption(litert_op_, &keep_dims),
+            ERROR_LOG_STR("keep_dims", op_name_.c_str()));
         return keep_dims;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -373,15 +390,17 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflResizeBilinear:
       if (name == "align_corners") {
         bool align_corners;
-        LiteRtStatus status = LiteRtGetResizeBilinearAlignCornersOption(
-            litert_op_, &align_corners);
-        DECODER_CHECK_STATUS(status, "align_corners");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetResizeBilinearAlignCornersOption(litert_op_,
+                                                      &align_corners),
+            ERROR_LOG_STR("align_corners", op_name_.c_str()));
         return align_corners;
       } else if (name == "half_pixel_centers") {
         bool half_pixel_centers;
-        LiteRtStatus status = LiteRtGetResizeBilinearHalfPixelCenterOption(
-            litert_op_, &half_pixel_centers);
-        DECODER_CHECK_STATUS(status, "half_pixel_centers");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetResizeBilinearHalfPixelCenterOption(litert_op_,
+                                                         &half_pixel_centers),
+            ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return half_pixel_centers;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -390,16 +409,17 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflResizeNearestNeighbor:
       if (name == "align_corners") {
         bool align_corners;
-        LiteRtStatus status = LiteRtGetResizeNearestNeighborAlignCornersOption(
-            litert_op_, &align_corners);
-        DECODER_CHECK_STATUS(status, "align_corners");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetResizeNearestNeighborAlignCornersOption(litert_op_,
+                                                             &align_corners),
+            ERROR_LOG_STR("align_corners", op_name_.c_str()));
         return align_corners;
       } else if (name == "half_pixel_centers") {
         bool half_pixel_centers;
-        LiteRtStatus status =
+        LITERT_RETURN_IF_ERROR(
             LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
-                litert_op_, &half_pixel_centers);
-        DECODER_CHECK_STATUS(status, "half_pixel_centers");
+                litert_op_, &half_pixel_centers),
+            ERROR_LOG_STR("half_pixel_centers", op_name_.c_str()));
         return half_pixel_centers;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -408,9 +428,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflConcatenation:
       if (name == "axis") {
         int32_t axis;
-        LiteRtStatus status =
-            LiteRtGetConcatenationAxisOption(litert_op_, &axis);
-        DECODER_CHECK_STATUS(status, "axis");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetConcatenationAxisOption(litert_op_, &axis),
+            ERROR_LOG_STR("axis", op_name_.c_str()));
         return axis;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -419,35 +439,37 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d:
       if (name == "strides") {
         int32_t stride_w;
-        LiteRtStatus status =
-            LiteRtGetMaxPool2dStrideWOption(litert_op_, &stride_w);
-        DECODER_CHECK_STATUS(status, "stride_w");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
-        status = LiteRtGetMaxPool2dStrideHOption(litert_op_, &stride_h);
-        DECODER_CHECK_STATUS(status, "stride_h");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return std::vector<int64_t>{1, stride_h, stride_w, 1};
       } else if (name == "padding") {
         uint32_t padding;
-        LiteRtStatus status =
-            LiteRtGetMaxPool2dPaddingOption(litert_op_, &padding);
-        DECODER_CHECK_STATUS(status, "padding");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
         return std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
       } else if (name == "ksize") {
         int32_t filter_width;
-        LiteRtStatus status =
-            LiteRtGetMaxPool2dFilterWidthOption(litert_op_, &filter_width);
-        DECODER_CHECK_STATUS(status, "filter_width");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dFilterWidthOption(litert_op_, &filter_width),
+            ERROR_LOG_STR("filter_width", op_name_.c_str()));
         int32_t filter_height;
-        status =
-            LiteRtGetMaxPool2dFilterHeightOption(litert_op_, &filter_height);
-        DECODER_CHECK_STATUS(status, "filter_height");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dFilterHeightOption(litert_op_, &filter_height),
+            ERROR_LOG_STR("filter_height", op_name_.c_str()));
         return std::vector<int64_t>{1, filter_height, filter_width, 1};
       } else if (name == "activation") {
         uint32_t fused_activation;
-        LiteRtStatus status = LiteRtGetMaxPool2dFusedActivationOption(
-            litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMaxPool2dFusedActivationOption(litert_op_,
+                                                    &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
@@ -459,35 +481,38 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d:
       if (name == "strides") {
         int32_t stride_w;
-        LiteRtStatus status =
-            LiteRtGetAveragePool2dStrideWOption(litert_op_, &stride_w);
-        DECODER_CHECK_STATUS(status, "stride_w");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
-        status = LiteRtGetAveragePool2dStrideHOption(litert_op_, &stride_h);
-        DECODER_CHECK_STATUS(status, "stride_h");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return std::vector<int64_t>{1, stride_h, stride_w, 1};
       } else if (name == "padding") {
         uint32_t padding;
-        LiteRtStatus status =
-            LiteRtGetAveragePool2dPaddingOption(litert_op_, &padding);
-        DECODER_CHECK_STATUS(status, "padding");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
         return std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
       } else if (name == "ksize") {
         int32_t filter_width;
-        LiteRtStatus status =
-            LiteRtGetAveragePool2dFilterWidthOption(litert_op_, &filter_width);
-        DECODER_CHECK_STATUS(status, "filter_width");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dFilterWidthOption(litert_op_, &filter_width),
+            ERROR_LOG_STR("filter_width", op_name_.c_str()));
         int32_t filter_height;
-        status = LiteRtGetAveragePool2dFilterHeightOption(litert_op_,
-                                                          &filter_height);
-        DECODER_CHECK_STATUS(status, "filter_height");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dFilterHeightOption(litert_op_,
+                                                     &filter_height),
+            ERROR_LOG_STR("filter_height", op_name_.c_str()));
         return std::vector<int64_t>{1, filter_height, filter_width, 1};
       } else if (name == "activation") {
         uint32_t fused_activation;
-        LiteRtStatus status = LiteRtGetAveragePool2dFusedActivationOption(
-            litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetAveragePool2dFusedActivationOption(litert_op_,
+                                                        &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
@@ -499,9 +524,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflMul:
       if (name == "fused_activation_function") {
         uint32_t fused_activation;
-        LiteRtStatus status =
-            LiteRtGetMulFusedActivationOption(litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetMulFusedActivationOption(litert_op_, &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else {
@@ -511,18 +536,19 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflTransposeConv:
       if (name == "strides") {
         int32_t stride_w;
-        LiteRtStatus status =
-            LiteRtGetTransposeConvStrideWOption(litert_op_, &stride_w);
-        DECODER_CHECK_STATUS(status, "stride_w");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetTransposeConvStrideWOption(litert_op_, &stride_w),
+            ERROR_LOG_STR("stride_w", op_name_.c_str()));
         int32_t stride_h;
-        status = LiteRtGetTransposeConvStrideHOption(litert_op_, &stride_h);
-        DECODER_CHECK_STATUS(status, "stride_h");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetTransposeConvStrideHOption(litert_op_, &stride_h),
+            ERROR_LOG_STR("stride_h", op_name_.c_str()));
         return std::vector<int64_t>{1, stride_h, stride_w, 1};
       } else if (name == "padding") {
         uint32_t padding;
-        LiteRtStatus status =
-            LiteRtGetTransposeConvPaddingOption(litert_op_, &padding);
-        DECODER_CHECK_STATUS(status, "padding");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetTransposeConvPaddingOption(litert_op_, &padding),
+            ERROR_LOG_STR("padding", op_name_.c_str()));
         return std::string(
             tflite::EnumNamePadding(static_cast<tflite::Padding>(padding)));
       } else if (name == "dilations") {
@@ -531,9 +557,10 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
         return std::vector<int64_t>{1, 1, 1, 1};
       } else if (name == "activation") {
         uint32_t fused_activation;
-        LiteRtStatus status = LiteRtGetTransposeConvFusedActivationOption(
-            litert_op_, &fused_activation);
-        DECODER_CHECK_STATUS(status, "fused_activation");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetTransposeConvFusedActivationOption(litert_op_,
+                                                        &fused_activation),
+            ERROR_LOG_STR("fused_activation", op_name_.c_str()));
         return tflite::EnumNameActivationFunctionType(
             static_cast<tflite::ActivationFunctionType>(fused_activation));
       } else if (name == "data_format") {
@@ -545,8 +572,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflSoftmax:
       if (name == "beta") {
         float beta;
-        LiteRtStatus status = LiteRtGetSoftmaxBetaOption(litert_op_, &beta);
-        DECODER_CHECK_STATUS(status, "beta");
+        LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(litert_op_, &beta),
+                               ERROR_LOG_STR("beta", op_name_.c_str()));
         return beta;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -564,33 +591,34 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflStridedSlice:
       if (name == "begin_mask") {
         int32_t begin_mask;
-        LiteRtStatus status =
-            LiteRtGetStridedSliceBeginMaskOption(litert_op_, &begin_mask);
-        DECODER_CHECK_STATUS(status, "begin_mask");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetStridedSliceBeginMaskOption(litert_op_, &begin_mask),
+            ERROR_LOG_STR("begin_mask", op_name_.c_str()));
         return begin_mask;
       } else if (name == "end_mask") {
         int32_t end_mask;
-        LiteRtStatus status =
-            LiteRtGetStridedSliceEndMaskOption(litert_op_, &end_mask);
-        DECODER_CHECK_STATUS(status, "end_mask");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetStridedSliceEndMaskOption(litert_op_, &end_mask),
+            ERROR_LOG_STR("end_mask", op_name_.c_str()));
         return end_mask;
       } else if (name == "new_axis_mask") {
         int32_t new_axis_mask;
-        LiteRtStatus status =
-            LiteRtGetStridedSliceNewAxisMaskOption(litert_op_, &new_axis_mask);
-        DECODER_CHECK_STATUS(status, "new_axis_mask");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetStridedSliceNewAxisMaskOption(litert_op_, &new_axis_mask),
+            ERROR_LOG_STR("new_axis_mask", op_name_.c_str()));
         return new_axis_mask;
       } else if (name == "ellipsis_mask") {
         int32_t ellipsis_mask;
-        LiteRtStatus status =
-            LiteRtGetStridedSliceEllipsisMaskOption(litert_op_, &ellipsis_mask);
-        DECODER_CHECK_STATUS(status, "ellipsis_mask");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetStridedSliceEllipsisMaskOption(litert_op_, &ellipsis_mask),
+            ERROR_LOG_STR("ellipsis_mask", op_name_.c_str()));
         return ellipsis_mask;
       } else if (name == "shrink_axis_mask") {
         int32_t shrink_axis_mask;
-        LiteRtStatus status = LiteRtGetStridedSliceShrinkAxisMaskOption(
-            litert_op_, &shrink_axis_mask);
-        DECODER_CHECK_STATUS(status, "shrink_axis_mask");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetStridedSliceShrinkAxisMaskOption(litert_op_,
+                                                      &shrink_axis_mask),
+            ERROR_LOG_STR("shrink_axis_mask", op_name_.c_str()));
         return shrink_axis_mask;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -599,9 +627,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace:
       if (name == "block_size") {
         int32_t block_size;
-        LiteRtStatus status =
-            LiteRtGetDepthToSpaceBlockSizeOption(litert_op_, &block_size);
-        DECODER_CHECK_STATUS(status, "block_size");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetDepthToSpaceBlockSizeOption(litert_op_, &block_size),
+            ERROR_LOG_STR("block_size", op_name_.c_str()));
         return block_size;
       } else if (name == "data_format") {
         return "NHWC";
@@ -612,14 +640,14 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflGather:
       if (name == "axis") {
         int32_t axis;
-        LiteRtStatus status = LiteRtGetGatherAxisOption(litert_op_, &axis);
-        DECODER_CHECK_STATUS(status, "axis");
+        LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(litert_op_, &axis),
+                               ERROR_LOG_STR("axis", op_name_.c_str()));
         return axis;
       } else if (name == "batch_dims") {
         int32_t batch_dims;
-        LiteRtStatus status =
-            LiteRtGetGatherBatchDimsOption(litert_op_, &batch_dims);
-        DECODER_CHECK_STATUS(status, "batch_dims");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetGatherBatchDimsOption(litert_op_, &batch_dims),
+            ERROR_LOG_STR("batch_dims", op_name_.c_str()));
         return batch_dims;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -628,15 +656,15 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflBatchMatmul:
       if (name == "adj_x") {
         bool adj_x;
-        LiteRtStatus status =
-            LiteRtGetBatchMatmulAdjXOption(litert_op_, &adj_x);
-        DECODER_CHECK_STATUS(status, "adj_x");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetBatchMatmulAdjXOption(litert_op_, &adj_x),
+            ERROR_LOG_STR("adj_x", op_name_.c_str()));
         return adj_x;
       } else if (name == "adj_y") {
         bool adj_y;
-        LiteRtStatus status =
-            LiteRtGetBatchMatmulAdjYOption(litert_op_, &adj_y);
-        DECODER_CHECK_STATUS(status, "adj_y");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetBatchMatmulAdjYOption(litert_op_, &adj_y),
+            ERROR_LOG_STR("adj_y", op_name_.c_str()));
         return adj_y;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -645,8 +673,9 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu:
       if (name == "alpha") {
         float alpha;
-        LiteRtStatus status = LiteRtGetLeakyReluAlphaOption(litert_op_, &alpha);
-        DECODER_CHECK_STATUS(status, "alpha");
+        LITERT_RETURN_IF_ERROR(
+            LiteRtGetLeakyReluAlphaOption(litert_op_, &alpha),
+            ERROR_LOG_STR("alpha", op_name_.c_str()));
         return alpha;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());
@@ -655,8 +684,8 @@ ov::Any DecoderOperation::get_attribute(const std::string& name) const {
     case LiteRtOpCode::kLiteRtOpCodeTflPack:
       if (name == "axis") {
         int32_t axis;
-        LiteRtStatus status = LiteRtGetPackAxisOption(litert_op_, &axis);
-        DECODER_CHECK_STATUS(status, "axis");
+        LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op_, &axis),
+                               ERROR_LOG_STR("axis", op_name_.c_str()));
         return axis;
       } else {
         LITERT_LOG(LITERT_ERROR, "Unsupported attribute %s", name.c_str());

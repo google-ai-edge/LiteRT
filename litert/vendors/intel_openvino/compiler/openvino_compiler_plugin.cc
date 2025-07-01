@@ -1,5 +1,17 @@
 // Copyright (C) 2025 Intel Corporation
 // SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #include <stdio.h>
 
@@ -18,7 +30,6 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/core/model/model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 namespace {
@@ -203,7 +214,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
-    //TODO(rjasuja): Enhance implementation for Partition() call 
+  // TODO(rjasuja): Enhance implementation for Partition() call
   for (const auto &op : graph.Ops()) {
     if (!IsOpSupported(op)) {
       LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());
