@@ -78,6 +78,20 @@ struct Mallocator {
   }
 };
 
+// Allocate with alignment requirements.
+template <size_t Alignment, typename ByteT = uint8_t>
+struct AlignedMallocator {
+  void operator()(ByteT* d) {
+    if (d != nullptr) {
+      free(d);
+    }
+  }
+
+  ByteT* operator()(size_t bytes) {
+    return reinterpret_cast<ByteT*>(std::aligned_alloc(Alignment, bytes));
+  }
+};
+
 // New/delete based memory.
 template <typename ByteT = uint8_t>
 struct Newlocator {
@@ -197,8 +211,9 @@ class MutableBufferRef : public BufferRef<ByteT> {
   MutableBufferRef(const ByteT*, size_t, size_t) = delete;
   MutableBufferRef(const void*, size_t, size_t) = delete;
 
-  // Mutable start of actual data.
+  // Start of actual data.
   ByteT* Data() { return this->data_ + this->start_offset_; }
+  const ByteT* Data() const { return this->data_ + this->start_offset_; }
 
   // Get the mutable start of actual data as a char pointer.
   char* StrData() { return reinterpret_cast<char*>(Data()); }
