@@ -91,6 +91,8 @@ inline constexpr std::optional<absl::Span<const uint32_t>> StridesSpan(
 // Tensor layout. C++ equivalent to LiteRtLayout.
 class Layout {
  public:
+  using Dim = int32_t;
+
   constexpr Layout()
       : lrt_layout_{/*.rank=*/0, /*.has_strides=*/false, /*.dimensions=*/{},
                     /*.strides=*/{}} {}
@@ -115,7 +117,7 @@ class Layout {
 
   uint32_t Rank() const { return lrt_layout_.rank; }
 
-  absl::Span<const int32_t> Dimensions() const {
+  absl::Span<const Dim> Dimensions() const {
     return absl::MakeSpan(lrt_layout_.dimensions, Rank());
   }
 

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
+load("//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -183,6 +184,7 @@ cc_library(
     hdrs = ["rng_fixture.h"],
     deps = [
         ":fuzz",
+        "//litert/cc:litert_numerics",
         "//litert/cc:litert_rng",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",
@@ -219,6 +221,38 @@ cc_library(
 cc_library(
     name = "fuzz",
     hdrs = ["fuzz.h"],
+)
+
+cc_library(
+    name = "simple_buffer",
+    hdrs = ["simple_buffer.h"],
+    deps = [
+        "//litert/c:litert_dispatch_headers",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_rng",
+        "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "simple_buffer_test",
+    srcs = ["simple_buffer_test.cc"],
+    deps = [
+        ":matchers",
+        ":rng_fixture",
+        ":simple_buffer",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_model",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 exports_files(srcs = [
