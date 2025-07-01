@@ -134,6 +134,23 @@ class LiteRtCompiledModelT {
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
 
+  // Resizes the specified input tensor to support dynamic shapes.
+  litert::Expected<void> ResizeInputTensor(absl::string_view signature_key,
+                                           size_t input_index, const int* dims,
+                                           int num_dims);
+
+  litert::Expected<void> ResizeInputTensor(size_t signature_index,
+                                           size_t input_index, const int* dims,
+                                           int num_dims) {
+    if (signature_index >= signature_keys_.size()) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
+          "Signature index is out of range of signature keys");
+    }
+    return ResizeInputTensor(*signature_keys_[signature_index], input_index,
+                             dims, num_dims);
+  }
+
  private:
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
@@ -280,6 +297,10 @@ class LiteRtCompiledModelT {
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
   LiteRtProfilerT* profiler_ = nullptr;
+
+  // Flag to track if input tensors have been resized, requiring buffer
+  // requirements to be recalculated.
+  bool input_tensors_resized_ = false;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

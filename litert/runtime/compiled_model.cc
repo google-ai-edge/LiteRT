@@ -429,6 +429,11 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
   }
+  // Check if we have a cached CPU buffer requirement.
+  auto cached_req = cpu_buffer_requirements_.find(tensor);
+  if (cached_req != cpu_buffer_requirements_.end()) {
+    return cached_req->second.Get();
+  }
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
@@ -807,4 +812,53 @@ litert::Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() {
     }
   }
   return LiteRtMetricsT{.metrics = std::move(metrics)};
+}
+
+litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
+    absl::string_view signature_key, size_t input_index, const int* dims,
+    int num_dims) {
+  if (!dims && num_dims > 0) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "ResizeInputTensor was given a NULL shape.");
+  }
+
+  auto runner = GetSignatureRunner(signature_key);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get signature runner");
+  }
+
+  auto input_names = runner->subgraph_input_names();
+  if (input_index >= input_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Input index out of range");
+  }
+
+  auto input_name = input_names[input_index];
+
+  // Resize the input tensor using TFLite's SignatureRunner API
+  auto status = runner->ResizeInputTensor(
+      input_name, std::vector<int>(dims, dims + num_dims));
+  if (status != kTfLiteOk) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to resize input tensor");
+  }
+
+  // Mark that input tensors have been resized
+  input_tensors_resized_ = true;
+
+  // Clear cached buffer requirements for this tensor
+  auto* input_tensor = runner->input_tensor(input_name);
+  if (input_tensor != nullptr) {
+    cpu_buffer_requirements_.erase(input_tensor);
+  }
+
+  // Allocate tensors to propagate shape changes
+  status = runner->AllocateTensors();
+  if (status != kTfLiteOk) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to allocate tensors after resize");
+  }
+
+  return {};
 }
