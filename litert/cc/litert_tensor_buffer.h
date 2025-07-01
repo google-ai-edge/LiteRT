@@ -372,22 +372,19 @@ class TensorBufferScopedLock {
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
-      TensorBuffer& tensor_buffer,
-      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
+      TensorBuffer& tensor_buffer, TensorBuffer::LockMode mode) {
     return Create<T>(tensor_buffer.Get(), mode);
   }
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, const T*>> Create(
-      const TensorBuffer& tensor_buffer,
-      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
+      const TensorBuffer& tensor_buffer, TensorBuffer::LockMode mode) {
     return Create<const T>(tensor_buffer.Get(), mode);
   }
 
   template <typename T = void>
   static Expected<std::pair<TensorBufferScopedLock, T*>> Create(
-      LiteRtTensorBuffer tensor_buffer,
-      TensorBuffer::LockMode mode = TensorBuffer::LockMode::kReadWrite) {
+      LiteRtTensorBuffer tensor_buffer, TensorBuffer::LockMode mode) {
     void* host_mem_addr;
     LITERT_RETURN_IF_ERROR(LiteRtLockTensorBuffer(
         tensor_buffer, &host_mem_addr, TensorBuffer::ToLiteRtLockMode(mode)));
