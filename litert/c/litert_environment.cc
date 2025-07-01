@@ -24,7 +24,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/auto_registration.h"
+#if LITERT_ENABLE_GPU
 #include "litert/runtime/gpu_environment.h"
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,11 +56,17 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
                          option.tag) != kGpuOptionTags.end();
       });
 
+#if LITERT_ENABLE_GPU
   if (has_gpu_options) {
     LITERT_ASSIGN_OR_RETURN(
         auto gpu_env, litert::internal::GpuEnvironment::Create(env.get()));
     LITERT_RETURN_IF_ERROR(env->SetGpuEnvironment(std::move(gpu_env)));
   }
+#else
+  if (has_gpu_options) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+#endif
 
   *environment = env.release();
   return kLiteRtStatusOk;
@@ -82,6 +90,7 @@ LiteRtStatus LiteRtGetEnvironmentOptions(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
+#if LITERT_ENABLE_GPU
 LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         int num_options,
                                         const LiteRtEnvOption* options) {
@@ -92,6 +101,13 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
   LITERT_RETURN_IF_ERROR(environment->SetGpuEnvironment(std::move(gpu_env)));
   return kLiteRtStatusOk;
 }
+#else
+LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
+                                        int num_options,
+                                        const LiteRtEnvOption* options) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif
 
 LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
                                        bool* is_supported) {

@@ -36,17 +36,21 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/event.h"
+#if LITERT_ENABLE_GPU
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
+#endif  // LITERT_ENABLE_GPU
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_ENABLE_GPU
 namespace litert::internal {
 class GpuEnvironment;
 }  // namespace litert::internal
+#endif  // LITERT_ENABLE_GPU
 
 class LiteRtTensorBufferT {
  public:
@@ -88,6 +92,7 @@ class LiteRtTensorBufferT {
       size_t fastrpc_buffer_offset,
       LiteRtFastRpcDeallocator deallocator = nullptr);
 
+#if LITERT_ENABLE_GPU
   static litert::Expected<Ptr> CreateFromGlBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -98,6 +103,7 @@ class LiteRtTensorBufferT {
       LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
       size_t size_bytes, LiteRtGLint layer,
       LiteRtGlTextureDeallocator deallocator = nullptr);
+#endif  // LITERT_ENABLE_GPU
 
   static litert::Expected<Ptr> CreateManaged(
       LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
@@ -140,8 +146,10 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetIonBuffer();
   litert::Expected<std::pair<void*, int>> GetDmaBufBuffer();
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
+#if LITERT_ENABLE_GPU
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
+#endif  // LITERT_ENABLE_GPU
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -200,11 +208,14 @@ class LiteRtTensorBufferT {
 
   using BufferVariant =
       std::variant<HostBuffer, AhwbBuffer, IonBuffer, DmaBufBuffer,
-                   FastRpcBuffer,
+                   FastRpcBuffer
 #if LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::OpenClMemory,
+                   , litert::internal::OpenClMemory
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::GlBuffer, litert::internal::GlTexture>;
+#if LITERT_ENABLE_GPU
+                   , litert::internal::GlBuffer, litert::internal::GlTexture
+#endif  // LITERT_ENABLE_GPU
+                   >;
 
   LiteRtTensorBufferT(LiteRtEnvironment env,
                       const LiteRtRankedTensorType& tensor_type,
@@ -231,9 +242,11 @@ class LiteRtTensorBufferT {
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 
+#if LITERT_ENABLE_GPU
   static litert::Expected<Ptr> CreateManagedGlBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       size_t buffer_size);
+#endif  // LITERT_ENABLE_GPU
 
   litert::Expected<void> IsValid();
 
