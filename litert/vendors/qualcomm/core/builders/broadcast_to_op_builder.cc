@@ -92,47 +92,47 @@ std::vector<OpWrapper> BuildBroadcastToOp(
 
   auto& broadcast_op = CreateOpWrapper(res, qnn_op);
   broadcast_op.AddInputTensor(inputs[0]);
-
-  switch (inputs[0].get().GetDataType()) {
+  auto data_type = inputs[0].get().GetDataType();
+  switch (data_type) {
     case QNN_DATATYPE_BOOL_8: {
       TensorWrapper& static_tensor = CreateStaticTensor<std::uint8_t>(
-          tensor_pool, inputs[0].get().GetDataType(), inputs[0], outputs[0],
-          false);
+          tensor_pool, data_type, inputs[0], outputs[0], false);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }
     case QNN_DATATYPE_UFIXED_POINT_8: {
       TensorWrapper& static_tensor = CreateStaticTensor<std::uint8_t>(
-          tensor_pool, inputs[0].get().GetDataType(), inputs[0], outputs[0],
-          true);
+          tensor_pool, data_type, inputs[0], outputs[0], true);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }
     case QNN_DATATYPE_SFIXED_POINT_8: {
       TensorWrapper& static_tensor = CreateStaticTensor<std::int8_t>(
-          tensor_pool, inputs[0].get().GetDataType(), inputs[0], outputs[0],
-          true);
+          tensor_pool, data_type, inputs[0], outputs[0], true);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }
     case QNN_DATATYPE_UFIXED_POINT_16: {
       TensorWrapper& static_tensor = CreateStaticTensor<std::uint16_t>(
-          tensor_pool, inputs[0].get().GetDataType(), inputs[0], outputs[0],
-          true);
+          tensor_pool, data_type, inputs[0], outputs[0], true);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }
     case QNN_DATATYPE_SFIXED_POINT_16: {
       TensorWrapper& static_tensor = CreateStaticTensor<std::int16_t>(
-          tensor_pool, inputs[0].get().GetDataType(), inputs[0], outputs[0],
-          true);
+          tensor_pool, data_type, inputs[0], outputs[0], true);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }
     case QNN_DATATYPE_FLOAT_32: {
-      TensorWrapper& static_tensor =
-          CreateStaticTensor<float>(tensor_pool, inputs[0].get().GetDataType(),
-                                    inputs[0], outputs[0], false);
+      TensorWrapper& static_tensor = CreateStaticTensor<float>(
+          tensor_pool, data_type, inputs[0], outputs[0], false);
+      broadcast_op.AddInputTensor(static_tensor);
+      break;
+    }
+    case QNN_DATATYPE_INT_32: {
+      TensorWrapper& static_tensor = CreateStaticTensor<std::int32_t>(
+          tensor_pool, data_type, inputs[0], outputs[0], false);
       broadcast_op.AddInputTensor(static_tensor);
       break;
     }

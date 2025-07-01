@@ -1031,12 +1031,15 @@ cc_test(
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_macros",
         ":litert_model",
+        ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -1145,6 +1148,7 @@ litert_device_test(
 #         "//litert/c:litert_profiler_event",
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc/options:litert_gpu_options",
+#         "//litert/cc/options:litert_runtime_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
