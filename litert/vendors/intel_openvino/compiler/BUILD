@@ -43,6 +43,7 @@ litert_dynamic_lib(
     deps = [
         ":graph_iterator",
         "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -90,9 +91,8 @@ litert_lib(
     ],
     deps = [
         "//litert/c:litert_logging",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_model",
-        "//litert/tools:dump",
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
         "//conditions:default": [],

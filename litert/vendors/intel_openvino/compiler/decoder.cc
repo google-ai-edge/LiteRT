@@ -18,8 +18,8 @@
 #include <map>
 
 #include "litert/c/litert_op_options.h"
-#include "litert/tools/dump.h"
 #include "litert/vendors/intel_openvino/utils.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace openvino {
