@@ -24,6 +24,10 @@ litert_dynamic_lib(
     srcs = ["compiler_plugin.cc"],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
     export_litert_only = True,
+    linkopts = [
+        # Wheel package places the shared library in the root directory.
+        "-Wl,-rpath,$$ORIGIN/../../..",
+    ],
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_MediaTek.so",
     ungrte = True,
