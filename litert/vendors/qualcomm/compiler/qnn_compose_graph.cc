@@ -39,6 +39,7 @@
 #include "litert/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
+#include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/broadcast_to_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
@@ -76,6 +77,7 @@
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/spatial_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
@@ -915,6 +917,45 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflReverseV2: {
       op_wrappers =
           ::qnn::BuildReverseOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflArgMax: {
+      op_wrappers =
+          ::qnn::BuildArgMaxOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflArgMin: {
+      op_wrappers =
+          ::qnn::BuildArgMinOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflStridedSlice: {
+      std::int32_t begin_mask;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetStridedSliceBeginMaskOption(litert_op.Get(), &begin_mask));
+      std::int32_t end_mask;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetStridedSliceEndMaskOption(litert_op.Get(), &end_mask));
+      std::int32_t ellipsis_mask;
+      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceEllipsisMaskOption(
+          litert_op.Get(), &ellipsis_mask));
+      std::int32_t shrink_axis_mask;
+      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceShrinkAxisMaskOption(
+          litert_op.Get(), &shrink_axis_mask));
+      std::int32_t new_axis_mask;
+      LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceNewAxisMaskOption(
+          litert_op.Get(), &new_axis_mask));
+      bool offset;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetStridedSliceOffsetOption(litert_op.Get(), &offset));
+      op_wrappers = ::qnn::BuildStridedSliceOp(
+          tensor_pool, input_tensors, output_tensors, begin_mask, end_mask,
+          ellipsis_mask, shrink_axis_mask, new_axis_mask, offset);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflNeg: {
+      op_wrappers = ::qnn::BuildElementwiseNegOp(tensor_pool, input_tensors,
+                                                 output_tensors);
       break;
     }
     default: {
