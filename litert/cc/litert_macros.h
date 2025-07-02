@@ -162,9 +162,7 @@ class ErrorStatusBuilder {
   operator absl::Status() const noexcept;
 
   template <class T>
-  operator absl::StatusOr<T>() const noexcept {
-    return static_cast<absl::Status>(*this);
-  }
+  operator absl::StatusOr<T>() const noexcept { return *this; }
   // NOLINTEND(*-explicit-constructor)
 
   static constexpr bool IsError(bool status) { return !status; }
