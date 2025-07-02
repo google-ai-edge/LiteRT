@@ -306,4 +306,166 @@ LiteRtStatus SplitOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus Conv2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus Conv3dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideDOption(op, &stride_d));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationDOption(op, &dilation_d_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus AveragePool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflAveragePool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFusedActivationOption(
+      op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus MaxPool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMaxPool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ResizeBilinearOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeBilinear) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearHalfPixelCenterOption(op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LeakyReluOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflLeakyRelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetLeakyReluAlphaOption(op, &alpha));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SpaceToDepthOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSpaceToDepth) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSpaceToDepthBlockSizeOption(op, &block_size));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DepthToSpaceOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflDepthToSpace) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthToSpaceBlockSizeOption(op, &block_size));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ResizeNearestNeighborOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeNearestNeighbor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeNearestNeighborAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
+      op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus CumSumOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflCumsum) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetCumsumExclusiveOption(op, &exclusive));
+  LITERT_RETURN_IF_ERROR(LiteRtGetCumsumReverseOption(op, &reverse));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
