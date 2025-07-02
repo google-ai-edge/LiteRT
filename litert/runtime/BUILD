@@ -166,7 +166,7 @@ cc_library(
         "//tflite/delegates/gpu/cl:cl_device",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@opencl_headers",
-    ] + select({
+    ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/cl:gl_interop",
             "//tflite/delegates/gpu/gl:egl_environment",
