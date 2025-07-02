@@ -27,19 +27,6 @@ jobs:
       matrix:
         docker-python-version: ['3.11']
     steps:
-      - uses: actions/checkout@v4
-      - name: Init submodule
-        run: |
-          git config --global --add safe.directory ${GITHUB_WORKSPACE}
-          git config --global --add safe.directory ${GITHUB_WORKSPACE}/third_party/tensorflow
-          git submodule update --init --recursive
-          git submodule update --remote
-
-          # Run configure.
-          cd ./third_party/tensorflow
-          echo -e "/usr/bin/python3\/usr/lib/python3/dist-packages\N\N\Y\/usr/lib/llvm-18/bin/clang\-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern\N" | ./configure
-          cp .tf_configure.bazelrc ${GITHUB_WORKSPACE}
-
       - name: Run bazel test
         # TODO(ecalubaquib): Remove continue-on-error once b/391391626 is fixed.
         continue-on-error: true
