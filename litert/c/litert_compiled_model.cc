@@ -176,11 +176,14 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtCompiledModelSetProfiler(LiteRtCompiledModel compiled_model,
-                                            LiteRtProfiler profiler) {
-  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,
-                         kLiteRtStatusErrorInvalidArgument);
-  LITERT_RETURN_IF_ERROR(compiled_model->SetProfiler(profiler));
+LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
+                                            LiteRtProfiler* profiler) {
+  LITERT_RETURN_IF_ERROR(
+      compiled_model != nullptr && profiler != nullptr,
+      kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSIGN_OR_RETURN(LiteRtProfilerT * profiler_ptr,
+                          compiled_model->GetProfiler());
+  *profiler = profiler_ptr;
   return kLiteRtStatusOk;
 }
 
