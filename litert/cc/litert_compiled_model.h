@@ -401,10 +401,13 @@ class CompiledModel
     return Environment(env_, OwnHandle::kNo);
   }
 
-  // Sets the profiler for the model. Caller owns the profiler,Profiler needs
-  // to be maintained during the model execution, the caller is responsible for
-  // disposing the profiler after the model execution.
-  Expected<bool> SetProfiler(Profiler& profiler);
+  // Returns the profiler used by the compiled model.
+  // The returned Profiler doesn't own the underlying LiteRtProfiler.
+  Expected<Profiler> GetProfiler() {
+    LiteRtProfiler profiler = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetProfiler(Get(), &profiler));
+    return Profiler(profiler, OwnHandle::kNo);
+  };
 
  private:
   // Returns the signature input index for the given input tensor name.

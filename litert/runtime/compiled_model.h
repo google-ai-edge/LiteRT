@@ -47,7 +47,13 @@ class LiteRtCompiledModelT {
   using Ptr = std::unique_ptr<LiteRtCompiledModelT>;
 
   explicit LiteRtCompiledModelT(LiteRtEnvironmentT* env) : env_(env) {}
-  ~LiteRtCompiledModelT() = default;
+  ~LiteRtCompiledModelT() {
+    // If the profiler is set, delete it here.
+    if (profiler_ != nullptr) {
+      delete profiler_;
+      profiler_ = nullptr;
+    }
+  };
 
   // Creates a LiteRtCompiledModelT from a LiteRtModel object.
   // The model is loaded into memory and the caller takes ownership of the
@@ -119,17 +125,6 @@ class LiteRtCompiledModelT {
 
   // Returns the environment associated with the compiled model.
   litert::Expected<LiteRtEnvironmentT*> GetEnvironment() { return env_; }
-
-  // Sets the profiler to be used by the compiled model.
-  litert::Expected<void> SetProfiler(LiteRtProfilerT* profiler) {
-    LITERT_RETURN_IF_ERROR(profiler,
-                           litert::ErrorStatusBuilder::InvalidArgument())
-        << "profiler is null.";
-
-    profiler_ = profiler;
-    interp_->SetProfiler(profiler_);
-    return {};
-  }
 
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
