@@ -179,4 +179,241 @@ LiteRtStatus SoftmaxOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus StridedSliceOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflStridedSlice) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceBeginMaskOption(op, &begin_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceEndMaskOption(op, &end_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceEllipsisMaskOption(op, &ellipsis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceNewAxisMaskOption(op, &new_axis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceShrinkAxisMaskOption(op, &shrink_axis_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceOffsetOption(op, &offset));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SubOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSub) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSubFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ReshapeOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflReshape) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const int32_t* new_shape_data;
+  int32_t new_shape_size;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReshapeNewShapeOption(op, &new_shape_data, &new_shape_size));
+  new_shape.assign(new_shape_data, new_shape_data + new_shape_size);
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SumOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSum) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSumKeepDimsOption(op, &keep_dims));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ReduceMaxOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflReduceMax) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetReduceMaxKeepDimsOption(op, &keep_dims));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus PackOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflPack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(op, &axis));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GatherOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflGather) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op, &axis));
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherBatchDimsOption(op, &batch_dims));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus MeanOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMean) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetMeanKeepDimsOption(op, &keep_dims));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SplitOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSplit) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSplitNumSplitsOption(op, &num_splits));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus Conv2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus Conv3dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideDOption(op, &stride_d));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationDOption(op, &dilation_d_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus AveragePool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflAveragePool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFusedActivationOption(
+      op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus MaxPool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMaxPool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ResizeBilinearOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeBilinear) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearHalfPixelCenterOption(op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LeakyReluOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflLeakyRelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetLeakyReluAlphaOption(op, &alpha));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
