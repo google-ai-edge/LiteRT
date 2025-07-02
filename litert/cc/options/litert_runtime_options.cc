@@ -51,4 +51,21 @@ Expected<bool> RuntimeOptions::GetShloCompositeInlining() const {
   return shlo_composite_inlining;
 }
 
+Expected<void> RuntimeOptions::SetEnableProfiling(
+  bool enable_profiling) {
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsEnableProfiling(
+    runtime_options, enable_profiling));
+return {};
+}
+
+Expected<bool> RuntimeOptions::GetEnableProfiling() const {
+LiteRtRuntimeOptions runtime_options;
+LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+bool enable_profiling;
+LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsEnableProfiling(
+    runtime_options, &enable_profiling));
+return enable_profiling;
+}
 }  // namespace litert
