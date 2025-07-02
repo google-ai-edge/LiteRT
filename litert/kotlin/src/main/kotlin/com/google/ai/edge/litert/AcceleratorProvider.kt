@@ -74,11 +74,26 @@ interface NpuCompatibilityChecker {
         }
       }
 
+    internal val SUPPORTED_GOOGLE_SOCS = setOf(Pair("Google", "Tensor G5"))
+
+    /** Google Tensor NPU compatibility checker. */
+    val GoogleTensor =
+      object : NpuCompatibilityChecker {
+        override fun isDeviceSupported(): Boolean {
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return SUPPORTED_GOOGLE_SOCS.contains(Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL))
+          }
+          return false
+        }
+      }
+
     /** Default NPU compatibility checker for all vendors. */
     val Default =
       object : NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
-          return Qualcomm.isDeviceSupported() || Mediatek.isDeviceSupported()
+          return Qualcomm.isDeviceSupported() ||
+            Mediatek.isDeviceSupported() ||
+            GoogleTensor.isDeviceSupported()
         }
       }
   }
