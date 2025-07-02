@@ -68,6 +68,16 @@ LiteRtStatus LiteRtSetRuntimeOptionsShloCompositeInlining(
 LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
     LiteRtRuntimeOptions options, bool* shlo_composite_inlining);
 
+// Sets the profiling flag in runtime options. The options is
+// being modified in the this setter method.
+LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool enable_profiling);
+
+// Gets the profiling flag from runtime options. Reads the
+// value from the options and writes it to the pointer.
+LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool* enable_profiling);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

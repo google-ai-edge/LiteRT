@@ -37,6 +37,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/model/model.h"
 #include "litert/runtime/open_cl_memory.h"
@@ -615,15 +616,18 @@ TEST(CompiledModelTest, WithProfiler) {
   ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
                                                  kLiteRtHwAcceleratorCpu),
             kLiteRtStatusOk);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  jit_compilation_options->options.Append(std::move(runtime_options));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
   LiteRtDestroyOptions(jit_compilation_options);
 
   // Create profiler.
-  LiteRtProfiler profiler = nullptr;
-  ASSERT_EQ(LiteRtCreateProfiler(100, &profiler), kLiteRtStatusOk);
-  compiled_model->SetProfiler(profiler);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtProfiler profiler,
+                              compiled_model->GetProfiler());
   ASSERT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
 
   // Check CompiledModel buffer requirements.
@@ -712,7 +716,6 @@ TEST(CompiledModelTest, WithProfiler) {
     LiteRtDestroyTensorBuffer(output_buffer);
   }
 
-  LiteRtDestroyProfiler(profiler);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);
 }
