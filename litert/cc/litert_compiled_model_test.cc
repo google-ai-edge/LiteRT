@@ -28,8 +28,11 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/common.h"
@@ -373,10 +376,17 @@ TEST(CompiledModelTest, WithProfiler) {
   Model model = testing::LoadTestFileModel(kModelFileName);
   ASSERT_TRUE(model);
 
+  LITERT_ASSIGN_OR_ABORT(Options compilation_options,
+    litert::Options::Create());
+  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  compilation_options.AddOpaqueOptions(std::move(runtime_options));
+
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, compilation_options));
 
   // Check fully accelerated.
   LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
@@ -384,9 +394,8 @@ TEST(CompiledModelTest, WithProfiler) {
   ASSERT_TRUE(fullyAccelerated);
 
   // Create profiler.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, Profiler::Create(1024));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
   ASSERT_TRUE(profiler);
-  ASSERT_TRUE(compiled_model.SetProfiler(profiler));
   ASSERT_TRUE(profiler.StartProfiling());
 
   // Check CompiledModel buffer requirements.
