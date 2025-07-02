@@ -14,6 +14,9 @@
 
 #include "litert/cc/litert_op_options.h"
 
+#include <cstdint>
+
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
@@ -36,9 +39,34 @@ LiteRtStatus CompositeOptions::InitFromOp(LiteRtOp op) {
   LITERT_RETURN_IF_ERROR(
       LiteRtGetSHLOCompositeOpDecompositionSubgraphIndex(op, &subgraph));
 
+  LITERT_RETURN_IF_ERROR(LiteRtGetSHLOCompositeOpVersion(op, &version));
+
+  const uint8_t* impl_attributes = nullptr;
+  int32_t impl_attributes_size = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetSHLOCompositeOpAttributes(
+      op, &impl_attributes, &impl_attributes_size));
+
+  if (impl_attributes_size > 0) {
+    attributes_map =
+        flexbuffers::GetRoot(impl_attributes, impl_attributes_size).AsMap();
+  }
   this->op = op;
 
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
+  LITERT_RETURN_IF_ERROR(CompositeOptions::InitFromOp(litert_op));
+  if (!attributes_map.has_value()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  constexpr char kEpsilonKey[] = "epsilon";
+  flexbuffers::Reference raw_epsilon = attributes_map.value()[kEpsilonKey];
+  if (raw_epsilon.IsNull()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  epsilon  = raw_epsilon.AsFloat();
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
