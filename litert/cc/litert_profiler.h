@@ -36,16 +36,6 @@ class Profiler
       : internal::Handle<LiteRtProfiler, LiteRtDestroyProfiler>(profiler,
                                                                 owned) {}
 
-  // Creates a Profiler instance. The caller takes ownership of the returned
-  // Profiler object. The caller should keep the profiler alive during the model
-  // execution. `size` is the maximum number of events that can be stored in the
-  // profiler.
-  static Expected<Profiler> Create(int size) {
-    LiteRtProfiler profiler;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateProfiler(size, &profiler));
-    return Profiler(profiler, OwnHandle::kYes);
-  }
-
   // Get the number of events.
   Expected<int> GetNumEvents() const {
     int num_events = -1;

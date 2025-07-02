@@ -158,9 +158,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
 
   TfLiteStatus ResetInputsAndOutputs() override {
     if (profiler_) {
-      profiler_->StopProfiling();
-      profiler_->Reset();
-      profiler_->StartProfiling();
+      profiler_.StopProfiling();
+      auto events = profiler_.GetEvents();
+      for (const auto& event : *events) {
+        LITERT_LOG(LITERT_INFO, "Event: %s", event.tag);
+      }
+      profiler_.Reset();
+      profiler_.StartProfiling();
     }
     return kTfLiteOk;
   }
@@ -198,7 +202,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<litert::CompiledModel> compiled_model_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
-  std::unique_ptr<litert::Profiler> profiler_;
+  litert::Profiler profiler_;
 };
 
 }  // namespace benchmark
