@@ -436,6 +436,11 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
   }
+  // Check if we have a cached CPU buffer requirement.
+  auto cached_req = cpu_buffer_requirements_.find(tensor);
+  if (cached_req != cpu_buffer_requirements_.end()) {
+    return cached_req->second.Get();
+  }
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
