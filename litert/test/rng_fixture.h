@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/cc/litert_numerics.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/test/fuzz.h"
 
@@ -80,6 +81,46 @@ class RngTest : public ::testing::Test {
 
   std::vector<std::unique_ptr<ScopedTrace>> traces_;
   std::vector<RepeatedBlock> fuzz_blocks_;
+};
+
+// Dummy primitive generator that returns a monotonically increasing sequence.
+template <typename D>
+class DummyGenerator final : public DataGeneratorBase<D> {
+ public:
+  using DataType = D;
+
+  DummyGenerator() = default;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return val_++;
+  }
+
+  DataType Max() const override { return NumericLimits<D>::Max(); }
+  DataType Min() const override { return 0; }
+
+ private:
+  D val_ = 0;
+};
+
+// Dummy random tensor data generator that uses the dummy generator above.
+template <typename D>
+class DummyRandomTensorData final
+    : public RandomTensorDataBase<D, DummyRandomTensorData<D>,
+                                  DummyGenerator<D>> {
+ public:
+  friend class RandomTensorDataBase<D, DummyRandomTensorData<D>,
+                                    DummyGenerator<D>>;
+  using Gen = DummyGenerator<D>;
+  using DataType = D;
+  static Gen MakeGen() { return Gen(); }
+};
+
+// Dummy traits class that maps the data type to the dummy random tensor data
+// generator.
+template <typename D>
+struct DummyRandomTensorBufferTraits {
+  using Gen = DummyRandomTensorData<D>;
 };
 
 }  // namespace litert::testing

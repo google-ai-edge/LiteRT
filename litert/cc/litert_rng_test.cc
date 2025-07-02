@@ -289,10 +289,10 @@ TYPED_TEST(RandomTensorDataTest, NoRange) {
   auto device = this->TracedDevice();
   RandomTensorData<TypeParam> data;
   std::vector<TypeParam> buf(10);
-  LITERT_ASSERT_OK(data(device, buf));
+  LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
   EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
-  EXPECT_THAT(absl::MakeConstSpan(buf),
+  EXPECT_THAT(absl::MakeConstSpan(absl::MakeSpan(buf)),
               Each(AllOf(Le(data.High()), Ge(data.Low()))));
 }
 
@@ -326,41 +326,13 @@ TYPED_TEST(RandomTensorDataTest, ExplicitRange) {
   static constexpr int64_t kMin = -10;
   static constexpr int64_t kMax = 10;
   RangedRandomTensorData<TypeParam, kMin, kMax> data;
-  std::vector<int> buf(10);
-  LITERT_ASSERT_OK(data(device, buf));
+  std::vector<TypeParam> buf(10);
+  LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), 10);
   EXPECT_EQ(data.Low(), -10);
   EXPECT_THAT(absl::MakeConstSpan(buf),
               Each(AllOf(Le(data.High()), Ge(data.Low()))));
 }
-
-// using RangedRandomTensorDataTest = RngTest;
-
-// TEST_F(RangedRandomTensorDataTest, ExplicitRangeInt) {
-//   auto device = this->TracedDevice();
-//   static constexpr int64_t kMin = -10;
-//   static constexpr int64_t kMax = 10;
-//   RangedRandomIntTensorData<int, kMin, kMax> data;
-//   std::vector<int> buf(10);
-//   LITERT_ASSERT_OK(data(device, buf));
-//   EXPECT_EQ(data.High(), 10);
-//   EXPECT_EQ(data.Low(), -10);
-//   EXPECT_THAT(absl::MakeConstSpan(buf),
-//               Each(AllOf(Le(data.High()), Ge(data.Low()))));
-// }
-
-// TEST_F(RangedRandomTensorDataTest, ExplicitRangeFp) {
-//   auto device = this->TracedDevice();
-//   static constexpr double kMin = -10.0;
-//   static constexpr double kMax = 10.0;
-//   RangedRandomFpTensorData<float, kMin, kMax> data;
-//   std::vector<float> buf(10);
-//   LITERT_ASSERT_OK(data(device, buf));
-//   EXPECT_EQ(data.High(), 10);
-//   EXPECT_EQ(data.Low(), -10);
-//   EXPECT_THAT(absl::MakeConstSpan(buf),
-//               Each(AllOf(Le(data.High()), Ge(data.Low()))));
-// }
 
 }  // namespace
 }  // namespace litert
