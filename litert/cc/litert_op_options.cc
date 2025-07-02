@@ -179,4 +179,107 @@ LiteRtStatus SoftmaxOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus StridedSliceOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflStridedSlice) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceBeginMaskOption(op, &begin_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceEndMaskOption(op, &end_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceEllipsisMaskOption(op, &ellipsis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceNewAxisMaskOption(op, &new_axis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceShrinkAxisMaskOption(op, &shrink_axis_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceOffsetOption(op, &offset));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SubOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSub) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSubFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ReshapeOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflReshape) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const int32_t* new_shape_data;
+  int32_t new_shape_size;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReshapeNewShapeOption(op, &new_shape_data, &new_shape_size));
+  new_shape.assign(new_shape_data, new_shape_data + new_shape_size);
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SumOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSum) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSumKeepDimsOption(op, &keep_dims));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ReduceMaxOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflReduceMax) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetReduceMaxKeepDimsOption(op, &keep_dims));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus PackOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflPack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(op, &axis));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GatherOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflGather) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op, &axis));
+  LITERT_RETURN_IF_ERROR(LiteRtGetGatherBatchDimsOption(op, &batch_dims));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
