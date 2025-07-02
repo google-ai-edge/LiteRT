@@ -269,7 +269,8 @@ TEST(DispatchDelegate, HwBuffer) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -362,7 +363,8 @@ TEST(DispatchDelegate, CompiledModel) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -424,7 +426,8 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -450,7 +453,8 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
@@ -482,7 +486,8 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t"
@@ -541,7 +546,8 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -551,7 +557,8 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[1]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[1], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -616,7 +623,8 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
@@ -678,11 +686,15 @@ TEST(DispatchDelegate, CompiledModelAsync) {
       std::vector<TensorBuffer> output_buffers,
       compiled_model.CreateOutputBuffers(signature_index));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_0_cpu_addr_and_lock,
-                              TensorBufferScopedLock::Create(input_buffers[0]));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_0_cpu_addr_and_lock,
+      TensorBufferScopedLock::Create(input_buffers[0],
+                                     TensorBuffer::LockMode::kWrite));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_1_cpu_addr_and_lock,
-                              TensorBufferScopedLock::Create(input_buffers[1]));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_1_cpu_addr_and_lock,
+      TensorBufferScopedLock::Create(input_buffers[1],
+                                     TensorBuffer::LockMode::kWrite));
 
   // Attach events to input buffers.
   Fence input_fence_0 = platforms::darwinn::fence_util::CreateFence();
@@ -720,7 +732,8 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
