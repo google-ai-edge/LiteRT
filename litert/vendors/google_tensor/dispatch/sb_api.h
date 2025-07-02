@@ -351,6 +351,17 @@ ThrStatus thrLoadSqContainerFile(ThrContext* context, ThrSqContainerType type,
 ThrStatus thrUnloadSqContainer(ThrContext* context,
                                ThrSqContainerHandle handle);
 
+// Pins the resources of the SqContainer associated with the given
+// `ThrSqContainerHandle`. This can be used to preload the resources of the
+// SqContainer and prevent them from being released when they are not in use.
+// Note: Pinning a pinned SqContainer is a no-op.
+ThrStatus thrPinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
+
+// Unpins the resources of the SqContainer associated with the given
+// `ThrSqContainerHandle`.
+// Note: Unpinning an unpinned SqContainer is a no-op.
+ThrStatus thrUnpinSqContainer(ThrContext* context, ThrSqContainerHandle handle);
+
 // Assigns a SchedulingQuantum for the node of `ThrNodeId`.
 // `func_name` needs to be provided for a DSP function.
 //
