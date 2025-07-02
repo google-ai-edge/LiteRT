@@ -166,7 +166,7 @@ cc_library(
         "//tflite/delegates/gpu/cl:cl_device",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@opencl_headers",
-    ] + select({
+    ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
             "//tflite/delegates/gpu/cl:gl_interop",
             "//tflite/delegates/gpu/gl:egl_environment",
@@ -344,6 +344,7 @@ cc_test(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/cc/options:litert_runtime_options",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -502,7 +503,6 @@ cc_library(
     srcs = ["profiler.cc"],
     hdrs = ["profiler.h"],
     deps = [
-        "//litert/c:litert_logging",
         "//litert/c:litert_profiler_event",
         "//tflite/core/api",
         "//tflite/profiling:profile_buffer",
