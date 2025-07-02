@@ -15,11 +15,11 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 
+#include <cstdint>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -28,6 +28,18 @@ namespace litert {
 struct OpOptions {
   virtual LiteRtStatus InitFromOp(LiteRtOp op) = 0;
   virtual ~OpOptions() = default;
+};
+
+using ActivationFunction = uint32_t;
+enum ActivationFunctionType : uint32_t {
+  kActivationFunctionTypeNone = 0,
+  kActivationFunctionTypeRelu = 1,
+  kActivationFunctionTypeReluN1To1 = 2,
+  kActivationFunctionTypeRelu6 = 3,
+  kActivationFunctionTypeTanh = 4,
+  kActivationFunctionTypeSignBit = 5,
+  kActivationFunctionTypeMin = kActivationFunctionTypeNone,
+  kActivationFunctionTypeMax = kActivationFunctionTypeSignBit,
 };
 
 // Struct to hold LiteRt composite ops.
@@ -46,11 +58,35 @@ struct CompositeOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt Add op.
+struct AddOptions : public OpOptions {
+  LiteRtOp op;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt BatchMatmul op.
+struct BatchMatmulOptions : public OpOptions {
+  LiteRtOp op;
+  bool adj_x;
+  bool adj_y;
+  bool asymmetric_quantize_input;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
   if constexpr (std::is_same_v<OptionsT, CompositeOptions>) {
     CompositeOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, AddOptions>) {
+    AddOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, BatchMatmulOptions>) {
+    BatchMatmulOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {

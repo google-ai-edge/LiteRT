@@ -41,4 +41,34 @@ LiteRtStatus CompositeOptions::InitFromOp(LiteRtOp op) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus AddOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflAdd) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAddFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus BatchMatmulOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflBatchMatmul) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjXOption(op, &adj_x));
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAdjYOption(op, &adj_y));
+  LITERT_RETURN_IF_ERROR(LiteRtGetBatchMatmulAsymmetricQuantizeInputOption(
+      op, &asymmetric_quantize_input));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
 }  // namespace litert
