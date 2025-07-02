@@ -45,6 +45,8 @@ litert_dynamic_lib(
         "//conditions:default": [],
     }) + [
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so",
+        # Wheel package places the shared library in the root directory.
+        "-Wl,-rpath,$$ORIGIN/../../..",
     ],
     shared_lib_name = "qnn_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
