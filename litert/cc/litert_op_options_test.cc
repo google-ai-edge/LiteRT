@@ -213,6 +213,48 @@ TEST(OpOptionsTest, GetMulOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetSoftmaxOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSoftmax);
+  tflite::SoftmaxOptionsT options;
+  options.beta = 1.0;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SoftmaxOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SoftmaxOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->beta, 1.0);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetStridedSliceOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflStridedSlice);
+  tflite::StridedSliceOptionsT options;
+  options.begin_mask = 1;
+  options.end_mask = 2;
+  options.ellipsis_mask = 3;
+  options.new_axis_mask = 4;
+  options.shrink_axis_mask = 5;
+  options.offset = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_StridedSliceOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<StridedSliceOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->begin_mask, 1);
+  EXPECT_EQ(res->end_mask, 2);
+  EXPECT_EQ(res->ellipsis_mask, 3);
+  EXPECT_EQ(res->new_axis_mask, 4);
+  EXPECT_EQ(res->shrink_axis_mask, 5);
+  EXPECT_EQ(res->offset, true);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -222,6 +264,8 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<DivOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<FullyConnectedOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MulOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SoftmaxOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<StridedSliceOptions>(&op));
 }
 
 }  // namespace
