@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/wrappers/param_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
@@ -62,6 +63,10 @@ class OpWrapper final {
       const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs);
 
   void ClearTensorParams();
+
+  void AddNamespace(absl::string_view op_namespace);
+
+  void AppendName(absl::string_view name);
 
  private:
   const char* type_name_{nullptr};

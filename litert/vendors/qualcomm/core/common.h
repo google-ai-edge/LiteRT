@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
+
 // c++ enum and wrapper without dependency.
 namespace qnn {
 
@@ -61,6 +63,9 @@ class Options {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
 
+  const absl::string_view GetQnnJsonPath() const;
+  void SetQnnJsonPath(const char* qnn_json_path);
+
   std::string Dump() const;
 
  private:
@@ -71,6 +76,7 @@ class Options {
   bool enable_weight_sharing_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
+  std::string qnn_json_path_;
 };
 
 }  // namespace qnn
