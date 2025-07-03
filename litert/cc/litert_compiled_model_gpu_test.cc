@@ -42,6 +42,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -119,8 +120,8 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
@@ -174,16 +175,13 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options,
       CreateGpuOptions(/*no_immutable_external_tensors_mode=*/true));
+  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  options.AddOpaqueOptions(std::move(runtime_options));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(*env, model, options));
 
-  // Create profiler, the profiler needs to be alive during the model execution.
-  // The profiler is owned by the caller, the caller is responsible for
-  // disposing the profiler after the model execution. You can set another
-  // profiler after the model execution.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, Profiler::Create(1024));
-  ASSERT_TRUE(profiler);
-  ASSERT_TRUE(compiled_model.SetProfiler(profiler));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto profiler, compiled_model.GetProfiler());
   ASSERT_TRUE(profiler.StartProfiling());
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
@@ -227,8 +225,8 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
@@ -356,8 +354,8 @@ TEST_P(CompiledModelGpuTest, Async) {
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
@@ -433,8 +431,8 @@ TEST_P(CompiledModelGpuTest, PartialDelegation) {
   EXPECT_EQ(output_names.at(0), "tfl.add1");
   EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     float expected_output[2] = {12.0f, 23.0f};
@@ -500,7 +498,7 @@ TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
   EXPECT_TRUE(output_buffers[0].IsOpenClMemory());
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const int32_t>(
-        output_buffers[0]);
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kInt32TestOutputSize);
     for (auto i = 0; i < kInt32TestOutputSize; ++i) {
@@ -662,8 +660,8 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
@@ -758,8 +756,8 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   {
-    auto lock_and_addr =
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]);
+    auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
     ASSERT_TRUE(lock_and_addr);
     auto output = absl::MakeSpan(lock_and_addr->second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
