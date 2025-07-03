@@ -21,6 +21,9 @@
 
 namespace qnn {
 namespace {
+constexpr std::size_t kInputIndex = 0;
+constexpr std::size_t kOutputIndex = 0;
+
 std::vector<std::uint32_t> GetStaticTensorDimention(
     const std::vector<std::uint32_t>& input_dimensions,
     const std::vector<std::uint32_t>& output_dimensions) {
@@ -37,6 +40,10 @@ std::vector<std::uint32_t> GetStaticTensorDimention(
     final_dimensions = input_dimensions;
   }
 
+  // assign to 1 for minimal size
+  // in[0]: [1, 1, 1, 2]
+  // in[1]: [1, 1, 2, 1]
+  // out[0]: [1, 1, 2, 2]
   for (std::size_t i = 0; i < output_size; ++i) {
     final_dimensions[i] =
         (output_dimensions[i] > final_dimensions[i]) ? output_dimensions[i] : 1;
@@ -46,28 +53,22 @@ std::vector<std::uint32_t> GetStaticTensorDimention(
 }
 
 template <typename T>
-TensorWrapper& CreateStaticTensor(TensorPool& tensor_pool,
-                                  const Qnn_DataType_t data_type,
-                                  TensorWrapper& input, TensorWrapper& output,
-                                  bool is_quant) {
-  std::vector<std::uint32_t> static_dims =
-      GetStaticTensorDimention(input.GetDims(), output.GetDims());
-  std::uint32_t static_size =
-      std::accumulate(static_dims.begin(), static_dims.end(), 1,
-                      std::multiplies<std::uint32_t>());
-
+inline TensorWrapper& CreateStaticTensor(
+    TensorPool& tensor_pool, const TensorWrapper& input,
+    const std::vector<std::uint32_t>& static_dims) {
+  std::uint32_t static_size = std::accumulate(
+      static_dims.begin(), static_dims.end(), 1, std::multiplies<>());
   T static_value{0};
   QuantizeParamsWrapperVariant quant_param{};
-  if (is_quant) {
+  if (input.IsPerTensorQuant()) {
     auto input_quant_param =
         std::get<ScaleOffsetQuantizeParamsWrapper>(input.GetQuantParams());
     quant_param.emplace<ScaleOffsetQuantizeParamsWrapper>(input_quant_param);
-    static_value = -input_quant_param.GetZeroPoint();
+    static_value = input_quant_param.GetZeroPoint();
   }
   std::vector<T> static_data(static_size, static_value);
-
-  return tensor_pool.CreateStaticTensor(data_type, quant_param, static_dims,
-                                        sizeof(T) * static_size,
+  return tensor_pool.CreateStaticTensor(input.GetDataType(), quant_param,
+                                        static_dims, sizeof(T) * static_size,
                                         static_data.data());
 }
 }  // namespace
@@ -78,71 +79,74 @@ std::vector<OpWrapper> BuildBroadcastToOp(
   std::vector<OpWrapper> res;
 
   // TODO: handle per-channel case
-  if (std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
+  if (!std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+          inputs[0].get().GetQuantParams()) &&
+      !std::holds_alternative<UndefinedQuantizeParamsWrapper>(
           inputs[0].get().GetQuantParams())) {
     return res;
   }
 
+  TensorWrapper& input_tensor = inputs[kInputIndex];
+  TensorWrapper& output_tensor = outputs[kOutputIndex];
+  auto data_type = input_tensor.GetDataType();
+
   const char* qnn_op = nullptr;
-  if (inputs[0].get().GetDataType() == QNN_DATATYPE_BOOL_8) {
+  if (data_type == QNN_DATATYPE_BOOL_8) {
     qnn_op = QNN_OP_ELEMENT_WISE_OR;
   } else {
     qnn_op = QNN_OP_ELEMENT_WISE_ADD;
   }
 
   auto& broadcast_op = CreateOpWrapper(res, qnn_op);
-  broadcast_op.AddInputTensor(inputs[0]);
-  auto data_type = inputs[0].get().GetDataType();
+  broadcast_op.AddInputTensor(input_tensor);
+
+  auto static_dims =
+      GetStaticTensorDimention(input_tensor.GetDims(), output_tensor.GetDims());
+
+  TensorWrapper* static_tensor = nullptr;
   switch (data_type) {
     case QNN_DATATYPE_BOOL_8: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::uint8_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], false);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<uint8_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_UFIXED_POINT_8: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::uint8_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], true);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<uint8_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_SFIXED_POINT_8: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::int8_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], true);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<int8_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_UFIXED_POINT_16: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::uint16_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], true);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<uint16_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_SFIXED_POINT_16: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::int16_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], true);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<int16_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_FLOAT_32: {
-      TensorWrapper& static_tensor = CreateStaticTensor<float>(
-          tensor_pool, data_type, inputs[0], outputs[0], false);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<float>(tensor_pool, input_tensor, static_dims);
       break;
     }
     case QNN_DATATYPE_INT_32: {
-      TensorWrapper& static_tensor = CreateStaticTensor<std::int32_t>(
-          tensor_pool, data_type, inputs[0], outputs[0], false);
-      broadcast_op.AddInputTensor(static_tensor);
+      static_tensor =
+          &CreateStaticTensor<int32_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
     default: {
       QNN_LOG_ERROR("Unsupported QNN data type when creating static tensor");
-      break;
+      return {};
     }
   }
-
-  broadcast_op.AddOutputTensor(outputs[0]);
+  broadcast_op.AddInputTensor(*static_tensor);
+  broadcast_op.AddOutputTensor(output_tensor);
 
   return res;
 }
