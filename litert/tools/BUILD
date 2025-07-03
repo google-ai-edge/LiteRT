@@ -290,6 +290,7 @@ cc_library(
         "//litert/cc/internal:litert_gpu_options",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/cc/options:litert_runtime_options",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/tools:command_line_flags",
