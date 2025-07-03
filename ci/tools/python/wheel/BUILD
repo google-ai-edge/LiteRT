@@ -40,7 +40,7 @@ genrule(
     name = "fixed_protos",
     srcs = ["//tflite/profiling/proto:model_runtime_info_py"],
     outs = ["model_runtime_info_pb2.py"],
-    cmd = "sed -e 's/tflite\\.profiling\\.proto/ai_edge_litert/g' $< > $@",
+    cmd = "for f in $(SRCS); do sed -e 's/tflite\\.profiling\\.proto/ai_edge_litert/g' $$f > $(RULEDIR)/$$(basename $$f); done",
 )
 
 # This includes the dependencies that lives in litert/python/
@@ -80,16 +80,15 @@ PACKAGE_DATA = [
 py_wheel(
     name = "litert_wheel",
     srcs = [
-        #":fixed_protos", # TODO(vam): Re-enable this once the proto is fixed.
-        "//tflite/profiling/proto:model_runtime_info_py",
+        ":fixed_protos",
         ":fixed_pydeps",
         "//litert/c:libLiteRtRuntimeCApi.so",
+        "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
-        "//litert/python:pywrap_litert_binaries",
     ],
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
