@@ -15,12 +15,10 @@ limitations under the License.
 #include "tflite/experimental/acceleration/compatibility/gpu_compatibility.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <map>
 #include <memory>
 #include <string>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/experimental/acceleration/compatibility/devicedb-sample.h"
 #include "tflite/experimental/acceleration/compatibility/variables.h"
