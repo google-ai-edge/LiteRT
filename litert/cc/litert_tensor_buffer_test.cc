@@ -395,7 +395,7 @@ TEST(TensorBuffer, DoubleLockOrUnlock) {
   EXPECT_THAT(tensor_buffer.Unlock(), IsError());
 }
 
-TEST(TensorBuffer, TensorBufferScopedLock) {
+TEST(TensorBuffer, TensorBufferScopedLock_Read) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
   const RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
@@ -406,7 +406,42 @@ TEST(TensorBuffer, TensorBufferScopedLock) {
                                   sizeof(kTensorData)));
 
   {
-    auto lock_and_addr = TensorBufferScopedLock::Create(tensor_buffer);
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kRead);
+    LITERT_EXPECT_OK(lock_and_addr);
+  }
+}
+
+TEST(TensorBuffer, TensorBufferScopedLock_Write) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(env.Get(), kTensorBufferType, kTensorType,
+                                  sizeof(kTensorData)));
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kWrite);
+    LITERT_EXPECT_OK(lock_and_addr);
+  }
+}
+
+TEST(TensorBuffer, TensorBufferScopedLock_ReadWrite) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
+  const RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeHostMemory;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto tensor_buffer,
+      TensorBuffer::CreateManaged(env.Get(), kTensorBufferType, kTensorType,
+                                  sizeof(kTensorData)));
+
+  {
+    auto lock_and_addr = TensorBufferScopedLock::Create(
+        tensor_buffer, TensorBuffer::LockMode::kReadWrite);
     LITERT_EXPECT_OK(lock_and_addr);
   }
 }
