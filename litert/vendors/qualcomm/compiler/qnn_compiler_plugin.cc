@@ -110,27 +110,6 @@ LiteRtStatus InitQnnOptions(
   return kLiteRtStatusOk;
 }
 
-bool SkipValidationOfQuantizeOp(const litert::Op& op) {
-  const auto op_input_0 = op.Inputs()[0].RankedTensorType();
-  if (!op_input_0) {
-    LITERT_LOG(LITERT_ERROR, "%s", op_input_0.Error().Message().data());
-    return false;
-  }
-  const auto op_output_0 = op.Outputs()[0].RankedTensorType();
-  if (!op_output_0) {
-    LITERT_LOG(LITERT_ERROR, "%s", op_output_0.Error().Message().data());
-    return false;
-  }
-
-  if (op_input_0->ElementType() == litert::ElementType::Float32 &&
-      op_output_0->ElementType() == litert::ElementType::Int16 &&
-      op.Code() == kLiteRtOpCodeTflQuantize) {
-    LITERT_LOG(LITERT_INFO, "[G2G] Skip validation of quant op in Gemma3 mask");
-    return true;
-  }
-  return false;
-}
-
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -340,8 +319,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     if (op_wrappers.empty()) {
       continue;
     }
-    if (SkipValidationOfQuantizeOp(op) ||
-        std::all_of(
+    if (std::all_of(
             op_wrappers.begin(), op_wrappers.end(),
             [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
               return kLiteRtStatusOk ==
