@@ -435,17 +435,24 @@ cc_library(
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
         "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 
 cc_test(
     name = "litert_op_options_test",
     srcs = ["litert_op_options_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+    ],
     deps = [
+        ":litert_expected",
         ":litert_op_options",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
