@@ -38,6 +38,8 @@ class RuntimeOptions : public OpaqueOptions {
 
   Expected<void> SetShloCompositeInlining(bool shlo_composite_inlining);
   Expected<bool> GetShloCompositeInlining() const;
+  Expected<void> SetEnableProfiling(bool enable_profiling);
+  Expected<bool> GetEnableProfiling() const;
 };
 
 }  // namespace litert
