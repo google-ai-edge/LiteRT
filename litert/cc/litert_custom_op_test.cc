@@ -69,11 +69,14 @@ class MyCustomOpKernel : public CustomOpKernel {
     LITERT_ASSIGN_OR_RETURN(size_t num_elements,
                             tensor_type.Layout().NumElements());
     LITERT_ASSIGN_OR_RETURN(auto input0_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(inputs[0]));
+                            TensorBufferScopedLock::Create<float>(
+                                inputs[0], TensorBuffer::LockMode::kRead));
     LITERT_ASSIGN_OR_RETURN(auto input1_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(inputs[1]));
+                            TensorBufferScopedLock::Create<float>(
+                                inputs[1], TensorBuffer::LockMode::kRead));
     LITERT_ASSIGN_OR_RETURN(auto output_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(outputs[0]));
+                            TensorBufferScopedLock::Create<float>(
+                                outputs[0], TensorBuffer::LockMode::kWrite));
 
     const float* input0 = input0_lock_and_addr.second;
     const float* input1 = input1_lock_and_addr.second;
@@ -131,7 +134,8 @@ TEST(CompiledModelTest, CustomOp) {
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(output_buffers[0]));
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
     auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
     for (auto i = 0; i < kTestOutputSize; ++i) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];

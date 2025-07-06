@@ -57,6 +57,8 @@ TEST(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   params.Set<bool>("use_cpu", true);
   params.Set<bool>("use_gpu", false);
   params.Set<bool>("require_full_delegation", false);
+  params.Set<bool>("use_profiler", true);
+
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
   TestBenchmarkListener listener;
   benchmark.AddListener(&listener);
