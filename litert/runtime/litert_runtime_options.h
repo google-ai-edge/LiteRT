@@ -22,6 +22,9 @@ struct LiteRtRuntimeOptionsT {
   // If true, the interpreter will inline composite ops.
   bool shlo_composite_inlining = false;
 
+  // If true, the interpreter will enable profiling.
+  bool enable_profiling = false;
+
   static const char* Identifier() { return "runtime"; }
 };
 
