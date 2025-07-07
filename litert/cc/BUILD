@@ -1225,10 +1225,13 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_profiler",
-        "//litert/c:litert_profiler_event",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
 )
 
 exports_files(glob([
