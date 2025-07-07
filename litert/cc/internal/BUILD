@@ -142,6 +142,7 @@ cc_library(
         ":litert_custom_op_kernel",
         ":litert_environment",
         ":litert_options",
+        ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
@@ -154,7 +155,6 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_profiler",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -283,5 +283,18 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_profiler",
+    hdrs = ["//litert/cc:litert_profiler.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_profiler",
+        "//litert/c:litert_profiler_event",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
     ],
 )
