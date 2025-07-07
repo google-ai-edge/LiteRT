@@ -67,3 +67,22 @@ LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
   *shlo_composite_inlining = options->shlo_composite_inlining;
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool enable_profiling) {
+LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+    << "options is null.";
+options->enable_profiling = enable_profiling;
+return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
+  LiteRtRuntimeOptions options, bool* enable_profiling) {
+LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+    << "options is null.";
+LITERT_RETURN_IF_ERROR(enable_profiling,
+                       litert::ErrorStatusBuilder::InvalidArgument())
+    << "enable_profiling is null.";
+*enable_profiling = options->enable_profiling;
+return kLiteRtStatusOk;
+}
