@@ -115,11 +115,31 @@ TEST(OpOptionsTest, GetAddOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
-TEST(OpOptionsTest, GetUnsupportedAddOptions) {
+TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
   ASSERT_FALSE(GetOptionsAs<AddOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<BatchMatmulOptions>(&op));
 }
 
+TEST(OpOptionsTest, GetBatchMatmulOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
+  tflite::BatchMatMulOptionsT options;
+  options.adj_x = false;
+  options.adj_y = false;
+  options.asymmetric_quantize_inputs = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_BatchMatMulOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<BatchMatmulOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->adj_x, false);
+  EXPECT_EQ(res->adj_y, false);
+  EXPECT_EQ(res->asymmetric_quantize_input, true);
+  EXPECT_EQ(&op, res->op);
+}
 }  // namespace
 }  // namespace litert
