@@ -98,5 +98,28 @@ TEST(OpOptionsTest, GetRmsNormEpsilonFromSimpleComposite) {
   EXPECT_EQ(info.Error().Status(), kLiteRtStatusErrorInvalidArgument);
 }
 
+TEST(OpOptionsTest, GetAddOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  tflite::AddOptionsT options;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_AddOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<AddOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
+  EXPECT_NE(res->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetUnsupportedAddOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeShloComposite);
+  ASSERT_FALSE(GetOptionsAs<AddOptions>(&op));
+}
+
 }  // namespace
 }  // namespace litert
