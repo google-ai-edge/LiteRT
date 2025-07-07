@@ -24,7 +24,6 @@ jobs:
     runs-on: ubuntu-latest
 
     outputs:
-      tf_commit: ${{ steps.update_submodule.outputs.tf_commit }}
       nightly_release_date: ${{ steps.date.outputs.date }}
 
     steps:
@@ -37,19 +36,11 @@ jobs:
           DATE=$(date +'%Y%m%d')
           echo "date=${DATE}" >> $GITHUB_OUTPUT
 
-      - name: Init submodule
-        run: |
-          git submodule update --init --recursive
-
-      - name: Update submodule
-        id: update_submodule
+      - name: Grab TF commit hash
+        id: update_tf_commit
         if: ${{ inputs.is-prod-release != 'true' }}
         run: |
-          git submodule update --remote
-
-          cd ./third_party/tensorflow
-          TF_COMMIT=$(git rev-parse HEAD)
-
+          TF_COMMIT=$(curl -s https://api.github.com/repos/tensorflow/tensorflow/commits/master | jq -r '.sha')
           echo "tf_commit=${TF_COMMIT}" >> $GITHUB_OUTPUT
 
   build_linux:

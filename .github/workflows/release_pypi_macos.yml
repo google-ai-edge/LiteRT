@@ -13,9 +13,6 @@ name: Build and Release Python Package for MacOS
 on:
   workflow_call:
     inputs:
-      tensorflow-commit:
-        required: false
-        type: string
       nightly-release-date:
         required: false
         type: string
@@ -42,20 +39,6 @@ jobs:
         run: |
           DATE="${{ inputs.nightly-release-date }}"
           echo "NIGHTLY_RELEASE_DATE=${DATE}" >> $GITHUB_ENV
-
-      - name: Init submodule
-        run: |
-          git submodule update --init --recursive
-
-      - name: Update submodule
-        if: ${{ inputs.tensorflow-commit != '' }}
-        run: |
-          git submodule update --remote
-
-          cd ./third_party/tensorflow
-          TF_COMMIT="${{ inputs.tensorflow-commit }}"
-          echo "checking out tensorflow-commit=${TF_COMMIT}"
-          git checkout -q ${TF_COMMIT}
 
       - name: Install dependencies
         run: |
