@@ -14,6 +14,7 @@
 # ==============================================================================
 
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library")
+load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 
 # Building blocks for generating accuracy validation metric graphs.
 load("//tflite/experimental/acceleration/mini_benchmark:build_defs.bzl", "validation_model", "validation_test")
@@ -41,6 +42,7 @@ py_strict_library(
     ],
 )
 
+# THIS IS A TEST
 py_strict_binary(
     name = "mobilenet",
     srcs = ["mobilenet.py"],
@@ -49,7 +51,9 @@ py_strict_binary(
         "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
         "@org_tensorflow//tensorflow:tensorflow_py",
-    ],
+    ] + if_pywrap(
+        if_true = ["@org_tensorflow//tensorflow/python:_pywrap_tensorflow"],
+    ),
 )
 
 genrule(
@@ -93,7 +97,9 @@ py_strict_binary(
         "//tflite/python:lite",
         "//tflite/tools:flatbuffer_utils",
         "@org_tensorflow//tensorflow:tensorflow_py",
-    ],
+    ] + if_pywrap(
+        if_true = ["@org_tensorflow//tensorflow/python:_pywrap_tensorflow"],
+    ),
 )
 
 genrule(
