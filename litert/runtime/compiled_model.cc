@@ -112,6 +112,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         runtime_options) {
       interpreter_options.SetShloCompositeInlining(
           (*runtime_options)->shlo_composite_inlining);
+      if ((*runtime_options)->enable_profiling) {
+        profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
+      }
     }
 
     if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
@@ -124,10 +127,14 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   tflite::InterpreterBuilder builder(*fb_model_, resolver,
                                      &interpreter_options);
   builder(&interp_);
-  interp_->SetNumThreads(num_threads);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to build TFL interpreter");
+  }
+  interp_->SetNumThreads(num_threads);
+
+  if (profiler_ != nullptr) {
+    interp_->SetProfiler(profiler_);
   }
 
   signature_keys_ = interp_->signature_keys();
@@ -428,6 +435,11 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
+  }
+  // Check if we have a cached CPU buffer requirement.
+  auto cached_req = cpu_buffer_requirements_.find(tensor);
+  if (cached_req != cpu_buffer_requirements_.end()) {
+    return cached_req->second.Get();
   }
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {

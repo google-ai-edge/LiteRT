@@ -15,9 +15,12 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_OP_OPTIONS_H_
 
+#include <cstdint>
+#include <optional>
 #include <type_traits>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_expected.h"
@@ -42,8 +45,19 @@ struct CompositeOptions : public OpOptions {
   int subgraph;
   // The name of the composite op (stored in model).
   absl::string_view name;
+  // The version of the composite op.
+  int32_t version;
+  // The attributes of the composite op.
+  std::optional<flexbuffers::Map> attributes_map;
 
   LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+struct RmsNormOpts : public CompositeOptions {
+  // The epsilon composite attribute of the RMS norm.
+  float epsilon;
+
+  LiteRtStatus InitFromOp(LiteRtOp litert_op) override;
 };
 
 // Returns the composite info for the given op if it is a composite op.
@@ -51,6 +65,10 @@ template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
   if constexpr (std::is_same_v<OptionsT, CompositeOptions>) {
     CompositeOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, RmsNormOpts>) {
+    RmsNormOpts options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {
