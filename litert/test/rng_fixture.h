@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/cc/litert_numerics.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/test/fuzz.h"
 
@@ -80,6 +81,25 @@ class RngTest : public ::testing::Test {
 
   std::vector<std::unique_ptr<ScopedTrace>> traces_;
   std::vector<RepeatedBlock> fuzz_blocks_;
+};
+
+template <typename D>
+class DummyGenerator final : public DataGeneratorBase<D> {
+ public:
+  using DataType = D;
+
+  DummyGenerator() = default;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return val_++;
+  }
+
+  DataType Max() const override { return NumericLimits<D>::Max(); }
+  DataType Min() const override { return 0; }
+
+ private:
+  D val_ = 0;
 };
 
 }  // namespace litert::testing

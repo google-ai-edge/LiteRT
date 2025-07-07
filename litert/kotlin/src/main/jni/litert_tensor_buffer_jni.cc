@@ -130,8 +130,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                          "Failed to get tensor num elements.");
     return nullptr;
   }
-  auto lock_and_addr =
-      litert::TensorBufferScopedLock::Create<const int>(tensor_buffer);
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const int>(
+      tensor_buffer, litert::TensorBuffer::LockMode::kRead);
   jintArray result = env->NewIntArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetIntArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -160,8 +160,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadFloat(JNIEnv* env,
     return nullptr;
   }
 
-  auto lock_and_addr =
-      litert::TensorBufferScopedLock::Create<const float>(tensor_buffer);
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
+      tensor_buffer, litert::TensorBuffer::LockMode::kRead);
   jfloatArray result = env->NewFloatArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetFloatArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -190,8 +190,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt8(JNIEnv* env,
     return nullptr;
   }
 
-  auto lock_and_addr =
-      litert::TensorBufferScopedLock::Create<const jbyte>(tensor_buffer);
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const jbyte>(
+      tensor_buffer, litert::TensorBuffer::LockMode::kRead);
   jbyteArray result = env->NewByteArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetByteArrayRegion(result, 0, *num_elements, lock_and_addr->second);
@@ -220,8 +220,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
     return nullptr;
   }
 
-  auto lock_and_addr =
-      litert::TensorBufferScopedLock::Create<const jboolean>(tensor_buffer);
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const jboolean>(
+      tensor_buffer, litert::TensorBuffer::LockMode::kRead);
   jbooleanArray result = env->NewBooleanArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetBooleanArrayRegion(result, 0, *num_elements, lock_and_addr->second);
