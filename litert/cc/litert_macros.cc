@@ -24,7 +24,7 @@
 
 namespace litert {
 
-ErrorStatusBuilder::operator absl::Status() const noexcept {
+absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
   PrintLog();
   switch (error_.Status()) {
     case kLiteRtStatusOk:

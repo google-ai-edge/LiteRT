@@ -250,6 +250,8 @@ cc_test(
         ":litert_macros",
         "//litert/c:litert_common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],
 )

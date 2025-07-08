@@ -159,10 +159,10 @@ class ErrorStatusBuilder {
     return litert::Unexpected(error_.Status(), LogMessage());
   }
 
-  operator absl::Status() const noexcept;
+  operator absl::Status() const noexcept { return ToAbslStatus(); }
 
   template <class T>
-  operator absl::StatusOr<T>() const noexcept { return *this; }
+  operator absl::StatusOr<T>() const noexcept { return ToAbslStatus(); }
   // NOLINTEND(*-explicit-constructor)
 
   static constexpr bool IsError(bool status) { return !status; }
@@ -229,6 +229,7 @@ class ErrorStatusBuilder {
            (!error_.Message().empty() || extra_log_);
   }
 
+  absl::Status ToAbslStatus() const noexcept;
   std::string LogMessage() const;
 
   litert::Error error_;

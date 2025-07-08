@@ -19,6 +19,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_logging.h"
@@ -333,6 +335,39 @@ TEST(LiteRtErrorStatusBuilderTest, CastToLiteRtStatusLogsError) {
   intercepted_logs << log_interceptor;
   EXPECT_THAT(intercepted_logs.str(), HasSubstr("Failed a subcall."));
   EXPECT_THAT(intercepted_logs.str(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatus) {
+  auto error = []() -> absl::Status {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+    return absl::OkStatus();
+  }();
+  EXPECT_FALSE(error.ok());
+  EXPECT_EQ(error.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error.message(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
+  auto error_1 = []() -> absl::StatusOr<int> {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(kLiteRtStatusErrorInvalidArgument, "An error message."));
+    return 1;
+  }();
+  EXPECT_FALSE(error_1.ok());
+  EXPECT_EQ(error_1.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error_1.status().message(), HasSubstr("An error message."));
+
+  auto error_2 = []() -> absl::StatusOr<int> {
+    LITERT_ASSIGN_OR_RETURN(
+        auto v,
+        Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                 "An error message.")));
+    return v;
+  }();
+  EXPECT_FALSE(error_2.ok());
+  EXPECT_EQ(error_2.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error_2.status().message(), HasSubstr("An error message."));
 }
 
 }  // namespace
