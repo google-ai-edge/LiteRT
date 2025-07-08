@@ -83,6 +83,7 @@ class RngTest : public ::testing::Test {
   std::vector<RepeatedBlock> fuzz_blocks_;
 };
 
+// Dummy primitive generator that returns a monotonically increasing sequence.
 template <typename D>
 class DummyGenerator final : public DataGeneratorBase<D> {
  public:
@@ -100,6 +101,26 @@ class DummyGenerator final : public DataGeneratorBase<D> {
 
  private:
   D val_ = 0;
+};
+
+// Dummy random tensor data generator that uses the dummy generator above.
+template <typename D>
+class DummyRandomTensorData final
+    : public RandomTensorDataBase<D, DummyRandomTensorData<D>,
+                                  DummyGenerator<D>> {
+ public:
+  friend class RandomTensorDataBase<D, DummyRandomTensorData<D>,
+                                    DummyGenerator<D>>;
+  using Gen = DummyGenerator<D>;
+  using DataType = D;
+  static Gen MakeGen() { return Gen(); }
+};
+
+// Dummy traits class that maps the data type to the dummy random tensor data
+// generator.
+struct DummyRandomTensorBufferTraits {
+  template <typename D>
+  using Gen = DummyRandomTensorData<D>;
 };
 
 }  // namespace litert::testing
