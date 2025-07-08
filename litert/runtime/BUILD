@@ -535,5 +535,3 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
-
-# A dummy change to trigger copybara to push the changes missing from the previous CLs.
