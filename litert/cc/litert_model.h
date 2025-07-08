@@ -83,6 +83,19 @@ class RankedTensorType {
   class Layout layout_;
 };
 
+// Construct a ranked tensor type from c++ type.
+template <typename T>
+RankedTensorType MakeRankedTensorType(
+    std::initializer_list<Layout::Dim> shape) {
+  return RankedTensorType(GetElementType<T>(), Layout(std::move(shape)));
+}
+template <typename T, typename Shape>
+RankedTensorType MakeRankedTensorType(const Shape& shape) {
+  return RankedTensorType(
+      GetElementType<T>(),
+      Layout(Dimensions(std::cbegin(shape), std::cend(shape))));
+}
+
 // Tensor weights. C++ equivalent of LiteRtWeights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
  public:
