@@ -72,3 +72,27 @@ elseif(UNIX)
     )
 endif()
 
+
+if(LITERT_MAJOR_VERSION)
+    set_target_properties(qnn_compiler_plugin PROPERTIES
+        VERSION   "${LITERT_MAJOR_VERSION}.${LITERT_MINOR_VERSION}.${LITERT_PATCH_VERSION}"
+        SOVERSION "${LITERT_MAJOR_VERSION}"
+    )
+endif()
+
+install(TARGETS qnn_compiler_plugin
+    LIBRARY
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        COMPONENT   Runtime
+    NAMELINK_COMPONENT Development
+)
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/litert_qcom_compiler_plugin.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/litert_qcom_compiler_plugin.pc
+    @ONLY
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/litert_qcom_compiler_plugin.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
+    COMPONENT   Development
+)
