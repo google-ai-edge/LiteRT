@@ -99,4 +99,19 @@ LiteRtStatus BatchMatmulOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus ConcatenationOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConcatenation) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationAxisOption(op, &axis));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
+      op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

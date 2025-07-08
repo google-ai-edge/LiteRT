@@ -120,6 +120,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   op.SetOpCode(kLiteRtOpCodeShloComposite);
   ASSERT_FALSE(GetOptionsAs<AddOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<BatchMatmulOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ConcatenationOptions>(&op));
 }
 
 TEST(OpOptionsTest, GetBatchMatmulOptions) {
@@ -141,5 +142,24 @@ TEST(OpOptionsTest, GetBatchMatmulOptions) {
   EXPECT_EQ(res->asymmetric_quantize_input, true);
   EXPECT_EQ(&op, res->op);
 }
+
+TEST(OpOptionsTest, GetConcatenationOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflConcatenation);
+  tflite::ConcatenationOptionsT options;
+  options.axis = 1;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ConcatenationOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ConcatenationOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->axis, 1);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
+  EXPECT_EQ(&op, res->op);
+}
+
 }  // namespace
 }  // namespace litert
