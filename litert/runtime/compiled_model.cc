@@ -14,6 +14,7 @@
 
 #include "litert/runtime/compiled_model.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -34,6 +35,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -521,6 +523,39 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                io.data(), tensor, buffer, buffer_type.data());
   });
 
+  // Automatic shape detection for input tensors.
+  if (is_input) {
+    auto [_, layout] = buffer->tensor_type();
+    absl::Span<const int> buffer_shape =
+        absl::MakeConstSpan(layout.dimensions, layout.rank);
+
+    LITERT_ASSIGN_OR_RETURN(bool needs_auto_resize,
+                            InputTensorNeedsResize(tensor, buffer_shape));
+    if (needs_auto_resize) {
+      // When an input tensor is resized, output and intermediate tensors may
+      // also be resized. This can invalidate previously cached buffer
+      // requirements, so we clear the cache.
+      cpu_buffer_requirements_.clear();
+      // Shape change detected - perform automatic resize.
+      if (runner->ResizeInputTensor(
+              tensor_name, std::vector<int>(buffer_shape.begin(),
+                                            buffer_shape.end())) == kTfLiteOk) {
+        LITERT_LOG(LITERT_INFO, "Automatically resized input tensor %s",
+                   tensor_name ? tensor_name : "<unnamed>");
+      } else {
+        LITERT_LOG(LITERT_WARNING, "Automatic resize failed for tensor %s",
+                   tensor_name ? tensor_name : "<unnamed>");
+      }
+    } else {
+      // Get current tensor shape.
+      absl::Span<const int> current_shape =
+          absl::MakeConstSpan(tensor->dims->data, tensor->dims->size);
+      LITERT_RETURN_IF_ERROR(current_shape == buffer_shape,
+                             Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                        "Input tensor shape mismatch"));
+    }
+  }
+
   bool backend_requires_cpu_buffer = false;
 
   if (auto requirements = buffer_context_->GetBufferRequirements(tensor)) {
@@ -638,8 +673,9 @@ Expected<void> LiteRtCompiledModelT::Run(
   uint64_t event_handle = std::numeric_limits<uint64_t>::max();
   if (profiler_ && profiler_->IsProfiling()) {
     profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
-    event_handle = profiler_->BeginEvent("LiteRT::Run[buffer registration]",
-                          tflite::Profiler::EventType::DEFAULT, 0, 0);
+    event_handle =
+        profiler_->BeginEvent("LiteRT::Run[buffer registration]",
+                              tflite::Profiler::EventType::DEFAULT, 0, 0);
   }
   auto runner = GetSignatureRunner(signature_key);
   if (runner == nullptr) {
@@ -724,8 +760,8 @@ Expected<void> LiteRtCompiledModelT::Run(
 
   if (profiler_ && profiler_->IsProfiling()) {
     profiler_->SetCurrentEventSource(ProfiledEventSource::LITERT);
-    event_handle = profiler_->BeginEvent("LiteRT::Run[Buffer sync]",
-                          tflite::Profiler::EventType::DEFAULT, 0, 0);
+    event_handle = profiler_->BeginEvent(
+        "LiteRT::Run[Buffer sync]", tflite::Profiler::EventType::DEFAULT, 0, 0);
   }
 
   if (async) {
@@ -813,4 +849,83 @@ Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() {
     }
   }
   return LiteRtMetricsT{.metrics = std::move(metrics)};
+}
+
+// Three cases are handled in this function:
+// 1. The input tensor has the same shape as the new shape, then no resize is
+// needed.
+// 2. The input tensor has dynamic dimensions and the new shape is compatible,
+// then resize is needed.
+// 3. The input tensor has static dimensions or the new shape is not compatible,
+// then return error.
+Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
+    const TfLiteTensor* tensor, absl::Span<const int> new_shape) {
+  const TfLiteIntArray* shape_array =
+      (tensor->dims_signature && tensor->dims_signature->size > 0)
+          ? tensor->dims_signature
+          : tensor->dims;
+
+  if (!shape_array || shape_array->size == 0 || new_shape.empty()) {
+    return false;
+  }
+
+  // Get current tensor shape.
+  absl::Span<const int> current_shape =
+      absl::MakeConstSpan(shape_array->data, shape_array->size);
+
+  // Check if shapes are already the same.
+  if (current_shape == new_shape) {
+    return false;
+  }
+
+  // Validate that the tensor has dynamic dimensions (contains -1).
+  LITERT_RETURN_IF_ERROR(
+      std::find(current_shape.begin(), current_shape.end(), -1) !=
+          current_shape.end(),
+      litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                         absl::StrCat("Cannot auto-resize tensor ",
+                                      tensor->name ? tensor->name : "<unnamed>",
+                                      ": no dynamic dimensions found")));
+
+  // Validate that new shape is compatible with tensor structure.
+  LITERT_RETURN_IF_ERROR(
+      current_shape.size() == new_shape.size(),
+      litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrCat("Cannot auto-resize tensor ",
+                       tensor->name ? tensor->name : "<unnamed>",
+                       ": rank mismatch (current: ", current_shape.size(),
+                       ", new: ", new_shape.size(), ")")));
+
+  // Check that static dimensions match and dynamic dimensions are reasonable.
+  for (size_t i = 0; i < current_shape.size(); ++i) {
+    if (current_shape[i] != -1) {
+      // Static dim ⇒ must be identical.
+      LITERT_RETURN_IF_ERROR(
+          current_shape[i] == new_shape[i],
+          litert::Unexpected(
+              kLiteRtStatusErrorInvalidArgument,
+              absl::StrCat("Cannot auto-resize tensor ",
+                           tensor->name ? tensor->name : "<unnamed>",
+                           ": static dimension mismatch at index ", i,
+                           " (current: ", current_shape[i],
+                           ", new: ", new_shape[i], ")")));
+    } else {
+      // Dynamic dim ⇒ new value must be positive.
+      LITERT_RETURN_IF_ERROR(
+          new_shape[i] > 0,
+          litert::Unexpected(
+              kLiteRtStatusErrorInvalidArgument,
+              absl::StrCat("Cannot auto-resize tensor ",
+                           tensor->name ? tensor->name : "<unnamed>",
+                           ": invalid dimension size ", new_shape[i],
+                           " at index ", i)));
+    }
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "Detected shape change for tensor %s - validation passed",
+             tensor->name ? tensor->name : "<unnamed>");
+
+  return true;
 }

@@ -25,6 +25,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -130,6 +131,9 @@ class LiteRtCompiledModelT {
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
 
  private:
+  // Helper function to automatically resize input tensor based on shape change
+  static litert::Expected<bool> InputTensorNeedsResize(
+      const TfLiteTensor* tensor, absl::Span<const int> new_shape);
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
     tflite::TfLiteOpaqueDelegateUniquePtr delegate;
