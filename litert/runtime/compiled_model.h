@@ -111,9 +111,9 @@ class LiteRtCompiledModelT {
   // The same as Run() for C API.
   litert::Expected<void> RunCApi(size_t signature_index,
                                  size_t num_input_buffers,
-                                 LiteRtTensorBuffer* input_buffers,
+                                 const LiteRtTensorBuffer* input_buffers,
                                  size_t num_output_buffers,
-                                 LiteRtTensorBuffer* output_buffers,
+                                 const LiteRtTensorBuffer* output_buffers,
                                  bool* async);
 
   litert::Expected<void> StartMetricsCollection(int detail_level);
