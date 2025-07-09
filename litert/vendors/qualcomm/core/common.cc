@@ -4,7 +4,6 @@
 #include "litert/vendors/qualcomm/core/common.h"
 
 #include <cstdint>
-
 #include <string>
 #include <vector>
 
