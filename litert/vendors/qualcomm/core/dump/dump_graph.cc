@@ -86,60 +86,61 @@ void AddQnnTensor(const Qnn_TensorV1_t& qnn_tensor,
   }
 }
 
-void AddScalarParams(const Qnn_Param_t& params, nlohmann::json& qnn_node_json) {
+void AddScalarParams(const Qnn_Param_t& params,
+                     nlohmann::json& scalar_params_json) {
   const char* name = params.name;
   Qnn_DataType_t datatype = params.scalarParam.dataType;
   const Qnn_Scalar_t& scalar = params.scalarParam;
   switch (datatype) {
     case QNN_DATATYPE_INT_8:
     case QNN_DATATYPE_SFIXED_POINT_8:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.int8Value}};
       break;
     case QNN_DATATYPE_INT_16:
     case QNN_DATATYPE_SFIXED_POINT_16:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.int16Value}};
       break;
     case QNN_DATATYPE_INT_32:
     case QNN_DATATYPE_SFIXED_POINT_32:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.int32Value}};
       break;
     case QNN_DATATYPE_INT_64:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.int64Value}};
       break;
     case QNN_DATATYPE_BOOL_8:
     case QNN_DATATYPE_UINT_8:
     case QNN_DATATYPE_UFIXED_POINT_8:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.uint8Value}};
       break;
     case QNN_DATATYPE_UINT_16:
     case QNN_DATATYPE_UFIXED_POINT_16:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.uint16Value}};
       break;
     case QNN_DATATYPE_UINT_32:
     case QNN_DATATYPE_UFIXED_POINT_32:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.uint32Value}};
       break;
     case QNN_DATATYPE_UINT_64:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.uint64Value}};
       break;
     case QNN_DATATYPE_FLOAT_32:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.floatValue}};
       break;
     case QNN_DATATYPE_FLOAT_64:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.doubleValue}};
       break;
     case QNN_DATATYPE_STRING:
-      qnn_node_json["scalar_params"][name] =
+      scalar_params_json[name] =
           nlohmann::json{{std::to_string(datatype), scalar.stringValue}};
       break;
     default:
@@ -269,7 +270,7 @@ void DumpQnnJson(
     qnn_node_json["tensor_params"] = nlohmann::json::object();
     for (uint32_t i = 0; i < op_config.v1.numOfParams; ++i) {
       if (op_config.v1.params[i].paramType == QNN_PARAMTYPE_SCALAR) {
-        AddScalarParams(op_config.v1.params[i], qnn_node_json);
+        AddScalarParams(op_config.v1.params[i], qnn_node_json["scalar_params"]);
       } else if (op_config.v1.params[i].paramType == QNN_PARAMTYPE_TENSOR) {
         nlohmann::json qnn_tensor_json = nlohmann::json::object();
         const Qnn_TensorV1_t& qnn_tensor =
