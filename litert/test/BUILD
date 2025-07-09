@@ -222,6 +222,35 @@ cc_library(
     hdrs = ["fuzz.h"],
 )
 
+cc_library(
+    name = "simple_buffer",
+    hdrs = ["simple_buffer.h"],
+    deps = [
+        "//litert/c:litert_dispatch_headers",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "simple_buffer_test",
+    srcs = ["simple_buffer_test.cc"],
+    deps = [
+        ":simple_buffer",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_model",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(srcs = [
     "testdata/mobilenet_v2_1.0_224.tflite",
     "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
