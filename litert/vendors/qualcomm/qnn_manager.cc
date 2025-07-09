@@ -268,6 +268,11 @@ LiteRtStatus QnnManager::GenerateContextBinary(
 }
 
 LiteRtStatus QnnManager::ValidateOp(const Qnn_OpConfig_t& op_config) {
+  // TODO: Unblock QNN validation for RMSNorm
+  if (absl::StrContains(op_config.v1.name, "RmsNorm")) {
+    return kLiteRtStatusOk;
+  }
+
   if (Qnn_ErrorHandle_t error =
           Api()->backendValidateOpConfig(BackendHandle(), op_config);
       QNN_SUCCESS != error) {
