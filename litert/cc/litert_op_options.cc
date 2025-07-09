@@ -114,4 +114,18 @@ LiteRtStatus ConcatenationOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus DivOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflDiv) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDivFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

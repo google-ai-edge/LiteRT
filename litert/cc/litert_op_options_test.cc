@@ -115,14 +115,6 @@ TEST(OpOptionsTest, GetAddOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
-TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
-  LiteRtOpT op;
-  op.SetOpCode(kLiteRtOpCodeShloComposite);
-  ASSERT_FALSE(GetOptionsAs<AddOptions>(&op));
-  ASSERT_FALSE(GetOptionsAs<BatchMatmulOptions>(&op));
-  ASSERT_FALSE(GetOptionsAs<ConcatenationOptions>(&op));
-}
-
 TEST(OpOptionsTest, GetBatchMatmulOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeTflBatchMatmul);
@@ -159,6 +151,31 @@ TEST(OpOptionsTest, GetConcatenationOptions) {
   EXPECT_EQ(res->axis, 1);
   EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
   EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetDivOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflDiv);
+  tflite::DivOptionsT options;
+  options.fused_activation_function = tflite::ActivationFunctionType_RELU;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_DivOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<DivOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeShloComposite);
+  ASSERT_FALSE(GetOptionsAs<AddOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<BatchMatmulOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ConcatenationOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<DivOptions>(&op));
 }
 
 }  // namespace
