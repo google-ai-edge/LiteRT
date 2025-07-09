@@ -79,6 +79,7 @@
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -386,6 +387,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                                    output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflSqrt: {
+      op_wrappers = ::qnn::BuildElementwiseSqrtOp(tensor_pool, input_tensors,
+                                                  output_tensors);
+      break;
+    }
     case LiteRtOpCode::kLiteRtOpCodeTflSin: {
       op_wrappers = ::qnn::BuildElementwiseSinOp(tensor_pool, input_tensors,
                                                  output_tensors);
@@ -580,9 +586,16 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     }
     case LiteRtOpCode::kLiteRtOpCodeTflPack: {
       int32_t axis{};
-      LiteRtGetPackAxisOption(litert_op.Get(), &axis);
+      LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(litert_op.Get(), &axis));
       op_wrappers =
           ::qnn::BuildPackOp(tensor_pool, input_tensors, output_tensors, axis);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflUnpack: {
+      int32_t axis{};
+      LITERT_RETURN_IF_ERROR(LiteRtGetUnpackAxisOption(litert_op.Get(), &axis));
+      op_wrappers = ::qnn::BuildUnpackOp(tensor_pool, input_tensors,
+                                         output_tensors, axis);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflDynamicUpdateSlice: {
