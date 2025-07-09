@@ -153,7 +153,7 @@ TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtQualcommOptionsTest, QnnJsonPath) {
+TEST(LiteRtQualcommOptionsTest, QnnJsonDir) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
 
@@ -161,12 +161,12 @@ TEST(LiteRtQualcommOptionsTest, QnnJsonPath) {
   LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
 
   LITERT_ASSERT_OK(
-      LiteRtQualcommOptionsSetQnnJsonPath(qualcomm_options, "tmp.json"));
+      LiteRtQualcommOptionsSetQnnJsonDir(qualcomm_options, "tmp/"));
 
-  const char* qnn_json_path;
+  const char* qnn_json_dir;
   LITERT_ASSERT_OK(
-      LiteRtQualcommOptionsGetQnnJsonPath(qualcomm_options, &qnn_json_path));
-  EXPECT_STREQ(qnn_json_path, "tmp.json");
+      LiteRtQualcommOptionsGetQnnJsonDir(qualcomm_options, &qnn_json_dir));
+  EXPECT_STREQ(qnn_json_dir, "tmp/");
 
   LiteRtDestroyOpaqueOptions(options);
 }

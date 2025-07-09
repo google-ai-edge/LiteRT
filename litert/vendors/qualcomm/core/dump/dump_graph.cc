@@ -3,11 +3,14 @@
 
 #include <fstream>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "nlohmann/json.hpp"
@@ -228,7 +231,13 @@ nlohmann::json GetData(Qnn_DataType_t datatype,
 
 void DumpQnnJson(
     const absl::flat_hash_set<const TensorWrapper*>& tensor_wrappers,
-    std::vector<OpWrapper>& graph_op_wrappers, const char* json_path) {
+    std::vector<OpWrapper>& graph_op_wrappers, std::string_view json_dir,
+    std::string_view graph_name) {
+  CreateDirectoryRecursive(json_dir);
+  std::string qnn_json_path =
+      (json_dir.back() == '/') ? json_dir.data() : absl::StrCat(json_dir, "/");
+  qnn_json_path = absl::StrCat(qnn_json_path, graph_name, ".json");
+  QNN_LOG_INFO("Qnn Json Path: %s", qnn_json_path.c_str());
   nlohmann::json qnn_json = {
       {"model.cpp", "N/A"},
       {"model.bin", "N/A"},
@@ -303,7 +312,7 @@ void DumpQnnJson(
   qnn_json["op_types"] = op_types;
 
   // Write the JSON string to a file.
-  std::ofstream outFile(json_path);
+  std::ofstream outFile(qnn_json_path.data());
   if (outFile.is_open()) {
     outFile << qnn_json.dump(4);
     outFile.close();

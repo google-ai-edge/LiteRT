@@ -92,8 +92,8 @@ ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
           "quantized uin16 model.");
 
 ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
-          qualcomm_htp_performance_mode,
-          kLiteRtQualcommHtpPerformanceModeBurst, "HTP performance mode.");
+          qualcomm_htp_performance_mode, kLiteRtQualcommHtpPerformanceModeBurst,
+          "HTP performance mode.");
 
 ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
@@ -210,8 +210,8 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsProfiling options) {
   }
 }
 
-ABSL_FLAG(std::string, qualcomm_qnn_json_path, "",
-          "Qnn JSON path. If provided, you can obtain Qnn IR in Qnn JSON "
+ABSL_FLAG(std::string, qualcomm_qnn_json_dir, "",
+          "Qnn JSON directory. If provided, you can obtain Qnn IR in Qnn JSON "
           "format.");
 
 // NOLINTEND(*alien-types*)
@@ -250,8 +250,8 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
                 });
   opts.SetDumpTensorIds(int32_ids);
 
-  const auto qnn_json_path = absl::GetFlag(FLAGS_qualcomm_qnn_json_path);
-  opts.SetQnnJsonPath(qnn_json_path);
+  const auto qnn_json_dir = absl::GetFlag(FLAGS_qualcomm_qnn_json_dir);
+  opts.SetQnnJsonDir(qnn_json_dir);
 
   return opts;
 }

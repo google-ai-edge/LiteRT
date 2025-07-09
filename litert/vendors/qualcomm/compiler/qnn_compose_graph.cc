@@ -965,10 +965,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   }
 
   // Dump Qnn Json to understand Qnn IR.
-  if (!options.GetQnnJsonPath().empty()) {
-    QNN_LOG_INFO("Qnn Json Path: %s", options.GetQnnJsonPath().data());
+  if (!options.GetQnnJsonDir().empty()) {
     ::qnn::DumpQnnJson(created_tensors, graph_op_wrappers,
-                       options.GetQnnJsonPath().data());
+                       options.GetQnnJsonDir(), qnn_graph_name);
   }
 
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(graph_mapper.Finalize());

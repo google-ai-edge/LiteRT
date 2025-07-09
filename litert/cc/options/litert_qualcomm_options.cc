@@ -136,16 +136,15 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
   return dump_ids;
 }
 
-void QualcommOptions::SetQnnJsonPath(const std::string& qnn_json_path) {
-  internal::AssertOk(LiteRtQualcommOptionsSetQnnJsonPath, Data(),
-                     qnn_json_path.c_str());
+void QualcommOptions::SetQnnJsonDir(const std::string& qnn_json_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetQnnJsonDir, Data(),
+                     qnn_json_dir.c_str());
 }
 
-const char* QualcommOptions::GetQnnJsonPath() {
-  const char* qnn_json_path;
-  internal::AssertOk(LiteRtQualcommOptionsGetQnnJsonPath, Data(),
-                     &qnn_json_path);
-  return qnn_json_path;
+const char* QualcommOptions::GetQnnJsonDir() {
+  const char* qnn_json_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetQnnJsonDir, Data(), &qnn_json_dir);
+  return qnn_json_dir;
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {

@@ -36,7 +36,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
-  std::string qnn_json_path;
+  std::string qnn_json_dir;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -247,24 +247,24 @@ LiteRtStatus LiteRtQualcommOptionsGetProfiling(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtQualcommOptionsSetQnnJsonPath(LiteRtQualcommOptions options,
-                                                 const char* qnn_json_path) {
+LiteRtStatus LiteRtQualcommOptionsSetQnnJsonDir(LiteRtQualcommOptions options,
+                                                const char* qnn_json_dir) {
   if (options == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  options->qnn_json_path = qnn_json_path;
+  options->qnn_json_dir = qnn_json_dir;
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtQualcommOptionsGetQnnJsonPath(LiteRtQualcommOptions options,
-                                                 const char** qnn_json_path) {
-  if (options == nullptr || qnn_json_path == nullptr) {
+LiteRtStatus LiteRtQualcommOptionsGetQnnJsonDir(LiteRtQualcommOptions options,
+                                                const char** qnn_json_dir) {
+  if (options == nullptr || qnn_json_dir == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  *qnn_json_path = options->qnn_json_path.data();
+  *qnn_json_dir = options->qnn_json_dir.data();
 
   return kLiteRtStatusOk;
 }
