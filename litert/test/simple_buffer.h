@@ -105,7 +105,7 @@ class SimpleBuffer {
 
   // Returns a span of const values from the buffer.
   template <typename T = uint8_t>
-  absl::Span<const T> ConstSpan() {
+  absl::Span<const T> Span() const {
     return absl::MakeConstSpan(reinterpret_cast<const T*>(buffer_.get()),
                                TypedNumElements<T>());
   }
