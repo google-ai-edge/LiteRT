@@ -32,6 +32,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
@@ -591,7 +592,9 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       if (auto status =
               LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode);
           status != kLiteRtStatusOk) {
-        return Unexpected(status, "Failed to lock the tensor buffer");
+        return Unexpected(
+            status, absl::StrFormat("Failed to lock the tensor buffer: %s",
+                                    tensor->name ? tensor->name : "<unnamed>"));
       }
       TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
       if (is_input) {
@@ -617,7 +620,9 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     if (auto status = LiteRtLockTensorBuffer(
             buffer, &host_mem_addr, kLiteRtTensorBufferLockModeReadWrite);
         status != kLiteRtStatusOk) {
-      return Unexpected(status, "Failed to lock the tensor buffer");
+      return Unexpected(
+          status, absl::StrFormat("Failed to lock the tensor buffer: %s",
+                                  tensor->name ? tensor->name : "<unnamed>"));
     }
     locked_buffers.push_back(buffer);
     TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
