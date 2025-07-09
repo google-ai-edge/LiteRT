@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -303,7 +304,7 @@ class TensorWrapper final {
   void ConvertQint16ToQuint16();
 
   void MarkDump() {
-    if (!IsStrEndsWith(name_, kDumpSuffix)) {
+    if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;
       qnn_tensor_.v2.name = name_.c_str();
     }
@@ -311,7 +312,7 @@ class TensorWrapper final {
   }
 
   bool IsMarkedDump() const {
-    return IsStrEndsWith(name_, kDumpSuffix) &&
+    return absl::EndsWith(name_, kDumpSuffix) &&
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
 
