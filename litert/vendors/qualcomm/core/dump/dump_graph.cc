@@ -151,8 +151,9 @@ void AddScalarParams(const Qnn_Param_t& params, nlohmann::json& qnn_node_json) {
 }
 
 template <typename T>
-nlohmann::json ReshapeData(absl::Span<T> data, absl::Span<uint32_t> dims,
-                           uint32_t& index) {
+nlohmann::json ReshapeData(uint32_t index, void* buffer_data,
+                           uint32_t data_size, absl::Span<uint32_t> dims) {
+  T* data = static_cast<T*>(buffer_data);
   if (dims.empty()) {
     return nlohmann::json();
   }
@@ -161,9 +162,10 @@ nlohmann::json ReshapeData(absl::Span<T> data, absl::Span<uint32_t> dims,
   nlohmann::json nested_array = nlohmann::json::array();
   if (dims.size() == 1) {
     for (uint32_t i = 0; i < size; ++i) {
-      if (index < data.size()) {
+      if (index < data_size) {
         nested_array.emplace_back(data[index++]);
       } else {
+        QNN_LOG_ERROR("The data size for tensor_params does not match.");
         // Fill with 0 if array is smaller than the specified dimensions.
         nested_array.emplace_back(0);
       }
@@ -171,7 +173,8 @@ nlohmann::json ReshapeData(absl::Span<T> data, absl::Span<uint32_t> dims,
   } else {
     absl::Span<uint32_t> sub_dims = dims.subspan(1);
     for (uint32_t i = 0; i < size; ++i) {
-      nested_array.emplace_back(ReshapeData(data, sub_dims, index));
+      nested_array.emplace_back(
+          ReshapeData<T>(index, buffer_data, data_size, sub_dims));
     }
   }
   return nested_array;
@@ -180,59 +183,44 @@ nlohmann::json ReshapeData(absl::Span<T> data, absl::Span<uint32_t> dims,
 nlohmann::json GetData(Qnn_DataType_t datatype,
                        const Qnn_ClientBuffer_t& buffer,
                        absl::Span<uint32_t> dims) {
-  uint32_t index = 0;
-  if (datatype == QNN_DATATYPE_INT_8 ||
-      datatype == QNN_DATATYPE_SFIXED_POINT_8) {
-    absl::Span<int8_t> data(static_cast<int8_t*>(buffer.data),
-                            buffer.dataSize / sizeof(int8_t));
-    return ReshapeData<int8_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_BOOL_8 ||
-             datatype == QNN_DATATYPE_UINT_8 ||
-             datatype == QNN_DATATYPE_UFIXED_POINT_8) {
-    absl::Span<uint8_t> data(static_cast<uint8_t*>(buffer.data),
-                             buffer.dataSize / sizeof(uint8_t));
-    return ReshapeData<uint8_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_INT_16 ||
-             datatype == QNN_DATATYPE_SFIXED_POINT_16) {
-    absl::Span<int16_t> data(static_cast<int16_t*>(buffer.data),
-                             buffer.dataSize / sizeof(int16_t));
-    return ReshapeData<int16_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_UINT_16 ||
-             datatype == QNN_DATATYPE_UFIXED_POINT_16) {
-    absl::Span<uint16_t> data(static_cast<uint16_t*>(buffer.data),
-                              buffer.dataSize / sizeof(uint16_t));
-    return ReshapeData<uint16_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_INT_32 ||
-             datatype == QNN_DATATYPE_SFIXED_POINT_32) {
-    absl::Span<int32_t> data(static_cast<int32_t*>(buffer.data),
-                             buffer.dataSize / sizeof(int32_t));
-    return ReshapeData<int32_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_UINT_32 ||
-             datatype == QNN_DATATYPE_UFIXED_POINT_32) {
-    absl::Span<uint32_t> data(static_cast<uint32_t*>(buffer.data),
-                              buffer.dataSize / sizeof(uint32_t));
-    return ReshapeData<uint32_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_FLOAT_32) {
-    absl::Span<float> data(static_cast<float*>(buffer.data),
-                           buffer.dataSize / sizeof(float));
-    return ReshapeData<float>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_FLOAT_64) {
-    absl::Span<double> data(static_cast<double*>(buffer.data),
-                            buffer.dataSize / sizeof(double));
-    return ReshapeData<double>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_INT_64) {
-    absl::Span<int64_t> data(static_cast<int64_t*>(buffer.data),
-                             buffer.dataSize / sizeof(int64_t));
-    return ReshapeData<int64_t>(data, dims, index);
-  } else if (datatype == QNN_DATATYPE_UINT_64) {
-    absl::Span<uint64_t> data(static_cast<uint64_t*>(buffer.data),
-                              buffer.dataSize / sizeof(uint64_t));
-    return ReshapeData<uint64_t>(data, dims, index);
-  } else {
-    QNN_LOG_WARNING(
-        "Datatype: %u is not supported for tensor_params in Qnn Json dump",
-        datatype)
+  uint32_t size = buffer.dataSize;
+  uint32_t ind = 0;
+  void* data = buffer.data;
+  switch (datatype) {
+    case QNN_DATATYPE_INT_8:
+    case QNN_DATATYPE_SFIXED_POINT_8:
+      return ReshapeData<int8_t>(ind, data, size / sizeof(int8_t), dims);
+    case QNN_DATATYPE_BOOL_8:
+    case QNN_DATATYPE_UINT_8:
+    case QNN_DATATYPE_UFIXED_POINT_8:
+      return ReshapeData<uint8_t>(ind, data, size / sizeof(uint8_t), dims);
+    case QNN_DATATYPE_INT_16:
+    case QNN_DATATYPE_SFIXED_POINT_16:
+      return ReshapeData<int16_t>(ind, data, size / sizeof(int16_t), dims);
+    case QNN_DATATYPE_UINT_16:
+    case QNN_DATATYPE_UFIXED_POINT_16:
+      return ReshapeData<uint16_t>(ind, data, size / sizeof(uint16_t), dims);
+    case QNN_DATATYPE_INT_32:
+    case QNN_DATATYPE_SFIXED_POINT_32:
+      return ReshapeData<int32_t>(ind, data, size / sizeof(int32_t), dims);
+    case QNN_DATATYPE_UINT_32:
+    case QNN_DATATYPE_UFIXED_POINT_32:
+      return ReshapeData<uint32_t>(ind, data, size / sizeof(uint32_t), dims);
+    case QNN_DATATYPE_FLOAT_32:
+      return ReshapeData<float>(ind, data, size / sizeof(float), dims);
+    case QNN_DATATYPE_FLOAT_64:
+      return ReshapeData<double>(ind, data, size / sizeof(double), dims);
+    case QNN_DATATYPE_INT_64:
+      return ReshapeData<int64_t>(ind, data, size / sizeof(int64_t), dims);
+    case QNN_DATATYPE_UINT_64:
+      return ReshapeData<uint64_t>(ind, data, size / sizeof(uint64_t), dims);
+    default:
+      QNN_LOG_ERROR(
+          "Datatype: %u is not supported for tensor_params in Qnn Json dump",
+          datatype);
+      break;
   }
+  return nlohmann::json();
 }
 
 }  // namespace
