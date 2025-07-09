@@ -242,6 +242,7 @@ void DumpQnnJson(
         {"nodes", nlohmann::json::object()}}}};
 
   // Dump Qnn Ops.
+  // Note that only the static data of tensorParam is stored in QNN Json.
   std::unordered_set<uint32_t> param_tensor_ids;
   std::unordered_set<std::string> op_types;
   for (auto& op : graph_op_wrappers) {
