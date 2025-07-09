@@ -162,7 +162,7 @@ void OpWrapper::AddNamespace(absl::string_view op_namespace) {
   name_ = absl::StrCat(op_namespace, "/", name_);
 }
 
-void OpWrapper::AppendName(absl::string_view name) {
+void OpWrapper::AppendNameWithUnderscore(absl::string_view name) {
   name_ = absl::StrCat(name_, "_", name);
 }
 

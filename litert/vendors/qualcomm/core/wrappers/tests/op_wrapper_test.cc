@@ -203,7 +203,7 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "name");
   op_wrapper_1.AddNamespace("namespace");
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name");
-  op_wrapper_1.AppendName("new");
+  op_wrapper_1.AppendNameWithUnderscore("new");
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 

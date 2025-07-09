@@ -327,7 +327,7 @@ size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
     for (size_t i = 0; i < new_ops.size(); ++i) {
-      new_ops[i].AppendName("qcg2g_" + std::to_string(i));
+      new_ops[i].AppendNameWithUnderscore("qcg2g_" + std::to_string(i));
     }
     // Replace the matched pattern with a newly generated subgraph.
     size_t step_size = new_ops.size();
@@ -390,7 +390,7 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   if (is_valid) {
     // Adjust the name to avoid a name collision in the Qnn JSON dump.
     for (size_t i = 0; i < new_ops.size(); ++i) {
-      new_ops[i].AppendName("qcg2g_" + std::to_string(i));
+      new_ops[i].AppendNameWithUnderscore("qcg2g_" + std::to_string(i));
     }
     // Replace the matched pattern with a newly generated subgraph.
     size_t step_size = new_ops.size();

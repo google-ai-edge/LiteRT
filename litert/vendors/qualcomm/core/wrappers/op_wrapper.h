@@ -66,7 +66,7 @@ class OpWrapper final {
 
   void AddNamespace(absl::string_view op_namespace);
 
-  void AppendName(absl::string_view name);
+  void AppendNameWithUnderscore(absl::string_view name);
 
  private:
   const char* type_name_{nullptr};
