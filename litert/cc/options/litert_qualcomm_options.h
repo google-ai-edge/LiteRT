@@ -61,7 +61,7 @@ class QualcommOptions : public OpaqueOptions {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
 
-  void SetQnnJsonPath(const char* profiling);
+  void SetQnnJsonPath(const std::string& profiling);
   const char* GetQnnJsonPath();
 
  private:

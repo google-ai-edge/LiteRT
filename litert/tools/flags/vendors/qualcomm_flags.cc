@@ -251,7 +251,7 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
   opts.SetDumpTensorIds(int32_ids);
 
   const auto qnn_json_path = absl::GetFlag(FLAGS_qualcomm_qnn_json_path);
-  opts.SetQnnJsonPath(qnn_json_path.c_str());
+  opts.SetQnnJsonPath(qnn_json_path);
 
   return opts;
 }

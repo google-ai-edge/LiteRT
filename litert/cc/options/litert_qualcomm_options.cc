@@ -136,9 +136,9 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
   return dump_ids;
 }
 
-void QualcommOptions::SetQnnJsonPath(const char* qnn_json_path) {
+void QualcommOptions::SetQnnJsonPath(const std::string& qnn_json_path) {
   internal::AssertOk(LiteRtQualcommOptionsSetQnnJsonPath, Data(),
-                     qnn_json_path);
+                     qnn_json_path.c_str());
 }
 
 const char* QualcommOptions::GetQnnJsonPath() {
