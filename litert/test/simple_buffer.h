@@ -209,7 +209,7 @@ class SimpleBuffer {
 
   // Create a new native tensor buffer from this buffer which points to the
   // underlying host memory.
-  Expected<TensorBuffer> SpawnTensorBuffer() {
+  Expected<TensorBuffer> SpawnTensorBuffer() const {
     return TensorBuffer::CreateFromHostMemory(tensor_type_, buffer_.get(),
                                               size_in_bytes_);
   }
