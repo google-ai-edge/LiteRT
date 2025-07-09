@@ -933,10 +933,11 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     // this information.
     if (op.Outputs().size() > 0 && !op.Outputs()[0].Name().empty()) {
       // Add op namespace based on the first output tensor name.
-      for (auto& op_wrapper : op_wrappers) {
-        size_t pos = op.Outputs()[0].Name().find(";");
-        if (pos != std::string_view::npos) {
-          op_wrapper.AddNamespace(op.Outputs()[0].Name().substr(0, pos));
+      size_t pos = op.Outputs()[0].Name().find(";");
+      if (pos != std::string_view::npos) {
+        auto op_namespace = op.Outputs()[0].Name().substr(0, pos);
+        for (auto& op_wrapper : op_wrappers) {
+          op_wrapper.AddNamespace(op_namespace);
         }
       }
     }
