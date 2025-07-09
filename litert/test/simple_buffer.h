@@ -68,18 +68,35 @@ class SimpleBuffer {
   }
 
   // Create buffer with the given shape and type.
+  template <typename T, typename Shape>
+  static Expected<SimpleBuffer> Create(const Shape& dimensions) {
+    return Create(MakeRankedTensorType<T>(dimensions));
+  }
+
+  // Create buffer with the given shape and type.
   template <typename T>
   static Expected<SimpleBuffer> Create(
       std::initializer_list<Layout::Dim> dimensions) {
-    return Create(MakeRankedTensorType<T>(std::move(dimensions)));
+    LITERT_ASSIGN_OR_RETURN(auto helper,
+                            Create<T>(Dimensions(std::move(dimensions))));
+    return helper;
   }
 
-  // Create a new buffer with the provided type information and data.
+  // Create a new buffer with the provided type information and literal data.
+  template <typename T, typename Shape>
+  static Expected<SimpleBuffer> Create(const Shape& dimensions,
+                                       std::initializer_list<T> data) {
+    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(dimensions));
+    LITERT_RETURN_IF_ERROR(helper.Write(std::move(data)));
+    return helper;
+  }
+
+  // Create a new buffer with the provided type information and literal data.
   template <typename T>
   static Expected<SimpleBuffer> Create(
       std::initializer_list<Layout::Dim> dimensions,
       std::initializer_list<T> data) {
-    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(std::move(dimensions)));
+    LITERT_ASSIGN_OR_RETURN(auto helper, Create<T>(dimensions));
     LITERT_RETURN_IF_ERROR(helper.Write(std::move(data)));
     return helper;
   }
