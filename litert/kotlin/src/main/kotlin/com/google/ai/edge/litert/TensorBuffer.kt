@@ -130,7 +130,13 @@ enum class TensorBufferType(private val type: Int) {
   // 20-29 are reserved for WebGpu memory objects.
   WebGpuBuffer(20),
   WebGpuBufferFp16(21),
-  WebGpuBufferPacked(22);
+  WebGpuBufferPacked(22),
+
+  // 30-39 are reserved for Metal memory objects.
+  MetalBuffer(30),
+  MetalBufferFp16(31),
+  MetalTexture(32),
+  MetalTextureFp16(33);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 

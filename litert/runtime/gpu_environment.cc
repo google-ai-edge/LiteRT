@@ -32,9 +32,12 @@
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include <EGL/egl.h>
-
 #include "tflite/delegates/gpu/cl/gl_interop.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+#include "tflite/delegates/gpu/metal/metal_device.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 namespace litert {
 namespace internal {
@@ -108,6 +111,16 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
         reinterpret_cast<WGPUQueue>(wgpu_queue_option->int_value);
   }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  auto metal_device_option =
+      environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
+  if (metal_device_option.has_value() &&
+      metal_device_option->type == kLiteRtAnyTypeInt) {
+    options.metal_device =
+        (__bridge_transfer id<MTLDevice>)(metal_device_option->ptr_value);
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   return options;
 }
@@ -267,6 +280,25 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #else
   LITERT_LOG(LITERT_INFO, "Failed to create OpenCL context.");
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  LITERT_RETURN_IF_ERROR(tflite::gpu::metal::MetalDevice().device() != nullptr)
+      << "Failed to create Metal device for LiteRT.";
+  // Set up Metal.
+  properties_.is_metal_available = true;
+  if (options_.metal_device) {
+    metal_device_ = tflite::gpu::metal::MetalDevice(options_.metal_device);
+    LITERT_LOG(LITERT_INFO, "Created Metal device from provided device id");
+  } else {
+    auto default_device = tflite::gpu::metal::MetalDevice();
+    if (default_device.device() == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
+      return {};
+    }
+    metal_device_ = tflite::gpu::metal::MetalDevice();
+    LITERT_LOG(LITERT_INFO, "Created default Metal device.");
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   return {};
 }
