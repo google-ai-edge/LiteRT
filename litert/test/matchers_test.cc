@@ -14,22 +14,32 @@
 
 #include "litert/test/matchers.h"
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_model.h"
 
-using litert::Error;
-using litert::Expected;
-using litert::Unexpected;
-using testing::Not;
-using testing::StrEq;
-using testing::litert::IsError;
-using testing::litert::IsOk;
+using ::litert::ElementType;
+using ::litert::Error;
+using ::litert::Expected;
+using ::litert::MakeRankedTensorType;
+using ::litert::Unexpected;
+using ::testing::Not;
+using ::testing::StrEq;
+using ::testing::litert::HasTypeAspect;
+using ::testing::litert::IsError;
+using ::testing::litert::IsOk;
+using ::testing::litert::MeanSquaredErrorLt;
 
 namespace {
 
@@ -187,6 +197,43 @@ void TestAssertOkAndAssignFailure() {
 
 TEST(AssertOkAndAssign, FailuresStopsExecution) {
   EXPECT_FATAL_FAILURE(TestAssertOkAndAssignFailure(), "is ok");
+}
+
+TEST(HasTypeAspectMatcher, MatchTypeOnly) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect(kLiteRtElementTypeInt32));
+  EXPECT_THAT(t, HasTypeAspect(ElementType::Int32));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(kLiteRtElementTypeInt32));
+  EXPECT_THAT(LiteRtRankedTensorType(t), HasTypeAspect(ElementType::Int32));
+}
+
+TEST(HasTypeAspectMatcher, MatchDimsOnly) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect({2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t), HasTypeAspect({2, 2}));
+}
+
+TEST(HasTypeAspectMatcher, DimsAndType) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect(kLiteRtElementTypeInt32, {2, 2}));
+  EXPECT_THAT(t, HasTypeAspect(ElementType::Int32, {2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(kLiteRtElementTypeInt32, {2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(ElementType::Int32, {2, 2}));
+}
+
+TEST(MeanSquaredError, AssertInTol) {
+  std::vector<float> v = {1.0f, 1.0f};
+  std::vector<float> u = {1.0f + 31e-4, 1.0f + 31e-4};
+  EXPECT_THAT(v, MeanSquaredErrorLt(u));
+}
+
+TEST(MeanSquaredError, AssertNotInTol) {
+  std::vector<float> v = {1.0f, 1.0f};
+  std::vector<float> u = {1.0f + 32e-4, 1.0f + 32e-4};
+  EXPECT_THAT(v, Not(MeanSquaredErrorLt(u)));
 }
 
 }  // namespace
