@@ -14,6 +14,7 @@
 
 #include "litert/test/matchers.h"
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -21,15 +22,21 @@
 #include <gtest/gtest-spi.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_model.h"
 
-using litert::Error;
-using litert::Expected;
-using litert::Unexpected;
-using testing::Not;
-using testing::StrEq;
-using testing::litert::IsError;
-using testing::litert::IsOk;
+using ::litert::ElementType;
+using ::litert::Error;
+using ::litert::Expected;
+using ::litert::MakeRankedTensorType;
+using ::litert::Unexpected;
+using ::testing::Not;
+using ::testing::StrEq;
+using ::testing::litert::HasTypeAspect;
+using ::testing::litert::IsError;
+using ::testing::litert::IsOk;
 
 namespace {
 
@@ -187,6 +194,31 @@ void TestAssertOkAndAssignFailure() {
 
 TEST(AssertOkAndAssign, FailuresStopsExecution) {
   EXPECT_FATAL_FAILURE(TestAssertOkAndAssignFailure(), "is ok");
+}
+
+TEST(HasTypeAspectMatcher, MatchTypeOnly) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect(kLiteRtElementTypeInt32));
+  EXPECT_THAT(t, HasTypeAspect(ElementType::Int32));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(kLiteRtElementTypeInt32));
+  EXPECT_THAT(LiteRtRankedTensorType(t), HasTypeAspect(ElementType::Int32));
+}
+
+TEST(HasTypeAspectMatcher, MatchDimsOnly) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect({2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t), HasTypeAspect({2, 2}));
+}
+
+TEST(HasTypeAspectMatcher, DimsAndType) {
+  auto t = MakeRankedTensorType<int32_t>({2, 2});
+  EXPECT_THAT(t, HasTypeAspect(kLiteRtElementTypeInt32, {2, 2}));
+  EXPECT_THAT(t, HasTypeAspect(ElementType::Int32, {2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(kLiteRtElementTypeInt32, {2, 2}));
+  EXPECT_THAT(LiteRtRankedTensorType(t),
+              HasTypeAspect(ElementType::Int32, {2, 2}));
 }
 
 }  // namespace
