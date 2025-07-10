@@ -43,6 +43,9 @@ typedef struct AHardwareBuffer AHardwareBuffer;
 extern "C" {
 #endif  // __cplusplus
 
+typedef struct WGPUBufferImpl* WGPUBuffer;
+typedef struct WGPUTextureImpl* WGPUTexture;
+
 #define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
 
 typedef void (*LiteRtHostMemoryDeallocator)(void* addr);
@@ -53,6 +56,8 @@ typedef void (*LiteRtFastRpcDeallocator)(void* fastrpc_buffer_addr);
 typedef void (*LiteRtOpenClDeallocator)(void* opencl_buffer_addr);
 typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
 typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
+typedef void (*LiteRtWebGpuBufferDeallocator)(void* webgpu_buffer_addr);
+typedef void (*LiteRtWebGpuTextureDeallocator)(void* webgpu_texture_addr);
 
 // /////////////////////////////////////////////////////////////////////////////
 // TensorBuffers.
@@ -218,6 +223,26 @@ LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
 LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+// Create a tensor buffer from an existing WebGpu Buffer of a given size, with
+// optional WebGpu buffer deallocator (it can be NULL).
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
+// NULL deallocator means that the WebGpu buffer is not managed by the tensor
+// buffer and therefore must be released separately by the caller.
+LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, WGPUBuffer webgpu_buffer,
+    size_t opencl_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
+
+// Return an error if the backing buffer is not a WebGpu buffer.
+LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(LiteRtTensorBuffer tensor_buffer,
+                                               WGPUBuffer* webgpu_buffer_addr);
+
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 // Create a managed TensorBuffer for a given size and type.
 //

@@ -51,17 +51,6 @@ template Expected<char*> OpenClMemory::Lock<char>(
 template Expected<void> OpenClMemory::Unlock<float>();
 template Expected<void> OpenClMemory::Unlock<char>();
 
-LockState ToLockState(LiteRtTensorBufferLockMode mode) {
-  switch (mode) {
-    case kLiteRtTensorBufferLockModeRead:
-      return LockState::kRead;
-    case kLiteRtTensorBufferLockModeWrite:
-      return LockState::kWrite;
-    case kLiteRtTensorBufferLockModeReadWrite:
-      return LockState::kReadWrite;
-  }
-}
-
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
   absl::MutexLock lock(&mutex_);
