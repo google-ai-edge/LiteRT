@@ -21,12 +21,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
@@ -59,6 +63,23 @@ class SimpleBuffer {
   }
 
  public:
+  using Ref = std::reference_wrapper<SimpleBuffer>;
+  using CRef = std::reference_wrapper<const SimpleBuffer>;
+
+  template <typename T>
+  struct View {
+    absl::Span<T> data;
+    absl::Span<const Layout::Dim> dimensions;
+    using Type = std::remove_const_t<T>;
+    Layout::Dim NumElements() const {
+      return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
+                         std::multiplies<Layout::Dim>());
+    }
+  };
+
+  template <typename T>
+  using CView = View<const T>;
+
   // Create a buffer with the given tensor type.
   static Expected<SimpleBuffer> Create(RankedTensorType tensor_type) {
     LITERT_ASSIGN_OR_RETURN(const size_t bytes, tensor_type.Bytes());
@@ -150,6 +171,18 @@ class SimpleBuffer {
                           TypedNumElements<T>());
   }
 
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  CView<T> AsView() const {
+    return {Span<T>(), Type().Layout().Dimensions()};
+  }
+
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  View<T> AsView() {
+    return {Span<T>(), Type().Layout().Dimensions()};
+  }
+
   // Writes the the provided data into the contained buffer.
   template <typename Arg>
   Expected<void> Write(const Arg& data, size_t start = 0) {
@@ -176,7 +209,7 @@ class SimpleBuffer {
 
   // Create a new native tensor buffer from this buffer which points to the
   // underlying host memory.
-  Expected<TensorBuffer> SpawnTensorBuffer() {
+  Expected<TensorBuffer> SpawnTensorBuffer() const {
     return TensorBuffer::CreateFromHostMemory(tensor_type_, buffer_.get(),
                                               size_in_bytes_);
   }
