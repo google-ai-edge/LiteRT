@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 #if defined(__ANDROID__)
@@ -46,6 +47,8 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -99,7 +102,7 @@ TEST(DispatchDelegate, CpuBuffer) {
                               MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context;
+  LiteRtExternalLiteRtBufferContextT buffer_context;
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -171,7 +174,7 @@ TEST(DispatchDelegate, HwBuffer) {
                               MakeRuntimeFromTestFile(kPrecompiledTfliteFile));
   tflite::Interpreter& interpreter = runtime->Interpreter();
 
-  litert::internal::ExternalLiteRtBufferContext buffer_context;
+  LiteRtExternalLiteRtBufferContextT buffer_context;
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -196,45 +199,41 @@ TEST(DispatchDelegate, HwBuffer) {
             kTfLiteOk);
 
   // Create and register tensor buffers for all inputs and outputs.
-  std::vector<litert::TensorBuffer> input_buffers;
+  std::vector<LiteRtTensorBufferPtr> input_buffers;
   for (int i = 0; i < interpreter.inputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto* input_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.input_tensor(i)));
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                input_buffer_requirements->SupportedTypes());
+    const auto& supported_types =
+        input_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBuffer input_buffer,
+        LiteRtTensorBufferPtr input_buffer,
         buffer_context.CreateBufferForTensor(interpreter.input_tensor(i)));
-    ASSERT_TRUE(input_buffer.IsOwned());
-    ASSERT_THAT(input_buffer.BufferType(),
-                IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
-                                input_buffer.Duplicate());
+    ASSERT_EQ(input_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
+    input_buffer->Duplicate();
+    LiteRtTensorBufferPtr duplicate_buffer(input_buffer.get());
     auto status = buffer_context.RegisterTensorBuffer(
         interpreter.input_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
     input_buffers.push_back(std::move(input_buffer));
   }
 
-  std::vector<litert::TensorBuffer> output_buffers;
+  std::vector<LiteRtTensorBufferPtr> output_buffers;
   for (int i = 0; i < interpreter.outputs().size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto* output_buffer_requirements,
         buffer_context.GetBufferRequirements(interpreter.output_tensor(i)));
     ASSERT_NE(output_buffer_requirements, nullptr);
-    LITERT_ASSERT_OK_AND_ASSIGN(const auto supported_types,
-                                output_buffer_requirements->SupportedTypes());
+    const auto& supported_types =
+        output_buffer_requirements->SupportedBufferTypes();
     ASSERT_EQ(supported_types.at(0), kLiteRtTensorBufferTypeAhwb);
     LITERT_ASSERT_OK_AND_ASSIGN(
-        TensorBuffer output_buffer,
+        LiteRtTensorBufferPtr output_buffer,
         buffer_context.CreateBufferForTensor(interpreter.output_tensor(i)));
-    ASSERT_TRUE(output_buffer.IsOwned());
-    ASSERT_THAT(output_buffer.BufferType(),
-                IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-    LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer duplicate_buffer,
-                                output_buffer.Duplicate());
+    ASSERT_EQ(output_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
+    output_buffer->Duplicate();
+    LiteRtTensorBufferPtr duplicate_buffer(output_buffer.get());
     auto status = buffer_context.RegisterTensorBuffer(
         interpreter.output_tensor(i), std::move(duplicate_buffer));
     ASSERT_EQ(status, kLiteRtStatusOk);
@@ -254,29 +253,32 @@ TEST(DispatchDelegate, HwBuffer) {
   // Fill model inputs.
   ASSERT_STREQ(runner->input_names()[0], "arg0");
   auto& input_0_buffer = input_buffers[0];
-  input_0_buffer.Write<float>(
-      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      void* host_mem_addr,
+      input_0_buffer->Lock(kLiteRtTensorBufferLockModeWrite));
+  std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+  LITERT_ASSERT_OK(input_0_buffer->Unlock());
 
   ASSERT_STREQ(runner->input_names()[1], "arg1");
   auto& input_1_buffer = input_buffers[1];
-  input_1_buffer.Write<float>(
-      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      host_mem_addr, input_1_buffer->Lock(kLiteRtTensorBufferLockModeWrite));
+  std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+  LITERT_ASSERT_OK(input_1_buffer->Unlock());
 
   EXPECT_EQ(runner->Invoke(), kTfLiteOk);
 
   // Check model output.
   ASSERT_STREQ(runner->output_names()[0], "tfl.custom");
-  {
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto lock_and_addr,
-        litert::TensorBufferScopedLock::Create<const float>(
-            output_buffers[0], TensorBuffer::LockMode::kRead));
-    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
-    for (auto i = 0; i < kTestOutputSize; ++i) {
-      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
-    }
-    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      void* output_mem_addr,
+      output_buffers[0]->Lock(kLiteRtTensorBufferLockModeRead));
+  absl::Span<const float> output = absl::MakeConstSpan(
+      reinterpret_cast<const float*>(output_mem_addr), kTestOutputSize);
+  for (auto i = 0; i < kTestOutputSize; ++i) {
+    ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
   }
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
 TEST(DispatchDelegate, CompiledModel) {
