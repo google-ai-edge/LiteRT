@@ -79,9 +79,6 @@ LITERT_DEFINE_HANDLE(LiteRtTensorBuffer);
 LITERT_DEFINE_HANDLE(LiteRtTensorBufferRequirements);
 // LiteRT Profiler object. (litert_profiler.h)
 LITERT_DEFINE_HANDLE(LiteRtProfiler);
-// LiteRT ExternalLiteRtBufferContext object.
-// (litert_external_litert_buffer_context.h)
-LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 
 #if __ANDROID_API__ >= 26
 #define LITERT_HAS_AHWB_SUPPORT 1

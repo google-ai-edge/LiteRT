@@ -45,8 +45,8 @@ class LiteRtTensorBufferRequirementsT {
 
  private:
   friend litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>>
-  JoinInternal(const LiteRtTensorBufferRequirementsT& src1,
-               const LiteRtTensorBufferRequirementsT& src2);
+  Join(const LiteRtTensorBufferRequirementsT& src1,
+       const LiteRtTensorBufferRequirementsT& src2);
 
   std::vector<LiteRtTensorBufferType> supported_buffer_types_;
   size_t buffer_size_;

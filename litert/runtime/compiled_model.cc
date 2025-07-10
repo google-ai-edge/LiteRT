@@ -51,6 +51,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/build_stamp.h"
@@ -66,7 +68,6 @@
 #include "litert/runtime/litert_runtime_options.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -80,8 +81,10 @@
 
 using ::litert::Error;
 using ::litert::Expected;
+using ::litert::TensorBuffer;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
+using ::litert::internal::ExternalLiteRtBufferContext;
 using ::litert::internal::SerializeModel;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
@@ -144,7 +147,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     signature_keys_.push_back(default_signature_key);
   }
   // Register the ExternalLiteRtBufferContext for TensorBuffer handshaking.
-  buffer_context_ = std::make_unique<LiteRtExternalLiteRtBufferContextT>(env);
+  buffer_context_ = std::make_unique<ExternalLiteRtBufferContext>(env);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 
@@ -419,13 +422,13 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
   }
 }
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<LiteRtTensorBufferRequirements>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Use the buffer context to get the buffer requirements only if the tensor
   // is not a CPU tensor.
   if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
     if (auto requirements = buffer_context_->GetBufferRequirements(tensor)) {
-      return *requirements;
+      return (*requirements)->Get();
     }
   } else {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
@@ -433,21 +436,25 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   // Check if we have a cached CPU buffer requirement.
   auto cached_req = cpu_buffer_requirements_.find(tensor);
   if (cached_req != cpu_buffer_requirements_.end()) {
-    return cached_req->second.get();
+    return cached_req->second.Get();
   }
   LiteRtTensorBufferRequirements litert_cpu_buffer_requirements;
   LiteRtTensorBufferType cpu_buffer_type[] = {
       kLiteRtTensorBufferTypeHostMemory};
   uint32_t cpu_buffer_strides[] = {0};
-  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
+  auto res = LiteRtCreateTensorBufferRequirements(
       /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
-      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
-  cpu_buffer_requirements_[tensor] =
-      LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
+      /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements);
+  if (res != kLiteRtStatusOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to create CPU buffer requirements");
+  }
+  cpu_buffer_requirements_[tensor] = litert::TensorBufferRequirements(
+      litert_cpu_buffer_requirements, litert::OwnHandle::kYes);
   return litert_cpu_buffer_requirements;
 }
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<LiteRtTensorBufferRequirements>
 LiteRtCompiledModelT::GetInputBufferRequirements(
     absl::string_view signature_key, size_t input_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -468,7 +475,7 @@ LiteRtCompiledModelT::GetInputBufferRequirements(
   return GetTensorBufferRequirements(input_tensor);
 }
 
-Expected<const LiteRtTensorBufferRequirementsT*>
+Expected<LiteRtTensorBufferRequirements>
 LiteRtCompiledModelT::GetOutputBufferRequirements(
     absl::string_view signature_key, size_t output_index) {
   auto runner = GetSignatureRunner(signature_key);
@@ -505,7 +512,7 @@ tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
 
 Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor,
-    const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
+    const char* tensor_name, LiteRtTensorBuffer buffer, bool is_input,
     std::vector<LiteRtTensorBuffer>& locked_buffers) {
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
@@ -551,16 +558,17 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   bool backend_requires_cpu_buffer = false;
 
-  Expected<LiteRtTensorBufferRequirementsConst> requirements =
-      buffer_context_->GetBufferRequirements(tensor);
-  if (requirements) {
-    const auto& supported_types = (*requirements)->SupportedBufferTypes();
+  if (auto requirements = buffer_context_->GetBufferRequirements(tensor)) {
+    auto supported_types = (*requirements)->SupportedTypes();
+    if (!supported_types) {
+      return supported_types.Error();
+    }
 
-    for (auto& type : supported_types) {
+    for (auto& type : *supported_types) {
       if (type == buffer->buffer_type()) {
         // Register tensor buffer if it can be used by the backend.
         buffer->Duplicate();
-        LiteRtTensorBufferPtr duplicated_buffer(buffer);
+        TensorBuffer duplicated_buffer(buffer, litert::OwnHandle::kYes);
         if (auto status = buffer_context_->RegisterTensorBuffer(
                 tensor, std::move(duplicated_buffer));
             status != kLiteRtStatusOk) {

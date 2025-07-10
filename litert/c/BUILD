@@ -614,21 +614,6 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "litert_external_litert_buffer_context",
-    srcs = ["litert_external_litert_buffer_context.cc"],
-    hdrs = [
-        "litert_external_litert_buffer_context.h",
-    ],
-    deps = [
-        ":litert_common",
-        ":litert_dispatch_headers",
-        "//litert/cc:litert_macros",
-        "//litert/runtime:external_litert_buffer_context",
-        "//tflite/c:common",
-    ],
-)
-
 filegroup(
     name = "litert_model_srcs",
     srcs = ["litert_model.cc"],
@@ -660,7 +645,6 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_options",
     ":litert_profiler",
     ":litert_tensor_buffer",
-    ":litert_external_litert_buffer_context",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_google_tensor_options",
@@ -725,7 +709,6 @@ cc_library(
         ":litert_options.h",
         ":litert_platform_support.h",
         ":litert_tensor_buffer.h",
-        ":litert_external_litert_buffer_context.h",
         ":litert_tensor_buffer_requirements.h",
         ":litert_tensor_buffer_types.h",
         # Needed for litert/c/litert_op_code.h
