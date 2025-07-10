@@ -30,7 +30,6 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
@@ -66,12 +65,15 @@ class LiteRtCompiledModelT {
   // Returns the buffer requirements for the n-th input tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the input tensor
   // buffer.
-  litert::Expected<LiteRtTensorBufferRequirements> GetInputBufferRequirements(
-      absl::string_view signature_key, size_t input_index);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetInputBufferRequirements(absl::string_view signature_key,
+                             size_t input_index);
 
-  // The same as GetInputBufferRequirements() for C API.
-  litert::Expected<LiteRtTensorBufferRequirements>
-  GetInputBufferRequirementsCApi(size_t signature_index, size_t input_index) {
+  // Returns the buffer requirements for the n-th input tensor using sigature
+  // index. The returned LiteRtTensorBufferRequirements is used to create the
+  // input tensor buffer.
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetInputBufferRequirements(size_t signature_index, size_t input_index) {
     if (signature_index >= signature_keys_.size()) {
       return litert::Unexpected(
           kLiteRtStatusErrorIndexOOB,
@@ -84,8 +86,9 @@ class LiteRtCompiledModelT {
   // Returns the buffer requirements for the n-th output tensor. The returned
   // LiteRtTensorBufferRequirements is used to create the output tensor
   // buffer.
-  litert::Expected<LiteRtTensorBufferRequirements> GetOutputBufferRequirements(
-      absl::string_view signature_key, size_t output_index);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetOutputBufferRequirements(absl::string_view signature_key,
+                              size_t output_index);
 
   // The same as GetOutputBufferRequirements() for C API.
   litert::Expected<LiteRtTensorBufferRequirements>
@@ -95,8 +98,11 @@ class LiteRtCompiledModelT {
           kLiteRtStatusErrorIndexOOB,
           "Signature index is out of range of signature keys");
     }
-    return GetOutputBufferRequirements(*signature_keys_[signature_index],
-                                       output_index);
+    LITERT_ASSIGN_OR_RETURN(
+        const LiteRtTensorBufferRequirementsT* requirements,
+        GetOutputBufferRequirements(*signature_keys_[signature_index],
+                                    output_index));
+    return const_cast<LiteRtTensorBufferRequirements>(requirements);
   }
 
   // Runs the model of the given signature with the provided input/output
@@ -203,8 +209,8 @@ class LiteRtCompiledModelT {
   }
 
   // Returns the buffer requirements for the given tensor.
-  litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
-      const TfLiteTensor* tensor);
+  litert::Expected<const LiteRtTensorBufferRequirementsT*>
+  GetTensorBufferRequirements(const TfLiteTensor* tensor);
 
   // Returns the SignatureRunner for the given signature key.
   // If the signature key is not found, returns nullptr.
@@ -218,7 +224,7 @@ class LiteRtCompiledModelT {
   // marked as non-CPU to avoid TFLite from allocating it.
   litert::Expected<void> RegisterBuffer(
       tflite::SignatureRunner* runner, TfLiteTensor* tensor,
-      const char* tensor_name, LiteRtTensorBuffer buffer, bool is_input,
+      const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
       std::vector<LiteRtTensorBuffer>& locked_buffers);
 
   void RegisterDelegate(Delegate&& delegate) {
@@ -257,7 +263,7 @@ class LiteRtCompiledModelT {
   // buffers, they don't register TensorBufferRequirements. Instead, the
   // CompiledModel creates the TensorBufferRequirements and stores them
   // in this map.
-  absl::flat_hash_map<const TfLiteTensor*, litert::TensorBufferRequirements>
+  absl::flat_hash_map<const TfLiteTensor*, LiteRtTensorBufferRequirementsPtr>
       cpu_buffer_requirements_;
 
   // Map from signature key to SignatureRunner. This is used to lazy calling
@@ -269,8 +275,7 @@ class LiteRtCompiledModelT {
   // Delegates.
   // Note: The ExternalLiteRtBufferContext must be destroyed after the
   // Interpreter.
-  std::unique_ptr<litert::internal::ExternalLiteRtBufferContext>
-      buffer_context_;
+  std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.

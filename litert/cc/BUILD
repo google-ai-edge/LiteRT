@@ -660,6 +660,7 @@ cc_library(
 # - litert::Options
 # - litert::CustomOpKernel
 # - litert::DispatchDelegate
+# - litert::ExternalLiteRtBufferContext
 
 LITERT_C_API_DEPS = [
     "//litert/c:litert_any",
@@ -679,6 +680,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_options",
     "//litert/c:litert_tensor_buffer",
     "//litert/c:litert_tensor_buffer_types",
+    "//litert/c:litert_external_litert_buffer_context",
     "//tflite:framework",
     "//tflite/c:c_api_opaque",
     "//tflite/c:c_api_types",
@@ -1234,6 +1236,23 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
+)
+
+cc_library(
+    name = "litert_external_litert_buffer_context",
+    hdrs = ["litert_external_litert_buffer_context.h"],
+    visibility = [
+        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+    ],
+    deps = [
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_macros",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//tflite/c:common",
+    ],
 )
 
 exports_files(glob([
