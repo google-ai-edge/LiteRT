@@ -64,7 +64,7 @@ class Options {
   std::vector<std::int32_t> GetDumpTensorIds() const;
 
   const absl::string_view GetQnnJsonDir() const;
-  void SetQnnJson(const char* qnn_json_dir);
+  void SetQnnJsonDir(const char* qnn_json_dir);
 
   std::string Dump() const;
 
