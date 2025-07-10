@@ -118,8 +118,8 @@ class DummyRandomTensorData final
 
 // Dummy traits class that maps the data type to the dummy random tensor data
 // generator.
+template <typename D>
 struct DummyRandomTensorBufferTraits {
-  template <typename D>
   using Gen = DummyRandomTensorData<D>;
 };
 

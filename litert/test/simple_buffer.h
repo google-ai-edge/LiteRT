@@ -24,6 +24,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -118,6 +119,21 @@ class SimpleBuffer {
     LITERT_RETURN_IF_ERROR(const_cast<TensorBuffer&>(tensor_buffer)
                                .Read<uint8_t>(helper.Span<uint8_t>()));
     return helper;
+  }
+
+  // Create a buffer with same size and type information as the provided
+  // tensor buffer, and fill it with random data. Data generation is dictated
+  // by the traits template.
+  // TODO: Add visit type pattern to allow skipping explicitly specializing
+  // by data type.
+  template <typename T, template <typename> typename RngTraits, typename Rng>
+  Expected<void> WriteRandom(Rng& rng, size_t start = 0,
+                             std::optional<size_t> num_elements = {}) {
+    using Gen = RngTraits<T>::Gen;
+    Gen gen;
+    const auto num_elements_to_write =
+        num_elements ? *num_elements : TypedNumElements<T>() - start;
+    return gen(rng, Span<T>().subspan(start, num_elements_to_write));
   }
 
   // Returns a span of const values from the buffer.

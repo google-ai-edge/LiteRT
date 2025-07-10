@@ -242,10 +242,11 @@ cc_test(
     name = "simple_buffer_test",
     srcs = ["simple_buffer_test.cc"],
     deps = [
+        ":matchers",
+        ":rng_fixture",
         ":simple_buffer",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_model",
-        "//litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
