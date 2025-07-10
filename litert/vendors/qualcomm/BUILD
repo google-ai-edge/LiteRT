@@ -86,7 +86,6 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
