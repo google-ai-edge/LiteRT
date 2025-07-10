@@ -295,7 +295,6 @@ tf_cc_test(
         ":delegate",
         ":delegate_data",
         ":test_util",
-        "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/delegates/utils:simple_delegate",
         "//tflite/kernels:kernel_util",
