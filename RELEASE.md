@@ -33,6 +33,14 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <IF RELEASE CONTAINS MULTIPLE FEATURES FROM SAME AREA, GROUP THEM TOGETHER>
 -->
 
+* [tflite] Add error detection in TfLiteRegistration::init(). When a Delegate
+kernel returns `TfLiteKernelInitFailed()`, it is treated
+as a critical failure on Delegate. This error will be detected in
+SubGraph::ReplaceNodeSubsetsWithDelegateKernels() will cause
+Delegate::Prepare() to fail, ultimately leading
+InterpreterBuilder::operator() or Interpreter::ModifyGraphWithDelegate() to
+return an error.
+
 ### Bug Fixes and Other Changes
 
 * Update tests to provide `kLiteRtHwAcceleratorNpu` for fully AOT compiled
