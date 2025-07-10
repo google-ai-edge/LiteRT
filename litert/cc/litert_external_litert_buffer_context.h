@@ -28,8 +28,8 @@
 namespace litert {
 
 class ExternalLiteRtBufferContext
-    : internal::Handle<LiteRtExternalLiteRtBufferContext,
-                       LiteRtDestroyExternalLiteRtBufferContext> {
+    : public internal::Handle<LiteRtExternalLiteRtBufferContext,
+                              LiteRtDestroyExternalLiteRtBufferContext> {
  public:
   ExternalLiteRtBufferContext() = default;
 

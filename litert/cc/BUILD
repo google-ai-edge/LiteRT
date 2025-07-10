@@ -1242,7 +1242,7 @@ cc_library(
     name = "litert_external_litert_buffer_context",
     hdrs = ["litert_external_litert_buffer_context.h"],
     visibility = [
-        "//third_party/odml/infra/ml_drift_delegate:__subpackages__",
+        "//litert:litert_internal_users_with_internal_cc",
     ],
     deps = [
         ":litert_environment",
