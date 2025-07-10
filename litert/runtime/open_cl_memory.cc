@@ -147,6 +147,9 @@ bool OpenClMemory::IsSupported() {
 Expected<OpenClMemory> OpenClMemory::Alloc(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   if (gpu_env == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "OpenCL is not supported");
