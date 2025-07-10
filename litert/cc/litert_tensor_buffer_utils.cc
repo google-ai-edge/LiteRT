@@ -53,6 +53,14 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "OpenClImageBufferFp16";
     case kLiteRtTensorBufferTypeOpenClBufferPacked:
       return "OpenClBufferPacked";
+    case kLiteRtTensorBufferTypeMetalBuffer:
+      return "MetalBuffer";
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+      return "MetalBufferFp16";
+    case kLiteRtTensorBufferTypeMetalTexture:
+      return "MetalTexture";
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+      return "MetalTextureFp16";
   }
   LITERT_LOG(LITERT_ERROR, "Unexpected value for LiteRtTensorBufferType: %d",
              static_cast<int>(buffer_type));

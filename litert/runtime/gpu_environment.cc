@@ -30,6 +30,10 @@
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+#include "tflite/delegates/gpu/metal/metal_device.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENGL_SUPPORT
 #include <EGL/egl.h>
 
@@ -74,6 +78,16 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
         reinterpret_cast<cl_command_queue>(command_queue_option->int_value);
   }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  auto metal_device_option =
+      environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
+  if (metal_device_option.has_value() &&
+      metal_device_option->type == kLiteRtAnyTypeInt) {
+    options.metal_device =
+        reinterpret_cast<id<MTLDevice>>(metal_device_option->int_value);
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
   auto egl_display_option =
@@ -134,6 +148,14 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   properties_.is_opencl_available = true;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+  if (tflite::gpu::metal::MetalDevice().device() == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create Metal device for LiteRT.");
+  }
+  // Set up Metal.
+  properties_.is_metal_available = true;
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // Set up options.
   options_ = CreateGpuEnvironmentOptions(environment);
 
@@ -152,6 +174,22 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     LITERT_LOG(LITERT_INFO, "Created default OpenCL device.");
   }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  if (options_.metal_device) {
+    metal_device_ = tflite::gpu::metal::MetalDevice(options_.metal_device);
+    LITERT_LOG(LITERT_INFO, "Created Metal device from provided device id");
+  } else {
+    auto default_device = tflite::gpu::metal::MetalDevice();
+    if (default_device.device() == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
+      return {};
+    } else {
+      metal_device_ = default_device;
+      LITERT_LOG(LITERT_INFO, "Created default Metal device.");
+    }
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   // Set up remaining properties.
 #if LITERT_HAS_OPENGL_SUPPORT
