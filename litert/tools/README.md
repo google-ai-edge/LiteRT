@@ -187,7 +187,8 @@ analyze_model_main --model_path=<model_path>
 
 ## `benchmark_model`
 
-Benchmark the performance of a LiteRT model on different hardware.
+Benchmark the performance of a LiteRT model on different hardware with improved
+readability and control over output verbosity.
 
 ### Basic Usage
 
@@ -195,7 +196,63 @@ Benchmark the performance of a LiteRT model on different hardware.
 benchmark_model --graph=<model_path> --use_cpu
 ```
 
-Can also use `--use_gpu` and `--use_npu`
+### Hardware Acceleration Options
+
+-   `--use_cpu`: Use CPU acceleration (default: true)
+-   `--use_gpu`: Use GPU acceleration
+-   `--use_npu`: Use NPU acceleration
+
+### Examples
+
+#### Standard benchmark with clean output
+
+```bash
+benchmark_model --graph=model.tflite --use_gpu
+```
+
+### Benchmark Parameters
+
+-   `--num_runs` (default: 50): Target number of benchmark iterations
+-   `--min_secs` (default: 1.0): Minimum seconds to run, may increase actual
+    runs
+-   `--max_secs` (default: 150.0): Maximum seconds to run, may limit actual runs
+-   `--warmup_runs` (default: 1): Number of warmup iterations before
+    benchmarking
+-   `--warmup_min_secs` (default: 0.5): Minimum warmup duration
+
+### Output Format
+
+**Standard Output:**
+
+```
+========== BENCHMARK RESULTS ==========
+Model initialization: 45.32 ms              # One-time model loading cost
+First inference:      120.45 ms             # Very first run (often slower)
+Warmup (avg):         98.76 ms (1 runs)     # Warmup to prime caches
+Inference (avg):      85.23 ms (50 runs)    # Main benchmark result
+Inference (min):      82.10 ms              # Fastest single run
+Inference (max):      92.45 ms              # Slowest single run
+Inference (std):      3.21 ms               # Standard deviation
+
+Throughput:           12.45 MB/s            # Input data processed per second
+
+Memory Usage:
+Init footprint:       25.60 MB              # Memory after model load
+Overall footprint:    32.40 MB              # Total memory used
+Peak memory:          35.20 MB              # Maximum memory spike
+======================================
+```
+
+### Understanding the Metrics
+
+-   **Warmup runs**: Initial runs to "warm up" the system (fill caches, trigger
+    JIT compilation). These are excluded from final statistics.
+-   **Inference runs**: The actual benchmark iterations used for performance
+    measurement.
+-   **Throughput**: Calculated as (input_size_bytes × runs_per_second) / MB,
+    showing data processing rate.
+-   **First/curr**: First shows the first benchmark run time, curr shows the
+    most recent run time.
 
 ## `apply_plugin`
 

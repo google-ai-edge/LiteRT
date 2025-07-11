@@ -44,6 +44,63 @@ limitations under the License.
 
 namespace litert {
 namespace benchmark {
+// Custom logging listener with better output
+class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
+ public:
+  void OnBenchmarkEnd(
+      const ::tflite::benchmark::BenchmarkResults& results) override {
+    auto inference_us = results.inference_time_us();
+    auto init_us = results.startup_latency_us();
+    auto warmup_us = results.warmup_time_us();
+
+    LITERT_LOG(LITERT_INFO, "\n========== BENCHMARK RESULTS ==========");
+    LITERT_LOG(LITERT_INFO, "Model initialization: %.2f ms", init_us / 1000.0);
+    LITERT_LOG(LITERT_INFO, "Warmup (first):       %.2f ms",
+               warmup_us.first() / 1000.0);
+    LITERT_LOG(LITERT_INFO, "Warmup (avg):         %.2f ms (%d runs)",
+               warmup_us.avg() / 1000.0, warmup_us.count());
+    LITERT_LOG(LITERT_INFO, "Inference (avg):      %.2f ms (%d runs)",
+               inference_us.avg() / 1000.0, inference_us.count());
+
+    if (inference_us.count() > 0) {
+      LITERT_LOG(LITERT_INFO, "Inference (min):      %.2f ms",
+                 inference_us.min() / 1000.0);
+      LITERT_LOG(LITERT_INFO, "Inference (max):      %.2f ms",
+                 inference_us.max() / 1000.0);
+      LITERT_LOG(LITERT_INFO, "Inference (std):      %.2f",
+                 inference_us.std_deviation() / 1000.0);
+    } else {
+      LITERT_LOG(LITERT_INFO, "No inference runs were performed.");
+    }
+
+    double throughput = results.throughput_MB_per_second();
+    if (throughput > 0) {
+      LITERT_LOG(LITERT_INFO, "Throughput:           %.2f MB/s", throughput);
+    } else {
+      LITERT_LOG(LITERT_INFO,
+                 "No throughput data available (throughput <= 0).");
+    }
+
+    auto init_mem_usage = results.init_mem_usage();
+    auto overall_mem_usage = results.overall_mem_usage();
+    if (init_mem_usage.IsSupported()) {
+      LITERT_LOG(LITERT_INFO, "\nMemory Usage:");
+      LITERT_LOG(LITERT_INFO, "Init footprint:       %.2f MB",
+                 init_mem_usage.mem_footprint_kb / 1024.0);
+      LITERT_LOG(LITERT_INFO, "Overall footprint:    %.2f MB",
+                 overall_mem_usage.mem_footprint_kb / 1024.0);
+
+      float peak_mem_mb = results.peak_mem_mb();
+      if (peak_mem_mb > 0) {
+        LITERT_LOG(LITERT_INFO, "Peak memory:          %.2f MB", peak_mem_mb);
+      } else {
+        LITERT_LOG(LITERT_INFO,
+                   "Peak memory usage not available. (peak_mem_mb <= 0)");
+      }
+    }
+    LITERT_LOG(LITERT_INFO, "======================================\n");
+  }
+};
 
 using ::litert::CompiledModel;
 using ::litert::Environment;
@@ -57,7 +114,9 @@ using ::tflite::utils::InputTensorData;
 class BenchmarkLiteRtModel : public BenchmarkModel {
  public:
   explicit BenchmarkLiteRtModel(BenchmarkParams params = DefaultParams())
-      : BenchmarkModel(std::move(params)) {}
+      : BenchmarkModel(std::move(params)), log_output_() {
+    AddListener(&log_output_);
+  }
   ~BenchmarkLiteRtModel() override = default;
   static BenchmarkParams DefaultParams() {
     BenchmarkParams default_params = BenchmarkModel::DefaultParams();
@@ -75,7 +134,6 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(true));
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
-
     return default_params;
   }
 
@@ -203,6 +261,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
   litert::Profiler profiler_;
+  BenchmarkLoggingListener log_output_;
 };
 
 }  // namespace benchmark
