@@ -15,6 +15,8 @@
 
 # buildifier: disable=out-of-order-load
 
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 
 # Placeholder: load proto_library
