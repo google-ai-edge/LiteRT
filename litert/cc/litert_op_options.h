@@ -22,10 +22,80 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
+
+enum TfliteTensorType : uint32_t {
+  TensorType_FLOAT32 = 0,
+  TensorType_FLOAT16 = 1,
+  TensorType_INT32 = 2,
+  TensorType_UINT8 = 3,
+  TensorType_INT64 = 4,
+  TensorType_STRING = 5,
+  TensorType_BOOL = 6,
+  TensorType_INT16 = 7,
+  TensorType_COMPLEX64 = 8,
+  TensorType_INT8 = 9,
+  TensorType_FLOAT64 = 10,
+  TensorType_COMPLEX128 = 11,
+  TensorType_UINT64 = 12,
+  TensorType_RESOURCE = 13,
+  TensorType_VARIANT = 14,
+  TensorType_UINT32 = 15,
+  TensorType_UINT16 = 16,
+  TensorType_INT4 = 17,
+  TensorType_BFLOAT16 = 18,
+  TensorType_MIN = TensorType_FLOAT32,
+  TensorType_MAX = TensorType_BFLOAT16
+};
+
+inline LiteRtElementType GetElementType(uint32_t tflite_element_type) {
+  switch (tflite_element_type) {
+    case TensorType_FLOAT32:
+      return kLiteRtElementTypeFloat32;
+    case TensorType_FLOAT16:
+      return kLiteRtElementTypeFloat16;
+    case TensorType_INT32:
+      return kLiteRtElementTypeInt32;
+    case TensorType_UINT8:
+      return kLiteRtElementTypeUInt8;
+    case TensorType_INT64:
+      return kLiteRtElementTypeInt64;
+    case TensorType_STRING:
+      return kLiteRtElementTypeTfString;
+    case TensorType_BOOL:
+      return kLiteRtElementTypeBool;
+    case TensorType_INT16:
+      return kLiteRtElementTypeInt16;
+    case TensorType_COMPLEX64:
+      return kLiteRtElementTypeComplex64;
+    case TensorType_INT8:
+      return kLiteRtElementTypeInt8;
+    case TensorType_FLOAT64:
+      return kLiteRtElementTypeFloat64;
+    case TensorType_COMPLEX128:
+      return kLiteRtElementTypeComplex128;
+    case TensorType_UINT64:
+      return kLiteRtElementTypeUInt64;
+    case TensorType_RESOURCE:
+      return kLiteRtElementTypeTfResource;
+    case TensorType_VARIANT:
+      return kLiteRtElementTypeTfVariant;
+    case TensorType_UINT32:
+      return kLiteRtElementTypeUInt32;
+    case TensorType_UINT16:
+      return kLiteRtElementTypeUInt16;
+    case TensorType_INT4:
+      return kLiteRtElementTypeInt4;
+    case TensorType_BFLOAT16:
+      return kLiteRtElementTypeBFloat16;
+    default:
+      return kLiteRtElementTypeNone;
+  }
+};
 
 struct OpOptions {
   virtual LiteRtStatus InitFromOp(LiteRtOp op) = 0;
@@ -42,6 +112,17 @@ enum ActivationFunctionType : uint32_t {
   kActivationFunctionTypeSignBit = 5,
   kActivationFunctionTypeMin = kActivationFunctionTypeNone,
   kActivationFunctionTypeMax = kActivationFunctionTypeSignBit,
+};
+
+
+using FullyConnectedOptionsWeightsFormat = uint32_t;
+enum FullyConnectedOptionsWeightsFormatType : uint32_t {
+  kFullyConnectedOptionsWeightsFormatDefault = 0,
+  kFullyConnectedOptionsWeightsFormatShuffled4x16Int8 = 1,
+  kFullyConnectedOptionsWeightsFormatMin =
+      kFullyConnectedOptionsWeightsFormatDefault,
+  kFullyConnectedOptionsWeightsFormatMax =
+      kFullyConnectedOptionsWeightsFormatShuffled4x16Int8
 };
 
 // Struct to hold LiteRt composite ops.
@@ -102,6 +183,17 @@ struct DivOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt FullyConnected op.
+struct FullyConnectedOptions : public OpOptions {
+  LiteRtOp op;
+  ActivationFunction fused_activation_function = 1;
+  FullyConnectedOptionsWeightsFormat weights_format;
+  bool keep_num_dims;
+  LiteRtElementType quantized_bias_type;
+  bool asymmetric_quantize_input;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -127,6 +219,10 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, DivOptions>) {
     DivOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, FullyConnectedOptions>) {
+    FullyConnectedOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {

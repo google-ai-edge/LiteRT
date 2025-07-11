@@ -128,4 +128,28 @@ LiteRtStatus DivOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus FullyConnectedOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflFullyConnected) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedFusedActivationOption(
+      op, &fused_activation_function));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetFullyConnectedWeightsFormatOption(op, &weights_format));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetFullyConnectedKeepNumDimsOption(op, &keep_num_dims));
+  uint32_t retrieved_quantized_bias_type;
+  LITERT_RETURN_IF_ERROR(LiteRtFullyConnectedGetQuantizedBiasTypeOption(
+      op, &retrieved_quantized_bias_type));
+  quantized_bias_type = GetElementType(retrieved_quantized_bias_type);
+  LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedAsymmetricQuantizeInputOption(
+      op, &asymmetric_quantize_input));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

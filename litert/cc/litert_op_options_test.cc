@@ -169,6 +169,33 @@ TEST(OpOptionsTest, GetDivOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetFullyConnectedOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflFullyConnected);
+  tflite::FullyConnectedOptionsT options;
+  options.fused_activation_function = tflite::ActivationFunctionType_RELU;
+  options.keep_num_dims = true;
+  options.quantized_bias_type = tflite::TensorType_FLOAT32;
+  options.asymmetric_quantize_inputs = false;
+  options.weights_format =
+      tflite::FullyConnectedOptionsWeightsFormat_SHUFFLED4x16INT8;
+
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_FullyConnectedOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<FullyConnectedOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(res->keep_num_dims, true);
+  EXPECT_EQ(res->quantized_bias_type, kLiteRtElementTypeFloat32);
+  EXPECT_EQ(res->asymmetric_quantize_input, false);
+  EXPECT_EQ(res->weights_format,
+            kFullyConnectedOptionsWeightsFormatShuffled4x16Int8);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -176,6 +203,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<BatchMatmulOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<ConcatenationOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<DivOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<FullyConnectedOptions>(&op));
 }
 
 }  // namespace
