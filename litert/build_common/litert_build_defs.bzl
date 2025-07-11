@@ -181,6 +181,34 @@ def export_lrt_runtime_only_linkopt():
         "//conditions:default": [],
     }) + symbol_opts()
 
+_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX = "//litert/build_common:export_litert_tflite_runtime_linux.lds"
+_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN = "//litert/build_common:export_litert_tflite_runtime_darwin.lds"
+_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX = make_linkopt("--version-script=$(location {})".format(_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX))
+_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN = make_linkopt("-exported_symbols_list,$(location {})".format(_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN))
+
+def export_lrt_tflite_runtime_script():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:android": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:chromiumos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_SCRIPT_DARWIN],
+        "//conditions:default": [],
+    })
+
+def export_lrt_tflite_runtime_linkopt():
+    return select({
+        "@org_tensorflow//tensorflow:linux_x86_64": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:android": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [
+            "-Wl,-z,max-page-size=16384",
+            _EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX,
+        ],
+        "@org_tensorflow//tensorflow:chromiumos": _EXPORT_LRT_COMMON_LINKOPTS_LINUX + [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_LINUX],
+        "@org_tensorflow//tensorflow:macos": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "@org_tensorflow//tensorflow:ios": [_EXPORT_LRT_TFLITE_RUNTIME_LINKOPT_DARWIN],
+        "//conditions:default": [],
+    }) + symbol_opts()
+
 ####################################################################################################
 # Macros
 

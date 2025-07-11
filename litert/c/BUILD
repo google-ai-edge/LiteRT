@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
-load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script")
+load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script", "export_lrt_tflite_runtime_linkopt", "export_lrt_tflite_runtime_script")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts")
 
 package(
@@ -678,6 +678,26 @@ cc_shared_library(
         "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
+)
+
+# Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
+cc_shared_library(
+    name = "litert_tflite_runtime_c_api_so",
+    additional_linker_inputs = export_lrt_tflite_runtime_script(),
+    shared_lib_name = "libLiteRtRuntimeCApi.so",
+    user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
+        "@org_tensorflow//tensorflow:android": [
+            "-landroid",
+            "-Wl,-soname=libLiteRtRuntimeCApi.so",
+        ],
+        "@org_tensorflow//tensorflow:ios": [],
+        "@org_tensorflow//tensorflow:macos": [],
+        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
+    }),
+    deps = LITERT_C_API_COMMON_DEPS + [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_experimental",
+    ],
 )
 
 # Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
