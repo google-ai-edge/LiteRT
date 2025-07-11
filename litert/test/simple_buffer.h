@@ -25,9 +25,12 @@
 #include <initializer_list>
 #include <iterator>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
@@ -62,10 +65,20 @@ class SimpleBuffer {
  public:
   using Ref = std::reference_wrapper<SimpleBuffer>;
   using CRef = std::reference_wrapper<const SimpleBuffer>;
+
   template <typename T>
-  using View = std::pair<absl::Span<T>, absl::Span<const Layout::Dim>>;
+  struct View {
+    absl::Span<T> data;
+    absl::Span<const Layout::Dim> dimensions;
+    using Type = std::remove_const_t<T>;
+    Layout::Dim NumElements() const {
+      return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
+                         std::multiplies<Layout::Dim>());
+    }
+  };
+
   template <typename T>
-  using CView = std::pair<absl::Span<const T>, absl::Span<const Layout::Dim>>;
+  using CView = View<const T>;
 
   // Create a buffer with the given tensor type.
   static Expected<SimpleBuffer> Create(RankedTensorType tensor_type) {
