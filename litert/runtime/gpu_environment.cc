@@ -91,6 +91,24 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
         reinterpret_cast<EGLContext>(egl_context_option->int_value);
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+  auto wgpu_device_option =
+      environment->GetOption(kLiteRtEnvOptionTagWebGpuDevice);
+  if (wgpu_device_option.has_value() &&
+      wgpu_device_option->type == kLiteRtAnyTypeInt) {
+    options.webgpu_device =
+        reinterpret_cast<WGPUDevice>(wgpu_device_option->int_value);
+  }
+  auto wgpu_queue_option =
+      environment->GetOption(kLiteRtEnvOptionTagWebGpuQueue);
+  if (wgpu_queue_option.has_value() &&
+      wgpu_queue_option->type == kLiteRtAnyTypeInt) {
+    options.webgpu_queue =
+        reinterpret_cast<WGPUQueue>(wgpu_queue_option->int_value);
+  }
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
   return options;
 }
 

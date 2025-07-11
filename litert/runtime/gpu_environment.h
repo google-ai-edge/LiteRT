@@ -34,6 +34,10 @@
 #include "tflite/delegates/gpu/gl/egl_environment.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+#include "third_party/dawn/include/dawn/webgpu.h"
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
 namespace litert::internal {
 
 struct GpuEnvironmentProperties {
@@ -78,6 +82,11 @@ struct GpuEnvironmentOptions {
   bool IsGlAware() const {
     return egl_context != EGL_NO_CONTEXT && egl_display != EGL_NO_DISPLAY;
   }
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+  WGPUDevice webgpu_device = nullptr;
+  WGPUQueue webgpu_queue = nullptr;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 };
 
 // A class for storing the MLD global environment and kept in Environment.
@@ -95,7 +104,10 @@ class GpuEnvironment {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   EGLDisplay getEglDisplay() { return options_.egl_display; }
   EGLContext getEglContext() { return options_.egl_context; }
-
+#if LITERT_HAS_WEBGPU_SUPPORT
+  WGPUDevice getWebGpuDevice() { return webgpu_device_; }
+  WGPUQueue getWebGpuQueue() { return webgpu_queue_; }
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
   // Create a GpuEnvironment with the given environment.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
@@ -125,6 +137,11 @@ class GpuEnvironment {
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_WEBGPU_SUPPORT
+  WGPUDevice webgpu_device_;
+  WGPUQueue webgpu_queue_;
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
