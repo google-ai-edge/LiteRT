@@ -1,4 +1,5 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 load(
     "//tflite:build_def.bzl",
     "tflite_cc_library_with_c_headers_test",
