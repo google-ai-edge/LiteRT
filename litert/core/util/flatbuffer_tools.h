@@ -282,6 +282,11 @@ class FlatbufferWrapper {
     return *fb_model_;
   }
 
+  // Underlying model object.
+  const ::tflite::FlatBufferModel* FlatbufferModelPtr() const {
+    return fb_model_.get();
+  }
+
   // Packed schema object.
   const TflPackedModel* PackedModel() const { return fb_model_->GetModel(); }
 
