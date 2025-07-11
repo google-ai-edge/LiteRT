@@ -16,12 +16,17 @@ limitations under the License.
 
 #include <sys/types.h>
 
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/log/check.h"
 #include "tensorflow/core/framework/tensor.h"
 #include "tensorflow/core/framework/tensor_shape.h"
+#include "tensorflow/core/framework/types.pb.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/delegates/flex/buffer_map_util.h"
 #include "tflite/interpreter.h"
