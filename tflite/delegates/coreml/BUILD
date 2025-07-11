@@ -13,6 +13,8 @@
 # limitations under the License.
 # ==============================================================================
 
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:objc_library.bzl", "objc_library")
 load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
 
 package(
