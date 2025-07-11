@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <memory>
@@ -59,6 +60,13 @@ class SimpleBuffer {
   }
 
  public:
+  using Ref = std::reference_wrapper<SimpleBuffer>;
+  using CRef = std::reference_wrapper<const SimpleBuffer>;
+  template <typename T>
+  using View = std::pair<absl::Span<T>, absl::Span<const Layout::Dim>>;
+  template <typename T>
+  using CView = std::pair<absl::Span<const T>, absl::Span<const Layout::Dim>>;
+
   // Create a buffer with the given tensor type.
   static Expected<SimpleBuffer> Create(RankedTensorType tensor_type) {
     LITERT_ASSIGN_OR_RETURN(const size_t bytes, tensor_type.Bytes());
@@ -148,6 +156,18 @@ class SimpleBuffer {
   absl::Span<T> Span() {
     return absl::MakeSpan(reinterpret_cast<T*>(buffer_.get()),
                           TypedNumElements<T>());
+  }
+
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  CView<T> AsView() const {
+    return {Span<T>(), Type().Layout().Dimensions()};
+  }
+
+  // Return a typed view of both the data and dimensions.
+  template <typename T>
+  View<T> AsView() {
+    return {Span<T>(), Type().Layout().Dimensions()};
   }
 
   // Writes the the provided data into the contained buffer.
