@@ -110,6 +110,15 @@ TEST(QnnOptionTest, EnableWeightSharing) {
   EXPECT_EQ(options.GetEnableWeightSharing(), false);
 }
 
+TEST(QnnOptionTest, SetQnnJsonDir) {
+  Options options;
+  options.SetQnnJsonDir("tmp/");
+  EXPECT_FALSE(options.GetQnnJsonDir().empty());
+  EXPECT_EQ(options.GetQnnJsonDir(), "tmp/");
+  options.SetQnnJsonDir("");
+  EXPECT_TRUE(options.GetQnnJsonDir().empty());
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -118,6 +127,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetUseQint16AsQuint16());
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
+  EXPECT_TRUE(options.GetQnnJsonDir().empty());
 }
 
 }  // namespace

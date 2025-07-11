@@ -156,6 +156,12 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
 
+LiteRtStatus LiteRtQualcommOptionsSetQnnJsonDir(LiteRtQualcommOptions options,
+                                                const char* qnn_json_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetQnnJsonDir(LiteRtQualcommOptions options,
+                                                const char** qnn_json_dir);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

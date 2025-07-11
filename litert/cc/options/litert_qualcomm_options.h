@@ -61,6 +61,9 @@ class QualcommOptions : public OpaqueOptions {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
 
+  void SetQnnJsonDir(const std::string& profiling);
+  const char* GetQnnJsonDir();
+
  private:
   LiteRtQualcommOptions Data() const;
 };
