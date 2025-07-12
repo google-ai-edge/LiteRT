@@ -3,6 +3,8 @@ load(
     "tf_cc_binary",
     "tf_cc_test",
 )
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
