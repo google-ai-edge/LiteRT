@@ -57,6 +57,70 @@ struct Select {
 template <typename... Branches>
 using SelectT = typename Select<Branches...>::type;
 
+template <typename... Ts>
+struct TypeList {};
+
+template <template <typename...> typename C, typename... Lists, typename... Ts,
+          typename... SoFar, typename Functor>
+void ExpandProductHelper(Functor& f, TypeList<Ts...>,
+                         TypeList<SoFar...> sofar) {
+  ((ExpandProductHelper<C, Lists...>(f, TypeList<SoFar..., Ts>())), ...);
+}
+
+template <template <typename...> typename C, typename HeadList,
+          typename... Lists, typename... SoFar, typename Functor>
+void ExpandProductHelper(Functor& f, TypeList<SoFar...> sofar) {
+  ExpandProductHelper<C, Lists...>(f, HeadList(), sofar);
+}
+
+template <template <typename...> typename C, typename... SoFar,
+          typename Functor>
+void ExpandProductHelper(Functor& f, TypeList<SoFar...> sofar) {
+  f.template operator()<C<SoFar...>>();
+}
+
+// Utillity for specializing a template against the cartesian product of given
+// type lists.
+//
+// The number of lists passed must match the number of template parameters of
+// the template being specialized, which is C. This template cannot have
+// non-type template parameters, but that behavior can be achieved with the
+// standard `std::integral_constant` template.
+//    The Functor is used to perform a call back templatated on each of the
+// members of the cartesian product. It must support a zero-arity void
+// () operatory with a single template parameter.
+//
+// EXAMPLE:
+//
+// template <typename LeftType, typename RightType>
+// struct MyStruct {
+//   using L = LeftType;
+//   using R = RightType;
+// };
+//
+// struct MyFunctor {
+//   template <typename T>
+//   void operator()() {
+//     std::cerr << typeid(T::L).name() << ", " << typeid(T::R).name() << "\n";
+//   }
+// };
+//
+//  ExpandProduct<MyStruct, TypeList<double, float>, TypeList<int, char,
+//    char>(MyFunctor());
+// /*
+//  d, i
+//  d, c
+//  d, c
+//  f, i
+//  f, c
+//  f, c
+// */
+template <template <typename...> typename C, typename... Lists,
+          typename Functor>
+void ExpandProduct(Functor& f) {
+  ExpandProductHelper<C, Lists...>(f, TypeList<>());
+}
+
 // See "std::construct_at" from C++20.
 template <class T, class... Args>
 T* ConstructAt(T* p, Args&&... args) {
