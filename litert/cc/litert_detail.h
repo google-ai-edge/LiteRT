@@ -58,7 +58,9 @@ template <typename... Branches>
 using SelectT = typename Select<Branches...>::type;
 
 template <typename... Ts>
-struct TypeList {};
+struct TypeList {
+  static constexpr size_t kSize = sizeof...(Ts);
+};
 
 template <template <typename...> typename C, typename... Lists, typename... Ts,
           typename... SoFar, typename Functor>
