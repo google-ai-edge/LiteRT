@@ -1,6 +1,7 @@
 # Description:
 #   TensorFlow Lite minimal example.
 
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_binary.bzl", "cc_binary")
 load("//tflite:build_def.bzl", "tflite_linkopts")
 
 package(

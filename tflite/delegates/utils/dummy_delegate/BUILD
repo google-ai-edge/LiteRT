@@ -1,3 +1,5 @@
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_binary.bzl", "cc_binary")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tflite:build_def.bzl", "tflite_copts")
 load("//tflite/tools/evaluation/tasks:build_def.bzl", "task_linkopts")
