@@ -7,6 +7,10 @@
 # the code in ../builtin_ops_header/, i.e. have a single tool generate
 # both the builtin_ops.h header and the builtin_ops_list.inc file?
 
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_binary.bzl", "cc_binary")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
