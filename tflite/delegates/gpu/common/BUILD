@@ -1,6 +1,8 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "workspace_root")
 load("@org_tensorflow//tensorflow/core/platform:build_config.bzl", "tf_platform_alias")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
