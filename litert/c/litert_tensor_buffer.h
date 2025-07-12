@@ -51,6 +51,7 @@ typedef void (*LiteRtIonDeallocator)(void* ion_buffer_addr);
 typedef void (*LiteRtDmaBufDeallocator)(void* dmabuf_buffer_addr);
 typedef void (*LiteRtFastRpcDeallocator)(void* fastrpc_buffer_addr);
 typedef void (*LiteRtOpenClDeallocator)(void* opencl_buffer_addr);
+typedef void (*LiteRtMetalDeallocator)(void* metal_buffer_addr);
 typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
 typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
 

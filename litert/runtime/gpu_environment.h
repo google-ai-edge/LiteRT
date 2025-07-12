@@ -30,6 +30,10 @@
 #include "tflite/delegates/gpu/cl/cl_device.h"
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+#include "tflite/delegates/gpu/metal/metal_device.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/gl/egl_environment.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -54,6 +58,9 @@ struct GpuEnvironmentProperties {
 
   // Indicates whether AHWB->GL interop is supported.
   bool is_ahwb_gl_interop_supported = false;
+
+  // Indicates whether Metal is available.
+  bool is_metal_available = false;
 };
 
 struct GpuEnvironmentOptions {
@@ -65,6 +72,10 @@ struct GpuEnvironmentOptions {
   cl_context context = nullptr;
   cl_command_queue command_queue = nullptr;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  id<MTLDevice> metal_device = nullptr;
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   // Whenever input and/or output is GL object, EGL display and context must be
   // set to create GL aware OpenCL context. Do not set these variables whenever
@@ -96,6 +107,10 @@ class GpuEnvironment {
   EGLDisplay getEglDisplay() { return options_.egl_display; }
   EGLContext getEglContext() { return options_.egl_context; }
 
+#if LITERT_HAS_METAL_SUPPORT
+  tflite::gpu::metal::MetalDevice* getMetalDevice() { return &metal_device_; }
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // Create a GpuEnvironment with the given environment.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
@@ -125,6 +140,10 @@ class GpuEnvironment {
   tflite::gpu::cl::CLContext context_;
   tflite::gpu::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  tflite::gpu::metal::MetalDevice metal_device_;
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;

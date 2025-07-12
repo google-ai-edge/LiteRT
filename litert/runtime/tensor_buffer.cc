@@ -157,6 +157,12 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeGlTexture:
       // internal gl texture is auto-disposed by the
       // litert::internal::GlTexture destructor.
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+      // internal metal buffer is auto-disposed by the
+      // litert::internal::MetalMemory destructor.
       break;
   }
 }
