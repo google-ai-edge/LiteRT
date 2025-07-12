@@ -1,3 +1,5 @@
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+
 # Description:
 #
 # This package contains shim library targets for the Async C package.

@@ -1,3 +1,5 @@
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+
 # Test utilities for TFLite async execution.
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
 
