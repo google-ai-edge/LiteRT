@@ -1,3 +1,6 @@
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+
 # Provides stable ABI delegate.
 load("//tflite:build_def.bzl", "tflite_copts")
 
