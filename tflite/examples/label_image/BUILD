@@ -1,6 +1,9 @@
 # Description:
 # TensorFlow Lite Example Label Image.
 
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_binary.bzl", "cc_binary")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_linkopts")
 
 package(
