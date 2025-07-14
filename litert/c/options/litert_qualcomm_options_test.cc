@@ -153,6 +153,24 @@ TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, QnnJsonDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsSetQnnJsonDir(qualcomm_options, "tmp/"));
+
+  const char* qnn_json_dir;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetQnnJsonDir(qualcomm_options, &qnn_json_dir));
+  EXPECT_STREQ(qnn_json_dir, "tmp/");
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));

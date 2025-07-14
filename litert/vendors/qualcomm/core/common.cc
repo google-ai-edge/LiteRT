@@ -58,6 +58,12 @@ std::vector<std::int32_t> Options::GetDumpTensorIds() const {
   return dump_tensor_ids_;
 }
 
+const absl::string_view Options::GetQnnJsonDir() const { return qnn_json_dir_; }
+
+void Options::SetQnnJsonDir(const char* qnn_json_dir) {
+  qnn_json_dir_ = qnn_json_dir;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
