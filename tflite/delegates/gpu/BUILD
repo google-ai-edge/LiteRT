@@ -5,6 +5,10 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_binary.bzl", "cc_binary")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:objc_library.bzl", "objc_library")
 load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
 load("//tflite:special_rules.bzl", "tflite_extra_gles_deps", "tflite_portable_test_suite")
 load("//tflite/delegates/gpu:build_defs.bzl", "gpu_delegate_linkopts")
