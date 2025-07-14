@@ -159,6 +159,18 @@ class TensorBuffer
 #endif
   }
 
+  Expected<WGPUBuffer> GetWebGpuBuffer() const {
+#if LITERT_HAS_WEBGPU_SUPPORT
+    WGPUBuffer webgpu_buffer;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferWebGpuBuffer(Get(), &webgpu_buffer));
+    return webgpu_buffer;
+#else
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "WebGPU is not supported on this platform");
+#endif
+  }
+
   struct GlBuffer {
     LiteRtGLenum target;
     LiteRtGLuint id;

@@ -51,17 +51,6 @@ template Expected<char*> OpenClMemory::Lock<char>(
 template Expected<void> OpenClMemory::Unlock<float>();
 template Expected<void> OpenClMemory::Unlock<char>();
 
-LockState ToLockState(LiteRtTensorBufferLockMode mode) {
-  switch (mode) {
-    case kLiteRtTensorBufferLockModeRead:
-      return LockState::kRead;
-    case kLiteRtTensorBufferLockModeWrite:
-      return LockState::kWrite;
-    case kLiteRtTensorBufferLockModeReadWrite:
-      return LockState::kReadWrite;
-  }
-}
-
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
   absl::MutexLock lock(&mutex_);
@@ -92,7 +81,8 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
                         "Failed to allocate aligned memory");
     }
   }
-  if (lock_state == LockState::kRead || lock_state == LockState::kReadWrite) {
+  if (lock_state == LockState::kReadLocked ||
+      lock_state == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
       LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
                                  ->EnqueueReadBuffer(GetMemoryPtr(),
@@ -118,8 +108,8 @@ Expected<void> OpenClMemory::Unlock() {
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "The OpenCL memory is already unlocked."));
   absl::Cleanup unlock = [this] { lock_state_ = LockState::kUnlocked; };
-  if (lock_state_ == LockState::kWrite ||
-      lock_state_ == LockState::kReadWrite) {
+  if (lock_state_ == LockState::kWriteLocked ||
+      lock_state_ == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
       LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
                                  ->EnqueueWriteBuffer(GetMemoryPtr(),

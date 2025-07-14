@@ -154,6 +154,10 @@ load("//third_party/tqdm:workspace.bzl", tqdm = "repo")
 
 tqdm()
 
+load("//third_party/dawn:workspace.bzl", dawn = "repo")
+
+dawn()
+
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(

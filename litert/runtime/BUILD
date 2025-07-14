@@ -58,6 +58,7 @@ cc_library(
         "open_cl_sync.cc",
         "tensor_buffer.cc",
         "tensor_buffer_requirements.cc",
+        "webgpu_buffer.cc",
     ],
     hdrs = [
         "ahwb_buffer.h",
@@ -70,7 +71,9 @@ cc_library(
         "open_cl_memory.h",
         "open_cl_sync.h",
         "tensor_buffer.h",
+        "tensor_buffer_lockstate.h",
         "tensor_buffer_requirements.h",
+        "webgpu_buffer.h",
         "//litert/c:litert_tensor_buffer.h",
     ],
     linkopts = gles_linkopts(),
@@ -123,28 +126,30 @@ cc_library(
     }),
 )
 
+GPU_ENVIRONMENT_DEPS = [
+    "//litert/c:litert_any",
+    "//litert/c:litert_common",
+    "//litert/c:litert_gl_types",
+    "//litert/c:litert_logging",
+    "//litert/cc:litert_expected",
+    "//litert/cc:litert_macros",
+    "@opencl_headers",
+    "//tflite/delegates/gpu/cl:cl_command_queue",
+    "//tflite/delegates/gpu/cl:cl_context",
+    "//tflite/delegates/gpu/cl:cl_device",
+    "//tflite/delegates/gpu/cl:opencl_wrapper",
+] + select({
+    "@org_tensorflow//tensorflow:android": [
+        "//tflite/delegates/gpu/cl:gl_interop",
+        "//tflite/delegates/gpu/gl:egl_environment",
+    ],
+    "//conditions:default": [],
+})
+
 cc_library(
     name = "gpu_environment_header",
     hdrs = ["gpu_environment.h"],
-    deps = [
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:cl_device",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "@opencl_headers",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/cl:gl_interop",
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
+    deps = GPU_ENVIRONMENT_DEPS,
 )
 
 cc_library(
@@ -152,27 +157,10 @@ cc_library(
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
     linkopts = gles_linkopts(),
-    deps = [
-        "//litert/c:litert_any",
-        "//litert/c:litert_common",
+    deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:cl_device",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "@opencl_headers",
-    ] + gles_deps() + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/cl:gl_interop",
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
 )
 
 # copybara:uncomment_begin(google-only)

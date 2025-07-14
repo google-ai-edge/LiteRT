@@ -36,6 +36,12 @@ typedef enum {
   kLiteRtTensorBufferTypeOpenClBufferPacked = 14,
   kLiteRtTensorBufferTypeOpenClImageBuffer = 15,
   kLiteRtTensorBufferTypeOpenClImageBufferFp16 = 16,
+
+  // 20-29 are reserved for WebGPU memory objects.
+  kLiteRtTensorBufferTypeWebGpuBuffer = 20,
+  kLiteRtTensorBufferTypeWebGpuBufferFp16 = 21,
+  kLiteRtTensorBufferTypeWebGpuBufferPacked = 22,
+  // TODO b/422216124 - Add WebGPU Texture types.
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
 
@@ -49,4 +55,9 @@ inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16;
 }
 
+inline bool IsWebGpuMemory(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeWebGpuBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked;
+}
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

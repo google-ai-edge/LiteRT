@@ -45,6 +45,8 @@ class Environment
     ClCommandQueue = kLiteRtEnvOptionTagOpenClCommandQueue,
     EglContext = kLiteRtEnvOptionTagEglContext,
     EglDisplay = kLiteRtEnvOptionTagEglDisplay,
+    WebGpuDevice = kLiteRtEnvOptionTagWebGpuDevice,
+    WebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
   };
 
   struct Option {
