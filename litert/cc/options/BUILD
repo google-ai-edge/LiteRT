@@ -198,6 +198,81 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "darwinn_options",
+    srcs = ["darwinn_options.cc"],
+    hdrs = ["darwinn_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/runtime:litert_darwinn_options",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": [
+            "//litert/c/options:litert_darwinn_device_options",
+            "//litert/c/options:litert_darwinn_runtime_options",
+        ],
+        "@org_tensorflow//tensorflow:emscripten": [
+            "//litert/c/options:litert_darwinn_device_options",
+            "//litert/c/options:litert_darwinn_runtime_options",
+        ],
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
+    name = "darwinn_options_direct",
+    srcs = ["darwinn_options.cc"],
+    hdrs = [
+        "darwinn_options.h",
+        "darwinn_options_direct.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_darwinn_device_options",
+        "//litert/c/options:litert_darwinn_runtime_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/runtime:litert_darwinn_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "darwinn_options_test",
+    srcs = ["darwinn_options_test.cc"],
+    deps = [
+        ":darwinn_options_direct",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "darwinn_options_debug_test",
+    srcs = ["darwinn_options_debug_test.cc"],
+    deps = [
+        ":darwinn_options_direct",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",
