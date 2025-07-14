@@ -1,4 +1,6 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_library.bzl", "cc_library")
+load("@org_tensorflow//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 load("//tflite:special_rules.bzl", "if_nnapi")
 
 package(
