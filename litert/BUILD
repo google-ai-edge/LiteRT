@@ -33,7 +33,7 @@ package_group(
         "//litert/python/...",
         "//litert/test/...",
         "//litert/sdk_util/...",
-        # When litert_lm_link_capi_so=false
+        # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # Users with access to core internal apis.
         # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
@@ -58,7 +58,7 @@ package_group(
         "//litert/tools/...",
         "//litert/vendors/cc/...",
         "//litert/vendors/qualcomm/...",
-        # When litert_lm_link_capi_so=false
+        # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
     ],
@@ -122,4 +122,16 @@ package_group(
 exports_files(
     glob(["*.gwsq"]),
     visibility = ["//visibility:public"],
+)
+
+# If litert_link_capi_so is not defined, each target links LiteRT C API either statically or
+# dynamically based on its own requirements.
+config_setting(
+    name = "litert_link_capi_so",
+    values = {"define": "litert_link_capi_so=true"},
+)
+
+config_setting(
+    name = "litert_link_capi_static",
+    values = {"define": "litert_link_capi_so=false"},
 )
