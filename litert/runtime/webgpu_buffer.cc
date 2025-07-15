@@ -41,7 +41,7 @@ Expected<T*> WebGpuBuffer::Lock(LiteRtTensorBufferLockMode mode) {
 #if LITERT_HAS_WEBGPU_SUPPORT
   absl::MutexLock lock(&mutex_);
 
-  // TODO b/379743988: Implement the lock logic.
+  // TODO b/422216124: Implement the lock logic.
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "WebGPU buffer locking is not supported yet.");
 #else
@@ -53,7 +53,7 @@ Expected<T*> WebGpuBuffer::Lock(LiteRtTensorBufferLockMode mode) {
 template <typename T>
 Expected<void> WebGpuBuffer::Unlock() {
 #if LITERT_HAS_WEBGPU_SUPPORT
-  // TODO b/379743988: Implement the unlock logic.
+  // TODO b/422216124: Implement the unlock logic.
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "WebGPU buffer unlocking is not supported yet.");
 #else
@@ -66,7 +66,7 @@ Expected<WebGpuBuffer> WebGpuBuffer::Alloc(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
 #if LITERT_HAS_WEBGPU_SUPPORT
-  // TODO b/379743988: Implement the Alloc logic.
+  // TODO b/422216124: Implement the Alloc logic.
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "WebGPU buffer allocation is not supported yet.");
 #else

@@ -25,7 +25,6 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/gpu_environment.h"
-#include "litert/runtime/tensor_buffer_lockstate.h"
 
 namespace litert::internal {
 
@@ -94,9 +93,6 @@ class WebGpuBuffer {
   LiteRtWebGpuBufferDeallocator deallocator_ = nullptr;
   // The size of the buffer in bytes.
   size_t size_ = 0;
-  // The size of the CPU memory buffer in bytes. It's doubled for fp16 buffers.
-  size_t cpu_buffer_size_ = 0;
-  LockState lock_state_ = LockState::kUnlocked;
 };
 
 }  // namespace litert::internal
