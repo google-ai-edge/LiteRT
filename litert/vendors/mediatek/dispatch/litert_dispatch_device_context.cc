@@ -31,13 +31,17 @@
 
 using litert::Error;
 
+namespace litert {
+namespace mediatek {
+
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() = default;
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api) {
+    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    const LiteRtDispatchDeviceContext& device_context) {
   return std::unique_ptr<LiteRtDispatchDeviceContextT>(
-      new LiteRtDispatchDeviceContextT(neuron_adapter_api));
+      new LiteRtDispatchDeviceContextT(neuron_adapter_api, device_context));
 }
 
 litert::Expected<LiteRtTensorBufferHandle>
@@ -190,3 +194,6 @@ LiteRtDispatchDeviceContextT::NeuronMemoryRegistry::Find(
   }
   return &records_[tensor_buffer_handle];
 }
+
+}  // namespace mediatek
+}  // namespace litert

@@ -12,22 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// This is the migrated version using the template framework
+
 #include <any>
-#include <cstdio>
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
+#include "litert/vendors/common/vendor_traits.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
@@ -35,288 +33,194 @@
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
-namespace {
+namespace litert {
+namespace vendors {
 
-using ::litert::qnn::QnnManager;
+// Static storage for QNN manager
+static std::unique_ptr<litert::qnn::QnnManager> TheQnnManager;
+static std::string TheBuildId;
 
-static std::unique_ptr<QnnManager> TheQnnManager;
-
-QnnManager& Qnn() { return *TheQnnManager; }
-
-LiteRtEnvironmentOptions TheEnvironmentOptions = nullptr;
-
-LiteRtOptions TheOptions = nullptr;
-
-char BuildId[256];
-
-// /////////////////////////////////////////////////////////////////////////////
-// Basic Execution API
-// /////////////////////////////////////////////////////////////////////////////
-
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  TheEnvironmentOptions = environment_options;
-  TheOptions = options;
-
-  // TODO LUKE confirm where the lib dir is coming from, the
-  // "dispatch_library_dir" thing makes no sense Since this should be shared lib
-  // for libqnn.so.
-  litert::EnvironmentOptions env_options(environment_options);
-
-  const char* dispatch_lib_dir = nullptr;
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (dispatch_lib_dir_any) {
-    dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
-  }
-
-  std::optional<std::string> shared_library_dir_opt =
-      dispatch_lib_dir != nullptr
-          ? std::make_optional(std::string(dispatch_lib_dir))
-          : std::nullopt;
-
-  auto configs = QnnManager::DefaultBackendConfigs();
-  // TODO(Alen): initialize qnn_options from LiteRtOptions
+// Implement trait methods for Qualcomm
+template <>
+LiteRtStatus VendorTraits<QualcommTag>::Initialize(const std::string& lib_dir) {
+  std::optional<std::string> shared_library_dir = 
+      !lib_dir.empty() ? std::make_optional(lib_dir) : std::nullopt;
+  
+  auto configs = litert::qnn::QnnManager::DefaultBackendConfigs();
   ::qnn::Options qnn_options;
   qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
   qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
-  if (auto qnn_manager = QnnManager::Create(
-          /*configs=*/configs,
-          /*options=*/qnn_options,
-          /*shared_library_dir=*/shared_library_dir_opt,
-          /*soc_model*/ std::nullopt);
-      !qnn_manager) {
+  
+  auto qnn_manager = litert::qnn::QnnManager::Create(
+      /*configs=*/configs,
+      /*options=*/qnn_options,
+      /*shared_library_dir=*/shared_library_dir,
+      /*soc_model=*/std::nullopt);
+  
+  if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
-  } else {
-    std::swap(TheQnnManager, *qnn_manager);
   }
-
+  
+  TheQnnManager = std::move(*qnn_manager);
+  
+  // Build version string
   Qnn_ApiVersion_t qnn_api_version;
-  if (auto status = Qnn().Api()->backendGetApiVersion(&qnn_api_version);
+  if (auto status = TheQnnManager->Api()->backendGetApiVersion(&qnn_api_version);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to get QNN API version: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
   }
-
-  const char* build_id;
-  if (auto status = Qnn().Api()->backendGetBuildId(&build_id);
+  
+  const char* backend_build_id = nullptr;
+  if (auto status = TheQnnManager->Api()->backendGetBuildId(&backend_build_id);
       status != QNN_SUCCESS) {
-    LITERT_LOG(LITERT_ERROR, "Failed to get QNN build ID: %d", status);
+    LITERT_LOG(LITERT_ERROR, "Failed to get backend build ID: %d", status);
     return kLiteRtStatusErrorRuntimeFailure;
   }
-
-  snprintf(BuildId, sizeof(BuildId),
-           "Qualcomm Dispatch API version %d.%d.%d, QNN API version %d.%d.%d, "
-           "build id: %s",
-           LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
-           LITERT_API_VERSION_PATCH, qnn_api_version.coreApiVersion.major,
-           qnn_api_version.coreApiVersion.minor,
-           qnn_api_version.coreApiVersion.patch, build_id);
-  BuildId[sizeof(BuildId) - 1] = 0;
-
+  
+  char build_id[256];
+  std::snprintf(build_id, sizeof(build_id),
+                "QNN API v%u.%u.%u | Backend %s | LiteRT Dispatch v%d.%d.%d",
+                qnn_api_version.coreApiVersion.major,
+                qnn_api_version.coreApiVersion.minor,
+                qnn_api_version.coreApiVersion.patch,
+                backend_build_id != nullptr ? backend_build_id : "Unknown",
+                LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+                LITERT_API_VERSION_PATCH);
+  TheBuildId = build_id;
+  
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GetVendorId(const char** vendor_id) {
-  *vendor_id = "Qualcomm";
-  return kLiteRtStatusOk;
+template <>
+std::string VendorTraits<QualcommTag>::GetBuildId() {
+  return TheBuildId;
 }
 
-LiteRtStatus GetBuildId(const char** build_id) {
-  *build_id = BuildId;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetCapabilities(int* capabilities) {
-  *capabilities = kLiteRtDispatchCapabilitiesBasic;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(Qnn()); context) {
-    *device_context = context->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
-               context.Error().Message().c_str());
-    return context.Error().Status();
+template <>
+Expected<std::unique_ptr<VendorDeviceContext>> 
+VendorTraits<QualcommTag>::CreateDeviceContext(
+    const LiteRtDispatchDeviceContext* device_context_options) {
+  if (!TheQnnManager) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                     "QNN Manager not initialized");
   }
-}
-
-LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
-  delete device_context;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetInputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int input_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  if (auto requirements =
-          invocation_context->GetInputRequirements(input_index, *tensor_type);
-      requirements) {
-    *tensor_buffer_requirements = *requirements;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor buffer requirements: %s",
-               requirements.Error().Message().c_str());
-    return requirements.Error().Status();
+  
+  auto result = litert::qnn::LiteRtDispatchDeviceContextT::Create(
+      *TheQnnManager, *device_context_options);
+  
+  if (!result.ok()) {
+    return Unexpected(result.Error());
   }
+  
+  return std::unique_ptr<VendorDeviceContext>(result.Value().release());
 }
 
-LiteRtStatus GetOutputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int output_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  if (auto requirements =
-          invocation_context->GetOutputRequirements(output_index, *tensor_type);
-      requirements) {
-    *tensor_buffer_requirements = *requirements;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to get tensor buffer requirements: %s",
-               requirements.Error().Message().c_str());
-    return requirements.Error().Status();
-  }
-}
-
-LiteRtStatus RegisterTensorBuffer(
-    LiteRtDispatchDeviceContext device_context, LiteRtTensorBuffer buffer,
+template <>
+LiteRtStatus VendorTraits<QualcommTag>::RegisterTensorBuffer(
+    VendorDeviceContext* context,
+    LiteRtTensorBuffer tensor_buffer,
     LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  if (auto status = device_context->RegisterTensorBuffer(buffer); !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to register buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  } else {
-    *tensor_buffer_handle = *status;
-    return kLiteRtStatusOk;
+  auto* qnn_context = static_cast<litert::qnn::LiteRtDispatchDeviceContextT*>(context);
+  
+  LITERT_ASSIGN_OR_RETURN(auto handle,
+                          qnn_context->RegisterTensorBuffer(tensor_buffer));
+  *tensor_buffer_handle = handle;
+  return kLiteRtStatusOk;
+}
+
+template <>
+LiteRtStatus VendorTraits<QualcommTag>::UnregisterTensorBuffer(
+    VendorDeviceContext* context,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  auto* qnn_context = static_cast<litert::qnn::LiteRtDispatchDeviceContextT*>(context);
+  return qnn_context->UnregisterTensorBuffer(tensor_buffer_handle);
+}
+
+template <>
+Expected<std::unique_ptr<VendorInvocationContext>>
+VendorTraits<QualcommTag>::CreateInvocationContext(
+    VendorDeviceContext* device_context,
+    const void* exec_bytecode_ptr,
+    size_t exec_bytecode_size,
+    const char* function_name) {
+  auto* qnn_device_context = 
+      static_cast<litert::qnn::LiteRtDispatchDeviceContextT*>(device_context);
+  
+  // Create LiteRtMemBuffer from the raw pointer and size
+  LiteRtMemBuffer mem_buffer = {
+      .fd = -1,
+      .base_addr = exec_bytecode_ptr,
+      .offset = 0,
+      .size = exec_bytecode_size
+  };
+  
+  auto result = litert::qnn::LiteRtDispatchInvocationContextT::Create(
+      *TheQnnManager, *qnn_device_context, &mem_buffer, function_name);
+  
+  if (!result.ok()) {
+    return Unexpected(result.Error());
   }
+  
+  return std::unique_ptr<VendorInvocationContext>(result.Value().release());
 }
 
-LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
-                                    LiteRtTensorBufferHandle handle) {
-  if (auto status = device_context->UnregisterTensorBuffer(handle); !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  } else {
-    return kLiteRtStatusOk;
+// Implement GetInputRequirements and GetOutputRequirements specializations
+template <>
+LiteRtStatus VendorTraits<QualcommTag>::GetInputRequirements(
+    VendorInvocationContext* invocation_context,
+    int input_index,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+  if (!invocation_context || !tensor_type || !tensor_buffer_requirements) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-}
-
-LiteRtStatus InvocationContextCreate(
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtDispatchExecutableType exec_type,
-    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs,
-    LiteRtDispatchInvocationContext* invocation_context) {
-  auto context = LiteRtDispatchInvocationContextT::Create(
-      Qnn(), *device_context, exec_bytecode_buffer, function_name);
-  if (!context) {
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to create context from context binary: %s for function "
-               "%s, base address: %p, size: %zu",
-               context.Error().Message().c_str(), function_name,
-               exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size);
-    return context.Error().Status();
+  
+  auto* qnn_invocation_context = 
+      static_cast<litert::qnn::LiteRtDispatchInvocationContextT*>(
+          invocation_context);
+  
+  auto requirements = qnn_invocation_context->GetInputRequirements(
+      input_index, *tensor_type);
+  
+  if (!requirements.ok()) {
+    return requirements.Error().Status();
   }
-  *invocation_context = context->release();
-  device_context->SetInvocationContext(*invocation_context);
+  
+  *tensor_buffer_requirements = requirements.Value();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus InvocationContextDestroy(
-    LiteRtDispatchInvocationContext invocation_context) {
-  delete invocation_context;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto status = invocation_context->AttachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach input buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
+template <>
+LiteRtStatus VendorTraits<QualcommTag>::GetOutputRequirements(
+    VendorInvocationContext* invocation_context,
+    int output_index,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+  if (!invocation_context || !tensor_type || !tensor_buffer_requirements) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto status = invocation_context->AttachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach output buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
+  
+  auto* qnn_invocation_context = 
+      static_cast<litert::qnn::LiteRtDispatchInvocationContextT*>(
+          invocation_context);
+  
+  auto requirements = qnn_invocation_context->GetOutputRequirements(
+      output_index, *tensor_type);
+  
+  if (!requirements.ok()) {
+    return requirements.Error().Status();
   }
+  
+  *tensor_buffer_requirements = requirements.Value();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_RETURN_IF_ERROR(
-      invocation_context->DetachInput(graph_input_index, tensor_buffer_handle));
-  return kLiteRtStatusOk;
-}
+}  // namespace vendors
+}  // namespace litert
 
-LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  LITERT_RETURN_IF_ERROR(invocation_context->DetachOutput(
-      graph_output_index, tensor_buffer_handle));
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  if (auto status = invocation_context->Execute(); !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to execute invocation context: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  }
-  return kLiteRtStatusOk;
-}
-
-// /////////////////////////////////////////////////////////////////////////////
-
-LiteRtDispatchInterface TheInterface = {
-    /*.initialize=*/Initialize,
-    /*.get_vendor_id=*/GetVendorId,
-    /*.get_build_id=*/GetBuildId,
-    /*.get_capabilities=*/GetCapabilities,
-    /*.device_context_create=*/DeviceContextCreate,
-    /*.device_context_destroy=*/DeviceContextDestroy,
-    /*.get_input_requirements=*/GetInputRequirements,
-    /*.get_output_requirements=*/GetOutputRequirements,
-    /*.register_tensor_buffer=*/RegisterTensorBuffer,
-    /*.unregister_tensor_buffer=*/UnregisterTensorBuffer,
-    /*.invocation_context_create=*/InvocationContextCreate,
-    /*.invocation_context_destroy=*/InvocationContextDestroy,
-    /*.attach_input=*/AttachInput,
-    /*.attach_output=*/AttachOutput,
-    /*.detach_input=*/DetachInput,
-    /*.detach_output=*/DetachOutput,
-    /*.invoke=*/Invoke,
-};
-
-LiteRtDispatchApi TheApi = {
-    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
-                  /*.minor=*/LITERT_API_VERSION_MINOR,
-                  /*.patch=*/LITERT_API_VERSION_PATCH},
-    /*.interface=*/&TheInterface,
-    /*.async_interface=*/nullptr,
-    /*.graph_interface=*/nullptr,
-};
-
-}  // namespace
-
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
+// Define the entry point using the macro
+extern "C" {
+DEFINE_VENDOR_DISPATCH_ENTRY_POINT(litert::vendors::QualcommTag)
 }

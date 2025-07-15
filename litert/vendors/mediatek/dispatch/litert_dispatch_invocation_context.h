@@ -22,38 +22,44 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
+#include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
-class LiteRtDispatchInvocationContextT {
+namespace litert {
+namespace mediatek {
+
+class LiteRtDispatchInvocationContextT : public litert::vendors::VendorInvocationContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
   static litert::Expected<Ptr> Create(
       litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
-      LiteRtDispatchDeviceContext device_context,
+      LiteRtDispatchDeviceContextT& device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs);
 
   ~LiteRtDispatchInvocationContextT();
 
+  // Override base class methods
+  LiteRtStatus AttachInput(int graph_input_index,
+                          LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus AttachOutput(int graph_output_index,
+                           LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus DetachInput(int graph_input_index,
+                          LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus DetachOutput(int graph_output_index,
+                           LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus Invoke() override;
+  void* GetBackendContext() override { return execution_; }
+
+  // MediaTek-specific methods
   litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
       int input_index, const LiteRtRankedTensorType& tensor_type);
 
   litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
-
-  litert::Expected<void> AttachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> AttachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<void> DetachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> DetachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<void> Invoke();
 
  private:
   class IoRequirementsBuilder {
@@ -69,7 +75,7 @@ class LiteRtDispatchInvocationContextT {
 
   LiteRtDispatchInvocationContextT(
       const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
-      LiteRtDispatchDeviceContext device_context, NeuronModel* model,
+      LiteRtDispatchDeviceContextT& device_context, NeuronModel* model,
       NeuronCompilation* compilation, NeuronExecution* execution,
       int num_inputs, int num_outputs)
       : neuron_adapter_api_(neuron_adapter_api),
@@ -81,7 +87,7 @@ class LiteRtDispatchInvocationContextT {
         output_requirements_builders_(num_outputs) {}
 
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
-  LiteRtDispatchDeviceContext device_context_;
+  LiteRtDispatchDeviceContextT& device_context_;
   NeuronModel* model_;
   NeuronCompilation* compilation_;
   NeuronExecution* execution_;
@@ -90,5 +96,8 @@ class LiteRtDispatchInvocationContextT {
   std::vector<std::unique_ptr<IoRequirementsBuilder>>
       output_requirements_builders_;
 };
+
+}  // namespace mediatek
+}  // namespace litert
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

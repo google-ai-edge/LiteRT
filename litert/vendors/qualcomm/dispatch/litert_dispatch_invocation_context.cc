@@ -237,46 +237,58 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
   return GetTensorBufferRequirements(tensor_type);
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_input_index < 0 || graph_input_index >= inputs_.size()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Invalid graph_input_index");
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
   auto& tensor = inputs_[graph_input_index];
   input_buffer_handles_[graph_input_index] = tensor_buffer_handle;
-  return AttachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  auto result = AttachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  return result.ok() ? kLiteRtStatusOk : result.Error().Status();
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   if (graph_output_index < 0 || graph_output_index >= outputs_.size()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Invalid graph_output_index");
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
   auto& tensor = outputs_[graph_output_index];
   output_buffer_handles_[graph_output_index] = tensor_buffer_handle;
-  return AttachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  auto result = AttachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  return result.ok() ? kLiteRtStatusOk : result.Error().Status();
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (graph_input_index < 0 || graph_input_index >= inputs_.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  
   auto& tensor = inputs_[graph_input_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  auto result = DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  if (!result.ok()) {
+    return result.Error().Status();
+  }
   input_buffer_handles_[graph_input_index] = -1;
-  return {};
+  return kLiteRtStatusOk;
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  if (graph_output_index < 0 || graph_output_index >= outputs_.size()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  
   auto& tensor = outputs_[graph_output_index];
-  LITERT_RETURN_IF_ERROR(
-      DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle));
+  auto result = DetachBuffer(tensor.GetQnnTensor(), tensor_buffer_handle);
+  if (!result.ok()) {
+    return result.Error().Status();
+  }
   output_buffer_handles_[graph_output_index] = -1;
-  return {};
+  return kLiteRtStatusOk;
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::AttachBuffer(
@@ -315,6 +327,11 @@ Expected<void> LiteRtDispatchInvocationContextT::DetachBuffer(
   LITERT_RETURN_IF_ERROR(
       device_context_.UnregisterTensorBuffer(tensor_buffer_handle, tensor));
   return {};
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
+  auto result = Execute();
+  return result.ok() ? kLiteRtStatusOk : result.Error().Status();
 }
 
 Expected<void> LiteRtDispatchInvocationContextT::Execute() {

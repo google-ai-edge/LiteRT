@@ -41,8 +41,9 @@ using litert::Unexpected;
 using litert::qnn::QnnManager;
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create(QnnManager& qnn) {
-  return Ptr(new LiteRtDispatchDeviceContextT(qnn));
+LiteRtDispatchDeviceContextT::Create(QnnManager& qnn_manager,
+                                    const LiteRtDispatchDeviceContext& device_context) {
+  return Ptr(new LiteRtDispatchDeviceContextT(qnn_manager, device_context));
 }
 
 Expected<LiteRtTensorBuffer> LiteRtDispatchDeviceContextT::GetTensorBuffer(

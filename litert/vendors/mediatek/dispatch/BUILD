@@ -74,6 +74,7 @@ litert_dynamic_lib(
         "//litert/core:dynamic_loading",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/cc:options_helper",
+        "//litert/vendors/common:vendor_dispatch_base",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
     ],

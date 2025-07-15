@@ -18,18 +18,26 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
 #include "litert/vendors/qualcomm/dispatch/registry.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 
-class LiteRtDispatchDeviceContextT {
+namespace litert {
+namespace qnn {
+
+class LiteRtDispatchDeviceContextT : public litert::vendors::VendorDeviceContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
   ~LiteRtDispatchDeviceContextT() = default;
 
-  static litert::Expected<Ptr> Create(litert::qnn::QnnManager& qnn_manager);
+  static litert::Expected<Ptr> Create(litert::qnn::QnnManager& qnn_manager,
+                                      const LiteRtDispatchDeviceContext& device_context);
+
+  // Override base class method
+  void* GetBackendContext() override { return &qnn_manager_; }
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer) {
@@ -37,9 +45,10 @@ class LiteRtDispatchDeviceContextT {
         TensorBufferRegistryEntry(tensor_buffer));
   }
 
-  litert::Expected<void> UnregisterTensorBuffer(
+  LiteRtStatus UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle) {
-    return tensor_buffer_registry_.Unregister(tensor_buffer_handle);
+    auto result = tensor_buffer_registry_.Unregister(tensor_buffer_handle);
+    return result.ok() ? kLiteRtStatusOk : result.Error().Status();
   }
 
   litert::Expected<void> UnregisterTensorBuffer(
@@ -72,8 +81,10 @@ class LiteRtDispatchDeviceContextT {
   using TensorBufferRegistry = litert::qnn::Registry<LiteRtTensorBufferHandle,
                                                      TensorBufferRegistryEntry>;
 
-  LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager)
-      : qnn_manager_(qnn_manager) {}
+  LiteRtDispatchDeviceContextT(litert::qnn::QnnManager& qnn_manager,
+                               const LiteRtDispatchDeviceContext& device_context)
+      : litert::vendors::VendorDeviceContext(device_context),
+        qnn_manager_(qnn_manager) {}
 
   litert::Expected<Qnn_MemHandle_t> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer, const Qnn_Tensor_t& tensor);
@@ -82,5 +93,8 @@ class LiteRtDispatchDeviceContextT {
   TensorBufferRegistry tensor_buffer_registry_;
   LiteRtDispatchInvocationContextT* invocation_context_ = nullptr;
 };
+
+}  // namespace qnn
+}  // namespace litert
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
