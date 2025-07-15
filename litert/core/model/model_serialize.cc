@@ -30,7 +30,7 @@
 // through flatbuffer_tools.h via model.h) have the same #ifdef, thus this line
 // need to be put at the top to ensure we get the "mutable" version.
 #if 1
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/schema/mutable/schema_generated.h"
 #endif
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -45,7 +45,6 @@
 #include "litert/core/model/litert_to_flatbuffer.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "tflite/schema/mutable/schema_generated.h"
 
 namespace litert::internal {
 namespace {
