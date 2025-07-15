@@ -14,7 +14,6 @@
 
 #include "litert/runtime/custom_op_dispatcher.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -24,12 +23,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
+#include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tfl_utils.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api.h"
@@ -40,17 +40,20 @@ namespace litert::internal {
 namespace {
 
 // Creates a TensorBuffer attached to the TFL tensor's data buffer.
-Expected<TensorBuffer> CreateHostTensorBufferFromTflTensor(
+Expected<LiteRtTensorBufferPtr> CreateHostTensorBufferFromTflTensor(
     TfLiteOpaqueContext* tfl_context,
     const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   LITERT_ASSIGN_OR_RETURN(auto tensor_type,
                           ConvertTensorType(tfl_opaque_tensor));
   void* host_mem_addr = TfLiteOpaqueTensorData(tfl_opaque_tensor);
   size_t buffer_size = TfLiteOpaqueTensorByteSize(tfl_opaque_tensor);
-  LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
-                          TensorBuffer::CreateFromHostMemory(
-                              tensor_type, host_mem_addr, buffer_size));
-  return tensor_buffer;
+  LiteRtRankedTensorType litert_tensor_type =
+      static_cast<LiteRtRankedTensorType>(tensor_type);
+  LiteRtTensorBufferT* tensor_buffer;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromHostMemory(
+      &litert_tensor_type, host_mem_addr, buffer_size, /*deallocator=*/nullptr,
+      &tensor_buffer));
+  return LiteRtTensorBufferPtr(tensor_buffer);
 }
 
 }  // namespace
@@ -79,7 +82,8 @@ CustomOpDispatcher::~CustomOpDispatcher() {
 
 void* CustomOpDispatcher::Init(void* user_data, TfLiteOpaqueContext* context,
                                const char* buffer, size_t length) {
-  if (auto buffer_context = ExternalLiteRtBufferContext::GetInstance(context);
+  if (auto buffer_context =
+          LiteRtExternalLiteRtBufferContextT::GetInstance(context);
       buffer_context) {
     auto& self = *static_cast<CustomOpDispatcher*>(user_data);
     self.buffer_context_ = *buffer_context;
@@ -178,14 +182,14 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
     LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
                             self.GetTensorBuffer(context, tfl_opaque_tensor));
-    inputs.push_back(tensor_buffer.Release());
+    inputs.push_back(tensor_buffer.release());
   }
 
   for (auto i = 0; i < num_outputs; ++i) {
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
     LITERT_ASSIGN_OR_RETURN(auto tensor_buffer,
                             self.GetTensorBuffer(context, tfl_opaque_tensor));
-    outputs.push_back(tensor_buffer.Release());
+    outputs.push_back(tensor_buffer.release());
   }
 
   self.op_kernel_.Run(self.user_data_, inputs.size(), inputs.data(),
@@ -194,7 +198,7 @@ Expected<void> CustomOpDispatcher::InvokeHelper(void* user_data,
   return {};
 }
 
-Expected<TensorBuffer> CustomOpDispatcher::GetTensorBuffer(
+Expected<LiteRtTensorBufferPtr> CustomOpDispatcher::GetTensorBuffer(
     TfLiteOpaqueContext* context, const TfLiteOpaqueTensor* tfl_opaque_tensor) {
   // If there is already a tensor buffer associated with the TFL tensor, then
   // return a duplicate. Otherwise create a new one attached to the TFL tensor's
@@ -206,7 +210,9 @@ Expected<TensorBuffer> CustomOpDispatcher::GetTensorBuffer(
       // Duplicate the tensor buffer to avoid the lifetime issue.
       // The original tensor buffer is owned by the buffer context, and it
       // might be deallocated after the invoke.
-      return tensor_buffer->Duplicate();
+      LiteRtTensorBuffer buffer = tensor_buffer->get();
+      buffer->Duplicate();
+      return LiteRtTensorBufferPtr(buffer);
     }
   }
   return CreateHostTensorBufferFromTflTensor(context, tfl_opaque_tensor);

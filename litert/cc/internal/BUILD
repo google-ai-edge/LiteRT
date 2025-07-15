@@ -298,3 +298,18 @@ cc_library(
         "//litert/cc:litert_macros",
     ],
 )
+
+cc_library(
+    name = "litert_external_litert_buffer_context",
+    hdrs = ["//litert/cc:litert_external_litert_buffer_context.h"],
+    deps = [
+        ":litert_environment",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_common",
+        "//litert/c:litert_external_litert_buffer_context",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//tflite/c:common",
+    ],
+)
