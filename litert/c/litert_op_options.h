@@ -185,6 +185,15 @@ LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis);
 
 //==============================================================================
 //
+// Get option APIs for LiteRt Unpack op.
+//  Options:
+// - axisOption : int32_t
+//
+//==============================================================================
+LiteRtStatus LiteRtGetUnpackAxisOption(LiteRtOp op, int32_t* axis);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt Gather op.
 //  Options:
 // - axisOption : int32_t
