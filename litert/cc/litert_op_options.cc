@@ -152,4 +152,18 @@ LiteRtStatus FullyConnectedOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus MulOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMul) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMulFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

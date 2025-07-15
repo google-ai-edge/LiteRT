@@ -196,6 +196,23 @@ TEST(OpOptionsTest, GetFullyConnectedOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetMulOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflMul);
+  tflite::MulOptionsT options;
+  options.fused_activation_function =
+      tflite::ActivationFunctionType_RELU_N1_TO_1;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_MulOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<MulOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeReluN1To1);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -204,6 +221,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<ConcatenationOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<DivOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<FullyConnectedOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<MulOptions>(&op));
 }
 
 }  // namespace
