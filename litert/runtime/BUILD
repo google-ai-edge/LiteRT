@@ -115,6 +115,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
+        "@dawn//dawn:dawn_headers",
         "@opencl_headers",
     ] + gles_deps() + select({
         "@org_tensorflow//tensorflow:android": [
@@ -123,6 +124,12 @@ cc_library(
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
         "//conditions:default": [],
+    }) + select({
+        "//tools/cc_target_os:emscripten": [],
+        "//conditions:default": [
+            "@dawn//dawn:dawn_native",
+            "@dawn//dawn:libdawn_proc",
+        ],
     }),
 )
 

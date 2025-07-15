@@ -19,6 +19,7 @@
 #include <cstddef>
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "dawn/webgpu.h"  // from @dawn
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -66,9 +67,21 @@ Expected<WebGpuBuffer> WebGpuBuffer::Alloc(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
 #if LITERT_HAS_WEBGPU_SUPPORT
-  // TODO b/379743988: Implement the Alloc logic.
-  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                    "WebGPU buffer allocation is not supported yet.");
+  if (gpu_env == nullptr) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "WebGPU is not supported");
+  }
+
+  WGPUBufferDescriptor buffer_desc = {
+      .usage = WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst |
+               WGPUBufferUsage_Storage,
+      .size = bytes_size,
+  };
+  WGPUBuffer buffer =
+      wgpuDeviceCreateBuffer(gpu_env->getWebGpuDevice(), &buffer_desc);
+
+  return Expected<WebGpuBuffer>(gpu_env, tensor_type, buffer_type, buffer,
+                                bytes_size, nullptr);
 #else
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "WebGPU is not supported");
