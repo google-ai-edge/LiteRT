@@ -726,8 +726,15 @@ cc_library(
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
+        "//litert:litert_link_capi_so": [
             "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+        "//conditions:default": [
+            "//litert/c:litert_common",
+            "//litert/c:litert_custom_op_kernel",
+            "//litert/c:litert_layout",
+            "//litert/c:litert_logging",
+            "//litert/c:litert_tensor_buffer",
         ],
     }),
 )
@@ -779,12 +786,16 @@ cc_library(
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
-        "//litert/c:litert_common",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
+        "//litert:litert_link_capi_so": [
             "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+        "//conditions:default": [
+            "//litert/c:litert_common",
+            "//litert/c:litert_event",
+            "//litert/c:litert_event_type",
         ],
     }),
 )
@@ -849,8 +860,15 @@ cc_library(
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
+        "//litert:litert_link_capi_so": [
             "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+        "//conditions:default": [
+            "//litert/c:litert_common",
+            "//litert/c:litert_gl_types",
+            "//litert/c:litert_model",
+            "//litert/c:litert_tensor_buffer",
+            "//litert/c:litert_tensor_buffer_types",
         ],
     }),
 )
@@ -924,8 +942,13 @@ cc_library(
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "//conditions:default": [
+        "//litert:litert_link_capi_so": [
             "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+        "//conditions:default": [
+            "//litert/c:litert_common",
+            "//litert/c:litert_tensor_buffer",
+            "//litert/c:litert_tensor_buffer_types",
         ],
     }),
 )
