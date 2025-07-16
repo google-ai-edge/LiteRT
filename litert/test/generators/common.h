@@ -121,6 +121,8 @@ template <size_t N>
 using SizeC = std::integral_constant<size_t, N>;
 template <LiteRtOpCode OpCode>
 using OpCodeC = std::integral_constant<LiteRtOpCode, OpCode>;
+template <size_t... Sizes>
+using SizeListC = TypeList<SizeC<Sizes>...>;
 
 }  // namespace litert::testing
 
