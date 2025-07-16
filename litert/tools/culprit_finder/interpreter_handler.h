@@ -21,6 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
+#include "litert/core/tflite_error_reporter_adapter.h"
 #include "litert/tools/culprit_finder/tflite_input_manager.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/model_builder.h"
@@ -41,7 +42,8 @@ class InterpreterHandler {
     model_ = tflite::FlatBufferModel::BuildFromBuffer(
         reinterpret_cast<const char*>(
             model_loader_->GetModel()->allocation()->base()),
-        model_loader_->GetModel()->allocation()->bytes());
+        model_loader_->GetModel()->allocation()->bytes(),
+        ::litert::GetTfliteCompatibleErrorReporter());
   };
   ~InterpreterHandler() = default;
 

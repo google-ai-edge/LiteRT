@@ -22,6 +22,7 @@ limitations under the License.
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/core/tflite_error_reporter_adapter.h"
 #include "litert/tools/benchmark_litert_model.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -43,7 +44,8 @@ InternalBenchmarkStrippedLitertModel::InternalBenchmarkStrippedLitertModel(
 TfLiteStatus InternalBenchmarkStrippedLitertModel::LoadModel() {
   std::string graph = params_.Get<std::string>("graph");
   TFLITE_LOG(INFO) << "Loading model from: " << graph;
-  auto input_model = tflite::FlatBufferModel::BuildFromFile(graph.c_str());
+  auto input_model = tflite::FlatBufferModel::BuildFromFile(
+      graph.c_str(), ::litert::GetTfliteCompatibleErrorReporter());
   if (!input_model) {
     TFLITE_LOG(ERROR) << "Failed to mmap model " << graph;
     return kTfLiteError;

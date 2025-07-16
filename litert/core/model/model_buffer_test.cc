@@ -24,6 +24,7 @@
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "litert/core/tflite_error_reporter_adapter.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
@@ -49,7 +50,7 @@ TEST(GetModelBufWithByteCode, CreateInterpreter) {
 
   auto alloc = std::make_unique<tflite::MemoryAllocation>(
       model_with_byte_code->Data(), model_with_byte_code->Size(),
-      tflite::DefaultErrorReporter());
+      ::litert::GetTfliteCompatibleErrorReporter());
 
   auto fb_model = tflite::FlatBufferModel::BuildFromBuffer(
       reinterpret_cast<const char*>(alloc->base()), alloc->bytes());
@@ -91,7 +92,7 @@ TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
 
   auto alloc = std::make_unique<tflite::MemoryAllocation>(
       model_with_byte_code->Data(), model_with_byte_code->Size(),
-      tflite::DefaultErrorReporter());
+      ::litert::GetTfliteCompatibleErrorReporter());
 
   auto fb_model = tflite::FlatBufferModel::BuildFromBuffer(
       reinterpret_cast<const char*>(alloc->base()), alloc->bytes());

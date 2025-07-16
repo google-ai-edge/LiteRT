@@ -59,6 +59,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/options.h"
+#include "litert/core/tflite_error_reporter_adapter.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
@@ -202,8 +203,9 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LITERT_LOG(
         LITERT_INFO,
         "Flatbuffer model initialized directly from incoming litert model.");
-    fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(tfl_buf.StrData(),
-                                                         tfl_buf.Size());
+    fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
+        tfl_buf.StrData(), tfl_buf.Size(),
+        ::litert::GetTfliteCompatibleErrorReporter());
     fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
     return {};
   }
@@ -217,7 +219,8 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 
   model_buf_ = std::move(*serialized);
   fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size());
+      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
+      ::litert::GetTfliteCompatibleErrorReporter());
   if (fb_model_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorFileIO,
                       "Failed to build flatbuffer from buffer");

@@ -21,6 +21,7 @@
 
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/cc/litert_macros.h"
+#include "litert/core/tflite_error_reporter_adapter.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tensorflow/compiler/mlir/lite/core/model_builder_base.h"
 
@@ -268,7 +269,7 @@ Expected<TflPerChannelQParams> AsPerChannelQparams(
 
 ::tflite::Allocation::Ptr MakeAllocation(BufferRef<uint8_t> buf) {
   return std::make_unique<::tflite::MemoryAllocation>(
-      buf.Data(), buf.Size(), ::tflite::DefaultErrorReporter());
+      buf.Data(), buf.Size(), ::litert::GetTfliteCompatibleErrorReporter());
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
@@ -310,7 +311,7 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
     absl::string_view path) {
-  auto error_reporter = tflite::DefaultErrorReporter();
+  auto error_reporter = ::litert::GetTfliteCompatibleErrorReporter();
   auto allocation =
       tflite::GetAllocationFromFile(path.data(), error_reporter);
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
