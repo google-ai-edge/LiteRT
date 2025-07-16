@@ -166,4 +166,17 @@ LiteRtStatus MulOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus SoftmaxOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSoftmax) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSoftmaxBetaOption(op, &beta));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
