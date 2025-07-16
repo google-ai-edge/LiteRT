@@ -25,17 +25,16 @@
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 
-namespace litert::internal {
+class LiteRtExternalLiteRtBufferContextT;
 
-class ExternalLiteRtBufferContext;
+namespace litert::internal {
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
@@ -94,7 +93,7 @@ class DispatchDelegateKernel
   Expected<LiteRtDispatchInvocationContext> CreateNodeInvocationContext(
       TfLiteOpaqueContext* context, TfLiteOpaqueNode* node);
 
-  Expected<TensorBufferRequirements> GetBufferRequirements(
+  Expected<LiteRtTensorBufferRequirementsPtr> GetBufferRequirements(
       int node_idx, TfLiteOpaqueTensor* io_tfl_tensor, int io_tensor_index,
       bool is_input) const;
 
@@ -102,9 +101,10 @@ class DispatchDelegateKernel
   Expected<void> ComputeTensorPortConnections(TfLiteOpaqueContext* context);
 
   Expected<void> AllocateTensorBuffersIfNeeded();
-  Expected<TensorBuffer> AllocateTensorBuffer(TfLiteOpaqueTensor* tfl_tensor);
-  Expected<void> RegisterBufferWithDispatchApi(TfLiteOpaqueTensor* tfl_tensor,
-                                               TensorBuffer&& tensor_buffer);
+  Expected<LiteRtTensorBufferPtr> AllocateTensorBuffer(
+      TfLiteOpaqueTensor* tfl_tensor);
+  Expected<void> RegisterBufferWithDispatchApi(
+      TfLiteOpaqueTensor* tfl_tensor, LiteRtTensorBufferPtr&& tensor_buffer);
 
   Expected<void> AttachBuffersToInvocationContextsIfNeeded(
       TfLiteOpaqueContext* context);
@@ -122,7 +122,7 @@ class DispatchDelegateKernel
   const bool async_dispatch_;  // Indicates whether the Dispatch API can be
                                // invoked asynchronously.
 
-  ExternalLiteRtBufferContext* buffer_context_ = nullptr;
+  LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;
   std::vector<LiteRtDispatchInvocationContext> node_invocation_contexts_;
   std::vector<TfLiteOpaqueTensor*> input_tensors_;
@@ -130,7 +130,7 @@ class DispatchDelegateKernel
   std::vector<TfLiteOpaqueTensor*> internal_tensors_;
 
   struct TensorInfo {
-    TensorBuffer tensor_buffer;
+    LiteRtTensorBufferPtr tensor_buffer;
     LiteRtTensorBufferHandle buffer_handle;
     bool maybe_sync_with_cpu = false;
     size_t tensor_buffer_used_size = 0;

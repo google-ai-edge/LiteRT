@@ -54,6 +54,9 @@ template Expected<void> OpenClMemory::Unlock<char>();
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
   absl::MutexLock lock(&mutex_);
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   LITERT_RETURN_IF_ERROR(lock_state_ == LockState::kUnlocked,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "The OpenCL memory is already locked."));
@@ -104,6 +107,9 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
   absl::MutexLock lock(&mutex_);
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   LITERT_RETURN_IF_ERROR(lock_state_ != LockState::kUnlocked,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "The OpenCL memory is already unlocked."));
@@ -137,6 +143,9 @@ bool OpenClMemory::IsSupported() {
 Expected<OpenClMemory> OpenClMemory::Alloc(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t bytes_size) {
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   if (gpu_env == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "OpenCL is not supported");

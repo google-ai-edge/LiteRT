@@ -18,14 +18,12 @@
 #include <memory>
 
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/core/options.h"
+#include "litert/runtime/external_litert_buffer_context.h"
 #include "tflite/c/c_api.h"
 #include "tflite/c/c_api_opaque.h"
 
 namespace litert::internal {
-
-class ExternalLiteRtBufferContext;
 
 class CustomOpDispatcher {
  public:
@@ -60,7 +58,7 @@ class CustomOpDispatcher {
                                      TfLiteOpaqueContext* context,
                                      TfLiteOpaqueNode* node);
 
-  Expected<TensorBuffer> GetTensorBuffer(
+  Expected<LiteRtTensorBufferPtr> GetTensorBuffer(
       TfLiteOpaqueContext* context,
       const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
@@ -68,7 +66,7 @@ class CustomOpDispatcher {
   void* user_data_;
   TfLiteOperator* tfl_operator_;
   std::unique_ptr<TfLiteRegistration> tfl_registration_;
-  ExternalLiteRtBufferContext* buffer_context_ = nullptr;
+  LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
 };
 
 }  // namespace litert::internal
