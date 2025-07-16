@@ -22,6 +22,32 @@ package(
 # Imperitive logic for generating test graphs in memory.
 
 cc_library(
+    name = "binary_no_bcast",
+    testonly = True,
+    hdrs = ["binary_no_bcast.h"],
+    deps = [
+        ":common",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_c_types_printing",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
+        "//litert/core/model",
+        "//litert/core/model:model_graph_testonly",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "common",
     hdrs = ["common.h"],
     deps = [
@@ -31,5 +57,19 @@ cc_library(
         "//litert/test:simple_buffer",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "binary_no_bcast_test",
+    srcs = ["binary_no_bcast_test.cc"],
+    deps = [
+        ":binary_no_bcast",
+        ":common",
+        "//litert/c:litert_op_code",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )
