@@ -233,6 +233,7 @@ using DefaultDevice = RandomDevice<std::mt19937>;
 
 // This class composes the primitive data generators above to support
 // generating randomized tensor types (and shapes).
+// TODO: Update this to separate the type and shape generation.
 template <size_t Rank, size_t MaxSize, LiteRtElementType... ElementType>
 class RandomTensorType {
  private:
@@ -271,6 +272,15 @@ class RandomTensorType {
   // TODO: Explore need for 0 valued dims.
   static constexpr DimSize kMinDimSize = 1;
 
+ private:
+  static constexpr ShapeSpec DefaultShapeSpec() {
+    ShapeSpec res;
+    for (auto i = 0; i < Rank; ++i) {
+      res[i] = RandDim();
+    }
+    return res;
+  };
+
  public:
   // Generate a random tensor type from the specification provided. An
   // element type is taken randomly from the template parameter. The shape
@@ -280,9 +290,9 @@ class RandomTensorType {
   // which signifies a range over all possible values of that dimension.
   // `shuffle` can be used to permute the dimensions after generation.
   template <typename Rng>
-  Expected<LiteRtRankedTensorType> operator()(Rng& rng,
-                                              const ShapeSpec& spec = {},
-                                              bool shuffle = false) {
+  Expected<LiteRtRankedTensorType> operator()(
+      Rng& rng, const ShapeSpec& spec = DefaultShapeSpec(),
+      bool shuffle = false) {
     LITERT_ASSIGN_OR_RETURN(auto layout, Layout(rng, spec, shuffle));
     return LiteRtRankedTensorType{GenerateElementType(rng), std::move(layout)};
   }
