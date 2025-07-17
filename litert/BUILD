@@ -54,6 +54,7 @@ package_group(
         "//litert/compiler/...",
         "//litert/core/...",
         "//litert/runtime/...",
+        "//litert/cts/...",
         "//litert/tools/...",
         "//litert/vendors/cc/...",
         "//litert/vendors/qualcomm/...",
