@@ -31,8 +31,8 @@
 #include "litert/vendors/intel_openvino/utils.h"
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create(ov::Core core) {
-  return Ptr(new LiteRtDispatchDeviceContextT(core));
+LiteRtDispatchDeviceContextT::Create() {
+  return Ptr(new LiteRtDispatchDeviceContextT());
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -131,7 +131,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
         return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                   "MMAP failed for tensor buffer");
 
-      auto context = core_.get_default_context("NPU")
+      auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
@@ -169,7 +169,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-      auto context = core_.get_default_context("NPU")
+      auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       ov::RemoteTensor remote_tensor = context.create_tensor(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},

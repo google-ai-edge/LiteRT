@@ -31,7 +31,7 @@ class LiteRtDispatchDeviceContextT {
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
   ~LiteRtDispatchDeviceContextT() = default;
-  static litert::Expected<Ptr> Create(ov::Core core);
+  static litert::Expected<Ptr> Create();
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
 
@@ -49,10 +49,15 @@ class LiteRtDispatchDeviceContextT {
     }
   }
 
+  // Return the core shared_pointer.
+  std::shared_ptr<ov::Core> getCore() const {
+      return core_;
+  }
+
  private:
-  explicit LiteRtDispatchDeviceContextT(ov::Core core)
-      : core_(core), next_handle_(0) {}
-  ov::Core core_;
+  explicit LiteRtDispatchDeviceContextT()
+      : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
+  std::shared_ptr<ov::Core> core_;
   std::unordered_map<LiteRtTensorBufferHandle, ov::RemoteTensor>
       tensor_handle_map_;
   uint64_t next_handle_;
