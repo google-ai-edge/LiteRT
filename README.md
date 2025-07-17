@@ -59,8 +59,8 @@ For more details, check our
 
 1.  Start a docker daemon
 
-2.  Run [build_with_docker.sh](./build/build_with_docker.sh) under
-    [build/](./build)
+2.  Run [build_with_docker.sh](./docker_build/build_with_docker.sh) under
+    [docker_build/](./docker_build)
 
 3.  For more information about how to use docker interactive shell/ building
     different targets. Please refer to [build/README.md](./build/README.md)
