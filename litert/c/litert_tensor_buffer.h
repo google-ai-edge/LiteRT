@@ -225,19 +225,6 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
     LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer);
 
 #if LITERT_HAS_WEBGPU_SUPPORT
-// Create a tensor buffer from an existing WebGpu Buffer of a given size, with
-// optional WebGpu buffer deallocator (it can be NULL).
-//
-// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
-// calling LiteRtDestroyTensorBuffer() to release the object.
-// NULL deallocator means that the WebGpu buffer is not managed by the tensor
-// buffer and therefore must be released separately by the caller.
-LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, WGPUBuffer webgpu_buffer,
-    size_t opencl_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
-    LiteRtTensorBuffer* tensor_buffer);
-
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(LiteRtTensorBuffer tensor_buffer,
                                                WGPUBuffer* webgpu_buffer_addr);
@@ -293,13 +280,6 @@ LiteRtStatus LiteRtSetTensorBufferEvent(LiteRtTensorBuffer tensor_buffer,
 // Remove any event that may have been previously attached to the given tensor
 // buffer and deallocate such event.
 LiteRtStatus LiteRtClearTensorBufferEvent(LiteRtTensorBuffer tensor_buffer);
-
-// Lock mode for tensor buffer.
-typedef enum {
-  kLiteRtTensorBufferLockModeRead = 0,
-  kLiteRtTensorBufferLockModeWrite = 1,
-  kLiteRtTensorBufferLockModeReadWrite = 2,
-} LiteRtTensorBufferLockMode;
 
 // Lock a tensor buffer and map it to host memory, potentially synchronizing on
 // an event that was previously attached to the tensor buffer with
