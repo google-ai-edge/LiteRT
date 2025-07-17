@@ -103,11 +103,12 @@ struct TestLogicTraits {
 
   // Get the primitive type for the associated input.
   template <size_t N>
-  using InputDataType = std::tuple_element_t<N, ReferenceInputs>::Type;
+  using InputDataType = typename std::tuple_element_t<N, ReferenceInputs>::Type;
 
   // Get the primitive type for the associated output.
   template <size_t N>
-  using OutputDataType = std::tuple_element_t<N, ReferenceOutputs>::Type;
+  using OutputDataType =
+      typename std::tuple_element_t<N, ReferenceOutputs>::Type;
 };
 
 // Shorthand for compile time constants of misc types. Due to constraints

@@ -150,7 +150,7 @@ class SimpleBuffer {
   template <typename T, template <typename> typename RngTraits, typename Rng>
   Expected<void> WriteRandom(Rng& rng, size_t start = 0,
                              std::optional<size_t> num_elements = {}) {
-    using Gen = RngTraits<T>::Gen;
+    using Gen = typename RngTraits<T>::Gen;
     Gen gen;
     const auto num_elements_to_write =
         num_elements ? *num_elements : TypedNumElements<T>() - start;
