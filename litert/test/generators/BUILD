@@ -22,6 +22,19 @@ package(
 # Imperitive logic for generating test graphs in memory.
 
 cc_library(
+    name = "common",
+    hdrs = ["common.h"],
+    deps = [
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_rng",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "binary_no_bcast",
     testonly = True,
     hdrs = ["binary_no_bcast.h"],
@@ -47,19 +60,6 @@ cc_library(
     ],
 )
 
-cc_library(
-    name = "common",
-    hdrs = ["common.h"],
-    deps = [
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_rng",
-        "//litert/test:simple_buffer",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 cc_test(
     name = "binary_no_bcast_test",
     srcs = ["binary_no_bcast_test.cc"],
@@ -69,6 +69,39 @@ cc_test(
         "//litert/c:litert_op_code",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "graph_helpers",
+    testonly = True,
+    hdrs = ["graph_helpers.h"],
+    deps = [
+        ":common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/model",
+        "//litert/core/model:model_graph_testonly",
+        "//litert/core/model:model_load",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools",
+    ],
+)
+
+cc_test(
+    name = "graph_helpers_test",
+    srcs = ["graph_helpers_test.cc"],
+    deps = [
+        ":graph_helpers",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/test:matchers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
     ],
