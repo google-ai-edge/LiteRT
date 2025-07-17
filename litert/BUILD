@@ -85,6 +85,7 @@ package_group(
         "//litert/tools/...",
         "//litert/vendors/...",
         # copybara:uncomment "//third_party/odml/litert/llm/...",
+        # copybara:uncomment "//third_party/odml/litert/tensor/...",
     ],
 )
 
