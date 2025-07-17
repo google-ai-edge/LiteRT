@@ -1,0 +1,26 @@
+# openvino_build_content.bazel
+# This file defines the BUILD content for the @openvino_native_sdk repository.
+# Paths within this file are relative to the root of the external repository
+# (which is the symlinked "openvino" directory in this case).
+
+cc_library(
+    name = "openvino",
+    hdrs = glob([
+        "openvino/runtime/include/**/*.h", # Gathers all .h files recursively
+        "openvino/runtime/include/ie/cpp/**/*.h",
+        "openvino/runtime/include/ie/**/*.h",
+    ]),
+    srcs = [
+        "openvino/runtime/lib/intel64/libopenvino.so",
+        "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+        "openvino/runtime/lib/intel64/libc++_shared.so",
+    ],
+    # Important: This strips the prefix so users include like <ie/cpp/foo.h>
+    strip_include_prefix = "openvino/runtime/include",
+    includes = [
+        "openvino/runtime/include/ie/cpp",
+        "openvino/runtime/include/ie",
+        "openvino/runtime/include",
+    ],
+    visibility = ["//visibility:public"],
+)
