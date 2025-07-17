@@ -20,10 +20,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -37,21 +39,19 @@
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/runtime/ahwb_buffer.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/dmabuf_buffer.h"
 #include "litert/runtime/event.h"
 #include "litert/runtime/fastrpc_buffer.h"
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
 #include "litert/runtime/ion_buffer.h"
+#include "litert/runtime/tensor_buffer_registry.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-#include "litert/runtime/webgpu_buffer.h"
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 using litert::BufferTypeToString;
 using litert::Expected;
@@ -166,7 +166,7 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
       // internal webgpu buffer is auto-disposed by the
-      // litert::internal::WebGpuBuffer destructor.
+      // litert::internal::CustomBuffer destructor.
       break;
   }
 }
@@ -394,32 +394,29 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
-Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromWebGpuBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, WGPUBuffer buffer, size_t buffer_size,
-    LiteRtWebGpuBufferDeallocator deallocator) {
-  Ptr tensor_buffer(
-      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  tensor_buffer->buffer_.emplace<litert::internal::WebGpuBuffer>(
-      gpu_env, tensor_type, buffer_type, buffer, buffer_size, deallocator);
-  return tensor_buffer;
-}
 
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  auto buffer = litert::internal::WebGpuBuffer::Alloc(gpu_env, tensor_type,
-                                                      buffer_type, buffer_size);
-  if (!buffer) {
-    return Unexpected(buffer.Error());
+  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  void* hw_buffer_handle = nullptr;
+  void* hw_buffer_info = nullptr;
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
+                          registry.GetCustomHandlers(buffer_type));
+  auto result =
+      custom_buffer_handlers.create_func(&tensor_type, buffer_type, buffer_size,
+                                         &hw_buffer_handle, &hw_buffer_info);
+  if (result != kLiteRtStatusOk) {
+    return Unexpected(result, absl::StrCat("Failed to create ",
+                                           BufferTypeToString(buffer_type)));
   }
+
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  tensor_buffer->buffer_.emplace<litert::internal::WebGpuBuffer>(
-      std::move(*buffer));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      litert::internal::CustomBuffer(tensor_type, buffer_type, hw_buffer_handle,
+                                     hw_buffer_info));
   return tensor_buffer;
 }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
@@ -726,10 +723,10 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
-Expected<litert::internal::WebGpuBuffer*>
-LiteRtTensorBufferT::GetWebGpuBuffer() {
+Expected<litert::internal::CustomBuffer*>
+LiteRtTensorBufferT::GetCustomBuffer() {
   if (IsWebGpuMemory(buffer_type_)) {
-    return &std::get<litert::internal::WebGpuBuffer>(buffer_);
+    return &std::get<litert::internal::CustomBuffer>(buffer_);
   }
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "Unexpected tensor buffer type");
@@ -802,15 +799,10 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
-#if LITERT_HAS_WEBGPU_SUPPORT
-      LITERT_ASSIGN_OR_ABORT(auto webgpu_buffer, GetWebGpuBuffer());
+      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              webgpu_buffer->Lock<float>(mode));
+                              custom_buffer->Lock<float>(this, mode));
       return host_memory_ptr;
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "WebGPU buffers are not supported");
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
     }
 
     case kLiteRtTensorBufferTypeGlTexture:
@@ -858,13 +850,8 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
-#if LITERT_HAS_WEBGPU_SUPPORT
-      LITERT_ASSIGN_OR_RETURN(auto webgpu_buffer, GetWebGpuBuffer());
-      return webgpu_buffer->Unlock<float>();
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "WebGPU buffers are not supported");
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+      return custom_buffer->Unlock<float>(this);
     }
 
     case kLiteRtTensorBufferTypeHostMemory:

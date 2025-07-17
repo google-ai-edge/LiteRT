@@ -35,6 +35,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
@@ -43,10 +44,6 @@
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-
-#if LITERT_HAS_WEBGPU_SUPPORT
-#include "litert/runtime/webgpu_buffer.h"
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 namespace litert::internal {
 class GpuEnvironment;
@@ -114,13 +111,6 @@ class LiteRtTensorBufferT {
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_HAS_WEBGPU_SUPPORT
-  static litert::Expected<Ptr> CreateFromWebGpuBuffer(
-      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, WGPUBuffer buffer, size_t buffer_size,
-      LiteRtWebGpuBufferDeallocator deallocator = nullptr);
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
-
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
 
@@ -156,9 +146,7 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-#if LITERT_HAS_WEBGPU_SUPPORT
-  litert::Expected<litert::internal::WebGpuBuffer*> GetWebGpuBuffer();
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+  litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
@@ -218,10 +206,8 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-#if LITERT_HAS_WEBGPU_SUPPORT
-                   litert::internal::WebGpuBuffer,
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
-                   litert::internal::GlBuffer, litert::internal::GlTexture>;
+                   litert::internal::CustomBuffer, litert::internal::GlBuffer,
+                   litert::internal::GlTexture>;
 
   LiteRtTensorBufferT(LiteRtEnvironment env,
                       const LiteRtRankedTensorType& tensor_type,
