@@ -149,9 +149,5 @@ exec "$@"\n\
 # Set the entrypoint
 ENTRYPOINT ["/entrypoint.sh"]
 
-# Copy verification script
-COPY verify_android_env.sh /verify_android_env.sh
-RUN chmod +x /verify_android_env.sh
-
 # Immediately execute a build.
 CMD ["bash", "-c", "./docker_build/verify_android_env.sh && USE_BAZEL_VERSION=7.4.1 bazel build //litert/runtime:metrics"]
