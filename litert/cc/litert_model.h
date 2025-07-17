@@ -29,6 +29,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_detail.h"
@@ -318,6 +319,149 @@ class Subgraph : public internal::NonOwnedHandle<LiteRtSubgraph> {
   Expected<Tensor> Output(absl::string_view name) const;
 };
 
+// Model Rewriter. C++ equivalent of LiteRtRewriter.
+struct RankedTensorSpec {
+  RankedTensorType ranked_tensor_type;
+  std::optional<Weights> weights = std::nullopt;
+  std::optional<LiteRtQuantizationPerTensor> per_tensor_quantization =
+      std::nullopt;
+  std::optional<LiteRtQuantizationPerChannel> per_channel_quantization =
+      std::nullopt;
+  std::optional<std::string> tensor_name = std::nullopt;
+};
+
+class RankedTensorSpecBuilder {
+ public:
+  RankedTensorSpecBuilder&& with_ranked_tensor_type(RankedTensorType type) && {
+    ranked_tensor_type_ = std::move(type);
+    return std::move(*this);
+  }
+
+  RankedTensorSpecBuilder&& with_weights(Weights w) && {
+    weights_ = std::move(w);
+    return std::move(*this);
+  }
+
+  RankedTensorSpecBuilder&& with_per_tensor_quantization(
+      LiteRtQuantizationPerTensor q) && {
+    per_tensor_quantization_ = std::move(q);
+    return std::move(*this);
+  }
+
+  RankedTensorSpecBuilder&& with_per_channel_quantization(
+      LiteRtQuantizationPerChannel q) && {
+    per_channel_quantization_ = std::move(q);
+    return std::move(*this);
+  }
+
+  RankedTensorSpecBuilder&& with_tensor_name(std::string name) && {
+    tensor_name_ = std::move(name);
+    return std::move(*this);
+  }
+
+  std::optional<RankedTensorSpec> build() && {
+    if (!ranked_tensor_type_.has_value()) {
+      return std::nullopt;
+    }
+
+    return RankedTensorSpec{
+        *std::move(ranked_tensor_type_), std::move(weights_),
+        std::move(per_tensor_quantization_),
+        std::move(per_channel_quantization_), std::move(tensor_name_)};
+  }
+
+ private:
+  std::optional<RankedTensorType> ranked_tensor_type_;
+  std::optional<Weights> weights_;
+  std::optional<LiteRtQuantizationPerTensor> per_tensor_quantization_;
+  std::optional<LiteRtQuantizationPerChannel> per_channel_quantization_;
+  std::optional<std::string> tensor_name_;
+};
+
+class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
+ public:
+  explicit Rewriter(LiteRtRewriter rewriter)
+      : internal::NonOwnedHandle<LiteRtRewriter>(rewriter) {}
+  // For ranked tensors.
+  Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const {
+    // tensor holds the newly created tensor.
+    LiteRtTensor tensor;
+    LiteRtRankedTensorType ranked_tensor_type_litert =
+        static_cast<LiteRtRankedTensorType>(spec.ranked_tensor_type);
+
+    LiteRtWeights litert_weights;
+    if (spec.weights.has_value()) {
+      litert_weights = spec.weights.value().Get();
+    } else {
+      litert_weights = nullptr;
+    }
+
+    LiteRtQuantizationTypeId quantization_type_id = kLiteRtQuantizationNone;
+    LiteRtQuantizationPerTensor litert_per_tensor_quantization;
+    if (spec.per_tensor_quantization.has_value()) {
+      litert_per_tensor_quantization = spec.per_tensor_quantization.value();
+      quantization_type_id = kLiteRtQuantizationPerTensor;
+    }
+    LiteRtQuantizationPerChannel litert_per_channel_quantization;
+    if (spec.per_channel_quantization.has_value()) {
+      litert_per_channel_quantization = spec.per_channel_quantization.value();
+      quantization_type_id = kLiteRtQuantizationPerChannel;
+    }
+    internal::AssertOk(LiteRtRewriterBuildTensor, kLiteRtRankedTensorType,
+                       ranked_tensor_type_litert, LiteRtUnrankedTensorType(),
+                       litert_weights, quantization_type_id,
+                       litert_per_tensor_quantization,
+                       litert_per_channel_quantization, this->Get(),
+                       spec.tensor_name.value_or("").c_str(),
+                       spec.tensor_name.value_or("").size(), &tensor);
+    return Tensor(tensor);
+  }
+
+  // Trait for building scalars.
+  Expected<Tensor> BuildScalar(
+      LiteRtElementType element_type,
+      std::optional<std::string> name = std::nullopt) const {
+    LiteRtTensor tensor;
+    LiteRtUnrankedTensorType unranked_tensor_type;
+    unranked_tensor_type.element_type = element_type;
+    internal::AssertOk(
+        LiteRtRewriterBuildTensor, kLiteRtUnrankedTensorType,
+        LiteRtRankedTensorType(), unranked_tensor_type, LiteRtWeights(),
+        kLiteRtQuantizationNone, LiteRtQuantizationPerTensor(),
+        LiteRtQuantizationPerChannel(), this->Get(), name.value_or("").c_str(),
+        name.value_or("").size(), &tensor);
+    return Tensor(tensor);
+  }
+
+  Op BuildOp(LiteRtOpCode op_code, OpInputs& inputs, OpOutputs& outputs,
+             std::optional<std::string> name = std::nullopt) const {
+    LiteRtOp litert_op;
+    std::vector<LiteRtTensor> input_tensors;
+    input_tensors.reserve(inputs.size());
+    for (const auto& input : inputs) {
+      input_tensors.push_back(input.Get());
+    }
+    std::vector<LiteRtTensor> output_tensors;
+    output_tensors.reserve(outputs.size());
+    for (const auto& output : outputs) {
+      output_tensors.push_back(output.Get());
+    }
+    internal::AssertOk(LiteRtRewriterBuildOp, op_code, input_tensors.size(),
+                       input_tensors.data(), output_tensors.size(),
+                       output_tensors.data(), this->Get(), &litert_op);
+    return Op(litert_op);
+  }
+  // Clone the given op.
+  Op BuildOp(Op& src, OpInputs& inputs, OpOutputs& outputs) {
+    return BuildOp(src.Code(), inputs, outputs);
+  };
+
+  // Record the op to be erased.
+  void EraseOp(Op op) const {
+    internal::AssertOk(LiteRtRewriterEraseOp, op.Get(), this->Get());
+  }
+};
+
 // Model signature. C++ equivalent of LiteRtSignature.
 class Signature : public internal::NonOwnedHandle<LiteRtSignature> {
  public:
@@ -548,8 +692,8 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
  private:
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
+  // Parameter `owned` indicates if the created TensorBuffer object should
+  // take ownership of the provided `tensor_buffer` handle.
   Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
 };
 

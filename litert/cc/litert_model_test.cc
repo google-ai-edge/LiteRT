@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -27,8 +28,10 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 
@@ -51,6 +54,9 @@ constexpr LiteRtRankedTensorType kTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32,
     /*.layout=*/kLayout,
 };
+
+static constexpr absl::string_view kTensorName = "M3";
+static constexpr absl::string_view kData = "Nurburgring";
 
 //===----------------------------------------------------------------------===//
 //                                CC Model                                    //
@@ -360,6 +366,137 @@ TEST(CcElementTypeTest, GetByteWidth) {
 TEST(CcElementTypeTest, GetElementType) {
   ElementType ty = GetElementType<float>();
   EXPECT_EQ(ty, ElementType::Float32);
+}
+
+//===----------------------------------------------------------------------===//
+//                               CC Rewriter                                  //
+//===----------------------------------------------------------------------===//
+
+TEST(CcRankedTensorSpecBuilderTest, TestBuild) {
+  auto ranked_tensor_spec =
+      RankedTensorSpecBuilder()
+          .with_ranked_tensor_type(RankedTensorType(kTensorType))
+          .with_tensor_name(std::string(kTensorName))
+          .build();
+  ASSERT_TRUE(ranked_tensor_spec.has_value());
+  EXPECT_EQ(ranked_tensor_spec->ranked_tensor_type.ElementType(),
+            ElementType::Float32);
+  EXPECT_EQ(ranked_tensor_spec->tensor_name, kTensorName);
+}
+
+TEST(CcRewriterTest, TestBuildUnrankedTensor) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  auto tensor = cc_rewriter.BuildScalar(kLiteRtElementTypeFloat32,
+                                        std::string(kTensorName));
+  ASSERT_TRUE(tensor.HasValue());
+  EXPECT_EQ(tensor->Name(), kTensorName);
+  EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
+}
+
+TEST(CcRewriterTest, TestBuildRankedTensor) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  RankedTensorType tensor_type(kTensorType);
+  auto ranked_tensor_spec = RankedTensorSpecBuilder()
+                                .with_ranked_tensor_type(tensor_type)
+                                .with_tensor_name(std::string(kTensorName))
+                                .build();
+  auto tensor = cc_rewriter.BuildTensor(*ranked_tensor_spec);
+
+  ASSERT_TRUE(tensor.HasValue());
+  EXPECT_EQ(tensor->Name(), kTensorName);
+  EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
+  auto built_tensor_type = tensor->RankedTensorType();
+  EXPECT_EQ(built_tensor_type->ElementType(), ElementType::Float32);
+  EXPECT_EQ(built_tensor_type->Layout().Rank(), 3);
+  EXPECT_THAT(built_tensor_type->Layout().Dimensions(),
+              ::testing::ElementsAreArray({1, 2, 3}));
+}
+
+TEST(CcRewriterTest, TestBuildRankedTensorWithWeights) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  RankedTensorType tensor_type(kTensorType);
+
+  litert::internal::BufferManager manager;
+  LiteRtWeightsT weights;
+  {
+    weights.SetBufferManager(&manager);
+    litert::OwningBufferRef<uint8_t> buf(kData);
+    SetWeightsFromOwnedBuffer(weights, std::move(buf));
+  }
+  Weights cc_weights = Weights(&weights);
+  auto ranked_tensor_spec = RankedTensorSpecBuilder()
+                                .with_ranked_tensor_type(tensor_type)
+                                .with_weights(Weights(&weights))
+                                .build();
+  auto tensor = cc_rewriter.BuildTensor(*ranked_tensor_spec);
+  ASSERT_TRUE(tensor.HasValue());
+  EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
+  EXPECT_EQ(tensor->Weights().Get()->Buffer().StrView(), kData);
+}
+
+TEST(CcRewriterTest, TestBuildRankedTensorWithPerTensorQuantization) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  RankedTensorType tensor_type(kTensorType);
+  auto per_tensor_quantization = MakePerTensorQuantization(1.0, 1);
+  auto ranked_tensor_spec = RankedTensorSpecBuilder()
+                                .with_ranked_tensor_type(tensor_type)
+                                .with_per_tensor_quantization(
+                                    per_tensor_quantization.second.per_tensor)
+                                .build();
+  auto tensor = cc_rewriter.BuildTensor(*ranked_tensor_spec);
+  ASSERT_TRUE(tensor.HasValue());
+  EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
+  EXPECT_EQ(tensor->PerTensorQuantization().scale, 1.0);
+  EXPECT_EQ(tensor->PerTensorQuantization().zero_point, 1);
+}
+
+TEST(CcRewriterTest, TestBuildRankedTensorWithPerChannelQuantization) {
+  constexpr auto kNumChannels = 2;
+  constexpr auto kQuantizedDimension = 0;
+  constexpr float kScales[kNumChannels] = {1.0, 2.0};
+  constexpr int64_t kZeroPoints[kNumChannels] = {0, 0};
+
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  RankedTensorType tensor_type(kTensorType);
+  LiteRtTensorT per_channel_quantized_tensor;
+  auto per_channel_quantization = MakePerChannelQuantization(
+      kScales, kZeroPoints, kQuantizedDimension, per_channel_quantized_tensor);
+  auto ranked_tensor_spec = RankedTensorSpecBuilder()
+                                .with_ranked_tensor_type(tensor_type)
+                                .with_per_channel_quantization(
+                                    per_channel_quantization.second.per_channel)
+                                .build();
+  auto tensor = cc_rewriter.BuildTensor(*ranked_tensor_spec);
+  ASSERT_TRUE(tensor.HasValue());
+  EXPECT_EQ(tensor->ElementType(), ElementType::Float32);
+  EXPECT_EQ(tensor->PerChannelQuantization().scales[0], 1.0);
+  EXPECT_EQ(tensor->PerChannelQuantization().scales[1], 2.0);
+  EXPECT_EQ(tensor->PerChannelQuantization().zero_points[0], 0);
+  EXPECT_EQ(tensor->PerChannelQuantization().zero_points[1], 0);
+  EXPECT_EQ(tensor->PerChannelQuantization().num_channels, 2);
+  EXPECT_EQ(tensor->PerChannelQuantization().quantized_dimension, 0);
+}
+
+TEST(CcRewriterTest, TestBuildOp) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  LiteRtTensorT litert_tensor_0;
+  LiteRtTensorT litert_tensor_1;
+  LiteRtTensorT litert_tensor_2;
+  OpInputs inputs;
+  inputs.push_back(Tensor(&litert_tensor_0));
+  inputs.push_back(Tensor(&litert_tensor_1));
+  OpOutputs outputs;
+  outputs.push_back(Tensor(&litert_tensor_2));
+  auto op = cc_rewriter.BuildOp(kLiteRtOpCodeTflAdd, inputs, outputs);
+  EXPECT_EQ(op.Inputs().size(), 2);
+  EXPECT_EQ(op.Outputs().size(), 1);
+  EXPECT_EQ(op.Code(), kLiteRtOpCodeTflAdd);
 }
 
 }  // namespace
