@@ -209,6 +209,13 @@ typedef enum {
   kLiteRtDelegateBufferStorageTypeTexture2D = 2,
 } LiteRtDelegateBufferStorageType;
 
+// Lock mode for tensor buffer.
+typedef enum {
+  kLiteRtTensorBufferLockModeRead = 0,
+  kLiteRtTensorBufferLockModeWrite = 1,
+  kLiteRtTensorBufferLockModeReadWrite = 2,
+} LiteRtTensorBufferLockMode;
+
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;
 
