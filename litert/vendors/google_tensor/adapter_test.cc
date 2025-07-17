@@ -25,9 +25,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -63,19 +63,6 @@ TEST(AdapterTest, CompileSuccess) {
   auto model = litert::testing::LoadTestFileModel("mul_simple.tflite");
   LiteRtModel litert_model = model.Get();
 
-  LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
-  litert::OwningBufferRef buf;
-
-  // Using weak pointer to link the data to the buffer.
-  auto [data, size, offset] = buf.GetWeak();
-
-  const auto opts = litert::SerializationOptions::Defaults();
-  auto status =
-      LiteRtSerializeModel(litert_model, &data, &size, &offset, false, opts);
-  if (status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to serialize model");
-  }
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options, ::litert::google_tensor::GoogleTensorOptions::Create());
   options.SetFloatTruncationType(kLiteRtGoogleTensorFloatTruncationTypeHalf);
@@ -83,13 +70,11 @@ TEST(AdapterTest, CompileSuccess) {
   options.SetOutputDir("/tmp/");
   options.SetDumpOpTimings(true);
 
-  ASSERT_GT(buf.Size(), 0);
-  LITERT_LOG(LITERT_INFO, "buffer_str size: %d", buf.Size());
   LITERT_LOG(LITERT_INFO, "Compling model...");
 
   std::string compiled_code;
   auto compile_status = adapter_result.Value()->api().compile(
-      buf.StrView(), kSocModel, options.Get(), &compiled_code);
+      litert_model, kSocModel, options.Get(), &compiled_code);
   ASSERT_OK(compile_status);
   ASSERT_FALSE(compiled_code.empty());
 }

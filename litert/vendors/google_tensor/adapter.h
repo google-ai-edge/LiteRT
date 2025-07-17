@@ -30,7 +30,7 @@ namespace litert::google_tensor {
 // Flags is a vector of key-value pairs. where key is the flag name and value is
 // the flag value. eg. {{"enable_reference", "true"}}
 using Flags = std::vector<std::pair<std::string, std::string>>;
-typedef absl::Status (*Compile)(absl::string_view serialized_tfl_buffer,
+typedef absl::Status (*Compile)(LiteRtModel partitions,
                                 absl::string_view soc_model,
                                 LiteRtOpaqueOptions options,
                                 std::string* compiled_code);

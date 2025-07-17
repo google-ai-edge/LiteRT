@@ -319,17 +319,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  // Serialize model.
-  LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
-  litert::OwningBufferRef buf;
-  auto [data, size, offset] = buf.GetWeak();
-  const auto opts = litert::SerializationOptions::Defaults();
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSerializeModel(partitions, &data, &size, &offset, false, opts));
-  // TODO(abhirs): add support for serializing subgraphs
-
-  absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
-                               buf.Size());
 
   // Loading Google Tensor Compiler Adapter
   LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
@@ -365,7 +354,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   std::string compiled;
 
   auto compile_status = adapter_result.Value()->api().compile(
-      buffer_str, soc_model_view, opaque_options, &compiled);
+      partitions, soc_model_view, opaque_options, &compiled);
 
   if (!compile_status.ok()) {
     LITERT_LOG(
