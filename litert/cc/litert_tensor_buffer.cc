@@ -149,4 +149,13 @@ bool TensorBuffer::IsOpenClMemory() const {
   return ::IsOpenClMemory(tensor_buffer_type);
 }
 
+bool TensorBuffer::IsWebGpuMemory() const {
+  LiteRtTensorBufferType tensor_buffer_type;
+  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
+      status != kLiteRtStatusOk) {
+    return false;
+  }
+  return ::IsWebGpuMemory(tensor_buffer_type);
+}
+
 }  // namespace litert

@@ -313,3 +313,44 @@ cc_library(
         "//tflite/c:common",
     ],
 )
+
+cc_test(
+    name = "litert_compiled_model_webgpu_test",
+    srcs = ["//litert/cc:litert_compiled_model_webgpu_test.cc"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    tags = [
+        "no_oss",
+        "notap",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_event",
+        ":litert_gpu_options",
+        ":litert_options",
+        ":litert_runtime_options",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_profiler_event",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_platform_support",
+        "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",  # buildcleaner: keep
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@opencl_headers",
+    ],
+)

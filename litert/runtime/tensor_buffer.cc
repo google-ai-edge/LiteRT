@@ -416,8 +416,8 @@ LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
   if (!buffer) {
     return Unexpected(buffer.Error());
   }
-  Ptr tensor_buffer(new LiteRtTensorBufferT(
-      env, tensor_type, kLiteRtTensorBufferTypeWebGpuBuffer, buffer_size));
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
   tensor_buffer->buffer_.emplace<litert::internal::WebGpuBuffer>(
       std::move(*buffer));
   return tensor_buffer;

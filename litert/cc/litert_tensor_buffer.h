@@ -214,6 +214,11 @@ class TensorBuffer
   // mistakes when using it.
   bool IsOpenClMemory() const;
 
+  // Returns true if the tensor buffer is an WebGPU memory.
+  // Note: This function doesn't return Expected<bool> users can easily make
+  // mistakes when using it.
+  bool IsWebGpuMemory() const;
+
   Expected<RankedTensorType> TensorType() const {
     LiteRtRankedTensorType tensor_type;
     LITERT_RETURN_IF_ERROR(
