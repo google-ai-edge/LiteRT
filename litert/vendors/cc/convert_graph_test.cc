@@ -29,7 +29,6 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/cc/backend_ir.h"

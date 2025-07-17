@@ -28,6 +28,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
@@ -38,6 +39,10 @@ using ::litert::BufferRef;
 using ::litert::OwningBufferRef;
 using ::testing::ElementsAreArray;
 using ::testing::litert::IsError;
+
+const litert::Dimensions kStaticDims = {2, 2};  // NOLINT
+const litert::Dimensions kDynDims = {-1, 2};    // NOLINT
+const litert::Strides kStrides = {1, 1};        // NOLINT
 
 TEST(LiteRtWeightsTest, GetNullWeights) {
   LiteRtWeightsT weights = {};

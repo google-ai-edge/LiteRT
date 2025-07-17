@@ -26,9 +26,12 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -636,6 +639,17 @@ class LiteRtSubgraphT {
     return tensors_.RemoveIf(pred);
   }
 
+  void TransferOpsFrom(LiteRtOpT::Alloc&& other, size_t index) {
+    ops_.TransferFrom(other, index);
+  }
+
+  void TransferTensorsFrom(LiteRtTensorT::Alloc&& other) {
+    tensors_.TransferFrom(other);
+  }
+
+  LiteRtOpT::Alloc&& OpsAllocation() { return std::move(ops_); }
+  LiteRtTensorT::Alloc&& TensorsAllocation() { return std::move(tensors_); }
+
   // IR is generally, default constructible and movable but not copyable.
   LiteRtSubgraphT() = default;
   LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
@@ -726,6 +740,66 @@ class LiteRtSignatureT {
 // main subgraph when no explicit signatures have been authored.
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph);
 
+// Rewriter (Experimental internal feature)
+
+class LiteRtRewriterT {
+ public:
+  // Get the subgraph that is being rewritten.
+  LiteRtSubgraphT& Subgraph() { return subgraph_; }
+
+  // Returns the set of ops that are marked for erases.
+  absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
+
+  // Build a new LiteRt tensor owned by the rewriter.
+  LiteRtTensorT& BuildTensor(const LiteRtWeightsT& weights,
+                             Quantization quantization, TensorType tensor_type,
+                             std::optional<std::string> name = std::nullopt);
+
+  // Build a new LiteRt tensor owned by the rewriter, clone of src.
+  LiteRtTensorT& BuildTensor(const LiteRtTensorT& src);
+
+  // Build a new LiteRt op owned by the rewriter.
+  LiteRtOpT& BuildOp(LiteRtOpCode code, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // Build a new LiteRt op owned by the rewriter, clone of src.
+  LiteRtOpT& BuildOp(LiteRtOpT& src, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // check if op is allocated in rewriter.
+  bool IsOpAllocated(LiteRtOp op) const { return allocated_ops_.contains(op); }
+
+  // check if tensor is allocated in rewriter.
+  bool IsTensorAllocated(LiteRtTensor tensor) const {
+    return allocated_tensors_.contains(tensor);
+  }
+
+  // Transactionally erase an op, changes won't be applied until ApplyChanges
+  // is called.
+  void EraseOp(LiteRtOp opToErase);
+
+  // Apply all changes to the given subgraph, that was recorded by the rewriter.
+  //
+  // Note: This internal function is intentionally not exposed to the public
+  // API, to avoid users from accidentally applying changes mid-computation.
+  void ApplyChanges(LiteRtSubgraphT* subgraph_to_apply);
+
+  LiteRtRewriterT() = default;
+  LiteRtRewriterT(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT(LiteRtRewriterT&&) = default;
+  LiteRtRewriterT& operator=(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT& operator=(LiteRtRewriterT&&) = default;
+
+ private:
+  // Subgraph to hold the IR.
+  LiteRtSubgraphT subgraph_;
+
+  // Records of transactions.
+  absl::flat_hash_set<LiteRtOp> erases_;
+  absl::flat_hash_set<LiteRtTensor> allocated_tensors_;
+  absl::flat_hash_set<LiteRtOp> allocated_ops_;
+};
+
 //
 // Model
 //
@@ -794,7 +868,7 @@ class LiteRtModelT {
 
   // Transfers given subgraphs into this model. New subgraphs are appended.
   void TransferSubgraphsFrom(LiteRtSubgraphT::Alloc&& subgraphs) {
-    // TODO: Consider mergeing buffer managers here.
+    // TODO: Consider merging buffer managers here.
     subgraphs_.TransferFrom(std::move(subgraphs));
   }
 
@@ -979,6 +1053,83 @@ template <class Arg>
 void SetTflOpCodes(LiteRtModelT& litert_model, Arg&& arg) {
   litert_model.tfl_operator_codes_ = std::forward<Arg>(arg);
 }
+
+// Model graph stuff
+// using IrMapping = absl::flat_hash_map<LiteRtTensor, LiteRtTensor>;
+
+// CLONING
+
+// Clones the basic data between tensors (like name and data) but not
+// things related to incoming/outgoing edges (users, defining op) or weights.
+void CloneTo(const LiteRtTensorT& src, LiteRtTensorT& dest);
+
+// Clones the basic data between ops (like op code and options) but
+// things related to incoming/outgoing edges (input/output tensors).
+void CloneTo(const LiteRtOpT& src, LiteRtOpT& dest);
+
+// Same as clone to, but allocates a the dest tensor into given subgraph.
+LiteRtTensorT& MakeClone(LiteRtSubgraphT& parent, const LiteRtTensorT& src);
+
+// Same as clone to, but allocates a the dest op into given subgraph.
+LiteRtOpT& MakeClone(LiteRtSubgraphT& parent, const LiteRtOpT& src);
+
+// OBSERVERS
+
+// Checks if tensor is input to given op, return its index if so.
+std::optional<LiteRtParamIndex> FindInput(const LiteRtOpT& op,
+                                          const LiteRtTensorT& tensor);
+
+// Checks if tensor is output to given op, return its index if so.
+std::optional<LiteRtParamIndex> FindOutput(const LiteRtOpT& op,
+                                           const LiteRtTensorT& tensor);
+
+// Checks if tensor is input to given subgraph, return its index if so.
+std::optional<LiteRtParamIndex> FindInput(const LiteRtSubgraphT& subgraph,
+                                          const LiteRtTensorT& tensor);
+
+// Checks if tensor is output to given subgraph, return its index if so.
+std::optional<LiteRtParamIndex> FindOutput(const LiteRtSubgraphT& subgraph,
+                                           const LiteRtTensorT& tensor);
+
+// Check if tensor is part of subgraph IO.
+bool IsIO(const LiteRtSubgraphT& subgraph, const LiteRtTensorT& tensor);
+
+using UseIndices =
+    absl::InlinedVector<LiteRtParamIndex, kExpectedMaxNumOfTensorUses>;
+
+// Checks if tensor is used by op, return the use inds for each use of tensor by
+// op (there may be multiple). These are the indexes to call
+// LiteRtTensorT::GetUse with.
+UseIndices FindUseInds(const LiteRtTensorT& tensor, const LiteRtOpT& op);
+
+// Is this tensor a constant tensor?
+bool IsConstant(const LiteRtTensorT& tensor);
+
+// MUTATORS
+
+// Attaches the pre-allocated tensor to be an input of given op.
+void AttachInput(LiteRtTensor tensor, LiteRtOpT& op);
+
+// Attaches the pre-allocated tensor to be an output of given op.
+void AttachOutput(LiteRtTensor tensor, LiteRtOpT& op);
+
+// Remove the input edge from an op. Return the disconnected tensor.
+LiteRtTensor DisconnectInput(LiteRtOpT& op, LiteRtParamIndex input_ind);
+
+// Remove an output edge from an op. Return the disconnected tensor.
+LiteRtTensor DisconnectOutput(LiteRtOpT& op, LiteRtParamIndex output_ind);
+
+// Remove all incoming and outgoing edges from this op. This can prep nodes
+// for removal in DCE.
+void Drop(LiteRtOpT& litert_op);
+
+// Run very naive dead code elimination. Removes only ops/tensors that have no
+// in/out edges. Ops are handled first. Ignores subgraph IO. Not recursive and
+// does only one pass. Returns if the graph was modified.
+// NOTE: This de-allocates removed objects, only use when references to these
+// objects will not be used.
+// TODO: Update this with complete work-list based approach.
+bool DCE(LiteRtSubgraphT& subgraph);
 
 }  // namespace litert::internal
 

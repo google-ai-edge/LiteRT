@@ -18,7 +18,6 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
 
 namespace litert::internal {
 
