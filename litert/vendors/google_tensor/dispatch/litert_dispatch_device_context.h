@@ -22,10 +22,12 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
-class LiteRtDispatchDeviceContextT {
+class LiteRtDispatchDeviceContextT
+    : public litert::vendors::VendorDeviceContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
 
@@ -54,10 +56,14 @@ class LiteRtDispatchDeviceContextT {
 
   void add_graph(ThrGraph* graph) { thr_graphs_.insert(graph); }
 
+  // Override from VendorDeviceContext
+  void* GetBackendContext() override { return thr_context_; }
+
  private:
   explicit LiteRtDispatchDeviceContextT(
       const litert::google_tensor::Southbound& southbound)
-      : southbound_(southbound) {}
+      : VendorDeviceContext(LiteRtDispatchDeviceContext{}),
+        southbound_(southbound) {}
 
   const litert::google_tensor::Southbound& southbound_;
   ThrContext* thr_context_ = nullptr;
