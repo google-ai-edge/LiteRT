@@ -19,12 +19,14 @@ package(
     ],
 )
 
-# Driver and glue code for LiteRt's compliance test suite (CTS).
+# LiteRt's compliance test suite (CTS).
 
 cc_test(
     name = "cts_main",
     srcs = ["cts_main.cc"],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     deps = [
+        ":compiled_model_executor",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -38,13 +40,51 @@ cc_test(
         "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:matchers",
         "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
         "//litert/test/generators:common",
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "compiled_model_executor",
+    hdrs = ["compiled_model_executor.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_options",
+        "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/test:simple_buffer",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "compiled_model_executor_test",
+    srcs = ["compiled_model_executor_test.cc"],
+    deps = [
+        ":compiled_model_executor",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "//litert/test:simple_buffer",
+        "//litert/test/generators:graph_helpers",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )

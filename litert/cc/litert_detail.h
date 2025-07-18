@@ -22,10 +22,12 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 
 namespace litert {
 
@@ -121,6 +123,22 @@ template <template <typename...> typename C, typename... Lists,
           typename Functor>
 void ExpandProduct(Functor& f) {
   ExpandProductHelper<C, Lists...>(f, TypeList<>());
+}
+
+// Inplace initialize an array from vector. This is required if T offers
+// no default constructor.
+template <typename T, size_t... Is>
+auto VecToArrayHelper(std::vector<T>&& v, std::index_sequence<Is...>)
+    -> std::array<T, sizeof...(Is)> {
+  if (v.size() < sizeof...(Is)) {
+    LITERT_ABORT;
+  }
+  return std::array<T, sizeof...(Is)>{std::move(v[Is])...};
+}
+
+template <size_t N, typename T>
+std::array<T, N> VecToArray(std::vector<T>&& v) {
+  return VecToArrayHelper(std::move(v), std::make_index_sequence<N>());
 }
 
 // See "std::construct_at" from C++20.
