@@ -417,6 +417,15 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
 
 }  // namespace
 
+Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(
+    OwningBufferRef<uint8_t>&& buffer) {
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(std::move(buffer));
+  if (!flatbuffer) {
+    return flatbuffer.Error();
+  }
+  return UnpackModel(std::move(**flatbuffer));
+}
+
 Expected<LiteRtModelT::Ptr> LoadModelFromBuffer(BufferRef<uint8_t> buffer) {
   auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(buffer);
   if (!flatbuffer) {

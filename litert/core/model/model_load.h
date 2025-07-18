@@ -31,6 +31,9 @@ Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromBuffer(
     BufferRef<uint8_t> buffer);
 
+Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromBuffer(
+    OwningBufferRef<uint8_t>&& buffer);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_MODEL_LOAD_H_
