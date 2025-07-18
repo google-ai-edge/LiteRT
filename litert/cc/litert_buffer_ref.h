@@ -15,13 +15,17 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_BUFFER_REF_H_
 #define ODML_LITERT_LITERT_CC_LITERT_BUFFER_REF_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <iostream>
+#include <iterator>
 #include <ostream>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -360,6 +364,22 @@ OwningBufferRef(ByteT*, size_t) -> OwningBufferRef<ByteT, Allocator>;
 
 template <typename ByteT = char, class Allocator = Newlocator<ByteT>>
 OwningBufferRef(const char*) -> OwningBufferRef<ByteT, Allocator>;
+
+template <typename Iter>
+OwningBufferRef<uint8_t> MakeBufferRef(Iter begin, Iter end) {
+  using T = typename std::remove_reference_t<
+      std::remove_cv_t<typename std::iterator_traits<Iter>::value_type>>;
+  const size_t element_size = sizeof(*begin);
+  const size_t num_elements = std::distance(begin, end);
+  OwningBufferRef res(num_elements * element_size);
+  std::copy(begin, end, reinterpret_cast<T*>(res.Data()));
+  return res;
+}
+
+template <typename T>
+OwningBufferRef<uint8_t> MakeBufferRef(std::initializer_list<T> data) {
+  return MakeBufferRef(std::cbegin(data), std::cend(data));
+}
 
 }  // namespace litert
 
