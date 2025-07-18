@@ -39,7 +39,6 @@ litert_dynamic_lib(
         "southbound.cc",
     ],
     hdrs = [
-        "dispatch_api.h",
         "litert_dispatch_device_context.h",
         "litert_dispatch_graph.h",
         "litert_dispatch_invocation_context.h",
@@ -84,6 +83,7 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/common:vendor_dispatch_base",
     ],
 )
 

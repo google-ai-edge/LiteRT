@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
 
 #include <cstdio>
 #include <optional>
@@ -32,6 +31,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/common/vendor_traits.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
@@ -40,52 +40,30 @@
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 namespace {
-
-litert::google_tensor::Southbound* TheSouthbound;
-char BuildId[256];
-
-LiteRtEnvironmentOptions TheEnvironmntOptions;
-LiteRtOptions TheOptions;
-
+litert::google_tensor::Southbound* TheSouthbound = nullptr;
+std::string TheBuildId;
 }  // namespace
 
 namespace litert {
-namespace google_tensor {
+namespace vendors {
 
-// /////////////////////////////////////////////////////////////////////////////
-// Basic Execution API
-// /////////////////////////////////////////////////////////////////////////////
+// Implement trait methods for Google Tensor
+LiteRtStatus VendorTraits<GoogleTensorTag>::Initialize(
+    const std::string& lib_dir) {
+  // Extract shared library directory
+  auto shared_library_dir_opt =
+      lib_dir.empty() ? std::nullopt : std::make_optional(lib_dir);
 
-std::optional<std::string> GetSharedLibraryDir(
-    LiteRtEnvironmentOptions environment_options) {
-  litert::EnvironmentOptions env_options(environment_options);
-  auto dispatch_lib_dir_any =
-      env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (!dispatch_lib_dir_any) {
-    LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
-               dispatch_lib_dir_any.Error().Message().c_str());
-    return std::nullopt;
-  }
-  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
-}
-
-LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
-                        LiteRtOptions options) {
-  TheEnvironmntOptions = environment_options;
-  TheOptions = options;
-
-  auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
-
-  if (auto southbound =
-          litert::google_tensor::Southbound::Create(shared_library_dir_opt);
-      !southbound) {
+  // Create Southbound interface
+  auto southbound = google_tensor::Southbound::Create(shared_library_dir_opt);
+  if (!southbound) {
     LITERT_LOG(LITERT_INFO, "Initialization failure: %s",
                southbound.Error().Message().c_str());
     return southbound.Error().Status();
-  } else {
-    TheSouthbound = southbound->release();
   }
+  TheSouthbound = southbound->release();
 
+  // Initialize the Southbound API
   auto thr_initialize = TheSouthbound->api().thr_initialize;
   if (!thr_initialize) {
     LITERT_LOG(LITERT_INFO, "thr_initialize not found");
@@ -96,205 +74,98 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  // Get version information
   auto thr_get_vendor_api_version =
       TheSouthbound->api().thr_get_vendor_api_version;
-  const char* sb_api_version =
+  const char* vendor_version =
       thr_get_vendor_api_version ? thr_get_vendor_api_version() : "N.A.";
   auto thr_get_vendor_id = TheSouthbound->api().thr_get_vendor_id;
   const char* sb_vendor_id = thr_get_vendor_id ? thr_get_vendor_id() : "N.A.";
+
+  // Build version string
+  char build_id[256];
   snprintf(
-      BuildId, sizeof(BuildId),
+      build_id, sizeof(build_id),
       "GoogleTensor Dispatch API version %d.%d.%d, Darwinn API version %s, "
       "vendor id: %s",
       LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
-      LITERT_API_VERSION_PATCH, sb_api_version, sb_vendor_id);
-  BuildId[sizeof(BuildId) - 1] = 0;
+      LITERT_API_VERSION_PATCH, vendor_version, sb_vendor_id);
+  TheBuildId = build_id;
 
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GetVendorId(const char** vendor_id) {
-  *vendor_id = "Google";
-  return kLiteRtStatusOk;
-}
+std::string VendorTraits<GoogleTensorTag>::GetBuildId() { return TheBuildId; }
 
-LiteRtStatus GetBuildId(const char** build_id) {
-  *build_id = BuildId;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetCapabilities(int* capabilities) {
-  *capabilities = kLiteRtDispatchCapabilitiesBasic |
-                  kLiteRtDispatchCapabilitiesAsync |
-                  kLiteRtDispatchCapabilitiesGraph;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto result = LiteRtDispatchDeviceContextT::Create(*TheSouthbound);
-      result) {
-    *device_context = result->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
+Expected<std::unique_ptr<VendorDeviceContext>>
+VendorTraits<GoogleTensorTag>::CreateDeviceContext(
+    const LiteRtDispatchDeviceContext* device_context_options) {
+  // Google Tensor doesn't use device context options, just southbound
+  auto result = LiteRtDispatchDeviceContextT::Create(*TheSouthbound);
+  if (!result) {
+    return Unexpected(result.Error().Status(), result.Error().Message());
   }
+  // Cast the unique_ptr to the base type
+  return std::unique_ptr<VendorDeviceContext>(result.Value().release());
 }
 
-LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
-  delete device_context;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetInputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int input_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  LITERT_ASSIGN_OR_RETURN(
-      *tensor_buffer_requirements,
-      invocation_context->GetInputRequirements(input_index, *tensor_type),
-      _ << "Failed to get input requirements.");
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetOutputRequirements(
-    LiteRtDispatchInvocationContext invocation_context, int output_index,
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  if (auto result =
-          invocation_context->GetOutputRequirements(output_index, *tensor_type);
-      result) {
-    *tensor_buffer_requirements = *result;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to get output requirements: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-LiteRtStatus RegisterTensorBuffer(
-    LiteRtDispatchDeviceContext device_context, LiteRtTensorBuffer buffer,
+LiteRtStatus VendorTraits<GoogleTensorTag>::RegisterTensorBuffer(
+    VendorDeviceContext* context, LiteRtTensorBuffer tensor_buffer,
     LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  if (auto status = device_context->RegisterTensorBuffer(buffer); status) {
-    *tensor_buffer_handle = *status;
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to register buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  }
-}
-
-LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
-                                    LiteRtTensorBufferHandle handle) {
-  if (auto status = device_context->UnregisterTensorBuffer(handle); status) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  }
-}
-
-LiteRtStatus InvocationContextCreate(
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtDispatchExecutableType exec_type,
-    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
-    int num_inputs, int num_outputs,
-    LiteRtDispatchInvocationContext* invocation_context) {
-  function_name = "";
-  if (auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
-          *TheSouthbound, device_context, exec_type, exec_bytecode_buffer,
-          function_name, num_inputs, num_outputs);
-      result) {
-    *invocation_context = result->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create invocation context: %s",
-               result.Error().Message().c_str());
+  auto* gt_context = static_cast<LiteRtDispatchDeviceContextT*>(context);
+  auto result = gt_context->RegisterTensorBuffer(tensor_buffer);
+  if (!result) {
     return result.Error().Status();
   }
-}
-
-LiteRtStatus InvocationContextDestroy(
-    LiteRtDispatchInvocationContext invocation_context) {
-  delete invocation_context;
+  *tensor_buffer_handle = *result;
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->AttachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach input: %s",
-               result.Error().Message().c_str());
+LiteRtStatus VendorTraits<GoogleTensorTag>::UnregisterTensorBuffer(
+    VendorDeviceContext* context,
+    LiteRtTensorBufferHandle tensor_buffer_handle) {
+  auto* gt_context = static_cast<LiteRtDispatchDeviceContextT*>(context);
+  auto result = gt_context->UnregisterTensorBuffer(tensor_buffer_handle);
+  if (!result) {
     return result.Error().Status();
   }
+  return kLiteRtStatusOk;
 }
 
-LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->AttachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
+Expected<std::unique_ptr<VendorInvocationContext>>
+VendorTraits<GoogleTensorTag>::CreateInvocationContext(
+    VendorDeviceContext* device_context, const void* exec_bytecode_ptr,
+    size_t exec_bytecode_size, const char* function_name) {
+  auto* gt_device_context =
+      static_cast<LiteRtDispatchDeviceContextT*>(device_context);
+
+  // Create LiteRtMemBuffer from the raw pointer and size
+  LiteRtMemBuffer mem_buffer = {.fd = -1,
+                                .base_addr = exec_bytecode_ptr,
+                                .offset = 0,
+                                .size = exec_bytecode_size};
+
+  // Determine executable type based on content or use default
+  LiteRtDispatchExecutableType exec_type =
+      kLiteRtDispatchExecutableTypeDspLibrary;
+
+  // We need to use CreateFromBytecode which returns Expected<Ptr>
+  auto result = LiteRtDispatchInvocationContextT::CreateFromBytecode(
+      *TheSouthbound,
+      reinterpret_cast<LiteRtDispatchDeviceContext>(gt_device_context),
+      exec_type, &mem_buffer, function_name, /*num_inputs=*/0,
+      /*num_outputs=*/0);
+
+  if (!result) {
+    return Unexpected(result.Error().Status(), result.Error().Message());
   }
+
+  // Cast to base type
+  return std::unique_ptr<VendorInvocationContext>(result.Value().release());
 }
 
-LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
-                         int graph_input_index,
-                         LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->DetachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to detatch input: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
-                          int graph_output_index,
-                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = invocation_context->DetachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to detatch output: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  if (auto result = invocation_context->Invoke(); result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to invoke: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-// /////////////////////////////////////////////////////////////////////////////
-// Async Execution API
-// /////////////////////////////////////////////////////////////////////////////
-
-LiteRtStatus AttachInputEvent(
+// Add async interface methods to traits
+LiteRtStatus VendorTraits<GoogleTensorTag>::AttachInputEvent(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtEvent input_event) {
   if (auto result =
@@ -308,8 +179,9 @@ LiteRtStatus AttachInputEvent(
   }
 }
 
-LiteRtStatus InvokeAsync(LiteRtDispatchInvocationContext invocation_context,
-                         int num_output_events, LiteRtEvent* output_events) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::InvokeAsync(
+    LiteRtDispatchInvocationContext invocation_context, int num_output_events,
+    LiteRtEvent* output_events) {
   if (auto result =
           invocation_context->InvokeAsync(num_output_events, output_events);
       result) {
@@ -321,68 +193,9 @@ LiteRtStatus InvokeAsync(LiteRtDispatchInvocationContext invocation_context,
   }
 }
 
-// /////////////////////////////////////////////////////////////////////////////
-// Metrics API
-// /////////////////////////////////////////////////////////////////////////////
-
-LiteRtStatus StartMetricsCollection(
-    LiteRtDispatchInvocationContext invocation_context, int detail_level) {
-  if (auto result = invocation_context->StartMetricsCollection(detail_level);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to start metrics collection: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-LiteRtStatus StopMetricsCollection(
-    LiteRtDispatchInvocationContext invocation_context,
-    LiteRtDispatchMetrics* metrics) {
-  if (auto result = invocation_context->StopMetricsCollection(metrics);
-      result) {
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to stop metrics collection: %s",
-               result.Error().Message().c_str());
-    return result.Error().Status();
-  }
-}
-
-LiteRtStatus GetNumMetrics(LiteRtDispatchMetrics metrics, int* num_metrics) {
-  if (metrics == nullptr) {
-    LITERT_LOG(LITERT_ERROR,
-               "GetNumMetrics failed: metrics should not be null");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *num_metrics = metrics->GetNumMetrics();
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus GetMetric(LiteRtDispatchMetrics metrics, int metric_index,
-                       LiteRtMetric* metric) {
-  if (metrics == nullptr) {
-    LITERT_LOG(LITERT_ERROR, "GetMetric failed: metrics should not be null");
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  *metric = metrics->GetMetric(metric_index);
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus DestroyMetrics(LiteRtDispatchMetrics metrics) {
-  if (metrics) {
-    delete metrics;
-  }
-  return kLiteRtStatusOk;
-}
-
-// /////////////////////////////////////////////////////////////////////////////
-// Graph Execution API
-// /////////////////////////////////////////////////////////////////////////////
-
-LiteRtStatus GraphCreate(LiteRtDispatchDeviceContext device_context,
-                         LiteRtDispatchGraph* graph) {
+// Add graph interface methods to traits
+LiteRtStatus VendorTraits<GoogleTensorTag>::GraphCreate(
+    LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph* graph) {
   if (auto result = device_context->CreateGraph(); result) {
     *graph = *result;
     return kLiteRtStatusOk;
@@ -393,18 +206,21 @@ LiteRtStatus GraphCreate(LiteRtDispatchDeviceContext device_context,
   }
 }
 
-LiteRtStatus GraphDestroy(LiteRtDispatchGraph graph) {
-  if (auto result = graph->device_context()->DestroyGraph(graph); result) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::GraphDestroy(
+    LiteRtDispatchGraph graph) {
+  auto device_context = graph->device_context();
+  if (auto result = device_context->DestroyGraph(graph); result) {
     return kLiteRtStatusOk;
   } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to delete graph: %s",
+    LITERT_LOG(LITERT_ERROR, "Failed to destroy graph: %s",
                result.Error().Message().c_str());
     return result.Error().Status();
   }
 }
 
-LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
-                     LiteRtDispatchNodeType node_type) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AddNode(
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
+    LiteRtDispatchNodeType node_type) {
   if (auto result = graph->AddNode(node_id, node_type); result) {
     return kLiteRtStatusOk;
   } else {
@@ -414,7 +230,8 @@ LiteRtStatus AddNode(LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
   }
 }
 
-LiteRtStatus AddEdge(LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AddEdge(
+    LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id) {
   if (auto result = graph->AddEdge(edge_id); result) {
     return kLiteRtStatusOk;
   } else {
@@ -424,9 +241,9 @@ LiteRtStatus AddEdge(LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id) {
   }
 }
 
-LiteRtStatus ConnectNodeInput(LiteRtDispatchGraph graph,
-                              LiteRtDispatchNodeId node_id, int input_index,
-                              LiteRtDispatchEdgeId edge_id) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::ConnectNodeInput(
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, int input_index,
+    LiteRtDispatchEdgeId edge_id) {
   if (auto result = graph->ConnectNodeInput(node_id, input_index, edge_id);
       result) {
     return kLiteRtStatusOk;
@@ -437,9 +254,9 @@ LiteRtStatus ConnectNodeInput(LiteRtDispatchGraph graph,
   }
 }
 
-LiteRtStatus ConnectNodeOutput(LiteRtDispatchGraph graph,
-                               LiteRtDispatchNodeId node_id, int output_index,
-                               LiteRtDispatchEdgeId edge_id) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::ConnectNodeOutput(
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, int output_index,
+    LiteRtDispatchEdgeId edge_id) {
   if (auto result = graph->ConnectNodeOutput(node_id, output_index, edge_id);
       result) {
     return kLiteRtStatusOk;
@@ -450,9 +267,11 @@ LiteRtStatus ConnectNodeOutput(LiteRtDispatchGraph graph,
   }
 }
 
-LiteRtStatus ConnectGraphInput(LiteRtDispatchGraph graph, int input_index,
-                               LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectGraphInput(input_index, edge_id); result) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::ConnectGraphInput(
+    LiteRtDispatchGraph graph, int graph_input_index,
+    LiteRtDispatchEdgeId edge_id) {
+  if (auto result = graph->ConnectGraphInput(graph_input_index, edge_id);
+      result) {
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to connect graph input: %s",
@@ -461,9 +280,11 @@ LiteRtStatus ConnectGraphInput(LiteRtDispatchGraph graph, int input_index,
   }
 }
 
-LiteRtStatus ConnectGraphOutput(LiteRtDispatchGraph graph, int output_index,
-                                LiteRtDispatchEdgeId edge_id) {
-  if (auto result = graph->ConnectGraphOutput(output_index, edge_id); result) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::ConnectGraphOutput(
+    LiteRtDispatchGraph graph, int graph_output_index,
+    LiteRtDispatchEdgeId edge_id) {
+  if (auto result = graph->ConnectGraphOutput(graph_output_index, edge_id);
+      result) {
     return kLiteRtStatusOk;
   } else {
     LITERT_LOG(LITERT_ERROR, "Failed to connect graph output: %s",
@@ -472,12 +293,11 @@ LiteRtStatus ConnectGraphOutput(LiteRtDispatchGraph graph, int output_index,
   }
 }
 
-LiteRtStatus LoadExecutable(LiteRtDispatchDeviceContext device_context,
-                            LiteRtDispatchExecutableType type,
-                            const LiteRtMemBuffer* bytecode_buffer,
-                            LiteRtDispatchExecutableHandle* exec_handle) {
-  if (auto result = device_context->LoadExecutable(type, bytecode_buffer);
-      result) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::LoadExecutable(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableType type, const LiteRtMemBuffer* bytecode,
+    LiteRtDispatchExecutableHandle* exec_handle) {
+  if (auto result = device_context->LoadExecutable(type, bytecode); result) {
     *exec_handle = *result;
     return kLiteRtStatusOk;
   } else {
@@ -487,8 +307,9 @@ LiteRtStatus LoadExecutable(LiteRtDispatchDeviceContext device_context,
   }
 }
 
-LiteRtStatus UnloadExecutable(LiteRtDispatchDeviceContext device_context,
-                              LiteRtDispatchExecutableHandle exec_handle) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::UnloadExecutable(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableHandle exec_handle) {
   if (auto result = device_context->UnloadExecutable(exec_handle); result) {
     return kLiteRtStatusOk;
   } else {
@@ -498,10 +319,9 @@ LiteRtStatus UnloadExecutable(LiteRtDispatchDeviceContext device_context,
   }
 }
 
-LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
-                                LiteRtDispatchNodeId node_id,
-                                LiteRtDispatchExecutableHandle exec_handle,
-                                const char* function_name) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AssignNodeFunction(
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id,
+    LiteRtDispatchExecutableHandle exec_handle, const char* function_name) {
   // TODO - b/397771624: Southbound currently doesn't support function names, so
   // overriding function names to empty strings as a temporary fix. We need to
   // investigate with the CoreML team to find a more robust solution.
@@ -517,8 +337,8 @@ LiteRtStatus AssignNodeFunction(LiteRtDispatchGraph graph,
   }
 }
 
-LiteRtStatus AnnotateGraph(LiteRtDispatchGraph graph, const char* key,
-                           const char* value) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AnnotateGraph(
+    LiteRtDispatchGraph graph, const char* key, const char* value) {
   if (auto result = graph->AnnotateGraph(key, value); result) {
     return kLiteRtStatusOk;
   } else {
@@ -528,9 +348,9 @@ LiteRtStatus AnnotateGraph(LiteRtDispatchGraph graph, const char* key,
   }
 }
 
-LiteRtStatus AnnotateNode(LiteRtDispatchGraph graph,
-                          LiteRtDispatchNodeId node_id, const char* key,
-                          const char* value) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AnnotateNode(
+    LiteRtDispatchGraph graph, LiteRtDispatchNodeId node_id, const char* key,
+    const char* value) {
   if (auto result = graph->AnnotateNode(node_id, key, value); result) {
     return kLiteRtStatusOk;
   } else {
@@ -540,9 +360,9 @@ LiteRtStatus AnnotateNode(LiteRtDispatchGraph graph,
   }
 }
 
-LiteRtStatus AnnotateEdge(LiteRtDispatchGraph graph,
-                          LiteRtDispatchEdgeId edge_id, const char* key,
-                          const char* value) {
+LiteRtStatus VendorTraits<GoogleTensorTag>::AnnotateEdge(
+    LiteRtDispatchGraph graph, LiteRtDispatchEdgeId edge_id, const char* key,
+    const char* value) {
   if (auto result = graph->AnnotateEdge(edge_id, key, value); result) {
     return kLiteRtStatusOk;
   } else {
@@ -552,7 +372,7 @@ LiteRtStatus AnnotateEdge(LiteRtDispatchGraph graph,
   }
 }
 
-LiteRtStatus InvocationContextCreateFromGraph(
+LiteRtStatus VendorTraits<GoogleTensorTag>::InvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context) {
   if (auto result = LiteRtDispatchInvocationContextT::CreateFromGraph(
@@ -567,75 +387,11 @@ LiteRtStatus InvocationContextCreateFromGraph(
   }
 }
 
-}  // namespace google_tensor
+}  // namespace vendors
 }  // namespace litert
 
-// /////////////////////////////////////////////////////////////////////////////
+// The async and graph interfaces are now provided by the base class
+// using the trait methods defined below
 
-namespace {
-
-LiteRtDispatchInterface TheInterface = {
-    .initialize = litert::google_tensor::Initialize,
-    .get_vendor_id = litert::google_tensor::GetVendorId,
-    .get_build_id = litert::google_tensor::GetBuildId,
-    .get_capabilities = litert::google_tensor::GetCapabilities,
-    .device_context_create = litert::google_tensor::DeviceContextCreate,
-    .device_context_destroy = litert::google_tensor::DeviceContextDestroy,
-    .get_input_requirements = litert::google_tensor::GetInputRequirements,
-    .get_output_requirements = litert::google_tensor::GetOutputRequirements,
-    .register_tensor_buffer = litert::google_tensor::RegisterTensorBuffer,
-    .unregister_tensor_buffer = litert::google_tensor::UnregisterTensorBuffer,
-    .invocation_context_create = litert::google_tensor::InvocationContextCreate,
-    .invocation_context_destroy =
-        litert::google_tensor::InvocationContextDestroy,
-    .attach_input = litert::google_tensor::AttachInput,
-    .attach_output = litert::google_tensor::AttachOutput,
-    .detach_input = litert::google_tensor::DetachInput,
-    .detach_output = litert::google_tensor::DetachOutput,
-    .invoke = litert::google_tensor::Invoke,
-    .start_metrics_collection = litert::google_tensor::StartMetricsCollection,
-    .stop_metrics_collection = litert::google_tensor::StopMetricsCollection,
-    .get_num_metrics = litert::google_tensor::GetNumMetrics,
-    .get_metric = litert::google_tensor::GetMetric,
-    .destroy_metrics = litert::google_tensor::DestroyMetrics,
-};
-
-LiteRtDispatchAsyncInterface TheAsyncInterface = {
-    .attach_input_event = litert::google_tensor::AttachInputEvent,
-    .invoke_async = litert::google_tensor::InvokeAsync,
-};
-
-LiteRtDispatchGraphInterface TheGraphInterface = {
-    .graph_create = litert::google_tensor::GraphCreate,
-    .graph_destroy = litert::google_tensor::GraphDestroy,
-    .add_node = litert::google_tensor::AddNode,
-    .add_edge = litert::google_tensor::AddEdge,
-    .connect_node_input = litert::google_tensor::ConnectNodeInput,
-    .connect_node_output = litert::google_tensor::ConnectNodeOutput,
-    .connect_graph_input = litert::google_tensor::ConnectGraphInput,
-    .connect_graph_output = litert::google_tensor::ConnectGraphOutput,
-    .load_executable = litert::google_tensor::LoadExecutable,
-    .unload_executable = litert::google_tensor::UnloadExecutable,
-    .assign_node_function = litert::google_tensor::AssignNodeFunction,
-    .annotate_graph = litert::google_tensor::AnnotateGraph,
-    .annotate_node = litert::google_tensor::AnnotateNode,
-    .annotate_edge = litert::google_tensor::AnnotateEdge,
-    .invocation_context_create_from_graph =
-        litert::google_tensor::InvocationContextCreateFromGraph,
-};
-
-LiteRtDispatchApi TheApi = {
-    .version = {.major = LITERT_API_VERSION_MAJOR,
-                .minor = LITERT_API_VERSION_MINOR,
-                .patch = LITERT_API_VERSION_PATCH},
-    .interface = &TheInterface,
-    .async_interface = &TheAsyncInterface,
-    .graph_interface = &TheGraphInterface,
-};
-
-}  // namespace
-
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
-  *api = TheApi;
-  return kLiteRtStatusOk;
-}
+// Use the macro to define the dispatch entry point
+DEFINE_VENDOR_DISPATCH_ENTRY_POINT(litert::vendors::GoogleTensorTag)

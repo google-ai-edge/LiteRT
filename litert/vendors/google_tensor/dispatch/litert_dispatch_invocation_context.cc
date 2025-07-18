@@ -264,26 +264,6 @@ litert::Expected<void> AttachBufferHelper(
 
 }  // namespace
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
-    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->InputEdge(graph_input_index); result) {
-    auto edge_id = *result;
-    return AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
-}
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
-    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->OutputEdge(graph_output_index); result) {
-    auto edge_id = *result;
-    return AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
-}
-
 namespace {
 
 litert::Expected<void> DetachTensorBufferHelper(
@@ -316,28 +296,6 @@ litert::Expected<void> DetachTensorBufferHelper(
 }
 
 }  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
-    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->InputEdge(graph_input_index); result) {
-    auto edge_id = *result;
-    return DetachTensorBufferHelper(southbound_, this, edge_id,
-                                    tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
-}
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
-    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto result = graph_->OutputEdge(graph_output_index); result) {
-    auto edge_id = *result;
-    return DetachTensorBufferHelper(southbound_, this, edge_id,
-                                    tensor_buffer_handle);
-  } else {
-    return result.Error();
-  }
-}
 
 namespace {
 
@@ -412,18 +370,6 @@ litert::Expected<void> Wait(
 }
 
 }  // namespace
-
-litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  if (auto result = PrepareForInvoke(southbound_, this,
-                                     /*create_output_sync_fence=*/false);
-      !result) {
-    return result.Error();
-  }
-  if (auto result = InvokeOnce(southbound_, this); !result) {
-    return result.Error();
-  }
-  return Wait(southbound_, this);
-}
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInputEvent(
     int graph_input_index, LiteRtEvent input_event) {
@@ -568,7 +514,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::InvokeAsync(
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::StartMetricsCollection(
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::StartMetricsCollectionInternal(
     int detail_level) {
   auto thr_invocation_context_start_metrics_collection =
       southbound_.api().thr_invocation_context_start_metrics_collection;
@@ -588,7 +535,8 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::StartMetricsCollection(
   return {};
 }
 
-litert::Expected<void> LiteRtDispatchInvocationContextT::StopMetricsCollection(
+litert::Expected<void>
+LiteRtDispatchInvocationContextT::StopMetricsCollectionInternal(
     LiteRtDispatchMetrics* metrics) {
   auto thr_invocation_context_stop_metrics_collection =
       southbound_.api().thr_invocation_context_stop_metrics_collection;
@@ -613,4 +561,97 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::StopMetricsCollection(
                                         thr_metrics.metric_keys,
                                         thr_metrics.metric_values);
   return {};
+}
+
+// VendorInvocationContext interface implementations
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachInput(
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // Get the edge ID for this input
+  auto edge_result = graph_->InputEdge(graph_input_index);
+  if (!edge_result) {
+    return edge_result.Error().Status();
+  }
+  auto edge_id = *edge_result;
+
+  // Call the helper to attach the buffer
+  auto attach_result =
+      AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
+  return attach_result ? kLiteRtStatusOk : attach_result.Error().Status();
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachOutput(
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // Get the edge ID for this output
+  auto edge_result = graph_->OutputEdge(graph_output_index);
+  if (!edge_result) {
+    return edge_result.Error().Status();
+  }
+  auto edge_id = *edge_result;
+
+  // Call the helper to attach the buffer
+  auto attach_result =
+      AttachBufferHelper(southbound_, this, edge_id, tensor_buffer_handle);
+  return attach_result ? kLiteRtStatusOk : attach_result.Error().Status();
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachInput(
+    int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // Get the edge ID for this input
+  auto edge_result = graph_->InputEdge(graph_input_index);
+  if (!edge_result) {
+    return edge_result.Error().Status();
+  }
+  auto edge_id = *edge_result;
+
+  // Call the helper to detach the buffer
+  auto detach_result = DetachTensorBufferHelper(southbound_, this, edge_id,
+                                                tensor_buffer_handle);
+  return detach_result ? kLiteRtStatusOk : detach_result.Error().Status();
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
+    int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // Get the edge ID for this output
+  auto edge_result = graph_->OutputEdge(graph_output_index);
+  if (!edge_result) {
+    return edge_result.Error().Status();
+  }
+  auto edge_id = *edge_result;
+
+  // Call the helper to detach the buffer
+  auto detach_result = DetachTensorBufferHelper(southbound_, this, edge_id,
+                                                tensor_buffer_handle);
+  return detach_result ? kLiteRtStatusOk : detach_result.Error().Status();
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
+  // Prepare for invocation
+  auto prepare_result =
+      PrepareForInvoke(southbound_, this, /*create_output_sync_fence=*/false);
+  if (!prepare_result) {
+    return prepare_result.Error().Status();
+  }
+
+  // Invoke once
+  auto invoke_result = InvokeOnce(southbound_, this);
+  if (!invoke_result) {
+    return invoke_result.Error().Status();
+  }
+
+  // Wait for completion
+  auto wait_result = Wait(southbound_, this);
+  return wait_result ? kLiteRtStatusOk : wait_result.Error().Status();
+}
+
+// Override base class virtual methods for metrics
+LiteRtStatus LiteRtDispatchInvocationContextT::StartMetricsCollection(
+    int detail_level) {
+  auto result = StartMetricsCollectionInternal(detail_level);
+  return result ? kLiteRtStatusOk : result.Error().Status();
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::StopMetricsCollection(
+    LiteRtDispatchMetrics* metrics) {
+  auto result = StopMetricsCollectionInternal(metrics);
+  return result ? kLiteRtStatusOk : result.Error().Status();
 }

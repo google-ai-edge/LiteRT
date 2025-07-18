@@ -26,11 +26,12 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "litert/vendors/google_tensor/dispatch/dispatch_api.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
-class LiteRtDispatchInvocationContextT {
+class LiteRtDispatchInvocationContextT
+    : public litert::vendors::VendorInvocationContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
@@ -52,21 +53,15 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
 
-  litert::Expected<void> AttachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> AttachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<void> DetachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> DetachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<void> Invoke();
   litert::Expected<void> InvokeAsync(int num_output_events,
                                      LiteRtEvent* output_events);
-  litert::Expected<void> StartMetricsCollection(int detail_level);
-  litert::Expected<void> StopMetricsCollection(LiteRtDispatchMetrics* metrics);
+  litert::Expected<void> StartMetricsCollectionInternal(int detail_level);
+  litert::Expected<void> StopMetricsCollectionInternal(
+      LiteRtDispatchMetrics* metrics);
+
+  // Override base class virtual methods for metrics
+  LiteRtStatus StartMetricsCollection(int detail_level) override;
+  LiteRtStatus StopMetricsCollection(LiteRtDispatchMetrics* metrics) override;
 
   litert::Expected<void> AttachInputEvent(int graph_input_index,
                                           LiteRtEvent input_event);
@@ -78,6 +73,23 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchDeviceContext device_context() { return device_context_; }
 
   LiteRtDispatchGraph graph() { return graph_; }
+
+  // Overrides from VendorInvocationContext
+  LiteRtStatus AttachInput(int graph_input_idx,
+                           LiteRtTensorBufferHandle handle) override;
+
+  LiteRtStatus AttachOutput(int graph_output_idx,
+                            LiteRtTensorBufferHandle handle) override;
+
+  LiteRtStatus DetachInput(int graph_input_idx,
+                           LiteRtTensorBufferHandle handle) override;
+
+  LiteRtStatus DetachOutput(int graph_output_idx,
+                            LiteRtTensorBufferHandle handle) override;
+
+  LiteRtStatus Invoke() override;
+
+  void* GetBackendContext() override { return thr_invocation_context_; }
 
  private:
   LiteRtDispatchInvocationContextT(
