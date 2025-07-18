@@ -32,17 +32,12 @@ namespace {
 using ::litert::internal::GetTflOptions;
 
 TEST(GraphHelpersTest, TestSingleOpModel) {
-  TensorDetails lhs = {std::vector<int32_t>{1, 2, 3}, kLiteRtElementTypeInt32,
-                       "lhs"};
+  TensorDetails lhs = {{1, 2, 3}, kLiteRtElementTypeInt32, "lhs"};
 
-  const int32_t kRhsData = 1;
-  OwningBufferRef<uint8_t> rhs_data(reinterpret_cast<const uint8_t*>(&kRhsData),
-                                    sizeof(kRhsData));
-  TensorDetails rhs = {std::vector<int32_t>{}, kLiteRtElementTypeInt32, "cst",
-                       std::move(rhs_data)};
+  TensorDetails rhs = {
+      {}, kLiteRtElementTypeInt32, "cst", MakeBufferRef<int32_t>({1})};
 
-  TensorDetails output = {std::vector<int32_t>{1, 2, 3},
-                          kLiteRtElementTypeInt32, "output"};
+  TensorDetails output = {{1, 2, 3}, kLiteRtElementTypeInt32, "output"};
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model, SingleOpModel<kLiteRtOpCodeTflAdd>(
@@ -83,7 +78,7 @@ TEST(GraphHelpersTest, TestSingleOpModel) {
   {
     const auto& rhs_tensor = sg.Tensor(1);
     EXPECT_EQ(rhs_tensor.Name(), "cst");
-    EXPECT_EQ(rhs_tensor.Weights().Buffer().Size(), sizeof(kRhsData));
+    EXPECT_EQ(rhs_tensor.Weights().Buffer().Size(), sizeof(int32_t));
   }
 
   {
