@@ -312,6 +312,7 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
