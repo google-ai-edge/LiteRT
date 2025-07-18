@@ -40,6 +40,12 @@ typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+#import <Metal/Metal.h>
+
+#include "tflite/delegates/gpu/metal/metal_device.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 namespace litert::internal {
 
 struct GpuEnvironmentProperties {
@@ -60,6 +66,9 @@ struct GpuEnvironmentProperties {
 
   // Indicates whether AHWB->GL interop is supported.
   bool is_ahwb_gl_interop_supported = false;
+
+  // Indicates whether Metal is available.
+  bool is_metal_available = false;
 };
 
 struct GpuEnvironmentOptions {
@@ -89,6 +98,11 @@ struct GpuEnvironmentOptions {
   WGPUDevice webgpu_device = nullptr;
   WGPUQueue webgpu_queue = nullptr;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  id<MTLDevice> metal_device = nullptr;
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 };
 
 // A class for storing the MLD global environment and kept in Environment.
@@ -110,6 +124,10 @@ class GpuEnvironment {
   WGPUDevice getWebGpuDevice() { return webgpu_device_; }
   WGPUQueue getWebGpuQueue() { return webgpu_queue_; }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
+  tflite::gpu::metal::MetalDevice* getMetalDevice() { return &metal_device_; }
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // Create a GpuEnvironment with the given environment.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
@@ -144,6 +162,10 @@ class GpuEnvironment {
   WGPUDevice webgpu_device_;
   WGPUQueue webgpu_queue_;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  tflite::gpu::metal::MetalDevice metal_device_;
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;

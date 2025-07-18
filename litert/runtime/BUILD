@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts", "metal_linkopts", "metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -25,6 +25,8 @@ cc_library(
     name = "event",
     srcs = ["event.cc"],
     hdrs = ["event.h"],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
     deps = [
         ":gpu_environment",
         "//litert/c:litert_common",
@@ -68,6 +70,7 @@ cc_library(
         "gl_buffer.h",
         "gl_texture.h",
         "ion_buffer.h",
+        "litert_gpu_util.h",
         "open_cl_memory.h",
         "open_cl_sync.h",
         "tensor_buffer.h",
@@ -76,7 +79,8 @@ cc_library(
         "webgpu_buffer.h",
         "//litert/c:litert_tensor_buffer.h",
     ],
-    linkopts = gles_linkopts(),
+    copts = metal_opts(),
+    linkopts = gles_linkopts() + metal_linkopts(),
     deps = [
         ":gpu_environment",
         "//litert/c:litert_common",
@@ -122,6 +126,8 @@ cc_library(
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
+        "@org_tensorflow//tensorflow:ios": [":metal_memory"],
+        "@org_tensorflow//tensorflow:macos": [":metal_memory"],
         "//conditions:default": [],
     }),
 )
@@ -143,20 +149,61 @@ GPU_ENVIRONMENT_DEPS = [
         "//tflite/delegates/gpu/cl:gl_interop",
         "//tflite/delegates/gpu/gl:egl_environment",
     ],
+    "@org_tensorflow//tensorflow:ios": [
+        "//tflite/delegates/gpu/metal:metal_device",
+        # copybara:uncomment_begin (google-only)
+        # "//third_party/apple_frameworks:Metal",
+        # copybara:uncomment_end
+    ],
+    "@org_tensorflow//tensorflow:macos": [
+        "//tflite/delegates/gpu/metal:metal_device",
+        # copybara:uncomment_begin (google-only)
+        # "//third_party/apple_frameworks:Metal",
+        # copybara:uncomment_end
+    ],
     "//conditions:default": [],
 })
 
 cc_library(
     name = "gpu_environment_header",
     hdrs = ["gpu_environment.h"],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS,
+)
+
+objc_library(
+    name = "gpu_environment_header_objc",
+    hdrs = ["gpu_environment.h"],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:cl_device",
+        "@opencl_headers",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [
+            "//tflite/delegates/gpu/cl:gl_interop",
+            "//tflite/delegates/gpu/gl:egl_environment",
+        ],
+        "@org_tensorflow//tensorflow:ios": ["//tflite/delegates/gpu/metal:metal_device"],
+        "@org_tensorflow//tensorflow:macos": ["//tflite/delegates/gpu/metal:metal_device"],
+        "//conditions:default": [],
+    }),
 )
 
 cc_library(
     name = "gpu_environment",
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
-    linkopts = gles_linkopts(),
+    copts = metal_opts(),
+    linkopts = gles_linkopts() + metal_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options",
         "//litert/core:environment",
@@ -488,6 +535,21 @@ cc_library(
     deps = ["//litert/c/options:litert_google_tensor_options_type"],
 )
 
+cc_library(
+    name = "litert_gpu_util",
+    hdrs = ["litert_gpu_util.h"],
+    deps = [
+        "//litert/c:litert_dispatch_headers",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:shape",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
 cc_test(
     name = "profiler_test",
     srcs = ["profiler_test.cc"],
@@ -498,5 +560,74 @@ cc_test(
         "//tflite/core/api",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+objc_library(
+    name = "metal_memory",
+    srcs = ["metal_memory.mm"],
+    hdrs = [
+        "metal_memory.h",
+        "tensor_buffer_lockstate.h",
+    ],
+    aspect_hints = [
+        # copybara:uncomment_begin (google-only)
+        # "//tools/build_defs/swift:no_module",
+        # copybara:uncomment_end
+    ],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
+    deps = [
+        ":gpu_environment_header_objc",
+        ":metal_sync",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/synchronization",
+        # copybara:uncomment_begin (google-only)
+        # "//third_party/apple_frameworks:Metal",
+        # copybara:uncomment_end
+        "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/util:tensor_type_util",
+        "//tflite/delegates/gpu/metal:buffer",
+        "//tflite/delegates/gpu/metal:common",
+        "//tflite/delegates/gpu/metal:gpu_object",
+        "//tflite/delegates/gpu/metal:metal_device",
+    ],
+)
+
+objc_library(
+    name = "metal_sync",
+    srcs = ["metal_sync.mm"],
+    hdrs = [
+        "litert_gpu_util.h",
+        "metal_sync.h",
+    ],
+    aspect_hints = [
+        # copybara:uncomment_begin (google-only)
+        # "//tools/build_defs/swift:no_module",
+        # copybara:uncomment_end
+    ],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
+    deps = [
+        ":gpu_environment_header_objc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        # copybara:uncomment_begin (google-only)
+        # "//third_party/apple_frameworks:Metal",
+        # copybara:uncomment_end
+        "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/cc:litert_macros",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:shape",
+        "//tflite/delegates/gpu/common:tensor",
+        "//tflite/delegates/gpu/common/task:tensor_desc",
+        "//tflite/delegates/gpu/metal:metal_device",
+        "//tflite/delegates/gpu/metal:metal_spatial_tensor",
     ],
 )
