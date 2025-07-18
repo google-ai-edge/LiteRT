@@ -232,7 +232,7 @@ LoadModelAndCompilation(
 Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
     litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
-    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchDeviceContextT& device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs) {
@@ -422,59 +422,56 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
   return output_requirements_builders_[output_index]->Create();
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto neuron_memory_info =
-      device_context_->GetNeuronMemoryInfo(tensor_buffer_handle);
+      device_context_.GetNeuronMemoryInfo(tensor_buffer_handle);
   if (!neuron_memory_info) {
-    return litert::Error(neuron_memory_info.Error());
+    return neuron_memory_info.Error().Status();
   }
 
   if (neuron_adapter_api_.api().execution_set_input_from_memory(
           execution_, graph_input_index, nullptr,
           neuron_memory_info->neuron_memory, neuron_memory_info->offset,
           neuron_memory_info->size) != NEURON_NO_ERROR) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Failed to set execution input from memory");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return {};
+  return kLiteRtStatusOk;
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   auto neuron_memory_info =
-      device_context_->GetNeuronMemoryInfo(tensor_buffer_handle);
+      device_context_.GetNeuronMemoryInfo(tensor_buffer_handle);
   if (!neuron_memory_info) {
-    return litert::Error(neuron_memory_info.Error());
+    return neuron_memory_info.Error().Status();
   }
 
   if (neuron_adapter_api_.api().execution_set_output_from_memory(
           execution_, graph_output_index, nullptr,
           neuron_memory_info->neuron_memory, neuron_memory_info->offset,
           neuron_memory_info->size) != NEURON_NO_ERROR) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Failed to set execution output from memory");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return {};
+  return kLiteRtStatusOk;
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::DetachInput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   // Nothing to do.
-  return {};
+  return kLiteRtStatusOk;
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::DetachOutput(
+LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
   // Nothing to do.
-  return {};
+  return kLiteRtStatusOk;
 }
 
-Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
   if (neuron_adapter_api_.api().execution_compute(execution_) !=
       NEURON_NO_ERROR) {
-    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
-                         "Failed to execute network");
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return {};
+  return kLiteRtStatusOk;
 }
