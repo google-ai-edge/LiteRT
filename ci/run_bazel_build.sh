@@ -208,6 +208,7 @@ UBUNTU_EXCLUDED_TARGETS=(
   "-//tflite/tools/benchmark/experimental/delegate_performance/android/..."
   "-//tflite/tools/benchmark/experimental/firebase/android/..."
   # Note: dont need to exclude ios as ios starts with BAZEL.apple
+  "-//litert/vendors/intel_openvino/..."
 )
 
 UBUNTU_EXCLUDED_EXPERIMENTAL_TARGETS=(
