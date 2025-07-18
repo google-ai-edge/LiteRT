@@ -93,6 +93,8 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/tools:dump_test"
         # Requires c++20.
         "-//litert/tools:apply_plugin_test"
+        # Enable once openvino
+        "-//litert/vendors/intel_openvino/..."
 )
 
 
