@@ -15,7 +15,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,11 +35,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
-#include "litert/core/model/model_load.h"
-#include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
+#include "litert/test/generators/graph_helpers.h"
 #include "litert/test/rng_fixture.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -48,11 +45,6 @@ namespace litert {
 namespace testing {
 namespace {
 
-using ::litert::internal::AttachInput;
-using ::litert::internal::AttachOutput;
-using ::litert::internal::LoadModelFromBuffer;
-using ::litert::internal::SerializeModel;
-using ::litert::internal::SetTflOpCodes;
 using ::litert::internal::TflOpCode;
 using ::litert::internal::TflOpCodePtr;
 using ::litert::internal::TflOptions;
@@ -81,8 +73,8 @@ struct NoOp {
   static constexpr size_t kRank = Rank::value;
 
   // Names of the input and output tensor.
-  static constexpr TensorNames<2> kInputNames = {"input"};
-  static constexpr TensorNames<2> kOutputNames = {"output"};
+  static constexpr TensorNames<1> kInputNames = {"input"};
+  static constexpr TensorNames<1> kOutputNames = {"output"};
 
   // Signature name of the model.
   static constexpr absl::string_view kSignatureName = "default";
@@ -116,67 +108,26 @@ struct NoOp {
 
   // Given an instance of random params, construct the graph under test.
   Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
-    LiteRtModelT model;
-    std::vector<TflOpCodePtr> tfl_codes;
+    const std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
 
-    auto& sg = model.EmplaceSubgraph();
+    std::vector<TensorDetails> inputs(2);
+    std::vector<TensorDetails> outputs(1);
 
-    auto& tensor = sg.EmplaceTensor();
-    {
-      tensor.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType),
-                                            params.shape));
-      tensor.SetName(std::string(kInputNames[0]));
-      sg.Inputs().push_back(&tensor);
-    }
+    inputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
+                              std::string(kInputNames[0])};
 
-    auto& cst = sg.EmplaceTensor();
-    {
-      cst.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType), {}));
-      cst.SetName("cst");
-      const T cst_data = 0;
-      BufferRef<uint8_t> cst_buffer(&cst_data, sizeof(T));
-      ::SetWeightsFromUnownedBuffer(cst.Weights(), cst_buffer);
-    }
+    const T cst_data = 0;
+    inputs[1] = TensorDetails{
+        dims, LiteRtElementType(kElementType), "cst",
+        OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&cst_data),
+                                 sizeof(T))};
 
-    auto& output = sg.EmplaceTensor();
-    {
-      output.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType),
-                                            params.shape));
-      output.SetName(std::string(kOutputNames[0]));
-      sg.Outputs().push_back(&output);
-    }
+    outputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
+                               std::string(kOutputNames[0])};
 
-    auto& op = sg.EmplaceOp();
-    {
-      op.SetOpCode(kLiteRtOpCodeTflAdd);
-      TflOptions opts;
-      opts.type = FbTypes::kBuiltinOptions;
-      typename FbTypes::OptionsT add_opts;
-      add_opts.fused_activation_function =
-          ::tflite::ActivationFunctionType_NONE;
-      add_opts.pot_scale_int16 = false;
-      opts.Set(std::move(add_opts));
-      internal::SetTflOptions(op, std::move(opts));
-      auto code = std::make_unique<TflOpCode>();
-      code->builtin_code = FbTypes::kBuiltinOperator;
-      code->version = 1;
-      internal::SetTflOpCodeInd(op, tfl_codes.size());
-      tfl_codes.push_back(std::move(code));
-    }
-
-    AttachInput(&tensor, op);
-    AttachInput(&cst, op);
-    AttachOutput(&output, op);
-
-    std::vector<std::string> input_names = {std::string(kInputNames[0])};
-    std::vector<std::string> output_names = {std::string(kOutputNames[0])};
-    model.EmplaceSignature(&sg, std::move(input_names), std::move(output_names),
-                           std::string(kSignatureName));
-
-    SetTflOpCodes(model, std::move(tfl_codes));
-
-    LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
-    return LoadModelFromBuffer(std::move(serialized));
+    return SingleOpModel<kLiteRtOpCodeTflAdd>(
+        inputs, outputs, ::tflite::ActivationFunctionType_NONE,
+        /*pot_scale_int16=*/false);
   }
 
   // Generate an instance of the random params for this test logic with the
