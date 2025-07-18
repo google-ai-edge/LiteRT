@@ -28,6 +28,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
 #include "litert/vendors/qualcomm/context_binary_info.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -36,7 +37,8 @@
 
 class LiteRtDispatchDeviceContextT;
 
-class LiteRtDispatchInvocationContextT {
+class LiteRtDispatchInvocationContextT
+    : public litert::vendors::VendorInvocationContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
 
@@ -47,20 +49,27 @@ class LiteRtDispatchInvocationContextT {
       LiteRtDispatchDeviceContextT& device_context,
       const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name);
 
+  // Override base class methods
+  LiteRtStatus AttachInput(
+      int graph_input_index,
+      LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus AttachOutput(
+      int graph_output_index,
+      LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus DetachInput(
+      int graph_input_index,
+      LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus DetachOutput(
+      int graph_output_idx,
+      LiteRtTensorBufferHandle tensor_buffer_handle) override;
+  LiteRtStatus Invoke() override;
+  void* GetBackendContext() override { return context_handle_.get(); }
+
+  // Qualcomm-specific methods
   litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
       int input_index, const LiteRtRankedTensorType& tensor_type);
   litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
       int output_index, const LiteRtRankedTensorType& tensor_type);
-
-  litert::Expected<void> AttachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> AttachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-
-  litert::Expected<void> DetachInput(
-      int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
-  litert::Expected<void> DetachOutput(
-      int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle);
 
   litert::Expected<void> Execute();
 

@@ -22,9 +22,11 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/common/vendor_dispatch_base.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
-class LiteRtDispatchDeviceContextT {
+class LiteRtDispatchDeviceContextT
+    : public litert::vendors::VendorDeviceContext {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
   struct NeuronMemoryInfo {
@@ -36,7 +38,11 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
-      const litert::mediatek::NeuronAdapterApi& neuron_adapter_api);
+      const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+      const LiteRtDispatchDeviceContext& device_context);
+
+  // Override base class method
+  void* GetBackendContext() override { return nullptr; }
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
@@ -75,9 +81,11 @@ class LiteRtDispatchDeviceContextT {
     std::vector<NeuronMemoryInfo> records_;
   };
 
-  explicit LiteRtDispatchDeviceContextT(
-      const litert::mediatek::NeuronAdapterApi& neuron_adapter_api)
-      : neuron_adapter_api_(neuron_adapter_api),
+  LiteRtDispatchDeviceContextT(
+      const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+      const LiteRtDispatchDeviceContext& device_context)
+      : litert::vendors::VendorDeviceContext(device_context),
+        neuron_adapter_api_(neuron_adapter_api),
         neuron_memory_registry_(neuron_adapter_api) {}
 
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
