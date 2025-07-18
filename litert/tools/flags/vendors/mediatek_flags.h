@@ -76,8 +76,7 @@ namespace litert::mediatek {
 
 Expected<MediatekOptions> MediatekOptionsFromFlags();
 
-#endif
-
 }  // namespace litert::mediatek
 
+#endif  // INCLUDE_MEDIATEK_COMPILE_FLAGS || INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_VENDORS_MEDIATEK_FLAGS_H_
