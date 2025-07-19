@@ -24,6 +24,7 @@ cc_library(
         ":quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

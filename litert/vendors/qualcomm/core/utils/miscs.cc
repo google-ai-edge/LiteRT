@@ -5,7 +5,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -59,11 +58,6 @@ bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
     return false;
   }
   return true;
-}
-
-bool IsStrEndsWith(std::string_view str, std::string_view suffix) {
-  return str.size() >= suffix.size() &&
-         str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 }  // namespace qnn
