@@ -254,3 +254,40 @@ cc_library(
         "//litert/c:litert_logging",
     ],
 )
+
+cc_library(
+    name = "error_reporter",
+    srcs = ["error_reporter.cc"],
+    hdrs = ["error_reporter.h"],
+    deps = [
+        "//litert/c:litert_logging",
+    ],
+)
+
+cc_library(
+    name = "stateful_error_reporter",
+    hdrs = ["stateful_error_reporter.h"],
+    deps = [
+        ":error_reporter",
+    ],
+)
+
+cc_library(
+    name = "buffer_error_reporter",
+    srcs = ["buffer_error_reporter.cc"],
+    hdrs = ["buffer_error_reporter.h"],
+    deps = [
+        ":stateful_error_reporter",
+    ],
+)
+
+cc_test(
+    name = "error_reporter_test",
+    srcs = ["error_reporter_test.cc"],
+    deps = [
+        ":buffer_error_reporter",
+        ":error_reporter",
+        ":stateful_error_reporter",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

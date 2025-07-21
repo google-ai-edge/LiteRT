@@ -181,6 +181,28 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_error_reporter",
+    srcs = ["litert_error_reporter.cc"],
+    hdrs = ["litert_error_reporter.h"],
+    deps = [
+        ":litert_common",
+        "//litert/core:buffer_error_reporter",
+        "//litert/core:error_reporter",
+        "//litert/core:stateful_error_reporter",
+    ],
+)
+
+cc_test(
+    name = "litert_error_reporter_test",
+    srcs = ["litert_error_reporter_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_error_reporter",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_layout",
     srcs = ["litert_layout.cc"],
     hdrs = ["litert_layout.h"],
