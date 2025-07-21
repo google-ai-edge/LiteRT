@@ -123,10 +123,10 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
 
   ElementType ElementType() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
-      LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType())
+      LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType());
       return static_cast<enum ElementType>(tensor_type.element_type);
     } else {
-      LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType())
+      LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType());
       return tensor_type.ElementType();
     }
   }

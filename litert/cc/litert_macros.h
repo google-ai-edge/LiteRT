@@ -162,7 +162,9 @@ class ErrorStatusBuilder {
   operator absl::Status() const noexcept { return ToAbslStatus(); }
 
   template <class T>
-  operator absl::StatusOr<T>() const noexcept { return ToAbslStatus(); }
+  operator absl::StatusOr<T>() const noexcept {
+    return ToAbslStatus();
+  }
   // NOLINTEND(*-explicit-constructor)
 
   static constexpr bool IsError(bool status) { return !status; }
@@ -294,7 +296,7 @@ class LogBeforeAbort {
     [[maybe_unused]] ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));    \
     return RETURN_VALUE;                                                    \
   }                                                                         \
-  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value());
+  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value())
 
 #define LITERT_ASSIGN_OR_ABORT_SELECT_OVERLOAD_HELPER(_1, _2, _3, OVERLOAD, \
                                                       ...)                  \
@@ -312,7 +314,7 @@ class LogBeforeAbort {
     ::litert::ErrorStatusBuilder _(std::move(TMP_VAR));                      \
     ::litert::LogBeforeAbort(std::move((LOG_EXPRESSION)));                   \
   }                                                                          \
-  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value());
+  _LITERT_STRIP_PARENS(DECL) = std::move(TMP_VAR.Value())
 
 #define _CONCAT_NAME_IMPL(x, y) x##y
 

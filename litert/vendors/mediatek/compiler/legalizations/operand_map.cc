@@ -75,7 +75,7 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
       if (tensor_type.ElementType() == ElementType::Int4) {
         // Unpack Int4 into Int8
         new_bytes = num_element * sizeof(int8_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
         LITERT_LOG(LITERT_INFO, "\nUnpack Int4 into Int8, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(UnpackDenseInt4IntoInt8(
@@ -84,7 +84,7 @@ Expected<uint32_t> OperandMap::Register(const Tensor& t, int32_t tensor_flags) {
       } else if (tensor_type.ElementType() == ElementType::Int64) {
         // Cast Int64 into Int32
         new_bytes = num_element * sizeof(int32_t);
-        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes))
+        LITERT_ASSIGN_OR_RETURN(extra_data_idx, RegisterExtraData(new_bytes));
         LITERT_LOG(LITERT_INFO, "\nCast Int64 into Int32, new bytes: %d",
                    new_bytes);
         LITERT_RETURN_IF_ERROR(CastInt64IntoInt32(

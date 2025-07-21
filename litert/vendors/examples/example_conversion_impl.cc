@@ -31,7 +31,7 @@ TensorConverter<ExampleTensor> MakeTensorConverter(
     auto& tensor = *alloc();
     tensor.name = litert_tensor.Name();
 
-    LITERT_ASSIGN_OR_RETURN(auto litert_type, litert_tensor.RankedTensorType())
+    LITERT_ASSIGN_OR_RETURN(auto litert_type, litert_tensor.RankedTensorType());
 
     const auto litert_dims = litert_type.Layout().Dimensions();
     tensor.dims.assign(litert_dims.cbegin(), litert_dims.cend());
