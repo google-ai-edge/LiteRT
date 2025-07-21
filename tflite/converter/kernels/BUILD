@@ -1,0 +1,25 @@
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+
+package(
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    default_visibility = [
+        "//visibility:public",
+    ],
+    licenses = ["notice"],
+)
+
+# LINT.IfChange(cc_library_padding)
+cc_library(
+    name = "padding",
+    srcs = [],
+    hdrs = ["padding.h"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = [
+        "//tflite/converter/kernels:__pkg__",
+        "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/utils:__pkg__",
+    ],
+    deps = [
+        "//tflite/converter/core/c:tflite_common",
+    ],
+)
+# LINT.ThenChange(//depot/google3/third_party/tensorflow/lite/kernels/BUILD)
