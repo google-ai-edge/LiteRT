@@ -71,3 +71,6 @@ Currently, the following devices are supported:
 | Mediatek | MT6985    |  15             | Mediatek_MT6985_ANDROID_15 |
 | Mediatek | MT6989    |  15             | Mediatek_MT6989_ANDROID_15 |
 | Mediatek | MT6991    |  15             | Mediatek_MT6991_ANDROID_15 |
+| Google   | G3        |  16             | Google_Tensor_G3           |
+| Google   | G4        |  16             | Google_Tensor_G4           |
+| Google   | G5        |  16             | Google_Tensor_G5           |
