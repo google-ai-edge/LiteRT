@@ -85,7 +85,7 @@ litert_test(
     ],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     data = [
-        "//litert/test:mlir_test_data",
+        # "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
     linkopts = select({
