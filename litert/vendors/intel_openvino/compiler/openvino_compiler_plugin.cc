@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
+#include "openvino/openvino.hpp"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -29,8 +31,6 @@
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/intel_openvino/compiler/graph_iterator.h"
-#include "third_party/openvino/frontend/tensorflow_lite/frontend.hpp"
-#include "third_party/openvino/openvino.hpp"
 namespace {
 
 constexpr char kPluginManufacturer[] = "IntelOpenVINO";

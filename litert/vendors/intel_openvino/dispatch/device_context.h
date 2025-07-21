@@ -18,13 +18,13 @@
 
 #include <sys/mman.h>
 
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
+#include "openvino/runtime/remote_context.hpp"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
-#include "third_party/openvino/runtime/core.hpp"
-#include "third_party/openvino/runtime/intel_npu/level_zero/level_zero.hpp"
-#include "third_party/openvino/runtime/remote_context.hpp"
 
 class LiteRtDispatchDeviceContextT {
  public:

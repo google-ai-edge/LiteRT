@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
+#include "litert/vendors/intel_openvino/compiler/decoder.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -30,7 +31,6 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"
-#include "litert/vendors/intel_openvino/compiler/decoder.h"
 
 namespace litert {
 namespace openvino {

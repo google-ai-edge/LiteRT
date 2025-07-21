@@ -16,12 +16,12 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
+#include "openvino/runtime/core.hpp"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
-#include "third_party/openvino/runtime/core.hpp"
 
 class LiteRtDispatchDeviceContextT;
 

@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <string>
 
+#include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -29,7 +30,6 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
-#include "third_party/openvino/frontend/tensorflow_lite/frontend.hpp"
 
 namespace litert {
 namespace {
