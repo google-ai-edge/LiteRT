@@ -87,7 +87,7 @@ case "${ARCH}" in
     ;;
 esac
 
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=c++17 --config=monolithic --config=nogcp --config=nonccl \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
 # Move the wheel file to the root directory since it is not accessible from the

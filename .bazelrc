@@ -165,6 +165,7 @@ build:apple-toolchain --host_crosstool_top=@local_config_apple_cc//:toolchain
 # Settings for MacOS on ARM CPUs.
 build:macos_arm64 --config=macos
 build:macos_arm64 --cpu=darwin_arm64
+build:macos_arm64 --cxxopt=-std=c++17
 build:macos_arm64 --macos_minimum_os=11.0
 build:macos_arm64 --platforms=@build_bazel_apple_support//configs/platforms:darwin_arm64
 
