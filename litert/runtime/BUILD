@@ -195,6 +195,10 @@ cc_library(
     name = "gpu_environment",
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
+    features = select({
+        "@org_tensorflow//tensorflow:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
     linkopts = gles_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options",
