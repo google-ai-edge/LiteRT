@@ -179,4 +179,25 @@ LiteRtStatus SoftmaxOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus StridedSliceOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflStridedSlice) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceBeginMaskOption(op, &begin_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceEndMaskOption(op, &end_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceEllipsisMaskOption(op, &ellipsis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceNewAxisMaskOption(op, &new_axis_mask));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetStridedSliceShrinkAxisMaskOption(op, &shrink_axis_mask));
+  LITERT_RETURN_IF_ERROR(LiteRtGetStridedSliceOffsetOption(op, &offset));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
