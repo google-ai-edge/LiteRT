@@ -24,6 +24,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
@@ -290,8 +291,8 @@ class CtsTest : public RngTest {
   static Expected<void> Register(size_t id, Rng& rng) {
     using TestClass = CtsTest<Logic, Executor>;
 
-    const auto suite_name =
-        absl::StrFormat("cts_%lu_%s", id, Logic::Name().data());
+    const auto suite_name = absl::StrFormat(
+        "%s_cts_%lu_%s", TestExecutor::Name(), id, Logic::Name().data());
     LITERT_LOG(LITERT_VERBOSE, "Starting registration for %s",
                suite_name.c_str());
 
@@ -330,6 +331,9 @@ class CtsTest : public RngTest {
 
     CheckOutputs(actual, ref, std::make_index_sequence<kNumOutputs>());
   }
+
+  // Name of the dependent logic.
+  static absl::string_view LogicName() { return Logic::Name(); }
 
  private:
   CtsTest(LiteRtModelT::Ptr model, Logic::Traits::Params params, Logic logic)
@@ -385,13 +389,14 @@ class RegisterFunctor {
  public:
   template <typename Logic>
   void operator()() {
-    using TestClassType = CtsTest<Logic>;
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
-      if (auto status = TestClassType::Register(test_id_++, device); !status) {
-        LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
-                   test_id_, Logic::Name().data(),
-                   status.Error().Message().c_str());
+      if (options_.Backend() == CtsOptions::ExecutionBackend::kCpu) {
+        CallRegister<CtsTest<Logic, CpuCompiledModelExecutor>>(device);
+      } else if (options_.Backend() == CtsOptions::ExecutionBackend::kGpu) {
+        ABSL_CHECK(false) << "GPU backend not supported yet.";
+      } else if (options_.Backend() == CtsOptions::ExecutionBackend::kNpu) {
+        ABSL_CHECK(false) << "NPU backend not supported yet.";
       }
     }
   }
@@ -400,6 +405,15 @@ class RegisterFunctor {
       : iters_(iters), test_id_(test_id), options_(options) {}
 
  private:
+  template <typename TestClass, typename Device>
+  void CallRegister(Device& device) {
+    if (auto status = TestClass::Register(test_id_++, device); !status) {
+      LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
+                 test_id_, TestClass::LogicName().data(),
+                 status.Error().Message().c_str());
+    }
+  }
+
   const size_t iters_;
   size_t& test_id_;
   const CtsOptions& options_;
