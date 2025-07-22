@@ -213,6 +213,22 @@ TEST(OpOptionsTest, GetMulOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetSoftmaxOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSoftmax);
+  tflite::SoftmaxOptionsT options;
+  options.beta = 1.0;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SoftmaxOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SoftmaxOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->beta, 1.0);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -222,6 +238,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<DivOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<FullyConnectedOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MulOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SoftmaxOptions>(&op));
 }
 
 }  // namespace
