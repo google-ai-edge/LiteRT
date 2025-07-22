@@ -140,6 +140,9 @@ build --action_env ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION}"\n\
 build --action_env TF_CONFIGURE_IOS="${TF_CONFIGURE_IOS}"\n\
 build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
 build --action_env TF_NEED_CLANG="${TF_NEED_CLANG}"\n\
+build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
+build --repo_env=CC="${CLANG_COMPILER_PATH}"\n\
+build --repo_env=BAZEL_COMPILER="${CLANG_COMPILER_PATH}"\n\
 EOL\n\
 \n\
 /litert_build/configure --workspace=/litert_build\n\
