@@ -364,6 +364,18 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_tensor_buffer_registry",
+    srcs = ["litert_tensor_buffer_registry.cc"],
+    hdrs = ["litert_tensor_buffer_registry.h"],
+    deps = [
+        ":litert_common",
+        ":litert_tensor_buffer_types",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:tensor_buffer_registry",
+    ],
+)
+
 cc_test(
     name = "litert_tensor_buffer_requirements_test",
     srcs = [
@@ -661,6 +673,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_profiler",
     ":litert_tensor_buffer",
     ":litert_external_litert_buffer_context",
+    ":litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_google_tensor_options",

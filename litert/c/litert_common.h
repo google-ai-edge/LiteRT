@@ -161,6 +161,7 @@ typedef enum {
   kLiteRtStatusErrorTimeoutExpired = 7,
   kLiteRtStatusErrorWrongVersion = 8,
   kLiteRtStatusErrorUnknown = 9,
+  kLiteRtStatusErrorAlreadyExists = 10,
 
   // File and loading related errors.
   kLiteRtStatusErrorFileIO = 500,
@@ -208,6 +209,13 @@ typedef enum {
   kLiteRtDelegateBufferStorageTypeBuffer = 1,
   kLiteRtDelegateBufferStorageTypeTexture2D = 2,
 } LiteRtDelegateBufferStorageType;
+
+// Lock mode for tensor buffer.
+typedef enum {
+  kLiteRtTensorBufferLockModeRead = 0,
+  kLiteRtTensorBufferLockModeWrite = 1,
+  kLiteRtTensorBufferLockModeReadWrite = 2,
+} LiteRtTensorBufferLockMode;
 
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;

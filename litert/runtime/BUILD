@@ -49,6 +49,7 @@ cc_library(
     name = "tensor_buffer",
     srcs = [
         "ahwb_buffer.cc",
+        "custom_buffer.cc",
         "dmabuf_buffer.cc",
         "fastrpc_buffer.cc",
         "gl_buffer.cc",
@@ -58,10 +59,10 @@ cc_library(
         "open_cl_sync.cc",
         "tensor_buffer.cc",
         "tensor_buffer_requirements.cc",
-        "webgpu_buffer.cc",
     ],
     hdrs = [
         "ahwb_buffer.h",
+        "custom_buffer.h",
         "dmabuf_buffer.h",
         "event.h",
         "fastrpc_buffer.h",
@@ -73,12 +74,13 @@ cc_library(
         "tensor_buffer.h",
         "tensor_buffer_lockstate.h",
         "tensor_buffer_requirements.h",
-        "webgpu_buffer.h",
+        "//litert/c:litert_custom_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer.h",
     ],
     linkopts = gles_linkopts(),
     deps = [
         ":gpu_environment",
+        ":tensor_buffer_registry",
         "//litert/c:litert_common",
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
@@ -124,6 +126,43 @@ cc_library(
         ],
         "//conditions:default": [],
     }),
+)
+
+cc_library(
+    name = "tensor_buffer_registry",
+    srcs = ["tensor_buffer_registry.cc"],
+    hdrs = [
+        "tensor_buffer_registry.h",
+        "//litert/c:litert_custom_tensor_buffer.h",
+    ],
+    visibility = [
+        "//litert/c:__subpackages__",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_tensor_buffer_utils",
+        "@com_google_absl//absl/strings",
+    ],
+)
+
+cc_test(
+    name = "tensor_buffer_registry_test",
+    srcs = ["tensor_buffer_registry_test.cc"],
+    deps = [
+        ":tensor_buffer",
+        ":tensor_buffer_registry",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 GPU_ENVIRONMENT_DEPS = [

@@ -97,6 +97,8 @@ absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::FailedPreconditionError(error_.Message());
     case kLiteRtStatusErrorUnknown:
       return absl::UnknownError(error_.Message());
+    case kLiteRtStatusErrorAlreadyExists:
+      return absl::AlreadyExistsError(error_.Message());
     case kLiteRtStatusErrorFileIO:
       return absl::UnavailableError(error_.Message());
     case kLiteRtStatusErrorInvalidFlatbuffer:

@@ -36,6 +36,7 @@ enum class Status(val code: Int) {
   ErrorTimeoutExpired(7),
   ErrorWrongVersion(8),
   ErrorUnknown(9),
+  ErrorAlreadyExists(10),
 
   // File and loading related errors.
   ErrorFileIO(500),

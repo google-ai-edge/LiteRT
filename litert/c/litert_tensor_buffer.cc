@@ -273,22 +273,6 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
-LiteRtStatus LiteRtCreateTensorBufferFromWebGpuBuffer(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, WGPUBuffer webgpu_buffer,
-    size_t opencl_buffer_size, LiteRtWebGpuBufferDeallocator deallocator,
-    LiteRtTensorBuffer* tensor_buffer) {
-  if (!tensor_type || !tensor_buffer) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
-                          LiteRtTensorBufferT::CreateFromWebGpuBuffer(
-                              env, *tensor_type, buffer_type, webgpu_buffer,
-                              opencl_buffer_size, deallocator));
-  *tensor_buffer = created_tensor_buffer.release();
-  return kLiteRtStatusOk;
-}
-
 // Return an error if the backing buffer is not a WebGpu buffer.
 LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(LiteRtTensorBuffer tensor_buffer,
                                                WGPUBuffer* webgpu_buffer_addr) {
@@ -296,9 +280,10 @@ LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(LiteRtTensorBuffer tensor_buffer,
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  LITERT_ASSIGN_OR_RETURN(auto webgpu_buffer, tensor_buffer->GetWebGpuBuffer());
+  LITERT_ASSIGN_OR_RETURN(auto webgpu_buffer, tensor_buffer->GetCustomBuffer());
 
-  *webgpu_buffer_addr = webgpu_buffer->GetMemoryPtr();
+  *webgpu_buffer_addr =
+      reinterpret_cast<WGPUBuffer>(webgpu_buffer->hw_buffer_handle());
   return kLiteRtStatusOk;
 }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT

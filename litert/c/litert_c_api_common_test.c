@@ -38,6 +38,7 @@
 #include "litert/c/litert_profiler_event.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer.h"   // NOLINT
 #include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
+#include "litert/c/litert_tensor_buffer_registry.h"  // NOLINT
 #include "litert/c/options/litert_cpu_options.h"  // NOLINT
 #include "litert/c/options/litert_google_tensor_options.h"  // NOLINT
 #include "litert/c/options/litert_google_tensor_options_type.h"  // NOLINT
