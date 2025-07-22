@@ -45,6 +45,8 @@ include(":ai_pack:selfie_multiclass")
 
 include(":ai_pack:selfie_multiclass_mtk")
 
+include(":ai_pack:selfie_multiclass_google_tensor")
+
 // NPU runtime libraries
 include(":litert_npu_runtime_libraries:runtime_strings")
 
@@ -57,3 +59,5 @@ include(":litert_npu_runtime_libraries:qualcomm_runtime_v73")
 include(":litert_npu_runtime_libraries:qualcomm_runtime_v75")
 
 include(":litert_npu_runtime_libraries:qualcomm_runtime_v79")
+
+include(":litert_npu_runtime_libraries:google_tensor_runtime")
