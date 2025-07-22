@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_op_code.h"
@@ -79,11 +80,24 @@ struct TestLogicTraits {
   // Typing utility for defining the signature of a reference implementation
   // from a set of input and output primitive types.
   template <typename... Ts>
-  static auto MakeRefernceInputs(TypeList<Ts...>)
+  static auto RefInputTypes(TypeList<Ts...>)
       -> std::tuple<SimpleBuffer::CView<Ts>...>;
   template <typename... Ts>
-  static auto MakeRefernceOutputs(TypeList<Ts...>)
+  static auto RefOutputTypes(TypeList<Ts...>)
       -> std::tuple<SimpleBuffer::View<Ts>...>;
+
+  // Metaprogramming helper to grab the typed views from the tensor buffers
+  // to pass to the reference implementation.
+  template <typename ReferenceTensors, typename Buffers, size_t... Is>
+  static ReferenceTensors MakeReferenceTensors(Buffers& inputs,
+                                               std::index_sequence<Is...>) {
+    return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
+  }
+  template <typename ReferenceTensors, typename Buffers>
+  static ReferenceTensors MakeReferenceTensors(Buffers& inputs) {
+    return MakeReferenceTensors<ReferenceTensors>(
+        inputs, std::make_index_sequence<kNumInputs>());
+  }
 
  public:
   // Inputs for this test logic for the compiled model api.
@@ -93,10 +107,10 @@ struct TestLogicTraits {
   using OutputBuffers = std::array<SimpleBuffer, OutputTypes::kSize>;
 
   // Inputs for the reference implementation.
-  using ReferenceInputs = decltype(MakeRefernceInputs(InputTypes()));
+  using ReferenceInputs = decltype(RefInputTypes(InputTypes()));
 
   // Outputs for the reference implementation.
-  using ReferenceOutputs = decltype(MakeRefernceOutputs(OutputTypes()));
+  using ReferenceOutputs = decltype(RefOutputTypes(OutputTypes()));
 
   // Parameters that encapsulate all of the randomized values for this test.
   using Params = P;
@@ -109,6 +123,22 @@ struct TestLogicTraits {
   template <size_t N>
   using OutputDataType =
       typename std::tuple_element_t<N, ReferenceOutputs>::Type;
+
+  // Number of inputs.
+  static constexpr size_t kNumInputs = InputTypes::kSize;
+
+  // Number of outputs.
+  static constexpr size_t kNumOutputs = OutputTypes::kSize;
+
+  // Get the typed reference input views from the input buffers.
+  static ReferenceInputs MakeReferenceInputs(const InputBuffers& inputs) {
+    return MakeReferenceTensors<ReferenceInputs>(inputs);
+  }
+
+  // Get the typed reference output views from the output buffers.
+  static ReferenceOutputs MakeReferenceOutputs(OutputBuffers& outputs) {
+    return MakeReferenceTensors<ReferenceOutputs>(outputs);
+  }
 };
 
 // Shorthand for compile time constants of misc types. Due to constraints
