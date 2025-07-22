@@ -36,9 +36,12 @@
 #include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/cts/compiled_model_executor.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
+#include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
+#include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert {
@@ -93,6 +96,13 @@ struct NoOp {
   // Utility for mapping litert ops to corresponding tflite schema types.
   using FbTypes = FbOpTypes<kLiteRtOpCodeTflAdd>;
 
+  // Configs the random tensor data behavior. Can configure per datatype
+  // if desired.
+  template <typename TT>
+  struct RandomTensorBufferTraits {
+    using Gen = RandomTensorData<TT>;
+  };
+
  public:
   // Defines consituent types needed by the driver code. All test logics
   // must have one of these as a public member type.
@@ -118,7 +128,9 @@ struct NoOp {
 
     const T cst_data = 0;
     inputs[1] = TensorDetails{
-        dims, LiteRtElementType(kElementType), "cst",
+        {},
+        LiteRtElementType(kElementType),
+        "cst",
         OwningBufferRef<uint8_t>(reinterpret_cast<const uint8_t*>(&cst_data),
                                  sizeof(T))};
 
@@ -149,23 +161,30 @@ struct NoOp {
   template <typename Rng>
   Expected<typename Traits::InputBuffers> MakeInputs(Rng& rng,
                                                      const Params& params) {
-    // TODO: Implement.
-    return Error(kLiteRtStatusErrorUnsupported, "Not implemented");
+    LITERT_ASSIGN_OR_RETURN(auto input, SimpleBuffer::Create<T>(params.shape));
+    LITERT_RETURN_IF_ERROR(
+        (input.template WriteRandom<T, RandomTensorBufferTraits>(rng)));
+    return typename Traits::InputBuffers{std::move(input)};
   }
 
   // Initialize output buffers, these will be passed to the compiled model api.
   Expected<typename Traits::OutputBuffers> MakeOutputs(const Params& params) {
-    // TODO: Implement.
-    return Error(kLiteRtStatusErrorUnsupported, "Not implemented");
+    LITERT_ASSIGN_OR_RETURN(auto output, SimpleBuffer::Create<T>(params.shape));
+    return typename Traits::OutputBuffers{std::move(output)};
   }
 
   // Reference implementation which the driver code will compare the actual
   // results against.
   Expected<void> Reference(const Params& params,
                            const Traits::ReferenceInputs& inputs,
-                           const Traits::ReferenceOutputs& outputs) {
-    // TODO: Implement.
-    return Error(kLiteRtStatusErrorUnsupported, "Not implemented");
+                           Traits::ReferenceOutputs& outputs) {
+    auto [input] = inputs;
+    auto [output] = outputs;
+    const size_t num_elements = output.NumElements();
+    for (size_t i = 0; i < num_elements; ++i) {
+      output.data[i] = input.data[i];
+    }
+    return {};
   }
 };
 
@@ -173,11 +192,19 @@ struct NoOp {
 
 // Class that drives all cts test cases. These are specialized with
 // fully specified test logic and executor (backend).
-template <typename TestLogic, typename TestExecutor = void>
+template <typename TestLogic, typename TestExecutor = CpuCompiledModelExecutor>
 class CtsTest : public RngTest {
  private:
   using Logic = TestLogic;
   using Executor = TestExecutor;
+  using Traits = typename Logic::Traits;
+  using Params = typename Traits::Params;
+  using InputBuffers = typename Traits::InputBuffers;
+  using OutputBuffers = typename Traits::OutputBuffers;
+  using ReferenceInputs = typename Traits::ReferenceInputs;
+  using ReferenceOutputs = typename Traits::ReferenceOutputs;
+  static constexpr size_t kNumInputs = Traits::kNumInputs;
+  static constexpr size_t kNumOutputs = Traits::kNumOutputs;
 
  public:
   // Register a fully specified case with gtest. This will generate an instance
@@ -215,16 +242,49 @@ class CtsTest : public RngTest {
     return {};
   }
 
-  // [WIP] Run compiled model with random inputs and compare against the
+  // Run compiled model with random inputs and compare against the
   // reference implementation.
   void TestBody() override {
-    // TODO implement. Call reference and compiled model and compare results.
-    GTEST_SKIP() << "Not implemented";
+    auto device = this->TracedDevice();
+
+    // TODO: for i in inter-test iterations
+    LITERT_ASSERT_OK_AND_ASSIGN(auto inputs,
+                                logic_.MakeInputs(device, params_));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto actual, GetActual(inputs));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto ref, GetReference(inputs));
+
+    // TODO: Implement a custom matcher for tensor data and use it here.
+    ASSERT_EQ(actual.size(), ref.size());
   }
 
  private:
   CtsTest(LiteRtModelT::Ptr model, Logic::Traits::Params params, Logic logic)
       : model_(std::move(model)), params_(std::move(params)) {}
+
+  Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {
+    LITERT_ASSIGN_OR_RETURN(auto exec, Executor::Create(*model_));
+    LITERT_ASSIGN_OR_RETURN(auto actual, exec.Run(inputs));
+    if (actual.size() != kNumOutputs) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrFormat("Expected %d outputs, got %d", kNumOutputs,
+                                   actual.size()));
+    }
+    return VecToArray<kNumOutputs>(std::move(actual));
+  }
+
+  Expected<OutputBuffers> GetReference(const InputBuffers& inputs) {
+    LITERT_ASSIGN_OR_RETURN(auto outputs, logic_.MakeOutputs(params_));
+    auto ref_inputs = Traits::MakeReferenceInputs(inputs);
+    auto ref_outputs = Traits::MakeReferenceOutputs(outputs);
+    LITERT_RETURN_IF_ERROR(logic_.Reference(params_, ref_inputs, ref_outputs));
+    if (outputs.size() != kNumOutputs) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrFormat("Expected %d outputs, got %d", kNumOutputs,
+                                   outputs.size()));
+    }
+    return outputs;
+  }
 
   typename LiteRtModelT::Ptr model_;
   typename Logic::Traits::Params params_;

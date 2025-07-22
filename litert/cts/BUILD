@@ -25,6 +25,7 @@ cc_test(
     name = "cts_main",
     srcs = ["cts_main.cc"],
     deps = [
+        ":compiled_model_executor",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -38,7 +39,9 @@ cc_test(
         "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:matchers",
         "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
         "//litert/test/generators:common",
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
