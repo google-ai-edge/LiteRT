@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <optional>
 #include <type_traits>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
@@ -125,6 +126,14 @@ enum FullyConnectedOptionsWeightsFormatType : uint32_t {
       kFullyConnectedOptionsWeightsFormatShuffled4x16Int8
 };
 
+using Padding = uint32_t;
+enum PaddingType : uint32_t {
+  kPaddingSame = 0,
+  kPaddingValid = 1,
+  kPaddingMin = kPaddingSame,
+  kPaddingMax = kPaddingValid,
+};
+
 // Struct to hold LiteRt composite ops.
 struct CompositeOptions : public OpOptions {
   // Name for special composites representing manual partitions.
@@ -208,6 +217,113 @@ struct SoftmaxOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt StridedSlice op.
+struct StridedSliceOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t begin_mask;
+  int32_t end_mask;
+  int32_t ellipsis_mask;
+  int32_t new_axis_mask;
+  int32_t shrink_axis_mask;
+  bool offset;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Sub op.
+struct SubOptions : public OpOptions {
+  LiteRtOp op;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Reshape op.
+struct ReshapeOptions : public OpOptions {
+  LiteRtOp op;
+  std::vector<int32_t> new_shape;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Sum op.
+struct SumOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt ReduceMax op.
+struct ReduceMaxOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Pack op.
+struct PackOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t axis;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Gather op.
+struct GatherOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t axis;
+  int32_t batch_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Mean op.
+struct MeanOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Split op.
+struct SplitOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t num_splits;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Conv2d op.
+struct Conv2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t dilation_w_factor;
+  int32_t dilation_h_factor;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt Conv3d op.
+struct Conv3dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t stride_d;
+  int32_t dilation_w_factor;
+  int32_t dilation_h_factor;
+  int32_t dilation_d_factor;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt AveragePool2d op.
+struct AveragePool2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t filter_width;
+  int32_t filter_height;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -245,6 +361,54 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, SoftmaxOptions>) {
     SoftmaxOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, StridedSliceOptions>) {
+    StridedSliceOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SubOptions>) {
+    SubOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, ReshapeOptions>) {
+    ReshapeOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SumOptions>) {
+    SumOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, ReduceMaxOptions>) {
+    ReduceMaxOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, PackOptions>) {
+    PackOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, GatherOptions>) {
+    GatherOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, MeanOptions>) {
+    MeanOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SplitOptions>) {
+    SplitOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, Conv2dOptions>) {
+    Conv2dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, Conv3dOptions>) {
+    Conv3dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, AveragePool2dOptions>) {
+    AveragePool2dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {
