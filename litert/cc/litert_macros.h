@@ -144,6 +144,16 @@ class ErrorStatusBuilder {
       litert::SourceLocation loc = litert::SourceLocation::current())
       : error_(std::move(unexpected.Error())), loc_(loc) {}
 
+  explicit ErrorStatusBuilder(
+      absl::Status&& status,
+      litert::SourceLocation loc = litert::SourceLocation::current());
+
+  template <class T>
+  explicit ErrorStatusBuilder(
+      absl::StatusOr<T>&& status,
+      litert::SourceLocation loc = litert::SourceLocation::current())
+      : ErrorStatusBuilder(std::move(status).status(), loc) {}
+
   // NOLINTBEGIN(*-explicit-constructor): This class transparently converts to
   // `LiteRtStatus` and `litert::Expected`.
 
@@ -174,6 +184,13 @@ class ErrorStatusBuilder {
   }
 
   static constexpr bool IsError(const litert::Unexpected&) { return true; }
+
+  static constexpr bool IsError(const absl::Status& s) { return !s.ok(); }
+
+  template <class T>
+  static constexpr bool IsError(const absl::StatusOr<T>& s) {
+    return !s.ok();
+  }
 
   template <class T>
   static constexpr bool IsError(const litert::Expected<T>& expected) {
