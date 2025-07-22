@@ -55,6 +55,8 @@ ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
           "used to generator the randomized parameters for all invocations of "
           "the respective test-generator.");
 
+ABSL_FLAG(bool, quiet, true, "Minimize logging.");
+
 namespace litert {
 namespace testing {
 namespace {
@@ -259,15 +261,16 @@ class CtsTest : public RngTest {
 
     const auto suite_name =
         absl::StrFormat("cts_%lu_%s", id, Logic::Name().data());
-    LITERT_LOG(LITERT_INFO, "Starting registration for %s", suite_name.c_str());
+    LITERT_LOG(LITERT_VERBOSE, "Starting registration for %s",
+               suite_name.c_str());
 
     Logic logic;
 
     LITERT_ASSIGN_OR_RETURN(auto params, logic.GenerateParams(rng));
-    LITERT_LOG(LITERT_INFO, "Generated params.");
+    LITERT_LOG(LITERT_VERBOSE, "Generated params.");
 
     LITERT_ASSIGN_OR_RETURN(auto model, logic.BuildGraph(params));
-    LITERT_LOG(LITERT_INFO, "Built graph.");
+    LITERT_LOG(LITERT_VERBOSE, "Built graph.");
 
     const auto test_name = absl::StrFormat("%v", model->Subgraph(0).Ops());
 
@@ -406,6 +409,9 @@ void RegisterCtsTests() {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
+  if (absl::GetFlag(FLAGS_quiet)) {
+    LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
+  }
   litert::testing::RegisterCtsTests();
   return RUN_ALL_TESTS();
 }
