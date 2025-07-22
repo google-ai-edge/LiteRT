@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -52,6 +53,7 @@ using ::litert::internal::TflOpCode;
 using ::litert::internal::TflOpCodePtr;
 using ::litert::internal::TflOptions;
 using ::testing::RegisterTest;
+using ::testing::litert::MeanSquaredErrorLt;
 
 // EXAMPLE TEST LOGIC //////////////////////////////////////////////////////////
 
@@ -254,8 +256,7 @@ class CtsTest : public RngTest {
     LITERT_ASSERT_OK_AND_ASSIGN(auto actual, GetActual(inputs));
     LITERT_ASSERT_OK_AND_ASSIGN(auto ref, GetReference(inputs));
 
-    // TODO: Implement a custom matcher for tensor data and use it here.
-    ASSERT_EQ(actual.size(), ref.size());
+    CheckOutputs(actual, ref, std::make_index_sequence<kNumOutputs>());
   }
 
  private:
@@ -284,6 +285,21 @@ class CtsTest : public RngTest {
                                    outputs.size()));
     }
     return outputs;
+  }
+
+  template <size_t I>
+  void CheckOutput(const OutputBuffers& actual, const OutputBuffers& ref) {
+    auto actual_span =
+        actual[I].template Span<typename Traits::template OutputDataType<I>>();
+    auto ref_span =
+        ref[I].template Span<typename Traits::template OutputDataType<I>>();
+    EXPECT_THAT(actual_span, MeanSquaredErrorLt(ref_span));
+  }
+
+  template <size_t... Is>
+  void CheckOutputs(const OutputBuffers& actual, const OutputBuffers& ref,
+                    std::index_sequence<Is...>) {
+    (CheckOutput<Is>(actual, ref), ...);
   }
 
   typename LiteRtModelT::Ptr model_;
