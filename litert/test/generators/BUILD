@@ -50,7 +50,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_rng",
         "//litert/core/model",
-        "//litert/core/model:model_graph_testonly",
         "//litert/core/model:model_load",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools_testonly",

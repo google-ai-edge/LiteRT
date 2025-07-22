@@ -35,6 +35,8 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
+#include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/graph_helpers.h"
