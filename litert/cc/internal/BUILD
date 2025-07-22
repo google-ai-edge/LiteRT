@@ -358,7 +358,7 @@ cc_test(
 )
 
 litert_device_exec(
-    name = "litert_compiled_model_webgpu_test_device",
+    name = "litert_compiled_model_webgpu_device_test",
     backend_id = "gpu",
     data = [
         "//litert/test:testdata/simple_model.tflite",
