@@ -6,6 +6,7 @@ ci/tools/python/wheel/utils/BUILD:
 litert/build_common/special_rule.bzl:
 litert/build_common/strict.default.bzl:
 litert/python/aot/core/tflxx_util.py:
+litert/samples/async_segmentation/README.md:
 litert/samples/image_segmentation/kotlin_cpu_gpu/android/app/src/main/res/drawable/ic_chevron_up.png:
 litert/samples/image_segmentation/kotlin_cpu_gpu/android/app/src/main/res/drawable/logo.png:
 litert/samples/image_segmentation/kotlin_cpu_gpu/android/gradle/wrapper/gradle-wrapper.jar:

@@ -16,7 +16,7 @@ LiteRT, generating 6 masks.
 the original (un-preprocessed) input image.
 
 It's a command-line tool intended to be run via android ADB.
-The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
+The C++ code is organized into `ImageUtils` and `ImageProcessor`, and
 `SegmentationModel` classes.
 
 ## Image Processing Workflow:
@@ -66,32 +66,31 @@ The C++ code is organized into `ImageUtils`, `ImageProcessor`, and
 
 ## Prerequisites
 
-1.  **Android NDK**: Installed and configured for Bazel.
-2.  **Bazel**: Installed.
-3.  **ADB**: Installed and in PATH.
-4.  **LiteRT**: [LiteRT libraries](https://github.com/google-ai-edge/LiteRT).
-
-## Setup Instructions
-
-### WORKSPACE Setup (for Open-Source Bazel)
-Edit `WORKSPACE` to point to your NDK if not using `ANDROID_NDK_HOME`.
+1.  **Bazel**: Installed.
+2.  **ADB**: Installed and in PATH.
+3.  **LiteRT**: [LiteRT libraries](https://github.com/google-ai-edge/LiteRT).
 
 ### Build Instructions
-Follow instructions for open-source Bazel.
-Example (open-source):
+All commands should be run from the root of the LiteRT repository.
 ```bash
-bazel build //litert/samples/async_segmentation --config=android_arm64
+bazel build //litert/samples/async_segmentation:async_segmentation_cpu --config=android_arm64
+bazel build //litert/samples/async_segmentation:async_segmentation_gpu --config=android_arm64
+bazel build //litert/samples/async_segmentation:async_segmentation_npu --config=android_arm64
 ```
 
-### Running the Executable
-
-Use the `deploy_and_run_on_android.sh` script. Review and edit paths within the
-script first. `bash chmod +x
-litert/samples/async_segmentation/deploy_and_run_on_android.sh
-litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu [--use_gl_buffers]
-bazel-bin/`
-
-Check for `output_segmented.png` on the device.
+### Running the Executables
+After building, use the `deploy_and_run_on_android.sh` script to deploy and run the executables.
+```bash
+# For CPU
+./litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=cpu --phone=s25 bazel-bin/
+# For GPU
+./litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu --phone=s25 bazel-bin/
+# For GPU with GL buffers
+./litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=gpu --use_gl_buffers --phone=s25 bazel-bin/
+# For NPU
+./litert/samples/async_segmentation/deploy_and_run_on_android.sh --accelerator=npu --phone=s25 bazel-bin/
+```
+The output image `output_segmented.png` will be pulled from the device and saved in the current directory.
 
 ### Performance
 
