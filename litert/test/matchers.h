@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_TEST_MATCHERS_H_
 #define ODML_LITERT_LITERT_TEST_MATCHERS_H_
 
+#include <cmath>
+#include <cstddef>
 #include <optional>
 #include <ostream>
 #include <string>
@@ -574,6 +576,31 @@ inline auto HasTypeAspect(absl::Span<const int> dims) {
 template <typename ElementTy>
 auto HasTypeAspect(ElementTy ty, absl::Span<const int> dims) {
   return ::testing::AllOf(HasTypeAspect(dims), HasTypeAspect(ty));
+}
+
+// Checks that the mean squared error between two spans is less than the
+// provided tolerance.
+//
+// Example:
+//   std::vector<float> v = {1.0f, 1.0f};
+//   std::vector<float> u = {1.0f + 31e-4, 1.0f + 31e-4};
+//   EXPECT_THAT(absl::MakeConstSpan(v),
+//   MeanSquaredError(absl::MakeConstSpan(u)));
+template <typename Exp>
+auto MeanSquaredErrorLt(const Exp& expected, double tol = 1e-5) {
+  auto mse = [expected](const auto& actual) -> double {
+    double err = 0;
+    auto exp_begin = expected.cbegin();
+    auto actual_begin = actual.cbegin();
+    for (size_t i = 0; i < std::size(expected); ++i) {
+      double actual_val = static_cast<double>(*actual_begin++);
+      double expected_val = static_cast<double>(*exp_begin++);
+      err += std::pow(actual_val - expected_val, 2);
+    }
+    return err / static_cast<double>(std::size(expected));
+  };
+  return ::testing::AllOf(::testing::SizeIs(std::size(expected)),
+                          ::testing::ResultOf(mse, ::testing::Le(tol)));
 }
 
 }  // namespace testing::litert
