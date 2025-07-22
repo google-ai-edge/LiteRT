@@ -264,7 +264,7 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
     auto& res = tensor_pool.CreateInputTensorWithSuffix(
         qnn_data_type, quantize_params, dimentions, litert_suffix);
     tensor_wrapper = &res;
-  } else if (litert_tensor.IsSubgraphOutput() || is_tensor_read_and_write) {
+  } else if (litert_tensor.Uses().empty() || is_tensor_read_and_write) {
     auto& res = tensor_pool.CreateOutpuTensorWithSuffix(
         qnn_data_type, quantize_params, dimentions, litert_suffix);
     tensor_wrapper = &res;

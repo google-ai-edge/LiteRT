@@ -54,9 +54,7 @@ class GraphIteratorDelegate
       }
     }
     for (const auto& output : subgraph_ptr_->Outputs()) {
-      if (output.IsSubgraphOutput()) {
-        iterator_indices_.output_index_++;
-      }
+      iterator_indices_.output_index_++;
     }
     for (const auto& op : subgraph_ptr_->Ops()) {
       iterator_indices_.op_index_++;

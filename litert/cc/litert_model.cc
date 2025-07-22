@@ -25,8 +25,6 @@
 
 namespace litert {
 
-bool Tensor::IsSubgraphOutput() const { return Uses().empty(); }
-
 bool Tensor::IsSubgraphInput() const {
   LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());
   // A special case for zero-sized tensors.

@@ -268,7 +268,6 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     return std::nullopt;
   }
 
-  bool IsSubgraphOutput() const;
   bool IsSubgraphInput() const;
   bool IsConstant() const;
 };
