@@ -21,6 +21,7 @@ limitations under the License.
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
+#include "tflite/kernels/internal/runtime_shape.h"
 #include "tflite/kernels/internal/types.h"
 
 namespace tflite {
