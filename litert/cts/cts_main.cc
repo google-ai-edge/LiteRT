@@ -57,6 +57,9 @@ ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
 
 ABSL_FLAG(bool, quiet, true, "Minimize logging.");
 
+ABSL_FLAG(std::string, backend, "cpu",
+          "Which backend to use as the \"actual\".");
+
 namespace litert {
 namespace testing {
 namespace {
@@ -69,20 +72,39 @@ using ::testing::litert::MeanSquaredErrorLt;
 
 class CtsOptions {
  public:
-  static CtsOptions FromFlags() {
+  enum class ExecutionBackend { kCpu, kGpu, kNpu };
+
+  static Expected<CtsOptions> FromFlags() {
+    // Seeds.
     const auto seed_flags = absl::GetFlag(FLAGS_seeds);
     absl::flat_hash_map<std::string, int> seeds;
     for (const auto& seed : seed_flags) {
       std::pair<std::string, std::string> seed_pair = absl::StrSplit(seed, ':');
       int seed_int;
-      if (!absl::SimpleAtoi(seed_pair.second, &seed_int)) {
+      if (absl::SimpleAtoi(seed_pair.second, &seed_int)) {
         seeds.insert({seed_pair.first, seed_int});
       } else {
-        LITERT_LOG(LITERT_ERROR, "Failed to parse seed %s",
-                   seed_pair.second.c_str());
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     absl::StrFormat("Failed to parse seed %s", seed.c_str()));
       }
     }
-    return CtsOptions(std::move(seeds));
+
+    // Backend.
+    ExecutionBackend backend;
+    const auto backend_flag = absl::GetFlag(FLAGS_backend);
+    if (backend_flag == "cpu") {
+      backend = ExecutionBackend::kCpu;
+    } else if (backend_flag == "gpu") {
+      backend = ExecutionBackend::kGpu;
+    } else if (backend_flag == "npu") {
+      backend = ExecutionBackend::kNpu;
+    } else {
+      return Error(
+          kLiteRtStatusErrorInvalidArgument,
+          absl::StrFormat("Unknown backend: %s", backend_flag.c_str()));
+    }
+
+    return CtsOptions(std::move(seeds), backend, absl::GetFlag(FLAGS_quiet));
   }
 
   int GetSeedForParams(absl::string_view name) const {
@@ -94,11 +116,20 @@ class CtsOptions {
     return it->second;
   }
 
+  ExecutionBackend Backend() const { return backend_; }
+
+  bool Quiet() const { return quiet_; }
+
  private:
-  explicit CtsOptions(absl::flat_hash_map<std::string, int>&& seeds_for_params)
-      : seeds_for_params_(std::move(seeds_for_params)) {}
+  explicit CtsOptions(absl::flat_hash_map<std::string, int>&& seeds_for_params,
+                      ExecutionBackend backend, bool quiet)
+      : seeds_for_params_(std::move(seeds_for_params)),
+        backend_(backend),
+        quiet_(quiet) {}
 
   absl::flat_hash_map<std::string, int> seeds_for_params_;
+  ExecutionBackend backend_;
+  bool quiet_;
 };
 
 // EXAMPLE TEST LOGIC //////////////////////////////////////////////////////////
@@ -388,8 +419,7 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 }  // namespace
 
 // Register all the cts tests.
-void RegisterCtsTests() {
-  const auto cts_options = CtsOptions::FromFlags();
+void RegisterCtsTests(const CtsOptions& cts_options) {
   size_t test_id = 0;
   {
     // NO OP //
@@ -409,9 +439,15 @@ void RegisterCtsTests() {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
-  if (absl::GetFlag(FLAGS_quiet)) {
+  auto options = litert::testing::CtsOptions::FromFlags();
+  if (!options) {
+    LITERT_LOG(LITERT_ERROR, "Failed to create CTS options: %s",
+               options.Error().Message().c_str());
+    return 1;
+  }
+  if (options->Quiet()) {
     LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
   }
-  litert::testing::RegisterCtsTests();
+  litert::testing::RegisterCtsTests(*options);
   return RUN_ALL_TESTS();
 }
