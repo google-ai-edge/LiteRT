@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
-#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -44,6 +43,5 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
-bool IsStrEndsWith(std::string_view str, std::string_view suffix);
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
