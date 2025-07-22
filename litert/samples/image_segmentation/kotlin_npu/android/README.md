@@ -1,6 +1,6 @@
 # Guide to prepare and build the app
 
-LiteRT NPU acceleration is only available through an Early Access Program. If you are not already enrolled, [sign up](forms.gle/CoH4jpLwxiEYvDvF6).
+LiteRT NPU acceleration is only available through an Early Access Program. If you are not already enrolled, [sign up](https://forms.gle/CoH4jpLwxiEYvDvF6).
 
 See [NPU acceleration instruction](https://ai.google.dev/edge/litert/next/eap/npu) for more information about compiling NPU models and setup NPU runtime.
 
