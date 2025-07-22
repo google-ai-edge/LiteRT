@@ -33,16 +33,15 @@ litert_dynamic_lib(
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:__subpackages__"],
     deps = [
+        ":example_transformations",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/c:litert_options",
-        "//litert/cc:litert_expected",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_model_predicates",
         "//litert/cc:litert_op_options",
     ],
 )
@@ -58,6 +57,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -98,7 +98,6 @@ cc_test(
         ":example_ir",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_model",
-        "//litert/core/model:model_graph_testonly",
         "//litert/core/model:model_testonly",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
@@ -160,6 +159,29 @@ cc_test(
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/cc:litert_compiler_plugin",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "example_transformations",
+    srcs = ["example_transformations.cc"],
+    hdrs = ["example_transformations.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
+        "//litert/cc:litert_model",
+    ],
+)
+
+cc_test(
+    name = "example_transformations_test",
+    srcs = ["example_transformations_test.cc"],
+    deps = [
+        ":example_transformations",
+        "//litert/c:litert_op_code",
+        "//litert/core/model:model_testonly",
         "@com_google_googletest//:gtest_main",
     ],
 )

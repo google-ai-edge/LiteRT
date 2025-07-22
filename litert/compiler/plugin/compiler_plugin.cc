@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <list>
 #include <optional>
 #include <string>
 #include <utility>
@@ -37,6 +38,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -159,6 +161,8 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                    result.get_compiled_result_call_info);
   RESOLVE_API_FUNC(kLiteRtGetNumCompiledResultCalls,
                    result.get_compiled_result_num_calls);
+  RESOLVE_API_FUNC(kLiteRtCompilerPluginRegisterAllTransformations,
+                   result.register_all_transformations);
 
   return kLiteRtStatusOk;
 }
@@ -297,6 +301,10 @@ CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
 }
 
 CompilerPlugin::~CompilerPlugin() {
+  // for (const auto& transformation : transformations_) {
+  //   free((void*)transformation.name);
+  // }
+  // transformations_.clear();
   if (plugin_handle_ != nullptr) {
     plugin_api_.destroy_compiler_plugin(plugin_handle_);
   }
@@ -323,6 +331,82 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
   LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_supported_hardware(
       plugin_handle_, &supported_hardware));
   return supported_hardware;
+}
+
+Expected<void> CompilerPlugin::RegisterAllTransformations() {
+  LiteRtParamIndex num_patterns;
+  LiteRtPatternFn* pattern_fns;
+  const char** transformation_names;
+
+  LITERT_RETURN_IF_ERROR(plugin_api_.register_all_transformations(
+      plugin_handle_, &pattern_fns, &transformation_names, &num_patterns));
+  for (LiteRtParamIndex i = 0; i < num_patterns; ++i) {
+    if (pattern_fns[i] == nullptr) {
+      return Unexpected(kLiteRtStatusInvalidTransformation,
+                        "Null pattern function");
+    }
+    if (transformation_names[i] == nullptr) {
+      return Unexpected(kLiteRtStatusInvalidTransformation,
+                        "Null transformation name");
+    }
+    pattern_fns_.push_back(pattern_fns[i]);
+    transformation_names_.push_back(std::string(transformation_names[i]));
+  }
+  return {};
+}
+
+Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
+    LiteRtModelT& model) {
+  static constexpr auto kMaxIterations = 100;
+  for (auto& subgraph : model.Subgraphs()) {
+    bool subgraph_modified = true;
+    int iterations = 0;
+    while (subgraph_modified) {
+      subgraph_modified = false;
+      if (iterations++ > kMaxIterations) {
+        break;
+      }
+      std::list<LiteRtOp> worklist;
+      for (const auto& op : subgraph->Ops()) {
+        worklist.push_back(op);
+      }
+      while (!worklist.empty()) {
+        LiteRtOp op = worklist.front();
+        worklist.pop_front();
+
+        // Check if the op is still in the subgraph.
+        bool op_exists = false;
+        for (const auto& current_op : subgraph->Ops()) {
+          if (current_op == op) {
+            op_exists = true;
+            break;
+          }
+        }
+        if (!op_exists) {
+          continue;
+        }
+        for (int pattern_idx = 0; pattern_idx < pattern_fns_.size();
+             ++pattern_idx) {
+          LiteRtRewriterT rewriter;
+          // Call the function pointer.
+          if (pattern_fns_[pattern_idx](op, &rewriter) == kLiteRtStatusOk) {
+            LITERT_LOG(LITERT_INFO, "Matched pattern '%s'",
+                       transformation_names_[pattern_idx].c_str());
+
+            rewriter.ApplyChanges(subgraph);
+            subgraph_modified = true;
+            // Break from the inner transformation loop since the graph changed.
+            break;
+          }
+        }
+        if (subgraph_modified) {
+          // Restart the scan for this subgraph as it has been modified.
+          break;
+        }
+      }
+    }
+  }
+  return {};
 }
 
 Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
@@ -649,16 +733,43 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   return {};
 }
 
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model) {
+  auto status = compiler_plugin.RegisterAllTransformations();
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
+             compiler_plugin.GetNumTransformations());
+
+  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
+
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Applied transformations.");
+  return {};
+}
+
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
-  // Collect partitions to pass to compilation.
+  // Compiler Plugin: Transformation, apply transformations to model.
+  auto status = TransformModel(compiler_plugin, model, soc_model);
+  if (!status) {
+    return status;
+  }
+
+  // Compiler Plugin: Partitioning, collect partitions to pass to compilation.
   auto partitions =
       PartitionModel(compiler_plugin, model, soc_model, subgraphs_to_partition);
   if (!partitions) {
     return partitions.Error();
   }
+
+  // Compiler Plugin: Compilation, compile partitions and apply to model.
   return ApplyPluginWithPartition(compiler_plugin, model,
                                   std::move(*partitions), soc_model);
 }

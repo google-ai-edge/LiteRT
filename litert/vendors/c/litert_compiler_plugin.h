@@ -21,6 +21,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
+#include "litert/c/litert_rewriter.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,11 @@ LITERT_DEFINE_HANDLE(LiteRtCompilerPlugin);
 
 // Artifact produced from compiling a selected partition of ops.
 LITERT_DEFINE_HANDLE(LiteRtCompiledResult);
+
+typedef struct {
+  const LiteRtPatternFn pattern;  // pointer to the pattern function pointer.
+  const char* name;
+} LiteRtTransformation;
 
 //
 // Plugin
@@ -109,6 +115,11 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 // is equal to the number of custom ops in the final model.
 LiteRtStatus LiteRtGetNumCompiledResultCalls(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls);
+
+// Expiremental APIs.
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns);
 
 #ifdef __cplusplus
 }
