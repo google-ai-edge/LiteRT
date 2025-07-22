@@ -108,7 +108,8 @@ litert_bin(
         "@org_tensorflow//tensorflow:android": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    ungrte = True,
+    ungrte = False,
+    visibility = ["//litert:litert_public"],
     deps = [
         ":apply_plugin",
         ":outstream",
