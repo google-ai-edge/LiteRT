@@ -2,7 +2,6 @@ load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//tflite:__subpackages__"],
     licenses = ["notice"],
 )
 
