@@ -21,8 +21,12 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -45,6 +49,12 @@
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
+ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
+          "Comma-separated test-generator/seed pairings in the form "
+          "<generator_name>:<seed>. This seed will be "
+          "used to generator the randomized parameters for all invocations of "
+          "the respective test-generator.");
+
 namespace litert {
 namespace testing {
 namespace {
@@ -54,6 +64,40 @@ using ::litert::internal::TflOpCodePtr;
 using ::litert::internal::TflOptions;
 using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
+
+class CtsOptions {
+ public:
+  static CtsOptions FromFlags() {
+    const auto seed_flags = absl::GetFlag(FLAGS_seeds);
+    absl::flat_hash_map<std::string, int> seeds;
+    for (const auto& seed : seed_flags) {
+      std::pair<std::string, std::string> seed_pair = absl::StrSplit(seed, ':');
+      int seed_int;
+      if (!absl::SimpleAtoi(seed_pair.second, &seed_int)) {
+        seeds.insert({seed_pair.first, seed_int});
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Failed to parse seed %s",
+                   seed_pair.second.c_str());
+      }
+    }
+    return CtsOptions(std::move(seeds));
+  }
+
+  int GetSeedForParams(absl::string_view name) const {
+    static constexpr int kDefaultSeed = 42;
+    auto it = seeds_for_params_.find(name);
+    if (it == seeds_for_params_.end()) {
+      return kDefaultSeed;
+    }
+    return it->second;
+  }
+
+ private:
+  explicit CtsOptions(absl::flat_hash_map<std::string, int>&& seeds_for_params)
+      : seeds_for_params_(std::move(seeds_for_params)) {}
+
+  absl::flat_hash_map<std::string, int> seeds_for_params_;
+};
 
 // EXAMPLE TEST LOGIC //////////////////////////////////////////////////////////
 
@@ -307,9 +351,10 @@ class RegisterFunctor {
  public:
   template <typename Logic>
   void operator()() {
+    using TestClassType = CtsTest<Logic>;
+    DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
-      if (auto status = CtsTest<Logic>::Register(test_id_++, device_);
-          !status) {
+      if (auto status = TestClassType::Register(test_id_++, device); !status) {
         LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                    test_id_, Logic::Name().data(),
                    status.Error().Message().c_str());
@@ -317,13 +362,13 @@ class RegisterFunctor {
     }
   }
 
-  RegisterFunctor(size_t iters, size_t& test_id)
-      : iters_(iters), test_id_(test_id) {}
+  RegisterFunctor(size_t iters, size_t& test_id, const CtsOptions& options)
+      : iters_(iters), test_id_(test_id), options_(options) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
-  DefaultDevice device_;
+  const CtsOptions& options_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -331,8 +376,9 @@ class RegisterFunctor {
 // of times. Each of these registrations will yield a single test case with a
 // a different set of random parameters.
 template <template <typename...> typename Logic, typename... Lists>
-void RegisterCombinations(size_t iters, size_t& test_id) {
-  RegisterFunctor f(iters, test_id);
+void RegisterCombinations(size_t iters, size_t& test_id,
+                          const CtsOptions& options) {
+  RegisterFunctor f(iters, test_id, options);
   ExpandProduct<Logic, Lists...>(f);
 }
 
@@ -340,6 +386,7 @@ void RegisterCombinations(size_t iters, size_t& test_id) {
 
 // Register all the cts tests.
 void RegisterCtsTests() {
+  const auto cts_options = CtsOptions::FromFlags();
   size_t test_id = 0;
   {
     // NO OP //
@@ -348,7 +395,7 @@ void RegisterCtsTests() {
         NoOp,  // Test logic template
         SizeListC<1, 2, 3, 4>,  // Ranks
         TypeList<float, int32_t>  // Data types
-    >(/*iters=*/10, test_id);
+    >(/*iters=*/10, test_id, cts_options);
     // clang-format on
   }
 }

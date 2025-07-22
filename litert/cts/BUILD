@@ -24,6 +24,7 @@ package(
 cc_test(
     name = "cts_main",
     srcs = ["cts_main.cc"],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     deps = [
         ":compiled_model_executor",
         "//litert/c:litert_common",
@@ -45,7 +46,10 @@ cc_test(
         "//litert/test/generators:common",
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
