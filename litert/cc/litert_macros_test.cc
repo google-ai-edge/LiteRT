@@ -183,7 +183,7 @@ TEST(LiteRtAssignOrReturnTest, MoveOnlyVariableAssignmentWorks) {
 }
 
 TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
-  const Expected<int> InvalidArgumentError =
+  Expected<int> InvalidArgumentError =
       Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument));
 
   int canary_value = 0;
@@ -213,7 +213,7 @@ TEST(LiteRtAssignOrReturnTest, ReturnsOnFailure) {
 }
 
 TEST(LiteRtAssignOrReturnTest, AllowsStructuredBindings) {
-  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
   auto Function = [&]() -> Expected<std::pair<int, const char*>> {
     LITERT_ASSIGN_OR_RETURN((auto [i, c]), e);
     EXPECT_EQ(i, e.Value().first);
@@ -229,7 +229,7 @@ TEST(LiteRtAbortIfErrorTest, DoesntDieWithSuccessValues) {
 }
 
 TEST(LiteRtAbortIfErrorTest, DiesWithErrorValue) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ABORT_IF_ERROR(InvalidArgumentError) << "Error abort log",
@@ -247,14 +247,14 @@ TEST(LiteRtAssignOrAbortTest, WorksWithValidExpected) {
 }
 
 TEST(LiteRtAssignOrAbortTest, AllowsStructuredBindings) {
-  const Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
+  Expected<std::pair<int, const char*>> e(std::pair(1, "a"));
   LITERT_ASSIGN_OR_ABORT((auto [i, c]), e);
   EXPECT_EQ(i, e.Value().first);
   EXPECT_EQ(c, e.Value().second);
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithError) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError),
@@ -267,7 +267,7 @@ TEST(LiteRtAssignOrAbortTest, DiesWithError) {
 }
 
 TEST(LiteRtAssignOrAbortTest, DiesWithErrorAndCustomMessage) {
-  const Expected<int> InvalidArgumentError = Expected<int>(
+  Expected<int> InvalidArgumentError = Expected<int>(
       Unexpected(kLiteRtStatusErrorInvalidArgument, "Unexpected message"));
   EXPECT_DEATH(
       LITERT_ASSIGN_OR_ABORT([[maybe_unused]] int v, InvalidArgumentError,
@@ -360,9 +360,8 @@ TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
 
   auto error_2 = []() -> absl::StatusOr<int> {
     LITERT_ASSIGN_OR_RETURN(
-        auto v,
-        Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument,
-                                 "An error message.")));
+        auto v, Expected<int>(Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                         "An error message.")));
     return v;
   }();
   EXPECT_FALSE(error_2.ok());
