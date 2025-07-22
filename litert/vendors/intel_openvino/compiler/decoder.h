@@ -90,6 +90,8 @@ class DecoderOperation
   /// \brief Get a number of outputs
   size_t get_output_size() const override { return output_tensor_info_.size(); }
 
+  litert::Expected<ov::Any> fetch_attribute(const std::string& name) const;
+
  private:
   std::string op_type_;
   std::string op_name_;
