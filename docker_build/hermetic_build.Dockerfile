@@ -106,7 +106,8 @@ ENV TF_DOWNLOAD_CLANG=0
 ENV TF_SET_ANDROID_WORKSPACE=1
 ENV TF_CONFIGURE_IOS=0
 ENV USE_BAZEL_VERSION=7.4.1
-ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/clang
+ENV CLANG_COMPILER_PATH=/usr/lib/llvm-18/bin/clang
+ENV TF_NEED_CLANG=1
 
 # Set NDK version for configuration
 ENV ANDROID_NDK_VERSION=25
@@ -138,7 +139,10 @@ build --action_env ANDROID_NDK_API_LEVEL="${ANDROID_NDK_API_LEVEL}"\n\
 build --action_env ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION}"\n\
 build --action_env TF_CONFIGURE_IOS="${TF_CONFIGURE_IOS}"\n\
 build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
+build --action_env TF_NEED_CLANG="${TF_NEED_CLANG}"\n\
 EOL\n\
+\n\
+/litert_build/configure --workspace=/litert_build\n\
 \n\
 echo "Configuration complete. .tf_configure.bazelrc has been generated at /litert_build/.tf_configure.bazelrc"\n\
 \n\
