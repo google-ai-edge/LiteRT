@@ -35,7 +35,8 @@ class CustomBuffer {
   // LiteRtTensorBufferT. The `hw_memory_info_` of the other will be
   // reset to nullptr.
   CustomBuffer(CustomBuffer&& other)
-      : buffer_type_(other.buffer_type_),
+      : env_(other.env_),
+        buffer_type_(other.buffer_type_),
         hw_memory_info_(other.hw_memory_info_) {
     other.hw_memory_info_ = nullptr;
   }
@@ -53,18 +54,21 @@ class CustomBuffer {
   Expected<void> Unlock();
 
   // Creates a custom buffer.
-  static Expected<CustomBuffer> Alloc(const LiteRtRankedTensorType& tensor_type,
+  static Expected<CustomBuffer> Alloc(LiteRtEnvironment env,
+                                      const LiteRtRankedTensorType& tensor_type,
                                       LiteRtTensorBufferType buffer_type,
-                                      size_t buffer_size);
+                                      size_t buffer_size,
+                                      size_t packed_buffer_size);
 
  private:
   // Private constructor to create a custom buffer.
-  CustomBuffer(const LiteRtRankedTensorType& tensor_type,
+  CustomBuffer(LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
                LiteRtTensorBufferType buffer_type, HwMemoryInfo* hw_memory_info)
-      : buffer_type_(buffer_type), hw_memory_info_(hw_memory_info) {}
+      : env_(env), buffer_type_(buffer_type), hw_memory_info_(hw_memory_info) {}
 
+  LiteRtEnvironment env_;
   const LiteRtTensorBufferType buffer_type_;
-  HwMemoryInfo* hw_memory_info_;
+  HwMemoryInfoPtr hw_memory_info_;
 };
 
 }  // namespace litert::internal

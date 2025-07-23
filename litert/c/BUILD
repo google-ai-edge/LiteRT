@@ -571,6 +571,16 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_custom_tensor_buffer",
+    hdrs = ["litert_custom_tensor_buffer.h"],
+    deps = [
+        ":litert_common",
+        ":litert_model",
+        ":litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
     name = "litert_platform_support",
     hdrs = ["litert_platform_support.h"],
     deps = [":litert_common"],
@@ -660,6 +670,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_any",
     ":litert_common",
     ":litert_compiled_model",
+    ":litert_custom_tensor_buffer",
     ":litert_options",
     ":litert_dispatch_delegate",
     ":litert_event",

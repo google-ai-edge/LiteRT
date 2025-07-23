@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
@@ -353,4 +355,13 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@opencl_headers",
     ],
+)
+
+litert_device_exec(
+    name = "litert_compiled_model_webgpu_test_device",
+    backend_id = "gpu",
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    target = ":litert_compiled_model_webgpu_test",
 )

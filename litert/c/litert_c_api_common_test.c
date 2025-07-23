@@ -24,6 +24,7 @@
 #include "litert/c/litert_any.h"             // NOLINT
 #include "litert/c/litert_common.h"          // NOLINT
 #include "litert/c/litert_compiled_model.h"  // NOLINT
+#include "litert/c/litert_custom_tensor_buffer.h"  // NOLINT
 #include "litert/c/litert_dispatch_delegate.h"  // NOLINT
 #include "litert/c/litert_event.h"  // NOLINT
 #include "litert/c/litert_external_litert_buffer_context.h"  // NOLINT

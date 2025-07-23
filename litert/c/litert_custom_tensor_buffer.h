@@ -45,24 +45,25 @@ typedef struct HwMemoryInfo* HwMemoryInfoPtr;
 
 // Custom TensorBuffer handler function to create a custom TensorBuffer.
 typedef LiteRtStatus (*CreateCustomTensorBuffer)(
-    const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, size_t bytes,
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info);
 
 // Custom TensorBuffer handler function to destroy a custom TensorBuffer.
 typedef LiteRtStatus (*DestroyCustomTensorBuffer)(
-    HwMemoryInfoPtr hw_memory_info);
+    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
 
 // Custom TensorBuffer handler function to lock a custom TensorBuffer.
 // `host_memory_ptr` is the CPU mapped memory pointer to the custom
 // TensorBuffer.
-typedef LiteRtStatus (*LockCustomTensorBuffer)(LiteRtTensorBufferLockMode mode,
+typedef LiteRtStatus (*LockCustomTensorBuffer)(LiteRtEnvironment env,
                                                HwMemoryInfoPtr hw_memory_info,
+                                               LiteRtTensorBufferLockMode mode,
                                                void** host_memory_ptr);
 
 // Custom TensorBuffer handler function to unlock a custom TensorBuffer.
 typedef LiteRtStatus (*UnlockCustomTensorBuffer)(
-    HwMemoryInfoPtr hw_memory_info);
+    LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);
 
 #ifdef __cplusplus
 }

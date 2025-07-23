@@ -32,7 +32,7 @@ CustomBuffer::~CustomBuffer() {
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer_handlers,
                          registry.GetCustomHandlers(buffer_type_));
   if (hw_memory_info_) {
-    custom_buffer_handlers.destroy_func(hw_memory_info_);
+    custom_buffer_handlers.destroy_func(env_, hw_memory_info_);
   }
 }
 
@@ -41,8 +41,8 @@ Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry.GetCustomHandlers(buffer_type_));
   void* host_memory_ptr = nullptr;
-  auto status =
-      custom_buffer_handlers.lock_func(mode, hw_memory_info_, &host_memory_ptr);
+  auto status = custom_buffer_handlers.lock_func(env_, hw_memory_info_, mode,
+                                                 &host_memory_ptr);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to lock custom tensor buffer.");
   }
@@ -53,7 +53,7 @@ Expected<void> CustomBuffer::Unlock() {
   auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry.GetCustomHandlers(buffer_type_));
-  auto status = custom_buffer_handlers.unlock_func(hw_memory_info_);
+  auto status = custom_buffer_handlers.unlock_func(env_, hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock custom tensor buffer.");
   }
@@ -61,18 +61,20 @@ Expected<void> CustomBuffer::Unlock() {
 }
 
 Expected<CustomBuffer> CustomBuffer::Alloc(
-    const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, size_t buffer_size) {
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t buffer_size,
+    size_t packed_buffer_size) {
   auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry.GetCustomHandlers(buffer_type));
-  HwMemoryInfo* hw_memory_info = nullptr;
+  HwMemoryInfoPtr hw_memory_info = nullptr;
   auto status = custom_buffer_handlers.create_func(
-      &tensor_type, buffer_type, buffer_size, &hw_memory_info);
+      env, &tensor_type, buffer_type, buffer_size, packed_buffer_size,
+      &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to create custom tensor buffer.");
   }
-  return CustomBuffer(tensor_type, buffer_type, hw_memory_info);
+  return CustomBuffer(env, tensor_type, buffer_type, hw_memory_info);
 }
 
 }  // namespace internal

@@ -395,8 +395,10 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  auto buffer = litert::internal::CustomBuffer::Alloc(tensor_type, buffer_type,
-                                                      buffer_size);
+  LITERT_ASSIGN_OR_RETURN(auto packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
   if (!buffer) {
     return Unexpected(buffer.Error());
   }
