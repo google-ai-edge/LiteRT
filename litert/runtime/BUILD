@@ -183,7 +183,7 @@ GPU_ENVIRONMENT_DEPS = [
         "//tflite/delegates/gpu/gl:egl_environment",
     ],
     "//conditions:default": [],
-})
+}) + gles_deps()
 
 cc_library(
     name = "gpu_environment_header",
