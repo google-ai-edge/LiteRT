@@ -27,6 +27,7 @@ cc_test(
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     deps = [
         ":compiled_model_executor",
+        ":cts_configure",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_c_types_printing",
@@ -39,14 +40,29 @@ cc_test(
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "//litert/test/generators:example",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
+    ],
+)
+
+cc_library(
+    name = "cts_configure",
+    testonly = True,
+    srcs = ["cts_configure.cc"],
+    hdrs = ["cts_configure.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

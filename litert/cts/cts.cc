@@ -14,19 +14,13 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <utility>
-#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -38,28 +32,10 @@
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/cts/compiled_model_executor.h"
+#include "litert/cts/cts_configure.h"
 #include "litert/test/generators/example.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
-
-ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
-          "Comma-separated test-generator/seed pairings in the form "
-          "<generator_name>:<seed>. This seed will be "
-          "used to generator the randomized parameters for all invocations of "
-          "the respective test-generator.");
-
-ABSL_FLAG(bool, quiet, true, "Minimize logging.");
-
-ABSL_FLAG(std::string, backend, "cpu",
-          "Which backend to use as the \"actual\".");
-
-ABSL_FLAG(std::string, dispatch_dir, "",
-          "Path to directory containing the dispatch library. Only relevant "
-          "for NPU.");
-
-ABSL_FLAG(std::string, plugin_dir, "",
-          "Path to directory containing the compiler plugin library. Only "
-          "relevant for NPU.");
 
 namespace litert {
 namespace testing {
@@ -70,68 +46,6 @@ using ::litert::internal::TflOpCodePtr;
 using ::litert::internal::TflOptions;
 using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
-
-class CtsOptions {
- public:
-  enum class ExecutionBackend { kCpu, kGpu, kNpu };
-
-  static Expected<CtsOptions> FromFlags() {
-    // Seeds.
-    const auto seed_flags = absl::GetFlag(FLAGS_seeds);
-    absl::flat_hash_map<std::string, int> seeds;
-    for (const auto& seed : seed_flags) {
-      std::pair<std::string, std::string> seed_pair = absl::StrSplit(seed, ':');
-      int seed_int;
-      if (absl::SimpleAtoi(seed_pair.second, &seed_int)) {
-        seeds.insert({seed_pair.first, seed_int});
-      } else {
-        return Error(kLiteRtStatusErrorInvalidArgument,
-                     absl::StrFormat("Failed to parse seed %s", seed.c_str()));
-      }
-    }
-
-    // Backend.
-    ExecutionBackend backend;
-    const auto backend_flag = absl::GetFlag(FLAGS_backend);
-    if (backend_flag == "cpu") {
-      backend = ExecutionBackend::kCpu;
-    } else if (backend_flag == "gpu") {
-      backend = ExecutionBackend::kGpu;
-    } else if (backend_flag == "npu") {
-      backend = ExecutionBackend::kNpu;
-    } else {
-      return Error(
-          kLiteRtStatusErrorInvalidArgument,
-          absl::StrFormat("Unknown backend: %s", backend_flag.c_str()));
-    }
-
-    return CtsOptions(std::move(seeds), backend, absl::GetFlag(FLAGS_quiet));
-  }
-
-  int GetSeedForParams(absl::string_view name) const {
-    static constexpr int kDefaultSeed = 42;
-    auto it = seeds_for_params_.find(name);
-    if (it == seeds_for_params_.end()) {
-      return kDefaultSeed;
-    }
-    return it->second;
-  }
-
-  ExecutionBackend Backend() const { return backend_; }
-
-  bool Quiet() const { return quiet_; }
-
- private:
-  explicit CtsOptions(absl::flat_hash_map<std::string, int>&& seeds_for_params,
-                      ExecutionBackend backend, bool quiet)
-      : seeds_for_params_(std::move(seeds_for_params)),
-        backend_(backend),
-        quiet_(quiet) {}
-
-  absl::flat_hash_map<std::string, int> seeds_for_params_;
-  ExecutionBackend backend_;
-  bool quiet_;
-};
 
 // Class that drives all cts test cases. These are specialized with
 // fully specified test logic and executor (backend).
@@ -258,17 +172,17 @@ class RegisterFunctor {
   void operator()() {
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
-      if (options_.Backend() == CtsOptions::ExecutionBackend::kCpu) {
+      if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
         CallRegister<CtsTest<Logic, CpuCompiledModelExecutor>>(device);
-      } else if (options_.Backend() == CtsOptions::ExecutionBackend::kGpu) {
+      } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
-      } else if (options_.Backend() == CtsOptions::ExecutionBackend::kNpu) {
+      } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
         ABSL_CHECK(false) << "NPU backend not supported yet.";
       }
     }
   }
 
-  RegisterFunctor(size_t iters, size_t& test_id, const CtsOptions& options)
+  RegisterFunctor(size_t iters, size_t& test_id, const CtsConf& options)
       : iters_(iters), test_id_(test_id), options_(options) {}
 
  private:
@@ -283,7 +197,7 @@ class RegisterFunctor {
 
   const size_t iters_;
   size_t& test_id_;
-  const CtsOptions& options_;
+  const CtsConf& options_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -292,7 +206,7 @@ class RegisterFunctor {
 // a different set of random parameters.
 template <template <typename...> typename Logic, typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id,
-                          const CtsOptions& options) {
+                          const CtsConf& options) {
   RegisterFunctor f(iters, test_id, options);
   ExpandProduct<Logic, Lists...>(f);
 }
@@ -300,7 +214,7 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 }  // namespace
 
 // Register all the cts tests.
-void RegisterCtsTests(const CtsOptions& cts_options) {
+void RegisterCtsTests(const CtsConf& cts_options) {
   size_t test_id = 0;
   {
     // NO OP //
@@ -320,14 +234,11 @@ void RegisterCtsTests(const CtsOptions& cts_options) {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
-  auto options = litert::testing::CtsOptions::FromFlags();
+  auto options = litert::testing::CtsConf::ParseFlagsAndDoSetup();
   if (!options) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create CTS options: %s",
+    LITERT_LOG(LITERT_ERROR, "Failed to create CTS configuration: %s",
                options.Error().Message().c_str());
     return 1;
-  }
-  if (options->Quiet()) {
-    LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
   }
   litert::testing::RegisterCtsTests(*options);
   return RUN_ALL_TESTS();
