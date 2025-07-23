@@ -196,7 +196,7 @@ cc_library(
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
     linkopts = gles_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + [
+    deps = GPU_ENVIRONMENT_DEPS + gles_deps() + [
         "//litert/c:litert_environment_options",
         "//litert/core:environment",
     ],
