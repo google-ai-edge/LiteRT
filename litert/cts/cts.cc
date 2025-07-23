@@ -33,7 +33,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/cts/compiled_model_executor.h"
 #include "litert/cts/cts_configure.h"
-#include "litert/test/generators/example.h"
+#include "litert/test/generators/generators.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 

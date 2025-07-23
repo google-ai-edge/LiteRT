@@ -39,7 +39,7 @@ cc_test(
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
-        "//litert/test/generators:example",
+        "//litert/test/generators",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
