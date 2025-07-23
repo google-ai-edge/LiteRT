@@ -13,35 +13,29 @@
 // limitations under the License.
 
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/cts/compiled_model_executor.h"
 #include "litert/cts/cts_configure.h"
-#include "litert/test/generators/generators.h"
+#include "litert/cts/register.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
-#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace testing {
-namespace {
 
 using ::litert::internal::TflOpCode;
 using ::litert::internal::TflOpCodePtr;
@@ -166,90 +160,6 @@ class CtsTest : public RngTest {
   Logic logic_;
 };
 
-// Utility to register a test logic a given number of times with a common
-// random device.
-class RegisterFunctor {
- public:
-  template <typename Logic>
-  void operator()() {
-    DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
-    for (size_t i = 0; i < iters_; ++i) {
-      if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
-        CallRegister<CtsTest<Logic, CpuCompiledModelExecutor>>(device);
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
-        ABSL_CHECK(false) << "GPU backend not supported yet.";
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
-      }
-    }
-  }
-
-  RegisterFunctor(size_t iters, size_t& test_id, const CtsConf& options)
-      : iters_(iters), test_id_(test_id), options_(options) {}
-
- private:
-  template <typename TestClass, typename Device>
-  void CallRegister(Device& device) {
-    if (auto status = TestClass::Register(test_id_++, device); !status) {
-      LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
-                 test_id_, TestClass::LogicName().data(),
-                 status.Error().Message().c_str());
-    }
-  }
-
-  const size_t iters_;
-  size_t& test_id_;
-  const CtsConf& options_;
-};
-
-// Specializes the given test logic template with the cartesian product of
-// the given type lists and registers each specialization a given number
-// of times. Each of these registrations will yield a single test case with a
-// a different set of random parameters.
-template <template <typename...> typename Logic, typename... Lists>
-void RegisterCombinations(size_t iters, size_t& test_id,
-                          const CtsConf& options) {
-  RegisterFunctor f(iters, test_id, options);
-  ExpandProduct<Logic, Lists...>(f);
-}
-
-}  // namespace
-
-// Helper aliases to set some of the template params that don't need to vary
-// for cts.
-template <typename Ranks, typename Types, typename OpCodes, typename Fas>
-using BinaryNoBroadcastCts =
-    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
-                      DefaultRandomTensorBufferTraits>;
-
-// Register all the cts tests.
-void RegisterCtsTests(const CtsConf& cts_options) {
-  size_t test_id = 0;
-  {
-    // NO OP //
-    // clang-format off
-    RegisterCombinations<
-        ExampleTestLogic,  // Test logic template
-        SizeListC<1, 2, 3, 4>,  // Ranks
-        TypeList<float, int32_t>  // Data types
-    >(/*iters=*/10, test_id, cts_options);
-    // clang-format on
-  }
-
-  {
-    // BINARY NO BCAST //
-    // clang-format off
-    RegisterCombinations<
-        BinaryNoBroadcastCts,  // Test logic template
-        SizeListC<1, 2, 3, 4, 5, 6>,  // Ranks
-        TypeList<float, int32_t>,  // Data types
-        OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,  // Op codes
-        FaListC<::tflite::ActivationFunctionType_NONE>  // TODO: More support.
-    >(/*iters=*/10, test_id, cts_options);
-    // clang-format on
-  }
-}
-
 }  // namespace testing
 }  // namespace litert
 
@@ -262,6 +172,6 @@ int main(int argc, char** argv) {
                options.Error().Message().c_str());
     return 1;
   }
-  litert::testing::RegisterCtsTests(*options);
+  ::litert::testing::RegisterCtsTests<::litert::testing::CtsTest>(*options);
   return RUN_ALL_TESTS();
 }

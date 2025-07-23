@@ -24,26 +24,27 @@ package(
 cc_test(
     name = "cts",
     srcs = ["cts.cc"],
+    # TODO: Figure out data seeding and test re-running.
+    args = [
+        # copybara:uncomment "--gunit_random_seed=42",
+        # copybara:uncomment "--gunit_color=yes",
+    ],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     deps = [
         ":compiled_model_executor",
         ":cts_configure",
+        ":register",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
         "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
-        "//litert/test/generators",
-        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
@@ -82,6 +83,23 @@ cc_library(
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/test:simple_buffer",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "register",
+    testonly = True,
+    hdrs = ["register.h"],
+    deps = [
+        ":compiled_model_executor",
+        ":cts_configure",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_rng",
+        "//litert/test/generators",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/log:absl_check",
     ],
 )
 
