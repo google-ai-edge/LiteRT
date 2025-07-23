@@ -22,8 +22,8 @@ package(
 # LiteRt's compliance test suite (CTS).
 
 cc_test(
-    name = "cts_main",
-    srcs = ["cts_main.cc"],
+    name = "cts",
+    srcs = ["cts.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     deps = [
         ":compiled_model_executor",

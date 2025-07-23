@@ -53,6 +53,14 @@ ABSL_FLAG(bool, quiet, true, "Minimize logging.");
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
 
+ABSL_FLAG(std::string, dispatch_dir, "",
+          "Path to directory containing the dispatch library. Only relevant "
+          "for NPU.");
+
+ABSL_FLAG(std::string, plugin_dir, "",
+          "Path to directory containing the compiler plugin library. Only "
+          "relevant for NPU.");
+
 namespace litert {
 namespace testing {
 namespace {
