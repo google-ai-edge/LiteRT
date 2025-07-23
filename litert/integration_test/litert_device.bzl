@@ -443,7 +443,8 @@ def litert_device_test(
         exec_env_vars = [],
         tags = [],
         linkopts = [],
-        copts = []):
+        copts = [],
+        **kwargs):
     """
     Syntactic sugar for the litert_device_exec macro.
 
@@ -477,6 +478,7 @@ def litert_device_test(
         }) + linkopts,
         copts = copts,
         tags = hidden_test_tags() + tags,
+        **kwargs
     )
 
     litert_device_exec(
