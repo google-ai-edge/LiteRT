@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
 
 #include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
+#include "litert/test/generators/common.h"  // IWYU pragma: export
 #include "litert/test/generators/example.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

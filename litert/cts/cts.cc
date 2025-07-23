@@ -24,6 +24,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
@@ -36,6 +37,7 @@
 #include "litert/test/generators/generators.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
+#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace testing {
@@ -133,7 +135,7 @@ class CtsTest : public RngTest {
 
   Expected<OutputBuffers> GetReference(const InputBuffers& inputs) {
     LITERT_ASSIGN_OR_RETURN(auto outputs, logic_.MakeOutputs(params_));
-    auto ref_inputs = Traits::MakeReferenceInputs(inputs);
+    const auto ref_inputs = Traits::MakeReferenceInputs(inputs);
     auto ref_outputs = Traits::MakeReferenceOutputs(outputs);
     LITERT_RETURN_IF_ERROR(logic_.Reference(params_, ref_inputs, ref_outputs));
     if (outputs.size() != kNumOutputs) {
@@ -213,6 +215,13 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 
 }  // namespace
 
+// Helper aliases to set some of the template params that don't need to vary
+// for cts.
+template <typename Ranks, typename Types, typename OpCodes, typename Fas>
+using BinaryNoBroadcastCts =
+    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
+                      DefaultRandomTensorBufferTraits>;
+
 // Register all the cts tests.
 void RegisterCtsTests(const CtsConf& cts_options) {
   size_t test_id = 0;
@@ -223,6 +232,19 @@ void RegisterCtsTests(const CtsConf& cts_options) {
         ExampleTestLogic,  // Test logic template
         SizeListC<1, 2, 3, 4>,  // Ranks
         TypeList<float, int32_t>  // Data types
+    >(/*iters=*/10, test_id, cts_options);
+    // clang-format on
+  }
+
+  {
+    // BINARY NO BCAST //
+    // clang-format off
+    RegisterCombinations<
+        BinaryNoBroadcastCts,  // Test logic template
+        SizeListC<1, 2, 3, 4, 5, 6>,  // Ranks
+        TypeList<float, int32_t>,  // Data types
+        OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,  // Op codes
+        FaListC<::tflite::ActivationFunctionType_NONE>  // TODO: More support.
     >(/*iters=*/10, test_id, cts_options);
     // clang-format on
   }

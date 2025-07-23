@@ -150,6 +150,7 @@ cc_library(
     hdrs = ["generators.h"],
     deps = [
         ":binary_no_bcast",
+        ":common",
         ":example",
     ],
 )
