@@ -91,14 +91,14 @@ TYPED_TEST(BinaryNoBroadcastTest, TestLogic) {
   EXPECT_EQ(inputs.size(), 2);
 
   auto lhs = inputs[0].template AsView<DataType>();
-  std::vector<DataType> expected_lhs(lhs.NumElements());
-  std::iota(expected_lhs.begin(), expected_lhs.end(), 0);
-  EXPECT_THAT(lhs.data, ElementsAreArray(expected_lhs));
+
+  std::vector<DataType> expected_input_data(lhs.NumElements());
+  std::iota(expected_input_data.begin(), expected_input_data.end(), 0);
+
+  EXPECT_THAT(lhs.data, ElementsAreArray(expected_input_data));
 
   auto rhs = inputs[1].template AsView<DataType>();
-  std::vector<DataType> expected_rhs(rhs.NumElements());
-  std::iota(expected_rhs.begin(), expected_rhs.end(), expected_lhs.back() + 1);
-  EXPECT_THAT(rhs.data, ElementsAreArray(expected_rhs));
+  EXPECT_THAT(rhs.data, ElementsAreArray(expected_input_data));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, gen.MakeOutputs(params));
   EXPECT_EQ(outputs.size(), 1);

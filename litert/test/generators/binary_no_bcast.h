@@ -19,8 +19,8 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -42,6 +42,7 @@
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/common.h"
+#include "litert/test/generators/graph_helpers.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -114,65 +115,21 @@ struct BinaryNoBroadcast {
   static constexpr absl::string_view Name() { return "BinaryNoBroadcast"; }
 
   Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
-    LiteRtModelT model;
-    std::vector<TflOpCodePtr> tfl_codes;
+    const std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
 
-    auto& sg = model.EmplaceSubgraph();
+    std::vector<TensorDetails> inputs(2);
+    std::vector<TensorDetails> outputs(1);
 
-    auto& lhs = sg.EmplaceTensor();
-    {
-      lhs.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType),
-                                         params.shape));
-      lhs.SetName(std::string(kInputNames[0]));
-      sg.Inputs().push_back(&lhs);
-    }
+    inputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
+                              std::string(kInputNames[0])};
+    inputs[1] = TensorDetails{dims, LiteRtElementType(kElementType),
+                              std::string(kInputNames[1])};
 
-    auto& rhs = sg.EmplaceTensor();
-    {
-      rhs.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType),
-                                         params.shape));
-      rhs.SetName(std::string(kInputNames[1]));
-      sg.Inputs().push_back(&rhs);
-    }
+    outputs[0] = TensorDetails{dims, LiteRtElementType(kElementType),
+                               std::string(kOutputNames[0])};
 
-    auto& output = sg.EmplaceTensor();
-    {
-      output.SetType(::MakeRankedTensorType(LiteRtElementType(kElementType),
-                                            params.shape));
-      output.SetName(std::string(kOutputNames[0]));
-      sg.Outputs().push_back(&output);
-    }
-
-    auto& op = sg.EmplaceOp();
-    {
-      op.SetOpCode(kOpCode);
-      TflOptions opts;
-      opts.type = FbTypes::kBuiltinOptions;
-      typename FbTypes::OptionsT add_opts;
-      add_opts.fused_activation_function = kFa;
-      opts.Set(std::move(add_opts));
-      internal::SetTflOptions(op, std::move(opts));
-      auto code = std::make_unique<TflOpCode>();
-      code->builtin_code = FbTypes::kBuiltinOperator;
-      code->version = 1;
-      internal::SetTflOpCodeInd(op, tfl_codes.size());
-      tfl_codes.push_back(std::move(code));
-    }
-
-    AttachInput(&lhs, op);
-    AttachInput(&rhs, op);
-    AttachOutput(&output, op);
-
-    std::vector<std::string> input_names = {std::string(kInputNames[0]),
-                                            std::string(kInputNames[1])};
-    std::vector<std::string> output_names = {std::string(kOutputNames[0])};
-    model.EmplaceSignature(&sg, std::move(input_names), std::move(output_names),
-                           std::string(kSignatureName));
-
-    SetTflOpCodes(model, std::move(tfl_codes));
-
-    LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
-    return LoadModelFromBuffer(std::move(serialized));
+    return SingleOpModel<kOpCode>(inputs, outputs, kFa,
+                                  /*pot_scale_int16=*/false);
   }
 
   template <typename Rng>
@@ -188,9 +145,8 @@ struct BinaryNoBroadcast {
                                                      const Params& params) {
     LITERT_ASSIGN_OR_RETURN(auto lhs, SimpleBuffer::Create<T>(params.shape));
     LITERT_ASSIGN_OR_RETURN(auto rhs, SimpleBuffer::Create<T>(params.shape));
-    RandomTensorBuffer r;
-    LITERT_RETURN_IF_ERROR(r(rng, lhs.template Span<T>()));
-    LITERT_RETURN_IF_ERROR(r(rng, rhs.template Span<T>()));
+    LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T, R>(rng)));
+    LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T, R>(rng)));
     return typename Traits::InputBuffers{std::move(lhs), std::move(rhs)};
   }
 

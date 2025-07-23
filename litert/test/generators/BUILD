@@ -76,6 +76,7 @@ cc_library(
     hdrs = ["binary_no_bcast.h"],
     deps = [
         ":common",
+        ":graph_helpers",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_c_types_printing",
