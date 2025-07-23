@@ -96,7 +96,8 @@ struct TestLogicTraits {
   template <typename ReferenceTensors, typename Buffers>
   static ReferenceTensors MakeReferenceTensors(Buffers& inputs) {
     return MakeReferenceTensors<ReferenceTensors>(
-        inputs, std::make_index_sequence<kNumInputs>());
+        inputs,
+        std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
   }
 
  public:
