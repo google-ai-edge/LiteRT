@@ -13,35 +13,30 @@
 // limitations under the License.
 
 #include <cstddef>
-#include <cstdint>
+#include <string>
 #include <utility>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/cts/compiled_model_executor.h"
 #include "litert/cts/cts_configure.h"
-#include "litert/test/generators/generators.h"
+#include "litert/cts/register.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
-#include "tflite/schema/schema_generated.h"
 
 namespace litert {
 namespace testing {
-namespace {
 
 using ::litert::internal::TflOpCode;
 using ::litert::internal::TflOpCodePtr;
@@ -66,37 +61,60 @@ class CtsTest : public RngTest {
   static constexpr size_t kNumOutputs = Traits::kNumOutputs;
 
  public:
-  // Register a fully specified case with gtest. This will generate an instance
-  // of the random params needed to finish specifying the test logic and is
-  // inteded to be called multiple times to generate coverage across the space
-  // of possible random params.
-  template <typename Rng>
-  static Expected<void> Register(size_t id, Rng& rng) {
-    using TestClass = CtsTest<Logic, Executor>;
+  // Fixture that skips the test body. Used "skip" filtered out test rather
+  // than not registering them at all.
+  class SkippedTest : public ::testing::Test {
+   public:
+    static Expected<void> Register(const std::string& suite_name,
+                                   const std::string& test_name) {
+      RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
+                   __FILE__, __LINE__, []() { return new SkippedTest(); });
+      return {};
+    }
 
-    const auto suite_name = absl::StrFormat(
-        "%s_cts_%lu_%s", TestExecutor::Name(), id, Logic::Name().data());
-    LITERT_LOG(LITERT_VERBOSE, "Starting registration for %s",
-               suite_name.c_str());
+    void TestBody() override {
+      GTEST_SKIP() << "Test explicitly filtered out via --filter flag.";
+    }
+  };
 
+  static std::string FmtSuiteName(size_t id) {
+    return absl::StrFormat("%s_cts_%lu_%s", TestExecutor::Name(), id,
+                           Logic::Name().data());
+  }
+
+  static std::string FmtTestName(const LiteRtModelT& model) {
+    return absl::StrFormat("%v", model.Subgraph(0).Ops());
+  }
+
+  // The various objects needed to initialize a test case.
+  struct SetupParams {
+    LiteRtModelT::Ptr model;
+    Params params;
     Logic logic;
+  };
 
+  // Generate the setup params for a test case given the random number
+  // generator. These can be passed to the Register method to register
+  // the test case.
+  template <typename Rng>
+  static Expected<SetupParams> BuildSetupParams(Rng& rng) {
+    Logic logic;
     LITERT_ASSIGN_OR_RETURN(auto params, logic.GenerateParams(rng));
-    LITERT_LOG(LITERT_VERBOSE, "Generated params.");
-
     LITERT_ASSIGN_OR_RETURN(auto model, logic.BuildGraph(params));
-    LITERT_LOG(LITERT_VERBOSE, "Built graph.");
+    return SetupParams{std::move(model), std::move(params), std::move(logic)};
+  }
 
-    const auto test_name = absl::StrFormat("%v", model->Subgraph(0).Ops());
-
-    RegisterTest(suite_name.data(), test_name.c_str(), nullptr, nullptr,
+  // Register a fully specified case with gtest.
+  static Expected<void> Register(const std::string& suite_name,
+                                 const std::string& test_name,
+                                 SetupParams&& setup_params) {
+    RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [model = std::move(model), params = std::move(params),
-                  logic = std::move(logic)]() mutable -> TestClass* {
-                   return new TestClass(std::move(model), std::move(params),
-                                        std::move(logic));
+                 [setup_params = std::move(setup_params)]() mutable {
+                   return new CtsTest(std::move(setup_params.model),
+                                      std::move(setup_params.params),
+                                      std::move(setup_params.logic));
                  });
-
     return {};
   }
 
@@ -166,90 +184,6 @@ class CtsTest : public RngTest {
   Logic logic_;
 };
 
-// Utility to register a test logic a given number of times with a common
-// random device.
-class RegisterFunctor {
- public:
-  template <typename Logic>
-  void operator()() {
-    DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
-    for (size_t i = 0; i < iters_; ++i) {
-      if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
-        CallRegister<CtsTest<Logic, CpuCompiledModelExecutor>>(device);
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
-        ABSL_CHECK(false) << "GPU backend not supported yet.";
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
-      }
-    }
-  }
-
-  RegisterFunctor(size_t iters, size_t& test_id, const CtsConf& options)
-      : iters_(iters), test_id_(test_id), options_(options) {}
-
- private:
-  template <typename TestClass, typename Device>
-  void CallRegister(Device& device) {
-    if (auto status = TestClass::Register(test_id_++, device); !status) {
-      LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
-                 test_id_, TestClass::LogicName().data(),
-                 status.Error().Message().c_str());
-    }
-  }
-
-  const size_t iters_;
-  size_t& test_id_;
-  const CtsConf& options_;
-};
-
-// Specializes the given test logic template with the cartesian product of
-// the given type lists and registers each specialization a given number
-// of times. Each of these registrations will yield a single test case with a
-// a different set of random parameters.
-template <template <typename...> typename Logic, typename... Lists>
-void RegisterCombinations(size_t iters, size_t& test_id,
-                          const CtsConf& options) {
-  RegisterFunctor f(iters, test_id, options);
-  ExpandProduct<Logic, Lists...>(f);
-}
-
-}  // namespace
-
-// Helper aliases to set some of the template params that don't need to vary
-// for cts.
-template <typename Ranks, typename Types, typename OpCodes, typename Fas>
-using BinaryNoBroadcastCts =
-    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
-                      DefaultRandomTensorBufferTraits>;
-
-// Register all the cts tests.
-void RegisterCtsTests(const CtsConf& cts_options) {
-  size_t test_id = 0;
-  {
-    // NO OP //
-    // clang-format off
-    RegisterCombinations<
-        ExampleTestLogic,  // Test logic template
-        SizeListC<1, 2, 3, 4>,  // Ranks
-        TypeList<float, int32_t>  // Data types
-    >(/*iters=*/10, test_id, cts_options);
-    // clang-format on
-  }
-
-  {
-    // BINARY NO BCAST //
-    // clang-format off
-    RegisterCombinations<
-        BinaryNoBroadcastCts,  // Test logic template
-        SizeListC<1, 2, 3, 4, 5, 6>,  // Ranks
-        TypeList<float, int32_t>,  // Data types
-        OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,  // Op codes
-        FaListC<::tflite::ActivationFunctionType_NONE>  // TODO: More support.
-    >(/*iters=*/10, test_id, cts_options);
-    // clang-format on
-  }
-}
-
 }  // namespace testing
 }  // namespace litert
 
@@ -262,6 +196,6 @@ int main(int argc, char** argv) {
                options.Error().Message().c_str());
     return 1;
   }
-  litert::testing::RegisterCtsTests(*options);
+  ::litert::testing::RegisterCtsTests<::litert::testing::CtsTest>(*options);
   return RUN_ALL_TESTS();
 }
