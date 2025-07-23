@@ -137,7 +137,11 @@ struct BinaryNoBroadcast {
     RandomTensorType<kRank, kMaxTensorSize, LiteRtElementType(kElementType)>
         type;
     LITERT_ASSIGN_OR_RETURN(const auto tensor_type, type(rng));
-    return Params{Dimensions(tensor_type.layout.dimensions)};
+    Params p;
+    std::copy(std::cbegin(tensor_type.layout.dimensions),
+              std::cbegin(tensor_type.layout.dimensions) + kRank,
+              std::begin(p.shape));
+    return p;
   }
 
   template <typename Rng>
