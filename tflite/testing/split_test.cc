@@ -14,6 +14,8 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/testing/split.h"
 
+#include <cstdint>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "tflite/string_type.h"
