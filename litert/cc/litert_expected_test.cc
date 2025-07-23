@@ -145,6 +145,40 @@ TEST(ExpectedTest, Dereference) {
   EXPECT_EQ(val.j, 2);
 }
 
+TEST(ExpectedTest, IndirectionFromReferenceCanMutateOriginal) {
+  TypeWithFields obj(1, 2);
+  Expected<TypeWithFields&> exp(obj);
+  EXPECT_EQ(exp->i, 1);
+  EXPECT_EQ(exp->j, 2);
+  exp->i = 3;
+  EXPECT_EQ(obj.i, 3);
+}
+
+TEST(ExpectedTest, IndirectionFromConstReference) {
+  const TypeWithFields obj(1, 2);
+  Expected<const TypeWithFields&> exp(obj);
+  EXPECT_EQ(exp->i, 1);
+  EXPECT_EQ(exp->j, 2);
+}
+
+TEST(ExpectedTest, DereferenceFromReferenceCanMutateOriginal) {
+  TypeWithFields obj(1, 2);
+  Expected<TypeWithFields&> exp(obj);
+  TypeWithFields& val = *exp;
+  EXPECT_EQ(val.i, 1);
+  EXPECT_EQ(val.j, 2);
+  val.i = 3;
+  EXPECT_EQ(obj.i, 3);
+}
+
+TEST(ExpectedTest, DereferenceFromConstReference) {
+  const TypeWithFields obj(1, 2);
+  Expected<const TypeWithFields&> exp(obj);
+  const TypeWithFields& val = *exp;
+  EXPECT_EQ(val.i, 1);
+  EXPECT_EQ(val.j, 2);
+}
+
 TEST(UnexpectedTest, WithStatus) {
   Unexpected err(kErrorStatus);
   EXPECT_EQ(err.Error().Status(), kErrorStatus);

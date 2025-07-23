@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_
 #define ODML_LITERT_LITERT_CC_LITERT_EXPECTED_H_
 
+#include <functional>
 #include <initializer_list>
 #include <memory>
 #include <optional>
@@ -107,26 +108,38 @@ class Unexpected {
   class Error error_;
 };
 
-// Utility for generic return values that may be a statused failure. Expecteds
-// store and own the lifetime of either an Unexpected, or a T. T may be any
+// Utility for generic return values that may be a statused failure. Expected
+// stores and owns the lifetime of either an Unexpected, or a T. T may be any
 // type, primitive or non-primitive.
 //
 // No dynamic allocations occur during initialization, so the underlying T is
 // only movable (as opposed to something like "release"). Arguments should be
 // constructed in place at the time of initializing the expected if possible.
 //
-// Unexpected&& and T&& may be implicitly casted
-// to an Expected. For example,
+// Unexpected&& and T&& may be implicitly casted to an Expected. For example,
 //
 // Expected<Foo> Bar() {
 //   bool success = ...
-//   if (!success) { return Unexpected(kLiteRtStatus, "Bad Baz"); }
+//   if (!success) {
+//     return Unexpected(kLiteRtStatus, "Bad Baz");
+//   }
 //   return Foo();
 // }
-//
 template <class T>
 class Expected {
  public:
+  using StorageType =
+      std::conditional_t<std::is_reference_v<T>,
+                         std::reference_wrapper<std::remove_reference_t<T>>, T>;
+
+  // The following type defs are snake case to match the standard member types.
+
+  using value_type = std::decay_t<T>;
+  using pointer = std::remove_reference_t<T>*;
+  using const_pointer = const value_type*;
+  using reference = std::remove_reference_t<T>&;
+  using const_reference = const value_type&;
+
   // Construct Expected with T inplace.
 
   // Construct T from initializer list inplace.
@@ -141,8 +154,16 @@ class Expected {
   // NOLINTBEGIN(*-explicit-constructor)
 
   // Allow for implicit conversion from convertible T value inplace.
-  Expected(const T& t) : has_value_(true), value_(t) {}
-  Expected(T&& t) : has_value_(true), value_(std::move(t)) {}
+  Expected(reference t) : has_value_(true), value_(t) {}
+  // Copy constructs from a constant reference.
+  //
+  // Disabled if `T` is a constant reference.
+  template <
+      class U,
+      class = std::enable_if_t<std::is_same_v<std::decay_t<U>, value_type>>,
+      class = std::enable_if<!std::is_same_v<const U&, reference>>>
+  Expected(const U& t) : has_value_(true), value_(t) {}
+  Expected(value_type&& t) : has_value_(true), value_(std::move(t)) {}
 
   // Construct from Unexpected inplace.
 
@@ -178,7 +199,7 @@ class Expected {
         if (other.HasValue()) {
           value_ = std::move(other.value_);
         } else {
-          value_.~T();
+          value_.~StorageType();
           ConstructAt(std::addressof(unexpected_),
                       std::move(other.unexpected_));
         }
@@ -201,7 +222,7 @@ class Expected {
         if (other.HasValue()) {
           value_ = other.value_;
         } else {
-          value_.~T();
+          value_.~StorageType();
           ConstructAt(std::addressof(unexpected_), other.unexpected_);
         }
       } else {
@@ -219,54 +240,70 @@ class Expected {
 
   ~Expected() {
     if (has_value_ && std::is_destructible<T>()) {
-      value_.~T();
+      value_.~StorageType();
     } else {
       unexpected_.~Unexpected();
     }
   }
 
   // Observers for T value, program exits if it doesn't have one.
-  const T& Value() const& {
+  const_reference Value() const& {
     CheckVal();
-    return value_;
+    if constexpr (std::is_reference_v<T>) {
+      return value_.get();
+    } else {
+      return value_;
+    }
   }
 
-  T& Value() & {
+  reference Value() & {
     CheckVal();
-    return value_;
-  }
-
-  // Deleted: an Expected should always be checked before accessing its value.
-  const T&& Value() const&& = delete;
-
-  // Deleted: an Expected should always be checked before accessing its value.
-  T&& Value() && = delete;
-
-  const T* operator->() const& {
-    CheckVal();
-    return &value_;
-  }
-
-  T* operator->() & {
-    CheckVal();
-    return &value_;
+    if constexpr (std::is_reference_v<T>) {
+      return value_.get();
+    } else {
+      return value_;
+    }
   }
 
   // Deleted: an Expected should always be checked before accessing its value.
-  const T* operator->() const&& = delete;
+  const reference& Value() const&& = delete;
 
   // Deleted: an Expected should always be checked before accessing its value.
-  T* operator->() && = delete;
+  reference& Value() && = delete;
 
-  const T& operator*() const& { return Value(); }
+  const_pointer operator->() const& {
+    CheckVal();
+    if constexpr (std::is_reference_v<T>) {
+      return &(value_.get());
+    } else {
+      return &value_;
+    }
+  }
 
-  T& operator*() & { return Value(); }
+  pointer operator->() & {
+    CheckVal();
+    if constexpr (std::is_reference_v<T>) {
+      return &(value_.get());
+    } else {
+      return &value_;
+    }
+  }
 
   // Deleted: an Expected should always be checked before accessing its value.
-  const T&& operator*() const&& = delete;
+  const_pointer operator->() const&& = delete;
 
   // Deleted: an Expected should always be checked before accessing its value.
-  T&& operator*() && = delete;
+  pointer operator->() && = delete;
+
+  const_reference operator*() const& { return Value(); }
+
+  reference operator*() & { return Value(); }
+
+  // Deleted: an Expected should always be checked before accessing its value.
+  const reference& operator*() const&& = delete;
+
+  // Deleted: an Expected should always be checked before accessing its value.
+  reference& operator*() && = delete;
 
   // Observer for Unexpected, program exits if it doesn't have one.
   const class Error& Error() const& {
@@ -294,7 +331,7 @@ class Expected {
  private:
   bool has_value_;
   union {
-    T value_;
+    StorageType value_;
     Unexpected unexpected_;
   };
   void CheckNoVal() const { ABSL_CHECK(!HasValue()); }
