@@ -14,6 +14,7 @@
 
 #include "litert/cts/cts_configure.h"
 
+#include <regex>  // NOLINT
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,6 +47,8 @@ ABSL_FLAG(std::string, dispatch_dir, "",
 ABSL_FLAG(std::string, plugin_dir, "",
           "Path to directory containing the compiler plugin library. Only "
           "relevant for NPU.");
+
+ABSL_FLAG(std::string, filter, ".*", "Regex to filter tests.");
 
 namespace litert::testing {
 
@@ -94,7 +97,8 @@ Expected<CtsConf> CtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
   CtsConf res(std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
               absl::GetFlag(FLAGS_dispatch_dir),
-              absl::GetFlag(FLAGS_plugin_dir));
+              absl::GetFlag(FLAGS_plugin_dir),
+              std::regex(absl::GetFlag(FLAGS_filter)));
   Setup(res);
   return res;
 }
@@ -106,6 +110,14 @@ int CtsConf::GetSeedForParams(absl::string_view name) const {
     return kDefaultSeed;
   }
   return it->second;
+}
+
+bool CtsConf::ShouldIncludeTest(const std::string& name) const {
+  return std::regex_match(name, re_);
+};
+
+bool CtsConf::ShouldIncludeTest(absl::string_view name) const {
+  return ShouldIncludeTest(std::string(name));
 }
 
 }  // namespace litert::testing
