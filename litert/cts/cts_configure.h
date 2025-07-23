@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CTS_CTS_CONFIGURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CTS_CTS_CONFIGURE_H_
 
+#include <regex>  // NOLINT
 #include <string>
 #include <vector>
 
@@ -41,6 +42,9 @@ ABSL_DECLARE_FLAG(std::string, dispatch_dir);
 // NPU.
 ABSL_DECLARE_FLAG(std::string, plugin_dir);
 
+// Regex to filter tests.
+ABSL_DECLARE_FLAG(std::string, dont_register);
+
 namespace litert::testing {
 
 class CtsConf {
@@ -63,20 +67,28 @@ class CtsConf {
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
 
+  // Given name of a potential test, determines if it should be run based on
+  // the filter regex.
+  bool ShouldRegister(const std::string& name) const;
+  bool ShouldRegister(absl::string_view name) const;
+
  private:
   explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
-                   bool quiet, std::string dispatch_dir, std::string plugin_dir)
+                   bool quiet, std::string dispatch_dir, std::string plugin_dir,
+                   std::regex&& re)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
         dispatch_dir_(std::move(dispatch_dir)),
-        plugin_dir_(std::move(plugin_dir)) {}
+        plugin_dir_(std::move(plugin_dir)),
+        re_(std::move(re)) {}
 
   SeedMap seeds_for_params_;
   ExecutionBackend backend_;
   bool quiet_;
   std::string dispatch_dir_;
   std::string plugin_dir_;
+  std::regex re_;
 };
 
 }  // namespace litert::testing
