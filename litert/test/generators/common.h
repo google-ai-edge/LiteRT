@@ -149,12 +149,18 @@ struct TestLogicTraits {
 template <::tflite::ActivationFunctionType Fa =
               ::tflite::ActivationFunctionType_NONE>
 using FaC = std::integral_constant<tflite::ActivationFunctionType, Fa>;
+template <::tflite::ActivationFunctionType... Fa>
+using FaListC = TypeList<FaC<Fa>...>;
+
 template <size_t N>
 using SizeC = std::integral_constant<size_t, N>;
-template <LiteRtOpCode OpCode>
-using OpCodeC = std::integral_constant<LiteRtOpCode, OpCode>;
 template <size_t... Sizes>
 using SizeListC = TypeList<SizeC<Sizes>...>;
+
+template <LiteRtOpCode OpCode>
+using OpCodeC = std::integral_constant<LiteRtOpCode, OpCode>;
+template <LiteRtOpCode... OpCodes>
+using OpCodeListC = TypeList<OpCodeC<OpCodes>...>;
 
 }  // namespace litert::testing
 
