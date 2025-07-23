@@ -35,6 +35,42 @@ cc_library(
 )
 
 cc_library(
+    name = "example",
+    testonly = True,
+    hdrs = ["example.h"],
+    deps = [
+        ":common",
+        ":graph_helpers",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_c_types_printing",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
+        "//litert/core/model",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "example_test",
+    srcs = ["example_test.cc"],
+    deps = [
+        ":common",
+        ":example",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "binary_no_bcast",
     testonly = True,
     hdrs = ["binary_no_bcast.h"],
