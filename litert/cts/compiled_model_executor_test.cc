@@ -34,6 +34,7 @@ namespace {
 
 using ::testing::ElementsAreArray;
 
+#ifndef _TEST_NPU
 TEST(CpuCompiledModelExecutorTest, CreateAndRunModel) {
   std::vector<int32_t> cst_data = {1};
   TensorDetails lhs = {{2, 2}, kLiteRtElementTypeInt32, "lhs"};
@@ -57,6 +58,38 @@ TEST(CpuCompiledModelExecutorTest, CreateAndRunModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, executor.Run(inputs));
   EXPECT_THAT(outputs.front().Span<int32_t>(), ElementsAreArray({2, 2, 2, 2}));
 }
+
+#else
+
+TEST(NpuCompiledModelExecutorTest, CreateAndRunModel) {
+  std::vector<int32_t> cst_data = {1};
+  TensorDetails lhs = {{2, 2}, kLiteRtElementTypeInt32, "lhs"};
+  TensorDetails rhs = {{},
+                       kLiteRtElementTypeInt32,
+                       "cst",
+                       MakeBufferRef(cst_data.cbegin(), cst_data.cend())};
+  TensorDetails output = {{2, 2}, kLiteRtElementTypeInt32, "output"};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model, SingleOpModel<kLiteRtOpCodeTflAdd>(
+                      {std::move(lhs), std::move(rhs)}, {std::move(output)},
+                      tflite::ActivationFunctionType_NONE, false));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto executor, NpuCompiledModelExecutor::Create(*model, "/data/local/tmp",
+                                                      "/data/local/tmp"));
+
+  std::vector<SimpleBuffer> inputs;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input, SimpleBuffer::Create<int32_t>({2, 2}, {1, 1, 1, 1}));
+  inputs.push_back(std::move(input));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, executor.Run(inputs));
+
+  EXPECT_THAT(outputs.front().Span<int32_t>(), ElementsAreArray({2, 2, 2, 2}));
+}
+
+#endif
 
 }  // namespace
 }  // namespace litert::testing
