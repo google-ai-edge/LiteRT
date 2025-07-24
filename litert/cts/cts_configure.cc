@@ -14,6 +14,7 @@
 
 #include "litert/cts/cts_configure.h"
 
+#include <regex>  // NOLINT
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,6 +47,11 @@ ABSL_FLAG(std::string, dispatch_dir, "",
 ABSL_FLAG(std::string, plugin_dir, "",
           "Path to directory containing the compiler plugin library. Only "
           "relevant for NPU.");
+
+ABSL_FLAG(
+    std::string, dont_register, "^$",
+    "Regex for test selection. This is a negative search match, if the pattern "
+    "can be found anywhere in the test name, it will be skipped.");
 
 namespace litert::testing {
 
@@ -94,7 +100,9 @@ Expected<CtsConf> CtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
   CtsConf res(std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
               absl::GetFlag(FLAGS_dispatch_dir),
-              absl::GetFlag(FLAGS_plugin_dir));
+              absl::GetFlag(FLAGS_plugin_dir),
+              std::regex(absl::GetFlag(FLAGS_dont_register),
+                         std::regex_constants::ECMAScript));
   Setup(res);
   return res;
 }
@@ -106,6 +114,14 @@ int CtsConf::GetSeedForParams(absl::string_view name) const {
     return kDefaultSeed;
   }
   return it->second;
+}
+
+bool CtsConf::ShouldRegister(const std::string& name) const {
+  return !std::regex_search(name, re_);
+};
+
+bool CtsConf::ShouldRegister(absl::string_view name) const {
+  return ShouldRegister(std::string(name));
 }
 
 }  // namespace litert::testing
