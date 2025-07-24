@@ -266,7 +266,7 @@ class Expected {
   }
 
   // Deleted: an Expected should always be checked before accessing its value.
-  const reference& Value() const&& = delete;
+  reference& Value() const&& = delete;
 
   // Deleted: an Expected should always be checked before accessing its value.
   reference& Value() && = delete;
@@ -300,7 +300,7 @@ class Expected {
   reference operator*() & { return Value(); }
 
   // Deleted: an Expected should always be checked before accessing its value.
-  const reference& operator*() const&& = delete;
+  reference& operator*() const&& = delete;
 
   // Deleted: an Expected should always be checked before accessing its value.
   reference& operator*() && = delete;
