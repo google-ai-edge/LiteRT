@@ -200,4 +200,18 @@ LiteRtStatus StridedSliceOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus SubOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSub) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetSubFusedActivationOption(op, &fused_activation_function));
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

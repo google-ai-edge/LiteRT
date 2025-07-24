@@ -255,6 +255,22 @@ TEST(OpOptionsTest, GetStridedSliceOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetSubOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSub);
+  tflite::SubOptionsT options;
+  options.fused_activation_function = tflite::ActivationFunctionType_TANH;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SubOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SubOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeTanh);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -266,6 +282,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<MulOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SoftmaxOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<StridedSliceOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SubOptions>(&op));
 }
 
 }  // namespace
