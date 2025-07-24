@@ -118,3 +118,8 @@ package_group(
     ],
     packages = [],
 )
+
+exports_files(
+    glob(["*.gwsq"]),
+    visibility = ["//visibility:public"],
+)
