@@ -60,6 +60,12 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
   vec.assign(array, array + array_size);
 }
 
+// CFI builds don't like directly passing free() as a function pointer, so wrap
+// in another function.
+void FreeHostMemory(void* ptr) {
+  litert_aligned_free(ptr);
+}
+
 }  // namespace
 
 // C API defined in environment.cc to workaround Windows build issue.
@@ -196,7 +202,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
                       "Failed to allocate aligned memory");
   }
 
-  LiteRtHostMemoryDeallocator deallocator = litert_aligned_free;
+  LiteRtHostMemoryDeallocator deallocator = FreeHostMemory;
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferT::Ptr tensor_buffer,
       CreateFromHostMemory(
