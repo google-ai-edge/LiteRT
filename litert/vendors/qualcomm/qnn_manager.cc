@@ -21,14 +21,12 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>  // NOLINT
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -43,6 +41,7 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/qnn_log.h"
+#include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
@@ -56,6 +55,9 @@
 #include "System/QnnSystemContext.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
 
+namespace {
+static constexpr int kRequiredNumProviders{1};
+}
 namespace litert::qnn {
 
 namespace {
@@ -146,21 +148,86 @@ LiteRtStatus QnnManager::ResolveApi() {
   }
 
   LITERT_ASSIGN_OR_RETURN(auto providers, LoadProvidersFromLib(lib_));
-  for (const auto& prov : providers) {
-    const bool major =
-        prov->apiVersion.coreApiVersion.major == QNN_API_VERSION_MAJOR;
-
-    const bool minor =
-        prov->apiVersion.coreApiVersion.minor == QNN_API_VERSION_MINOR;
-
-    const bool patch =
-        prov->apiVersion.coreApiVersion.patch == QNN_API_VERSION_PATCH;
-
-    if (major && minor && patch) {
-      interface_ = prov;
-      break;
-    }
+  if (providers.size() != kRequiredNumProviders) {
+    LITERT_LOG(LITERT_ERROR, "Found %zu providers, expected %u",
+               providers.size(), kRequiredNumProviders);
+    return kLiteRtStatusErrorDynamicLoading;
   }
+
+  auto qnn_version = providers[0]->apiVersion;
+  if (qnn_version.coreApiVersion.major != QNN_API_VERSION_MAJOR) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if ((qnn_version.coreApiVersion.major == QNN_API_VERSION_MAJOR &&
+       qnn_version.coreApiVersion.minor < QNN_API_VERSION_MINOR)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_version.coreApiVersion.major == QNN_API_VERSION_MAJOR &&
+      qnn_version.coreApiVersion.minor > QNN_API_VERSION_MINOR) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_version.coreApiVersion.major,
+               qnn_version.coreApiVersion.minor,
+               qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+               QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+  }
+
+  // TODO (chunhsue-qti) more backend version
+  if (qnn_version.backendApiVersion.major != QNN_HTP_API_VERSION_MAJOR) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn backend library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, QNN_HTP_API_VERSION_MAJOR,
+               QNN_HTP_API_VERSION_MINOR, QNN_HTP_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if ((qnn_version.backendApiVersion.major == QNN_HTP_API_VERSION_MAJOR &&
+       qnn_version.backendApiVersion.minor < QNN_HTP_API_VERSION_MINOR)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn backend library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, QNN_HTP_API_VERSION_MAJOR,
+               QNN_HTP_API_VERSION_MINOR, QNN_HTP_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_version.backendApiVersion.major == QNN_HTP_API_VERSION_MAJOR &&
+      qnn_version.backendApiVersion.minor > QNN_HTP_API_VERSION_MINOR) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn backend library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_version.backendApiVersion.major,
+               qnn_version.backendApiVersion.minor,
+               qnn_version.backendApiVersion.patch, QNN_HTP_API_VERSION_MAJOR,
+               QNN_HTP_API_VERSION_MINOR, QNN_HTP_API_VERSION_PATCH);
+  }
+  interface_ = providers[0];
 
   if (interface_ == nullptr) {
     LITERT_LOG(LITERT_ERROR, "%s", "No valid interface was provided\n");
@@ -179,21 +246,46 @@ LiteRtStatus QnnManager::ResolveSystemApi() {
 
   LITERT_ASSIGN_OR_RETURN(auto system_providers,
                           LoadSystemProvidersFromLib(lib_system_));
-  for (const auto& system_prov : system_providers) {
-    const bool major =
-        system_prov->systemApiVersion.major == QNN_SYSTEM_API_VERSION_MAJOR;
-
-    const bool minor =
-        system_prov->systemApiVersion.minor == QNN_SYSTEM_API_VERSION_MINOR;
-
-    const bool patch =
-        system_prov->systemApiVersion.patch == QNN_SYSTEM_API_VERSION_PATCH;
-
-    if (major && minor && patch) {
-      system_interface_ = system_prov;
-      break;
-    }
+  if (system_providers.size() != kRequiredNumProviders) {
+    LITERT_LOG(LITERT_ERROR, "Found %zu system providers, expected %u",
+               system_providers.size(), kRequiredNumProviders);
+    return kLiteRtStatusErrorDynamicLoading;
   }
+
+  auto qnn_system_version = system_providers[0]->systemApiVersion;
+  if (qnn_system_version.major != QNN_SYSTEM_API_VERSION_MAJOR) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn System library version %u.%u.%u is not supported. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if ((qnn_system_version.major == QNN_SYSTEM_API_VERSION_MAJOR &&
+       qnn_system_version.minor < QNN_SYSTEM_API_VERSION_MINOR)) {
+    LITERT_LOG(LITERT_ERROR,
+               "Qnn System library version %u.%u.%u is mismatched. "
+               "The minimum supported version is %u.%u.%u. Please make "
+               "sure you have the correct library version.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+    return kLiteRtStatusErrorDynamicLoading;
+  }
+
+  if (qnn_system_version.major == QNN_SYSTEM_API_VERSION_MAJOR &&
+      qnn_system_version.minor > QNN_SYSTEM_API_VERSION_MINOR) {
+    LITERT_LOG(LITERT_WARNING,
+               "Qnn System library version %u.%u.%u is used. "
+               "The version LiteRT using is %u.%u.%u.",
+               qnn_system_version.major, qnn_system_version.minor,
+               qnn_system_version.patch, QNN_SYSTEM_API_VERSION_MAJOR,
+               QNN_SYSTEM_API_VERSION_MINOR, QNN_SYSTEM_API_VERSION_PATCH);
+  }
+  system_interface_ = system_providers[0];
 
   if (system_interface_ == nullptr) {
     LITERT_LOG(LITERT_ERROR, "%s", "No valid system interface was provided\n");
