@@ -58,6 +58,8 @@ typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
 typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
 typedef void (*LiteRtWebGpuBufferDeallocator)(void* webgpu_buffer_addr);
 typedef void (*LiteRtWebGpuTextureDeallocator)(void* webgpu_texture_addr);
+typedef void (*LiteRtMetalDeallocator)(void* metal_buffer_addr);
+
 
 // /////////////////////////////////////////////////////////////////////////////
 // TensorBuffers.

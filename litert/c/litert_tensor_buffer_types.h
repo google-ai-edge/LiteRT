@@ -42,6 +42,12 @@ typedef enum {
   kLiteRtTensorBufferTypeWebGpuBufferFp16 = 21,
   kLiteRtTensorBufferTypeWebGpuBufferPacked = 22,
   // TODO b/422216124 - Add WebGPU Texture types.
+
+  // 30-39 are reserved for Metal memory objects.
+  kLiteRtTensorBufferTypeMetalBuffer = 30,
+  kLiteRtTensorBufferTypeMetalBufferFp16 = 31,
+  kLiteRtTensorBufferTypeMetalTexture = 32,
+  kLiteRtTensorBufferTypeMetalTextureFp16 = 33,
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
 
@@ -60,4 +66,12 @@ inline bool IsWebGpuMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked;
 }
+
+inline bool IsMetalMemory(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalTexture ||
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+}
+
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

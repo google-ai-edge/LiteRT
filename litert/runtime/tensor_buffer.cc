@@ -170,6 +170,13 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
       // internal webgpu buffer is auto-disposed by the
       // litert::internal::CustomBuffer destructor.
       break;
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+      // internal metal buffer is auto-disposed by the
+      // litert::internal::MetalMemory destructor.
+      break;
   }
 }
 
@@ -795,6 +802,15 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
       return host_memory_ptr;
     }
 
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeMetalTexture: {
+      // TODO(fengwuyao): Add support for Metal buffers.
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Metal buffers are not supported");
+    }
+
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown: {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -842,6 +858,15 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
+    }
+
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16: {
+      // TODO(fengwuyao): Add support for Metal buffers.
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Metal buffers are not supported");
     }
 
     case kLiteRtTensorBufferTypeHostMemory:

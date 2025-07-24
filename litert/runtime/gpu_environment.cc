@@ -109,6 +109,18 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+  auto metal_device_option =
+      environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
+  if (metal_device_option.has_value() &&
+      metal_device_option->type == kLiteRtAnyTypeInt) {
+    options.metal_info = MetalInfo::CreateWithDevice(
+        const_cast<void*>(metal_device_option->ptr_value));
+    // options.metal_device =
+    //     (__bridge_transfer id<MTLDevice>)(metal_device_option->ptr_value);
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   return options;
 }
 
@@ -267,6 +279,24 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #else
   LITERT_LOG(LITERT_INFO, "Failed to create OpenCL context.");
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  // Set up Metal.
+  if (options_.metal_info) {
+    properties_.is_metal_available = options_.metal_info->IsMetalAvailable();
+    metal_info_ = std::move(options_.metal_info);
+    LITERT_LOG(LITERT_INFO, "Created Metal device from provided device id");
+  } else {
+    MetalInfoPtr metal_info = MetalInfo::Create();
+    if (metal_info->GetDevice() == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
+      return {};
+    }
+    properties_.is_metal_available = metal_info->IsMetalAvailable();
+    metal_info_ = std::move(metal_info);
+    LITERT_LOG(LITERT_INFO, "Created default Metal device.");
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   return {};
 }

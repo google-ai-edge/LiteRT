@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
+# load("//litert/build_common:special_rule.bzl", "metal_linkopts", "metal_opts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -127,6 +128,8 @@ cc_library(
         "environment.h",
         "//litert/c:litert_environment.h",
     ],
+    # copts = metal_opts(),
+    # linkopts = metal_linkopts(),
     deps = [
         ":environment_options",
         "//litert/c:litert_any",

@@ -14,7 +14,7 @@
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script", "export_lrt_tflite_runtime_linkopt", "export_lrt_tflite_runtime_script")
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "metal_linkopts", "metal_opts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -318,12 +318,13 @@ cc_library(
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
     ],
+    copts = metal_opts(),
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [
             "-landroid",
         ],
         "//conditions:default": [],
-    }) + gles_linkopts(),
+    }) + gles_linkopts() + metal_linkopts(),
     deps = [
         ":litert_common",
         ":litert_event",
@@ -509,6 +510,8 @@ cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
     deps = [
         ":litert_common",
         "//litert/cc:litert_expected",
@@ -559,6 +562,8 @@ cc_library(
     name = "litert_accelerator_registration",
     srcs = ["litert_accelerator_registration.cc"],
     hdrs = ["litert_accelerator_registration.h"],
+    copts = metal_opts(),
+    linkopts = metal_linkopts(),
     deps = [
         ":litert_accelerator",
         ":litert_common",

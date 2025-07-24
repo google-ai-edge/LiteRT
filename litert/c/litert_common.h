@@ -25,7 +25,7 @@ extern "C" {
 
 #ifdef __cplusplus
 #define LITERT_DEFINE_HANDLE(name) \
-  typedef class name##T* name;    \
+  typedef class name##T* name;     \
   typedef const class name##T* name##Const
 #else  // __cplusplus
 #define LITERT_DEFINE_HANDLE(name) \
@@ -34,7 +34,7 @@ extern "C" {
 #endif  // __cplusplus
 
 #define LITERT_DEFINE_HANDLE_STRUCT(name) \
-  typedef struct name##T* name;    \
+  typedef struct name##T* name;           \
   typedef const struct name##T* name##Const
 
 // LiteRT Accelerator object. (litert_accelerator.h)
@@ -117,6 +117,18 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #define LITERT_HAS_OPENCL_SUPPORT_DEFAULT 1
 #define LITERT_HAS_WEBGPU_SUPPORT_DEFAULT 1
 #define LITERT_HAS_OPENGL_SUPPORT 0
+#endif
+
+#if defined(__APPLE__)
+#define LITERT_HAS_METAL_SUPPORT_DEFAULT 1
+#else
+#define LITERT_HAS_METAL_SUPPORT_DEFAULT 0
+#endif
+
+#if defined(LITERT_DISABLE_METAL_SUPPORT)
+#define LITERT_HAS_METAL_SUPPORT 0
+#else
+#define LITERT_HAS_METAL_SUPPORT LITERT_HAS_METAL_SUPPORT_DEFAULT
 #endif
 
 #if defined(LITERT_DISABLE_OPENCL_SUPPORT)

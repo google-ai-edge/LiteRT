@@ -42,3 +42,15 @@ def gles_linkopts():
         ],
         "//conditions:default": [],
     })
+
+def metal_opts():
+    """This is a no-op outside of Google."""
+    return []
+
+def metal_linkopts():
+    """This is a no-op outside of Google."""
+    return []
+
+def metal_deps():
+    """This is a no-op outside of Google."""
+    return []

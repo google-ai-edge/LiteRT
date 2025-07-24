@@ -42,6 +42,18 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace litert::internal {
 
+class MetalInfo;
+typedef std::unique_ptr<struct MetalInfo> MetalInfoPtr;
+class MetalInfo {
+ public:
+  virtual ~MetalInfo() = default;
+  virtual void* GetDevice() = 0;
+  virtual bool IsMetalAvailable() = 0;
+  static MetalInfoPtr Create();                        // factory.
+  static MetalInfoPtr CreateWithDevice(void* device);  // factory.
+  // No member vars on purpose.
+};
+
 struct GpuEnvironmentProperties {
   bool is_opencl_available = false;
 
@@ -60,6 +72,9 @@ struct GpuEnvironmentProperties {
 
   // Indicates whether AHWB->GL interop is supported.
   bool is_ahwb_gl_interop_supported = false;
+
+  // Indicates whether Metal is available.
+  bool is_metal_available = false;
 };
 
 struct GpuEnvironmentOptions {
@@ -89,6 +104,10 @@ struct GpuEnvironmentOptions {
   WGPUDevice webgpu_device = nullptr;
   WGPUQueue webgpu_queue = nullptr;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  MetalInfoPtr metal_info;
+#endif  // LITERT_HAS_METAL_SUPPORT
 };
 
 // A class for storing the MLD global environment and kept in Environment.
@@ -110,6 +129,11 @@ class GpuEnvironment {
   WGPUDevice getWebGpuDevice() { return webgpu_device_; }
   WGPUQueue getWebGpuQueue() { return webgpu_queue_; }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  void* getMetalDevice() { return metal_info_.get()->GetDevice(); }
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // Create a GpuEnvironment with the given environment.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
@@ -144,6 +168,10 @@ class GpuEnvironment {
   WGPUDevice webgpu_device_;
   WGPUQueue webgpu_queue_;
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+  MetalInfoPtr metal_info_;
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
   std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
