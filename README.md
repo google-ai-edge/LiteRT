@@ -63,4 +63,4 @@ For more details, check our
     [docker_build/](./docker_build)
 
 3.  For more information about how to use docker interactive shell/ building
-    different targets. Please refer to [build/README.md](./build/README.md)
+    different targets. Please refer to [docker_build/README.md](./docker_build/README.md)
