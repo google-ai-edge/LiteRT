@@ -130,6 +130,8 @@ litert_device_test(
         "//litert/cc:litert_shared_library",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
+        "//litert/vendors/qualcomm/core:common",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
