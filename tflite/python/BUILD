@@ -669,6 +669,7 @@ py_strict_library(
         "//tflite/testing:_pywrap_string_util",
         "//tflite/tools/optimize/python:_pywrap_modify_model_interface",
         "//tflite/tools/optimize/sparsity:format_converter_wrapper_pybind11",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:_pywrap_converter_api",
     ],
 )
 
@@ -684,7 +685,7 @@ pywrap_library(
             "//conditions:default": "pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 8,
+    pywrap_count = 9,
     visibility = ["//visibility:public"],
     deps = [
         ":tflite_pywrap_deps",
