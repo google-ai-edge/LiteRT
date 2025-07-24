@@ -59,7 +59,6 @@ litert_lib(
     srcs = ["graph_iterator.cc"],
     hdrs = [
         "graph_iterator.h",
-        "//litert/vendors/intel_openvino:utils.h"
         ],
     tags = [
         "nobuilder",
@@ -72,6 +71,7 @@ litert_lib(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_model",
+        "//litert/vendors/intel_openvino:ov_utils"
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
         "//conditions:default": [],
@@ -81,10 +81,7 @@ litert_lib(
 litert_lib(
     name = "decoder",
     srcs = ["decoder.cc"],
-    hdrs = [
-        "decoder.h",
-        "//litert/vendors/intel_openvino:utils.h"
-        ],
+    hdrs = ["decoder.h"],
     tags = [
         "nobuilder",
         "notap",
@@ -93,6 +90,7 @@ litert_lib(
         "//litert/c:litert_logging",
         "//litert/c:litert_op_options",
         "//litert/cc:litert_model",
+        "//litert/vendors/intel_openvino:ov_utils"
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
         "//conditions:default": [],

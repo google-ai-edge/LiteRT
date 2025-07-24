@@ -35,7 +35,6 @@ litert_dynamic_lib(
     hdrs = [
         "device_context.h",
         "invocation_context.h",
-        "//litert/vendors/intel_openvino:utils.h"
     ],
     copts = [
         "-Os",
@@ -71,6 +70,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_model",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/cleanup",
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],

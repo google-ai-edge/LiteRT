@@ -17,6 +17,11 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
-exports_files([
-    "utils.h",
-])
+cc_library(
+    name = "ov_utils",
+    hdrs = ["utils.h"],
+    deps = [
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_model",
+    ],
+)

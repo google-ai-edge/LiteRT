@@ -64,13 +64,10 @@ static const LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
                                            std::vector<int64_t>& ov_shape_vec) {
     if (litert_tensor.TypeId() != kLiteRtRankedTensorType) return kLiteRtStatusErrorInvalidArgument;
 
-    const auto ranked_tensor_type = litert_tensor.RankedTensorType();
-    if (!ranked_tensor_type) {
-        LITERT_LOG(LITERT_ERROR, "%s", ranked_tensor_type.Error().Message().data());
-        return ranked_tensor_type.Error().Status();
-    }
+    LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
+                            litert_tensor.RankedTensorType());
 
-    const auto tensor_layout = ranked_tensor_type->Layout();
+    const auto tensor_layout = ranked_tensor_type.Layout();
     if (tensor_layout.Rank() == 0)
         return kLiteRtStatusErrorUnsupported;
     else {
