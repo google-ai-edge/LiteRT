@@ -13,7 +13,15 @@
 # limitations under the License.
 
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_linkopts", "metal_deps", "metal_linkopts", "metal_opts")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "gles_deps",
+    "gles_linkopts",
+    "metal_deps",
+    "metal_deps_without_gpu_environment",
+    "metal_linkopts",
+    "metal_opts",
+)
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -196,7 +204,7 @@ cc_library(
     hdrs = ["gpu_environment.h"],
     copts = metal_opts(),
     linkopts = metal_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + metal_deps(),
+    deps = GPU_ENVIRONMENT_DEPS + metal_deps_without_gpu_environment(),
 )
 
 cc_library(
@@ -578,13 +586,8 @@ objc_library(
     copts = ["--std=gnu++20"] + metal_opts(),
     linkopts = metal_linkopts(),
     deps = [
-        ":gpu_environment_hdr",
+        ":gpu_environment",
         ":metal_sync",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/synchronization",
-        # copybara:uncomment_begin (google-only)
-        # "//third_party/apple_frameworks:Metal",
-        # copybara:uncomment_end
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
         "//litert/cc:litert_expected",
@@ -593,8 +596,9 @@ objc_library(
         "//tflite/delegates/gpu/metal:buffer",
         "//tflite/delegates/gpu/metal:common",
         "//tflite/delegates/gpu/metal:gpu_object",
-        "//tflite/delegates/gpu/metal:metal_device",
-    ],
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/synchronization",
+    ] + metal_deps(),
 )
 
 objc_library(
@@ -612,14 +616,7 @@ objc_library(
     copts = ["--std=gnu++20"] + metal_opts(),
     linkopts = metal_linkopts(),
     deps = [
-        ":gpu_environment_hdr",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        # copybara:uncomment_begin (google-only)
-        # "//third_party/apple_frameworks:Metal",
-        # copybara:uncomment_end
+        ":gpu_environment",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
         "//litert/cc:litert_macros",
@@ -627,27 +624,12 @@ objc_library(
         "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:tensor",
         "//tflite/delegates/gpu/common/task:tensor_desc",
-        "//tflite/delegates/gpu/metal:metal_device",
         "//tflite/delegates/gpu/metal:metal_spatial_tensor",
-    ],
-)
-
-# header dependencies for gpu_environment_metal to avoid circular dependency.
-cc_library(
-    name = "gpu_environment_hdr",
-    hdrs = ["gpu_environment.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_dispatch_headers",
-        "//litert/c:litert_gl_types",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:cl_device",
-        "//tflite/delegates/gpu/gl:egl_environment",
-        "@opencl_headers",
-    ],
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ] + metal_deps(),
 )
 
 objc_library(
@@ -659,9 +641,5 @@ objc_library(
         # "//tools/build_defs/swift:no_module",
         # copybara:uncomment_end
     ],
-    deps = [
-        ":gpu_environment_hdr",
-        "//tflite/delegates/gpu/metal:metal_device",
-        "//third_party/apple_frameworks:Metal",
-    ],
+    deps = [":gpu_environment_header"] + metal_deps_without_gpu_environment(),
 )

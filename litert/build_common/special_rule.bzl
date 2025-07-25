@@ -51,6 +51,10 @@ def metal_linkopts():
     """This is a no-op outside of Google."""
     return []
 
+def metal_deps_without_gpu_environment():
+    """This is a no-op outside of Google."""
+    return []
+
 def metal_deps():
     """This is a no-op outside of Google."""
     return []
