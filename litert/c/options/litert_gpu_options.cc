@@ -58,6 +58,9 @@ struct LiteRtGpuOptionsPayloadT {
   // List of external tensor patterns which are not affected by the no immutable
   // external tensors mode.
   std::vector<std::string> external_tensor_patterns;
+  // Added in version 1.4.0.
+  // GPU backend to use.
+  LiteRtGpuBackend gpu_backend = kLiteRtGpuBackendAutomatic;
 };
 
 namespace litert {
@@ -116,6 +119,14 @@ LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->benchmark_mode = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
+                                           LiteRtGpuBackend backend) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->gpu_backend = backend;
   return kLiteRtStatusOk;
 }
 
@@ -225,6 +236,16 @@ LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *enabled = payload->enable_infinite_float_capping;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                           LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(backend, ErrorStatusBuilder::InvalidArgument())
+      << "`backend` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *backend = payload->gpu_backend;
   return kLiteRtStatusOk;
 }
 

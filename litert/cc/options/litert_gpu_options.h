@@ -42,10 +42,11 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetModelCacheKey(const char* model_cache_key);
   LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
-  // TODO - b/421905729: Change name to EnableNoExternalTensorsMode
+  // TODO - b/421905729: Change name to EnableNonExternalTensorsMode
   // with the next API updates.
   LiteRtStatus EnableNoImmutableExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
+  LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
 };
 
 }  // namespace litert
