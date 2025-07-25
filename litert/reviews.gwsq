@@ -94,11 +94,15 @@ define Main {
     AddCritiqueTag(["#litert-test"]);
   }
 
-  string FinalPocCommentStr = list_to_string(PocComment, "\n");
-  string ReviewersStr = list_to_string(current_reviewers());
-  add_comment(format(
-      "Thanks for your CL {{author}}!\n\n@{{ReviewersStr}} has been selected as the primary reviewer. "
-      "The folowing PoCs for subcomponents affected by this change are required "
-      "to LGTM. Request review from them once the primary review has been "
-      "completed.\n\n{{FinalPocCommentStr}}\n\n-LiteRt Review Bot"));
+  string ReviewersStr = list_to_string(current_reviewers() - ['litert_compiler_core']);
+  string Prefix = format("Thanks for your CL {{author}}!\n\n@{{ReviewersStr}} has been selected as the primary reviewer.");
+
+  string PocCommentStr = "";
+  if (len(PocComment) > 0) {
+      string PocForSubcomponents = list_to_string(PocComment, "\n");
+      string PocCommentStr = format("The folowing PoCs for subcomponents affected by this change are required to LGTM. Please request review from them once the primary review has been completed.\n\n{{PocForSubcomponents}}");
+  }
+  
+
+  add_comment(format("{{Prefix}}{{PocCommentStr}}\n\n-LiteRt Review Bot"));
 }
