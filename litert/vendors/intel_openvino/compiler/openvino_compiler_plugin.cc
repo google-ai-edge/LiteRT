@@ -102,6 +102,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSelect,
     kLiteRtOpCodeTflSelectV2,
     kLiteRtOpCodeTflHardSwish,
+    kLiteRtOpCodeTflPrelu,
 };
 // clang format on
 
