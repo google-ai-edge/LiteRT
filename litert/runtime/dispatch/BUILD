@@ -140,6 +140,10 @@ litert_device_test(
         "//litert/test:testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
     ],
+    features = select({
+        "//tools/cc_target_os:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
     linkopts = gles_linkopts(),
     deps = [
         ":dispatch_delegate",
@@ -179,6 +183,10 @@ litert_device_test(
         "//litert/test:testdata/simple_cascade_model_npu.tflite",
         "//litert/test:testdata/simple_model_google_tensor.bin",
     ],
+    features = select({
+        "//tools/cc_target_os:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
     linkopts = gles_linkopts(),
     deps = [
         ":dispatch_delegate",
@@ -216,6 +224,10 @@ litert_device_test(
         "//litert/test:testdata/simple_mixed_cascade_model_npu.tflite",
         "//litert/test:testdata/simple_model_google_tensor.bin",
     ],
+    features = select({
+        "//tools/cc_target_os:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
     linkopts = gles_linkopts(),
     deps = [
         ":dispatch_delegate",

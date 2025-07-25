@@ -435,6 +435,7 @@ def litert_device_test(
         name,
         srcs,
         deps,
+        features = [],
         rule = native.cc_test,
         backend_id = "",
         driver = get_driver(),
@@ -470,6 +471,7 @@ def litert_device_test(
         name = target,
         srcs = srcs,
         deps = deps,
+        features = features,
         data = data,
         linkopts = select({
             "@org_tensorflow//tensorflow:android": ["-landroid"],

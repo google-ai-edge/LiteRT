@@ -121,6 +121,10 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
+    features = select({
+        "//tools/cc_target_os:android": ["-layering_check"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
