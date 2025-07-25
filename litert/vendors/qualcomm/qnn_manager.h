@@ -26,26 +26,27 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "QnnBackend.h"                 // from @qairt
+#include "QnnCommon.h"                  // from @qairt
+#include "QnnContext.h"                 // from @qairt
+#include "QnnDevice.h"                  // from @qairt
+#include "QnnInterface.h"               // from @qairt
+#include "QnnTypes.h"                   // from @qairt
+#include "System/QnnSystemContext.h"    // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
+#include "absl/strings/string_view.h"   // from @com_google_absl
+#include "absl/types/span.h"            // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 #include "litert/cc/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
 #include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
 #include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //
@@ -89,12 +90,12 @@ class QnnManager {
   ~QnnManager();
 
   static Expected<Ptr> Create(
-      absl::Span<const QnnBackend_Config_t*> configs,
+      // absl::Span<const QnnBackend_Config_t*> configs,
       const ::qnn::Options& options,
       std::optional<std::string> shared_library_dir = std::nullopt,
       std::optional<::qnn::SocInfo> soc_info = std::nullopt);
 
-  static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
+  // static absl::Span<const QnnBackend_Config_t*> DefaultBackendConfigs();
   static absl::Span<const QnnContext_Config_t*> DefaultContextConfigs();
   static absl::Span<const QnnContext_Config_t*> WeightSharingContextConfigs();
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
@@ -132,26 +133,30 @@ class QnnManager {
 
   LiteRtStatus ValidateOp(const Qnn_OpConfig_t& op_config);
 
-  bool IsLegacySocModel() { return soc_info_.dsp_arch == ::qnn::DspArch::V68; }
+  bool IsLegacySocModel() {
+    return htp_backend_->SocInfo().dsp_arch == ::qnn::DspArch::V68;
+  }
 
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
-  Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
+  // Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
+
+  ::qnn::HtpBackend* HtpBackend() const { return htp_backend_.get(); }
 
  private:
   QnnManager() = default;
 
-  LiteRtStatus Init(absl::Span<const QnnBackend_Config_t*> configs,
-                    std::optional<std::string> shared_library_dir,
-                    std::optional<::qnn::SocInfo> soc_info,
-                    const ::qnn::Options& options);
+  LiteRtStatus Init(
+      // absl::Span<const QnnBackend_Config_t*> configs,
+      std::optional<std::string> shared_library_dir,
+      std::optional<::qnn::SocInfo> soc_info, const ::qnn::Options& options);
 
   //
   // Manage libQnn*.so Loading
   //
 
   // Loads the libQnn*.so at given path.
-  LiteRtStatus LoadLib(absl::string_view path);
+  LiteRtStatus LoadLib();
 
   // Loads the libQnnSystem.so at given path.
   LiteRtStatus LoadSystemLib(absl::string_view path);
@@ -171,11 +176,11 @@ class QnnManager {
   LiteRtStatus ResolveSystemApi();
 
   // Get qnn log handle. Nullptr if logCreate has not been successfully called.
-  Qnn_LogHandle_t& LogHandle() { return log_handle_; }
+  // Qnn_LogHandle_t& LogHandle() { return log_handle_; }
 
   // Get qnn device handle. Nullptr if deviceCreate has not been successfully
   // called.
-  Qnn_DeviceHandle_t& DeviceHandle() { return device_handle_; }
+  // Qnn_DeviceHandle_t& DeviceHandle() { return device_handle_; }
 
   // Signal QNN SDK to free any memory related to the device. Does nothing
   // if deviceCreate has not been called.
@@ -200,15 +205,16 @@ class QnnManager {
   const QnnInterface_t* interface_ = nullptr;
   const QnnSystemInterface_t* system_interface_ = nullptr;
 
-  Qnn_LogHandle_t log_handle_ = nullptr;
-  Qnn_BackendHandle_t backend_handle_ = nullptr;
-  Qnn_DeviceHandle_t device_handle_ = nullptr;
-  ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[6];  // V75
-  std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
-  std::vector<QnnDevice_Config_t> device_configs_;
+  // Qnn_LogHandle_t log_handle_ = nullptr;
+  // Qnn_BackendHandle_t backend_handle_ = nullptr;
+  // Qnn_DeviceHandle_t device_handle_ = nullptr;
+  // ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[6];  // V75
+  // std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
+  std::unique_ptr<::qnn::HtpBackend> htp_backend_;
+  // std::vector<QnnDevice_Config_t> device_configs_;
   // For dispatch options
   std::unique_ptr<PerfControl> perf_control_{nullptr};
-  const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
+  // const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
