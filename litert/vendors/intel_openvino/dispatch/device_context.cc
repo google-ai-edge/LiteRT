@@ -112,7 +112,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Tensor strides are not supported"));
 
-  ov::element::Type ov_element_type = MapLiteTypeToOV(tensor_type.element_type);
+  ov::element::Type ov_element_type = litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT

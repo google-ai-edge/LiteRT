@@ -21,7 +21,7 @@ cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
         "//litert/cc:litert_model",
     ],
 )
