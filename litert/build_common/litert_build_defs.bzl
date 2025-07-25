@@ -18,6 +18,8 @@
 # load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
 # copybara:uncomment_end
 
+load("@bazel_skylib//lib:selects.bzl", "selects")
+
 ####################################################################################################
 # Util
 
@@ -223,23 +225,32 @@ def _litert_base(
 
     Args:
       rule: The underlying rule to use (e.g., cc_test, cc_library).
-      ungrte: Whether to link against system libraries ("ungrte").
+      ungrte: Whether to link against system libraries ("ungrte"). Even if
+      ungrte is set to true by the library, ungrte might not happen. An
+      additional build flag "ungrte" will also be inspected to determine whether
+      the behavior should occur. The default behavior without specifying the
+      build flag is to always ungrte.
       **cc_rule_kwargs: Keyword arguments to pass to the underlying rule.
     """
+
+    _DEFAULT_LINK_OPTS = ["-Wl,--disable-new-dtags"]
+
+    _UNGRTE_LINK_OPTS = [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64]
 
     if ungrte:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = select({
-                "@org_tensorflow//tensorflow:linux_x86_64": [_SYS_ELF_INTERPRETER_LINKOPT_X86_64, _SYS_RPATHS_LINKOPT_X86_64] + ["-Wl,--disable-new-dtags"],
+            linkopts = selects.with_or({
+                ("//conditions:default", "//litert/build_common:linux_x86_64_grte"): _DEFAULT_LINK_OPTS,
                 "@org_tensorflow//tensorflow:macos": [],
-                "//conditions:default": ["-Wl,--disable-new-dtags"],
+                "//litert/build_common:linux_x86_64_ungrte": _UNGRTE_LINK_OPTS + _DEFAULT_LINK_OPTS,
             }),
         )
+
     else:
         append_rule_kwargs(
             cc_rule_kwargs,
-            linkopts = ["-Wl,--disable-new-dtags"],
+            linkopts = _DEFAULT_LINK_OPTS,
         )
 
     rule(**cc_rule_kwargs)
