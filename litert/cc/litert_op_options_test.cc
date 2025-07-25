@@ -289,6 +289,22 @@ TEST(OpOptionsTest, GetReshapeOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetSumOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSum);
+  tflite::ReducerOptionsT options;
+  options.keep_dims = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SumOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->keep_dims, true);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -302,6 +318,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<StridedSliceOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SubOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<ReshapeOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SumOptions>(&op));
 }
 
 }  // namespace
