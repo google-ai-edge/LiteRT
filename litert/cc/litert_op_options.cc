@@ -214,4 +214,21 @@ LiteRtStatus SubOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus ReshapeOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflReshape) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const int32_t* new_shape_data;
+  int32_t new_shape_size;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetReshapeNewShapeOption(op, &new_shape_data, &new_shape_size));
+  new_shape.assign(new_shape_data, new_shape_data + new_shape_size);
+
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

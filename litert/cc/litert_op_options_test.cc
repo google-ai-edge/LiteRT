@@ -271,6 +271,24 @@ TEST(OpOptionsTest, GetSubOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetReshapeOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflReshape);
+  tflite::ReshapeOptionsT options;
+  options.new_shape = {1, 2, 3};
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReshapeOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ReshapeOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->new_shape[0], 1);
+  EXPECT_EQ(res->new_shape[1], 2);
+  EXPECT_EQ(res->new_shape[2], 3);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -283,6 +301,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<SoftmaxOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<StridedSliceOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SubOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ReshapeOptions>(&op));
 }
 
 }  // namespace
