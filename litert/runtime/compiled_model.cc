@@ -167,16 +167,15 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
 
 Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
-    LiteRtEnvironmentT& env) {
+    LiteRtOptions options, LiteRtEnvironmentT& env) {
   bool need_reserialization = false;
 
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
     LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
     // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the
     // vendor code (nullptr are safe for now).
-    auto jit_result =
-        litert::internal::ApplyPlugins(&env, /*options=*/nullptr, &model,
-                                       hw_accelerators, &need_reserialization);
+    auto jit_result = litert::internal::ApplyPlugins(
+        &env, options, &model, hw_accelerators, &need_reserialization);
     if (!jit_result) {
       LITERT_LOG(LITERT_WARNING, "Failed to apply compiler plugins: %s",
                  jit_result.Error().Message().c_str());
@@ -274,8 +273,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
            << "No acceleration provided.";
   }
 
-  LITERT_RETURN_IF_ERROR(
-      compiled_model->InitializeModel(*model, hardware_accelerators, *env));
+  LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
+      *model, hardware_accelerators, jit_compilation_options, *env));
 
   LITERT_RETURN_IF_ERROR(
       compiled_model->InitializeRuntime(env, jit_compilation_options));

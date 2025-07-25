@@ -176,6 +176,7 @@ class LiteRtCompiledModelT {
   // consider caching JIT result.
   litert::Expected<void> InitializeModel(LiteRtModelT& model,
                                          LiteRtHwAcceleratorSet hw_accelerators,
+                                         LiteRtOptions options,
                                          LiteRtEnvironmentT& env);
 
   // Returns the base address of the flatbuffer memory.
