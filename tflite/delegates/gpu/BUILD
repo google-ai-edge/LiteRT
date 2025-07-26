@@ -5,7 +5,7 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
-load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS")
+load("//tflite:build_def.bzl", "CXX17_BAZEL_ONLY_COPTS", "tflite_pagesize_linkopts")
 load("//tflite:special_rules.bzl", "tflite_extra_gles_deps", "tflite_portable_test_suite")
 load("//tflite/delegates/gpu:build_defs.bzl", "gpu_delegate_linkopts")
 
@@ -181,7 +181,7 @@ cc_binary(
         "//conditions:default": [
             "-fvisibility=hidden",
         ],
-    }),
+    }) + tflite_pagesize_linkopts(),
     linkshared = 1,
     linkstatic = 1,
     tags = [
