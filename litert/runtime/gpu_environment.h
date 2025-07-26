@@ -42,17 +42,27 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace litert::internal {
 
+#if LITERT_HAS_OPENCL_SUPPORT
 class MetalInfo;
 typedef std::unique_ptr<struct MetalInfo> MetalInfoPtr;
+
 class MetalInfo {
  public:
   virtual ~MetalInfo() = default;
+
+  // Returns an underlying Metal device.
   virtual void* GetDevice() = 0;
+
+  // Whether Metal is available on the system.
   virtual bool IsMetalAvailable() = 0;
-  static MetalInfoPtr Create();                        // factory.
-  static MetalInfoPtr CreateWithDevice(void* device);  // factory.
-  // No member vars on purpose.
+
+  // Create a MetalInfo instance with the default Metal device.
+  static MetalInfoPtr Create();
+
+  // Create a MetalInfo instance with the given Metal device.
+  static MetalInfoPtr CreateWithDevice(void* device);
 };
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 struct GpuEnvironmentProperties {
   bool is_opencl_available = false;

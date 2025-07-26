@@ -635,7 +635,6 @@ objc_library(
 objc_library(
     name = "gpu_environment_metal",
     srcs = ["gpu_environment_metal.mm"],
-    hdrs = ["gpu_environment_metal.h"],
     aspect_hints = [
         # copybara:uncomment_begin (google-only)
         # "//tools/build_defs/swift:no_module",

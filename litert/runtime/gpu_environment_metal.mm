@@ -12,16 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#import "third_party/odml/litert/litert/runtime/gpu_environment_metal.h"
+#import <Metal/Metal.h>
 
 #include "litert/runtime/gpu_environment.h"
+#include "tflite/delegates/gpu/metal/metal_device.h"
 
 namespace litert::internal {
+namespace {
+
+class MetalInfoImpl : public MetalInfo {
+ public:
+  MetalInfoImpl() : metal_device_(tflite::gpu::metal::MetalDevice()) {}
+  explicit MetalInfoImpl(id<MTLDevice> device)
+      : metal_device_(tflite::gpu::metal::MetalDevice(device)) {}
+
+  ~MetalInfoImpl() override = default;
+
+  // Implementation of MetalInfo.
+  void* GetDevice() override { return (__bridge void*)(metal_device_.device()); }
+  bool IsMetalAvailable() override { return metal_device_.device() != nullptr; }
+
+ private:
+  const tflite::gpu::metal::MetalDevice metal_device_;
+};
+
+}  // namespace
 
 MetalInfoPtr MetalInfo::Create() { return std::make_unique<MetalInfoImpl>(); }
 
 MetalInfoPtr MetalInfo::CreateWithDevice(void* device) {
-  return std::make_unique<MetalInfoImpl>(device);
+  return std::make_unique<MetalInfoImpl>((__bridge id<MTLDevice>)device);
 }
 
 }  // namespace litert::internal
