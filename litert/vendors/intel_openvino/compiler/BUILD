@@ -43,6 +43,7 @@ litert_dynamic_lib(
     deps = [
         ":graph_iterator",
         "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -56,7 +57,9 @@ litert_dynamic_lib(
 litert_lib(
     name = "graph_iterator",
     srcs = ["graph_iterator.cc"],
-    hdrs = ["graph_iterator.h"],
+    hdrs = [
+        "graph_iterator.h",
+    ],
     tags = [
         "nobuilder",
         "notap",
@@ -68,6 +71,7 @@ litert_lib(
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_model",
+        "//litert/vendors/intel_openvino:ov_utils",
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
         "//conditions:default": [],
@@ -84,9 +88,9 @@ litert_lib(
     ],
     deps = [
         "//litert/c:litert_logging",
-        "//litert/c:litert_options",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_model",
-        "//litert/tools:dump",
+        "//litert/vendors/intel_openvino:ov_utils",
     ] + select({
         ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
         "//conditions:default": [],

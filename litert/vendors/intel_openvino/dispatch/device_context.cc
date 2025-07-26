@@ -28,10 +28,11 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/vendors/intel_openvino/utils.h"
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
-LiteRtDispatchDeviceContextT::Create(ov::Core core) {
-  return Ptr(new LiteRtDispatchDeviceContextT(core));
+LiteRtDispatchDeviceContextT::Create() {
+  return Ptr(new LiteRtDispatchDeviceContextT());
 }
 
 #if LITERT_HAS_AHWB_SUPPORT
@@ -111,6 +112,8 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                          "Tensor strides are not supported"));
 
+  ov::element::Type ov_element_type =
+      litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   switch (tensor_buffer_type) {
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
@@ -129,7 +132,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
         return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                   "MMAP failed for tensor buffer");
 
-      auto context = core_.get_default_context("NPU")
+      auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
@@ -137,7 +140,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       // TODO: change f32 to ov_element_type fetched from TensorType
       auto remote_tensor = context.create_tensor(
-          ov::element::f32, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
+          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           buffer_fd);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);
@@ -167,10 +170,10 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
-      auto context = core_.get_default_context("NPU")
+      auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
       ov::RemoteTensor remote_tensor = context.create_tensor(
-          ov::element::f32, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
+          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
           fd);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);

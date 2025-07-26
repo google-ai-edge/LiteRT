@@ -27,10 +27,6 @@
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
-namespace {
-static std::unique_ptr<ov::Core> core;
-}  // namespace
-
 namespace litert {
 namespace openvino {
 
@@ -39,8 +35,8 @@ namespace openvino {
 // functions.
 LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
                                 LiteRtOptions options) {
-  core = std::make_unique<ov::Core>();
-  std::vector<std::string> availableDevices = core->get_available_devices();
+  ov::Core core;
+  std::vector<std::string> availableDevices = core.get_available_devices();
   for (auto&& device : availableDevices)
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
@@ -79,7 +75,7 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 // error.
 LiteRtStatus DispatchDeviceContextCreate(
     LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(*core); context) {
+  if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
     *device_context = context->release();
     return kLiteRtStatusOk;
   } else {
@@ -183,7 +179,7 @@ LiteRtStatus DispatchInvocationContextCreate(
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
   auto context = LiteRtDispatchInvocationContextT::Create(
-      *core, *device_context, exec_type, exec_bytecode_buffer, function_name,
+      *device_context, exec_type, exec_bytecode_buffer, function_name,
       num_inputs, num_outputs);
   if (!context) {
     LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",

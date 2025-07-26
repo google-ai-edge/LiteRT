@@ -32,7 +32,7 @@ class LiteRtDispatchInvocationContextT {
   ~LiteRtDispatchInvocationContextT() = default;
 
   static litert::Expected<Ptr> Create(
-      ov::Core core, LiteRtDispatchDeviceContextT &device_context,
+      LiteRtDispatchDeviceContextT &device_context,
       LiteRtDispatchExecutableType exec_type,
       const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
       int num_inputs, int num_outputs);
@@ -64,8 +64,6 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> Invoke();
 
  private:
-  // TODO: pass ov::Core from dispatch_api, create infer request in dispatch
-  // after compiling model
   LiteRtDispatchInvocationContextT(ov::InferRequest &infer_request,
                                    LiteRtDispatchDeviceContextT &device_context,
                                    int num_inputs, int num_outputs)

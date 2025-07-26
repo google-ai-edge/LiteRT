@@ -26,7 +26,7 @@
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
-    ov::Core core, LiteRtDispatchDeviceContextT &device_context,
+    LiteRtDispatchDeviceContextT &device_context,
     LiteRtDispatchExecutableType exec_type,
     const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
     int num_inputs, int num_outputs) {
@@ -42,7 +42,12 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to open model bytecode stream");
   }
-  ov::CompiledModel compiled_model = core.import_model(model_stream, "NPU");
+  auto core = device_context.getCore();
+  if (!core) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Failed to get OpenVINO core from device context");
+  }
+  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
