@@ -35,14 +35,14 @@ cc_library(
     ],
 )
 
-litert_lib(
-    name = "qnn_log",
-    srcs = ["qnn_log.cc"],
-    hdrs = ["qnn_log.h"],
-    deps = [
-        "@qairt//:qnn_lib_headers",
-    ],
-)
+# litert_lib(
+#     name = "qnn_log",
+#     srcs = ["qnn_log.cc"],
+#     hdrs = ["qnn_log.h"],
+#     deps = [
+#         "@qairt//:qnn_lib_headers",
+#     ],
+# )
 
 cc_library(
     name = "qnn_manager_hdr",
@@ -55,6 +55,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -74,7 +75,7 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
-        ":qnn_log",
+        # ":qnn_log",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
@@ -82,6 +83,7 @@ litert_cc_lib_with_qnn(
         "//litert/cc:litert_shared_library",
         "//litert/core:dynamic_loading",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "//litert/vendors/qualcomm/core/schema:soc_table",

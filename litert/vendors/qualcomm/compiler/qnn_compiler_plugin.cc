@@ -30,8 +30,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"       // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -296,9 +296,10 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
-  auto backend_configs = QnnManager::DefaultBackendConfigs();
+  // auto backend_configs = QnnManager::DefaultBackendConfigs();
   auto qnn_manager = QnnManager::Create(
-      backend_configs, compiler_plugin->Options(), std::nullopt,
+      // backend_configs,
+      compiler_plugin->Options(), std::nullopt,
       soc_model ? FindSocModel(soc_model) : std::nullopt);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
@@ -384,9 +385,10 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-  auto backend_configs = QnnManager::DefaultBackendConfigs();
+  // auto backend_configs = QnnManager::DefaultBackendConfigs();
   auto qnn_manager = QnnManager::Create(
-      backend_configs, compiler_plugin->Options(), std::nullopt, opt_soc_model);
+      // backend_configs,
+      compiler_plugin->Options(), std::nullopt, opt_soc_model);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();

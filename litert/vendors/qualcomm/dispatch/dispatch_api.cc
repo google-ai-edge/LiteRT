@@ -19,6 +19,8 @@
 #include <string>
 #include <utility>
 
+#include "QnnCommon.h"  // from @qairt
+#include "QnnTypes.h"   // from @qairt
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
@@ -32,8 +34,6 @@
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/qualcomm/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace {
 
@@ -75,13 +75,13 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
           ? std::make_optional(std::string(dispatch_lib_dir))
           : std::nullopt;
 
-  auto configs = QnnManager::DefaultBackendConfigs();
+  // auto configs = QnnManager::DefaultBackendConfigs();
   // TODO(Alen): initialize qnn_options from LiteRtOptions
   ::qnn::Options qnn_options;
   qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
   qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
   if (auto qnn_manager = QnnManager::Create(
-          /*configs=*/configs,
+          // /*configs=*/configs,
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
           /*soc_model*/ std::nullopt);

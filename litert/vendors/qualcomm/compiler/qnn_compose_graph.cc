@@ -24,10 +24,12 @@
 #include <string>
 #include <vector>
 
+#include "QnnCommon.h"                     // from @qairt
+#include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"               // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -89,8 +91,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {
@@ -1068,12 +1068,13 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   }
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
-  GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
-                        [api = qnn.Api(), backend = qnn.BackendHandle()](
-                            ::qnn::OpWrapper& op) -> bool {
-                          return QNN_SUCCESS == api->backendValidateOpConfig(
-                                                    backend, op.GetOpConfig());
-                        });
+  GraphToGraphTransform(
+      g2g_option, graph_op_wrappers, tensor_pool,
+      [api = qnn.Api(), backend = qnn.HtpBackend()->BackendHandle()](
+          ::qnn::OpWrapper& op) -> bool {
+        return QNN_SUCCESS ==
+               api->backendValidateOpConfig(backend, op.GetOpConfig());
+      });
 
   // Create ops and their corresponding tensors.
   for (auto& op_wrapper : graph_op_wrappers) {
