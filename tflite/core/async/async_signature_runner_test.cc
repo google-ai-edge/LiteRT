@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/core/async/async_signature_runner.h"
 
+#include <cstdlib>
 #include <memory>
 
 #include <gmock/gmock.h>
