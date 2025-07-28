@@ -2,15 +2,27 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
+#include <dlfcn.h>
+#include <stdint.h>
+#include <stdio.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <system_error>
 #include <vector>
 
+#include "QnnInterface.h"     // from @qairt
+#include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
 namespace qnn {
+namespace {
+static constexpr int kRequiredNumProviders{1};
+}
+typedef Qnn_ErrorHandle_t (*QnnInterfaceGetProvidersFn_t)(
+    const QnnInterface_t*** provider_list, uint32_t* num_providers);
+
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst) {
   dst.clear();
@@ -58,6 +70,87 @@ bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
     return false;
   }
   return true;
+}
+
+DlHandle::DlHandle(const char* path)
+    : handle_(dlopen(path, RTLD_LAZY | RTLD_LOCAL)) {}
+
+DlHandle::~DlHandle() {
+  if (handle_) dlclose(handle_);
+}
+
+void* DlHandle::get() const { return handle_; }
+
+bool DlHandle::valid() const { return handle_ != nullptr; }
+
+const QNN_INTERFACE_VER_TYPE* DlHandle::LoadAndResolveQnnApi(
+    Qnn_Version_t expected_qnn_version) const {
+  const QnnInterface_t** providers = nullptr;
+  const QnnInterface_t* interface = nullptr;
+  uint32_t num_providers = 0;
+
+  if (!valid()) {
+    QNN_LOG_ERROR("dlopen failed: %s\n", dlerror());
+    return nullptr;
+  }
+
+  auto get_providers = reinterpret_cast<QnnInterfaceGetProvidersFn_t>(
+      dlsym(handle_, "QnnInterface_getProviders"));
+
+  if (const char* error = dlerror(); error) {
+    QNN_LOG_ERROR("dlsym failed: %s\n", error);
+    return nullptr;
+  }
+
+  if (get_providers(&providers, &num_providers) != 0 || providers == nullptr ||
+      num_providers == 0) {
+    QNN_LOG_ERROR(
+        "QnnInterface_GetProviders failed or returned no providers\n");
+    return nullptr;
+  }
+
+  if (num_providers != kRequiredNumProviders) {
+    QNN_LOG_ERROR("Found %u providers, expected %u\n", num_providers,
+                  kRequiredNumProviders);
+    return nullptr;
+  }
+
+  auto qnn_version = providers[0]->apiVersion;
+
+  // Core API version check
+  if (qnn_version.coreApiVersion.major != QNN_API_VERSION_MAJOR ||
+      (qnn_version.coreApiVersion.major == QNN_API_VERSION_MAJOR &&
+       qnn_version.coreApiVersion.minor < QNN_API_VERSION_MINOR)) {
+    QNN_LOG_ERROR(
+        "Qnn core API version %u.%u.%u is not supported. Minimum required is "
+        "%u.%u.%u\n",
+        qnn_version.coreApiVersion.major, qnn_version.coreApiVersion.minor,
+        qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
+        QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
+    return nullptr;
+  }
+
+  // Backend API version check
+  if (qnn_version.backendApiVersion.major != expected_qnn_version.major ||
+      (qnn_version.backendApiVersion.major == expected_qnn_version.major &&
+       qnn_version.backendApiVersion.minor < expected_qnn_version.minor)) {
+    QNN_LOG_ERROR(
+        "Qnn backend API version %u.%u.%u is not supported. Minimum required "
+        "is %u.%u.%u\n",
+        qnn_version.backendApiVersion.major,
+        qnn_version.backendApiVersion.minor,
+        qnn_version.backendApiVersion.patch, expected_qnn_version.major,
+        expected_qnn_version.minor, expected_qnn_version.patch);
+    return nullptr;
+  }
+
+  interface = providers[0];
+  if (!interface) {
+    QNN_LOG_ERROR("No valid interface was provided\n");
+    return nullptr;
+  }
+
+  return &interface->QNN_INTERFACE_VER_NAME;
 }
 
 }  // namespace qnn

@@ -123,7 +123,7 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs() {
 
 absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
   static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
-  // TODO(Alen): pass dlc patch by options.
+  // TODO(Alen): pass dlc path by options.
   graph_custom_configs[0] = {.option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION,
                              .serializationOption.serializationType =
                                  QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER,
@@ -174,6 +174,7 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
       break;
     }
     default: {
+      LITERT_LOG(LITERT_ERROR, "Unsupported Backend to create graph");
       return kLiteRtStatusErrorUnsupported;
     }
   }

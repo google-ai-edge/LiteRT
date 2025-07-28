@@ -1,12 +1,17 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include "QnnInterface.h"        // from @qairt
+#include "QnnBackend.h"          // from @qairt
+#include "QnnCommon.h"           // from @qairt
+#include "QnnDevice.h"           // from @qairt
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 
 namespace qnn {
 
 QnnBackend::QnnBackend(const QNN_INTERFACE_VER_TYPE *qnn_api)
     : qnn_api_(qnn_api),
+      log_handle_(nullptr, QnnApi()->logFree),
       backend_handle_(nullptr, QnnApi()->backendFree),
       device_handle_(nullptr, QnnApi()->deviceFree) {}
 
@@ -40,6 +45,22 @@ QnnDevice_CoreInfo_t &QnnBackend::AllocateDeviceCoreInfo() {
   auto &back = device_core_infos_.emplace_back();
   back = QNN_DEVICE_CORE_INFO_INIT;
   return back;
+}
+QnnBackend::QnnLogHandle QnnBackend::CreateLogHandle(
+    ::qnn::LogLevel log_level) {
+  if (log_level != ::qnn::LogLevel::kOff) {
+    Qnn_LogHandle_t local_log_handle = nullptr;
+    if (auto status = QnnApi()->logCreate(
+            GetDefaultStdOutLogger(), static_cast<QnnLog_Level_t>(log_level),
+            &local_log_handle);
+        status != QNN_SUCCESS) {
+      QNN_LOG_ERROR("Failed to create QNN logger: %d", status);
+      return QnnLogHandle{nullptr, QnnApi()->logFree};
+    }
+    return QnnLogHandle{local_log_handle, QnnApi()->logFree};
+  }
+
+  return QnnLogHandle{nullptr, QnnApi()->logFree};
 }
 
 QnnBackend::QnnBackendHandle QnnBackend::CreateBackendHandle(
@@ -79,5 +100,7 @@ Qnn_BackendHandle_t QnnBackend::GetBackendHandle() {
 Qnn_DeviceHandle_t QnnBackend::GetDeviceHandle() {
   return device_handle_.get();
 }
+
+Qnn_LogHandle_t QnnBackend::GetLogHandle() { return log_handle_.get(); }
 
 }  // namespace qnn

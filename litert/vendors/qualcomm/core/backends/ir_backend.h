@@ -15,11 +15,20 @@ class IrBackend : public QnnBackend {
  public:
   static const char *GetLibraryName() { return "libQnnIr.so"; }
 
+  static const Qnn_Version_t GetExpectedBackendVersion() {
+    Qnn_Version_t backend_version;
+    backend_version.major = QNN_IR_API_VERSION_MAJOR;
+    backend_version.minor = QNN_IR_API_VERSION_MINOR;
+    backend_version.patch = QNN_IR_API_VERSION_PATCH;
+    return backend_version;
+  }
+
   IrBackend(const QNN_INTERFACE_VER_TYPE *qnn_api);
 
   ~IrBackend();
 
-  bool Init(Qnn_LogHandle_t log_handle, const Options &options) override;
+  bool Init(const Options &options,
+            std::optional<::qnn::SocInfo> soc_info) override;
 
  private:
 };

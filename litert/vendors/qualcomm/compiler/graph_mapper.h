@@ -17,8 +17,11 @@
 
 #include <cstdint>
 
+#include "QnnCommon.h"                     // from @qairt
+#include "QnnGraph.h"                      // from @qairt
+#include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_model.h"

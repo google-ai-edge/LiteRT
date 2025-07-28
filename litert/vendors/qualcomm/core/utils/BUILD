@@ -42,6 +42,8 @@ cc_test(
     deps = [
         ":log",
         ":miscs",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core:common",
         "@com_google_googletest//:gtest_main",
     ],

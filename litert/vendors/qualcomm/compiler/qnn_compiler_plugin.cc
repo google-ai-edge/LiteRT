@@ -30,8 +30,8 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"       // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -296,10 +296,9 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
-  auto backend_configs = QnnManager::DefaultBackendConfigs();
-  auto qnn_manager = QnnManager::Create(
-      backend_configs, compiler_plugin->Options(), std::nullopt,
-      soc_model ? FindSocModel(soc_model) : std::nullopt);
+  auto qnn_manager =
+      QnnManager::Create(compiler_plugin->Options(), std::nullopt,
+                         soc_model ? FindSocModel(soc_model) : std::nullopt);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
     return qnn_manager.Error().Status();
@@ -384,9 +383,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Initialize SDK and load qnn shared libraries.
   LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-  auto backend_configs = QnnManager::DefaultBackendConfigs();
-  auto qnn_manager = QnnManager::Create(
-      backend_configs, compiler_plugin->Options(), std::nullopt, opt_soc_model);
+  auto qnn_manager = QnnManager::Create(compiler_plugin->Options(),
+                                        std::nullopt, opt_soc_model);
   if (!qnn_manager) {
     LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
     return qnn_manager.Error().Status();
@@ -430,13 +428,39 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       LITERT_LOG(LITERT_INFO, "%s", "Creating context handle");
       // We enable weight sharing by default, this could lead to issue when
       // support legacy SoC.
-      auto context_configs = QnnManager::WeightSharingContextConfigs();
-      // Disable weight sharing if we have only one partition or SoC doesn't
-      // support weight sharing.
-      if (num_partitions == kDefaultPartitionNum ||
-          !IsWeightSharingSupported(opt_soc_model.value().dsp_arch) ||
-          !compiler_plugin->Options().GetEnableWeightSharing()) {
-        context_configs = QnnManager::DefaultContextConfigs();
+      auto context_configs = QnnManager::DefaultContextConfigs();
+      if (compiler_plugin->Options().GetEnableWeightSharing()) {
+        switch (compiler_plugin->Options().GetBackendType()) {
+          case ::qnn::BackendType::kHtpBackend: {
+            // Only enable weight sharing if we have multiple partitions and
+            // the current SoC support weight sharing feature.
+            bool disable_weight_sharing = false;
+            if (num_partitions == kDefaultPartitionNum) {
+              disable_weight_sharing = true;
+              LITERT_LOG(
+                  LITERT_WARNING,
+                  "Only support weight sharing with multiple partitions");
+            }
+            if (!IsWeightSharingSupported(opt_soc_model.value().dsp_arch)) {
+              disable_weight_sharing = true;
+              LITERT_LOG(LITERT_WARNING,
+                         "Only support weight sharing when dsp_arch >= v73");
+            }
+            if (disable_weight_sharing) {
+              LITERT_LOG(LITERT_WARNING, "Disable weight sharing feature");
+            } else {
+              context_configs = QnnManager::WeightSharingContextConfigs();
+              LITERT_LOG(LITERT_INFO, "Enable weight sharing feature");
+            }
+            break;
+          }
+          default: {
+            LITERT_LOG(LITERT_WARNING,
+                       "Only support weight sharing feature in Htp Backend, "
+                       "disable weight sharing feature");
+            break;
+          }
+        }
       }
       auto context_handle =
           (*qnn_manager)->CreateContextHandle(context_configs);

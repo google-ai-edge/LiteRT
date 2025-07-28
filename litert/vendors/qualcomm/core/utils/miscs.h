@@ -11,6 +11,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "QnnInterface.h"     // from @qairt
+#include "QnnTypes.h"         // from @qairt
 #include "absl/types/span.h"  // from @com_google_absl
 namespace qnn {
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
@@ -42,6 +44,25 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
                                size_t num_bytes);
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
+
+class DlHandle {
+ public:
+  explicit DlHandle(const char* path);
+  ~DlHandle();
+  DlHandle(const DlHandle&) = delete;
+  DlHandle(DlHandle&&) = delete;
+  DlHandle& operator=(const DlHandle&) = delete;
+  DlHandle& operator=(DlHandle&&) = delete;
+
+  void* get() const;
+  bool valid() const;
+
+  const QNN_INTERFACE_VER_TYPE* LoadAndResolveQnnApi(
+      Qnn_Version_t expected_qnn_version) const;
+
+ private:
+  void* handle_;
+};
 
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

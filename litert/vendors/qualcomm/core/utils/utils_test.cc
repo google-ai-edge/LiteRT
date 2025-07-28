@@ -1,5 +1,7 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
+#include <gtest/gtest.h>
+
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -9,7 +11,8 @@
 #include <string_view>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/backends/htp_backend.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -140,6 +143,30 @@ TEST(MiscTests, ConvertDataFromUInt16toInt16) {
   EXPECT_EQ(int16_data[1], 1);
   EXPECT_EQ(int16_data[2], 2);
   EXPECT_EQ(int16_data[3], 3);
+}
+
+TEST(MiscTests, LoadHtpBackendApiWithInvalidPathTest) {
+  auto handle = std::make_unique<DlHandle>("/invalid/path/to/libQnn.so");
+  auto api = handle->LoadAndResolveQnnApi(
+      ::qnn::HtpBackend::GetExpectedBackendVersion());
+
+  ASSERT_EQ(api, nullptr);
+}
+
+TEST(MiscTests, LoadHtpBackendApiTest) {
+  auto handle = std::make_unique<DlHandle>(::qnn::HtpBackend::GetLibraryName());
+  auto api = handle->LoadAndResolveQnnApi(
+      ::qnn::HtpBackend::GetExpectedBackendVersion());
+
+  ASSERT_NE(api, nullptr);
+}
+
+TEST(MiscTests, LoadIrBackendApiTest) {
+  auto handle = std::make_unique<DlHandle>(::qnn::IrBackend::GetLibraryName());
+  auto api = handle->LoadAndResolveQnnApi(
+      ::qnn::IrBackend::GetExpectedBackendVersion());
+
+  ASSERT_NE(api, nullptr);
 }
 
 }  // namespace qnn
