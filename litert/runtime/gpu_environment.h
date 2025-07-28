@@ -42,7 +42,7 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 
 namespace litert::internal {
 
-#if LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
 class MetalInfo;
 typedef std::unique_ptr<struct MetalInfo> MetalInfoPtr;
 
