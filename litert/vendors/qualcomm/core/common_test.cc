@@ -35,6 +35,29 @@ TEST(QnnOptionTest, LogLevel) {
   EXPECT_EQ(options.GetLogLevel(), kLogDebug);
 }
 
+TEST(QnnOptionTest, BackendType) {
+  Options options;
+  static constexpr BackendType kUndefined = BackendType::kUndefinedBackend;
+  options.SetBackendType(kUndefined);
+  EXPECT_EQ(options.GetBackendType(), kUndefined);
+
+  static constexpr BackendType kGpu = BackendType::kGpuBackend;
+  options.SetBackendType(kGpu);
+  EXPECT_EQ(options.GetBackendType(), kGpu);
+
+  static constexpr BackendType kHtp = BackendType::kHtpBackend;
+  options.SetBackendType(kHtp);
+  EXPECT_EQ(options.GetBackendType(), kHtp);
+  
+  static constexpr BackendType kDsp = BackendType::kDspBackend;
+  options.SetBackendType(kDsp);
+  EXPECT_EQ(options.GetBackendType(), kDsp);
+
+  static constexpr BackendType kIr = BackendType::kIrBackend;
+  options.SetBackendType(kIr);
+  EXPECT_EQ(options.GetBackendType(), kIr);
+}
+
 TEST(QnnOptionTest, HtpPerformanceMode) {
   Options options;
 
@@ -113,6 +136,7 @@ TEST(QnnOptionTest, EnableWeightSharing) {
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
+  EXPECT_EQ(options.GetBackendType(), BackendType::kHtpBackend);
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
   EXPECT_FALSE(options.GetUseHtpPreference());
   EXPECT_FALSE(options.GetUseQint16AsQuint16());
