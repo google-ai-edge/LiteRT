@@ -43,7 +43,7 @@ define EnsureLgtm(list Lgtmers, list Path) {
 define Main {
   set_tag("EXPORT_TO_GITHUB_PR", '1');
 
-  reassign_to_list([Andrew, Luke, Weiyi, Steven, Matt]);
+  reassign_to_list([Andrew, Luke, Steven, Matt]);
 
   list Fallback = [Weiyi, Luke];
 
