@@ -17,6 +17,12 @@ void Options::SetLogLevel(const LogLevel log_level) { log_level_ = log_level; }
 
 LogLevel Options::GetLogLevel() const { return log_level_; }
 
+void Options::SetBackendType(const BackendType backend_type) {
+  backend_type_ = backend_type;
+}
+
+BackendType Options::GetBackendType() const { return backend_type_; }
+
 void Options::SetProfiling(const Profiling profiling) {
   profiling_ = profiling;
 }

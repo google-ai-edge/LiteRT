@@ -21,15 +21,16 @@
 
 #include <array>
 
+#include "HTP/QnnHtpGraph.h"  // from @qairt
+#include "IR/QnnIrGraph.h"
+#include "QnnCommon.h"                 // from @qairt
+#include "QnnGraph.h"                  // from @qairt
+#include "QnnTypes.h"                  // from @qairt
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "HTP/QnnHtpGraph.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnGraph.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 
@@ -119,6 +120,25 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs() {
   return absl::MakeSpan(result.data(), result.size());
 }
 
+absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
+  static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
+  // TODO(Alen): pass dlc patch by options.
+  graph_custom_configs[0] = {.option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION,
+                             .serializationOption.serializationType =
+                                 QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER,
+                             .serializationOption.outputPath = ""};
+
+  static std::array<QnnGraph_Config_t, 1> graph_configs;
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+
+  static std::array<const QnnGraph_Config_t*, 2> result = {&graph_configs[0],
+                                                           nullptr};
+
+  return absl::MakeSpan(result.data(), result.size());
+}
+
 absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic() {
   if (qnn_.IsLegacySocModel()) {
     return GetLegacyGraphConfigs();
@@ -137,10 +157,26 @@ LiteRtStatus GraphMapper::IsLiteRtSubgraphSupported() {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name) {
-  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
-      qnn_.Api()->graphCreate(context_handle_, qnn_graph_name.data(),
-                              PickGraphConfigHeuristic().data(), &QnnGraph()));
+LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
+                                       const ::qnn::Options& options) {
+  switch (options.GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend: {
+      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
+          context_handle_, qnn_graph_name.data(),
+          PickGraphConfigHeuristic().data(), &QnnGraph()));
+      break;
+    }
+    case ::qnn::BackendType::kIrBackend: {
+      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
+          context_handle_, qnn_graph_name.data(),
+          GetDefaultIrGraphConfigs().data(), &QnnGraph()));
+      break;
+    }
+    default: {
+      return kLiteRtStatusErrorUnsupported;
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 

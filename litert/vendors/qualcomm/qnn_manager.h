@@ -26,8 +26,16 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "QnnBackend.h"                 // from @qairt
+#include "QnnCommon.h"                  // from @qairt
+#include "QnnContext.h"                 // from @qairt
+#include "QnnDevice.h"                  // from @qairt
+#include "QnnInterface.h"               // from @qairt
+#include "QnnTypes.h"                   // from @qairt
+#include "System/QnnSystemContext.h"    // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
+#include "absl/strings/string_view.h"   // from @com_google_absl
+#include "absl/types/span.h"            // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
@@ -36,16 +44,9 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
 #include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
+#include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 //===----------------------------------------------------------------------===//
 //
@@ -137,7 +138,7 @@ class QnnManager {
 
   // Get qnn backend handle. Nullptr if backendCreate has not been successfully
   // called.
-  Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
+  Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
  private:
   QnnManager() = default;
@@ -176,19 +177,11 @@ class QnnManager {
 
   // Get qnn device handle. Nullptr if deviceCreate has not been successfully
   // called.
-  Qnn_DeviceHandle_t& DeviceHandle() { return device_handle_; }
-
-  // Signal QNN SDK to free any memory related to the device. Does nothing
-  // if deviceCreate has not been called.
-  LiteRtStatus FreeDevice();
+  Qnn_DeviceHandle_t DeviceHandle() { return backend_->GetDeviceHandle(); }
 
   // Signal QNN SDK to free any memory related to logging. Does nothing
   // if logCreate has not been called.
   LiteRtStatus FreeLogging();
-
-  // Signal QNN SDK to free any memory related to backend. Does nothing
-  // if backendCreate has not been called.
-  LiteRtStatus FreeBackend();
 
   // Handle to the shared library that implements the API. The library is
   // released when the manager is destroyed.
@@ -202,8 +195,7 @@ class QnnManager {
   const QnnSystemInterface_t* system_interface_ = nullptr;
 
   Qnn_LogHandle_t log_handle_ = nullptr;
-  Qnn_BackendHandle_t backend_handle_ = nullptr;
-  Qnn_DeviceHandle_t device_handle_ = nullptr;
+  std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[6];  // V75
   std::unique_ptr<::qnn::HtpDeviceConfig> htp_device_config_;
   std::vector<QnnDevice_Config_t> device_configs_;

@@ -30,6 +30,14 @@ enum class Profiling {
   kOptrace = 4
 };
 
+enum class BackendType {
+  kUndefinedBackend = 0,
+  kGpuBackend,
+  kHtpBackend,
+  kDspBackend,
+  kIrBackend,
+};
+
 enum class HtpPerformanceMode {
   kDefault = 0,
   kSustainedHighPerformance = 1,
@@ -49,6 +57,9 @@ class Options {
 
   void SetLogLevel(const LogLevel log_level);
   LogLevel GetLogLevel() const;
+
+  void SetBackendType(const BackendType backend_type);
+  BackendType GetBackendType() const;
 
   void SetProfiling(const Profiling profiling);
   Profiling GetProfiling() const;
@@ -76,6 +87,7 @@ class Options {
 
  private:
   LogLevel log_level_ = LogLevel::kInfo;
+  BackendType backend_type_ = BackendType::kHtpBackend;
   Profiling profiling_ = Profiling::kOff;
   bool use_htp_preference_ = false;
   bool use_qint16_as_quint16_ = false;
