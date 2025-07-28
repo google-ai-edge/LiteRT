@@ -259,7 +259,8 @@ class CompilationConfig:
     self.compilation_config = kwargs
 
   def to_dict(self) -> dict[str, Any]:
-    ret = self.target.flatten() | self.compilation_config
+    ret = self.target.flatten()
+    ret['compilation_config'] = self.compilation_config
     if self.quant_recipe is not None:
       ret['quantize_recipe'] = self.quant_recipe
     return ret

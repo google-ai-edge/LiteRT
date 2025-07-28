@@ -59,6 +59,10 @@ class ExampleTarget(types.Target):
 class ExampleBackend(types.Backend):
   """Backend implementation for the example compiler plugin."""
 
+  def __init__(self, config: types.Config):
+    super().__init__(config)
+    self._compilation_config = config.get("compilation_config", None)
+
   @classmethod
   def target_(cls) -> ExampleTarget:
     return ExampleTarget("ExampleSocManufacturer", "ExampleSocModel")
