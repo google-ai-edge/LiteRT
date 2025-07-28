@@ -21,6 +21,22 @@ cc_library(
     name = "dispatch_accelerator",
     srcs = ["dispatch_accelerator.cc"],
     hdrs = ["dispatch_accelerator.h"],
+    copts = select({
+        "@org_tensorflow//tensorflow:macos": [
+            "-x objective-c++",
+            "-fobjc-arc",  # enable reference-counting
+        ],
+        "@org_tensorflow//tensorflow:ios": [
+            "-x objective-c++",
+            "-fobjc-arc",  # enable reference-counting
+        ],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@org_tensorflow//tensorflow:macos": ["-framework Metal"],
+        "@org_tensorflow//tensorflow:ios": ["-framework Metal"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",

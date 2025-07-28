@@ -43,18 +43,26 @@ def gles_linkopts():
         "//conditions:default": [],
     })
 
-def metal_opts():
+def litert_metal_opts():
     """This is a no-op outside of Google."""
     return []
 
-def metal_linkopts():
+def litert_metal_linkopts():
     """This is a no-op outside of Google."""
     return []
 
-def metal_deps_without_gpu_environment():
+def litert_metal_deps_without_gpu_environment():
     """This is a no-op outside of Google."""
     return []
 
-def metal_deps():
+def litert_metal_deps():
+    """This is a no-op outside of Google."""
+    return []
+
+def litert_metal_memory_deps():
+    """This is a no-op outside of Google."""
+    return []
+
+def litert_metal_tensor_buffer_deps():
     """This is a no-op outside of Google."""
     return []

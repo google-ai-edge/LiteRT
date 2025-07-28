@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_internal_users"],
@@ -21,6 +23,8 @@ cc_library(
     name = "auto_registration",
     srcs = ["auto_registration.cc"],
     hdrs = ["auto_registration.h"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
