@@ -6,6 +6,7 @@
 
 #include <list>
 #include <memory>
+#include <optional>
 
 #include "QnnBackend.h"          // from @qairt
 #include "QnnCommon.h"           // from @qairt
@@ -14,12 +15,16 @@
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/types/span.h"     // from @com_google_absl
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 
 namespace qnn {
 
 class QnnBackend {
  public:
+  using QnnLogHandle =
+      std::unique_ptr<std::remove_pointer<Qnn_LogHandle_t>::type,
+                      QnnLog_FreeFn_t>;
   using QnnBackendHandle =
       std::unique_ptr<std::remove_pointer<Qnn_BackendHandle_t>::type,
                       QnnBackend_FreeFn_t>;
@@ -31,11 +36,14 @@ class QnnBackend {
 
   virtual ~QnnBackend() = default;
 
-  virtual bool Init(Qnn_LogHandle_t log_handle, const Options &options) = 0;
+  virtual bool Init(const Options &options,
+                    std::optional<::qnn::SocInfo> soc_info) = 0;
 
   Qnn_BackendHandle_t GetBackendHandle();
 
   Qnn_DeviceHandle_t GetDeviceHandle();
+
+  const QnnDevice_PlatformInfo_t &GetDevicePlatformInfo();
 
  private:
   const QNN_INTERFACE_VER_TYPE *qnn_api_ = nullptr;
@@ -58,6 +66,8 @@ class QnnBackend {
 
   QnnDevice_CoreInfo_t &AllocateDeviceCoreInfo();
 
+  QnnLogHandle CreateLogHandle(::qnn::LogLevel log_level);
+
   QnnBackendHandle CreateBackendHandle(
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnBackend_Config_t *> configs);
@@ -66,6 +76,7 @@ class QnnBackend {
       Qnn_LogHandle_t log_handle,
       absl::Span<const QnnDevice_Config_t *> configs);
 
+  QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;
   QnnDeviceHandle device_handle_;
 };
