@@ -62,6 +62,7 @@ cc_library(
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_absl//absl/types:span",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@qairt//:qnn_lib_headers",
     ],
 )

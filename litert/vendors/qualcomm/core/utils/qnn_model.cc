@@ -3,9 +3,9 @@
 
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
 
-#include "HTP/QnnHtpGraph.h"  // from @qairt
-#include "QnnGraph.h"         // from @qairt
-#include "absl/types/span.h"  // from @com_google_absl
+#include "HTP/QnnHtpGraph.h"               // from @qairt
+#include "QnnGraph.h"                      // from @qairt
+#include "absl/types/span.h"               // from @com_google_absl
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 
 namespace qnn {
@@ -62,13 +62,15 @@ bool QnnModel::ValidateOpConfig(std::vector<qnn::OpWrapper>& ops) {
 }
 
 bool QnnModel::Finalize(std::vector<qnn::OpWrapper>& ops) {
-  // move the config out
   QNN_RETURN_STATUS_IF_NOT_OK(api_->graphCreate(
       context_handle_, "test", DefaultGraphConfigs().data(), &graph_handle_));
   for (auto& op_wrapper : ops) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
-      QNN_RETURN_STATUS_IF_NOT_OK(api_->tensorCreateGraphTensor(
-          graph_handle_, &(tensor_wrapper_ref.get().GetQnnTensor())));
+      if (!created_tensors_.count(&(tensor_wrapper_ref.get()))) {
+        QNN_RETURN_STATUS_IF_NOT_OK(api_->tensorCreateGraphTensor(
+            graph_handle_, &(tensor_wrapper_ref.get().GetQnnTensor())));
+        created_tensors_.emplace(&(tensor_wrapper_ref.get()));
+      }
     }
     api_->graphAddNode(graph_handle_, op_wrapper.GetOpConfig());
   }

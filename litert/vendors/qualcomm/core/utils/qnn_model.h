@@ -10,6 +10,7 @@
 #include "QnnCommon.h"
 #include "QnnInterface.h"
 #include "absl/types/span.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
@@ -65,6 +66,7 @@ class QnnModel {
   Qnn_ContextHandle_t graph_handle_ = nullptr;
   std::vector<qnn::TensorWrapper*> input_tensors_;
   std::vector<qnn::TensorWrapper*> output_tensors_;
+  absl::flat_hash_set<const ::qnn::TensorWrapper*> created_tensors_;
 };
 
 }  // namespace qnn

@@ -25,6 +25,11 @@ cc_test(
     ],
     deps = [
         ":qnn_backend_creator",
+        ":utils",
+        "//litert/core/model:model_graph_testonly",
+        "//litert/core/model:model_testonly",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/vendors/qualcomm/compiler:qnn_compose_graph",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:relu_op_builder",
@@ -44,5 +49,18 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "utils",
+    srcs = ["utils.cc"],
+    hdrs = ["utils.h"],
+    deps = [
+        "//litert/cc:litert_model",
+        "//litert/vendors/qualcomm/compiler:qnn_compose_graph",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
     ],
 )

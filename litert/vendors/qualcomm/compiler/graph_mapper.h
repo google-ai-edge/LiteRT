@@ -28,7 +28,7 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
-absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs();
+
 // Algorithm class for managing "scope" when mapping litert Subgraphs
 // to QNN Graphs.
 class GraphMapper {
