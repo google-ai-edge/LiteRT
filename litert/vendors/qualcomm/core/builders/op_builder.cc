@@ -231,7 +231,7 @@ OpWrapper& CreateSimpleActivationOp(std::vector<OpWrapper>& ops,
   return ret;
 }
 
-TensorWrapper& ReplaceOutputTensorForFusedActivation(
+TensorWrapper& CreateFusedActivationInputTensor(
     TensorPool& tensor_pool, const uint32_t fused_activation_function,
     std::vector<TensorWrapperRef>& output_tensors) {
   if (fused_activation_function == FusedActivationNone) {
@@ -245,11 +245,7 @@ TensorWrapper& ReplaceOutputTensorForFusedActivation(
         fused_activation_function);
   }
 
-  TensorWrapper& activation_input =
-      tensor_pool.CloneNativeTensorFrom(output_tensors[0]);
-  TensorWrapper& activation_output = output_tensors[0].get();
-  output_tensors[0] = TensorWrapperRef(activation_input);
-  return activation_output;
+  return tensor_pool.CloneNativeTensorFrom(output_tensors[0]);
 }
 
 void AddFusedActivationNode(std::vector<OpWrapper>& res,

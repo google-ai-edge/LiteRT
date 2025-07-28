@@ -312,12 +312,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetConcatenationFusedActivationOption(
           litert_op.Get(), &fused_activation));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildConcatenationOp(tensor_pool, input_tensors,
-                                                output_tensors, axis);
+                                                {activation_input}, axis);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflAdd: {
@@ -325,12 +325,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetAddFusedActivationOption(
           litert_op.Get(), &fused_activation));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildElementwiseAddOp(tensor_pool, input_tensors,
-                                                 output_tensors);
+                                                 {activation_input});
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLogicalAnd: {
@@ -353,12 +353,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetDivFusedActivationOption(
           litert_op.Get(), &fused_activation));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildElementwiseDivOp(tensor_pool, input_tensors,
-                                                 output_tensors);
+                                                 {activation_input});
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflGreater: {
@@ -376,12 +376,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetMulFusedActivationOption(
           litert_op.Get(), &fused_activation));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildElementwiseMulOp(tensor_pool, input_tensors,
-                                                 output_tensors);
+                                                 {activation_input});
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflRsqrt: {
@@ -414,12 +414,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetSubFusedActivationOption(
           litert_op.Get(), &fused_activation));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildElementwiseSubOp(tensor_pool, input_tensors,
-                                                 output_tensors);
+                                                 {activation_input});
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflMinimum: {
@@ -455,18 +455,18 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       LITERT_RETURN_IF_ERROR(LiteRtGetFullyConnectedKeepNumDimsOption(
           litert_op.Get(), &keep_num_dims));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       if (use_htp_preferences) {
         op_wrappers = ::qnn::BuildFullyConnectedOpHtp(
-            tensor_pool, input_tensors, output_tensors, keep_num_dims);
+            tensor_pool, input_tensors, {activation_input}, keep_num_dims);
       }
       if (op_wrappers.empty()) {
         op_wrappers = ::qnn::BuildFullyConnectedOp(
-            tensor_pool, input_tensors, output_tensors, keep_num_dims);
+            tensor_pool, input_tensors, {activation_input}, keep_num_dims);
       }
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflGather: {
@@ -641,13 +641,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildConv2dOp(
-          tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
+          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
           dilation_h_factor, dilation_w_factor, qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflConv3d: {
@@ -679,14 +679,14 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildConv3dOp(
-          tensor_pool, input_tensors, output_tensors, stride_d, stride_h,
+          tensor_pool, input_tensors, {activation_input}, stride_d, stride_h,
           stride_w, dilation_d_factor, dilation_h_factor, dilation_w_factor,
           qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflTransposeConv: {
@@ -706,13 +706,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildTransposeConvOp(tensor_pool, input_tensors,
-                                                output_tensors, stride_h,
+                                                {activation_input}, stride_h,
                                                 stride_w, qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflDepthwiseConv2d: {
@@ -738,13 +738,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildDepthwiseConv2dOp(
-          tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
+          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
           dilation_h_factor, dilation_w_factor, qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflAveragePool2d: {
@@ -770,13 +770,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildAveragePoolOp(
-          tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
+          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
           filter_height, filter_width, qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflMaxPool2d: {
@@ -802,13 +802,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       ::qnn::PaddingType qnn_padding;
       LITERT_RETURN_IF_ERROR(ConvertPaddingType(padding, qnn_padding));
 
-      auto& activation_output = ::qnn::ReplaceOutputTensorForFusedActivation(
+      auto& activation_input = ::qnn::CreateFusedActivationInputTensor(
           tensor_pool, fused_activation, output_tensors);
       op_wrappers = ::qnn::BuildMaxPoolOp(
-          tensor_pool, input_tensors, output_tensors, stride_h, stride_w,
+          tensor_pool, input_tensors, {activation_input}, stride_h, stride_w,
           filter_height, filter_width, qnn_padding);
       ::qnn::AddFusedActivationNode(op_wrappers, fused_activation,
-                                    output_tensors[0], activation_output);
+                                    activation_input, output_tensors[0]);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflDepthToSpace: {
