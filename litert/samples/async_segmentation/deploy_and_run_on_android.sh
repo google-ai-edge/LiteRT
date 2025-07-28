@@ -1,3 +1,4 @@
+#!/bin/bash
 #
 # Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
 #
@@ -17,12 +18,14 @@
 
 # --- Default values ---
 ACCELERATOR="gpu" # Default accelerator if not specified
+PHONE="s25" # Default phone model
 BINARY_BUILD_PATH=""
 
 # --- Usage ---
 usage() {
-    echo "Usage: $0 --accelerator=[gpu|npu|cpu] <binary_build_path>"
+    echo "Usage: $0 --accelerator=[gpu|npu|cpu] --phone=[s24|s25] <binary_build_path>"
     echo "  --accelerator : Specify the accelerator to use (gpu, npu, or cpu). Defaults to cpu if not provided."
+    echo "  --phone       : Specify the phone model (e.g., s24, s25) to select the correct NPU libraries. Defaults to s25."
     echo "  <binary_build_path> : The path to the binary build directory (e.g., bazel-bin/)."
     exit 1
 }
@@ -35,7 +38,7 @@ if [ "$#" -eq 0 ]; then
 fi
 
 # Parse options
-TEMP=$(getopt -o '' --long accelerator:,use_gl_buffers -- "$@")
+TEMP=$(getopt -o '' --long accelerator:,phone:,use_gl_buffers,host_npu_lib:,host_npu_dispatch_lib: -- "$@")
 if [ $? -ne 0 ]; then
     echo "Error parsing options." >&2
     usage
@@ -45,6 +48,8 @@ eval set -- "$TEMP"
 unset TEMP
 
 USE_GL_BUFFERS=false
+HOST_NPU_LIB=""
+HOST_NPU_DISPATCH_LIB=""
 
 while true; do
     case "$1" in
@@ -58,9 +63,21 @@ while true; do
             fi
             shift 2
             ;;
+        '--phone')
+            PHONE="$2"
+            shift 2
+            ;;
         '--use_gl_buffers')
             USE_GL_BUFFERS=true
             shift
+            ;;
+        '--host_npu_lib')
+            HOST_NPU_LIB="$2"
+            shift 2
+            ;;
+        '--host_npu_dispatch_lib')
+            HOST_NPU_DISPATCH_LIB="$2"
+            shift 2
             ;;
         '--')
             shift
@@ -97,13 +114,12 @@ ROOT_DIR="litert/"
 
 PACKAGE_LOCATION="${ROOT_DIR}samples/async_segmentation"
 C_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}c"
-NPU_LIBRARY_LOCATION="${BINARY_BUILD_PATH}/${ROOT_DIR}vendors/qualcomm/dispatch"
-PACKAGE_NAME="async_segmentation"
+PACKAGE_NAME="async_segmentation_${ACCELERATOR}"
 OUTPUT_PATH="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}"
 
 # Device paths
-DEVICE_BASE_DIR="/data/local/tmp/${PACKAGE_NAME}_android"
-DEVICE_EXEC_NAME="${PACKAGE_NAME}"
+DEVICE_BASE_DIR="/data/local/tmp/async_segmentation_android"
+DEVICE_EXEC_NAME="async_segmentation_executable"
 DEVICE_SHADER_DIR="${DEVICE_BASE_DIR}/shaders"
 DEVICE_TEST_IMAGE_DIR="${DEVICE_BASE_DIR}/test_images"
 DEVICE_MODEL_DIR="${DEVICE_BASE_DIR}/models"
@@ -113,12 +129,42 @@ DEVICE_NPU_LIBRARY_DIR="${DEVICE_BASE_DIR}/npu"
 HOST_SHADER_DIR="${PACKAGE_LOCATION}/shaders"
 HOST_TEST_IMAGE_DIR="${PACKAGE_LOCATION}/test_images"
 HOST_MODEL_DIR="${PACKAGE_LOCATION}/models"
-HOST_NPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/async_segmentation.runfiles/qairt/lib/"
-HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/async_segmentation.runfiles/litert_gpu/jni/arm64-v8a/"
+HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/litert/runtime/accelerators/gpu/"
 
+# Set NPU library path based on the --npu_dispatch_lib_path flag
+if [[ -z "$HOST_NPU_LIB" ]]; then
+    echo "Defaulting to QNN libraries path."
+    HOST_NPU_LIB="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/qairt/lib"
+fi
+if [[ -z "$HOST_NPU_DISPATCH_LIB" ]]; then
+    echo "Defaulting to internal dispatch library path."
+    HOST_NPU_DISPATCH_LIB="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/vendors/qualcomm/dispatch"
+fi
 # Qualcomm NPU library path
 LD_LIBRARY_PATH="${DEVICE_NPU_LIBRARY_DIR}/"
 ADSP_LIBRARY_PATH="${DEVICE_NPU_LIBRARY_DIR}/"
+
+# --- NPU Configuration ---
+QNN_STUB_LIB=""
+QNN_SKEL_LIB=""
+QNN_SKEL_PATH_ARCH=""
+case "$PHONE" in
+    's24')
+        QNN_STUB_LIB="libQnnHtpV75Stub.so"
+        QNN_SKEL_LIB="libQnnHtpV75Skel.so"
+        QNN_SKEL_PATH_ARCH="hexagon-v75"
+        ;;
+    's25')
+        QNN_STUB_LIB="libQnnHtpV79Stub.so"
+        QNN_SKEL_LIB="libQnnHtpV79Skel.so"
+        QNN_SKEL_PATH_ARCH="hexagon-v79"
+        ;;
+    *)
+        echo "Error: Unsupported phone model '$PHONE'. Supported models are 's24', 's25'." >&2
+        exit 1
+        ;;
+esac
+
 
 # --- Script Logic ---
 echo "Starting deployment to Android device..."
@@ -129,7 +175,7 @@ echo "Using output path: ${HOST_EXEC_PATH}"
 
 if [ ! -f "${HOST_EXEC_PATH}" ]; then
     echo "Error: Executable not found at ${HOST_EXEC_PATH}"
-    echo "Please build the project first."
+    echo "Please ensure the project has been built and the correct path is provided."
     exit 1
 fi
 
@@ -160,7 +206,7 @@ adb push "${HOST_TEST_IMAGE_DIR}/image.jpeg" "${DEVICE_TEST_IMAGE_DIR}/"
 echo "Pushed test images."
 
 # Push model files
-if [[ "$ACCELERATOR" == "npu" ]]; then
+if [[ "$PHONE" == "s25" ]]; then
     adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256_SM8750.tflite" "${DEVICE_MODEL_DIR}/"
 else
     adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256.tflite" "${DEVICE_MODEL_DIR}/"
@@ -181,15 +227,15 @@ echo "Pushed gpu accelerator shared library."
 
 # Push NPU dispatch library
 if [[ "$ACCELERATOR" == "npu" ]]; then
-adb push "${NPU_LIBRARY_LOCATION}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_DISPATCH_LIB}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU dispatch library."
 
 # Push NPU libraries
-adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtpV79Stub.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIBRARY_DIR}/hexagon-v79/unsigned/libQnnHtpV79Skel.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIB}/aarch64-android/${QNN_STUB_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIB}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_LIB}/${QNN_SKEL_PATH_ARCH}/unsigned/${QNN_SKEL_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU libraries."
 fi
 
@@ -197,21 +243,35 @@ fi
 adb shell "chmod +x ${DEVICE_BASE_DIR}/${DEVICE_EXEC_NAME}"
 echo "Set execute permissions on device."
 
+echo "Cleaning up previous run results"
+adb shell "rm -f ${DEVICE_BASE_DIR}/output_segmented.png"
+
 echo ""
 echo "Deployment complete."
-echo "To run the async segmentation on the device, use commands like these:"
-echo "  CPU (default):"
-echo "    adb shell \"cd ${DEVICE_BASE_DIR} && ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png\""
-echo "  GPU:"
-echo "    adb shell \"cd ${DEVICE_BASE_DIR} && ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png gpu\""
-echo "  NPU:"
-echo "    adb shell \"LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" cd ${DEVICE_BASE_DIR} && ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png npu\""
-echo ""
-echo "To pull the results:"
-echo "  adb pull ${DEVICE_BASE_DIR}/output_segmented.png ."
-echo "  adb pull ${DEVICE_BASE_DIR}/segmentation_mask_0.png ."
-echo "Set the dynamic library path:"
-echo "  LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\""
+echo "To run the async segmentation on the device, use a command like this:"
 
-adb shell "cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ./${DEVICE_EXEC_NAME} ./test_images/image.jpeg ./output_segmented.png ${ACCELERATOR} ${USE_GL_BUFFERS}"
+MODEL_PATH=""
+if [[ "$PHONE" == "s25" ]]; then
+    MODEL_PATH="./models/selfie_multiclass_256x256_SM8750.tflite"
+else
+    MODEL_PATH="./models/selfie_multiclass_256x256.tflite"
+fi
+
+RUN_COMMAND="./${DEVICE_EXEC_NAME} ${MODEL_PATH} ./test_images/image.jpeg ./output_segmented.png"
+if [[ "$ACCELERATOR" == "gpu" ]] && $USE_GL_BUFFERS; then
+    RUN_COMMAND="${RUN_COMMAND} true"
+fi
+
+if [[ "$ACCELERATOR" == "npu" ]]; then
+    FULL_COMMAND="cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ADSP_LIBRARY_PATH=\"${ADSP_LIBRARY_PATH}\" ${RUN_COMMAND}"
+else
+    FULL_COMMAND="cd ${DEVICE_BASE_DIR} && LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH}\" ${RUN_COMMAND}"
+fi
+
+echo "  adb shell \"${FULL_COMMAND}\""
+adb shell "${FULL_COMMAND}"
+
+echo ""
+echo "To pull the result:"
+echo "  adb pull ${DEVICE_BASE_DIR}/output_segmented.png ."
 adb pull ${DEVICE_BASE_DIR}/output_segmented.png .
