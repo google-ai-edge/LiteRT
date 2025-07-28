@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "QnnLog.h"  // from @qairt
+
 // c++ enum and wrapper without dependency.
 namespace qnn {
 
@@ -22,9 +24,7 @@ enum class LogLevel {
 
 enum class BackendType {
   kUndefinedBackend = 0,
-  kGpuBackend,
   kHtpBackend,
-  kDspBackend,
   kIrBackend,
 };
 
@@ -84,6 +84,10 @@ class Options {
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
 };
+
+// Gets a default logger implementation to stdout.
+// This is used when initializing qnn logging.
+QnnLog_Callback_t GetDefaultStdOutLogger();
 
 }  // namespace qnn
 
