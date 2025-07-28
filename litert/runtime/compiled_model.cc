@@ -67,6 +67,8 @@
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
+#include "litert/runtime/tensor_identifier.h"
+#include "litert/runtime/tfl_utils.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -83,6 +85,8 @@ using ::litert::Expected;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
 using ::litert::internal::SerializeModel;
+using ::litert::internal::TfLiteTensorIdentifier;
+using ::litert::internal::GetTensorIdentifier;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options) {
@@ -412,7 +416,7 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
       for (int i = 0; i < node.inputs->size; ++i) {
         int input_tensor_index = node.inputs->data[i];
         if (input_tensor_index == kTfLiteOptionalTensor) continue;
-        cpu_tensors_.insert(subgraph->tensor(input_tensor_index));
+        cpu_tensors_.insert({subgraph_no, input_tensor_index});
       }
     }
   }
@@ -420,9 +424,11 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
 
 Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
   // Use the buffer context to get the buffer requirements only if the tensor
   // is not a CPU tensor.
-  if (cpu_tensors_.find(tensor) == cpu_tensors_.end()) {
+  if (cpu_tensors_.find(tensor_id) == cpu_tensors_.end()) {
     if (auto requirements = buffer_context_->GetBufferRequirements(tensor)) {
       return *requirements;
     }
@@ -430,7 +436,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
     LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
   }
   // Check if we have a cached CPU buffer requirement.
-  auto cached_req = cpu_buffer_requirements_.find(tensor);
+  auto cached_req = cpu_buffer_requirements_.find(tensor_id);
   if (cached_req != cpu_buffer_requirements_.end()) {
     return cached_req->second.get();
   }
@@ -441,7 +447,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
       /*num_supported_tensor_buffer_types=*/1, cpu_buffer_type, tensor->bytes,
       /*num_strides=*/1, cpu_buffer_strides, &litert_cpu_buffer_requirements));
-  cpu_buffer_requirements_[tensor] =
+  cpu_buffer_requirements_[tensor_id] =
       LiteRtTensorBufferRequirementsPtr(litert_cpu_buffer_requirements);
   return litert_cpu_buffer_requirements;
 }
@@ -632,7 +638,9 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   // If the tensor is shared with CPU, register tensor buffer as is and let
   // accelerator handle the conversion.
-  if (cpu_tensors_.find(tensor) != cpu_tensors_.end()) {
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
+  if (cpu_tensors_.find(tensor_id) != cpu_tensors_.end()) {
     void* host_mem_addr;
     if (auto status = LiteRtLockTensorBuffer(
             buffer, &host_mem_addr, kLiteRtTensorBufferLockModeReadWrite);

@@ -25,9 +25,11 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
+#include "tflite/interpreter.h"
 
 namespace litert::internal {
 
@@ -120,6 +122,26 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
   }
 
   return {};
+}
+
+Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
+    const tflite::Interpreter& interpreter, const TfLiteTensor* target_tensor) {
+  for (int i = 0; i < interpreter.subgraphs_size(); ++i) {
+    const auto* subgraph = interpreter.subgraph(i);
+    // Instead of iterating over all tensors, we can start from the first one
+    // and look for the target tensor in the array of tensors. This assumes
+    // that the target tensor is linear located after the base tensor in memory.
+    const auto* base_tensor = subgraph->tensor(0);
+    const std::ptrdiff_t diff = target_tensor - base_tensor;
+    if (diff < 0 || diff >= subgraph->tensors_size()) {
+      continue;
+    }
+    if (subgraph->tensor(diff) == target_tensor) {
+        return TfLiteTensorIdentifier{i, static_cast<int>(diff)};
+    }
+  }
+  return Unexpected(kLiteRtStatusErrorNotFound,
+                    "Tensor not found in interpreter");
 }
 
 }  // namespace litert::internal

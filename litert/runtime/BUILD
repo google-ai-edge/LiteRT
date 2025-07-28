@@ -246,6 +246,7 @@ cc_library(
     srcs = ["tfl_utils.cc"],
     hdrs = ["tfl_utils.h"],
     deps = [
+        ":tensor_identifier",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/cc:litert_element_type",
@@ -253,12 +254,19 @@ cc_library(
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
+        "//tflite:framework_stable",
         "//tflite/c:c_api",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "//tflite/core:private_cc_api_stable",
         "@com_google_absl//absl/strings:str_format",
     ],
+)
+
+cc_library(
+    name = "tensor_identifier",
+    hdrs = ["tensor_identifier.h"],
 )
 
 cc_library(
@@ -295,6 +303,8 @@ cc_library(
         ":metrics",
         ":profiler",
         ":tensor_buffer",
+        ":tensor_identifier",
+        ":tfl_utils",
         "//litert/c:litert_accelerator",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -354,6 +364,7 @@ cc_test(
     deps = [
         ":compiled_model",
         ":tensor_buffer",
+        ":tfl_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_options",

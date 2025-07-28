@@ -15,12 +15,17 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_TFL_UTILS_H_
 #define ODML_LITERT_LITERT_RUNTIME_TFL_UTILS_H_
 
+#include <cstddef>
+#include <functional>
+
 #include "litert/c/litert_layout.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
-
-struct TfLiteOpaqueTensor;
+#include "litert/runtime/tensor_identifier.h"
+#include "tflite/c/c_api_types.h"
+#include "tflite/interpreter.h"
 
 namespace litert::internal {
 
@@ -36,6 +41,26 @@ Expected<RankedTensorType> ConvertTensorType(
 Expected<void> ResizeTensor(const LiteRtLayout& layout,
                             TfLiteOpaqueContext* tfl_context,
                             TfLiteOpaqueTensor* tfl_opaque_tensor);
+
+struct TensorIdentifierHash {
+  std::size_t operator()(const TfLiteTensorIdentifier& id) const {
+    return std::hash<int>()(id.subgraph_idx) ^
+           (std::hash<int>()(id.tensor_idx) << 1);
+  }
+};
+
+struct TensorIdentifierEqual {
+  bool operator()(const TfLiteTensorIdentifier& lhs,
+                  const TfLiteTensorIdentifier& rhs) const {
+    return lhs.subgraph_idx == rhs.subgraph_idx &&
+           lhs.tensor_idx == rhs.tensor_idx;
+  }
+};
+
+// Returns the TfLiteTensorIdentifier for the given tensor, or nullopt if the
+// tensor is not found in the interpreter.
+litert::Expected<TfLiteTensorIdentifier> GetTensorIdentifier(
+    const tflite::Interpreter& interpreter, const TfLiteTensor* target_tensor);
 
 }  // namespace litert::internal
 

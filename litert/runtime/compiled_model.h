@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -36,10 +37,16 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/profiler.h"
+#include "litert/runtime/tensor_identifier.h"
+#include "litert/runtime/tfl_utils.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
+
+using TfLiteTensorIdentifier = litert::internal::TfLiteTensorIdentifier;
+using TensorIdentifierHash = litert::internal::TensorIdentifierHash;
+using TensorIdentifierEqual = litert::internal::TensorIdentifierEqual;
 
 // The LiteRtCompiledModelT is internal implementation of CompiledModel C++ API.
 class LiteRtCompiledModelT {
@@ -159,7 +166,7 @@ class LiteRtCompiledModelT {
   litert::Expected<void> InitializeRuntime(
       LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options);
 
-  // Handles any JIT compilation and intializes the flatbuffer_model_ and
+  // Handles any JIT compilation and initializes the flatbuffer_model_ and
   // related field within the compiled model.
   //
   // If no JIT compilation is requested, the compiled model will point to the
@@ -264,7 +271,9 @@ class LiteRtCompiledModelT {
   // buffers, they don't register TensorBufferRequirements. Instead, the
   // CompiledModel creates the TensorBufferRequirements and stores them
   // in this map.
-  absl::flat_hash_map<const TfLiteTensor*, LiteRtTensorBufferRequirementsPtr>
+  absl::flat_hash_map<TfLiteTensorIdentifier,
+                      LiteRtTensorBufferRequirementsPtr, TensorIdentifierHash,
+                      TensorIdentifierEqual>
       cpu_buffer_requirements_;
 
   // Map from signature key to SignatureRunner. This is used to lazy calling
@@ -280,7 +289,9 @@ class LiteRtCompiledModelT {
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
-  absl::flat_hash_set<const void*> cpu_tensors_;
+  absl::flat_hash_set<TfLiteTensorIdentifier, TensorIdentifierHash,
+                      TensorIdentifierEqual>
+      cpu_tensors_;
 
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
