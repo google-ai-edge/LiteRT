@@ -29,8 +29,7 @@
 #include <dlfcn.h>
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 #if LITERT_HAS_FASTRPC_SUPPORT
 namespace {
@@ -40,35 +39,34 @@ class FastRpcMemLibrary {
   using Ptr = std::unique_ptr<FastRpcMemLibrary>;
 
   static Expected<Ptr> Create() {
-    DlHandle dlhandle(::dlopen("libcdsprpc.so", RTLD_NOW | RTLD_LOCAL),
-                      ::dlclose);
-    if (!dlhandle) {
+    DlHandle dl_handle(dlopen("libcdsprpc.so", RTLD_NOW | RTLD_LOCAL), dlclose);
+    if (!dl_handle) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "libcdsprpc.so not found");
     }
 
     auto rpcmem_alloc =
-        reinterpret_cast<RpcMemAlloc>(::dlsym(dlhandle.get(), "rpcmem_alloc"));
+        reinterpret_cast<RpcMemAlloc>(dlsym(dl_handle.get(), "rpcmem_alloc"));
     if (!rpcmem_alloc) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "rpcmem_alloc not found");
     }
 
     auto rpcmem_free =
-        reinterpret_cast<RpcMemFree>(::dlsym(dlhandle.get(), "rpcmem_free"));
+        reinterpret_cast<RpcMemFree>(::dlsym(dl_handle.get(), "rpcmem_free"));
     if (!rpcmem_free) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "rpcmem_free not found");
     }
 
     auto rpcmem_to_fd =
-        reinterpret_cast<RpcMemToFd>(::dlsym(dlhandle.get(), "rpcmem_to_fd"));
+        reinterpret_cast<RpcMemToFd>(::dlsym(dl_handle.get(), "rpcmem_to_fd"));
     if (!rpcmem_to_fd) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "rpcmem_to_fd not found");
     }
 
-    return Ptr(new FastRpcMemLibrary(std::move(dlhandle), rpcmem_alloc,
+    return Ptr(new FastRpcMemLibrary(std::move(dl_handle), rpcmem_alloc,
                                      rpcmem_free, rpcmem_to_fd));
   }
 
@@ -91,13 +89,13 @@ class FastRpcMemLibrary {
 
   FastRpcMemLibrary(DlHandle&& dlhandle, RpcMemAlloc rpcmem_alloc,
                     RpcMemFree rpcmem_free, RpcMemToFd rpcmem_to_fd)
-      : dlhandle_(std::move(dlhandle)) {
+      : dl_handle_(std::move(dlhandle)) {
     rpcmem_alloc_ = rpcmem_alloc;
     rpcmem_free_ = rpcmem_free;
     rpcmem_to_fd_ = rpcmem_to_fd;
   }
 
-  DlHandle dlhandle_;
+  DlHandle dl_handle_;
   RpcMemAlloc rpcmem_alloc_;
   RpcMemFree rpcmem_free_;
   RpcMemToFd rpcmem_to_fd_;
@@ -154,5 +152,4 @@ void FastRpcBuffer::Free(void* addr) {
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 }
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal

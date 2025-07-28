@@ -25,8 +25,7 @@
 #include "tflite/delegates/gpu/gl/gl_texture.h"
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 LiteRtGLenum GlTexture::target() const {
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -76,7 +75,7 @@ GlTexture::GlTexture(LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
   if (deallocator != nullptr) {
     tflite_gl_texture_ = tflite::gpu::gl::GlTexture(
         target, id, format, size_bytes, layer, /*has_ownership=*/false);
-    deallocator_ = std::move(deallocator);
+    deallocator_ = deallocator;
   } else {
     tflite_gl_texture_ = tflite::gpu::gl::GlTexture(
         target, id, format, size_bytes, layer, /*has_ownership=*/true);
@@ -90,7 +89,7 @@ GlTexture::GlTexture(LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
 GlTexture::GlTexture(GlTexture&& other) {
 #if LITERT_HAS_OPENGL_SUPPORT
   tflite_gl_texture_ = std::move(other.tflite_gl_texture_);
-  deallocator_ = std::move(other.deallocator_);
+  deallocator_ = other.deallocator_;
 #else
   LITERT_LOG(LITERT_ERROR, "GlTexture::GlTexture() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
@@ -106,5 +105,4 @@ GlTexture::~GlTexture() {
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal

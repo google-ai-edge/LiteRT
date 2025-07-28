@@ -37,14 +37,13 @@
 #include <unistd.h>
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 
-namespace litert {
-namespace internal {
+namespace litert::internal {
 
 #if LITERT_HAS_DMABUF_SUPPORT
 namespace {
 
 int DmabufHeapAlloc(int heap_fd, size_t len) {
-  struct dma_heap_allocation_data data = {0};
+  dma_heap_allocation_data data = {};
   data.len = len;  // Length of data to be allocated in bytes.
   data.fd = 0;     // Output parameter.
   data.fd_flags =
@@ -66,7 +65,7 @@ class DmaBufLibrary {
   DmaBufLibrary(DmaBufLibrary&&) = default;
   DmaBufLibrary& operator=(DmaBufLibrary&&) = default;
 
-  ~DmaBufLibrary() { ::close(heap_fd_); }
+  ~DmaBufLibrary() { close(heap_fd_); }
 
   static Expected<Ptr> Create() {
     int heap_fd = open("/dev/dma_heap/system", O_RDONLY | O_CLOEXEC);
@@ -83,8 +82,7 @@ class DmaBufLibrary {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to allocate DMA-BUF buffer");
     }
-    void* addr =
-        ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    void* addr = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (addr == MAP_FAILED) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         "Failed to mem-map DMA-BUF buffer");
@@ -99,8 +97,8 @@ class DmaBufLibrary {
       return;
     }
     auto& record = iter->second;
-    ::munmap(record.addr, record.size);
-    ::close(record.fd);
+    munmap(record.addr, record.size);
+    close(record.fd);
     records_.erase(iter);
   }
 
@@ -166,5 +164,4 @@ void DmaBufBuffer::Free(void* addr) {
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 }
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
