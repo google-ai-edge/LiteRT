@@ -84,6 +84,8 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:htp_device_config",
         "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",

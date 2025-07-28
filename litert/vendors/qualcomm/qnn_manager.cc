@@ -26,9 +26,22 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "HTP/QnnHtpCommon.h"           // from @qairt
+#include "HTP/QnnHtpContext.h"          // from @qairt
+#include "HTP/QnnHtpDevice.h"           // from @qairt
+#include "QnnBackend.h"                 // from @qairt
+#include "QnnCommon.h"                  // from @qairt
+#include "QnnContext.h"                 // from @qairt
+#include "QnnDevice.h"                  // from @qairt
+#include "QnnInterface.h"               // from @qairt
+#include "QnnLog.h"                     // from @qairt
+#include "QnnTypes.h"                   // from @qairt
+#include "System/QnnSystemCommon.h"     // from @qairt
+#include "System/QnnSystemContext.h"    // from @qairt
+#include "System/QnnSystemInterface.h"  // from @qairt
+#include "absl/strings/match.h"         // from @com_google_absl
+#include "absl/strings/string_view.h"   // from @com_google_absl
+#include "absl/types/span.h"            // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
@@ -38,22 +51,10 @@
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/htp_device_config.h"
 #include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/qnn_log.h"
-#include "HTP/QnnHtpCommon.h"  // from @qairt
-#include "HTP/QnnHtpContext.h"  // from @qairt
-#include "HTP/QnnHtpDevice.h"  // from @qairt
-#include "QnnBackend.h"  // from @qairt
-#include "QnnCommon.h"  // from @qairt
-#include "QnnContext.h"  // from @qairt
-#include "QnnDevice.h"  // from @qairt
-#include "QnnInterface.h"  // from @qairt
-#include "QnnLog.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
-#include "System/QnnSystemCommon.h"  // from @qairt
-#include "System/QnnSystemContext.h"  // from @qairt
-#include "System/QnnSystemInterface.h"  // from @qairt
 
 namespace {
 static constexpr int kRequiredNumProviders{1};
@@ -113,8 +114,6 @@ QnnManager::~QnnManager() {
                  status);
     }
   }
-  (void)FreeDevice();
-  (void)FreeBackend();
   (void)FreeLogging();
 }
 
@@ -190,7 +189,7 @@ LiteRtStatus QnnManager::ResolveApi() {
                qnn_version.coreApiVersion.patch, QNN_API_VERSION_MAJOR,
                QNN_API_VERSION_MINOR, QNN_API_VERSION_PATCH);
   }
-
+  /*
   // TODO (chunhsue-qti) more backend version
   if (qnn_version.backendApiVersion.major != QNN_HTP_API_VERSION_MAJOR) {
     LITERT_LOG(LITERT_ERROR,
@@ -227,6 +226,7 @@ LiteRtStatus QnnManager::ResolveApi() {
                qnn_version.backendApiVersion.patch, QNN_HTP_API_VERSION_MAJOR,
                QNN_HTP_API_VERSION_MINOR, QNN_HTP_API_VERSION_PATCH);
   }
+  */
   interface_ = providers[0];
 
   if (interface_ == nullptr) {
@@ -313,28 +313,6 @@ LiteRtStatus QnnManager::FreeLogging() {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus QnnManager::FreeBackend() {
-  if (backend_handle_ != nullptr) {
-    if (QNN_SUCCESS != Api()->backendFree(backend_handle_)) {
-      LITERT_LOG(LITERT_ERROR, "%s", "Failed to free backend\n");
-      return kLiteRtStatusErrorNotFound;
-    }
-  }
-  backend_handle_ = nullptr;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus QnnManager::FreeDevice() {
-  if (device_handle_ != nullptr) {
-    if (QNN_SUCCESS != Api()->deviceFree(device_handle_)) {
-      LITERT_LOG(LITERT_ERROR, "%s", "Failed to free device\n");
-      return kLiteRtStatusErrorNotFound;
-    }
-  }
-  device_handle_ = nullptr;
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus QnnManager::GenerateContextBinary(
     Qnn_ContextHandle_t context_handle, std::vector<char>& buffer) {
   Qnn_ContextBinarySize_t bin_size = 0;
@@ -407,7 +385,20 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
     litert::internal::PutLibOnLdPath(shared_library_dir->data(), kLibQnnHtpSo);
   }
 
-  LITERT_RETURN_IF_ERROR(LoadLib(kLibQnnHtpSo));
+  switch (options.GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(kLibQnnHtpSo));
+      break;
+    }
+    case ::qnn::BackendType::kIrBackend: {
+      LITERT_RETURN_IF_ERROR(LoadLib(::qnn::IrBackend::GetLibraryName()));
+      break;
+    }
+    default: {
+      // TODO:
+      break;
+    }
+  }
   LITERT_RETURN_IF_ERROR(ResolveApi());
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
@@ -423,6 +414,11 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
     }
   }
 
+  if (options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
+    backend_ = std::make_unique<::qnn::IrBackend>(Api());
+    backend_->Init(LogHandle(), options);
+  }
+  /*
   if (auto status =
           Api()->backendCreate(LogHandle(), configs.data(), &BackendHandle());
       status != QNN_SUCCESS) {
@@ -500,6 +496,7 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
+  */
   return kLiteRtStatusOk;
 }
 
@@ -519,8 +516,9 @@ QnnManager::CreateSystemContextHandle() {
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     absl::Span<const QnnContext_Config_t*> configs) {
   Qnn_ContextHandle_t context_handle;
-  if (auto status = Api()->contextCreate(BackendHandle(), DeviceHandle(),
-                                         configs.data(), &context_handle);
+  if (auto status = Api()->contextCreate(
+          BackendHandle(), DeviceHandle(),
+          configs.size() == 1 ? nullptr : configs.data(), &context_handle);
       status != QNN_SUCCESS) {
     LITERT_LOG(LITERT_ERROR, "Failed to create QNN context: %d", status);
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,

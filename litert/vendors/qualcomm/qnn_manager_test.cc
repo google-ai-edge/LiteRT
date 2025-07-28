@@ -46,4 +46,5 @@ TEST(QnnManagerTest, Dump) {
   EXPECT_THAT(dump, HasSubstr("< QnnSystemInterface_t >"));
 }
 
+
 }  // namespace

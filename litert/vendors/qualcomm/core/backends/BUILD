@@ -27,3 +27,26 @@ cc_library(
         "@qairt//:qnn_lib_headers",
     ],
 )
+
+cc_library(
+    name = "qnn_backend",
+    srcs = ["qnn_backend.cc"],
+    hdrs = ["qnn_backend.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "ir_backend",
+    srcs = ["ir_backend.cc"],
+    hdrs = ["ir_backend.h"],
+    deps = [
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
