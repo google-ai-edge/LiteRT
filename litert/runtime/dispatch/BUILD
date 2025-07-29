@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:special_rule.bzl", "gles_linkopts")
+# copybara:uncomment_begin(google_tensor)
+# load("//litert/build_common:special_rule.bzl", "gles_linkopts")
+#
+# copybara:uncomment_end
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -132,130 +135,132 @@ cc_library(
     ],
 )
 
-litert_device_test(
-    name = "dispatch_delegate_google_tensor_test",
-    srcs = ["dispatch_delegate_google_tensor_test.cc"],
-    backend_id = "google_tensor",
-    data = [
-        "//litert/test:testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
-        "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
-    ],
-    features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
-        "//conditions:default": [],
-    }),
-    linkopts = gles_linkopts(),
-    deps = [
-        ":dispatch_delegate",
-        ":dispatch_opaque_options",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_compiled_model",
-        "//litert/cc/internal:litert_environment",
-        "//litert/cc/internal:litert_event",
-        "//litert/cc/internal:litert_options",
-        "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/core/model:model_buffer",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime:external_litert_buffer_context",
-        "//litert/runtime:tensor_buffer",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model_npu",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-    ],
-)
-
-litert_device_test(
-    name = "dispatch_delegate_cascade_google_tensor_test",
-    srcs = ["dispatch_delegate_cascade_google_tensor_test.cc"],
-    backend_id = "google_tensor",
-    data = [
-        "//litert/test:testdata/simple_cascade_model_npu.tflite",
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-    ],
-    features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
-        "//conditions:default": [],
-    }),
-    linkopts = gles_linkopts(),
-    deps = [
-        ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_compiled_model",
-        "//litert/cc/internal:litert_environment",
-        "//litert/cc/internal:litert_event",
-        "//litert/cc/internal:litert_options",
-        "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/core/model:model_buffer",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime:external_litert_buffer_context",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_cascade_model_npu",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-    ],
-)
-
-litert_device_test(
-    name = "dispatch_delegate_mixed_cascade_google_tensor_test",
-    srcs = ["dispatch_delegate_mixed_cascade_google_tensor_test.cc"],
-    backend_id = "google_tensor",
-    data = [
-        "//litert/test:testdata/simple_mixed_cascade_model_npu.tflite",
-        "//litert/test:testdata/simple_model_google_tensor.bin",
-    ],
-    features = select({
-        "//tools/cc_target_os:android": ["-layering_check"],
-        "//conditions:default": [],
-    }),
-    linkopts = gles_linkopts(),
-    deps = [
-        ":dispatch_delegate",
-        "@com_google_googletest//:gtest_main",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
-        "//litert/cc/internal:litert_compiled_model",
-        "//litert/cc/internal:litert_environment",
-        "//litert/cc/internal:litert_event",
-        "//litert/cc/internal:litert_options",
-        "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/core/model:model_buffer",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/runtime:external_litert_buffer_context",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_mixed_cascade_model_npu",
-        "//tflite:framework",
-        "//tflite/c:c_api_opaque",
-    ],
-)
+# copybara:uncomment_begin(google_tensor)
+# litert_device_test(
+#     name = "dispatch_delegate_google_tensor_test",
+#     srcs = ["dispatch_delegate_google_tensor_test.cc"],
+#     backend_id = "google_tensor",
+#     data = [
+#         "//litert/test:testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
+#         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
+#     ],
+#     features = select({
+#         "//tools/cc_target_os:android": ["-layering_check"],
+#         "//conditions:default": [],
+#     }),
+#     linkopts = gles_linkopts(),
+#     deps = [
+#         ":dispatch_delegate",
+#         ":dispatch_opaque_options",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/log",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_buffer_ref",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_model",
+#         "//litert/cc/internal:litert_compiled_model",
+#         "//litert/cc/internal:litert_environment",
+#         "//litert/cc/internal:litert_event",
+#         "//litert/cc/internal:litert_options",
+#         "//litert/cc/internal:litert_tensor_buffer",
+#         "//litert/core/model:model_buffer",
+#         "//litert/core/util:flatbuffer_tools",
+#         "//litert/runtime:external_litert_buffer_context",
+#         "//litert/runtime:tensor_buffer",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model_npu",
+#         "//tflite:framework",
+#         "//tflite/c:c_api_opaque",
+#     ],
+# )
+#
+# litert_device_test(
+#     name = "dispatch_delegate_cascade_google_tensor_test",
+#     srcs = ["dispatch_delegate_cascade_google_tensor_test.cc"],
+#     backend_id = "google_tensor",
+#     data = [
+#         "//litert/test:testdata/simple_cascade_model_npu.tflite",
+#         "//litert/test:testdata/simple_model_google_tensor.bin",
+#     ],
+#     features = select({
+#         "//tools/cc_target_os:android": ["-layering_check"],
+#         "//conditions:default": [],
+#     }),
+#     linkopts = gles_linkopts(),
+#     deps = [
+#         ":dispatch_delegate",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/log",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_buffer_ref",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_model",
+#         "//litert/cc/internal:litert_compiled_model",
+#         "//litert/cc/internal:litert_environment",
+#         "//litert/cc/internal:litert_event",
+#         "//litert/cc/internal:litert_options",
+#         "//litert/cc/internal:litert_tensor_buffer",
+#         "//litert/core/model:model_buffer",
+#         "//litert/core/util:flatbuffer_tools",
+#         "//litert/runtime:external_litert_buffer_context",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_cascade_model_npu",
+#         "//tflite:framework",
+#         "//tflite/c:c_api_opaque",
+#     ],
+# )
+#
+# litert_device_test(
+#     name = "dispatch_delegate_mixed_cascade_google_tensor_test",
+#     srcs = ["dispatch_delegate_mixed_cascade_google_tensor_test.cc"],
+#     backend_id = "google_tensor",
+#     data = [
+#         "//litert/test:testdata/simple_mixed_cascade_model_npu.tflite",
+#         "//litert/test:testdata/simple_model_google_tensor.bin",
+#     ],
+#     features = select({
+#         "//tools/cc_target_os:android": ["-layering_check"],
+#         "//conditions:default": [],
+#     }),
+#     linkopts = gles_linkopts(),
+#     deps = [
+#         ":dispatch_delegate",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/log",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         # copybara:uncomment "//third_party/darwinn/driver_shared/fence:fence_test_util",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_buffer_ref",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_model",
+#         "//litert/cc/internal:litert_compiled_model",
+#         "//litert/cc/internal:litert_environment",
+#         "//litert/cc/internal:litert_event",
+#         "//litert/cc/internal:litert_options",
+#         "//litert/cc/internal:litert_tensor_buffer",
+#         "//litert/core/model:model_buffer",
+#         "//litert/core/util:flatbuffer_tools",
+#         "//litert/runtime:external_litert_buffer_context",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_mixed_cascade_model_npu",
+#         "//tflite:framework",
+#         "//tflite/c:c_api_opaque",
+#     ],
+# )
+# copybara:uncomment_end
 
 litert_device_test(
     name = "dispatch_delegate_qualcomm_test",

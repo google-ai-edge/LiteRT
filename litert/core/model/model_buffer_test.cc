@@ -36,7 +36,7 @@
 namespace litert::internal {
 namespace {
 
-static constexpr absl::string_view kNpuFile = kGoogleTensorModelFileName;
+static constexpr absl::string_view kNpuFile = kNpuModelFileName;
 static constexpr absl::string_view kTfliteFile = "simple_model_npu.tflite";
 static constexpr absl::string_view kCascadedTfliteFile =
     "simple_cascade_model_npu.tflite";

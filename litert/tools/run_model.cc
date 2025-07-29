@@ -14,7 +14,6 @@
 
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
-#define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
 
 #include <algorithm>
 #include <cstddef>
@@ -40,7 +39,6 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
@@ -66,7 +64,6 @@ ABSL_FLAG(size_t, iterations, 1,
 namespace litert {
 namespace {
 
-using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
 
@@ -107,9 +104,6 @@ Expected<Options> GetOptions() {
   options.SetHardwareAccelerators(GetAccelerator());
   if (auto qnn_opts = QualcommOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*qnn_opts));
-  }
-  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*google_tensor_opts));
   }
   if (auto mediatek_opts = MediatekOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*mediatek_opts));

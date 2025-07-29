@@ -512,11 +512,13 @@ cc_library(
     deps = ["//tflite/delegates/xnnpack:xnnpack_delegate_hdrs_only"],
 )
 
-cc_library(
-    name = "litert_google_tensor",
-    hdrs = ["litert_google_tensor.h"],
-    deps = ["//litert/c/options:litert_google_tensor_options_type"],
-)
+# copybara:uncomment_begin(google-only)
+# cc_library(
+#     name = "litert_google_tensor",
+#     hdrs = ["litert_google_tensor.h"],
+#     deps = ["//litert/c/options:litert_google_tensor_options_type"],
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "litert_gpu_util",

@@ -77,37 +77,39 @@ cc_test(
     ],
 )
 
-# GOOGLE TENSOR ####################################################################################
-
-cc_library(
-    name = "litert_google_tensor_options",
-    srcs = ["litert_google_tensor_options.cc"],
-    hdrs = ["litert_google_tensor_options.h"],
-    deps = [
-        ":litert_google_tensor_options_type",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "//litert/runtime:litert_google_tensor",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_google_tensor_options_test",
-    srcs = ["litert_google_tensor_options_test.cc"],
-    deps = [
-        ":litert_google_tensor_options",
-        "//litert/c:litert_opaque_options",
-        "//litert/cc/options:litert_google_tensor_options",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google_tensor)
+# # GOOGLE TENSOR ####################################################################################
+#
+# cc_library(
+#     name = "litert_google_tensor_options",
+#     srcs = ["litert_google_tensor_options.cc"],
+#     hdrs = ["litert_google_tensor_options.h"],
+#     deps = [
+#         ":litert_google_tensor_options_type",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_opaque_options",
+#         "//litert/cc:litert_detail",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_handle",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_opaque_options",
+#         "//litert/runtime:litert_google_tensor",
+#     ],
+# )
+#
+# cc_test(
+#     name = "litert_google_tensor_options_test",
+#     srcs = ["litert_google_tensor_options_test.cc"],
+#     deps = [
+#         ":litert_google_tensor_options",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c:litert_opaque_options",
+#         "//litert/cc/options:litert_google_tensor_options",
+#         "//litert/test:matchers",
+#     ],
+# )
+# copybara:uncomment_end
 
 # MEDIATEK ####################################################################################
 
