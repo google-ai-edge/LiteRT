@@ -307,6 +307,10 @@ void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   DCE(*subgraph_to_apply);
   subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(), splice_index);
   subgraph_to_apply->TransferTensorsFrom(subgraph_.TensorsAllocation());
+
+  erases_.clear();
+  allocated_ops_.clear();
+  allocated_tensors_.clear();
 }
 
 namespace litert::internal {
