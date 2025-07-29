@@ -5,9 +5,7 @@ cc_test(
     ],
     deps = [
         "//litert/cc:litert_buffer_ref",
-        "//litert/core/model:model_graph_testonly",
-        "//litert/core/model:model_testonly",
-        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/c:litert_model",
         "//litert/test:matchers",
         "//litert/test/generators:graph_helpers",
         "//litert/vendors/qualcomm/core:common",

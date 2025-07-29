@@ -4,10 +4,8 @@
 #include <cstdint>
 #include <cstdio>
 
+#include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
-#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/qualcomm/core/common.h"
@@ -40,8 +38,6 @@ TEST(FromLiteRtOp, AddRelu) {
           tflite::ActivationFunctionType_RELU, false));
 
   ASSERT_EQ(litert_model->NumSubgraphs(), 1);
-  auto ops = litert_model->MainSubgraph()->Ops();
-  ASSERT_EQ(ops.size(), 1);
 
   // QNN Conversion
   ::qnn::TensorPool tensor_pool;
@@ -50,9 +46,10 @@ TEST(FromLiteRtOp, AddRelu) {
   std::vector<::qnn::OpWrapper> op_wrappers;
   auto options = ::qnn::Options();
 
-  ASSERT_TRUE(ConvertLiteRtOp(litert::Op(ops[0]), tensor_pool, input_tensors,
-                              output_tensors, op_wrappers,
-                              options.GetUseHtpPreference()));
+  ASSERT_TRUE(
+      ConvertLiteRtSubGraph(litert::Subgraph(litert_model->MainSubgraph()),
+                            tensor_pool, input_tensors, output_tensors,
+                            op_wrappers, options.GetUseHtpPreference()));
 
   QnnBackendCreator backend_creator(options, "SM8650");
   ::qnn::QnnModel model(backend_creator.GetBackendHandle(),
