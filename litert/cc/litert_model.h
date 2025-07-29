@@ -547,8 +547,8 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
  private:
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
+  // Parameter `owned` indicates if the created TensorBuffer object should
+  // take ownership of the provided `tensor_buffer` handle.
   Model(LiteRtModel model, OwnHandle owned) : Handle(model, owned) {}
 };
 
