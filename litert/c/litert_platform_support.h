@@ -77,6 +77,14 @@ inline bool LiteRtHasSyncFenceSupport() {
 #endif
 }
 
+inline bool LiteRtHasMetalSupport() {
+#if LITERT_HAS_METAL_SUPPORT
+  return true;
+#else
+  return false;
+#endif
+}
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

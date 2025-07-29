@@ -118,8 +118,7 @@ Expected<MetalMemory> MetalMemory::Alloc(GpuEnvironment* gpu_env,
   id<MTLBuffer> converted_buffer_memory = (__bridge id<MTLBuffer>)buffer_memory_ptr;
   metal_buffer = tflite::gpu::metal::Buffer(converted_buffer_memory, bytes_size);
 
-  return Expected<MetalMemory>(gpu_env, tensor_type, buffer_type, std::move(metal_buffer),
-                               bytes_size, nullptr);
+  return Expected<MetalMemory>(gpu_env, tensor_type, buffer_type, std::move(metal_buffer));
 }
 
 bool MetalMemory::IsSupported() { return MTLCreateSystemDefaultDevice() != nullptr; }

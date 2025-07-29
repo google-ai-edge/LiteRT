@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:special_rule.bzl", "litert_metal_linkopts", "litert_metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -63,6 +64,8 @@ cc_library(
     name = "litert_custom_op_kernel",
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     deps = [
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
@@ -99,6 +102,8 @@ cc_library(
         "//litert/cc:litert_tensor_buffer.h",
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     deps = [
         ":litert_event",
         "//litert/c:litert_common",
@@ -167,6 +172,8 @@ cc_library(
 cc_library(
     name = "litert_options",
     hdrs = ["//litert/cc:litert_options.h"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_internal_users_with_internal_cc",

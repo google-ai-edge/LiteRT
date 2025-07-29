@@ -47,6 +47,8 @@ class Environment
     EglDisplay = kLiteRtEnvOptionTagEglDisplay,
     WebGpuDevice = kLiteRtEnvOptionTagWebGpuDevice,
     WebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
+    MetalDevice = kLiteRtEnvOptionTagMetalDevice,
+    MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
   };
 
   struct Option {

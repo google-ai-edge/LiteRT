@@ -40,6 +40,10 @@
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
 
+// #if LITERT_HAS_METAL_SUPPORT
+// #include "litert/runtime/metal_memory.h"
+// #endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
@@ -47,6 +51,39 @@
 
 namespace litert::internal {
 class GpuEnvironment;
+
+#if LITERT_HAS_METAL_SUPPORT
+class MetalMemoryWrapper;
+typedef std::unique_ptr<struct MetalMemoryWrapper> MetalMemoryWrapperPtr;
+
+class MetalMemoryWrapper {
+ public:
+  virtual ~MetalMemoryWrapper() = default;
+
+  // Allocates a CPU memory and conducts a copy from the Metal buffer to the
+  // CPU memory.
+  template <typename T>
+  Expected<T*> Lock(LiteRtTensorBufferLockMode mode);
+
+  // Writes the data from the CPU memory to the OpenCL buffer.
+  template <typename T>
+  Expected<void> Unlock();
+
+  static void* GetMemoryPtr();
+
+  static Expected<MetalMemoryWrapper> Alloc(
+      GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t bytes_size);
+
+  static MetalMemoryWrapperPtr Create();
+  static MetalMemoryWrapperPtr Create(GpuEnvironment* gpu_env,
+                                      const LiteRtRankedTensorType& tensor_type,
+                                      LiteRtTensorBufferType buffer_type,
+                                      void* metal_buffer, size_t buffer_size,
+                                      LiteRtMetalDeallocator deallocator);
+};
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 }  // namespace litert::internal
 
 class LiteRtTensorBufferT {
@@ -111,6 +148,13 @@ class LiteRtTensorBufferT {
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+  static litert::Expected<Ptr> CreateFromMetalMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, void* metal_buffer,
+      size_t buffer_size, LiteRtMetalDeallocator deallocator = nullptr);
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
 
@@ -143,6 +187,10 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
+#if LITERT_HAS_METAL_SUPPORT
+  // litert::Expected<litert::internal::MetalMemory*> GetMetalMemory();
+  litert::Expected<litert::internal::MetalMemoryWrapper*> GetMetalMemory();
+#endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -206,6 +254,10 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
+                   //  litert::internal::MetalMemory,
+                   litert::internal::MetalMemoryWrapper,
+#endif  // LITERT_HAS_METAL_SUPPORT
                    litert::internal::CustomBuffer, litert::internal::GlBuffer,
                    litert::internal::GlTexture>;
 
@@ -239,6 +291,10 @@ class LiteRtTensorBufferT {
       size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedWebGpuBuffer(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+  static litert::Expected<Ptr> CreateManagedMetalMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 

@@ -36,8 +36,10 @@ using MetalBuffer = ::tflite::gpu::metal::Buffer;
 
 class MetalMemory {
  public:
+  MetalMemory();
   MetalMemory(MetalMemory&& other)
-      : tensor_type_(other.tensor_type_),
+      : gpu_env_(other.gpu_env_),
+        tensor_type_(other.tensor_type_),
         buffer_type_(other.buffer_type_),
         data_(other.data_),
         buffer_(std::move(other.buffer_)),
@@ -46,16 +48,27 @@ class MetalMemory {
     other.size_ = 0;
   }
 
+  explicit MetalMemory(GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+                       LiteRtTensorBufferType buffer_type, tflite::gpu::metal::Buffer buffer)
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
+        buffer_type_(buffer_type),
+        buffer_(std::move(buffer)) {}
+
   MetalMemory(GpuEnvironment* gpu_env,
               const LiteRtRankedTensorType& tensor_type,
-              LiteRtTensorBufferType buffer_type, MetalBuffer buffer,
+              LiteRtTensorBufferType buffer_type, void* buffer,
               size_t size, LiteRtMetalDeallocator deallocator)
       : gpu_env_(gpu_env),
         tensor_type_(tensor_type),
         buffer_type_(buffer_type),
-        buffer_(std::move(buffer)),
         deallocator_(deallocator),
-        size_(size) {}
+        size_(size) {
+    // CreateBufferShared creates a buffer that is not owned by
+    // tflite::gpu::metal::Buffer (MetalMemory determines ownership). Null
+    // deallocator means that the buffer is not owned by MetalMemory.
+    buffer_ = tflite::gpu::metal::CreateBufferShared((__bridge id<MTLBuffer>)buffer);
+  }
 
   ~MetalMemory();
 
