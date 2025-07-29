@@ -19,6 +19,7 @@
 
 #include <stdlib.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -44,6 +45,7 @@
 #include "HTP/QnnHtpCommon.h"  // from @qairt
 #include "HTP/QnnHtpContext.h"  // from @qairt
 #include "HTP/QnnHtpDevice.h"  // from @qairt
+#include "HTP/QnnHtpProfile.h"  // from @qairt
 #include "QnnBackend.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
 #include "QnnContext.h"  // from @qairt
@@ -517,7 +519,8 @@ QnnManager::CreateSystemContextHandle() {
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
-    absl::Span<const QnnContext_Config_t*> configs) {
+    absl::Span<const QnnContext_Config_t*> configs,
+    ::qnn::Profiling profiling_level) {
   Qnn_ContextHandle_t context_handle;
   if (auto status = Api()->contextCreate(BackendHandle(), DeviceHandle(),
                                          configs.data(), &context_handle);
@@ -526,8 +529,41 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to create QNN context");
   }
-  auto deleter = Api()->contextFree;
-  return ContextHandle{context_handle, /*profile=*/nullptr, deleter, nullptr};
+  auto context_deleter = Api()->contextFree;
+  Qnn_ProfileHandle_t profile_handle = nullptr;
+  if (profiling_level != ::qnn::Profiling::kOff) {
+    // Profile Create
+    uint32_t profiling = QNN_PROFILE_LEVEL_BASIC;
+    if (profiling_level == ::qnn::Profiling::kLinting) {
+      profiling = QNN_HTP_PROFILE_LEVEL_LINTING;
+    } else if (profiling_level == ::qnn::Profiling::kOptrace) {
+      profiling = QNN_PROFILE_LEVEL_DETAILED;
+    } else {
+      profiling = static_cast<uint32_t>(profiling_level);
+    }
+    if (auto status =
+            Api()->profileCreate(backend_handle_, profiling, &profile_handle);
+        status != QNN_SUCCESS) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to create profile handle");
+    }
+    if (profiling_level == ::qnn::Profiling::kOptrace) {
+      static std::array<QnnProfile_Config_t, 1> profile_configs;
+      profile_configs[0] = QNN_PROFILE_CONFIG_INIT;
+      profile_configs[0].option = QNN_PROFILE_CONFIG_OPTION_ENABLE_OPTRACE;
+      profile_configs[0].enableOptrace = 1;
+      static std::array<const QnnProfile_Config_t*, 2> results = {
+          &profile_configs[0], nullptr};
+      if (auto status = Api()->profileSetConfig(profile_handle, results.data());
+          status != QNN_SUCCESS) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to set profile configs");
+      }
+    }
+  }
+  auto profile_deleter = Api()->profileFree;
+  return ContextHandle{context_handle, profile_handle, context_deleter,
+                       profile_deleter};
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
