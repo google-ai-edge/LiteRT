@@ -33,6 +33,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -83,14 +84,44 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
-        "//litert/cc:litert_environment",
         "//litert/cc:litert_op_options",
+        "//litert/cc:litert_rewriter",
+        "//litert/cc:litert_environment",
         "//litert/core:build_stamp",
         "//litert/core:filesystem",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/tools:dump",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_transformation_test",
+    srcs = ["compiler_plugin_transformation_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+        # TODO(yunandrew): Re-enable once the test is fixed.
+        "notap",
+    ],
+    deps = [
+        ":compiler_plugin",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
