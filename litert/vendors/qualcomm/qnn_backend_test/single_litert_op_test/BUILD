@@ -1,3 +1,11 @@
+# Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+package(
+    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    default_visibility = ["//litert:__subpackages__"],
+)
+
 cc_test(
     name = "add_relu_test",
     srcs = [

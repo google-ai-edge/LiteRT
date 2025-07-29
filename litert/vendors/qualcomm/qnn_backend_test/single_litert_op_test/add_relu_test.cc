@@ -1,9 +1,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include <cstdint>
-#include <cstdio>
-
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/test/generators/graph_helpers.h"

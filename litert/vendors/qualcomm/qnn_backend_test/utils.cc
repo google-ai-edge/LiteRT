@@ -1,3 +1,6 @@
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 #include "litert/vendors/qualcomm/qnn_backend_test/utils.h"
 
 #include "litert/cc/litert_model.h"

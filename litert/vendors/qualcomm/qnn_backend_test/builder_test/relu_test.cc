@@ -1,7 +1,8 @@
+// Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-
-#include <cstdio>
 
 #include "litert/vendors/qualcomm/core/builders/relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
