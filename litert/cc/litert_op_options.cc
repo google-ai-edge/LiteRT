@@ -257,4 +257,16 @@ LiteRtStatus ReduceMaxOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus PackOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflPack) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetPackAxisOption(op, &axis));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
