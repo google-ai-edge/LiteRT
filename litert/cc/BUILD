@@ -128,6 +128,7 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -141,6 +142,7 @@ cc_test(
         "//litert/test:mlir_test_data",
     ],
     deps = [
+        ":litert_buffer_ref",
         ":litert_element_type",
         ":litert_layout",
         ":litert_model",
@@ -149,6 +151,7 @@ cc_test(
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/core/model",
+        "//litert/core/model:buffer_manager",
         "//litert/test:common",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -1253,6 +1256,51 @@ cc_library(
         ":litert_tensor_buffer",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//tflite/c:common",
+    ],
+)
+
+cc_library(
+    name = "litert_rewriter",
+    srcs = ["litert_rewriter.cc"],
+    hdrs = ["litert_rewriter.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_detail",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
+        "//litert/core/model",
+    ],
+)
+
+cc_test(
+    name = "litert_rewriter_test",
+    srcs = ["litert_rewriter_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_model",
+        ":litert_rewriter",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+        "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

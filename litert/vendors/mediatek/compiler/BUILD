@@ -44,6 +44,7 @@ litert_dynamic_lib(
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
