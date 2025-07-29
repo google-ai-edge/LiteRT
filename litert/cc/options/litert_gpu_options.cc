@@ -45,6 +45,10 @@ LiteRtStatus GpuOptions::EnableBenchmarkMode(bool enabled) {
   return LiteRtSetGpuOptionsBenchmarkMode(Get(), enabled);
 }
 
+LiteRtStatus GpuOptions::SetGpuBackend(LiteRtGpuBackend backend) {
+  return LiteRtSetGpuOptionsGpuBackend(Get(), backend);
+}
+
 LiteRtStatus GpuOptions::EnableAllowSrcQuantizedFcConvOps(bool enabled) {
   return LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
       Get(), enabled);

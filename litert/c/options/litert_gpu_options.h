@@ -42,6 +42,10 @@ LiteRtStatus LiteRtSetGpuOptionsInfiniteFloatCapping(
 LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
                                               bool enable);
 
+// Sets the GPU backend.
+LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
+                                           LiteRtGpuBackend backend);
+
 // Set to true to run in no external tensors mode. This prevents GPU
 // Accelerator from using external tensors.
 // This mode mostly gives a better performance but it requires additional
@@ -136,6 +140,9 @@ LiteRtStatus LiteRtGetGpuOptionsInfiniteFloatCapping(
 
 LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
                                               LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
+                                           LiteRtGpuOptionsPayload payload);
 
 // TODO - b/421905729: Change name to LiteRtGetGpuOptionsNoExternalTensorsMode
 // with the next API updates.
