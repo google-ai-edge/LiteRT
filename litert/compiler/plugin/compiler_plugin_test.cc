@@ -23,7 +23,6 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_op_options.h"
@@ -31,7 +30,6 @@
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
-#include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 
 namespace litert::internal {
@@ -594,6 +592,38 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   const auto& sgs = partition_result->second.Subgraphs();
   ASSERT_EQ(sgs.size(), 1);
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+}
+
+TEST(TransformationTest, ApplyTransformation) {
+  auto model_wrap = testing::LoadTestFileModel("sqrt_mean_mul.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  ASSERT_EQ(plugins->size(), 1);
+
+  ASSERT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(model.MainSubgraph()->Op(1).OpCode(), kLiteRtOpCodeTflMean);
+  ASSERT_EQ(model.MainSubgraph()->Op(2).OpCode(), kLiteRtOpCodeTflSqrt);
+
+  auto transform_result = TransformModel(plugins->front(), model);
+  ASSERT_TRUE(transform_result);
+
+  ASSERT_EQ(model.MainSubgraph()->Ops().size(), 2);
+  EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflAbs);
+  EXPECT_EQ(model.MainSubgraph()->Op(1).OpCode(), kLiteRtOpCodeTflSqrt);
+}
+
+TEST(TransformationTest, SortTransformationsByBenefit) {
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+  plugin.RegisterAllTransformations();
+  ASSERT_EQ(plugin.GetNumTransformations(), 2);
+  absl::string_view name_0 = plugin.GetTransformation(0).name;
+  absl::string_view name_1 = plugin.GetTransformation(1).name;
+  EXPECT_EQ(name_0, "MyTransformation");
+  EXPECT_EQ(name_1, "DummyTransformation");
 }
 
 }  // namespace
