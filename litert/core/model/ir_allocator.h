@@ -126,6 +126,24 @@ class IrAllocator {
     other.ResetRefs();
   }
 
+  // Transfers ownership of the given object to this allocator with at specified
+  // index of this allocator.
+  void TransferFrom(IrAllocator& other, size_t index) {
+    auto storage_it = storage_.begin();
+    std::advance(storage_it, index);
+    storage_.splice(storage_it, other.storage_);
+
+    auto refs_it = refs_->begin();
+    std::advance(refs_it, index);
+    for (auto it = std::prev(storage_it, other.storage_.size());
+         it != storage_.end(); ++it) {
+      refs_->insert(refs_it, &*it);
+    }
+
+    other.ResetRefs();
+    ResetRefs();
+  }
+
   // Override for rvalues.
   void TransferFrom(IrAllocator&& other) { TransferFrom(other, std::nullopt); }
 
