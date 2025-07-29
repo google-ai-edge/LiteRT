@@ -123,6 +123,12 @@ absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::NotFoundError(error_.Message());
     case kLiteRtStatusErrorInvalidLegalization:
       return absl::InvalidArgumentError(error_.Message());
+    case kLiteRtStatusPatternNoMatch:
+      return absl::NotFoundError(error_.Message());
+    case kLiteRtStatusInvalidTransformation:
+      return absl::InvalidArgumentError(error_.Message());
+    default:
+      return absl::UnknownError(error_.Message());
   }
 }
 
