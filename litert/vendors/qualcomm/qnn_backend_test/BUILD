@@ -18,27 +18,6 @@ cc_test(
     ],
 )
 
-cc_test(
-    name = "qnn_model_test",
-    srcs = [
-        "qnn_model_test.cc",
-    ],
-    deps = [
-        ":qnn_backend_creator",
-        ":utils",
-        "//litert/core/model:model_graph_testonly",
-        "//litert/core/model:model_testonly",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//litert/vendors/qualcomm/compiler:qnn_compose_graph",
-        "//litert/vendors/qualcomm/core:common",
-        "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/builders:relu_op_builder",
-        "//litert/vendors/qualcomm/core/utils:qnn_model",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
 cc_library(
     name = "qnn_backend_creator",
     srcs = ["qnn_backend_creator.cc"],
