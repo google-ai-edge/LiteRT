@@ -995,9 +995,10 @@ void AddTensorToQnn(
 }
 
 LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+                      Qnn_ProfileHandle_t profile_handle,
                       LiteRtSubgraph subgraph, absl::string_view qnn_graph_name,
                       const ::qnn::Options& options) {
-  GraphMapper graph_mapper(subgraph, qnn, context_handle);
+  GraphMapper graph_mapper(subgraph, qnn, context_handle, profile_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
   LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name));
 
@@ -1117,11 +1118,12 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 //===----------------------------------------------------------------------===//
 
 LiteRtStatus ComposeGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
+                          Qnn_ProfileHandle_t profile_handle,
                           LiteRtSubgraph subgraph,
                           absl::string_view qnn_graph_name,
                           const ::qnn::Options& options) {
-  LITERT_RETURN_IF_ERROR(
-      MapGraph(qnn, context_handle, subgraph, qnn_graph_name, options));
+  LITERT_RETURN_IF_ERROR(MapGraph(qnn, context_handle, profile_handle, subgraph,
+                                  qnn_graph_name, options));
   return kLiteRtStatusOk;
 }
 
