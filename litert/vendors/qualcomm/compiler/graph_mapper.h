@@ -34,10 +34,12 @@ namespace litert::qnn {
 class GraphMapper {
  public:
   GraphMapper(LiteRtSubgraph subgraph, QnnManager& qnn,
-              Qnn_ContextHandle_t context_handle)
+              Qnn_ContextHandle_t context_handle,
+              Qnn_ProfileHandle_t profile_handle)
       : subgraph_(Subgraph(subgraph)),
         qnn_(qnn),
-        context_handle_(context_handle) {}
+        context_handle_(context_handle),
+        profile_handle_(profile_handle) {}
 
   // QNN Sdk Accessors
   QnnManager& Qnn();
@@ -79,6 +81,7 @@ class GraphMapper {
   //
   QnnManager& qnn_;
   Qnn_ContextHandle_t context_handle_;
+  Qnn_ProfileHandle_t profile_handle_;
   Qnn_GraphHandle_t qnn_graph_ = nullptr;
 };
 

@@ -420,7 +420,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context_configs = QnnManager::DefaultContextConfigs();
       }
       auto context_handle =
-          (*qnn_manager)->CreateContextHandle(context_configs);
+          (*qnn_manager)
+              ->CreateContextHandle(context_configs,
+                                    compiler_plugin->Options().GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s",
                    context_handle.Error().Message().c_str());
@@ -450,6 +452,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         **qnn_manager, context_handles[context_handle_idx].get(),
+        context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, compiler_plugin->Options()));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }

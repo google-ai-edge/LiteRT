@@ -239,6 +239,15 @@ TEST(ProfilingTest, Parse) {
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
   }
+
+  {
+    static constexpr absl::string_view kProfiling = "optrace";
+    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
+        kLiteRtQualcommProfilingOptrace;
+    EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
+    EXPECT_EQ(value, kProfilingEnum);
+    EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
+  }
 }
 
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
