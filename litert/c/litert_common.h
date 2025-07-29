@@ -229,6 +229,14 @@ typedef enum {
   kLiteRtTensorBufferLockModeReadWrite = 2,
 } LiteRtTensorBufferLockMode;
 
+// Backend option of GPU Accelerator.
+// No need to specify on iOS or Metal since there is only one backend.
+typedef enum {
+  kLiteRtGpuBackendAutomatic = 0,
+  kLiteRtGpuBackendOpenCl = 1,
+  kLiteRtGpuBackendWebGpu = 2,
+} LiteRtGpuBackend;
+
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;
 

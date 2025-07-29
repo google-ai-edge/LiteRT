@@ -134,6 +134,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(true));
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("gpu_backend",
+                            BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
 
@@ -248,6 +250,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "Whether to require full delegation."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "use_profiler", &params_, "Whether to use profiler."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "gpu_backend", &params_,
+        "GPU backend to use when using GPU accelerator."));
     return flags;
   }
 

@@ -46,6 +46,7 @@ class GpuOptions : public litert::OpaqueOptions {
   // with the next API updates.
   LiteRtStatus EnableNoImmutableExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
+  LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
 };
 
 }  // namespace litert
