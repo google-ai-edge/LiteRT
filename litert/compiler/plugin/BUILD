@@ -96,7 +96,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:insert_order_map",
         "//litert/core/model",
-        "//litert/core/model:model_graph",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
