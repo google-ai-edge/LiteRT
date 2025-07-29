@@ -1,11 +1,15 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <cstdio>
 
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_graph.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "litert/test/generators/graph_helpers.h"
+#include "litert/test/matchers.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
@@ -19,35 +23,25 @@ namespace litert::qnn {
 namespace {
 
 TEST(FromLiteRtOp, AddRelu) {
-  // LiteRT op creation
-  static constexpr std::array kDims = {2, 2};
-  LiteRtTensorT input1;
-  input1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
-                                      absl::MakeConstSpan(kDims)));
-  input1.SetName("input1");
+  // LiteRT model creation
+  std::vector<float> cst_data = {1.f};
+  testing::TensorDetails lhs = {{2, 2}, kLiteRtElementTypeFloat32, "lhs"};
+  testing::TensorDetails rhs = {
+      {},
+      kLiteRtElementTypeFloat32,
+      "cst",
+      MakeBufferRef(cst_data.cbegin(), cst_data.cend())};
+  testing::TensorDetails output = {{2, 2}, kLiteRtElementTypeFloat32, "output"};
 
-  LiteRtTensorT input2;
-  input2.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
-                                      absl::MakeConstSpan(kDims)));
-  input2.SetName("input2");
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_model,
+      testing::SingleOpModel<kLiteRtOpCodeTflAdd>(
+          {std::move(lhs), std::move(rhs)}, {std::move(output)},
+          tflite::ActivationFunctionType_RELU, false));
 
-  LiteRtTensorT output;
-  output.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
-                                      absl::MakeConstSpan(kDims)));
-  output.SetName("output");
-
-  LiteRtOpT op;
-  op.SetOpCode(kLiteRtOpCodeTflAdd);
-  ::litert::internal::AttachInput(&input1, op);
-  ::litert::internal::AttachInput(&input2, op);
-  ::litert::internal::AttachOutput(&output, op);
-
-  tflite::AddOptionsT add_opts;
-  add_opts.fused_activation_function = tflite::ActivationFunctionType_RELU;
-  ::litert::internal::TflOptions tfl_opts;
-  tfl_opts.Set(std::move(add_opts));
-  litert::internal::SetTflOptions(op, std::move(tfl_opts));
-  ::litert::Op Op(&op);
+  ASSERT_EQ(litert_model->NumSubgraphs(), 1);
+  auto ops = litert_model->MainSubgraph()->Ops();
+  ASSERT_EQ(ops.size(), 1);
 
   // QNN Conversion
   ::qnn::TensorPool tensor_pool;
@@ -56,8 +50,9 @@ TEST(FromLiteRtOp, AddRelu) {
   std::vector<::qnn::OpWrapper> op_wrappers;
   auto options = ::qnn::Options();
 
-  ASSERT_TRUE(ConvertLiteRtOp(Op, tensor_pool, input_tensors, output_tensors,
-                              op_wrappers, options.GetUseHtpPreference()));
+  ASSERT_TRUE(ConvertLiteRtOp(litert::Op(ops[0]), tensor_pool, input_tensors,
+                              output_tensors, op_wrappers,
+                              options.GetUseHtpPreference()));
 
   QnnBackendCreator backend_creator(options, "SM8650");
   ::qnn::QnnModel model(backend_creator.GetBackendHandle(),
@@ -73,11 +68,9 @@ TEST(FromLiteRtOp, AddRelu) {
 #endif
 
   auto input_index_0 = model.SetInputTensor(input_tensors[0]);
-  auto input_index_1 = model.SetInputTensor(input_tensors[1]);
   auto output_index_0 = model.SetOutputTensor(output_tensors[0]);
 
-  ASSERT_TRUE(model.SetInputData<float>(input_index_0, {0.f, -1.f, -1.f, 0.f}));
-  ASSERT_TRUE(model.SetInputData<float>(input_index_1, {-1.f, 1.f, 2.f, 2.f}));
+  ASSERT_TRUE(model.SetInputData<float>(input_index_0, {-2.f, -1.f, 0.f, 1.f}));
 
   ASSERT_TRUE(model.Execute());
   auto output_data = model.GetOutputData<float>(output_index_0);

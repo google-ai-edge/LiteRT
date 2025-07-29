@@ -7,7 +7,7 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 namespace litert::qnn {
 
-bool ConvertLiteRtOp(litert::Op& op, ::qnn::TensorPool& tensor_pool,
+bool ConvertLiteRtOp(const litert::Op& op, ::qnn::TensorPool& tensor_pool,
                      std::vector<::qnn::TensorWrapperRef>& input_tensors,
                      std::vector<::qnn::TensorWrapperRef>& output_tensors,
                      std::vector<::qnn::OpWrapper>& op_wrappers,
