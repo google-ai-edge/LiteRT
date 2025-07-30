@@ -24,6 +24,10 @@
 extern "C" {
 #endif  // __cplusplus
 
+//
+// Op options
+//
+
 //==============================================================================
 //
 //  Get option APIs for LiteRt ADD op.
@@ -33,6 +37,9 @@ extern "C" {
 //==============================================================================
 LiteRtStatus LiteRtGetAddFusedActivationOption(LiteRtOp op,
                                                uint32_t* fused_activation);
+LiteRtStatus LiteRtRewriterBuildAddOpOption(LiteRtRewriter rewriter,
+                                            LiteRtOp op,
+                                            uint32_t* fused_activation);
 
 //==============================================================================
 //

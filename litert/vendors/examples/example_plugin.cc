@@ -289,9 +289,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin,
     LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
+  // Add SqrtMeanSquareTransformation.
   compiler_plugin->transformations.push_back(
-      {&SqrtMeanSquareTransformation, "MyTransformation"});
+      {&SqrtMeanSquareTransformation, "MyTransformation0", 100});
+  // Add DummyTransformation.
+  compiler_plugin->transformations.push_back(
+      {&SqrtMeanSquareTransformation, "MyTransformation1"});
   *num_patterns = compiler_plugin->transformations.size();
   *transformations = compiler_plugin->transformations.data();
+
   return kLiteRtStatusOk;
 }

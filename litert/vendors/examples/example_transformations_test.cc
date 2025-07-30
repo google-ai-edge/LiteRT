@@ -33,7 +33,7 @@ TEST(ExampleTransformationTest, SimpleAddOpToMulOpTransformation) {
   internal::AttachOutput(&mul_op_output_tensor, add_op);
 
   // Call the transformation.
-  SimpleAddOpToMulOpTransformation(&add_op, &rewriter);
+  SimpleAddOpToMulOpTransformation(&rewriter, &add_op);
 
   // Apply the changes.
   rewriter.ApplyChanges(&subgraph);

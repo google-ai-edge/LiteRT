@@ -367,6 +367,12 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
     }
     transformations_.push_back(transformations[i]);
   }
+
+  // Sort transformations by benefit.
+  std::sort(transformations_.begin(), transformations_.end(),
+            [](const LiteRtTransformation& a, const LiteRtTransformation& b) {
+              return a.benefit > b.benefit;
+            });
   return {};
 }
 
