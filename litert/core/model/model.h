@@ -1116,12 +1116,22 @@ void AbslStringify(Sink& sink, const LiteRtOpT* op) {
 namespace absl {
 
 template <class Sink>
-void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+void StringifyLiteRtOpImpl(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
   for (auto it = ops.begin(); it < ops.end() - 1; ++it) {
     sink.Append(absl::StrFormat("%v", **it));
     sink.Append("/");
   }
   sink.Append(absl::StrFormat("%v", *ops.back()));
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const absl::Span<const LiteRtOp>& ops) {
+  StringifyLiteRtOpImpl(sink, ops);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const absl::Span<LiteRtOp>& ops) {
+  StringifyLiteRtOpImpl(sink, ops);
 }
 
 }  // namespace absl
