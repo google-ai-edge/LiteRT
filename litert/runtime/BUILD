@@ -143,6 +143,12 @@ cc_library(
 )
 
 cc_library(
+    name = "tensor_buffer_lockstate",
+    hdrs = ["tensor_buffer_lockstate.h"],
+    deps = ["//litert/c:litert_tensor_buffer"],
+)
+
+cc_library(
     name = "tensor_buffer_registry",
     srcs = ["tensor_buffer_registry.cc"],
     hdrs = [

@@ -130,7 +130,11 @@ enum class TensorBufferType(private val type: Int) {
   // 20-29 are reserved for WebGpu memory objects.
   WebGpuBuffer(20),
   WebGpuBufferFp16(21),
-  WebGpuBufferPacked(22),
+  WebGpuTexture(22),
+  WebGpuTextureFp16(23),
+  WebGpuImageBuffer(24),
+  WebGpuImageBufferFp16(25),
+  WebGpuBufferPacked(26),
 
   // 30-39 are reserved for Metal memory objects.
   MetalBuffer(30),
