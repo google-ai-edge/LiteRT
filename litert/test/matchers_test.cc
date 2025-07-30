@@ -183,7 +183,7 @@ TEST(AssertOkAndAssign, AssignAVariableWorks) {
 }
 
 TEST(AssertOkAndAssign, AssignStructuredBindingsWorks) {
-  const Expected<std::pair<int, char>> e(std::pair(3, 'a'));
+  Expected<std::pair<int, char>> e(std::pair(3, 'a'));
   LITERT_ASSERT_OK_AND_ASSIGN((auto [a, b]), e);
   EXPECT_EQ(a, e.Value().first);
   EXPECT_EQ(b, e.Value().second);
