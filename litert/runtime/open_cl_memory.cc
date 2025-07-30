@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if LITERT_HAS_OPENCL_SUPPORT
+
 #include "litert/runtime/open_cl_memory.h"
 
 #include <stdlib.h>
@@ -226,3 +228,5 @@ Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
 
 }  // namespace internal
 }  // namespace litert
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT

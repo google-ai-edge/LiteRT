@@ -184,7 +184,10 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Set up remaining properties.
+#if LITERT_HAS_OPENCL_SUPPORT
+
 #if LITERT_HAS_OPENGL_SUPPORT
+  // Set up GL interop properties when OpenCL and OpenGL are both supported.
   properties_.is_gl_sharing_supported =
       tflite::gpu::cl::IsGlSharingSupported(device_);
   properties_.is_gl_to_cl_fast_sync_supported =
@@ -192,7 +195,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-#if LITERT_HAS_OPENCL_SUPPORT
+
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
 #endif  // LITERT_HAS_OPENCL_SUPPORT

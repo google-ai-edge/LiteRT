@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_OPEN_CL_SYNC_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_OPEN_CL_SYNC_H_
 
+#if LITERT_HAS_OPENCL_SUPPORT
+
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
@@ -48,5 +50,7 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
                                      size_t bytes, cl_mem cl_memory, void* ptr);
 
 }  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_OPEN_CL_SYNC_H_

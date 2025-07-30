@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if LITERT_HAS_OPENCL_SUPPORT
+
 #include "litert/runtime/open_cl_sync.h"
 
 #include <cstdint>
@@ -221,3 +223,5 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
 }
 
 }  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT
