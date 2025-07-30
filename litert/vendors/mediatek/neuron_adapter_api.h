@@ -41,6 +41,15 @@ enum {
   ADAPTER_EXTENSION_GENERAL_OPERATION_TYPE = 0x0000,
 };
 
+typedef enum {
+  NEURON_FEATURE_UNKNOWN_OP,
+  NEURON_FEATURE_COUNT,
+} NeuronFeatureType;
+
+const NeuronRuntimeVersion kNeuronFeatureMinVersion[NEURON_FEATURE_COUNT] = {
+    {8, 2, 24},  // NEURON_FEATURE_UNKNOWN_OP
+};
+
 using NeuronModelPtr = std::unique_ptr<NeuronModel, void (*)(NeuronModel*)>;
 using NeuronCompilationPtr =
     std::unique_ptr<NeuronCompilation, void (*)(NeuronCompilation*)>;
@@ -81,6 +90,10 @@ class NeuronAdapterApi {
   Expected<NeuronExecutionPtr> CreateExecution(
       NeuronCompilation* compilation) const;
 
+  litert::Expected<void> GetNeuronVersion();
+
+  bool IsFeatureEnabled(NeuronFeatureType feature) const;
+
  private:
   NeuronAdapterApi();
   litert::Expected<void> LoadSymbols(
@@ -93,6 +106,7 @@ class NeuronAdapterApi {
   // destroyed.
   SharedLibrary dlib_;
   std::unique_ptr<Api> api_;
+  NeuronRuntimeVersion runtime_version_;
 };
 
 // This is not part of the provided NeuronAdapter header for some reason.
@@ -163,6 +177,8 @@ struct NeuronAdapterApi::Api {
       compilation_set_l1_memory_size_kb = nullptr;
   decltype(&NeuronCompilation_setOptimizationHint)
       compilation_set_optimization_hint = nullptr;
+  decltype(&NeuronCompilation_getSupportedOperations)
+      compilation_get_supported_opertations = nullptr;
 };
 
 }  // namespace litert::mediatek

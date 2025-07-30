@@ -391,6 +391,32 @@ inline Expected<uint32_t> AddMaxPool2dFuseActivationOption(
   return operand_map.AddScalarInt32(fuse);
 }
 
+//==============================================================================
+// kLiteRtOpCodeTflReduceMax
+//==============================================================================
+inline Expected<uint32_t> AddReduceMaxKeepDimsOption(const litert::Op& op,
+                                                     OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_REDUCE_MAX.
+  bool keepdim = false;
+  LITERT_RETURN_IF_ERROR(LiteRtGetReduceMaxKeepDimsOption(op.Get(), &keepdim))
+      << "Fails to get ReduceMaxKeepDims";
+  return operand_map.AddScalarBool(keepdim);
+}
+
+//==============================================================================
+// kLiteRtOpCodeTflDiv
+//==============================================================================
+inline Expected<uint32_t> AddDivFuseActivationOption(const litert::Op& op,
+                                                     OperandMap& operand_map) {
+  // Note that return type should be same as the NEURON parameters needs for
+  // NEURON_DIV.
+  uint32_t fuse = 0;
+  LITERT_RETURN_IF_ERROR(LiteRtGetDivFusedActivationOption(op.Get(), &fuse))
+      << "Fails to get DivFuseActivation";
+  return operand_map.AddScalarInt32(fuse);
+}
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_COMPILER_LEGALIZATIONS_LEGALIZE_HELPER_H_

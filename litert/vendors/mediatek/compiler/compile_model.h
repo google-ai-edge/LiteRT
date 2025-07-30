@@ -28,7 +28,13 @@ Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model,
     ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
-     int subgraph_index);
+     int subgraph_index, bool get_supported_mode = false);
+
+Expected<void> GetSupportedOperations(
+    const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
+    std::optional<std::string> soc_model,
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    const int subgraph_index, bool* support_flags, int num_ops);
 
 }  // namespace litert::mediatek
 
