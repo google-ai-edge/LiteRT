@@ -18,7 +18,6 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
@@ -93,6 +92,16 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
   ASSERT_EQ(op_data_string, "Partition_0");
 
   LiteRtDestroyCompiledResult(compiled);
+}
+
+TEST(TestCallDummyPlugin, RegisterAllTransformations) {
+  auto plugin = CreatePlugin();
+  LiteRtTransformation* transformations;
+  LiteRtParamIndex num_transformations;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
+      plugin.get(), &transformations, &num_transformations));
+  ASSERT_EQ(num_transformations, 1);
+  ASSERT_STREQ(transformations[0].name, "MyTransformation");
 }
 
 }  // namespace

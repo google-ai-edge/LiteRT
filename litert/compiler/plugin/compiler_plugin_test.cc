@@ -596,5 +596,25 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
 }
 
+TEST(TransformationTest, ApplyTransformation) {
+  auto model_wrap = testing::LoadTestFileModel("sqrt_mean_mul.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins = CompilerPlugin::LoadPlugins({kTestPluginSearchPath});
+
+  ASSERT_EQ(plugins->size(), 1);
+
+  ASSERT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflMul);
+  ASSERT_EQ(model.MainSubgraph()->Op(1).OpCode(), kLiteRtOpCodeTflMean);
+  ASSERT_EQ(model.MainSubgraph()->Op(2).OpCode(), kLiteRtOpCodeTflSqrt);
+
+  auto transform_result = TransformModel(plugins->front(), model);
+  ASSERT_TRUE(transform_result);
+
+  ASSERT_EQ(model.MainSubgraph()->Ops().size(), 2);
+  EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflAbs);
+  EXPECT_EQ(model.MainSubgraph()->Op(1).OpCode(), kLiteRtOpCodeTflSqrt);
+}
+
 }  // namespace
 }  // namespace litert::internal
