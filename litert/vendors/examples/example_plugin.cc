@@ -14,24 +14,26 @@
 
 #include <cstdlib>
 #include <memory>
+#include <vector>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/examples/example_plugin_common.h"
+#include "litert/vendors/examples/example_transformations.h"
 
 // A simple compiler plugin example that implements everything directly.
 // This plugin matches on mul ops, and emits "byte code" that is simply
 // a string representative of the ops consumed.
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {};
+struct LiteRtCompilerPluginT {
+  std::vector<LiteRtTransformation> transformations;
+};
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
@@ -120,6 +122,23 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   }
 
   *compiled_result = result.release();
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
+  // Add SqrtMeanSquareTransformation.
+  compiler_plugin->transformations.push_back(
+      {&litert::example::SqrtMeanSquareTransformation, "MyTransformation",
+       100});
+  // Add DummyTransformation.
+  compiler_plugin->transformations.push_back(
+      {&litert::example::DummyTransformation, "DummyTransformation", 1});
+
+  *num_patterns = compiler_plugin->transformations.size();
+  *transformations = compiler_plugin->transformations.data();
 
   return kLiteRtStatusOk;
 }
