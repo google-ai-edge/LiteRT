@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")
+load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
+load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -21,10 +22,22 @@ package(
     ],
 )
 
-tfl_model_gen(
+# copybara:uncomment_begin(internal)
+# tfl_model_gen(
+#     name = "mlir_test_data",
+#     srcs = glob(["testdata/*.mlir"]),
+# )
+# copybara:uncomment_end
+
+# copybara:comment_begin(external)
+symlink_files(
     name = "mlir_test_data",
-    srcs = glob(["testdata/*.mlir"]),
+    srcs = ["@models"],
+    declared_outputs = [f.replace(".mlir", ".tflite") for f in glob(["testdata/*.mlir"])],
+    dst = "testdata",
+    flatten = True,
 )
+# copybara:comment_end
 
 filegroup(
     name = "tflite_test_data",
