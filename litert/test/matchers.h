@@ -25,6 +25,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -34,6 +36,7 @@
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
 // Is equivalent to `ASSERT_THAT(expr, testing::litert::IsOk())`
@@ -62,7 +65,8 @@
   auto&& litert_expected_value_or_error_##LINE = (EXPR);      \
   LITERT_ASSERT_OK(litert_expected_value_or_error_##LINE);    \
   _LITERT_STRIP_PARENS(DECL) =                                \
-      std::move(litert_expected_value_or_error_##LINE.Value());
+      ::litert::ErrorStatusBuilder::ForwardWrappedValue(      \
+          litert_expected_value_or_error_##LINE)
 
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER2(LINE, DECL, EXPR) \
   LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR)
@@ -118,6 +122,17 @@ class IsOkMatcher {
         return false;
       }
       return true;
+    }
+
+    bool MatchAndExplainImpl(const absl::Status& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
+    }
+
+    template <class T>
+    bool MatchAndExplainImpl(const absl::StatusOr<T>& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
     }
 
    public:
