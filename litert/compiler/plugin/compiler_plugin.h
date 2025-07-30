@@ -25,6 +25,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_shared_library.h"
@@ -80,6 +81,14 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
+  // Get the number of transformations registered by the plugin.
+  int GetNumTransformations() const { return transformations_.size(); }
+
+  // Get the transformation at the given index.
+  LiteRtTransformation GetTransformation(int index) const {
+    return transformations_[index];
+  }
+
   std::string DebugString() const;
 
   // Get the compiler plugin's API version.
@@ -106,6 +115,11 @@ class CompilerPlugin {
   // this CompilerPlugin.
   Expected<CompiledResult> Compile(LiteRtModel partitions,
                                    absl::string_view soc_model = "");
+
+  // Register all transformations to the rewriter object owned by this plugin.
+  Expected<void> RegisterAllTransformations();
+
+  Expected<void> GreedyPatternMatchAndRewrite(LiteRtModelT& model);
 
   // Search for shared library files with prefix "libLiteRtCompilerPlugin" in
   // the directories passed through "lib_search_paths". Populates
@@ -135,6 +149,7 @@ class CompilerPlugin {
   SharedLibrary lib_;
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
+  std::vector<LiteRtTransformation> transformations_;
 
   // Internal LiteRtCompiledResult wrapper.
 
@@ -174,6 +189,11 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
                                         LiteRtModelT& model,
                                         PartitionResult partitions,
                                         absl::string_view soc_model = "");
+
+// Applies the transformation registered by vendor plugin to the model.
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model = "");
 
 // Apply all available plugins providing the selected HW accelerators to the
 // given model, modify the model accordingly, and return (1) the number of

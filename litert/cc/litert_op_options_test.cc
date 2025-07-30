@@ -355,5 +355,19 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<PackOptions>(&op));
 }
 
+TEST(OpOptionsTest, TestSetAddOpOptions) {
+  LiteRtRewriterT rewriter;
+  auto& op = rewriter.BuildOp(kLiteRtOpCodeTflAdd, {}, {});
+  {
+    AddOptions options = {};
+    options.fused_activation_function = kActivationFunctionTypeRelu;
+    options.op = &op;
+    options.SetOpOptions(&rewriter);
+  }
+  auto res = GetOptionsAs<AddOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+}
+
 }  // namespace
 }  // namespace litert
