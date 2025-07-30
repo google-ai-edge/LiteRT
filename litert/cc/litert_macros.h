@@ -206,7 +206,15 @@ class ErrorStatusBuilder {
   void PrintLog() const noexcept {
 #ifndef NDEBUG
     if (ShouldLog()) {
-      LITERT_LOG(log_level_, "%s", LogMessage().c_str());
+      auto logger = LiteRtGetDefaultLogger();
+      LiteRtLogSeverity __min_severity__;
+      if (LiteRtGetMinLoggerSeverity(logger, &__min_severity__) !=
+          kLiteRtStatusOk) {
+        __min_severity__ = kLiteRtLogSeverityVerbose;
+      }
+      if (log_level_ >= __min_severity__) {
+        LiteRtLoggerLog(logger, log_level_, "%s", LogMessage().c_str());
+      }
     }
 #endif
   }
