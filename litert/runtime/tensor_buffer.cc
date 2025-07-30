@@ -166,6 +166,10 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
       break;
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
       // internal webgpu buffer is auto-disposed by the
       // litert::internal::CustomBuffer destructor.
@@ -501,11 +505,22 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     }
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
       return CreateManagedWebGpuBuffer(env, tensor_type, buffer_type,
                                        buffer_size);
     }
-    default:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16: {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Managed Metal buffer is not supported.");
+    }
+    case kLiteRtTensorBufferTypeUnknown:
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected tensor type");
   }
@@ -795,6 +810,10 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     }
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
@@ -855,6 +874,10 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     }
     case kLiteRtTensorBufferTypeWebGpuBuffer:
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
