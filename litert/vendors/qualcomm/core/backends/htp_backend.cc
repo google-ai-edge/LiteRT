@@ -61,15 +61,6 @@ bool HtpBackend::Init(const Options &options,
 
       if (soc_info_online.has_value()) {
         soc_info_ = *soc_info_online;
-
-        if (local_device_platform_info != nullptr) {
-          if (auto status = QnnApi()->deviceFreePlatformInfo(
-                  nullptr, local_device_platform_info);
-              status != QNN_SUCCESS) {
-            QNN_LOG_ERROR("Failed to free HTP backend platform info: %d",
-                          status);
-          }
-        }
       }
 
     } else {
@@ -157,6 +148,26 @@ bool HtpBackend::Init(const Options &options,
   if (!local_device_handle) {
     QNN_LOG_ERROR("Failed to create device handle!");
     return false;
+  }
+
+  // HTP Performance Settings
+  if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
+    QNN_LOG_INFO("Set HTP performance mode: %d",
+                 options.GetHtpPerformanceMode());
+    QnnHtpDevice_Arch_t local_arch =
+        local_device_platform_info->v1.hwDevices->v1.deviceInfoExtension
+            ->onChipDevice.arch;
+    if (auto status = perf_control_.Init(local_arch); !status) {
+      return false;
+    }
+  }
+
+  if (local_device_platform_info != nullptr) {
+    if (auto status = QnnApi()->deviceFreePlatformInfo(
+            nullptr, local_device_platform_info);
+        status != QNN_SUCCESS) {
+      QNN_LOG_ERROR("Failed to free HTP backend platform info: %d", status);
+    }
   }
 
   // Follow RAII pattern to manage handles

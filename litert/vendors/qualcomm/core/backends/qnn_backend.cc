@@ -9,7 +9,8 @@ QnnBackend::QnnBackend(const QNN_INTERFACE_VER_TYPE *qnn_api)
     : qnn_api_(qnn_api),
       log_handle_(nullptr, QnnApi()->logFree),
       backend_handle_(nullptr, QnnApi()->backendFree),
-      device_handle_(nullptr, QnnApi()->deviceFree) {}
+      device_handle_(nullptr, QnnApi()->deviceFree),
+      perf_control_(qnn_api, ::qnn::HtpPerformanceMode::kDefault) {}
 
 const QNN_INTERFACE_VER_TYPE *QnnBackend::QnnApi() { return qnn_api_; }
 
@@ -96,5 +97,7 @@ Qnn_BackendHandle_t QnnBackend::GetBackendHandle() {
 Qnn_DeviceHandle_t QnnBackend::GetDeviceHandle() {
   return device_handle_.get();
 }
+
+PerfControl &QnnBackend::GetPerfControl() { return perf_control_; }
 
 }  // namespace qnn

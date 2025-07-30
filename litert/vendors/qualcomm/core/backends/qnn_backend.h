@@ -14,6 +14,7 @@
 #include "QnnInterface.h"        // from @qairt
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/types/span.h"     // from @com_google_absl
+#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -43,7 +44,7 @@ class QnnBackend {
 
   Qnn_DeviceHandle_t GetDeviceHandle();
 
-  const QnnDevice_PlatformInfo_t &GetDevicePlatformInfo();
+  PerfControl &GetPerfControl();
 
  private:
   const QNN_INTERFACE_VER_TYPE *qnn_api_ = nullptr;
@@ -79,6 +80,7 @@ class QnnBackend {
   QnnLogHandle log_handle_;
   QnnBackendHandle backend_handle_;
   QnnDeviceHandle device_handle_;
+  PerfControl perf_control_;
 };
 
 }  // namespace qnn

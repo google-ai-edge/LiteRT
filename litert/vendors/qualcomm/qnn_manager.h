@@ -42,7 +42,6 @@
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 #include "litert/cc/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -187,8 +186,6 @@ class QnnManager {
 
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
-  // For dispatch options
-  std::unique_ptr<PerfControl> perf_control_{nullptr};
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because

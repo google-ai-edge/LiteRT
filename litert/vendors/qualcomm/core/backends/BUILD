@@ -26,6 +26,7 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
         "@qairt//:qnn_lib_headers",
     ],
 )
@@ -50,7 +51,6 @@ cc_library(
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
-        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@qairt//:qnn_lib_headers",
     ],
 )

@@ -49,7 +49,6 @@
 #include "litert/core/dynamic_loading.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/backends/htp_backend.h"
-#include "litert/vendors/qualcomm/core/backends/htp_perf_control.h"
 #include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -103,7 +102,7 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 }  // namespace
 
 QnnManager::~QnnManager() {
-  if (perf_control_) perf_control_->Terminate();
+  if (backend_) backend_->GetPerfControl().Terminate();
 }
 
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
@@ -370,20 +369,6 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
       backend_ = std::make_unique<::qnn::HtpBackend>(Api());
       backend_->Init(options, soc_info);
       soc_info_ = static_cast<::qnn::HtpBackend*>(backend_.get())->GetSocInfo();
-      // HTP Performance Settings
-      // if (options.GetHtpPerformanceMode() !=
-      //     ::qnn::HtpPerformanceMode::kDefault) {
-      //   LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
-      //              options.GetHtpPerformanceMode());
-      //   perf_control_ = std::make_unique<PerfControl>(
-      //       Api(), options.GetHtpPerformanceMode());
-      //   QnnHtpDevice_Arch_t local_arch =
-      //       DevicePlatformInfo()
-      //           .v1.hwDevices->v1.deviceInfoExtension->onChipDevice.arch;
-      //   if (auto status = perf_control_->Init(local_arch); !status) {
-      //     return kLiteRtStatusErrorRuntimeFailure;
-      //   }
-      // }
 
       break;
     }
