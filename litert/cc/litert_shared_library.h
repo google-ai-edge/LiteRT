@@ -15,21 +15,16 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_SHARED_LIBRARY_H_
 #define ODML_LITERT_LITERT_CC_LITERT_SHARED_LIBRARY_H_
 
-#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
-    defined(__NT__) || defined(_WIN64)
-#define LITERT_WINDOWS_OS 1
-#endif
-
-#if !LITERT_WINDOWS_OS
-#include <dlfcn.h>
-#endif
-
 #include <ostream>
 #include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+
+#if !LITERT_WINDOWS_OS
+#include <dlfcn.h>
+#endif
 
 namespace litert {
 

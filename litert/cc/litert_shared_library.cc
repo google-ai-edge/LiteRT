@@ -14,10 +14,6 @@
 
 #include "litert/cc/litert_shared_library.h"
 
-#if !LITERT_WINDOWS_OS
-#include <dlfcn.h>
-#endif
-
 #if defined(_GNU_SOURCE) && !defined(__ANDROID__) && !defined(__APPLE__)
 #define LITERT_IMPLEMENT_SHARED_LIBRARY_INFO 1
 #include <link.h>
@@ -33,8 +29,11 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 
 #if !LITERT_WINDOWS_OS
+#include <dlfcn.h>
+
 // When using an address sanitizer, `RTLD_DEEPBIND` is not supported. When using
 // one, we discard the flag and log an error.
 #ifndef __has_feature       // Optional of course.
