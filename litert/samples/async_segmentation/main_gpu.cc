@@ -50,10 +50,10 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
     LITERT_ABORT_IF_ERROR(gpu_options.SetBufferStorageType(
         kLiteRtDelegateBufferStorageTypeBuffer));
     LITERT_ABORT_IF_ERROR(
-        gpu_options.EnableNoImmutableExternalTensorsMode(false));
+        gpu_options.EnableNoExternalTensorsMode(false));
   } else {
     LITERT_ABORT_IF_ERROR(
-        gpu_options.EnableNoImmutableExternalTensorsMode(true));
+        gpu_options.EnableNoExternalTensorsMode(true));
   }
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);

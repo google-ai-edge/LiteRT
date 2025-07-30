@@ -52,9 +52,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Set to true to serialize immutable external tensors. By default only the
   // non-external tensors are serialized.
   bool serialize_external_tensors = false;
-  // Set to true to run in no immutable external tensors mode. This prevents GPU
-  // Accelerator from using immutable external tensors.
-  bool experimental_no_immutable_external_tensors_mode = false;
+  // Set to true to run in no external tensors mode. This prevents GPU
+  // Accelerator from using external tensors.
+  bool experimental_no_external_tensors_mode = false;
   // List of external tensor patterns which are not affected by the no immutable
   // external tensors mode.
   std::vector<std::string> external_tensor_patterns;
@@ -130,11 +130,11 @@ LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtSetGpuOptionsNoExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable) {
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
-  payload->experimental_no_immutable_external_tensors_mode = enable;
+  payload->experimental_no_external_tensors_mode = enable;
   return kLiteRtStatusOk;
 }
 
@@ -259,13 +259,13 @@ LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload) {
   LITERT_RETURN_IF_ERROR(enabled, ErrorStatusBuilder::InvalidArgument())
       << "`enabled` cannot be null.";
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
-  *enabled = payload->experimental_no_immutable_external_tensors_mode;
+  *enabled = payload->experimental_no_external_tensors_mode;
   return kLiteRtStatusOk;
 }
 

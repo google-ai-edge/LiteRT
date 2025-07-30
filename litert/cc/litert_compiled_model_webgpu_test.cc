@@ -47,7 +47,7 @@ namespace {
 Expected<Options> CreateGpuOptions(bool no_immutable_external_tensors_mode) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
 
-  LITERT_RETURN_IF_ERROR(gpu_options.EnableNoImmutableExternalTensorsMode(
+  LITERT_RETURN_IF_ERROR(gpu_options.EnableNoExternalTensorsMode(
       no_immutable_external_tensors_mode));
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);

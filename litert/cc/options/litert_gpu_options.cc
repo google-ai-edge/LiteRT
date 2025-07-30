@@ -92,8 +92,8 @@ LiteRtStatus GpuOptions::SetSerializeExternalTensors(
       Get(), serialize_external_tensors);
 }
 
-LiteRtStatus GpuOptions::EnableNoImmutableExternalTensorsMode(bool enabled) {
-  return LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(Get(), enabled);
+LiteRtStatus GpuOptions::EnableNoExternalTensorsMode(bool enabled) {
+  return LiteRtSetGpuOptionsNoExternalTensorsMode(Get(), enabled);
 }
 
 LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {

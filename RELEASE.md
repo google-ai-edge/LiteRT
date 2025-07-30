@@ -18,6 +18,7 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
   * The type of field `strides` changes from `IntArry` to `List<Int>` to be immutable.
 * `com.google.ai.edge.litert.Layout`
   * The type of field `dimensions` and `strides` changes from `IntArry` to `List<Int>` to be immutable.
+* Rename GPU option `NoImmutableExternalTensorsMode` to `NoExternalTensorsMode`
 
 ### Known Caveats
 

@@ -52,9 +52,7 @@ LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
 // GPU-GPU copies for input and output tensors.
 //
 // WARNING: This is an experimental feature and subject to change.
-// TODO - b/421905729: Change name to LiteRtSetGpuOptionsNoExternalTensorsMode
-// with the next API updates.
-LiteRtStatus LiteRtSetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtSetGpuOptionsNoExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
 // Add a prefix pattern to match external tensors. External tensors won't be
@@ -144,9 +142,7 @@ LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
 LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
                                            LiteRtGpuOptionsPayload payload);
 
-// TODO - b/421905729: Change name to LiteRtGetGpuOptionsNoExternalTensorsMode
-// with the next API updates.
-LiteRtStatus LiteRtGetGpuOptionsNoImmutableExternalTensorsMode(
+LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus
