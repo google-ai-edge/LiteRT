@@ -337,6 +337,24 @@ TEST(OpOptionsTest, GetPackOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetGatherOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflGather);
+  tflite::GatherOptionsT options;
+  options.axis = 1;
+  options.batch_dims = 2;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_GatherOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<GatherOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->axis, 1);
+  EXPECT_EQ(res->batch_dims, 2);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -353,6 +371,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<SumOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<ReduceMaxOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<PackOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<GatherOptions>(&op));
 }
 
 }  // namespace
