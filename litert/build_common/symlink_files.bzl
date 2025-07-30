@@ -79,6 +79,13 @@ symlink_files = rule(
                   " `strip_prefix` attributes: their destination is based" +
                   " only on `dst` and the value for their key in `mapping`.",
         ),
+        "declared_outputs": attr.output_list(
+            doc = "Optionally explicitly declared outputs of the rule." +
+                  "This allows users to reference individual outputs rather" +
+                  " than the name of the rule itself.",
+            allow_empty = True,
+            mandatory = False,
+        ),
     },
 )
 
