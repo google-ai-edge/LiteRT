@@ -40,8 +40,11 @@ typedef enum {
   // 20-29 are reserved for WebGPU memory objects.
   kLiteRtTensorBufferTypeWebGpuBuffer = 20,
   kLiteRtTensorBufferTypeWebGpuBufferFp16 = 21,
-  kLiteRtTensorBufferTypeWebGpuBufferPacked = 22,
-  // TODO b/422216124 - Add WebGPU Texture types.
+  kLiteRtTensorBufferTypeWebGpuTexture = 22,
+  kLiteRtTensorBufferTypeWebGpuTextureFp16 = 23,
+  kLiteRtTensorBufferTypeWebGpuImageBuffer = 24,
+  kLiteRtTensorBufferTypeWebGpuImageBufferFp16 = 25,
+  kLiteRtTensorBufferTypeWebGpuBufferPacked = 26,
 
   // 30-39 are reserved for Metal memory objects.
   kLiteRtTensorBufferTypeMetalBuffer = 30,
@@ -64,6 +67,10 @@ inline bool IsOpenClMemory(LiteRtTensorBufferType buffer_type) {
 inline bool IsWebGpuMemory(LiteRtTensorBufferType buffer_type) {
   return buffer_type == kLiteRtTensorBufferTypeWebGpuBuffer ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuTexture ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked;
 }
 

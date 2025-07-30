@@ -57,6 +57,14 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "WebGpuBuffer";
     case kLiteRtTensorBufferTypeWebGpuBufferFp16:
       return "WebGpuBufferFp16";
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+      return "WebGpuTexture";
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+      return "WebGpuTextureFp16";
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+      return "WebGpuImageBuffer";
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+      return "WebGpuImageBufferFp16";
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
       return "WebGpuBufferPacked";
     case kLiteRtTensorBufferTypeMetalBuffer:
