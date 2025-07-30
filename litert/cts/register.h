@@ -32,7 +32,7 @@ namespace litert::testing {
 
 // Utility to register a test logic a given number of times with a common
 // random device.
-template <template <typename TestLogic, typename TestExecutor> typename Fixture>
+template <template <typename TestLogic> typename Fixture>
 class RegisterFunctor {
  public:
   template <typename Logic>
@@ -40,11 +40,13 @@ class RegisterFunctor {
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
       if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
-        CallRegister<Fixture<Logic, CpuCompiledModelExecutor>>(device);
+        BuildParamsAndRegister<Fixture<Logic>, CpuCompiledModelExecutor>(
+            device);
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
+        BuildParamsAndRegister<Fixture<Logic>, NpuCompiledModelExecutor>(
+            device, options_.DispatchDir(), options_.PluginDir());
       }
     }
   }
@@ -53,9 +55,40 @@ class RegisterFunctor {
       : iters_(iters), test_id_(test_id), options_(options) {}
 
  private:
-  template <typename TestClass, typename Device>
-  void CallRegister(Device& device) {
-    if (auto status = TestClass::Register(test_id_++, device); !status) {
+  template <typename TestClass, typename TestExecutor, typename Device,
+            typename... ExecArgs>
+  void BuildParamsAndRegister(Device& device, ExecArgs&&... exec_args) {
+    auto params = TestClass::BuildSetupParams(device);
+    if (!params) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to build params for CTS test %lu, %s: %s", test_id_,
+                 TestClass::LogicName().data(),
+                 params.Error().Message().c_str());
+      return;
+    }
+
+    const auto suite_name =
+        TestClass::FmtSuiteName(test_id_++, TestExecutor::Name());
+    const auto test_name = TestClass::FmtTestName(*params->model);
+
+    if (!options_.ShouldRegister(
+            absl::StrFormat("%s.%s", suite_name, test_name))) {
+      TestClass::SkippedTest::Register(suite_name, test_name);
+      return;
+    }
+
+    auto exec = TestExecutor::Create(*params->model,
+                                     std::forward<ExecArgs>(exec_args)...);
+    if (!exec) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to create executor for CTS test %lu, %s: %s", test_id_,
+                 TestClass::LogicName().data(), exec.Error().Message().c_str());
+      return;
+    }
+
+    if (auto status = TestClass::Register(suite_name, test_name,
+                                          std::move(*params), std::move(*exec));
+        !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
                  status.Error().Message().c_str());
@@ -71,7 +104,7 @@ class RegisterFunctor {
 // the given type lists and registers each specialization a given number
 // of times. Each of these registrations will yield a single test case with a
 // a different set of random parameters.
-template <template <typename TestLogic, typename TestExecutor> typename Fixture,
+template <template <typename TestLogic> typename Fixture,
           template <typename...> typename Logic, typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id,
                           const CtsConf& options) {
@@ -86,7 +119,7 @@ using BinaryNoBroadcastCts =
     BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
                       DefaultRandomTensorBufferTraits>;
 
-template <template <typename TestLogic, typename TestExecutor> typename Fixture>
+template <template <typename TestLogic> typename Fixture>
 void RegisterCtsTests(const CtsConf& cts_options) {
   size_t test_id = 0;
   {

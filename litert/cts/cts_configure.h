@@ -72,6 +72,12 @@ class CtsConf {
   bool ShouldRegister(const std::string& name) const;
   bool ShouldRegister(absl::string_view name) const;
 
+  // Npu libraries.
+  const std::string& DispatchDir() const { return dispatch_dir_; }
+  const std::string& PluginDir() const { return plugin_dir_; }
+
+  // TODO add printer.
+
  private:
   explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
