@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/cts:cts.bzl", "litert_define_cts")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
@@ -80,8 +83,8 @@ cc_library(
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_options",
-        "//litert/cc/internal:litert_tensor_buffer",
         "//litert/test:simple_buffer",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -116,5 +119,36 @@ cc_test(
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_device_test(
+    name = "compiled_model_executor_test_npu",
+    srcs = ["compiled_model_executor_test.cc"],
+    backend_id = "qualcomm",
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    defines = ["_TEST_NPU"],
+    deps = [
+        ":compiled_model_executor",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "//litert/test:simple_buffer",
+        "//litert/test/generators:graph_helpers",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# PRE-CONFIGURED CTS SUITES ########################################################################
+
+# An example CTS configuration for the CPU backend that filters out some tests.
+litert_define_cts(
+    name = "sample_cpu_cts",
+    backend = "cpu",
+    dont_register = [
+        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
+        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
     ],
 )

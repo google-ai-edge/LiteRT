@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <string>
 #include <utility>
 
 #include <gmock/gmock.h>
@@ -45,11 +46,10 @@ using ::testing::litert::MeanSquaredErrorLt;
 
 // Class that drives all cts test cases. These are specialized with
 // fully specified test logic and executor (backend).
-template <typename TestLogic, typename TestExecutor = CpuCompiledModelExecutor>
+template <typename TestLogic>
 class CtsTest : public RngTest {
  private:
   using Logic = TestLogic;
-  using Executor = TestExecutor;
   using Traits = typename Logic::Traits;
   using Params = typename Traits::Params;
   using InputBuffers = typename Traits::InputBuffers;
@@ -60,37 +60,63 @@ class CtsTest : public RngTest {
   static constexpr size_t kNumOutputs = Traits::kNumOutputs;
 
  public:
-  // Register a fully specified case with gtest. This will generate an instance
-  // of the random params needed to finish specifying the test logic and is
-  // inteded to be called multiple times to generate coverage across the space
-  // of possible random params.
-  template <typename Rng>
-  static Expected<void> Register(size_t id, Rng& rng) {
-    using TestClass = CtsTest<Logic, Executor>;
+  // Fixture that skips the test body. Used "skip" filtered out test rather
+  // than not registering them at all.
+  class SkippedTest : public ::testing::Test {
+   public:
+    static Expected<void> Register(const std::string& suite_name,
+                                   const std::string& test_name) {
+      RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
+                   __FILE__, __LINE__, []() { return new SkippedTest(); });
+      return {};
+    }
 
-    const auto suite_name = absl::StrFormat(
-        "%s_cts_%lu_%s", TestExecutor::Name(), id, Logic::Name().data());
-    LITERT_LOG(LITERT_VERBOSE, "Starting registration for %s",
-               suite_name.c_str());
+    void TestBody() override {
+      GTEST_SKIP() << "Test explicitly filtered out via --filter flag.";
+    }
+  };
 
+  static std::string FmtSuiteName(size_t id, absl::string_view executor_name) {
+    return absl::StrFormat("%s_cts_%lu_%s", executor_name, id,
+                           Logic::Name().data());
+  }
+
+  static std::string FmtTestName(const LiteRtModelT& model) {
+    return absl::StrFormat("%v", model.Subgraph(0).Ops());
+  }
+
+  // The various objects needed to initialize a test case.
+  struct SetupParams {
+    LiteRtModelT::Ptr model;
+    Params params;
     Logic logic;
+  };
 
+  // Generate the setup params for a test case given the random number
+  // generator. These can be passed to the Register method to register
+  // the test case.
+  template <typename Rng>
+  static Expected<SetupParams> BuildSetupParams(Rng& rng) {
+    Logic logic;
     LITERT_ASSIGN_OR_RETURN(auto params, logic.GenerateParams(rng));
-    LITERT_LOG(LITERT_VERBOSE, "Generated params.");
-
     LITERT_ASSIGN_OR_RETURN(auto model, logic.BuildGraph(params));
-    LITERT_LOG(LITERT_VERBOSE, "Built graph.");
+    return SetupParams{std::move(model), std::move(params), std::move(logic)};
+  }
 
-    const auto test_name = absl::StrFormat("%v", model->Subgraph(0).Ops());
-
-    RegisterTest(suite_name.data(), test_name.c_str(), nullptr, nullptr,
+  // Register a fully specified case with gtest.
+  static Expected<void> Register(
+      const std::string& suite_name, const std::string& test_name,
+      SetupParams&& setup_params,
+      std::unique_ptr<CompiledModelExecutor> executor) {
+    RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [model = std::move(model), params = std::move(params),
-                  logic = std::move(logic)]() mutable -> TestClass* {
-                   return new TestClass(std::move(model), std::move(params),
-                                        std::move(logic));
+                 [setup_params = std::move(setup_params),
+                  executor = std::move(executor)]() mutable {
+                   return new CtsTest(std::move(setup_params.model),
+                                      std::move(setup_params.params),
+                                      std::move(setup_params.logic),
+                                      std::move(executor));
                  });
-
     return {};
   }
 
@@ -113,12 +139,15 @@ class CtsTest : public RngTest {
   static absl::string_view LogicName() { return Logic::Name(); }
 
  private:
-  CtsTest(LiteRtModelT::Ptr model, Logic::Traits::Params params, Logic logic)
-      : model_(std::move(model)), params_(std::move(params)) {}
+  CtsTest(LiteRtModelT::Ptr model, Logic::Traits::Params params, Logic logic,
+          CompiledModelExecutor::Ptr executor)
+      : model_(std::move(model)),
+        params_(std::move(params)),
+        logic_(std::move(logic)),
+        executor_(std::move(executor)) {}
 
   Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {
-    LITERT_ASSIGN_OR_RETURN(auto exec, Executor::Create(*model_));
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec.Run(inputs));
+    LITERT_ASSIGN_OR_RETURN(auto actual, executor_->Run(inputs));
     if (actual.size() != kNumOutputs) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrFormat("Expected %d outputs, got %d", kNumOutputs,
@@ -158,6 +187,7 @@ class CtsTest : public RngTest {
   typename LiteRtModelT::Ptr model_;
   typename Logic::Traits::Params params_;
   Logic logic_;
+  CompiledModelExecutor::Ptr executor_;
 };
 
 }  // namespace testing

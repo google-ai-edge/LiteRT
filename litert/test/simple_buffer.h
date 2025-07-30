@@ -58,8 +58,11 @@ class SimpleBuffer {
   using LiteRtAlignedMem = std::unique_ptr<uint8_t, FreeDeleter>;
   template <typename T = uint8_t>
   static LiteRtAlignedMem MakeAlloc(size_t num_elements) {
-    return LiteRtAlignedMem(reinterpret_cast<T*>(std::aligned_alloc(
-        LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, num_elements * sizeof(T))));
+    void* host_memory_ptr;
+    posix_memalign(&host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                   num_elements * sizeof(T));
+    auto res = LiteRtAlignedMem(reinterpret_cast<uint8_t*>(host_memory_ptr));
+    return res;
   }
 
  public:

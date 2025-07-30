@@ -130,6 +130,8 @@ class DataGeneratorBase {
   // Bounds of distribution.
   virtual DataType Max() const = 0;
   virtual DataType Min() const = 0;
+
+  virtual ~DataGeneratorBase() = default;
 };
 
 // Base class for generating data of a certain type from a specific
