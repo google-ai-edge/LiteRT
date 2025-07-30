@@ -68,7 +68,7 @@ bool IsAhwbToGlBufferInteropSupported() {
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
                                                  AhwbBuffer& ahwb_buffer) {
 #if LITERT_HAS_AHWB_SUPPORT
-  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+  LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
   LITERT_RETURN_IF_ERROR(
@@ -217,7 +217,7 @@ size_t GlBuffer::offset() const {
 
 Expected<GlBuffer> GlBuffer::Alloc(GpuEnvironment* gpu_env, size_t size_bytes) {
 #if LITERT_HAS_OPENGL_SUPPORT
-  LITERT_RETURN_IF_ERROR(gpu_env->getEglDisplay() != EGL_NO_DISPLAY,
+  LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
   tflite::gpu::gl::GlBuffer tflite_gl_buffer;
