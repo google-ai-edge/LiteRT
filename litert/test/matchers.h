@@ -25,6 +25,8 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -120,6 +122,17 @@ class IsOkMatcher {
         return false;
       }
       return true;
+    }
+
+    bool MatchAndExplainImpl(const absl::Status& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
+    }
+
+    template <class T>
+    bool MatchAndExplainImpl(const absl::StatusOr<T>& value,
+                             testing::MatchResultListener* listener) const {
+      return value.ok();
     }
 
    public:
