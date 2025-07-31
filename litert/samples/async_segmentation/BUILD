@@ -98,7 +98,7 @@ cc_binary(
         ":shader_files",
         ":test_images",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
-        "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
+        # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
