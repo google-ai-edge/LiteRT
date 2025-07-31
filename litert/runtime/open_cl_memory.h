@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_OPEN_CL_BUFFER_H_
 #define ODML_LITERT_LITERT_RUNTIME_OPEN_CL_BUFFER_H_
 
+#if LITERT_HAS_OPENCL_SUPPORT
+
 #include <cstddef>
 #include <cstdlib>
 #include <utility>
@@ -131,5 +133,7 @@ class OpenClMemory {
 };
 
 }  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_OPEN_CL_BUFFER_H_
