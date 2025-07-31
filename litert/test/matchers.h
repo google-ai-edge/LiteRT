@@ -34,6 +34,7 @@
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
 // Is equivalent to `ASSERT_THAT(expr, testing::litert::IsOk())`
@@ -62,7 +63,8 @@
   auto&& litert_expected_value_or_error_##LINE = (EXPR);      \
   LITERT_ASSERT_OK(litert_expected_value_or_error_##LINE);    \
   _LITERT_STRIP_PARENS(DECL) =                                \
-      std::move(litert_expected_value_or_error_##LINE.Value());
+      ::litert::ErrorStatusBuilder::ForwardWrappedValue(      \
+          litert_expected_value_or_error_##LINE)
 
 #define LITERT_ASSERT_OK_AND_ASSIGN_HELPER2(LINE, DECL, EXPR) \
   LITERT_ASSERT_OK_AND_ASSIGN_HELPER1(LINE, DECL, EXPR)
