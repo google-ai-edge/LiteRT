@@ -122,7 +122,9 @@ cc_library(
     ],
     data = [
         "testdata/simple_add_uint16_qualcomm.bin",
-        "testdata/simple_model_google_tensor.bin",
+        # copybara:uncomment_begin(google_tensor)
+        # "testdata/simple_model_google_tensor.bin",
+        # copybara:uncomment_end
         "testdata/simple_model_mtk.bin",
         "testdata/simple_model_npu.tflite",
         "testdata/simple_model_qualcomm.bin",
@@ -142,7 +144,9 @@ cc_library(
     ],
     data = [
         "testdata/simple_cascade_model_npu.tflite",
-        "testdata/simple_model_google_tensor.bin",
+        # copybara:uncomment_begin(google_tensor)
+        # "testdata/simple_model_google_tensor.bin",
+        # copybara:uncomment_end
         "testdata/simple_model_mtk.bin",
     ],
     deps = [

@@ -84,17 +84,13 @@ litert_bin(
     name = "apply_plugin_main",
     srcs = ["apply_plugin_main.cc"],
     data = [
-        # copybara:uncomment_begin(google-only)
-        # "//platforms/darwinn/compiler:compiler_api_wrapper",
-        # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        # copybara:uncomment_end
-        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/examples:example_plugin_so",
+        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+        "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+        "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
-        "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
-        "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
     ],
     export_litert_only = 1,
     linkstatic = 1,
@@ -117,7 +113,6 @@ litert_bin(
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
-        "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "@com_google_absl//absl/flags:flag",
@@ -126,6 +121,53 @@ litert_bin(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# litert_bin(
+#     name = "apply_plugin_google_tensor_main",
+#     srcs = ["apply_plugin_google_tensor_main.cc"],
+#     data = [
+#         "//platforms/darwinn/compiler:compiler_api_wrapper",
+#         "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
+#         "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
+#         "//litert/vendors/examples:example_plugin_so",
+#         "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+#         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
+#         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
+#         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
+#         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+#     ],
+#     export_litert_only = 1,
+#     linkstatic = 1,
+#     # copybara:uncomment malloc = "//base:system_malloc",
+#     tags = [
+#         "noasan",
+#         "nomsan",
+#         "nosan",
+#     ],
+#     target_compatible_with = select({
+#         "@org_tensorflow//tensorflow:android": ["@platforms//:incompatible"],
+#         "//conditions:default": [],
+#     }),
+#     ungrte = True,
+#     deps = [
+#         ":apply_plugin",
+#         ":outstream",
+#         "@com_google_absl//absl/flags:flag",
+#         "@com_google_absl//absl/flags:parse",
+#         "@com_google_absl//absl/strings:str_format",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/cc/internal:litert_options",
+#         "//litert/core:build_stamp",
+#         "//litert/tools/flags:apply_plugin_flags",
+#         "//litert/tools/flags:common_flags",
+#         "//litert/tools/flags:flag_types",
+#         "//litert/tools/flags/vendors:google_tensor_flags",
+#         "//litert/tools/flags/vendors:mediatek_flags",
+#         "//litert/tools/flags/vendors:qualcomm_flags",
+#     ],
+# )
+# copybara:uncomment_end
 
 # Apply plugin test tests the core logic of the tool (with a dummy plugin impl), while the
 # following tests the actual plugins will function correctly.
@@ -198,16 +240,18 @@ cc_binary(
     deps = [
         ":apply_plugin",
         ":outstream",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings:str_format",
         "//litert/cc/internal:litert_options",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
-        "//litert/tools/flags/vendors:google_tensor_flags",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/tools/flags/vendors:google_tensor_flags",
+        # copybara:uncomment_end
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -362,7 +406,6 @@ cc_binary(
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//tflite/profiling:time",
@@ -381,10 +424,49 @@ cc_binary(
     }),
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_binary(
+#     name = "run_model_google_tensor",
+#     srcs = ["run_model_google_tensor.cc"],
+#     deps = [
+#         ":tensor_utils",
+#         "@com_google_absl//absl/flags:flag",
+#         "@com_google_absl//absl/flags:parse",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_common",
+#         "//litert/cc:litert_element_type",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_model",
+#         "//litert/cc/internal:litert_compiled_model",
+#         "//litert/cc/internal:litert_environment",
+#         "//litert/cc/internal:litert_options",
+#         "//litert/cc/internal:litert_tensor_buffer",
+#         "//litert/tools/flags/vendors:google_tensor_flags",
+#         "//litert/tools/flags/vendors:mediatek_flags",
+#         "//litert/tools/flags/vendors:qualcomm_flags",
+#         "//tflite/profiling:time",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+# copybara:uncomment_end
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
     deps = [
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "//litert/c:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -394,16 +476,12 @@ cc_binary(
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_options",
         "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/tools/flags/vendors:google_tensor_flags",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/tools/flags/vendors:google_tensor_flags",
+        # copybara:uncomment_end
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//tflite/profiling:time",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             # copybara:uncomment_begin(google-only)

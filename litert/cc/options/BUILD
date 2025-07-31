@@ -116,27 +116,29 @@ cc_library(
     }),
 )
 
-cc_library(
-    name = "litert_google_tensor_options",
-    srcs = ["litert_google_tensor_options.cc"],
-    hdrs = ["litert_google_tensor_options.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
-        "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_google_tensor_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_google_tensor_options"],
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
+# copybara:uncomment_begin(google_tensor)
+# cc_library(
+#     name = "litert_google_tensor_options",
+#     srcs = ["litert_google_tensor_options.cc"],
+#     hdrs = ["litert_google_tensor_options.h"],
+#     deps = [
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_opaque_options",
+#         "//litert/cc:litert_detail",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_handle",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_opaque_options",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_google_tensor_options"],
+#         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_google_tensor_options"],
+#         "//conditions:default": [
+#             "//litert/c:litert_runtime_c_api_shared_lib",
+#         ],
+#     }),
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "litert_mediatek_options",

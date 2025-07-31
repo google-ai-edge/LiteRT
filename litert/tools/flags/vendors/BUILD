@@ -55,39 +55,42 @@ cc_test(
     ],
 )
 
-# GOOGLE TENSOR ####################################################################################
-
-cc_library(
-    name = "google_tensor_flags",
-    srcs = ["google_tensor_flags.cc"],
-    hdrs = ["google_tensor_flags.h"],
-    copts = [
-        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
-        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
-    ],
-    deps = [
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_google_tensor_options",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-    alwayslink = 1,
-)
-
-cc_test(
-    name = "google_tensor_flags_test",
-    srcs = ["google_tensor_flags_test.cc"],
-    copts = [
-        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
-        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
-    ],
-    deps = [
-        ":google_tensor_flags",
-        "//litert/c/options:litert_google_tensor_options",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
+# copybara:uncomment_begin(google_tensor)
+# # GOOGLE TENSOR ####################################################################################
+#
+# cc_library(
+#     name = "google_tensor_flags",
+#     srcs = ["google_tensor_flags.cc"],
+#     hdrs = ["google_tensor_flags.h"],
+#     copts = [
+#         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
+#         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
+#     ],
+#     deps = [
+#         "@com_google_absl//absl/flags:flag",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc/internal:litert_google_tensor_options",
+#     ],
+#     alwayslink = 1,
+# )
+#
+# cc_test(
+#     name = "google_tensor_flags_test",
+#     srcs = ["google_tensor_flags_test.cc"],
+#     copts = [
+#         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
+#         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
+#     ],
+#     deps = [
+#         ":google_tensor_flags",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/c/options:litert_google_tensor_options",
+#     ],
+# )
+#
+# copybara:uncomment_end
 
 # MEDIATEK ####################################################################################
 

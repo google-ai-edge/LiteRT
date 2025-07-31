@@ -29,7 +29,6 @@
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/outstream.h"
@@ -117,21 +116,6 @@ int main(int argc, char* argv[]) {
 
     if (!opts->AddOpaqueOptions(std::move(*qnn_opts))) {
       run->dump_out.Get().get() << "Failed to add Qualcomm options to list\n";
-      return 1;
-    }
-  }
-
-  {
-    auto google_tensor_opts =
-        litert::google_tensor::GoogleTensorOptionsFromFlags();
-    if (!google_tensor_opts) {
-      run->dump_out.Get().get() << "Failed to create Google Tensor options\n";
-      return 1;
-    }
-
-    if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add google tensor options to list\n";
       return 1;
     }
   }

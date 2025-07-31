@@ -692,11 +692,15 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_qualcomm_options",
-    "//litert/c/options:litert_google_tensor_options",
+    # copybara:uncomment_begin(google-only)
+    # "//litert/c/options:litert_google_tensor_options",
+    # copybara:uncomment_end
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_gpu_options",
     "//litert/c/options:litert_runtime_options",
-    "//litert/c/options:litert_google_tensor_options_type",
+    # copybara:uncomment_begin(google-only)
+    # "//litert/c/options:litert_google_tensor_options_type",
+    # copybara:uncomment_end
 ]
 
 # This test verifies that the C API header files can build via C compiler.
@@ -707,6 +711,16 @@ cc_test(
     linkopts = ["-ldl"],
     deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "litert_c_api_common_google_tensor_test",
+#     srcs = ["litert_c_api_common_google_tensor_test.c"],
+#     copts = ["--std=c11"],
+#     linkopts = ["-ldl"],
+#     deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
+# )
+# copybara:uncomment_end
 
 # Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 cc_shared_library(
