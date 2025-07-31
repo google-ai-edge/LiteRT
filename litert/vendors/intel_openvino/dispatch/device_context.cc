@@ -19,8 +19,10 @@
 #endif  // __ANDROID__
 
 #include <string.h>
+#if LITERT_HAS_AHWB_SUPPORT
 #include <sys/socket.h>
 #include <unistd.h>
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 #include <openvino/runtime/intel_npu/level_zero/level_zero.hpp>
 #include <openvino/runtime/remote_context.hpp>
