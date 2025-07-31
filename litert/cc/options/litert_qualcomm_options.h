@@ -18,8 +18,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -60,6 +62,9 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
+
+  void SetIrJsonDir(const std::string& ir_json_dir);
+  absl::string_view GetIrJsonDir();
 
  private:
   LiteRtQualcommOptions Data() const;
