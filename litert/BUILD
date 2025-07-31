@@ -31,6 +31,7 @@ package_group(
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
+        "//litert/rust/...",
         "//litert/test/...",
         "//litert/sdk_util/...",
         # When litert_lm_link_capi_so=false
