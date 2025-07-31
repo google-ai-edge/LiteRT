@@ -371,6 +371,22 @@ TEST(OpOptionsTest, GetMeanOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetSplitOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSplit);
+  tflite::SplitOptionsT options;
+  options.num_splits = 3;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SplitOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SplitOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->num_splits, 3);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -389,6 +405,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<PackOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<GatherOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MeanOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SplitOptions>(&op));
 }
 
 }  // namespace

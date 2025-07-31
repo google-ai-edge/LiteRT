@@ -294,4 +294,16 @@ LiteRtStatus MeanOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus SplitOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSplit) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSplitNumSplitsOption(op, &num_splits));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
