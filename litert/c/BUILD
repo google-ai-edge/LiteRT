@@ -656,6 +656,37 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_rewriter",
+    srcs = ["litert_rewriter.cc"],
+    hdrs = ["litert_rewriter.h"],
+    deps = [
+        ":litert_common",
+        ":litert_logging",
+        ":litert_model",
+        ":litert_op_code",
+        "//litert/core/model",
+    ],
+)
+
+cc_test(
+    name = "litert_rewriter_test",
+    srcs = ["litert_rewriter_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_model",
+        ":litert_op_code",
+        ":litert_rewriter",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 filegroup(
     name = "litert_model_srcs",
     srcs = ["litert_model.cc"],
@@ -690,6 +721,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_tensor_buffer",
     ":litert_external_litert_buffer_context",
     ":litert_tensor_buffer_registry",
+    ":litert_rewriter",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_google_tensor_options",
@@ -780,6 +812,7 @@ cc_library(
         # Needed for litert/c/litert_op_code.h
         "//tflite:builtin_ops.h",
         # Neeeded for litert/c/litert_model.h
+        ":litert_rewriter.h",
         "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
         "//tflite/c:tensorflowlite_c_impl_hdrs_filegroup",
     ],  # Export all header files (.h) in this directory

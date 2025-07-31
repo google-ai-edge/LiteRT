@@ -139,5 +139,33 @@ TEST(IrAllocatorTest, TransferWithIndices) {
               ElementsAreArray({&op1, &op2, &other_op2, &other_op4}));
 }
 
+TEST(IrAllocatorTest, TransferAtIndex) {
+  IrAllocator<LiteRtOpT> root_ops;
+  auto& op1 = root_ops.EmplaceBack();
+  auto& op2 = root_ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& op3 = other_ops.EmplaceBack();
+  auto& op4 = other_ops.EmplaceBack();
+
+  root_ops.TransferFrom(other_ops, 1);
+  EXPECT_EQ(root_ops.Elements().at(0), &op1);
+  EXPECT_EQ(root_ops.Elements().at(1), &op3);
+  EXPECT_EQ(root_ops.Elements().at(2), &op4);
+  EXPECT_EQ(root_ops.Elements().at(3), &op2);
+}
+
+TEST(IrAllocatorTest, TransferAtStart) {
+  IrAllocator<LiteRtOpT> root_ops;
+  auto& op1 = root_ops.EmplaceBack();
+
+  IrAllocator<LiteRtOpT> other_ops;
+  auto& op2 = other_ops.EmplaceBack();
+
+  root_ops.TransferFrom(other_ops, 0);
+  EXPECT_EQ(root_ops.Elements().at(0), &op2);
+  EXPECT_EQ(root_ops.Elements().at(1), &op1);
+}
+
 }  // namespace
 }  // namespace litert::internal

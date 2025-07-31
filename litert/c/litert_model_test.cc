@@ -29,7 +29,6 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
-#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
 
 namespace {
