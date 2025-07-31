@@ -79,6 +79,7 @@ package_group(
     packages = [
         # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
+        "@mediapipe//mediapipe/examples/android/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
         "//litert/runtime/...",
         "//litert/samples/...",
