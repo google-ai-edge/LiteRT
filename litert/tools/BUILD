@@ -64,8 +64,8 @@ cc_test(
     ],
     deps = [
         ":apply_plugin",
+        ":outstream",
         "//litert/c:litert_common",
-        "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",

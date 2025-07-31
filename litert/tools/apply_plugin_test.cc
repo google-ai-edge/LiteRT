@@ -15,6 +15,7 @@
 #include "litert/tools/apply_plugin.h"
 
 #include <cstdint>
+#include <iostream>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -33,17 +34,16 @@
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "litert/tools/outstream.h"
 
 namespace litert::tools {
 namespace {
 
 using ::litert::internal::kLiteRtBuildStampKey;
 using ::litert::internal::ParseBuildStamp;
+using ::litert::testing::GetLiteRtPath;
 using ::testing::HasSubstr;
 using ::testing::litert::IsError;
-
-static constexpr absl::string_view kPluginSearchPath =
-    "third_party/odml/litert/litert/vendors/examples";
 
 static constexpr absl::string_view kSocManufacturer = "ExampleSocManufacturer";
 
@@ -61,11 +61,12 @@ ApplyPluginRun::Ptr MakeBaseRun(
     ApplyPluginRun::Cmd cmd, absl::string_view model_path = "one_mul.tflite") {
   auto run = std::make_unique<ApplyPluginRun>();
   run->cmd = cmd;
-  run->lib_search_paths.push_back(std::string(kPluginSearchPath));
+  run->lib_search_paths.push_back(GetLiteRtPath("vendors/examples/"));
   run->model.emplace(TestModelPath(model_path));
   run->soc_manufacturer.emplace(std::string(kSocManufacturer));
   run->soc_models.push_back(std::string(kSocModel));
   run->outs.clear();
+  run->dump_out = UserStream(std::cerr);
   return run;
 }
 

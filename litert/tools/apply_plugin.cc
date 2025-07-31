@@ -195,12 +195,16 @@ Expected<std::vector<CompilerPlugin>> LoadAllPlugins(Context& ctx) {
 Expected<CompilerPlugin> LoadPlugin(Context& ctx) {
   auto plugins = LoadAllPlugins(ctx);
   if (!plugins) {
+    LITERT_LOG(LITERT_ERROR, "Failed to load plugins: %s",
+               plugins.Error().Message().c_str());
     return plugins.Error();
   }
 
   ctx.Dump().Start("Select Plugin");
 
   for (auto& plugin : *plugins) {
+    ctx.Dump().Labeled() << absl::StreamFormat("Trying plugin: %s\n",
+                                               plugin.SocManufacturer());
     if (plugin.SocManufacturer() == ctx.Run().soc_manufacturer) {
       ctx.Dump().Labeled() << absl::StreamFormat("Selected plugin for: %s\n",
                                                  plugin.SocManufacturer());
