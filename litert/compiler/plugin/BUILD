@@ -27,6 +27,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -81,6 +82,33 @@ cc_library(
 #         "//litert/tools:dump",
 #     ],
 # )
+#
+# cc_test(
+#     name = "compiler_plugin_transformation_test",
+#     srcs = ["compiler_plugin_transformation_test.cc"],
+#     data = [
+#         "//litert/test:mlir_test_data",
+#         "//litert/vendors/examples:example_plugin_so",
+#     ],
+#     tags = [
+#         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+#         "noasan",
+#         "nomsan",
+#         "nosan",
+#         "notsan",
+#         # Use compilation mode opt to avoid false positives that gwp-asan mismatched delete errors.
+#         "optbuild",
+#     ],
+#     deps = [
+#         ":compiler_plugin",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings:string_view",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_op_code",
+#         "//litert/core/model",
+#         "//litert/test:common",
+#     ],
+# )
 # copybara:uncomment_end
 
 cc_library(
@@ -96,7 +124,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core:insert_order_map",
         "//litert/core/model",
-        "//litert/core/model:model_graph",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
