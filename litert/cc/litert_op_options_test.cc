@@ -355,6 +355,22 @@ TEST(OpOptionsTest, GetGatherOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetMeanOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflMean);
+  tflite::ReducerOptionsT options;
+  options.keep_dims = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ReducerOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<MeanOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->keep_dims, true);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -372,6 +388,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<ReduceMaxOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<PackOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<GatherOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<MeanOptions>(&op));
 }
 
 }  // namespace

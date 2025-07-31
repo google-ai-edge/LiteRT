@@ -264,6 +264,13 @@ struct GatherOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt Mean op.
+struct MeanOptions : public OpOptions {
+  LiteRtOp op;
+  bool keep_dims;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -329,6 +336,10 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, GatherOptions>) {
     GatherOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, MeanOptions>) {
+    MeanOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {

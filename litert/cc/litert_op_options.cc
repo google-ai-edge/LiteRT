@@ -282,4 +282,16 @@ LiteRtStatus GatherOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus MeanOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMean) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetMeanKeepDimsOption(op, &keep_dims));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
