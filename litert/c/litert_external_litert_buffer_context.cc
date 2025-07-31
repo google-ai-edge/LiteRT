@@ -23,6 +23,12 @@
 extern "C" {
 #endif
 
+LiteRtStatus LiteRtCreateExternalLiteRtBufferContext(
+    LiteRtEnvironment environment, LiteRtExternalLiteRtBufferContext* context) {
+  *context = new LiteRtExternalLiteRtBufferContextT(environment);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetExternalLiteRtBufferContextTensorBuffer(
     LiteRtExternalLiteRtBufferContext context, const TfLiteTensor* tensor,
     LiteRtTensorBuffer* tensor_buffer) {
@@ -69,7 +75,9 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextIsAsyncExecutionMode(
 }
 
 void LiteRtDestroyExternalLiteRtBufferContext(
-    LiteRtExternalLiteRtBufferContext context) {}
+    LiteRtExternalLiteRtBufferContext context) {
+  delete context;
+}
 
 #ifdef __cplusplus
 }
