@@ -30,7 +30,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/insert_order_map.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
 
 namespace litert::internal {
 namespace {

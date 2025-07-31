@@ -66,6 +66,8 @@ LITERT_DEFINE_HANDLE(LiteRtSignature);
 LITERT_DEFINE_HANDLE(LiteRtModel);
 // Append only list of ops.  (litert_model.h)
 LITERT_DEFINE_HANDLE(LiteRtOpList);
+// LiteRT Rewriter object. (litert_rewriter.h)
+LITERT_DEFINE_HANDLE(LiteRtRewriter);
 // Representations of an custom op.  (litert_op_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOp);
 // A linked list of type erased opaque options. These are added to the
@@ -194,6 +196,10 @@ typedef enum {
   // Legalization related errors.
   kLiteRtStatusLegalizeNoMatch = 2000,
   kLiteRtStatusErrorInvalidLegalization = 2001,
+
+  // Transformation related errors.
+  kLiteRtStatusPatternNoMatch = 3000,
+  kLiteRtStatusInvalidTransformation = 3001,
 } LiteRtStatus;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes)
 
