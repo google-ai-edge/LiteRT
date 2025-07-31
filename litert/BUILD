@@ -123,3 +123,15 @@ exports_files(
     glob(["*.gwsq"]),
     visibility = ["//visibility:public"],
 )
+
+# If litert_link_capi_so is not defined, each target links LiteRT C API either statically or
+# dynamically based on its own requirements.
+config_setting(
+    name = "litert_link_capi_so",
+    values = {"define": "litert_link_capi_so=true"},
+)
+
+config_setting(
+    name = "litert_link_capi_static",
+    values = {"define": "litert_link_capi_so=false"},
+)
