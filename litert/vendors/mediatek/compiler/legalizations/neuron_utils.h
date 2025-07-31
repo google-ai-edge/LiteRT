@@ -30,6 +30,7 @@ namespace litert::mediatek {
 // Bit mask for tensor flags.
 enum {
   NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED = 1U << 2,
+  NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE = 1U << 5,
 };
 
 using NeuronTensorType = int32_t;

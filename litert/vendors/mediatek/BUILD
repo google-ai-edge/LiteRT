@@ -33,6 +33,7 @@ litert_cc_lib_with_mtk(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
         "//litert/cc/options:litert_mediatek_options",
         "@com_google_absl//absl/strings",
