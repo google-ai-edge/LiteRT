@@ -409,6 +409,60 @@ class CompiledModel
     return Profiler(profiler, OwnHandle::kNo);
   };
 
+  // Resizes the specified input tensor to support dynamic shapes.
+  //
+  // This function allows resizing input tensors at runtime, similar to TFLite's
+  // ResizeInputTensor API. After calling this function, the compiled model will
+  // reallocate internal buffers as needed to accommodate the new tensor shape.
+  //
+  // Note: After resizing, the previously obtained buffer requirements may be
+  // invalidated. Callers should re-query buffer requirements if needed.
+  //
+  // Parameters:
+  // - signature_index: The index of the signature in the model.
+  // - input_index: The index of the input tensor in the signature.
+  // - dims: The new dimensions for the input tensor.
+  //
+  // Returns:
+  // - Success if the resize operation completed successfully.
+  // - Error with appropriate status code on failure.
+  Expected<void> ResizeInputTensor(size_t signature_index, size_t input_index,
+                                   absl::Span<const int> dims) {
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelResizeInputTensor(
+        Get(), signature_index, input_index, dims.data(), dims.size()));
+    return {};
+  }
+
+  // Resizes the specified input tensor by name for the given signature.
+  Expected<void> ResizeInputTensor(size_t signature_index,
+                                   absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    LITERT_ASSIGN_OR_RETURN(size_t input_index,
+                            FindInputIndex(signature_index, input_name));
+    return ResizeInputTensor(signature_index, input_index, dims);
+  }
+
+  // Resizes the specified input tensor by name for the given signature name.
+  Expected<void> ResizeInputTensor(absl::string_view signature_name,
+                                   absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_name));
+    return ResizeInputTensor(signature_index, input_name, dims);
+  }
+
+  // Resizes the specified input tensor of the default signature by index.
+  Expected<void> ResizeInputTensor(size_t input_index,
+                                   absl::Span<const int> dims) {
+    return ResizeInputTensor(/*signature_index=*/0, input_index, dims);
+  }
+
+  // Resizes the specified input tensor of the default signature by name.
+  Expected<void> ResizeInputTensor(absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    return ResizeInputTensor(/*signature_index=*/0, input_name, dims);
+  }
+
  private:
   // Returns the signature input index for the given input tensor name.
   Expected<size_t> FindInputIndex(size_t signature_index,
