@@ -33,6 +33,14 @@ struct AHardwareBuffer {};
 
 namespace litert::mediatek {
 
+/** Workaround for the adapter header without definition */
+/* Extended data type -A tensor of 32 bit signed integers that represent real numbers. */
+#define NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL 9014
+
+/** Workaround for the adapter header without definition */
+/* NeuronOperationType */
+#define NEURON_UNKNOWN static_cast<NeuronOperationType>(10001)
+
 static constexpr const char* kExtensionGeneralOpration =
     "com.mediatek.general_operation";
 // Extension operand
