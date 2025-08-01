@@ -115,6 +115,7 @@ GraphIteratorDelegate::get_decoder() const {
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo> input_meta_info;
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo> output_meta_info;
     for (const auto& input : op.Inputs()) {
+      tensor_meta_info = {};
       if (!fill_tensor_meta(tensor_meta_info, input)) {
         return nullptr;
       }
@@ -132,6 +133,7 @@ GraphIteratorDelegate::get_decoder() const {
       input_meta_info.push_back(tensor_meta_info);
     }
     for (const auto& output : op.Outputs()) {
+      tensor_meta_info = {};
       if (!fill_tensor_meta(tensor_meta_info, output)) {
         return nullptr;
       }
