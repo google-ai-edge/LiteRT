@@ -50,7 +50,6 @@ template <typename TestLogic, typename TestExecutor = CpuCompiledModelExecutor>
 class CtsTest : public RngTest {
  private:
   using Logic = TestLogic;
-  using Executor = TestExecutor;
   using Traits = typename Logic::Traits;
   using Params = typename Traits::Params;
   using InputBuffers = typename Traits::InputBuffers;
@@ -61,6 +60,8 @@ class CtsTest : public RngTest {
   static constexpr size_t kNumOutputs = Traits::kNumOutputs;
 
  public:
+  using Executor = TestExecutor;
+
   // Fixture that skips the test body. Used "skip" filtered out test rather
   // than not registering them at all.
   class SkippedTest : public ::testing::Test {
@@ -107,13 +108,16 @@ class CtsTest : public RngTest {
   // Register a fully specified case with gtest.
   static Expected<void> Register(const std::string& suite_name,
                                  const std::string& test_name,
-                                 SetupParams&& setup_params) {
+                                 SetupParams&& setup_params,
+                                 Executor::Args&& executor_args) {
     RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [setup_params = std::move(setup_params)]() mutable {
+                 [setup_params = std::move(setup_params),
+                  executor_args = std::move(executor_args)]() mutable {
                    return new CtsTest(std::move(setup_params.model),
                                       std::move(setup_params.params),
-                                      std::move(setup_params.logic));
+                                      std::move(setup_params.logic),
+                                      std::move(executor_args));
                  });
     return {};
   }
@@ -138,11 +142,15 @@ class CtsTest : public RngTest {
 
  private:
   CtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
-          Logic logic)
-      : model_(std::move(model)), params_(std::move(params)) {}
+          Logic logic, typename Executor::Args&& executor_args)
+      : model_(std::move(model)),
+        params_(std::move(params)),
+        logic_(std::move(logic)),
+        executor_args_(std::move(executor_args)) {}
 
   Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {
-    LITERT_ASSIGN_OR_RETURN(auto exec, Executor::Create(*model_));
+    LITERT_ASSIGN_OR_RETURN(auto exec,
+                            Executor::Create(*model_, executor_args_));
     LITERT_ASSIGN_OR_RETURN(auto actual, exec.Run(inputs));
     if (actual.size() != kNumOutputs) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -183,6 +191,7 @@ class CtsTest : public RngTest {
   typename LiteRtModelT::Ptr model_;
   typename Logic::Traits::Params params_;
   Logic logic_;
+  typename Executor::Args executor_args_;
 };
 
 }  // namespace testing
