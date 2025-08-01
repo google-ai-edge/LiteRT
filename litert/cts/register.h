@@ -40,12 +40,16 @@ class RegisterFunctor {
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
       if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
-        BuildParamsAndRegister<Fixture<Logic, CpuCompiledModelExecutor>>(
-            device);
+        BuildParamsAndRegister<Fixture<Logic, CpuCompiledModelExecutor>>(device,
+                                                                         {});
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
+        BuildParamsAndRegister<Fixture<Logic, NpuCompiledModelExecutor>>(
+            device, typename NpuCompiledModelExecutor::Args{
+                        options_.DispatchDir(),
+                        options_.PluginDir(),
+                    });
       }
     }
   }
@@ -55,7 +59,8 @@ class RegisterFunctor {
 
  private:
   template <typename TestClass, typename Device>
-  void BuildParamsAndRegister(Device& device) {
+  void BuildParamsAndRegister(Device& device,
+                              typename TestClass::Executor::Args&& args) {
     auto params = TestClass::BuildSetupParams(device);
     if (!params) {
       LITERT_LOG(LITERT_WARNING,
@@ -70,10 +75,12 @@ class RegisterFunctor {
 
     if (!options_.ShouldRegister(
             absl::StrFormat("%s.%s", suite_name, test_name))) {
-      TestClass::SkippedTest::Register(suite_name, test_name);
-    } else if (auto status = TestClass::Register(suite_name, test_name,
-                                                 std::move(*params));
-               !status) {
+      return;
+    }
+
+    if (auto status = TestClass::Register(suite_name, test_name,
+                                          std::move(*params), std::move(args));
+        !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
                  status.Error().Message().c_str());
@@ -100,9 +107,8 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 // Helper aliases to set some of the template params that don't need to vary
 // for cts.
 template <typename Ranks, typename Types, typename OpCodes, typename Fas>
-using BinaryNoBroadcastCts =
-    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
-                      DefaultRandomTensorBufferTraits>;
+using BinaryNoBroadcastCts = BinaryNoBroadcast<Ranks, Types, OpCodes, Fas,
+                                               SizeC<1024>, DefaultGenerator>;
 
 template <template <typename TestLogic, typename TestExecutor> typename Fixture>
 void RegisterCtsTests(const CtsConf& cts_options) {

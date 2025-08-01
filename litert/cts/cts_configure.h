@@ -72,6 +72,10 @@ class CtsConf {
   bool ShouldRegister(const std::string& name) const;
   bool ShouldRegister(absl::string_view name) const;
 
+  // NPU library directories.
+  const std::string& DispatchDir() const { return dispatch_dir_; }
+  const std::string& PluginDir() const { return plugin_dir_; }
+
  private:
   explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
