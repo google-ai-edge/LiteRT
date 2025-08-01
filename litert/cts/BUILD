@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/cts:cts.bzl", "litert_define_cts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -42,6 +43,7 @@ cc_test(
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
@@ -63,6 +65,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -137,5 +140,17 @@ litert_device_test(
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# PRE-CONFIGURED CTS SUITES ########################################################################
+
+# An example CTS configuration for the CPU backend that filters out some tests.
+litert_define_cts(
+    name = "sample_cpu_cts",
+    backend = "cpu",
+    dont_register = [
+        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
+        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
     ],
 )
