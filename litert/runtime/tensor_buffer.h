@@ -263,6 +263,10 @@ class LiteRtTensorBufferT {
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+  static litert::Expected<Ptr> CreateManagedVulkanMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
   litert::Expected<void> IsValid();
 
   LiteRtEnvironment env_;

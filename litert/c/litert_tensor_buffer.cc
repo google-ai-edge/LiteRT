@@ -19,11 +19,10 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer.h"
 
@@ -308,19 +307,32 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 // Return an error if the backing buffer is not a WebGpu buffer.
-LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(LiteRtTensorBuffer tensor_buffer,
-                                               WGPUBuffer* webgpu_buffer_addr) {
-  if (!tensor_buffer || !webgpu_buffer_addr) {
+LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
   LITERT_ASSIGN_OR_RETURN(auto webgpu_buffer, tensor_buffer->GetCustomBuffer());
 
-  *webgpu_buffer_addr =
-      reinterpret_cast<WGPUBuffer>(webgpu_buffer->hw_buffer_handle());
+  *hw_memory_handle = webgpu_buffer->hw_buffer_handle();
   return kLiteRtStatusOk;
 }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+LiteRtStatus LiteRtGetTensorBufferVulkanMemory(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer, tensor_buffer->GetCustomBuffer());
+
+  *hw_memory_handle = custom_buffer->hw_buffer_handle();
+  return kLiteRtStatusOk;
+}
+#endif  // LITERT_HAS_VULKAN_SUPPORT
 
 LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,

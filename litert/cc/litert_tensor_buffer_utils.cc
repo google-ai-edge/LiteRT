@@ -75,6 +75,20 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "MetalTexture";
     case kLiteRtTensorBufferTypeMetalTextureFp16:
       return "MetalTextureFp16";
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+      return "VulkanBuffer";
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+      return "VulkanBufferFp16";
+    case kLiteRtTensorBufferTypeVulkanTexture:
+      return "VulkanTexture";
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+      return "VulkanTextureFp16";
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+      return "VulkanImageBuffer";
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+      return "VulkanImageBufferFp16";
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+      return "VulkanBufferPacked";
   }
   LITERT_LOG(LITERT_ERROR, "Unexpected value for LiteRtTensorBufferType: %d",
              static_cast<int>(buffer_type));

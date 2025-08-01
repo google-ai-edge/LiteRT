@@ -51,6 +51,16 @@ typedef enum {
   kLiteRtTensorBufferTypeMetalBufferFp16 = 31,
   kLiteRtTensorBufferTypeMetalTexture = 32,
   kLiteRtTensorBufferTypeMetalTextureFp16 = 33,
+
+  // 40-49 are reserved for Vulkan memory objects.
+  // WARNING: Vulkan support is experimental.
+  kLiteRtTensorBufferTypeVulkanBuffer = 40,
+  kLiteRtTensorBufferTypeVulkanBufferFp16 = 41,
+  kLiteRtTensorBufferTypeVulkanTexture = 42,
+  kLiteRtTensorBufferTypeVulkanTextureFp16 = 43,
+  kLiteRtTensorBufferTypeVulkanImageBuffer = 44,
+  kLiteRtTensorBufferTypeVulkanImageBufferFp16 = 45,
+  kLiteRtTensorBufferTypeVulkanBufferPacked = 46,
 } LiteRtTensorBufferType;
 // LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/TensorBuffer.kt:tensor_buffer_types)
 
@@ -81,6 +91,16 @@ inline bool IsMetalMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
 }
 
+inline bool IsVulkanMemory(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeVulkanBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanTexture ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanImageBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBufferPacked;
+}
+
 inline bool IsGpuBuffer(LiteRtTensorBufferType buffer_type) {
   return buffer_type == kLiteRtTensorBufferTypeGlBuffer ||
          buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
@@ -90,7 +110,10 @@ inline bool IsGpuBuffer(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked ||
          buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
-         buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16;
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBufferPacked;
 }
 
 inline bool IsGpuTexture(LiteRtTensorBufferType buffer_type) {
@@ -100,14 +123,18 @@ inline bool IsGpuTexture(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeWebGpuTexture ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuTextureFp16 ||
          buffer_type == kLiteRtTensorBufferTypeMetalTexture ||
-         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanTexture ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanTextureFp16;
 }
 
 inline bool IsGpuImageBuffer(LiteRtTensorBufferType buffer_type) {
   return buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
          buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuImageBuffer ||
-         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16;
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanImageBufferFp16;
 }
 
 inline bool IsGpuFloat16Memory(LiteRtTensorBufferType buffer_type) {
@@ -118,7 +145,10 @@ inline bool IsGpuFloat16Memory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeWebGpuTextureFp16 ||
          buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
-         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeVulkanImageBufferFp16;
 }
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

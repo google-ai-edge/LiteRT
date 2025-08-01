@@ -16,12 +16,12 @@
 #define ODML_LITERT_LITERT_RUNTIME_GPU_ENVIRONMENT_H_
 
 #include <memory>
+#include <utility>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -118,6 +118,10 @@ struct GpuEnvironmentOptions {
 #if LITERT_HAS_METAL_SUPPORT
   MetalInfoPtr metal_info;
 #endif  // LITERT_HAS_METAL_SUPPORT
+
+#if LITERT_HAS_VULKAN_SUPPORT
+  void* vulkan_env = nullptr;
+#endif  // LITERT_HAS_VULKAN_SUPPORT
 };
 
 // A class for storing the MLD global environment and kept in Environment.
@@ -128,6 +132,7 @@ class GpuEnvironment {
   GpuEnvironment& operator=(const GpuEnvironment&) = delete;
   GpuEnvironment() = default;
   ~GpuEnvironment() = default;
+
 #if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
   tflite::gpu::cl::CLContext* getContext() { return &context_; }
@@ -135,22 +140,27 @@ class GpuEnvironment {
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   EGLDisplay getEglDisplay() { return options_.egl_display; }
   EGLContext getEglContext() { return options_.egl_context; }
+
 #if LITERT_HAS_WEBGPU_SUPPORT
-  WGPUDevice getWebGpuDevice() { return webgpu_device_; }
-  WGPUQueue getWebGpuQueue() { return webgpu_queue_; }
+  WGPUDevice getWebGpuDevice() { return options_.webgpu_device; }
+  WGPUQueue getWebGpuQueue() { return options_.webgpu_queue; }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   void* getMetalDevice() { return metal_info_.get()->GetDevice(); }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_VULKAN_SUPPORT
+  void* getVulkanEnvironment() { return options_.vulkan_env; }
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+
   // Create a GpuEnvironment with the given environment.
   static Expected<std::unique_ptr<GpuEnvironment>> Create(
       LiteRtEnvironmentT* environment) {
-    auto instance = new GpuEnvironment();
+    auto instance = std::make_unique<GpuEnvironment>();
     instance->Initialize(environment);
     LITERT_LOG(LITERT_INFO, "Created LiteRT GpuEnvironment.");
-    return std::unique_ptr<GpuEnvironment>(instance);
+    return std::move(instance);
   }
 
   bool SupportsClGlInterop() { return properties_.is_gl_sharing_supported; }
@@ -174,18 +184,14 @@ class GpuEnvironment {
   tflite::gpu::cl::CLCommandQueue command_queue_;
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_HAS_WEBGPU_SUPPORT
-  WGPUDevice webgpu_device_;
-  WGPUQueue webgpu_queue_;
-#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
+  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
   MetalInfoPtr metal_info_;
 #endif  // LITERT_HAS_METAL_SUPPORT
 
-#if LITERT_HAS_OPENGL_SUPPORT
-  std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env_;
-#endif  // LITERT_HAS_OPENGL_SUPPORT
   GpuEnvironmentOptions options_;
   GpuEnvironmentProperties properties_;
 };

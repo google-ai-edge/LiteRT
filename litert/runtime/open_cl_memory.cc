@@ -41,8 +41,9 @@
 #include "tflite/delegates/gpu/cl/opencl_wrapper.h"
 #include "tflite/delegates/gpu/cl/util.h"
 
-namespace litert {
-namespace internal {
+#if LITERT_HAS_OPENCL_SUPPORT
+
+namespace litert::internal {
 
 template Expected<float*> OpenClMemory::Lock<float>(
     LiteRtTensorBufferLockMode mode);
@@ -224,5 +225,6 @@ Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
                       std::move(cl_buffer));
 }
 
-}  // namespace internal
-}  // namespace litert
+}  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT

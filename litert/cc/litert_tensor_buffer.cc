@@ -28,8 +28,6 @@
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
-#else
-typedef struct _cl_mem* cl_mem;
 #endif
 
 namespace litert {
@@ -170,6 +168,15 @@ bool TensorBuffer::IsWebGpuMemory() const {
     return false;
   }
   return ::IsWebGpuMemory(tensor_buffer_type);
+}
+
+bool TensorBuffer::IsVulkanMemory() const {
+  LiteRtTensorBufferType tensor_buffer_type;
+  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
+      status != kLiteRtStatusOk) {
+    return false;
+  }
+  return ::IsVulkanMemory(tensor_buffer_type);
 }
 
 }  // namespace litert

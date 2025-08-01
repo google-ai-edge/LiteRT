@@ -20,7 +20,6 @@
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -36,6 +35,8 @@
 #include "tflite/delegates/gpu/common/shape.h"
 #include "tflite/delegates/gpu/common/task/tensor_desc.h"
 #include "tflite/delegates/gpu/common/tensor.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
 
 using tflite::gpu::BHWC;
 using tflite::gpu::CreateBhwcTensorDescriptor;
@@ -221,3 +222,5 @@ LiteRtStatus LiteRtGpuMemoryDownload(GpuEnvironment* gpu_env,
 }
 
 }  // namespace litert::internal
+
+#endif  // LITERT_HAS_OPENCL_SUPPORT

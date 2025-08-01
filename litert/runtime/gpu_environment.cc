@@ -121,6 +121,15 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_VULKAN_SUPPORT
+  auto vulkan_env_option =
+      environment->GetOption(kLiteRtEnvOptionTagVulkanEnvironment);
+  if (vulkan_env_option.has_value() &&
+      vulkan_env_option->type == kLiteRtAnyTypeInt) {
+    options.vulkan_env = reinterpret_cast<void*>(vulkan_env_option->int_value);
+  }
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+
   return options;
 }
 

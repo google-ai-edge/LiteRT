@@ -23,6 +23,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -165,12 +166,12 @@ class TensorBuffer
 #endif
   }
 
-  Expected<WGPUBuffer> GetWebGpuBuffer() const {
+  Expected<HwMemoryHandle> GetWebGpuBuffer() const {
 #if LITERT_HAS_WEBGPU_SUPPORT
-    WGPUBuffer webgpu_buffer;
+    HwMemoryHandle hw_memory_handle;
     LITERT_RETURN_IF_ERROR(
-        LiteRtGetTensorBufferWebGpuBuffer(Get(), &webgpu_buffer));
-    return webgpu_buffer;
+        LiteRtGetTensorBufferWebGpuBuffer(Get(), &hw_memory_handle));
+    return hw_memory_handle;
 #else
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "WebGPU is not supported on this platform");
@@ -184,6 +185,18 @@ class TensorBuffer
     return metal_buf;
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
+
+  Expected<HwMemoryHandle> GetVulkanMemory() const {
+#if LITERT_HAS_VULKAN_SUPPORT
+    HwMemoryHandle hw_memory_handle;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferVulkanMemory(Get(), &hw_memory_handle));
+    return hw_memory_handle;
+#else
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Vulkan is not supported on this platform");
+#endif
+  }
 
   struct GlBuffer {
     LiteRtGLenum target;
@@ -232,6 +245,11 @@ class TensorBuffer
   // Note: This function doesn't return Expected<bool> users can easily make
   // mistakes when using it.
   bool IsWebGpuMemory() const;
+
+  // Returns true if the tensor buffer is a Vulkan memory.
+  // Note: This function doesn't return Expected<bool> users can easily make
+  // mistakes when using it.
+  bool IsVulkanMemory() const;
 
   Expected<RankedTensorType> TensorType() const {
     LiteRtRankedTensorType tensor_type;

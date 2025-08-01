@@ -35,6 +35,8 @@ typedef enum {
   kLiteRtEnvOptionTagWebGpuQueue = 9,
   kLiteRtEnvOptionTagMetalDevice = 10,
   kLiteRtEnvOptionTagMetalCommandQueue = 11,
+  // WARNING: Vulkan support is experimental.
+  kLiteRtEnvOptionTagVulkanEnvironment = 12,
 } LiteRtEnvOptionTag;
 
 typedef struct {

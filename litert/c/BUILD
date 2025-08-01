@@ -54,7 +54,6 @@ cc_test(
 
 cc_library(
     name = "litert_custom_op_kernel",
-    srcs = [],
     hdrs = ["litert_custom_op_kernel.h"],
     deps = [
         ":litert_common",
@@ -64,12 +63,8 @@ cc_library(
 
 cc_test(
     name = "litert_custom_op_test",
-    srcs = [
-        "litert_custom_op_test.cc",
-    ],
-    data = [
-        "//litert/test:testdata/simple_model_custom_op.tflite",
-    ],
+    srcs = ["litert_custom_op_test.cc"],
+    data = ["//litert/test:testdata/simple_model_custom_op.tflite"],
     deps = [
         ":litert_common",
         ":litert_compiled_model",
@@ -159,12 +154,8 @@ cc_test(
 
 cc_library(
     name = "litert_logging",
-    srcs = [
-        "litert_logging.cc",
-    ],
-    hdrs = [
-        "litert_logging.h",
-    ],
+    srcs = ["litert_logging.cc"],
+    hdrs = ["litert_logging.h"],
     deps = [
         ":litert_common",
         "//tflite:minimal_logging",
@@ -175,9 +166,7 @@ cc_library(
 
 cc_test(
     name = "litert_logging_test",
-    srcs = [
-        "litert_logging_test.cc",
-    ],
+    srcs = ["litert_logging_test.cc"],
     deps = [
         ":litert_common",
         ":litert_logging",
@@ -215,9 +204,7 @@ cc_library(
 # potential circular dependencies.
 cc_library(
     name = "litert_model_types",
-    hdrs = [
-        "litert_model.h",
-    ],
+    hdrs = ["litert_model.h"],
     deps = [
         ":litert_common",
         ":litert_layout",
@@ -252,9 +239,7 @@ cc_library(
 cc_library(
     name = "litert_op_options",
     srcs = ["litert_op_options.cc"],
-    hdrs = [
-        "litert_op_options.h",
-    ],
+    hdrs = ["litert_op_options.h"],
     deps = [
         ":litert_common",
         ":litert_op_code",
@@ -269,9 +254,7 @@ cc_library(
 cc_test(
     name = "litert_op_options_test",
     srcs = ["litert_op_options_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-    ],
+    data = ["//litert/test:mlir_test_data"],
     tags = ["no_oss"],
     deps = [
         ":litert_common",
@@ -304,13 +287,11 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer_types",
-    srcs = [],
     hdrs = ["litert_tensor_buffer_types.h"],
 )
 
 cc_library(
     name = "litert_gl_types",
-    srcs = [],
     hdrs = ["litert_gl_types.h"],
 )
 
@@ -326,13 +307,12 @@ cc_library(
     ],
     copts = litert_metal_opts(),
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-        ],
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }) + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",
+        ":litert_custom_tensor_buffer",
         ":litert_event",
         ":litert_gl_types",
         ":litert_logging",
@@ -357,13 +337,9 @@ cc_library(
 
 cc_test(
     name = "litert_tensor_buffer_test",
-    srcs = [
-        "litert_tensor_buffer_test.cc",
-    ],
+    srcs = ["litert_tensor_buffer_test.cc"],
     # require GPU to run OpenCL tests.
-    tags = [
-        "requires-gpu-nvidia",
-    ],
+    tags = ["requires-gpu-nvidia"],
     deps = [
         ":litert_any",
         ":litert_common",
@@ -394,9 +370,7 @@ cc_library(
 
 cc_test(
     name = "litert_tensor_buffer_requirements_test",
-    srcs = [
-        "litert_tensor_buffer_requirements_test.cc",
-    ],
+    srcs = ["litert_tensor_buffer_requirements_test.cc"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -410,9 +384,7 @@ cc_test(
 
 cc_library(
     name = "litert_dispatch_delegate",
-    hdrs = [
-        "litert_dispatch_delegate.h",
-    ],
+    hdrs = ["litert_dispatch_delegate.h"],
     deps = [
         ":litert_common",
         ":litert_environment_options",
@@ -460,9 +432,7 @@ cc_test(
 cc_library(
     name = "litert_compiled_model",
     srcs = ["litert_compiled_model.cc"],
-    hdrs = [
-        "litert_compiled_model.h",
-    ],
+    hdrs = ["litert_compiled_model.h"],
     deps = [
         ":litert_common",
         ":litert_environment",
@@ -479,12 +449,8 @@ cc_library(
 
 cc_test(
     name = "litert_compiled_model_test",
-    srcs = [
-        "litert_compiled_model_test.cc",
-    ],
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
+    srcs = ["litert_compiled_model_test.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
     deps = [
         ":litert_common",
         ":litert_compiled_model",
@@ -504,12 +470,8 @@ cc_test(
 # The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
 cc_test(
     name = "litert_compiled_model_shared_lib_test",
-    srcs = [
-        "litert_compiled_model_test.cc",
-    ],
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
+    srcs = ["litert_compiled_model_test.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
     deps = [
         ":litert_runtime_c_api_shared_lib",
         "//litert/test:common",
@@ -619,9 +581,7 @@ cc_test(
 cc_library(
     name = "litert_profiler",
     srcs = ["litert_profiler.cc"],
-    hdrs = [
-        "litert_profiler.h",
-    ],
+    hdrs = ["litert_profiler.h"],
     deps = [
         ":litert_common",
         ":litert_profiler_event",
@@ -632,9 +592,7 @@ cc_library(
 
 cc_library(
     name = "litert_profiler_event",
-    hdrs = [
-        "litert_profiler_event.h",
-    ],
+    hdrs = ["litert_profiler_event.h"],
     deps = [
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
@@ -655,9 +613,7 @@ cc_test(
 cc_library(
     name = "litert_external_litert_buffer_context",
     srcs = ["litert_external_litert_buffer_context.cc"],
-    hdrs = [
-        "litert_external_litert_buffer_context.h",
-    ],
+    hdrs = ["litert_external_litert_buffer_context.h"],
     deps = [
         ":litert_common",
         ":litert_dispatch_headers",
@@ -769,6 +725,7 @@ cc_library(
         ":litert_any.h",
         ":litert_common.h",
         ":litert_compiled_model.h",
+        ":litert_custom_tensor_buffer.h",
         ":litert_custom_op_kernel.h",
         ":litert_environment.h",
         ":litert_environment_options.h",
