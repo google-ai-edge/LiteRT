@@ -285,9 +285,21 @@ LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph* graph,
                                         LiteRtDispatchEdgeId edge_id,
                                         const char* key, const char* value);
 
+// Create an invocation context from a given graph.
 LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph* graph,
     LiteRtDispatchInvocationContext* invocation_context);
+
+// Get the dispatch graph associated with an invocation context.
+// Note:
+// - This may return null if the invocation context doesn't have an
+//   associated graph (e.g., for invocation contexts created for bytecode
+//   execution that don't use the Graph API).
+// - The returned `LiteRtDispatchGraph` object is owned by the
+//   `invocation_context` and should not be freed by the caller.
+LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph);
 
 #ifdef __cplusplus
 }

@@ -115,6 +115,10 @@ class DispatchDelegateKernel
   Expected<const void*> FindAllocBase() const;
   Expected<int> FindAllocBaseFd() const;
 
+  // Applies dispatch annotations from the compiled model.
+  void ApplyDispatchAnnotations(
+      LiteRtDispatchInvocationContext invocation_context);
+
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;
   const std::string graph_name_;

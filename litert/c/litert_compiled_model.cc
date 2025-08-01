@@ -16,7 +16,10 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
@@ -57,8 +60,7 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
-      compiled_model->GetInputBufferRequirements(signature_index,
-                                                     input_index));
+      compiled_model->GetInputBufferRequirements(signature_index, input_index));
   *buffer_requirements =
       const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
@@ -176,15 +178,242 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler) {
-  LITERT_RETURN_IF_ERROR(
-      compiled_model != nullptr && profiler != nullptr,
-      kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
   LITERT_ASSIGN_OR_RETURN(LiteRtProfilerT * profiler_ptr,
                           compiled_model->GetProfiler());
   *profiler = profiler_ptr;
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char* value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and set the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
+      buffer_context->GetDispatchAnnotations());
+  annotations[key] = value;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char** value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and retrieve the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    *value = nullptr;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  const auto& annotations = buffer_context->GetDispatchAnnotations();
+  auto it = annotations.find(key);
+  if (it != annotations.end()) {
+    *value = it->second.c_str();
+  } else {
+    *value = nullptr;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key) {
+  if (!compiled_model || !key) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and remove the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
+      buffer_context->GetDispatchAnnotations());
+  annotations.erase(key);
+
+  return kLiteRtStatusOk;
+}
+// Node annotation functions
+LiteRtStatus LiteRtCompiledModelSetDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key,
+    const char* value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& node_annotations = const_cast<std::unordered_map<
+      uint64_t, std::unordered_map<std::string, std::string>>&>(
+      buffer_context->GetDispatchNodeAnnotations());
+  node_annotations[node_id][key] = value;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelGetDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key,
+    const char** value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    *value = nullptr;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  const auto& node_annotations = buffer_context->GetDispatchNodeAnnotations();
+  auto node_it = node_annotations.find(node_id);
+  if (node_it != node_annotations.end()) {
+    auto it = node_it->second.find(key);
+    if (it != node_it->second.end()) {
+      *value = it->second.c_str();
+    } else {
+      *value = nullptr;
+    }
+  } else {
+    *value = nullptr;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelRemoveDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key) {
+  if (!compiled_model || !key) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& node_annotations = const_cast<std::unordered_map<
+      uint64_t, std::unordered_map<std::string, std::string>>&>(
+      buffer_context->GetDispatchNodeAnnotations());
+  auto node_it = node_annotations.find(node_id);
+  if (node_it != node_annotations.end()) {
+    node_it->second.erase(key);
+    if (node_it->second.empty()) {
+      node_annotations.erase(node_it);
+    }
+  }
+
+  return kLiteRtStatusOk;
+}
+
+// Edge annotation functions
+LiteRtStatus LiteRtCompiledModelSetDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key,
+    const char* value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& edge_annotations = const_cast<std::unordered_map<
+      uint64_t, std::unordered_map<std::string, std::string>>&>(
+      buffer_context->GetDispatchEdgeAnnotations());
+  edge_annotations[edge_id][key] = value;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelGetDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key,
+    const char** value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    *value = nullptr;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  const auto& edge_annotations = buffer_context->GetDispatchEdgeAnnotations();
+  auto edge_it = edge_annotations.find(edge_id);
+  if (edge_it != edge_annotations.end()) {
+    auto it = edge_it->second.find(key);
+    if (it != edge_it->second.end()) {
+      *value = it->second.c_str();
+    } else {
+      *value = nullptr;
+    }
+  } else {
+    *value = nullptr;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelRemoveDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key) {
+  if (!compiled_model || !key) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& edge_annotations = const_cast<std::unordered_map<
+      uint64_t, std::unordered_map<std::string, std::string>>&>(
+      buffer_context->GetDispatchEdgeAnnotations());
+  auto edge_it = edge_annotations.find(edge_id);
+  if (edge_it != edge_annotations.end()) {
+    edge_it->second.erase(key);
+    if (edge_it->second.empty()) {
+      edge_annotations.erase(edge_it);
+    }
+  }
+
+  return kLiteRtStatusOk;
+}
 #ifdef __cplusplus
 }  // extern "C"
 #endif
