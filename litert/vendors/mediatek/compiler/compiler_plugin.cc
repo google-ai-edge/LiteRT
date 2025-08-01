@@ -20,6 +20,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -72,6 +74,7 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt6985", "mt6985"},
     {"mt6989", "mt6989"},
     {"mt6991", "mt6991"},
+    {"mt6993", "mt6993"},
 };
 
 constexpr LiteRtOpCode kSupportedOps[] = {
@@ -104,6 +107,14 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflPadv2,
     kLiteRtOpCodeTflHardSwish,
     kLiteRtOpCodeTflAveragePool2d,
+    kLiteRtOpCodeTflReduceMax,
+    kLiteRtOpCodeTflSqrt,
+    kLiteRtOpCodeTflDiv,
+    kLiteRtOpCodeTflCast,
+    kLiteRtOpCodeTflMaximum,
+    kLiteRtOpCodeTflRelu,
+    kLiteRtOpCodeTflAbs,
+    kLiteRtOpCodeTflGreater,
     kLiteRtOpCodeShloComposite,
 };
 // clang-format on
@@ -287,6 +298,59 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 
 namespace {
 
+Expected<char*> SetNeuronEnvironment(const char* soc_model) {
+#if __ANDROID__
+  char dla_directory_template[] =
+      "/data/local/tmp/runfiles/tempdir_dla.XXXXXXX";
+#else
+  char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
+#endif
+
+  char* dla_directory_name = mkdtemp(dla_directory_template);
+  if (dla_directory_name == nullptr) {
+    int error_code = errno;
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to make DLA temporary directory, (errno=%d)",
+               error_code);
+    return Error(kLiteRtStatusErrorFileIO,
+                 "Failed to make DLA temporary directory");
+  }
+
+  // A null soc_model is passed when performing JIT compilation.
+  if (soc_model) {
+    setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
+  }
+  setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, 1);
+
+  return dla_directory_name;
+}
+
+Expected<std::tuple<std::optional<const char*>, NeuronAdapterApi::Ptr>>
+CreateNeuronAdapterApi(const char* soc_model,
+                       LiteRtCompilerPlugin compiler_plugin) {
+  auto opt_soc_model = soc_model ? FindSocModel(soc_model) : std::nullopt;
+  if (opt_soc_model) {
+    LITERT_LOG(LITERT_ERROR, "Compiling for MediaTek architecture: %s",
+               *opt_soc_model);
+  } else if (soc_model) {
+    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
+    return Error(kLiteRtStatusErrorInvalidArgument,
+                 "Failed to create Neuron Adapter API");
+  }
+
+  if (!compiler_plugin->GetMediatekOptions()) {
+    LITERT_ASSIGN_OR_RETURN(compiler_plugin->GetMediatekOptions(),
+                            ::litert::mediatek::MediatekOptions::Create());
+  }
+
+  // Initialize SDK and load mediatek shared libraries.
+  LITERT_ASSIGN_OR_RETURN(auto api, NeuronAdapterApi::Create(
+                                        /*shared_library_dir=*/std::nullopt,
+                                        compiler_plugin->GetMediatekOptions()));
+
+  return std::make_tuple(opt_soc_model, std::move(api));
+}
+
 // TODO update this function to match the new legalizations.
 bool IsOpSupported(const litert::Op& op) {
   // NOTE: Currently we are demoing by just mapping simple f32 mul ops.  Use a
@@ -306,15 +370,71 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  litert::Subgraph graph(subgraph);
-  for (const auto& op : graph.Ops()) {
-    if (!IsOpSupported(op)) {
-      continue;
-    }
+  // Initialize SDK and load mediatek shared libraries.
+  LITERT_ASSIGN_OR_RETURN(auto dla_directory_name,
+                          SetNeuronEnvironment(soc_model));
+  auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
+  if (!soc_and_api) {
+    rmdir(dla_directory_name);
+    return soc_and_api.Error().Status();
+  }
+  auto& [opt_soc_model, neuron_adapter_api] = soc_and_api.Value();
 
-    LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+  litert::Subgraph graph(subgraph);
+  auto num_ops = graph.Ops().size();
+  const auto& ops = graph.Ops();
+
+  // If an unknown operation is not supported in the SDK, use the supported list
+  // directly to determine whether the operations are supported. If they are,
+  // try to get the supported status of the whole model from the compiler.
+  if (!neuron_adapter_api->IsFeatureEnabled(
+          litert::mediatek::NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP)) {
+    for (const auto& op : ops) {
+      if (!IsOpSupported(op)) {
+        continue;
+      }
+      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, op.Get(), 0));
+    }
+    return kLiteRtStatusOk;
+  }
+  LITERT_LOG(LITERT_INFO, "Use Get supported operations for partition.");
+
+  Expected<void> status;
+  // Mark un-legalized ops as unknown ops.
+  std::unordered_set<int> unknown_op_indices;
+  for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
+    const auto& op = ops[op_idx];
+    if (!IsOpSupported(op)) {
+      unknown_op_indices.insert(op_idx);
+    }
   }
 
+  // Create Model of the subgraph
+  LITERT_ASSIGN_OR_RETURN(auto model, neuron_adapter_api->CreateModel());
+  OperandMap operand_map(*neuron_adapter_api, model.get());
+  status = CreateModel(*neuron_adapter_api, graph, "get supported graph",
+                       model.get(), &operand_map, &unknown_op_indices);
+  if (!status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+    return status.Error().Status();
+  }
+
+  // Get supported operations of the subgraph
+  auto support_flags = std::make_unique<bool[]>(num_ops);
+  status = GetSupportedOperations(
+      *neuron_adapter_api, model.get(), opt_soc_model,
+      compiler_plugin->GetMediatekOptions(),
+      compiler_plugin->GetSubgraphIndex(), support_flags.get(), num_ops);
+
+  if (!status) {
+    LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
+    return status.Error().Status();
+  }
+  for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
+    if (support_flags[op_idx]) {
+      LITERT_RETURN_IF_ERROR(LiteRtPushOp(selected_ops, ops[op_idx].Get(), 0));
+    }
+  }
   return kLiteRtStatusOk;
 }
 
@@ -325,15 +445,12 @@ Expected<std::vector<uint8_t>> CompilePartition(
     const std::string& graph_name, std::optional<std::string> soc_model,
     ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
     const int subgraph_index) {
-  auto model = neuron_adapter_api.CreateModel();
-  if (!model) {
-    return model.Error();
-  }
-  OperandMap operand_map(neuron_adapter_api, model->get());
+  LITERT_ASSIGN_OR_RETURN(auto model, neuron_adapter_api.CreateModel());
+  OperandMap operand_map(neuron_adapter_api, model.get());
   LITERT_RETURN_IF_ERROR(CreateModel(neuron_adapter_api, partition, graph_name,
-                                     model->get(), &operand_map));
+                                     model.get(), &operand_map));
 
-  auto compilation = CompileModel(neuron_adapter_api, model->get(), soc_model,
+  auto compilation = CompileModel(neuron_adapter_api, model.get(), soc_model,
                                   mediatek_opts, subgraph_index);
   if (!compilation) {
     return compilation.Error();
@@ -362,27 +479,8 @@ Expected<std::vector<uint8_t>> CompilePartition(
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-#if __ANDROID__
-  char dla_directory_template[] =
-      "/data/local/tmp/runfiles/tempdir_dla.XXXXXXX";
-#else
-  char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
-#endif
-
-  char* dla_directory_name = mkdtemp(dla_directory_template);
-  if (dla_directory_name == nullptr) {
-    int error_code = errno;
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to make DLA temporary directory, (errno=%d)",
-               error_code);
-    return kLiteRtStatusErrorFileIO;
-  }
-
-  // A null soc_model is passed when performing JIT compilation.
-  if (soc_model) {
-    setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
-  }
-  setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, 1);
+  LITERT_ASSIGN_OR_RETURN(auto dla_directory_name,
+                          SetNeuronEnvironment(soc_model));
 
   auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
@@ -391,27 +489,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
              "Starting MediaTek Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
 
-  auto opt_soc_model = soc_model ? FindSocModel(soc_model) : std::nullopt;
-  if (opt_soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Compiling for MediaTek architecture: %s",
-               *opt_soc_model);
-  } else if (soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
+  auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
+  if (!soc_and_api) {
     rmdir(dla_directory_name);
-    return kLiteRtStatusErrorInvalidArgument;
+    return soc_and_api.Error().Status();
   }
-
-  if (!compiler_plugin->GetMediatekOptions()) {
-    LITERT_ASSIGN_OR_RETURN(compiler_plugin->GetMediatekOptions(),
-                            ::litert::mediatek::MediatekOptions::Create());
-  }
-
-  auto api = NeuronAdapterApi::Create(/*shared_library_dir=*/std::nullopt,
-                                      compiler_plugin->GetMediatekOptions());
-  if (!api) {
-    rmdir(dla_directory_name);
-    return api.Error().Status();
-  }
+  auto& [opt_soc_model, api] = soc_and_api.Value();
 
   auto result = std::make_unique<LiteRtCompiledResultT>();
 
@@ -420,7 +503,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
     // TODO(b/424234937): Remove this once the bug is fixed.
     compiler_plugin->SetSubgraphIndex(i);
-    auto bytecode = CompilePartition(**api, subgraph, graph_name, opt_soc_model,
+    auto bytecode = CompilePartition(*api, subgraph, graph_name, opt_soc_model,
                                      compiler_plugin->GetMediatekOptions(),
                                      compiler_plugin->GetSubgraphIndex());
     rmdir(dla_directory_name);

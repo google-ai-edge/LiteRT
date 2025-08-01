@@ -18,16 +18,15 @@ namespace litert::mediatek {
 
 Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
                                                int32_t tensor_flags) {
-  auto ranked_tensor_type = t.RankedTensorType();
-  if (!ranked_tensor_type) {
-    return ranked_tensor_type.Error();
-  }
+  auto element_type = t.ElementType();
 
   const bool use_int8_asymm_signed =
       tensor_flags & NN_TENSOR_FLAG_USE_INT8_ASYMM_SIGNED;
+  const bool use_invalid_tensor_type =
+      tensor_flags & NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE;
 
-  int32_t mtk_type;
-  switch (ranked_tensor_type->ElementType()) {
+  int32_t mtk_type = -1;
+  switch (element_type) {
     case ElementType::Float32:
       mtk_type = NEURON_TENSOR_FLOAT32;
       break;
@@ -67,14 +66,35 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
                      "Int4 is not supported.");
       }
       break;
+    case ElementType::Bool:
+      mtk_type = NEURON_TENSOR_BOOL8;
+      break;
     case ElementType::Int64:
-      mtk_type = NEURON_TENSOR_INT32;
-      LITERT_LOG(LITERT_WARNING, "Currently force casting int64 to int32.");
+      if (t.HasWeights()) {
+        if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+          mtk_type = NEURON_TENSOR_INT32;
+        } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
+          mtk_type = NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL;
+        } else {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "Int64 is not supported.");
+        }
+        LITERT_LOG(LITERT_WARNING,
+                   "Currently force casting int64 to int32 on constant.");
+      }
       break;
     default:
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   absl::StrFormat("Unsupported element type: %d",
-                                   ranked_tensor_type->ElementType()));
+      break;
+  }
+  // Currently use TQ8AS as invalid tensor type
+  if (mtk_type == -1) {
+    if (use_invalid_tensor_type) {
+      mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
+    } else {
+      return Error(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("Unsupported element type: %d", element_type));
+    }
   }
   return mtk_type;
 }

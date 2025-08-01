@@ -17,13 +17,16 @@
 #include <cstdint>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "neuron/api/NeuronAdapter.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/compiler/legalizations/add_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/batch_matmul_op_legalization.h"
@@ -34,6 +37,8 @@
 #include "litert/vendors/mediatek/compiler/legalizations/legalize_helper.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mean_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/mul_op_legalization.h"
+#include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
+#include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/compiler/legalizations/reshape_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_bilinear_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/resize_nearest_neighbor_op_legalization.h"
@@ -52,15 +57,18 @@ namespace litert::mediatek {
 Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                            const litert::Subgraph& partition,
                            const std::string& model_name, NeuronModel* model,
-                           OperandMap* operand_map) {
+                           OperandMap* operand_map,
+                           std::unordered_set<int>* unknown_op_indices) {
   if (neuron_adapter_api.api().model_set_name(model, model_name.c_str()) !=
       NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure, "Failed to set model name");
   }
 
   std::vector<uint32_t> input_indices;
+  int32_t tensor_flags =
+      unknown_op_indices ? NN_TENSOR_FLAG_USE_INVALID_TENSOR_TYPE : 0;
   for (const auto& input : partition.Inputs()) {
-    auto operand_index = operand_map->GetOperandIndex(input);
+    auto operand_index = operand_map->GetOperandIndex(input, tensor_flags);
     if (!operand_index) {
       return operand_index.Error();
     }
@@ -69,7 +77,7 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
 
   std::vector<uint32_t> output_indices;
   for (const auto& output : partition.Outputs()) {
-    auto operand_index = operand_map->GetOperandIndex(output);
+    auto operand_index = operand_map->GetOperandIndex(output, tensor_flags);
     if (!operand_index) {
       return operand_index.Error();
     }
@@ -83,8 +91,17 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
                  "Failed to identify model I/Os");
   }
 
-  for (const auto& op : partition.Ops()) {
+  const auto& ops = partition.Ops();
+  for (int op_idx = 0; op_idx < ops.size(); ++op_idx) {
+    LITERT_LOG(LITERT_INFO, "Legalizing op index: %d", op_idx);
+    const auto& op = ops[op_idx];
     Expected<void> status;
+    // Map un-legalized op as unknown op to by-pass the legalization
+    if (unknown_op_indices && unknown_op_indices->count(op_idx)) {
+      LITERT_RETURN_IF_ERROR(LegalizeCommonOp(
+          neuron_adapter_api, model, *operand_map, op, NEURON_UNKNOWN));
+      continue;
+    }
     switch (op.Code()) {
       case kLiteRtOpCodeTflAdd:
         status = LegalizeAddOp(neuron_adapter_api, model, *operand_map, op);
@@ -224,12 +241,47 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_PAD_V2);
         break;
+      case kLiteRtOpCodeTflReduceMax:
+        status = LegalizeOp(neuron_adapter_api, model, *operand_map, op,
+                            NEURON_REDUCE_MAX,
+                            std::make_tuple(AddReduceMaxKeepDimsOption));
+        break;
+      case kLiteRtOpCodeTflSqrt:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_SQRT);
+        break;
+      case kLiteRtOpCodeTflDiv:
+        status =
+            LegalizeOp(neuron_adapter_api, model, *operand_map, op, NEURON_DIV,
+                       std::make_tuple(AddDivFuseActivationOption));
+        break;
+      case kLiteRtOpCodeTflCast:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_CAST);
+        break;
+      case kLiteRtOpCodeTflMaximum:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_MAXIMUM);
+        break;
+      case kLiteRtOpCodeTflRelu:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_RELU);
+        break;
+      case kLiteRtOpCodeTflAbs:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_ABS);
+        break;
+      case kLiteRtOpCodeTflGreater:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_GREATER);
+        break;
       case kLiteRtOpCodeShloComposite:
         // TODO(MTK): Check if the op name is odml.rms_norm,
         // LiteRtGetSHLOCompositeOpName currently returns an error.
         status = LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
         break;
       default:
+        LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
         return Error(kLiteRtStatusErrorRuntimeFailure, "Unsupported op");
     }
 

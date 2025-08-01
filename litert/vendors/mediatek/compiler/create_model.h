@@ -26,10 +26,10 @@
 namespace litert::mediatek {
 
 // Create a new NeuronModel Graph from given LiteRt Graph.
-Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
-                           const Subgraph& partition,
-                           const std::string& model_name, NeuronModel* model,
-                           OperandMap* operand_map);
+Expected<void> CreateModel(
+    const NeuronAdapterApi& neuron_adapter_api, const Subgraph& partition,
+    const std::string& model_name, NeuronModel* model, OperandMap* operand_map,
+    std::unordered_set<int>* unknown_op_indices = nullptr);
 
 }  // namespace litert::mediatek
 
