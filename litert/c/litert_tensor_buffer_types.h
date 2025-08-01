@@ -81,4 +81,44 @@ inline bool IsMetalMemory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
 }
 
+inline bool IsGpuBuffer(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeGlBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16;
+}
+
+inline bool IsGpuTexture(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeGlTexture ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClTexture ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuTexture ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalTexture ||
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+}
+
+inline bool IsGpuImageBuffer(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeOpenClImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBuffer ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16;
+}
+
+inline bool IsGpuFloat16Memory(LiteRtTensorBufferType buffer_type) {
+  return buffer_type == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeOpenClImageBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeWebGpuImageBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+}
+
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_
