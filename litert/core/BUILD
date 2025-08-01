@@ -129,6 +129,7 @@ cc_library(
     ],
     deps = [
         ":environment_options",
+        ":error_reporter",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
@@ -137,6 +138,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
         "//litert/runtime:gpu_environment_header",
+        "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -252,5 +254,35 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+    ],
+)
+
+cc_library(
+    name = "error_reporter",
+    srcs = ["error_reporter.cc"],
+    hdrs = ["error_reporter.h"],
+    deps = [
+        ":buffer_error_reporter",
+        "//litert/c:litert_logging",
+        "//tflite/core/api:error_reporter",
+    ],
+)
+
+cc_library(
+    name = "buffer_error_reporter",
+    srcs = ["buffer_error_reporter.cc"],
+    hdrs = ["buffer_error_reporter.h"],
+    deps = [
+        "//tflite/core/api:error_reporter",
+    ],
+)
+
+cc_test(
+    name = "error_reporter_test",
+    srcs = ["error_reporter_test.cc"],
+    deps = [
+        ":buffer_error_reporter",
+        ":error_reporter",
+        "@com_google_googletest//:gtest_main",
     ],
 )
