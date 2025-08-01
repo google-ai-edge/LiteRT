@@ -14,7 +14,13 @@
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script", "export_lrt_tflite_runtime_linkopt", "export_lrt_tflite_runtime_script")
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "metal_linkopts", "metal_opts")
+load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "litert_metal_linkopts", "litert_metal_opts")
+# copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
+# copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
+
+# copybara:uncomment LITERT_MIN_IOS_VERSION = "13.0"
+
+# copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -318,13 +324,13 @@ cc_library(
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
     ],
-    copts = metal_opts(),
+    copts = litert_metal_opts(),
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [
             "-landroid",
         ],
         "//conditions:default": [],
-    }) + gles_linkopts() + metal_linkopts(),
+    }) + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",
         ":litert_event",
@@ -337,7 +343,16 @@ cc_library(
         "//litert/runtime:tensor_buffer",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
-    ] + gles_deps(),
+    ] + gles_deps() + select({
+        "@platforms//os:ios": [
+            "//litert/runtime:metal_memory",
+        ],
+        "@platforms//os:macos": [
+            "//litert/runtime:metal_memory",
+        ],
+        "//conditions:default": [],
+    }),
+    alwayslink = 1,
 )
 
 cc_test(
@@ -510,8 +525,6 @@ cc_library(
     name = "litert_accelerator",
     srcs = ["litert_accelerator.cc"],
     hdrs = ["litert_accelerator.h"],
-    copts = metal_opts(),
-    linkopts = metal_linkopts(),
     deps = [
         ":litert_common",
         "//litert/cc:litert_expected",
@@ -562,8 +575,6 @@ cc_library(
     name = "litert_accelerator_registration",
     srcs = ["litert_accelerator_registration.cc"],
     hdrs = ["litert_accelerator_registration.h"],
-    copts = metal_opts(),
-    linkopts = metal_linkopts(),
     deps = [
         ":litert_accelerator",
         ":litert_common",
@@ -830,3 +841,36 @@ cc_library(
 # copybara:uncomment_end
 
 exports_files(srcs = glob(["litert_*.h"]))
+
+objc_library(
+    name = "litert_tensor_buffer_test_library",
+    testonly = True,
+    srcs = ["litert_tensor_buffer_test.mm"],
+    deps = [
+        ":litert_any",
+        ":litert_common",
+        ":litert_dispatch_headers",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_environment",
+        "//litert/cc:litert_any",
+        "//litert/cc:litert_layout",
+        "//litert/runtime:metal_memory",
+        "//third_party/apple_frameworks:XCTest",
+    ],
+)
+
+# copybara:uncomment_begin(google-only)
+# macos_unit_test(
+#     name = "litert_tensor_buffer_test_macos",
+#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+#     tags = ["notap"],
+#     deps = [":litert_tensor_buffer_test_library"],
+# )
+#
+# ios_unit_test(
+#     name = "litert_tensor_buffer_test_ios",
+#     minimum_os_version = LITERT_MIN_IOS_VERSION,
+#     runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+#     deps = [":litert_tensor_buffer_test_library"],
+# )
+# copybara:uncomment_end(google-only)

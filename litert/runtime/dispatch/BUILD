@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:special_rule.bzl", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_metal_opts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -93,6 +93,7 @@ cc_library(
         "//litert/c:litert_dispatch_delegate.h",
         "//litert/cc:litert_dispatch_delegate.h",
     ],
+    copts = litert_metal_opts(),
     deps = [
         ":dispatch",
         ":dispatch_opaque_options",

@@ -114,6 +114,12 @@ class TensorBuffer
       LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
       size_t size_bytes, LiteRtGLint layer);
 
+#if LITERT_HAS_METAL_SUPPORT
+  static Expected<TensorBuffer> CreateFromMetalBuffer(
+      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes);
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   // Creates a duplicate of the current TensorBuffer object. The returned
   // object is reference counted so the underlying LiteRtTensorBuffer handle is
   // not released with the destructor until the last reference is removed.
@@ -170,6 +176,14 @@ class TensorBuffer
                               "WebGPU is not supported on this platform");
 #endif
   }
+
+#if LITERT_HAS_METAL_SUPPORT
+  Expected<void*> GetMetalBuffer() const {
+    void* metal_buf;
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferMetalMemory(Get(), &metal_buf));
+    return metal_buf;
+  }
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   struct GlBuffer {
     LiteRtGLenum target;

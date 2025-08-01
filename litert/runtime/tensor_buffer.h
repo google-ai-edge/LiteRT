@@ -40,6 +40,7 @@
 #include "litert/runtime/gl_buffer.h"
 #include "litert/runtime/gl_texture.h"
 
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
@@ -47,6 +48,7 @@
 
 namespace litert::internal {
 class GpuEnvironment;
+class MetalMemory;
 }  // namespace litert::internal
 
 class LiteRtTensorBufferT {
@@ -111,6 +113,13 @@ class LiteRtTensorBufferT {
       size_t opencl_buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if LITERT_HAS_METAL_SUPPORT
+  static litert::Expected<Ptr> CreateFromMetalMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, void* metal_buffer,
+      size_t buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
+#endif  // LITERT_HAS_METAL_SUPPORT
+
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
 
@@ -143,6 +152,9 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
+#if LITERT_HAS_METAL_SUPPORT
+  litert::Expected<litert::internal::MetalMemory*> GetMetalMemory();
+#endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -206,6 +218,9 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
+                   std::unique_ptr<litert::internal::MetalMemory>,
+#endif  // LITERT_HAS_METAL_SUPPORT
                    litert::internal::CustomBuffer, litert::internal::GlBuffer,
                    litert::internal::GlTexture>;
 
@@ -241,6 +256,12 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateManagedWebGpuBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+#if LITERT_HAS_METAL_SUPPORT
+  static litert::Expected<Ptr> CreateManagedMetalMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+#endif  // LITERT_HAS_METAL_SUPPORT
 
   litert::Expected<void> IsValid();
 

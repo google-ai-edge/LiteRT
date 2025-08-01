@@ -40,6 +40,9 @@ inline bool HasFastRpcSupport() { return LiteRtHasFastRpcSupport(); }
 // Check whether LiteRT has been compiled with SyncFence support.
 inline bool HasSyncFenceSupport() { return LiteRtHasSyncFenceSupport(); }
 
+// Check whether LiteRT has been compiled with Metal support.
+inline bool HasMetalSupport() { return LiteRtHasMetalSupport(); }
+
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PLATFORM_SUPPORT_H_

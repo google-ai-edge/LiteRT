@@ -27,6 +27,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer.h"
 
+#if LITERT_HAS_METAL_SUPPORT
+#include "litert/runtime/metal_memory.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -174,6 +178,36 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
   return kLiteRtStatusOk;
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_METAL_SUPPORT
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* buffer) {
+  if (!tensor_type || !buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
+                          LiteRtTensorBufferT::CreateFromMetalMemory(
+                              env, *tensor_type, buffer_type, metal_buffer,
+                              metal_buffer_size, deallocator));
+  *buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetTensorBufferMetalMemory(
+    LiteRtTensorBuffer tensor_buffer, void** metal_buffer_addr) {
+  if (!tensor_buffer || !metal_buffer_addr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto metal_memory, tensor_buffer->GetMetalMemory());
+  void* metal_buffer_ptr = metal_memory->GetMemoryPtr();
+  *metal_buffer_addr = metal_buffer_ptr;
+  return kLiteRtStatusOk;
+}
+
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_FASTRPC_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromFastRpcBuffer(
