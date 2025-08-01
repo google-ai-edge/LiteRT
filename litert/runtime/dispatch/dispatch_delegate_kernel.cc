@@ -450,6 +450,8 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
     return Unexpected(status, "Failed to create invocation context");
   }
 
+  ApplyDispatchAnnotations(invocation_context);
+
   return invocation_context;
 }
 
@@ -774,6 +776,8 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
       }
     }
 
+    ApplyDispatchAnnotations(invocation_context);
+
     auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
     output_events.resize(num_node_outputs);
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvokeAsync(
@@ -809,6 +813,9 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
              port_connections) {
           if (is_input_port) {
             auto* invocation_context = node_invocation_contexts_[node_idx];
+
+            ApplyDispatchAnnotations(invocation_context);
+
             (void)LiteRtDispatchAttachInputEvent(invocation_context, port_idx,
                                                  event);
           }
@@ -829,6 +836,61 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
   }
 
   return {};
+}
+
+void DispatchDelegateKernel::ApplyDispatchAnnotations(
+    LiteRtDispatchInvocationContext invocation_context) {
+  if (!buffer_context_) {
+    return;
+  }
+
+  // Get the dispatch graph from the invocation context.
+  LiteRtDispatchGraph graph = nullptr;
+  if (LiteRtDispatchInvocationContextGetGraph(invocation_context, &graph) !=
+          kLiteRtStatusOk ||
+      graph == nullptr) {
+    return;
+  }
+
+  // Apply graph-level annotations.
+  const auto& annotations = buffer_context_->GetDispatchAnnotations();
+  for (const auto& [key, value] : annotations) {
+    if (auto status =
+            LiteRtDispatchAnnotateGraph(&graph, key.c_str(), value.c_str());
+        status != kLiteRtStatusOk) {
+      LITERT_LOG(LITERT_WARNING,
+                 "Failed to apply dispatch annotation %s=%s: %d", key.c_str(),
+                 value.c_str(), status);
+    }
+  }
+
+  // Apply node-specific annotations.
+  const auto& node_annotations = buffer_context_->GetDispatchNodeAnnotations();
+  for (const auto& [node_id, node_annot_map] : node_annotations) {
+    for (const auto& [key, value] : node_annot_map) {
+      if (auto status = LiteRtDispatchAnnotateNode(&graph, node_id, key.c_str(),
+                                                   value.c_str());
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply node annotation for node %lu: %s=%s: %d",
+                   node_id, key.c_str(), value.c_str(), status);
+      }
+    }
+  }
+
+  // Apply edge-specific annotations.
+  const auto& edge_annotations = buffer_context_->GetDispatchEdgeAnnotations();
+  for (const auto& [edge_id, edge_annot_map] : edge_annotations) {
+    for (const auto& [key, value] : edge_annot_map) {
+      if (auto status = LiteRtDispatchAnnotateEdge(&graph, edge_id, key.c_str(),
+                                                   value.c_str());
+          status != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply edge annotation for edge %lu: %s=%s: %d",
+                   edge_id, key.c_str(), value.c_str(), status);
+      }
+    }
+  }
 }
 
 }  // namespace litert::internal

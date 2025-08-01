@@ -15,7 +15,9 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 #define ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
+#include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -150,6 +152,47 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
+  // Sets dispatch annotations that should be propagated to dispatch graphs.
+  void SetDispatchAnnotations(
+      const std::unordered_map<std::string, std::string>& annotations) {
+    dispatch_annotations_ = annotations;
+  }
+
+  // Gets all dispatch annotations.
+  const std::unordered_map<std::string, std::string>& GetDispatchAnnotations()
+      const {
+    return dispatch_annotations_;
+  }
+  // Sets node-specific dispatch annotations.
+  void SetDispatchNodeAnnotations(
+      const std::unordered_map<uint64_t,
+                               std::unordered_map<std::string, std::string>>&
+          node_annotations) {
+    dispatch_node_annotations_ = node_annotations;
+  }
+
+  // Gets all node-specific dispatch annotations.
+  const std::unordered_map<uint64_t,
+                           std::unordered_map<std::string, std::string>>&
+  GetDispatchNodeAnnotations() const {
+    return dispatch_node_annotations_;
+  }
+
+  // Sets edge-specific dispatch annotations.
+  void SetDispatchEdgeAnnotations(
+      const std::unordered_map<uint64_t,
+                               std::unordered_map<std::string, std::string>>&
+          edge_annotations) {
+    dispatch_edge_annotations_ = edge_annotations;
+  }
+
+  // Gets all edge-specific dispatch annotations.
+  const std::unordered_map<uint64_t,
+                           std::unordered_map<std::string, std::string>>&
+  GetDispatchEdgeAnnotations() const {
+    return dispatch_edge_annotations_;
+  }
+
  private:
   LiteRtEnvironment env_;
   std::unordered_map<const TfLiteOpaqueTensor*,
@@ -164,6 +207,20 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
       const LiteRtExternalLiteRtBufferContextT&) = delete;
 
   bool async_execution_mode_ = false;
+
+  // Dispatch annotations from the compiled model to be propagated to dispatch
+  // graphs.
+  std::unordered_map<std::string, std::string> dispatch_annotations_;
+
+  // Node-specific dispatch annotations from the compiled model to be propagated
+  // to dispatch graphs.
+  std::unordered_map<uint64_t, std::unordered_map<std::string, std::string>>
+      dispatch_node_annotations_;
+
+  // Edge-specific dispatch annotations from the compiled model to be propagated
+  // to dispatch graphs.
+  std::unordered_map<uint64_t, std::unordered_map<std::string, std::string>>
+      dispatch_edge_annotations_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

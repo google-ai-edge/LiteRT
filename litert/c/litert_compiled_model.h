@@ -17,6 +17,8 @@
 
 #include <stddef.h>
 
+#include <cstdint>
+
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -153,6 +155,136 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 // Gets the profiler for the model. CompiledModel owns the profiler.
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler);
+
+// Sets a dispatch annotation on the compiled model. These annotations will be
+// propagated to dispatch graphs when they are created during model execution.
+// The annotations provide runtime hints and metadata that can be used by
+// hardware accelerators for optimization.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key (must not be null).
+// - value: the annotation value (must not be null).
+LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char* value);
+
+// Gets a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key to look up (must not be null).
+// - value: pointer to store the annotation value (will be set to null if key
+//   not found).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+//
+// Note: The returned value pointer is owned by the compiled model and should
+// not be freed or outlive the compiled model.
+LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char** value);
+
+// Removes a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key to remove (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key);
+
+// Sets a dispatch annotation for a specific node in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - node_id: the ID of the node to annotate.
+// - key: the annotation key (must not be null).
+// - value: the annotation value (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelSetDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key,
+    const char* value);
+
+// Gets a dispatch annotation for a specific node in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - node_id: the ID of the node.
+// - key: the annotation key to look up (must not be null).
+// - value: output pointer for the annotation value (must not be null).
+//          Will be set to null if the annotation doesn't exist.
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelGetDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key,
+    const char** value);
+
+// Removes a dispatch annotation from a specific node in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - node_id: the ID of the node.
+// - key: the annotation key to remove (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRemoveDispatchNodeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t node_id, const char* key);
+
+// Sets a dispatch annotation for a specific edge in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - edge_id: the ID of the edge to annotate.
+// - key: the annotation key (must not be null).
+// - value: the annotation value (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelSetDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key,
+    const char* value);
+
+// Gets a dispatch annotation for a specific edge in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - edge_id: the ID of the edge.
+// - key: the annotation key to look up (must not be null).
+// - value: output pointer for the annotation value (must not be null).
+//          Will be set to null if the annotation doesn't exist.
+//
+// Returns:
+// - kLiteRtStatusOk if successful.
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelGetDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key,
+    const char** value);
+
+// Removes a dispatch annotation from a specific edge in the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - edge_id: the ID of the edge.
+// - key: the annotation key to remove (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRemoveDispatchEdgeAnnotation(
+    LiteRtCompiledModel compiled_model, uint64_t edge_id, const char* key);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
