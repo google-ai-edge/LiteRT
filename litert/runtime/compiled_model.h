@@ -143,6 +143,11 @@ class LiteRtCompiledModelT {
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
 
+  // Resizes the specified input tensor to support dynamic shapes.
+  litert::Expected<void> ResizeInputTensor(size_t signature_index,
+                                           size_t input_index,
+                                           absl::Span<const int> dims);
+
  private:
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(

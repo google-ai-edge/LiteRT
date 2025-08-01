@@ -444,17 +444,25 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "//tflite/c:c_api_types",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
 cc_test(
     name = "litert_compiled_model_test",
-    srcs = ["litert_compiled_model_test.cc"],
-    data = ["//litert/test:testdata/simple_model.tflite"],
+    srcs = [
+        "litert_compiled_model_test.cc",
+    ],
+    data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
     deps = [
         ":litert_common",
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_environment_options",
+        ":litert_logging",
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
@@ -470,9 +478,15 @@ cc_test(
 # The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
 cc_test(
     name = "litert_compiled_model_shared_lib_test",
-    srcs = ["litert_compiled_model_test.cc"],
-    data = ["//litert/test:testdata/simple_model.tflite"],
+    srcs = [
+        "litert_compiled_model_test.cc",
+    ],
+    data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
     deps = [
+        ":litert_environment_options",
         ":litert_runtime_c_api_shared_lib",
         "//litert/test:common",
         "//litert/test:simple_model",
@@ -754,6 +768,7 @@ cc_library(
     deps = [
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
+        "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ],
 )
@@ -781,6 +796,7 @@ cc_library(
     linkstatic = 1,
     deps = [
         # only depend on headers
+        "@com_google_absl//absl/types:span",
         "@opencl_headers",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/core/api",

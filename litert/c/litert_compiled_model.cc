@@ -18,6 +18,7 @@
 
 #include <memory>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
@@ -57,8 +58,7 @@ LiteRtStatus LiteRtGetCompiledModelInputBufferRequirements(
 
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferRequirementsConst buffer_requirements_ptr,
-      compiled_model->GetInputBufferRequirements(signature_index,
-                                                     input_index));
+      compiled_model->GetInputBufferRequirements(signature_index, input_index));
   *buffer_requirements =
       const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
   return kLiteRtStatusOk;
@@ -176,12 +176,21 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler) {
-  LITERT_RETURN_IF_ERROR(
-      compiled_model != nullptr && profiler != nullptr,
-      kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && profiler != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
   LITERT_ASSIGN_OR_RETURN(LiteRtProfilerT * profiler_ptr,
                           compiled_model->GetProfiler());
   *profiler = profiler_ptr;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelResizeInputTensor(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, const int* dims, size_t dims_size) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+  LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensor(
+      signature_index, input_index, absl::MakeConstSpan(dims, dims_size)));
   return kLiteRtStatusOk;
 }
 

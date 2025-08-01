@@ -928,3 +928,82 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
 
   return true;
 }
+
+litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
+    size_t signature_index, size_t input_index, absl::Span<const int> dims) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+
+  const auto& input_names = runner->subgraph_input_names();
+  if (input_index >= input_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Input index out of range");
+  }
+
+  const auto& input_name = input_names[input_index];
+  auto* input_tensor = runner->input_tensor(input_name);
+  if (input_tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get input tensor");
+  }
+
+  // Get current tensor shape.
+  const TfLiteIntArray* current_shape_array =
+      (input_tensor->dims_signature && input_tensor->dims_signature->size > 0)
+          ? input_tensor->dims_signature
+          : input_tensor->dims;
+
+  if (!current_shape_array) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get current shape.");
+  }
+  absl::Span<const int> current_shape =
+      absl::MakeConstSpan(current_shape_array->data, current_shape_array->size);
+
+  if (current_shape.size() != dims.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "New shape rank does not match current shape rank.");
+  }
+
+  // Check if the tensor has dynamic dimensions and if the new dims are
+  // compatible with the current one.
+  bool has_dynamic_shape = false;
+  for (size_t i = 0; i < current_shape.size(); ++i) {
+    if (current_shape[i] == -1) {
+      has_dynamic_shape = true;
+    } else if (current_shape[i] != dims[i]) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "New shape is not compatible with current shape.");
+    }
+  }
+  if (!has_dynamic_shape) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Tensor does not have a dynamic shape.");
+  }
+
+  // Resize the input tensor using TFLite's SignatureRunner API
+  const auto status = runner->ResizeInputTensor(
+      input_name, std::vector<int>(dims.begin(), dims.end()));
+  if (status != kTfLiteOk) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to resize input tensor");
+  }
+
+  // Clear cached buffer requirements for this tensor
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, input_tensor));
+  cpu_buffer_requirements_.erase(tensor_id);
+
+  return {};
+}

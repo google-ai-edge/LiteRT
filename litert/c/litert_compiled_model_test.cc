@@ -25,6 +25,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -173,6 +175,121 @@ TEST(CompiledModelTest, Basic) {
   for (auto tensor_buffer : output_tensor_buffers) {
     LiteRtDestroyTensorBuffer(tensor_buffer);
   }
+}
+
+TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
+  // Use the dynamic model for testing resize functionality
+  auto path = testing::GetTestFilePath(kDynamicModelFileName);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // (?, 2, 3) => (1, 2, 3)
+  const int new_dims[] = {1, 2, 3};
+  ASSERT_EQ(
+      LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                           /*signature_index=*/0,
+                                           /*input_index=*/0, new_dims, 3),
+      kLiteRtStatusOk);
+
+  // Get new buffer requirements after resize
+  LiteRtTensorBufferRequirements requirements;
+  ASSERT_EQ(LiteRtGetCompiledModelInputBufferRequirements(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                &requirements),
+            kLiteRtStatusOk);
+
+  size_t resized_input_tensor_size;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(
+                requirements, &resized_input_tensor_size),
+            kLiteRtStatusOk);
+
+  // Verify that the size has doubled (batch size doubled)
+  LITERT_LOG(LITERT_INFO, "New size: %zu", resized_input_tensor_size);
+  EXPECT_EQ(resized_input_tensor_size, 1 * 2 * 3 * sizeof(float));
+
+  // Test error cases
+  // Invalid signature index
+  EXPECT_NE(
+      LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                           /*signature_index=*/999,
+                                           /*input_index=*/0, new_dims, 3),
+      kLiteRtStatusOk);
+
+  // Invalid input index
+  EXPECT_NE(
+      LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                           /*signature_index=*/0,
+                                           /*input_index=*/999, new_dims, 3),
+      kLiteRtStatusOk);
+
+  // Empty dims
+  EXPECT_NE(LiteRtCompiledModelResizeInputTensor(
+                compiled_model, /*signature_index=*/0, /*input_index=*/0,
+                new_dims, 0),
+            kLiteRtStatusOk);
+
+  // Cleanup
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(CompiledModelTest, ResizeInputTensorWithStaticModel) {
+  // Use the simple model to ensure resize will error out.
+  auto path = testing::GetTestFilePath(kModelFileName);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // (?, 2, 3) => (1, 2, 3)
+  const int new_dims[] = {1, 2, 3};
+  ASSERT_NE(
+      LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                           /*signature_index=*/0,
+                                           /*input_index=*/0, new_dims, 3),
+      kLiteRtStatusOk);
+
+  // Cleanup
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
 }
 
 }  // namespace
