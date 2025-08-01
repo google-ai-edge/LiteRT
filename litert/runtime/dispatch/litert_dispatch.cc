@@ -572,3 +572,18 @@ LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
   INVOKE_GRAPH_FUNC(invocation_context_create_from_graph, device_context, graph,
                     invocation_context);
 }
+
+LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
+  if (!invocation_context || !graph) {
+    LITERT_LOG(LITERT_ERROR, "Null input");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!TheApi.graph_interface ||
+      !TheApi.graph_interface->invocation_context_get_graph) {
+    LITERT_LOG(LITERT_ERROR, "invocation_context_get_graph not found");
+    return kLiteRtStatusErrorUnsupported;
+  }
+  INVOKE_GRAPH_FUNC(invocation_context_get_graph, invocation_context, graph);
+}

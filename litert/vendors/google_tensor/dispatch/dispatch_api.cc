@@ -567,6 +567,16 @@ LiteRtStatus InvocationContextCreateFromGraph(
   }
 }
 
+LiteRtStatus InvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
+  if (!invocation_context || !graph) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *graph = invocation_context->graph();
+  return kLiteRtStatusOk;
+}
+
 }  // namespace google_tensor
 }  // namespace litert
 
@@ -622,6 +632,8 @@ LiteRtDispatchGraphInterface TheGraphInterface = {
     .annotate_edge = litert::google_tensor::AnnotateEdge,
     .invocation_context_create_from_graph =
         litert::google_tensor::InvocationContextCreateFromGraph,
+    .invocation_context_get_graph =
+        litert::google_tensor::InvocationContextGetGraph,
 };
 
 LiteRtDispatchApi TheApi = {

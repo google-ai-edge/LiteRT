@@ -143,6 +143,11 @@ class LiteRtCompiledModelT {
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
 
+  // Returns the external buffer context which contains dispatch annotations.
+  LiteRtExternalLiteRtBufferContextT* GetBufferContext() {
+    return buffer_context_.get();
+  }
+
  private:
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(
