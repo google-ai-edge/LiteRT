@@ -37,6 +37,10 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+    ],
 )
 
 cc_test(

@@ -16,7 +16,6 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_RUNTIME_OPTIONS_H_
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 namespace litert {
@@ -41,9 +40,6 @@ class RuntimeOptions : public OpaqueOptions {
   Expected<bool> GetShloCompositeInlining() const;
   Expected<void> SetEnableProfiling(bool enable_profiling);
   Expected<bool> GetEnableProfiling() const;
-  Expected<void> SetErrorReporterMode(
-      LiteRtErrorReporterMode error_reporter_mode);
-  Expected<LiteRtErrorReporterMode> GetErrorReporterMode() const;
 };
 
 }  // namespace litert

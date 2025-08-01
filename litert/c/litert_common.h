@@ -245,16 +245,6 @@ typedef enum {
   kLiteRtGpuBackendWebGpu = 2,
 } LiteRtGpuBackend;
 
-// Error reporter mode enum
-typedef enum LiteRtErrorReporterMode {
-  // No error reporting (errors are ignored)
-  kLiteRtErrorReporterModeNone = 0,
-  // Default stderr error reporter
-  kLiteRtErrorReporterModeStderr = 1,
-  // Buffer error reporter that collects errors for later retrieval
-  kLiteRtErrorReporterModeBuffer = 2,
-} LiteRtErrorReporterMode;
-
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int LiteRtHwAcceleratorSet;
 
