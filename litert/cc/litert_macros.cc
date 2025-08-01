@@ -75,54 +75,53 @@ ErrorStatusBuilder::ErrorStatusBuilder(absl::Status&& status,
       loc_(loc) {}
 
 absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
-  PrintLog();
   switch (error_.Status()) {
     case kLiteRtStatusOk:
       return absl::OkStatus();
     case kLiteRtStatusErrorInvalidArgument:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusErrorMemoryAllocationFailure:
-      return absl::ResourceExhaustedError(error_.Message());
+      return absl::ResourceExhaustedError(LogMessage());
     case kLiteRtStatusErrorRuntimeFailure:
-      return absl::InternalError(error_.Message());
+      return absl::InternalError(LogMessage());
     case kLiteRtStatusErrorMissingInputTensor:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusErrorUnsupported:
-      return absl::UnimplementedError(error_.Message());
+      return absl::UnimplementedError(LogMessage());
     case kLiteRtStatusErrorNotFound:
-      return absl::NotFoundError(error_.Message());
+      return absl::NotFoundError(LogMessage());
     case kLiteRtStatusErrorTimeoutExpired:
-      return absl::DeadlineExceededError(error_.Message());
+      return absl::DeadlineExceededError(LogMessage());
     case kLiteRtStatusErrorWrongVersion:
-      return absl::FailedPreconditionError(error_.Message());
+      return absl::FailedPreconditionError(LogMessage());
     case kLiteRtStatusErrorUnknown:
-      return absl::UnknownError(error_.Message());
+      return absl::UnknownError(LogMessage());
     case kLiteRtStatusErrorAlreadyExists:
-      return absl::AlreadyExistsError(error_.Message());
+      return absl::AlreadyExistsError(LogMessage());
     case kLiteRtStatusErrorFileIO:
-      return absl::UnavailableError(error_.Message());
+      return absl::UnavailableError(LogMessage());
     case kLiteRtStatusErrorInvalidFlatbuffer:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusErrorDynamicLoading:
-      return absl::UnavailableError(error_.Message());
+      return absl::UnavailableError(LogMessage());
     case kLiteRtStatusErrorSerialization:
-      return absl::InternalError(error_.Message());
+      return absl::InternalError(LogMessage());
     case kLiteRtStatusErrorCompilation:
-      return absl::InternalError(error_.Message());
+      return absl::InternalError(LogMessage());
     case kLiteRtStatusErrorIndexOOB:
-      return absl::OutOfRangeError(error_.Message());
+      return absl::OutOfRangeError(LogMessage());
     case kLiteRtStatusErrorInvalidIrType:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusErrorInvalidGraphInvariant:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusErrorGraphModification:
-      return absl::InternalError(error_.Message());
+      return absl::InternalError(LogMessage());
     case kLiteRtStatusErrorInvalidToolConfig:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
     case kLiteRtStatusLegalizeNoMatch:
-      return absl::NotFoundError(error_.Message());
+      return absl::NotFoundError(LogMessage());
     case kLiteRtStatusErrorInvalidLegalization:
-      return absl::InvalidArgumentError(error_.Message());
+      return absl::InvalidArgumentError(LogMessage());
   }
 }
 
