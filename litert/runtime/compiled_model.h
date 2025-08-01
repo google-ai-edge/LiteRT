@@ -40,6 +40,7 @@
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/core/api/error_reporter.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/model_builder.h"
@@ -147,6 +148,17 @@ class LiteRtCompiledModelT {
   litert::Expected<void> ResizeInputTensor(size_t signature_index,
                                            size_t input_index,
                                            absl::Span<const int> dims);
+
+  // Error reporter APIs
+
+  // Reports an error. Thread-safe.
+  void ReportError(const char* format, ...);
+
+  // Clears all errors (only available in buffer mode)
+  litert::Expected<void> ClearErrors();
+
+  // Gets all error messages (only available in buffer mode)
+  litert::Expected<std::string> GetErrorMessages();
 
  private:
   // Helper function to automatically resize input tensor based on shape change
@@ -301,6 +313,9 @@ class LiteRtCompiledModelT {
   // The profiler used by the compiled model. This is used to forward the
   // profiler events to the TFLite interpreter.
   LiteRtProfilerT* profiler_ = nullptr;
+
+  // The error reporter used by the compiled model
+  std::unique_ptr<tflite::ErrorReporter> error_reporter_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

@@ -68,4 +68,23 @@ LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsEnableProfiling(
     runtime_options, &enable_profiling));
 return enable_profiling;
 }
+
+Expected<void> RuntimeOptions::SetErrorReporterMode(
+    LiteRtErrorReporterMode error_reporter_mode) {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetRuntimeOptionsErrorReporterMode(
+      runtime_options, error_reporter_mode));
+  return {};
+}
+
+Expected<LiteRtErrorReporterMode> RuntimeOptions::GetErrorReporterMode() const {
+  LiteRtRuntimeOptions runtime_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindRuntimeOptions(Get(), &runtime_options));
+  LiteRtErrorReporterMode error_reporter_mode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetRuntimeOptionsErrorReporterMode(
+      runtime_options, &error_reporter_mode));
+  return error_reporter_mode;
+}
+
 }  // namespace litert

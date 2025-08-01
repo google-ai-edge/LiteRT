@@ -330,8 +330,10 @@ cc_library(
         "//litert/cc/internal:litert_event",
         "//litert/cc/internal:litert_options",
         "//litert/compiler/plugin:compiler_plugin",
+        "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",
+        "//litert/core:error_reporter",
         "//litert/core:options",
         "//litert/core/model",
         "//litert/core/model:model_serialize",
@@ -373,6 +375,7 @@ cc_test(
     tags = ["requires-gpu-nvidia"],
     deps = [
         ":compiled_model",
+        ":litert_runtime_options",
         ":tensor_buffer",
         ":tfl_utils",
         "//litert/c:litert_common",
@@ -386,6 +389,7 @@ cc_test(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/core:options",
         "//litert/core/model",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -497,6 +501,7 @@ cc_library(
 cc_library(
     name = "litert_runtime_options",
     hdrs = ["litert_runtime_options.h"],
+    deps = ["//litert/c:litert_common"],
 )
 
 cc_library(

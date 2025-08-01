@@ -69,20 +69,40 @@ LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
 }
 
 LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
-  LiteRtRuntimeOptions options, bool enable_profiling) {
-LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-    << "options is null.";
-options->enable_profiling = enable_profiling;
-return kLiteRtStatusOk;
+    LiteRtRuntimeOptions options, bool enable_profiling) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  options->enable_profiling = enable_profiling;
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetRuntimeOptionsEnableProfiling(
-  LiteRtRuntimeOptions options, bool* enable_profiling) {
-LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-    << "options is null.";
-LITERT_RETURN_IF_ERROR(enable_profiling,
-                       litert::ErrorStatusBuilder::InvalidArgument())
-    << "enable_profiling is null.";
-*enable_profiling = options->enable_profiling;
-return kLiteRtStatusOk;
+    LiteRtRuntimeOptions options, bool* enable_profiling) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(enable_profiling,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "enable_profiling is null.";
+  *enable_profiling = options->enable_profiling;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options, LiteRtErrorReporterMode error_reporter_mode) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  options->error_reporter_mode = error_reporter_mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetRuntimeOptionsErrorReporterMode(
+    LiteRtRuntimeOptions options,
+    LiteRtErrorReporterMode* error_reporter_mode) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(error_reporter_mode,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "error_reporter_mode is null.";
+  *error_reporter_mode = options->error_reporter_mode;
+  return kLiteRtStatusOk;
 }
