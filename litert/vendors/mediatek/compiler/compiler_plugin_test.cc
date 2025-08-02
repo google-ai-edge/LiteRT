@@ -69,7 +69,7 @@ TEST(TestMediatekPlugin, GetConfigInfo) {
   ASSERT_EQ(LiteRtGetNumCompilerPluginSupportedSocModels(
                 plugin.get(), &num_supported_soc_models),
             kLiteRtStatusOk);
-  ASSERT_EQ(num_supported_soc_models, 12);
+  ASSERT_EQ(num_supported_soc_models, 13);
 
   const char* config_id;
   ASSERT_EQ(
@@ -85,9 +85,8 @@ TEST(TestMediatekPlugin, PartitionAdd) {
   auto subgraph = model.Subgraph(0);
   ASSERT_TRUE(subgraph.HasValue());
   LiteRtOpListT selected_op_list;
-  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/nullptr,
-                                          subgraph->Get(),
-                                          &selected_op_list),
+  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"mt6989",
+                                          subgraph->Get(), &selected_op_list),
             kLiteRtStatusOk);
   const auto selected_ops = selected_op_list.Values();
 

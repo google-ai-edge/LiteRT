@@ -33,12 +33,30 @@ struct AHardwareBuffer {};
 
 namespace litert::mediatek {
 
+/** Workaround for the adapter header without definition */
+/* Extended data type -A tensor of 32 bit signed integers that represent real
+ * numbers. */
+#define NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL 9014
+
+/** Workaround for the adapter header without definition */
+/* NeuronOperationType */
+#define NEURON_UNKNOWN static_cast<NeuronOperationType>(10001)
+
 static constexpr const char* kExtensionGeneralOpration =
     "com.mediatek.general_operation";
 // Extension operand
 enum {
   ADAPTER_EXTENSION_GENERAL_OPERAND_ARGSTRING = 0x0100,
   ADAPTER_EXTENSION_GENERAL_OPERATION_TYPE = 0x0000,
+};
+
+typedef enum {
+  NEURON_FEATURE_UNKNOWN_OP,
+  NEURON_FEATURE_COUNT,
+} NeuronFeatureType;
+
+const NeuronRuntimeVersion kNeuronFeatureMinVersion[NEURON_FEATURE_COUNT] = {
+    {8, 2, 24},  // NEURON_FEATURE_UNKNOWN_OP
 };
 
 using NeuronModelPtr = std::unique_ptr<NeuronModel, void (*)(NeuronModel*)>;
@@ -81,6 +99,10 @@ class NeuronAdapterApi {
   Expected<NeuronExecutionPtr> CreateExecution(
       NeuronCompilation* compilation) const;
 
+  litert::Expected<void> GetNeuronVersion();
+
+  bool IsFeatureEnabled(NeuronFeatureType feature) const;
+
  private:
   NeuronAdapterApi();
   litert::Expected<void> LoadSymbols(
@@ -93,6 +115,7 @@ class NeuronAdapterApi {
   // destroyed.
   SharedLibrary dlib_;
   std::unique_ptr<Api> api_;
+  NeuronRuntimeVersion runtime_version_;
 };
 
 // This is not part of the provided NeuronAdapter header for some reason.
@@ -163,6 +186,8 @@ struct NeuronAdapterApi::Api {
       compilation_set_l1_memory_size_kb = nullptr;
   decltype(&NeuronCompilation_setOptimizationHint)
       compilation_set_optimization_hint = nullptr;
+  decltype(&NeuronCompilation_getSupportedOperations)
+      compilation_get_supported_opertations = nullptr;
 };
 
 }  // namespace litert::mediatek

@@ -87,7 +87,9 @@ Expected<void> LegalizeFullyConnectedOp(
   auto output_operand = OperandType::Create(op.Outputs()[0]);
   std::vector<uint32_t> output_indices;
 
-  if (GetRank(op.Outputs()[0]) > 2) {
+  if (!neuron_adapter_api.IsFeatureEnabled(
+          NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP) &&
+      GetRank(op.Outputs()[0]) > 2) {
     // if output_operand shape <B, K, N>, reshape to <B * K, N>
     auto last_dim = output_operand->GetDimension().back();
     auto elements = output_operand->GetElementCount();
@@ -112,7 +114,9 @@ Expected<void> LegalizeFullyConnectedOp(
                  "Failed to set NEURON_FULLY_CONNECTED operation");
   }
 
-  if (GetRank(op.Outputs()[0]) > 2) {
+  if (!neuron_adapter_api.IsFeatureEnabled(
+          NeuronFeatureType::NEURON_FEATURE_UNKNOWN_OP) &&
+      GetRank(op.Outputs()[0]) > 2) {
     // intermediate as reshape input
     input_indices = {output_indices.back()};
     auto output_operand = operand_map.GetOperandIndex(op.Outputs()[0]);

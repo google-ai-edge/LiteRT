@@ -27,6 +27,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
@@ -56,6 +57,8 @@ litert::Expected<NeuronAdapterApi::Ptr> NeuronAdapterApi::Create(
                status.Error().Message().c_str());
     return status.Error();
   }
+
+  LITERT_RETURN_IF_ERROR(neuron_adapter_api->GetNeuronVersion());
 
   return neuron_adapter_api;
 }
@@ -169,6 +172,8 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
             api_->compilation_set_l1_memory_size_kb);
   LOAD_SYMB(NeuronCompilation_setOptimizationHint,
             api_->compilation_set_optimization_hint);
+  LOAD_SYMB(NeuronCompilation_getSupportedOperations,
+            api_->compilation_get_supported_opertations);
 
   LITERT_LOG(LITERT_INFO, "NeuronAdapter symbols loaded");
   return {};
@@ -216,6 +221,36 @@ Expected<NeuronExecutionPtr> NeuronAdapterApi::CreateExecution(
                          "Failed to create execution");
   }
   return NeuronExecutionPtr{execution, api().execution_free};
+}
+
+litert::Expected<void> NeuronAdapterApi::GetNeuronVersion() {
+  if (api().get_version(&runtime_version_) != NEURON_NO_ERROR) {
+    LITERT_LOG(LITERT_ERROR, "Fail to get neuron api version");
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Fail to get neuron api version");
+  }
+  LITERT_LOG(LITERT_INFO, "Neuron api version: %d.%d.%d",
+             static_cast<int>(runtime_version_.major),
+             static_cast<int>(runtime_version_.minor),
+             static_cast<int>(runtime_version_.patch));
+  return {};
+}
+
+bool NeuronAdapterApi::IsFeatureEnabled(NeuronFeatureType feature) const {
+  if (feature < 0 || feature >= NEURON_FEATURE_COUNT) {
+    return false;
+  }
+
+  auto is_version_greater = [this](const NeuronRuntimeVersion& min_ver) {
+    if (runtime_version_.major > min_ver.major) return true;
+    if (runtime_version_.major < min_ver.major) return false;
+    if (runtime_version_.minor > min_ver.minor) return true;
+    if (runtime_version_.minor < min_ver.minor) return false;
+    if (runtime_version_.patch >= min_ver.patch) return true;
+    return false;
+  };
+
+  return is_version_greater(kNeuronFeatureMinVersion[feature]);
 }
 
 }  // namespace mediatek

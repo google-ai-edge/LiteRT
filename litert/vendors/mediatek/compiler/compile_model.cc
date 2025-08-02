@@ -34,7 +34,7 @@ Expected<NeuronCompilationPtr> CompileModel(
     const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
     std::optional<std::string> soc_model,
     ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
-    const int subgraph_index) {
+    const int subgraph_index, bool get_supported_mode) {
   // LITERT_USE_JIT is automatically defined based on the build target.
   // It is defined on devices with MediaTek hardwares.
 #if LITERT_USE_JIT
@@ -148,6 +148,12 @@ Expected<NeuronCompilationPtr> CompileModel(
                  "Failed to set optimization string");
   }
 
+  // NeuronCompilation_getSupportedOperations must be called before
+  // calling NeuronCompilation_finish
+  if (get_supported_mode) {
+    return compilation;
+  }
+
   if (auto status =
           neuron_adapter_api.api().compilation_finish(compilation->get());
       status != NEURON_NO_ERROR) {
@@ -158,6 +164,30 @@ Expected<NeuronCompilationPtr> CompileModel(
   }
 
   return compilation;
+}
+
+Expected<void> GetSupportedOperations(
+    const NeuronAdapterApi& neuron_adapter_api, NeuronModel* model,
+    std::optional<std::string> soc_model,
+    ::litert::Expected<litert::mediatek::MediatekOptions>& mediatek_opts,
+    const int subgraph_index, bool* support_flags, int num_ops) {
+  auto compilation =
+      CompileModel(neuron_adapter_api, model, soc_model, mediatek_opts,
+                   subgraph_index, /*get_supported_mode*/ true);
+  if (!compilation) {
+    return compilation.Error();
+  }
+  if (auto status =
+          neuron_adapter_api.api().compilation_get_supported_opertations(
+              compilation->get(), num_ops, support_flags);
+      status != NEURON_NO_ERROR) {
+    LITERT_LOG(LITERT_INFO,
+               "NeuronCompilation_getSupportedOperations failed with error %d",
+               status);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to get supported op of compilation");
+  }
+  return {};
 }
 
 }  // namespace litert::mediatek
