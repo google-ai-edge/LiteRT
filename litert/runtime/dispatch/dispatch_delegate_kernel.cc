@@ -450,6 +450,29 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
     return Unexpected(status, "Failed to create invocation context");
   }
 
+  // Apply dispatch annotations from the compiled model
+  if (buffer_context_) {
+    const auto& annotations = buffer_context_->GetDispatchAnnotations();
+    if (!annotations.empty()) {
+      // Get the dispatch graph from the invocation context
+      LiteRtDispatchGraph graph = nullptr;
+      if (LiteRtDispatchInvocationContextGetGraph(invocation_context, &graph) ==
+              kLiteRtStatusOk &&
+          graph != nullptr) {
+        // Apply annotations to the dispatch graph
+        for (const auto& [key, value] : annotations) {
+          if (auto status = LiteRtDispatchAnnotateGraph(&graph, key.c_str(),
+                                                        value.c_str());
+              status != kLiteRtStatusOk) {
+            LITERT_LOG(LITERT_WARNING,
+                       "Failed to apply dispatch annotation %s=%s: %d",
+                       key.c_str(), value.c_str(), status);
+          }
+        }
+      }
+    }
+  }
+
   return invocation_context;
 }
 

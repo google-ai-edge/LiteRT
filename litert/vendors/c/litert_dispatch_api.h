@@ -192,6 +192,10 @@ typedef LiteRtStatus (*LiteRtDispatchInvocationContextCreateFromGraphT)(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph graph,
     LiteRtDispatchInvocationContext* invocation_context);
 
+typedef LiteRtStatus (*LiteRtDispatchInvocationContextGetGraphT)(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph);
+
 typedef LiteRtStatus (*LiteRtDispatchAnnotateGraphT)(LiteRtDispatchGraph graph,
                                                      const char* key,
                                                      const char* value);
@@ -221,6 +225,7 @@ typedef struct LiteRtDispatchGraphInterface {
   LiteRtDispatchAnnotateEdgeT annotate_edge;
   LiteRtDispatchInvocationContextCreateFromGraphT
       invocation_context_create_from_graph;
+  LiteRtDispatchInvocationContextGetGraphT invocation_context_get_graph;
 } LiteRtDispatchGraphInterface;
 
 // /////////////////////////////////////////////////////////////////////////////

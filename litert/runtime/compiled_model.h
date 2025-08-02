@@ -148,6 +148,11 @@ class LiteRtCompiledModelT {
                                            size_t input_index,
                                            absl::Span<const int> dims);
 
+  // Returns the external buffer context which contains dispatch annotations.
+  LiteRtExternalLiteRtBufferContextT* GetBufferContext() {
+    return buffer_context_.get();
+  }
+
  private:
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(

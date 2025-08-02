@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -150,6 +151,18 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   // Returns the LiteRtEnvironment used to create CompiledModel.
   inline LiteRtEnvironment GetEnvironment() const { return env_; }
 
+  // Sets dispatch annotations that should be propagated to dispatch graphs.
+  void SetDispatchAnnotations(
+      const std::unordered_map<std::string, std::string>& annotations) {
+    dispatch_annotations_ = annotations;
+  }
+
+  // Gets all dispatch annotations.
+  const std::unordered_map<std::string, std::string>& GetDispatchAnnotations()
+      const {
+    return dispatch_annotations_;
+  }
+
  private:
   LiteRtEnvironment env_;
   std::unordered_map<const TfLiteOpaqueTensor*,
@@ -164,6 +177,10 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
       const LiteRtExternalLiteRtBufferContextT&) = delete;
 
   bool async_execution_mode_ = false;
+
+  // Dispatch annotations from the compiled model to be propagated to dispatch
+  // graphs.
+  std::unordered_map<std::string, std::string> dispatch_annotations_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

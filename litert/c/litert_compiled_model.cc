@@ -17,6 +17,8 @@
 #include <stddef.h>
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -191,6 +193,74 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
                          kLiteRtStatusErrorInvalidArgument);
   LITERT_RETURN_IF_ERROR(compiled_model->ResizeInputTensor(
       signature_index, input_index, absl::MakeConstSpan(dims, dims_size)));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char* value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and set the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
+      buffer_context->GetDispatchAnnotations());
+  annotations[key] = value;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char** value) {
+  if (!compiled_model || !key || !value) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and retrieve the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    *value = nullptr;
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  const auto& annotations = buffer_context->GetDispatchAnnotations();
+  auto it = annotations.find(key);
+  if (it != annotations.end()) {
+    *value = it->second.c_str();
+  } else {
+    *value = nullptr;
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key) {
+  if (!compiled_model || !key) {
+    LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the buffer context and remove the annotation
+  auto* buffer_context = compiled_model->GetBufferContext();
+  if (!buffer_context) {
+    LITERT_LOG(LITERT_ERROR, "Buffer context not initialized");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
+      buffer_context->GetDispatchAnnotations());
+  annotations.erase(key);
+
   return kLiteRtStatusOk;
 }
 

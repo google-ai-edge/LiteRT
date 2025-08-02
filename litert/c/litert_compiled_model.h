@@ -179,6 +179,53 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index, const int* dims, size_t dims_size);
 
+// Sets a dispatch annotation on the compiled model. These annotations will be
+// propagated to dispatch graphs when they are created during model execution.
+// The annotations provide runtime hints and metadata that can be used by
+// hardware accelerators for optimization.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key (must not be null).
+// - value: the annotation value (must not be null).
+//
+// Example annotations:
+// - "priority": "high|medium|low" - execution priority hints
+// - "memory_type": "shared|dedicated" - memory allocation preferences
+// - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
+// - "precision": "fp32|fp16|int8" - computation precision requirements
+LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char* value);
+
+// Gets a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key to look up (must not be null).
+// - value: pointer to store the annotation value (will be set to null if key
+//   not found).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+//
+// Note: The returned value pointer is owned by the compiled model and should
+// not be freed or outlive the compiled model.
+LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key, const char** value);
+
+// Removes a dispatch annotation from the compiled model.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - key: the annotation key to remove (must not be null).
+//
+// Returns:
+// - kLiteRtStatusOk if successful (even if key not found).
+// - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
+LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
+    LiteRtCompiledModel compiled_model, const char* key);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
