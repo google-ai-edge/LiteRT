@@ -68,6 +68,7 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/common:vendor_dispatch_base",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm:context_binary_info",
