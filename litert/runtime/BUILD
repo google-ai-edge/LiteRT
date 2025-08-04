@@ -55,6 +55,14 @@ cc_library(
     deps = ["//litert/c:litert_any"],
 )
 
+objc_library(
+    name = "tensor_buffer_objc",
+    aspect_hints = ["//tools/build_defs/swift:auto_module"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
+    deps = [":tensor_buffer"],
+)
+
 cc_library(
     name = "tensor_buffer",
     srcs = [
