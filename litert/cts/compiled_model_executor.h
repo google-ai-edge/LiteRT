@@ -19,9 +19,13 @@
 // Different CTS configurations may require different hardware accelerators
 // and backend specific configurations, hence the need for polymorphism.
 
+#include <cstdint>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -30,7 +34,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/test/simple_buffer.h"
 
 namespace litert::testing {
@@ -46,10 +49,14 @@ class CompiledModelExecutor {
   // Run the compiled model against the given model and with the given inputs.
   template <typename Iter>
   Expected<std::vector<SimpleBuffer>> Run(Iter start, Iter end) {
-    std::vector<TensorBuffer> api_inputs;
+    LITERT_ASSIGN_OR_RETURN(auto api_inputs, api_.CreateInputBuffers());
+    if (api_inputs.size() != std::distance(start, end)) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   absl::StrFormat("Expected %d inputs, got %d",
+                                   api_inputs.size(), api_inputs.size()));
+    }
     for (auto it = start; it != end; ++it) {
-      LITERT_ASSIGN_OR_RETURN(auto api_input, it->SpawnTensorBuffer());
-      api_inputs.push_back(std::move(api_input));
+      api_inputs[std::distance(start, it)].Write(it->template Span<uint8_t>());
     }
     LITERT_ASSIGN_OR_RETURN(auto api_outputs, api_.CreateOutputBuffers());
     LITERT_RETURN_IF_ERROR(api_.Run(api_inputs, api_outputs));
@@ -111,6 +118,49 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
 
  private:
   CpuCompiledModelExecutor(CompiledModel&& api, Options&& options,
+                           Environment&& env)
+      : CompiledModelExecutor(std::move(api), std::move(options),
+                              std::move(env)) {}
+};
+
+// Executor for the NPU backend.
+class NpuCompiledModelExecutor : public CompiledModelExecutor {
+ public:
+  NpuCompiledModelExecutor(NpuCompiledModelExecutor&& other) = default;
+  NpuCompiledModelExecutor& operator=(NpuCompiledModelExecutor&& other) =
+      default;
+  NpuCompiledModelExecutor(const NpuCompiledModelExecutor&) = delete;
+  NpuCompiledModelExecutor& operator=(const NpuCompiledModelExecutor&) = delete;
+
+  static constexpr absl::string_view Name() { return "npu"; }
+
+  static Expected<NpuCompiledModelExecutor> Create(
+      LiteRtModelT& model, const std::string& dispatch_dir,
+      const std::optional<std::string>& plugin_dir = std::nullopt) {
+    std::vector<litert::Environment::Option> environment_options = {
+        litert::Environment::Option{
+            litert::Environment::OptionTag::DispatchLibraryDir,
+            absl::string_view(dispatch_dir),
+        }};
+    if (plugin_dir) {
+      environment_options.push_back(Environment::Option{
+          Environment::OptionTag::CompilerPluginLibraryDir,
+          absl::string_view(*plugin_dir),
+      });
+    }
+    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
+    LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+    LITERT_RETURN_IF_ERROR(
+        options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu));
+    LITERT_ASSIGN_OR_RETURN(
+        auto api, CompiledModel::Create(
+                      env, Model::CreateFromNonOwnedHandle(&model), options));
+    return NpuCompiledModelExecutor(std::move(api), std::move(options),
+                                    std::move(env));
+  }
+
+ private:
+  NpuCompiledModelExecutor(CompiledModel&& api, Options&& options,
                            Environment&& env)
       : CompiledModelExecutor(std::move(api), std::move(options),
                               std::move(env)) {}
