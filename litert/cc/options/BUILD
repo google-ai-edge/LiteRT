@@ -39,7 +39,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_cpu_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_cpu_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -59,7 +59,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_gpu_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_gpu_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -111,7 +111,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_qualcomm_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_qualcomm_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -133,7 +133,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_google_tensor_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_google_tensor_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -155,7 +155,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_mediatek_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_mediatek_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
@@ -175,7 +175,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_runtime_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_runtime_options"],
         "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c:litert_runtime_c_api_hdrs",
         ],
     }),
 )
