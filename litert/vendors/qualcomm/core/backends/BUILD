@@ -7,6 +7,19 @@ package(
 )
 
 cc_library(
+    name = "htp_backend",
+    srcs = ["htp_backend.cc"],
+    hdrs = ["htp_backend.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "htp_device_config",
     srcs = ["htp_device_config.cc"],
     hdrs = ["htp_device_config.h"],

@@ -15,6 +15,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/tools/dump.h"
 
@@ -28,16 +29,20 @@ using ::testing::HasSubstr;
 // the QNN SDK instance can be properly initialized and destroyed.
 
 TEST(QnnManagerTest, SetupQnnManager) {
-  auto configs = QnnManager::DefaultBackendConfigs();
+  // auto configs = QnnManager::DefaultBackendConfigs();
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(configs, options);
+  auto qnn = QnnManager::Create(
+      // configs,
+      options);
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
-  auto configs = QnnManager::DefaultBackendConfigs();
+  // auto configs = QnnManager::DefaultBackendConfigs();
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(configs, options);
+  auto qnn = QnnManager::Create(
+      // configs,
+      options);
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
