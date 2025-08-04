@@ -104,6 +104,7 @@ cc_test(
         ":binary_no_bcast",
         ":common",
         "//litert/c:litert_op_code",
+        "//litert/cc:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "//tflite/schema:schema_fbs",
