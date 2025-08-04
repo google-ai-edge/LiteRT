@@ -74,14 +74,21 @@ interface NpuCompatibilityChecker {
         }
       }
 
-    internal val SUPPORTED_GOOGLE_SOCS = setOf(Pair("Google", "Tensor G5"))
+    internal val SUPPORTED_GOOGLE_SOCS = setOf("Tensor G5")
+    internal val GOOGLE_G3_G4_SOCS = setOf("Tensor G3", "Tensor G4")
 
     /** Google Tensor NPU compatibility checker. */
     val GoogleTensor =
       object : NpuCompatibilityChecker {
         override fun isDeviceSupported(): Boolean {
-          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return SUPPORTED_GOOGLE_SOCS.contains(Pair(Build.SOC_MANUFACTURER, Build.SOC_MODEL))
+          // Google Tensor NPU is only supported on Android 16+ devices (API level 36).
+          if (Build.VERSION.SDK_INT >= 36 && Build.SOC_MANUFACTURER == "Google") {
+            return when (Build.SOC_MODEL) {
+              in SUPPORTED_GOOGLE_SOCS -> true
+              // BP2A is the only android 16 build ID that does not support NPU.
+              in GOOGLE_G3_G4_SOCS -> !Build.ID.startsWith("BP2A")
+              else -> false
+            }
           }
           return false
         }
