@@ -11,6 +11,12 @@ acceleration, removing the need to deal with model FlatBuffers, I/O buffer
 interoperability, and delegates. The LiteRT Next APIs are not compatible with
 the LiteRT APIs.
 
+## Early Access Program for NPU Acceleration
+
+> Get exclusive access to unified NPU acceleration in LiteRT Next. Join our Early Access Program to be among the first to integrate seamless NPU support from major chipset providers into your applications.
+>
+> [**Sign up for the EAP today!**](https://forms.gle/CoH4jpLwxiEYvDvF6)
+
 ## Key features
 
 LiteRT Next contains the following key benefits and features:
@@ -26,9 +32,7 @@ LiteRT Next contains the following key benefits and features:
     the best performance for GenAI models.
 
 -   **Unified NPU Acceleration:** Offer seamless access to NPUs from major
-    chipset providers with a consistent developer experience. LiteRT NPU
-    acceleration is available through an
-    [Early Access Program](https://forms.gle/CoH4jpLwxiEYvDvF6).
+    chipset providers with a consistent developer experience.
 
 ## Key improvements
 
