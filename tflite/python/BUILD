@@ -474,6 +474,7 @@ pytype_strict_library(
         "@org_tensorflow//tensorflow/compiler/mlir/lite:types_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/python/mlir:mlir_all",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_options_proto_py",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
