@@ -107,7 +107,7 @@ struct BinaryNoBroadcast {
     std::array<Layout::Dim, kRank> shape;
   };
 
-  using RandomTensorBuffer = R<T>::Gen;
+  using RandomTensorBuffer = typename R<T>::Gen;
 
  public:
   using Traits = TestLogicTraits<TypeList<T, T>, TypeList<T>, Params>;
@@ -160,8 +160,8 @@ struct BinaryNoBroadcast {
   }
 
   Expected<void> Reference(const Params& params,
-                           const Traits::ReferenceInputs& inputs,
-                           const Traits::ReferenceOutputs& outputs) {
+                           const typename Traits::ReferenceInputs& inputs,
+                           const typename Traits::ReferenceOutputs& outputs) {
     auto [lhs, rhs] = inputs;
     auto [output] = outputs;
     if (lhs.dimensions != rhs.dimensions ||

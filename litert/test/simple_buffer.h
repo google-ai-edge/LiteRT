@@ -32,6 +32,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -58,8 +59,13 @@ class SimpleBuffer {
   using LiteRtAlignedMem = std::unique_ptr<uint8_t, FreeDeleter>;
   template <typename T = uint8_t>
   static LiteRtAlignedMem MakeAlloc(size_t num_elements) {
-    return LiteRtAlignedMem(reinterpret_cast<T*>(std::aligned_alloc(
-        LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, num_elements * sizeof(T))));
+    void* host_memory_ptr;
+    ABSL_CHECK_EQ(
+        posix_memalign(&host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                       num_elements * sizeof(T)),
+        0);
+    auto res = LiteRtAlignedMem(reinterpret_cast<uint8_t*>(host_memory_ptr));
+    return res;
   }
 
  public:

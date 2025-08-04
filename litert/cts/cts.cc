@@ -137,7 +137,8 @@ class CtsTest : public RngTest {
   static absl::string_view LogicName() { return Logic::Name(); }
 
  private:
-  CtsTest(LiteRtModelT::Ptr model, Logic::Traits::Params params, Logic logic)
+  CtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
+          Logic logic)
       : model_(std::move(model)), params_(std::move(params)) {}
 
   Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {

@@ -270,6 +270,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
 )
