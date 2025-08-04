@@ -7,16 +7,6 @@ package(
 )
 
 cc_library(
-    name = "htp_device_config",
-    srcs = ["htp_device_config.cc"],
-    hdrs = ["htp_device_config.h"],
-    deps = [
-        "//litert/vendors/qualcomm/core/schema:soc_table",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
     name = "htp_perf_control",
     srcs = ["htp_perf_control.cc"],
     hdrs = ["htp_perf_control.h"],
@@ -24,6 +14,43 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
         "@com_google_absl//absl/base:core_headers",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "qnn_backend",
+    srcs = ["qnn_backend.cc"],
+    hdrs = ["qnn_backend.h"],
+    deps = [
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "ir_backend",
+    srcs = ["ir_backend.cc"],
+    hdrs = ["ir_backend.h"],
+    deps = [
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "htp_backend",
+    srcs = ["htp_backend.cc"],
+    hdrs = ["htp_backend.h"],
+    deps = [
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
         "@qairt//:qnn_lib_headers",
     ],
 )
