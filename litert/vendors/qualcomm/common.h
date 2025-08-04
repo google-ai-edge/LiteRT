@@ -15,12 +15,14 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 
-#include "litert/c/litert_common.h"
-#include "litert/cc/litert_element_type.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "System/QnnSystemInterface.h"  // from @qairt
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/vendors/qualcomm/core/common.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -98,5 +100,22 @@ inline LiteRtStatus LegalizeElementType(litert::ElementType litert_type,
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
+
+inline LiteRtStatus InitQnnOptions(
+    ::qnn::Options& qnn_options,
+    litert::qualcomm::QualcommOptions& qualcomm_options) {
+  qnn_options.SetLogLevel(
+      static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
+  qnn_options.SetProfiling(
+      static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
+  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
+  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
+  qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
+  qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
+      qualcomm_options.GetHtpPerformanceMode()));
+  qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+  LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
+  return kLiteRtStatusOk;
+}
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
