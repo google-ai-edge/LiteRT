@@ -7,9 +7,14 @@ import getpass
 import argparse
 import logging
 import shutil
+from pathlib import Path
 import numpy as np
 
-_QNN_HOME = os.path.join(os.environ["LITERT_QAIRT_SDK"], "latest")
+_QNN_HOME = (
+    os.path.join(os.environ["LITERT_QAIRT_SDK"], "latest")
+    if "LITERT_QAIRT_SDK" in os.environ
+    else Path(__file__).resolve().parents[5] / "third_party" / "qairt" / "latest"
+)
 _TOOLS_X86 = os.path.join(_QNN_HOME, "bin", "x86_64-linux-clang")
 _WRD = f"/data/local/tmp/{getpass.getuser()}/litert"
 _ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
