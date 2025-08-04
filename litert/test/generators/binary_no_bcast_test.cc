@@ -22,6 +22,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_rng.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
@@ -44,7 +45,7 @@ class BinaryNoBroadcastTest : public RngTest {};
 template <size_t Rank, typename T, LiteRtOpCode OpCode,
           ActivationFunctionType Fa>
 using GenForTest = BinaryNoBroadcast<SizeC<Rank>, T, OpCodeC<OpCode>, FaC<Fa>,
-                                     SizeC<64>, DummyRandomTensorBufferTraits>;
+                                     SizeC<64>, DummyGenerator>;
 
 // clang-format off
 using BinaryNoBroadcastTestTypes = Types<
