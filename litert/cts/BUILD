@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/cts:cts.bzl", "litert_define_cts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -137,5 +138,17 @@ litert_device_test(
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# PRE-CONFIGURED CTS SUITES ########################################################################
+
+# An example CTS configuration for the CPU backend that filters out some tests.
+litert_define_cts(
+    name = "sample_cpu_cts",
+    backend = "cpu",
+    dont_register = [
+        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
+        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
     ],
 )
