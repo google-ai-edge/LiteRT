@@ -500,6 +500,21 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
+
+  if (const auto& custom_op_package = options.GetCustomOpPackage();
+      !custom_op_package.path.empty()) {
+    if (auto status = Api()->backendRegisterOpPackage(
+            BackendHandle(), custom_op_package.path.data(),
+            custom_op_package.interface_provider.data(),
+            custom_op_package.target.data());
+        status != QNN_SUCCESS) {
+      LITERT_LOG(LITERT_ERROR, "Failed to register op package. Error code: %d",
+                 status);
+    } else {
+      LITERT_LOG(LITERT_INFO, "Op package loaded successfully.");
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 
@@ -584,5 +599,4 @@ QnnManager::WeightSharingContextConfigs() {
   static const QnnContext_Config_t* configs[2] = {&contextConfig, nullptr};
   return absl::MakeSpan(configs);
 }
-
 };  // namespace litert::qnn

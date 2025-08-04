@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"   // from @com_google_absl
+#include "absl/strings/str_join.h"     // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 
 namespace qnn {
@@ -58,6 +58,17 @@ std::vector<std::int32_t> Options::GetDumpTensorIds() const {
   return dump_tensor_ids_;
 }
 
+void Options::SetCustomOpPackage(std::string_view path, std::string_view target,
+                                 std::string_view interface_provider) {
+  custom_op_package_.path = path;
+  custom_op_package_.target = target;
+  custom_op_package_.interface_provider = interface_provider;
+}
+
+const CustomOpPackage& Options::GetCustomOpPackage() const {
+  return custom_op_package_;
+}
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -68,14 +79,20 @@ UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
 HtpPerformanceMode: %d\n\
-DumpTensorIds: %s\n";  // NOLINT
+DumpTensorIds: %s\n\
+CustomOpPackage: {\n\
+  path: %s\n\
+  target: %s\n\
+  interface_provider: %s\n\
+}\n";
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
-                         use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, htp_performance_mode_,
-                         dump_tensor_ids);
+  return absl::StrFormat(
+      kQnnOptionsDumpFormat, log_level_, profiling_, use_htp_preference_,
+      use_qint16_as_quint16_, enable_weight_sharing_, htp_performance_mode_,
+      dump_tensor_ids, custom_op_package_.path, custom_op_package_.target,
+      custom_op_package_.interface_provider);
 }
 
 }  // namespace qnn

@@ -17,8 +17,10 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_QUALCOMM_OPTIONS_H_
 
+
 #include <cstdint>
 #include <vector>
+#include <string_view>
 
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
@@ -60,6 +62,15 @@ class QualcommOptions : public OpaqueOptions {
 
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
+
+  void SetCustomOpPackagePath(std::string_view path);
+  std::string_view GetCustomOpPackagePath();
+
+  void SetCustomOpPackageTarget(std::string_view target);
+  std::string_view GetCustomOpPackageTarget();
+
+  void SetCustomOpPackageInterfaceProvider(std::string_view interface_provider);
+  std::string_view GetCustomOpPackageInterfaceProvider();
 
  private:
   LiteRtQualcommOptions Data() const;

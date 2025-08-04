@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Copyright (c) 2020 Qualcomm Technologies, Inc.
+All Rights Reserved.
+Confidential and Proprietary - Qualcomm Technologies, Inc.
+-->
+<OpDefCollection
+        PackageName="LiteRtQualcommOpPackage"
+        Domain="custom"
+        Version="1.0"
+>
+    <OpDefList>
+        <!--Example Op Package which shows how a package can be defined using supplemental info-->
+        <OpDef>
+            <Name>ElementWiseAdd</Name>
+            <Description>
+                <Content>
+                    Adds two tensors element-wise. The output is the sum of input tensors.
+                </Content>
+                <Code>out[0] = in[0] + in[1]</Code>
+                <Content>
+                    Refer to ElementWiseAdd backend definitions for supported data type
+                    and layouts for each backend.
+                </Content>
+            </Description>
+
+            <Reference Source="Android NDK NeuralNetworks"
+                   Url="ANEURALNETWORKS_ADD &lt;https://developer.android.com/ndk/reference/group/neural-networks#group___neural_networks_1ggaabbe492c60331b13038e39d4207940e0ad681988001e5f8ab73230a311f4ab034&gt;"></Reference>
+    
+            <Input>
+                <Name>in[0]</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>BACKEND_SPECIFIC</Datatype>
+                <Shape>
+                    <Rank>ND</Rank>
+                    <Text>A tensor of rank N</Text>
+                </Shape>
+            </Input>
+
+            <Input>
+                <Name>in[1]</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>BACKEND_SPECIFIC</Datatype>
+                <Shape>
+                    <Rank>ND</Rank>
+                    <Text>A tensor of rank M</Text>
+                </Shape>
+            </Input>
+
+            <Output>
+                <Name>out[0]</Name>
+                <Mandatory>true</Mandatory>
+                <Datatype>BACKEND_SPECIFIC</Datatype>
+                <Shape>
+                    <Rank>ND</Rank>
+                    <Text>a tensor of rank = max(N,M)</Text>
+                </Shape>
+            </Output>
+
+            <!--This Op is implemented on these Backends-->
+            <SupportedBackend>HTP</SupportedBackend>
+        </OpDef>
+
+    </OpDefList>
+
+    <SupplementalOpDefList Backend="HTP">
+        <SupportedOps>
+            <OpName>ElementWiseAdd</OpName>
+        </SupportedOps>
+
+        <!--ElementWiseAdd-->
+        <SupplementalOpDef>
+            <Name>ElementWiseAdd</Name>
+
+            <Input>
+                <Name>in[0]</Name>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_16</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_16</Datatype>
+            </Input>
+
+            <Input>
+                <Name>in[1]</Name>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_16</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_16</Datatype>
+            </Input>
+
+            <Output>
+                <Name>out[0]</Name>
+                <Datatype>QNN_DATATYPE_FLOAT_32</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_8</Datatype>
+                <Datatype>QNN_DATATYPE_SFIXED_POINT_16</Datatype>
+                <Datatype>QNN_DATATYPE_UFIXED_POINT_16</Datatype>
+            </Output>
+        </SupplementalOpDef>
+
+    </SupplementalOpDefList>
+
+</OpDefCollection>
+

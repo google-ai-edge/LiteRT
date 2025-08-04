@@ -34,6 +34,12 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options);
 bool AbslParseFlag(absl::string_view text,
                    LiteRtQualcommOptionsLogLevel* options, std::string* error);
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_path);
+
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_target);
+
+ABSL_DECLARE_FLAG(std::string, qualcomm_custom_op_package_interface_provider);
+
 #endif
 
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////

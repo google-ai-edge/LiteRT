@@ -80,6 +80,9 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
   ::qnn::Options qnn_options;
   qnn_options.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kBurst);
   qnn_options.SetLogLevel(::qnn::LogLevel::kOff);
+  // TODO(Alen): should not merge, it is only for test.
+  qnn_options.SetCustomOpPackage("libQnnLiteRtQualcommOpPackage.so", "HTP",
+                                 "LiteRtQualcommOpPackageInterfaceProvider");
   if (auto qnn_manager = QnnManager::Create(
           /*configs=*/configs,
           /*options=*/qnn_options,

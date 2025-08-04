@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <string_view>
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -35,6 +36,12 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+struct CustomOpPackage {
+  std::string path = "";
+  std::string target = "";
+  std::string interface_provider = "";
+};
+
 class Options {
  public:
   Options() = default;
@@ -61,6 +68,10 @@ class Options {
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds() const;
 
+  void SetCustomOpPackage(std::string_view path, std::string_view target,
+                          std::string_view interface_provider);
+  const CustomOpPackage &GetCustomOpPackage() const;
+
   std::string Dump() const;
 
  private:
@@ -71,6 +82,7 @@ class Options {
   bool enable_weight_sharing_ = false;
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
+  CustomOpPackage custom_op_package_;
 };
 
 }  // namespace qnn
