@@ -497,6 +497,7 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
         device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
             ->onChipDevice.arch;
     if (auto status = perf_control_->Init(local_arch); !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to set HTP performance mode.");
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }
