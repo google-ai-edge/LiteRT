@@ -14,10 +14,16 @@
 
 #include "litert/c/litert_op_options.h"
 
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -303,20 +309,49 @@ LiteRtStatus LiteRtGetReshapeNewShapeOption(LiteRtOp op,
                                             const int32_t** new_shape,
                                             int32_t* new_shape_size) {
   if (op->OpCode() != kLiteRtOpCodeTflReshape) {
+    LITERT_LOG(LITERT_WARNING, "Expected Reshape op, but got: %d",
+               op->OpCode());
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto& opts = litert::internal::GetTflOptions(*op);
-  if (opts.value == nullptr) {
-    *new_shape_size = -1;
+  // The new shape is stored as the second input to the OP as a i32 tensor, as
+  // per 'lite/ir/tfl_ops.td' 'TFL_ReshapeOp' definition.
+  if (op->NumInputs() < 2) {
+    LITERT_LOG(LITERT_WARNING,
+               "Expected at least 2 inputs for Reshape op, but got: %d",
+               op->NumInputs());
     return kLiteRtStatusErrorInvalidArgument;
   }
-  if (opts.AsReshapeOptions() == nullptr) {
-    *new_shape_size = -1;
-    return kLiteRtStatusOk;
-  } else {
-    *new_shape = opts.AsReshapeOptions()->new_shape.data();
-    *new_shape_size = opts.AsReshapeOptions()->new_shape.size();
+  LiteRtTensor new_shape_tensor = op->Inputs()[1];
+  LiteRtRankedTensorType ranked_tensor_type;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetRankedTensorType(new_shape_tensor, &ranked_tensor_type));
+  if (ranked_tensor_type.element_type != kLiteRtElementTypeInt32) {
+    LITERT_LOG(LITERT_WARNING,
+               "Expected int32 element type for new shape tensor, but got: %d",
+               ranked_tensor_type.element_type);
+    return kLiteRtStatusErrorInvalidArgument;
   }
+  size_t num_elements = 0;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetNumLayoutElements(&(ranked_tensor_type.layout), &num_elements));
+  if (num_elements <= 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "Expected positive number of elements for new shape tensor, but "
+               "got: %zu",
+               num_elements);
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (new_shape_tensor->Weights().Buffer().Size() <= 0) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "Expected positive size for new shape tensor buffer, but got: %zu",
+        new_shape_tensor->Weights().Buffer().Size());
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *new_shape = reinterpret_cast<const int32_t*>(
+      new_shape_tensor->Weights().Buffer().Data());
+  *new_shape_size = num_elements;
   return kLiteRtStatusOk;
 }
 

@@ -453,13 +453,16 @@ cc_test(
     srcs = ["litert_op_options_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
     ],
     deps = [
+        ":litert_buffer_ref",
         ":litert_expected",
         ":litert_op_options",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/core/model",
+        "//litert/core/model:buffer_manager",
         "//litert/core/util:flatbuffer_tools",
         "//litert/test:common",
         "//tflite/schema:schema_fbs",

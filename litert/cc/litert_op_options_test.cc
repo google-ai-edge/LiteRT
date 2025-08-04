@@ -14,13 +14,16 @@
 
 #include "litert/cc/litert_op_options.h"
 
+#include <cstdint>
 #include <utility>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
@@ -271,21 +274,36 @@ TEST(OpOptionsTest, GetSubOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
-TEST(OpOptionsTest, GetReshapeOptions) {
-  LiteRtOpT op;
+TEST(GetOpOptionTest, TestGetReshapeOptions2x3To3x2) {
+  LiteRtModelT model_t;
+  auto& subgraph = model_t.EmplaceSubgraph();
+  auto& op = subgraph.EmplaceOp();
   op.SetOpCode(kLiteRtOpCodeTflReshape);
-  tflite::ReshapeOptionsT options;
-  options.new_shape = {1, 2, 3};
-  internal::TflOptions tfl_options;
-  tfl_options.type = ::tflite::BuiltinOptions_ReshapeOptions;
-  tfl_options.Set(std::move(options));
-  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  LiteRtTensorT tensor;
+  tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 3}));
+  op.Inputs().push_back(&tensor);
+
+  int32_t kTensorData[] = {3, 2};
+  LiteRtTensorT tensor2;
+  tensor2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {2}));
+  auto& weights = tensor2.Weights();
+  weights.SetBufferManager(model_t.Buffers());
+
+  litert::BufferRef<uint8_t> buffer(kTensorData, sizeof(kTensorData));
+  litert::internal::BufferContext context;
+  context.should_append = true;
+  SetWeightsFromUnownedBuffer(weights, std::move(buffer), context);
+
+  op.Inputs().push_back(&tensor2);
+  LiteRtTensorT tensor3;
+  tensor3.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {3, 2}));
+  op.Outputs().push_back(&tensor3);
 
   auto res = GetOptionsAs<ReshapeOptions>(&op);
   ASSERT_TRUE(res);
-  EXPECT_EQ(res->new_shape[0], 1);
+  EXPECT_EQ(res->new_shape[0], 3);
   EXPECT_EQ(res->new_shape[1], 2);
-  EXPECT_EQ(res->new_shape[2], 3);
   EXPECT_EQ(&op, res->op);
 }
 
