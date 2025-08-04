@@ -23,7 +23,7 @@
 #include <string>
 #include <utility>
 
-#include "absl/debugging/leak_check.h"  // from @com_google_absl
+#include "absl/debugging/leak_check.h"  // from @com_google_absl  // copybara:comment
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -247,7 +247,7 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
       }
       lib.path_ = path;
       {
-        absl::LeakCheckDisabler disabler;
+        absl::LeakCheckDisabler disabler;  // copybara:comment
         lib.handle_ =
             dlopen(lib.Path().c_str(), SanitizeFlagsInCaseOfAsan(flags));
       }
