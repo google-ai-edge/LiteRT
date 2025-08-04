@@ -5,6 +5,7 @@ import subprocess
 import json
 import getpass
 import argparse
+import logging
 import shutil
 import numpy as np
 
@@ -14,13 +15,14 @@ _WRD = f"/data/local/tmp/{getpass.getuser()}/litert"
 _ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 
 
-def _generate_inputs(ctx_bin_path: str) -> None:
+def _generate_zero_inputs(ctx_bin_path: str) -> None:
     """
     Generate zero inputs using qnn-context-binary-utility.
 
     Parameters:
         ctx_bin_path (str): Path to the context binary.
     """
+    logging.info("Generating input data...")
     json_path = os.path.join(_ASSETS_DIR, "tmp.json")
     subprocess.run(
         [
@@ -90,8 +92,8 @@ def _push_so(adb_cmd: str, htp_arch: str):
         adb_cmd (str): The base adb command (e.g., "adb" or "adb -s <device_id>").
         _QNN_HOME (str): The root directory of the QNN SDK.
     """
-    cmd = adb_cmd + " shell " + f'"rm -rf {_WRD} && mkdir -p {_WRD}"'
-    print(cmd)
+    logging.info("Pushing .so files to the target device...")
+    cmd = f'{adb_cmd} shell "rm -rf {_WRD} && mkdir -p {_WRD}"'
     subprocess.run(cmd, check=True, shell=True)
     for file_path in [
         "bin/aarch64-android/qnn-net-run",
@@ -101,7 +103,8 @@ def _push_so(adb_cmd: str, htp_arch: str):
         f"lib/aarch64-android/libQnnHtp{htp_arch.upper()}Stub.so",
         f"lib/hexagon-{htp_arch.lower()}/unsigned/libQnnHtp{htp_arch.upper()}Skel.so",
     ]:
-        cmd = adb_cmd + " push " + f"{os.path.join(_QNN_HOME, file_path)} {_WRD}"
+        cmd = f"{adb_cmd} push {os.path.join(_QNN_HOME, file_path)} {_WRD}"
+        logging.debug(cmd)
         subprocess.run(cmd, check=True, shell=True)
 
 
@@ -135,23 +138,21 @@ def _push_target(adb_cmd: str, ctx_bin_path: str) -> None:
         inputs_path (str): The path to the inputs.
         ctx_bin_path (str): The path to the context binary.
     """
-    inputs_path = os.path.join(_ASSETS_DIR, "inputs")
-    cmd = adb_cmd + " push " + f"{inputs_path} {_WRD}"
-    subprocess.run(cmd, check=True, shell=True)
-    cmd = adb_cmd + " push " + f"{os.path.abspath(ctx_bin_path)} {_WRD}"
-    subprocess.run(cmd, check=True, shell=True)
-    shutil.rmtree(inputs_path)
-
-    assert_json_path = os.path.join(_ASSETS_DIR, "htp_ext_config.json")
-    cmd = adb_cmd + f" push " f"{assert_json_path} {_WRD}"
-    subprocess.run(
-        cmd, check=True, shell=True, cwd=os.path.dirname(os.path.abspath(__file__))
-    )
-    assert_json_path = os.path.join(_ASSETS_DIR, "config.json")
-    cmd = adb_cmd + " push " + f"{assert_json_path} {_WRD}"
-    subprocess.run(
-        cmd, check=True, shell=True, cwd=os.path.dirname(os.path.abspath(__file__))
-    )
+    logging.info("Pushing inputs, ctx binary, and .json files to the target device...")
+    for file_path in [
+        os.path.join(_ASSETS_DIR, "inputs"),
+        os.path.join(_ASSETS_DIR, "htp_ext_config.json"),
+        os.path.join(_ASSETS_DIR, "config.json"),
+        os.path.abspath(ctx_bin_path),
+    ]:
+        cmd = f"{adb_cmd} push {file_path} {_WRD}"
+        subprocess.run(
+            cmd, check=True, shell=True, cwd=os.path.dirname(os.path.abspath(__file__))
+        )
+        logging.debug(cmd)
+        if file_path.endswith("inputs"):
+            shutil.rmtree(file_path)
+            logging.debug("Removing inputs...")
 
 
 def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
@@ -162,7 +163,7 @@ def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
         adb_cmd (str): The adb command.
         ctx_bin_name (str): The path of the context binary.
     """
-
+    logging.info("Exectuing qnn-net-run with the given context binary...")
     env_vars = (
         f"export LD_LIBRARY_PATH={_WRD} && "
         f"export ADSP_LIBRARY_PATH={_WRD} && "
@@ -181,6 +182,7 @@ def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
         "--profiling_level detailed"
     )
     full_cmd = f'{adb_cmd} shell "{env_vars} && {run_cmd}"'
+    logging.debug(full_cmd)
     subprocess.run(full_cmd, check=True, shell=True)
 
 
@@ -195,8 +197,9 @@ def _generate_profiler_output(
         schematic_bin_path (str): The path to the schematic binary.
         output_dir (str): The path to the output directory.
     """
+    logging.info("Exectuing qnn-profile-viewer with the outputs...")
     os.makedirs(output_dir, exist_ok=True)
-    cmd = adb_cmd + f" pull {_WRD}/output_htp ./"
+    cmd = f"{adb_cmd} pull {_WRD}/output_htp ./"
     subprocess.run(cmd, check=True, shell=True)
     log_path = os.path.join("output_htp", "qnn-profiling-data_0.log")
     cmd_lst = [
@@ -218,9 +221,17 @@ def _generate_profiler_output(
         os.path.join(output_dir, "chromeTrace.json"),
     ]
     os.makedirs(output_dir, exist_ok=True)
+    logging.debug(" ".join(cmd_lst))
     subprocess.run(
         cmd_lst,
         check=True,
+    )
+
+
+def _setup_logging(level_name):
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(
+        level=level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
 
@@ -246,10 +257,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--htp_arch", "-a", type=str, help="HTP Arch (e.g. V75)", required=True
     )
+    parser.add_argument(
+        "--log_level",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
     args = parser.parse_args()
-    _generate_inputs(args.ctx_bin)
+    _setup_logging(args.log_level)
+    _generate_zero_inputs(args.ctx_bin)
     ADB_CMD = _get_adb_cmd(args.hostname, args.serial)
     _push_so(ADB_CMD, args.htp_arch)
     _push_target(ADB_CMD, args.ctx_bin)
     _run_ctx_bin(ADB_CMD, args.ctx_bin)
     _generate_profiler_output(ADB_CMD, args.schematic_bin, args.output_dir)
+    logging.info("Success! Profiling data is in %s", args.output_dir)
