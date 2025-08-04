@@ -36,19 +36,6 @@ namespace litert::testing {
 template <size_t N>
 using TensorNames = std::array<absl::string_view, N>;
 
-// Traits that configure behavior for random tensor data generation. These
-// are attached to generators.
-template <typename G>
-struct RandomTensorBufferTraits {
-  using Gen = G;
-};
-
-// The default random generator traits that can be used unless a specific
-// distribution needs to be configured.
-template <typename T>
-using DefaultRandomTensorBufferTraits =
-    RandomTensorBufferTraits<RandomTensorData<T>>;
-
 // Convenience type for mapping litert ops to the related flatbuffer types.
 template <typename Options, ::tflite::BuiltinOperator BuiltinOperator,
           ::tflite::BuiltinOptions BuiltinOptions>
