@@ -65,8 +65,7 @@ template <
     typename T,
     typename OpCode,
     typename Fa = FaC<>,
-    typename MaxTensorSize = SizeC<1024>,
-    template <typename> typename R = DefaultGenerator
+    typename MaxTensorSize = SizeC<1024>
 >
 // clang-format on
 struct BinaryNoBroadcast {
@@ -142,12 +141,13 @@ struct BinaryNoBroadcast {
   }
 
   template <typename Rng>
-  Expected<typename Traits::InputBuffers> MakeInputs(Rng& rng,
-                                                     const Params& params) {
+  Expected<typename Traits::InputBuffers> MakeInputs(
+      const RandomTensorDataBuilder& data_builder, Rng& rng,
+      const Params& params) {
     LITERT_ASSIGN_OR_RETURN(auto lhs, SimpleBuffer::Create<T>(params.shape));
     LITERT_ASSIGN_OR_RETURN(auto rhs, SimpleBuffer::Create<T>(params.shape));
-    LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T, R>(rng)));
-    LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T, R>(rng)));
+    LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T>(data_builder, rng)));
+    LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T>(data_builder, rng)));
     return typename Traits::InputBuffers{std::move(lhs), std::move(rhs)};
   }
 

@@ -78,8 +78,9 @@ class RegisterFunctor {
       return;
     }
 
-    if (auto status = TestClass::Register(suite_name, test_name,
-                                          std::move(*params), std::move(args));
+    if (auto status =
+            TestClass::Register(suite_name, test_name, std::move(*params),
+                                std::move(args), options_.CreateDataBuilder());
         !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
@@ -107,8 +108,8 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 // Helper aliases to set some of the template params that don't need to vary
 // for cts.
 template <typename Ranks, typename Types, typename OpCodes, typename Fas>
-using BinaryNoBroadcastCts = BinaryNoBroadcast<Ranks, Types, OpCodes, Fas,
-                                               SizeC<1024>, DefaultGenerator>;
+using BinaryNoBroadcastCts =
+    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>>;
 
 template <template <typename TestLogic, typename TestExecutor> typename Fixture>
 void RegisterCtsTests(const CtsConf& cts_options) {
