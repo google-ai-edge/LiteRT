@@ -287,7 +287,7 @@ TYPED_TEST_SUITE(RandomTensorDataTest, RandomTensorDataTestTypes);
 
 TYPED_TEST(RandomTensorDataTest, NoRange) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   std::vector<TypeParam> buf(10);
   LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
@@ -298,7 +298,7 @@ TYPED_TEST(RandomTensorDataTest, NoRange) {
 
 TYPED_TEST(RandomTensorDataTest, NoRangeFromSize) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   LITERT_ASSERT_OK_AND_ASSIGN(const auto buf, data(device, 10));
   EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
   EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
@@ -308,7 +308,7 @@ TYPED_TEST(RandomTensorDataTest, NoRangeFromSize) {
 
 TYPED_TEST(RandomTensorDataTest, NoRangeFromLayout) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   LiteRtLayout layout;
   layout.rank = 2;
   layout.dimensions[0] = 3;
@@ -323,15 +323,54 @@ TYPED_TEST(RandomTensorDataTest, NoRangeFromLayout) {
 
 TYPED_TEST(RandomTensorDataTest, ExplicitRange) {
   auto device = this->TracedDevice();
-  static constexpr int64_t kMin = -10;
-  static constexpr int64_t kMax = 10;
-  RangedRandomTensorData<TypeParam, kMin, kMax> data;
+  static constexpr TypeParam kMin = -10;
+  static constexpr TypeParam kMax = 10;
+  RandomTensorData<TypeParam, DefaultRangedGenerator> data(kMin, kMax);
   std::vector<TypeParam> buf(10);
   LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), 10);
   EXPECT_EQ(data.Low(), -10);
   EXPECT_THAT(absl::MakeConstSpan(buf),
               Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+struct Functor {
+  template <typename RandomTensor, typename Rng>
+  auto operator()(RandomTensor& gen, Rng& rng) {
+    return gen(rng, 10);
+  }
+};
+
+TYPED_TEST(RandomTensorDataTest, BuilderWithRange) {
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  static constexpr TypeParam min = -1;
+  static constexpr TypeParam max = 1;
+  if constexpr (std::is_same_v<TypeParam, int32_t>) {
+    b.SetIntRange(min, max);
+  } else {
+    b.SetFloatRange(min, max);
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buf, (b.Call<TypeParam, Functor>(device)));
+  EXPECT_EQ(buf.size(), 10);
+  EXPECT_THAT(buf, Each(AllOf(Le(max), Ge(min))));
+}
+
+TYPED_TEST(RandomTensorDataTest, BuilderWithDummy) {
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  if constexpr (std::is_same_v<TypeParam, int32_t>) {
+    b.SetIntDummy();
+  } else {
+    b.SetFloatDummy();
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buf, (b.Call<TypeParam, Functor>(device)));
+  EXPECT_EQ(buf.size(), 10);
+
+  std::vector<TypeParam> expected(10);
+  std::iota(expected.begin(), expected.end(), 0);
+
+  EXPECT_EQ(buf, expected);
 }
 
 }  // namespace

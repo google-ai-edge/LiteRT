@@ -21,6 +21,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_rng.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 
@@ -149,8 +150,6 @@ TEST(TensorBufferHelperTest, WriteOffset) {
 }
 
 using RngTensorBufferHelperTest = RngTest;
-template <typename T>
-using TestRng = DummyRandomTensorBufferTraits<T>;
 
 TEST_F(RngTensorBufferHelperTest, WriteRandom) {
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -160,7 +159,7 @@ TEST_F(RngTensorBufferHelperTest, WriteRandom) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
   EXPECT_EQ(num_elements, 4);
   auto device = this->TracedDevice();
-  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device)));
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, DummyGenerator>(device)));
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(0, 1, 2, 3));
 }
 
@@ -172,7 +171,7 @@ TEST_F(RngTensorBufferHelperTest, WriteRandomOffset) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
   EXPECT_EQ(num_elements, 4);
   auto device = this->TracedDevice();
-  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device, 2)));
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, DummyGenerator>(device, 2)));
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 2, 0, 1));
 }
 
@@ -184,7 +183,7 @@ TEST_F(RngTensorBufferHelperTest, WriteRandomSubArray) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
   EXPECT_EQ(num_elements, 4);
   auto device = this->TracedDevice();
-  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, TestRng>(device, 1, 2)));
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t, DummyGenerator>(device, 1, 2)));
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 0, 1, 4));
 }
 

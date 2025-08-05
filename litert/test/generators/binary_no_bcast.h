@@ -67,7 +67,7 @@ template <
     typename OpCode,
     typename Fa = FaC<>,
     typename MaxTensorSize = SizeC<1024>,
-    template <typename> typename R = DefaultRandomTensorBufferTraits
+    template <typename> typename R = DefaultGenerator
 >
 // clang-format on
 struct BinaryNoBroadcast {
@@ -106,8 +106,6 @@ struct BinaryNoBroadcast {
   struct Params {
     std::array<Layout::Dim, kRank> shape;
   };
-
-  using RandomTensorBuffer = typename R<T>::Gen;
 
  public:
   using Traits = TestLogicTraits<TypeList<T, T>, TypeList<T>, Params>;

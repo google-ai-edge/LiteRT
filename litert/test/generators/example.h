@@ -79,10 +79,6 @@ struct ExampleTestLogic {
   // Utility for mapping litert ops to corresponding tflite schema types.
   using FbTypes = FbOpTypes<kLiteRtOpCodeTflAdd>;
 
-  // "Mock" (iota) data for random tensor buffers.
-  template <typename TT>
-  using RandomTensorBufferTraits = DummyRandomTensorBufferTraits<TT>;
-
  public:
   // Litert element type enum taken from c++ type T.
   static constexpr ElementType kElementType = GetElementType<T>();
@@ -142,7 +138,7 @@ struct ExampleTestLogic {
                                                      const Params& params) {
     LITERT_ASSIGN_OR_RETURN(auto input, SimpleBuffer::Create<T>(params.shape));
     LITERT_RETURN_IF_ERROR(
-        (input.template WriteRandom<T, RandomTensorBufferTraits>(rng)));
+        (input.template WriteRandom<T, DummyGenerator>(rng)));
     return typename Traits::InputBuffers{std::move(input)};
   }
 

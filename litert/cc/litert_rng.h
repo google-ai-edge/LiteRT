@@ -213,6 +213,26 @@ class ReinterpretGenerator<D, Dist,
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
 };
 
+// Dummy primitive generator that returns a monotonically increasing sequence.
+template <typename D>
+class DummyGenerator final : public DataGeneratorBase<D> {
+ public:
+  using DataType = D;
+
+  DummyGenerator() = default;
+
+  template <typename Rng>
+  DataType operator()(Rng& rng) {
+    return val_++;
+  }
+
+  DataType Max() const override { return NumericLimits<D>::Max(); }
+  DataType Min() const override { return 0; }
+
+ private:
+  D val_ = 0;
+};
+
 // DEFAULTS FOR DATA GENERATORS ////////////////////////////////////////////////
 
 template <typename D>
@@ -383,13 +403,16 @@ const auto RandomTensorType<Rank, MaxSize, ElementType...>::kMaxDimSize =
 // RANDOM TENSOR DATA //////////////////////////////////////////////////////////
 
 // Base class for generating data for tensors.
-template <typename D, typename Derived, typename Gen>
-class RandomTensorDataBase {
+template <typename D, template <typename> typename Generator>
+class RandomTensorData {
  private:
   // TODO: Support on standard types.
   static_assert(std::is_integral_v<D> || std::is_floating_point_v<D>);
+  using Gen = Generator<D>;
 
  public:
+  using DataType = D;
+
   // Fill out the pre-allocated buffer with random data.
   template <typename Rng, typename Iter>
   Expected<void> operator()(Rng& rng, Iter start, Iter end) {
@@ -424,35 +447,83 @@ class RandomTensorDataBase {
   D High() const { return gen_.Max(); }
   D Low() const { return gen_.Min(); }
 
+  template <typename DD,
+            typename = std::enable_if_t<std::is_constructible_v<Gen, DD, DD>>>
+  explicit RandomTensorData(DD min, DD max) : gen_(min, max) {}
+
+  template <typename = std::enable_if<std::is_constructible_v<Gen>>::type>
+  explicit RandomTensorData() : gen_() {}
+
  private:
-  Gen gen_ = Derived::MakeGen();
+  Gen gen_;
 };
 
-// Generates random data for tensors using the implicit entire avaiable range of
-// values. Uses the default data generator types.
-// TODO: Decide if type configurability is useful for this.
-template <typename D>
-class RandomTensorData
-    : public RandomTensorDataBase<D, RandomTensorData<D>, DefaultGenerator<D>> {
-  friend class RandomTensorDataBase<D, RandomTensorData<D>,
-                                    DefaultGenerator<D>>;
-  using Gen = DefaultGenerator<D>;
-  using DataType = D;
-  static Gen MakeGen() { return Gen(); }
-};
+// Utility class to specify how tensor data generation should be performed
+// per-datatype without templates.
+class RandomTensorDataBuilder {
+ public:
+  RandomTensorDataBuilder() = default;
 
-// Generates random data for tensors using the explicitly specified range of
-// values.
-template <typename D, int64_t Low = NumericLimits<int64_t>::Lowest(),
-          int64_t High = NumericLimits<int64_t>::Max()>
-class RangedRandomTensorData
-    : public RandomTensorDataBase<D, RangedRandomTensorData<D, Low, High>,
-                                  DefaultRangedGenerator<D>> {
-  friend class RandomTensorDataBase<D, RangedRandomTensorData<D, Low, High>,
-                                    DefaultRangedGenerator<D>>;
-  using Gen = DefaultRangedGenerator<D>;
-  using DataType = D;
-  static Gen MakeGen() { return Gen(Low, High); }
+  RandomTensorDataBuilder& SetIntRange(int32_t min, int32_t max) {
+    int_config_ = std::make_pair(min, max);
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetIntDummy() {
+    int_config_ = Dummy();
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetFloatRange(float min, float max) {
+    float_config_ = std::make_pair(min, max);
+    return *this;
+  }
+
+  RandomTensorDataBuilder& SetFloatDummy() {
+    float_config_ = Dummy();
+    return *this;
+  }
+
+  template <typename D, typename Functor, typename... Args>
+  auto Call(Args&&... args) {
+    if constexpr (std::is_same_v<D, int32_t>) {
+      if (std::holds_alternative<Dummy>(int_config_)) {
+        RandomTensorData<D, DummyGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else if (std::holds_alternative<NullOpt>(int_config_)) {
+        RandomTensorData<D, DefaultGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else {
+        auto [min, max] = std::get<std::pair<D, D>>(int_config_);
+        RandomTensorData<D, DefaultRangedGenerator> data(min, max);
+        return Functor()(data, std::forward<Args>(args)...);
+      }
+    } else if constexpr (std::is_same_v<D, float>) {
+      if (std::holds_alternative<Dummy>(float_config_)) {
+        RandomTensorData<D, DummyGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else if (std::holds_alternative<NullOpt>(float_config_)) {
+        RandomTensorData<D, DefaultGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else {
+        auto [min, max] = std::get<std::pair<D, D>>(float_config_);
+        RandomTensorData<D, DefaultRangedGenerator> data(min, max);
+        return Functor()(data, std::forward<Args>(args)...);
+      }
+    } else {
+      static_assert(false, "Unsupported type");
+    }
+  }
+
+ private:
+  struct Dummy {};
+  struct NullOpt {};
+
+  template <typename D>
+  using Config = std::variant<std::pair<D, D>, Dummy, NullOpt>;
+
+  Config<int32_t> int_config_ = NullOpt();
+  Config<float> float_config_ = NullOpt();
 };
 
 }  // namespace litert
