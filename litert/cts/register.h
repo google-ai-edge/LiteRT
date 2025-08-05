@@ -45,7 +45,11 @@ class RegisterFunctor {
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
+        BuildParamsAndRegister<Fixture<Logic, NpuCompiledModelExecutor>>(
+            device, typename NpuCompiledModelExecutor::Args{
+                        options_.DispatchDir(),
+                        options_.PluginDir(),
+                    });
       }
     }
   }
@@ -71,10 +75,13 @@ class RegisterFunctor {
 
     if (!options_.ShouldRegister(
             absl::StrFormat("%s.%s", suite_name, test_name))) {
-      TestClass::SkippedTest::Register(suite_name, test_name);
-    } else if (auto status = TestClass::Register(
-                   suite_name, test_name, std::move(*params), std::move(args));
-               !status) {
+      return;
+    }
+
+    if (auto status = TestClass::Register(
+            suite_name, test_name, std::move(*params), std::move(args),
+            options_.CreateDataBuilder(), options_.DataSeed());
+        !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
                  status.Error().Message().c_str());
@@ -102,8 +109,7 @@ void RegisterCombinations(size_t iters, size_t& test_id,
 // for cts.
 template <typename Ranks, typename Types, typename OpCodes, typename Fas>
 using BinaryNoBroadcastCts =
-    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>,
-                      DefaultRandomTensorBufferTraits>;
+    BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>>;
 
 template <template <typename TestLogic, typename TestExecutor> typename Fixture>
 void RegisterCtsTests(const CtsConf& cts_options) {

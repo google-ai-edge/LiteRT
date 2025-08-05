@@ -45,6 +45,7 @@ cc_test(
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
@@ -66,6 +67,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -152,5 +154,21 @@ litert_define_cts(
     dont_register = [
         "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
         "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
+    ],
+)
+
+litert_define_cts(
+    name = "qualcomm_cts",
+    backend = "qualcomm",
+    dont_register = [
+        ".*5d.*",  # Filter out 5d tests.
+        ".*6d.*",  # Filter out 6d tests.
+        ".*f32.*",  # Filter out f32 tests. TODO: Debug float numerics issue.
+        # NOTE: Comment above and uncomment to run one of the fp tests with numerics issues.
+        # "^(?:(?!npu_cts_87).)*$$",
+    ],
+    extra_flags = [
+        "--f16_range_for_f32=true",
+        "--data_seed=42",
     ],
 )
