@@ -50,12 +50,18 @@ ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error) {
+  if (text == "version7") {
+    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+    return true;
+  }
+
   if (text == "version8") {
     *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
     return true;
   }
-  if (text == "version7") {
-    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7;
+
+  if (text == "version9") {
+    *options = kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
     return true;
   }
 
@@ -65,10 +71,12 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options) {
   switch (options) {
-    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
-      return "version8";
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7:
       return "version7";
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
+      return "version8";
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
+      return "version9";
   }
 }
 
@@ -107,8 +115,7 @@ std::string AbslUnparseFlag(
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed:
       return "sustained_speed";
     case (
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer
-        ):
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer):
       return "fast_single_answer";
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
       return "turbo_boost";

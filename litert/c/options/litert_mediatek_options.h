@@ -40,6 +40,7 @@ LiteRtStatus LiteRtMediatekOptionsGet(LiteRtOpaqueOptions options,
 typedef enum LiteRtMediatekOptionsNeronSDKVersionType {
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7 = 0,
   kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8 = 1,
+  kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9 = 2,
 } LiteRtMediatekOptionsNeronSDKVersion;
 
 LiteRtStatus LiteRtMediatekOptionsSetNeronSDKVersionType(

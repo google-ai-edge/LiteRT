@@ -57,6 +57,15 @@ TEST(NeronSDKVersionTypeFlagTest, Parse) {
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kVersion, absl::UnparseFlag(value));
   }
+
+  {
+    static constexpr absl::string_view kVersion = "version9";
+    static constexpr LiteRtMediatekOptionsNeronSDKVersionType kLevelEnum =
+        kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9;
+    EXPECT_TRUE(absl::ParseFlag(kVersion, &value, &error));
+    EXPECT_EQ(value, kLevelEnum);
+    EXPECT_EQ(kVersion, absl::UnparseFlag(value));
+  }
 }
 
 TEST(MediatekOptionsFromFlagsTest, DefaultValue) {

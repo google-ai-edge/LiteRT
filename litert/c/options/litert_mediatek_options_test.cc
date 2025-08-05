@@ -300,6 +300,10 @@ TEST(MediatekOptionsTest, CppApi) {
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
   EXPECT_EQ(options->GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+  options->SetNeronSDKVersionType(
+      kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
+  EXPECT_EQ(options->GetNeronSDKVersionType(),
+            kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
 
   // Test Gemma Compiler Optimizations
   EXPECT_FALSE(options->GetEnableGemmaCompilerOptimizations());
