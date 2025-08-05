@@ -79,10 +79,6 @@ struct ExampleTestLogic {
   // Utility for mapping litert ops to corresponding tflite schema types.
   using FbTypes = FbOpTypes<kLiteRtOpCodeTflAdd>;
 
-  // "Mock" (iota) data for random tensor buffers.
-  template <typename TT>
-  using RandomTensorBufferTraits = DummyRandomTensorBufferTraits<TT>;
-
  public:
   // Litert element type enum taken from c++ type T.
   static constexpr ElementType kElementType = GetElementType<T>();
@@ -138,11 +134,11 @@ struct ExampleTestLogic {
   // Initialize input buffers with random data, these will be passed to the
   // compiled model api.
   template <typename Rng>
-  Expected<typename Traits::InputBuffers> MakeInputs(Rng& rng,
-                                                     const Params& params) {
+  Expected<typename Traits::InputBuffers> MakeInputs(
+      const RandomTensorDataBuilder& data_builder, Rng& rng,
+      const Params& params) {
     LITERT_ASSIGN_OR_RETURN(auto input, SimpleBuffer::Create<T>(params.shape));
-    LITERT_RETURN_IF_ERROR(
-        (input.template WriteRandom<T, RandomTensorBufferTraits>(rng)));
+    LITERT_RETURN_IF_ERROR((input.template WriteRandom<T>(data_builder, rng)));
     return typename Traits::InputBuffers{std::move(input)};
   }
 
