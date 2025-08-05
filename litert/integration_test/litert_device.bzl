@@ -250,6 +250,10 @@ def _GpuSpec():
 def _Specs(name):
     return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec())[name]
 
+# Check if the backend maps to an NPU backend.
+def is_npu_backend(name):
+    return name in ["qualcomm", "mediatek", "google_tensor"]
+
 # copybara:uncomment_begin(google-only)
 # # MOBILE HARNESS WRAPPER ###########################################################################
 #
@@ -321,6 +325,16 @@ def _Specs(name):
 # copybara:uncomment_end
 
 # RUN ON DEVICE MACRO ##############################################################################
+
+# Public facing functions to get lib locations from a backend id. Can be used in flag creation.
+def dispatch_device_rlocation(backend_id):
+    spec = _Specs(backend_id)
+    return device_rlocation(spec.dispatch, True)
+
+# Public facing functions to get lib locations from a backend id. Can be used in flag creation.
+def plugin_device_rlocation(backend_id):
+    spec = _Specs(backend_id)
+    return device_rlocation(spec.plugin, True)
 
 def get_driver():
     return if_oss(
