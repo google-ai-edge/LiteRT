@@ -14,10 +14,12 @@
 
 #include "litert/cc/litert_rng.h"
 
+#include <bitset>
 #include <chrono>  // NOLINT
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <type_traits>
 #include <vector>
@@ -287,7 +289,7 @@ TYPED_TEST_SUITE(RandomTensorDataTest, RandomTensorDataTestTypes);
 
 TYPED_TEST(RandomTensorDataTest, NoRange) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   std::vector<TypeParam> buf(10);
   LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
@@ -298,7 +300,7 @@ TYPED_TEST(RandomTensorDataTest, NoRange) {
 
 TYPED_TEST(RandomTensorDataTest, NoRangeFromSize) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   LITERT_ASSERT_OK_AND_ASSIGN(const auto buf, data(device, 10));
   EXPECT_EQ(data.High(), NumericLimits<TypeParam>::Max());
   EXPECT_EQ(data.Low(), NumericLimits<TypeParam>::Lowest());
@@ -308,7 +310,7 @@ TYPED_TEST(RandomTensorDataTest, NoRangeFromSize) {
 
 TYPED_TEST(RandomTensorDataTest, NoRangeFromLayout) {
   auto device = this->TracedDevice();
-  RandomTensorData<TypeParam> data;
+  RandomTensorData<TypeParam, DefaultGenerator> data;
   LiteRtLayout layout;
   layout.rank = 2;
   layout.dimensions[0] = 3;
@@ -323,15 +325,94 @@ TYPED_TEST(RandomTensorDataTest, NoRangeFromLayout) {
 
 TYPED_TEST(RandomTensorDataTest, ExplicitRange) {
   auto device = this->TracedDevice();
-  static constexpr int64_t kMin = -10;
-  static constexpr int64_t kMax = 10;
-  RangedRandomTensorData<TypeParam, kMin, kMax> data;
+  static constexpr TypeParam kMin = -10;
+  static constexpr TypeParam kMax = 10;
+  RandomTensorData<TypeParam, DefaultRangedGenerator> data(kMin, kMax);
   std::vector<TypeParam> buf(10);
   LITERT_ASSERT_OK(data(device, absl::MakeSpan(buf)));
   EXPECT_EQ(data.High(), 10);
   EXPECT_EQ(data.Low(), -10);
   EXPECT_THAT(absl::MakeConstSpan(buf),
               Each(AllOf(Le(data.High()), Ge(data.Low()))));
+}
+
+struct Functor {
+  template <typename RandomTensor, typename Rng>
+  auto operator()(RandomTensor& gen, Rng& rng) {
+    return gen(rng, 10);
+  }
+};
+
+TYPED_TEST(RandomTensorDataTest, BuilderWithRange) {
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  static constexpr TypeParam min = -1;
+  static constexpr TypeParam max = 1;
+  if constexpr (std::is_same_v<TypeParam, int32_t>) {
+    b.SetIntRange(min, max);
+  } else {
+    b.SetFloatRange(min, max);
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buf, (b.Call<TypeParam, Functor>(device)));
+  EXPECT_EQ(buf.size(), 10);
+  EXPECT_THAT(buf, Each(AllOf(Le(max), Ge(min))));
+}
+
+TYPED_TEST(RandomTensorDataTest, BuilderWithDummy) {
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  if constexpr (std::is_same_v<TypeParam, int32_t>) {
+    b.SetIntDummy();
+  } else {
+    b.SetFloatDummy();
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buf, (b.Call<TypeParam, Functor>(device)));
+  EXPECT_EQ(buf.size(), 10);
+
+  std::vector<TypeParam> expected(10);
+  std::iota(expected.begin(), expected.end(), 0);
+
+  EXPECT_EQ(buf, expected);
+}
+
+struct FloatGenerator {
+  template <typename... Floats>
+  explicit FloatGenerator(Floats&&... vals)
+      : vals({std::forward<Floats>(vals)...}) {}
+
+  uint32_t operator()() {
+    auto res = vals[cur];
+    cur = (cur + 1) % vals.size();
+    return (*reinterpret_cast<uint32_t*>(&res));
+  }
+
+  size_t NumValues() const { return vals.size(); }
+
+ private:
+  std::vector<float> vals;
+  size_t cur = 0;
+};
+
+TEST(F16InF23Test, Works) {
+  FloatGenerator device(
+      3.14f, .314f, -3.14f, 0.0061328127f, std::numeric_limits<float>::max(),
+      std::numeric_limits<float>::lowest(), std::numeric_limits<float>::min());
+
+  F16InF32Generator<float> f16_gen;
+  // Leaking a bit of the implementation here but the generator algorithm
+  // will emit (f16) subnormals but not infinities.
+  static constexpr auto kSmallestF16SNormal = 0.00006103515625f;
+  static constexpr auto kLargestF16Normal = 65504.0f;
+
+  for (int i = 0; i < device.NumValues(); ++i) {
+    const float f = std::abs(f16_gen(device));
+    EXPECT_GE(f, kSmallestF16SNormal);
+    EXPECT_LE(f, kLargestF16Normal);
+    const auto mant_bits = std::bitset<32>(f);
+    for (int i = 0; i < 13; ++i) {
+      EXPECT_FALSE(mant_bits.test(mant_bits.size() - 1 - i));
+    }
+  }
 }
 
 }  // namespace
