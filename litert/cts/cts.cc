@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -27,6 +28,7 @@
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/cts/compiled_model_executor.h"
@@ -62,22 +64,6 @@ class CtsTest : public RngTest {
  public:
   using Executor = TestExecutor;
 
-  // Fixture that skips the test body. Used "skip" filtered out test rather
-  // than not registering them at all.
-  class SkippedTest : public ::testing::Test {
-   public:
-    static Expected<void> Register(const std::string& suite_name,
-                                   const std::string& test_name) {
-      RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
-                   __FILE__, __LINE__, []() { return new SkippedTest(); });
-      return {};
-    }
-
-    void TestBody() override {
-      GTEST_SKIP() << "Test explicitly filtered out via --filter flag.";
-    }
-  };
-
   static std::string FmtSuiteName(size_t id) {
     return absl::StrFormat("%s_cts_%lu_%s", TestExecutor::Name(), id,
                            Logic::Name().data());
@@ -109,15 +95,20 @@ class CtsTest : public RngTest {
   static Expected<void> Register(const std::string& suite_name,
                                  const std::string& test_name,
                                  SetupParams&& setup_params,
-                                 Executor::Args&& executor_args) {
+                                 Executor::Args&& executor_args,
+                                 RandomTensorDataBuilder&& data_builder,
+                                 std::optional<int> data_seed) {
     RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
                  [setup_params = std::move(setup_params),
-                  executor_args = std::move(executor_args)]() mutable {
-                   return new CtsTest(std::move(setup_params.model),
-                                      std::move(setup_params.params),
-                                      std::move(setup_params.logic),
-                                      std::move(executor_args));
+                  executor_args = std::move(executor_args),
+                  data_builder = std::move(data_builder),
+                  data_seed = std::move(data_seed)]() mutable {
+                   return new CtsTest(
+                       std::move(setup_params.model),
+                       std::move(setup_params.params),
+                       std::move(setup_params.logic), std::move(executor_args),
+                       std::move(data_builder), std::move(data_seed));
                  });
     return {};
   }
@@ -125,11 +116,11 @@ class CtsTest : public RngTest {
   // Run compiled model with random inputs and compare against the
   // reference implementation.
   void TestBody() override {
-    auto device = this->TracedDevice();
+    auto device = this->TracedDevice(data_seed_);
 
     // TODO: for i in inter-test iterations
-    LITERT_ASSERT_OK_AND_ASSIGN(auto inputs,
-                                logic_.MakeInputs(device, params_));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto inputs, logic_.MakeInputs(data_builder_, device, params_));
 
     LITERT_ASSERT_OK_AND_ASSIGN(auto actual, GetActual(inputs));
     LITERT_ASSERT_OK_AND_ASSIGN(auto ref, GetReference(inputs));
@@ -142,11 +133,14 @@ class CtsTest : public RngTest {
 
  private:
   CtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
-          Logic logic, typename Executor::Args&& executor_args)
+          Logic logic, typename Executor::Args&& executor_args,
+          RandomTensorDataBuilder&& data_builder, std::optional<int> data_seed)
       : model_(std::move(model)),
         params_(std::move(params)),
         logic_(std::move(logic)),
-        executor_args_(std::move(executor_args)) {}
+        executor_args_(std::move(executor_args)),
+        data_builder_(std::move(data_builder)),
+        data_seed_(data_seed) {}
 
   Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {
     LITERT_ASSIGN_OR_RETURN(auto exec,
@@ -192,6 +186,8 @@ class CtsTest : public RngTest {
   typename Logic::Traits::Params params_;
   Logic logic_;
   typename Executor::Args executor_args_;
+  RandomTensorDataBuilder data_builder_;
+  std::optional<int> data_seed_;
 };
 
 }  // namespace testing

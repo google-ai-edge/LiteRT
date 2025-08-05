@@ -41,6 +41,7 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_rng.h"
 #include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert {
@@ -153,14 +154,18 @@ class SimpleBuffer {
   // by the traits template.
   // TODO: Add visit type pattern to allow skipping explicitly specializing
   // by data type.
-  template <typename T, template <typename> typename RngTraits, typename Rng>
+  template <typename T, template <typename> typename Generator, typename Rng>
   Expected<void> WriteRandom(Rng& rng, size_t start = 0,
                              std::optional<size_t> num_elements = {}) {
-    using Gen = typename RngTraits<T>::Gen;
-    Gen gen;
-    const auto num_elements_to_write =
-        num_elements ? *num_elements : TypedNumElements<T>() - start;
-    return gen(rng, Span<T>().subspan(start, num_elements_to_write));
+    RandomTensorData<T, Generator> gen;
+    return RandomTensorFunctor()(gen, rng, start, num_elements, *this);
+  }
+
+  template <typename T, typename Rng>
+  Expected<void> WriteRandom(const RandomTensorDataBuilder& b, Rng& rng,
+                             size_t start = 0,
+                             std::optional<size_t> num_elements = {}) {
+    return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
   }
 
   // Returns a span of const values from the buffer.
@@ -257,6 +262,20 @@ class SimpleBuffer {
         env_(std::move(env)),
         tensor_type_(std::move(tensor_type)),
         size_in_bytes_(size_in_bytes) {}
+
+  struct RandomTensorFunctor {
+    template <typename Gen, typename Rng>
+    Expected<void> operator()(Gen& gen, Rng& rng, size_t start,
+                              std::optional<size_t> num_elements,
+                              SimpleBuffer& self) {
+      const auto num_elements_to_write =
+          num_elements
+              ? *num_elements
+              : self.TypedNumElements<typename Gen::DataType>() - start;
+      return gen(rng, self.template Span<typename Gen::DataType>().subspan(
+                          start, num_elements_to_write));
+    }
+  };
 
   LiteRtAlignedMem buffer_;
   Environment env_;
