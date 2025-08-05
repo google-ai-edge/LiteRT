@@ -129,8 +129,8 @@ def _apply_plugin(
   return component(
       input_model,
       output_model,
-      backend.soc_manufacturer,
-      backend.soc_model,
+      backend.soc_manufacturer(),
+      backend.soc_model(),
   )
 
 
