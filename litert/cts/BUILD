@@ -33,6 +33,8 @@ cc_test(
         # copybara:uncomment "--gunit_color=yes",
     ],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    # TODO: Copybara rewrite the gunit flags and remove this tag.
+    tags = ["no_oss"],
     deps = [
         ":compiled_model_executor",
         ":cts_configure",
@@ -43,6 +45,7 @@ cc_test(
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:matchers",
@@ -64,6 +67,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_rng",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
