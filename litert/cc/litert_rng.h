@@ -485,7 +485,7 @@ class RandomTensorDataBuilder {
   }
 
   template <typename D, typename Functor, typename... Args>
-  auto Call(Args&&... args) {
+  auto Call(Args&&... args) const {
     if constexpr (std::is_same_v<D, int32_t>) {
       if (std::holds_alternative<Dummy>(int_config_)) {
         RandomTensorData<D, DummyGenerator> data;

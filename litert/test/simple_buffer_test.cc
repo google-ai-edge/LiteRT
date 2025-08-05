@@ -187,6 +187,20 @@ TEST_F(RngTensorBufferHelperTest, WriteRandomSubArray) {
   EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(1, 0, 1, 4));
 }
 
+TEST_F(RngTensorBufferHelperTest, WriteRandomWithBuilder) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto buf, SimpleBuffer::Create<int32_t>({2, 2}, {1, 2, 3, 4}));
+  const auto& type = buf.Type();
+  EXPECT_EQ(type.ElementType(), ElementType::Int32);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto num_elements, type.Layout().NumElements());
+  EXPECT_EQ(num_elements, 4);
+  auto device = this->TracedDevice();
+  RandomTensorDataBuilder b;
+  b.SetIntDummy();
+  LITERT_ASSERT_OK((buf.WriteRandom<int32_t>(b, device)));
+  EXPECT_THAT(buf.Span<int32_t>(), ElementsAre(0, 1, 2, 3));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace litert
