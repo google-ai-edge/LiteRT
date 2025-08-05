@@ -18,7 +18,7 @@ limitations under the License.
 #include <cstring>
 #include <vector>
 
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_signature.h"
+#include "tflite/converter/tools/versioning/op_signature.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/schema/schema_generated.h"

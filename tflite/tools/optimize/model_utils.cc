@@ -22,7 +22,7 @@ limitations under the License.
 #include <string>
 #include <vector>
 
-#include "tensorflow/compiler/mlir/lite/tools/optimize/operator_property.h"
+#include "tflite/converter/tools/optimize/operator_property.h"
 #include "tflite/core/model.h"
 #include "tflite/kernels/internal/tensor_utils.h"
 #include "tflite/kernels/internal/types.h"
@@ -57,7 +57,7 @@ int32_t GetOrInsertOpCodeIndex(ModelT* model, const BuiltinOperator& op_code,
   // Return the index of the newly placed OperatorCodeT.
   return op_code_idx;
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/model_utils.cc:GetOrInsertOpCodeIndex)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/model_utils.cc:GetOrInsertOpCodeIndex)
 
 }  // namespace
 
@@ -74,7 +74,7 @@ void MakeDequantizeOperator(ModelT* model, std::unique_ptr<OperatorT>* op,
 
   op->reset(op_raw);
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/model_utils.cc:MakeDequantizeOperator)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/model_utils.cc:MakeDequantizeOperator)
 
 // Creates a Quantize OperatorT object.
 void MakeQuantizeOperator(ModelT* model, std::unique_ptr<OperatorT>* op,
@@ -103,7 +103,7 @@ void MakeTensor(const string& name, const std::vector<int32_t>& shape,
 
   tensor->reset(tensor_raw);
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/model_utils.cc:MakeTensor)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/model_utils.cc:MakeTensor)
 
 // Create a new TensorT object with quantization parameters.
 void MakeTensorWithQuantParam(const string& name,
@@ -139,7 +139,7 @@ bool HasMinMax(const TensorT* tensor) {
   return tensor->quantization && !tensor->quantization->min.empty() &&
          !tensor->quantization->max.empty();
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/model_utils.cc:HasMinMax)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/model_utils.cc:HasMinMax)
 
 void SetOperatorCodeVersion(ModelT* model) {
   for (int subgraph_idx = 0, end = model->subgraphs.size(); subgraph_idx < end;

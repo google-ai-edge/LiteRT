@@ -28,7 +28,7 @@ limitations under the License.
 
 #include <gtest/gtest.h>
 #include "absl/log/check.h"
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/context_util.h"
 #include "tflite/core/c/builtin_op_data.h"

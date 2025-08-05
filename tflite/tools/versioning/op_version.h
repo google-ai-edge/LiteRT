@@ -18,7 +18,7 @@ limitations under the License.
 #include <cstdint>
 #include <vector>
 
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #include "tflite/tools/versioning/op_signature.h"
 
 namespace tflite {

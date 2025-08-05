@@ -31,7 +31,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/array.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common_internal.h"

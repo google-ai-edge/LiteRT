@@ -19,8 +19,8 @@ limitations under the License.
 #include <vector>
 
 #include "absl/log/log.h"
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
-#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/schema_generated.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tflite/builtin_op_data.h"
 #include "tflite/core/c/builtin_op_data.h"

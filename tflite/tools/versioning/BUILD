@@ -25,6 +25,8 @@ cc_library(
         ":op_signature",
         "//tflite:builtin_op_data",
         "//tflite:minimal_logging",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/kernels/internal:compatibility",
@@ -34,8 +36,6 @@ cc_library(
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
         "@org_tensorflow//tensorflow/core:tflite_portable_logging",
     ],
 )
@@ -69,6 +69,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//tflite:stderr_reporter",
+        "//tflite/converter/tools/versioning:op_signature",
         "//tflite/core/api",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
@@ -76,7 +77,6 @@ cc_library(
         "//tflite/kernels/internal:compatibility",
         "//tflite/schema:schema_fbs",
         "//tflite/schema:schema_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning:op_signature",
     ],
 )
 

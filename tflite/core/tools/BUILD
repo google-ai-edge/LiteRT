@@ -21,6 +21,7 @@ cc_library(
         "//tflite:schema_fbs_version",
         "//tflite:util",
         "//tflite/c:common",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core:framework",
         "//tflite/core/api:error_reporter",
         "//tflite/core/api:op_resolver",
@@ -30,7 +31,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:optional",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
     ],
 )
 
@@ -52,12 +52,12 @@ cc_test(
         "//tflite:util",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/core/api",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
         "@org_tensorflow//tensorflow/core/platform:resource_loader",
     ],
 )
@@ -83,11 +83,11 @@ cc_test(
         "//tflite:framework",
         "//tflite:schema_fbs_version",
         "//tflite/c:common",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/core:framework",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
