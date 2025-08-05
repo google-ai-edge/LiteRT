@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/c/litert_logging.h"
 #include "litert/tools/culprit_finder/culprit_finder_lib.h"
-#include "tflite/tools/logging.h"
 
 int main(int argc, const char* argv[]) {
   litert::tools::CulpritFinder culprit_finder(&argc, argv);
   culprit_finder.RunCulpritFinder();
-  TFLITE_LOG(INFO) << "Culprit finder finished.";
+  LITERT_LOG(LITERT_INFO, "Culprit finder finished.");
   return 0;
 }

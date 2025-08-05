@@ -17,24 +17,24 @@
 #include <cstring>
 #include <utility>
 
+#include "litert/c/litert_logging.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
-#include "tflite/tools/logging.h"
 #include "tflite/tools/utils.h"
 
 namespace litert::tools {
 
 TfLiteStatus TfliteInputManager::PrepareInputData() {
   if (interpreter_ == nullptr) {
-    TFLITE_LOG(ERROR) << "Interpreter is null";
+    LITERT_LOG(LITERT_ERROR, "Interpreter is null");
     return kTfLiteError;
   }
   inputs_data_.clear();
   for (int input_index : interpreter_->inputs()) {
     TfLiteTensor* input_tensor = interpreter_->tensor(input_index);
     if (input_tensor->type == kTfLiteString) {
-      TFLITE_LOG(ERROR) << "String input tensor is not supported";
+      LITERT_LOG(LITERT_ERROR, "String input tensor is not supported");
       return kTfLiteError;
     }
     float low_range = 0;
@@ -56,7 +56,7 @@ TfLiteStatus TfliteInputManager::SetInputTensors(
     int input_index = interpreter.inputs()[i];
     TfLiteTensor* input_tensor = interpreter.tensor(input_index);
     if (input_tensor->type == kTfLiteString) {
-      TFLITE_LOG(ERROR) << "String input tensor is not supported";
+      LITERT_LOG(LITERT_ERROR, "String input tensor is not supported");
       return kTfLiteError;
     }
     std::memcpy(input_tensor->data.raw, inputs_data_[i].data.get(),
