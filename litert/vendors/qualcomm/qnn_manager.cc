@@ -530,16 +530,14 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
                       "Failed to create QNN context");
   }
   auto context_deleter = Api()->contextFree;
-  auto profile_deleter = Api()->profileFree;
-  Qnn_ProfileHandle_t profile_handle = nullptr;
 
   // Return empty profile handle if profiling is off.
   if (profiling_level == ::qnn::Profiling::kOff) {
-    return ContextHandle{context_handle, profile_handle, context_deleter,
-                         profile_deleter};
+    return ContextHandle{context_handle, nullptr, context_deleter, nullptr};
   }
 
   // Create profile handle.
+  Qnn_ProfileHandle_t profile_handle = nullptr;
   uint32_t profiling = static_cast<uint32_t>(profiling_level);
   if (profiling_level == ::qnn::Profiling::kLinting) {
     profiling = QNN_HTP_PROFILE_LEVEL_LINTING;
@@ -565,8 +563,9 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
                         "Failed to set profile configs");
     }
   }
+
   return ContextHandle{context_handle, profile_handle, context_deleter,
-                       profile_deleter};
+                       Api()->profileFree};
 }
 
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
