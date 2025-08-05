@@ -32,9 +32,9 @@ limitations under the License.
 #include "tensorflow/core/framework/op_def.pb.h"
 
 // graph_transformation module.
-#include "tensorflow/compiler/mlir/lite/delegates/flex/allowlisted_flex_ops.h"
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_signature.h"
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_version.h"
+#include "tflite/converter/delegates/flex/allowlisted_flex_ops.h"
+#include "tflite/converter/tools/versioning/op_signature.h"
+#include "tflite/converter/tools/versioning/op_version.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/schema/schema_generated.h"

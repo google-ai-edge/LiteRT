@@ -66,9 +66,9 @@ cc_library(
     ],
     deps = [
         ":error_reporter",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
     ],
 )
 
@@ -76,7 +76,7 @@ cc_library(
     name = "error_reporter",
     hdrs = [
         "error_reporter.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter.h",
+        "//tflite/converter/core/api:error_reporter.h",
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
@@ -84,7 +84,7 @@ cc_library(
         "//visibility:public",
     ],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
+        "//tflite/converter/core/api:error_reporter",
     ],
 )
 
@@ -92,14 +92,14 @@ cc_library(
     name = "verifier",
     hdrs = [
         "verifier.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:verifier.h",
+        "//tflite/converter/core/api:verifier.h",
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
     visibility = ["//visibility:public"],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:verifier",
+        "//tflite/converter/core/api:error_reporter",
+        "//tflite/converter/core/api:verifier",
     ],
 )
 
@@ -123,11 +123,11 @@ cc_test(
         ":api",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
+        "//tflite/converter/core/api:error_reporter",
+        "//tflite/converter/schema:schema_conversion_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
     ],
 )
 
@@ -154,11 +154,11 @@ cc_test(
         ":api",
         "//tflite:string",
         "//tflite/c:c_api_types",
+        "//tflite/converter/core/api:error_reporter",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
     ],
 )

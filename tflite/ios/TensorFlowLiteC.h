@@ -16,7 +16,7 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_IOS_TENSORFLOWLITEC_H_
 #define TENSORFLOW_LITE_IOS_TENSORFLOWLITEC_H_
 
-#include "tensorflow/compiler/mlir/lite/core/c/tflite_types.h"
+#include "tflite/converter/core/c/tflite_types.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/core/async/c/types.h"
 #include "tflite/core/c/c_api.h"

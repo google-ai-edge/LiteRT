@@ -23,7 +23,7 @@ limitations under the License.
 
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_split.h"
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #include "tflite/minimal_logging.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/schema/schema_utils.h"
