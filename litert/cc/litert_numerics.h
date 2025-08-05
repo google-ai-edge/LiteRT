@@ -35,11 +35,11 @@ struct NumericLimits {
   using StdLimits = std::numeric_limits<DataType>;
 
  public:
-  // Smallest positive.
+  // Positive with smallest magnitude.
   static constexpr T Min() { return StdLimits::min(); }
-  // Largest positive.
+  //  Positive with largest magnitude.
   static constexpr T Max() { return StdLimits::max(); }
-  // Largest negative.
+  // Negative with largest magnitude.
   static constexpr T Lowest() { return StdLimits::lowest(); }
 };
 
