@@ -362,7 +362,8 @@ litert_device_test(
 #     name = "litert_guitar_device_integration_tests_kotlin",
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
-#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
@@ -370,7 +371,11 @@ litert_device_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test"],
 #             ),
 #             litert_qualcomm_mh_guitar_test(
-#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test"],
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
+#             ),
+#             litert_pixel_9_mh_guitar_test(
+#                 dimension_model = "pixel 9",
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
 #             ),
 #         ],
 #     ),

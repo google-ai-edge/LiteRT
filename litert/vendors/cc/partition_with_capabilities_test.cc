@@ -32,7 +32,7 @@
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/vendors/examples/example_conversion_impl.h"
 #include "litert/vendors/examples/example_ir.h"
-#include "tensorflow/compiler/mlir/lite/schema/schema_generated.h"
+#include "tflite/converter/schema/schema_generated.h"
 
 namespace litert {
 namespace {

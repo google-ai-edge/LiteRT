@@ -39,7 +39,7 @@
 #include "litert/runtime/profiler.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
@@ -153,6 +153,9 @@ class LiteRtCompiledModelT {
   LiteRtExternalLiteRtBufferContextT* GetBufferContext() {
     return buffer_context_.get();
   }
+
+  // Returns the number of signatures in the model.
+  size_t GetNumSignatures() const { return signature_keys_.size(); }
 
   // Error reporter APIs
 

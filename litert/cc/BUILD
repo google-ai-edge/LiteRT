@@ -1056,11 +1056,13 @@ cc_test(
     name = "litert_compiled_model_test",
     srcs = ["litert_compiled_model_test.cc"],
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_layout",
         ":litert_macros",
         ":litert_model",
         ":litert_options",
@@ -1079,6 +1081,7 @@ cc_test(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
