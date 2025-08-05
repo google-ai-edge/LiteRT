@@ -98,6 +98,8 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
   CpuCompiledModelExecutor(const CpuCompiledModelExecutor&) = delete;
   CpuCompiledModelExecutor& operator=(const CpuCompiledModelExecutor&) = delete;
 
+  struct Args {};
+
   static constexpr absl::string_view Name() { return "cpu"; }
 
   static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model) {
@@ -116,6 +118,11 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
                                     std::move(env));
   }
 
+  static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Args& args) {
+    return Create(model);
+  }
+
  private:
   CpuCompiledModelExecutor(CompiledModel&& api, Options&& options,
                            Environment&& env)
@@ -132,7 +139,17 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
   NpuCompiledModelExecutor(const NpuCompiledModelExecutor&) = delete;
   NpuCompiledModelExecutor& operator=(const NpuCompiledModelExecutor&) = delete;
 
+  struct Args {
+    std::string dispatch_dir;
+    std::optional<std::string> plugin_dir;
+  };
+
   static constexpr absl::string_view Name() { return "npu"; }
+
+  static Expected<NpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Args& args) {
+    return Create(model, args.dispatch_dir, args.plugin_dir);
+  }
 
   static Expected<NpuCompiledModelExecutor> Create(
       LiteRtModelT& model, const std::string& dispatch_dir,

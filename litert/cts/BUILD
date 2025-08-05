@@ -33,6 +33,8 @@ cc_test(
         # copybara:uncomment "--gunit_color=yes",
     ],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    # TODO: Copybara rewrite the gunit flags and remove this tag.
+    tags = ["no_oss"],
     deps = [
         ":compiled_model_executor",
         ":cts_configure",
