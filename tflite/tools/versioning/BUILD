@@ -18,7 +18,7 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
+        "//tflite/converter/tools/versioning",
     ],
 )
 
@@ -33,6 +33,7 @@ cc_library(
     compatible_with = get_compatible_with_portable(),
     deps = [
         "//tflite:stderr_reporter",
+        "//tflite/converter/tools/versioning:op_signature",
         "//tflite/core/api",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
@@ -40,7 +41,6 @@ cc_library(
         "//tflite/kernels/internal:compatibility",
         "//tflite/schema:schema_fbs",
         "//tflite/schema:schema_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning:op_signature",
     ],
 )
 

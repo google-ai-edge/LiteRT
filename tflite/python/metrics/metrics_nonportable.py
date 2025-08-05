@@ -16,7 +16,7 @@
 from typing import Optional, Text
 import uuid
 
-from tensorflow.compiler.mlir.lite.metrics import converter_error_data_pb2
+from tflite.converter.metrics import converter_error_data_pb2
 from tflite.python.metrics import metrics_interface
 from tflite.python.metrics.wrapper import metrics_wrapper
 from tensorflow.python.eager import monitoring

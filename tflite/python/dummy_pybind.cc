@@ -1,4 +1,4 @@
-/* Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,15 +12,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
-/// WARNING: Users of TensorFlow Lite should not include this file directly,
-/// but should instead include
-/// "tflite/c/builtin_op_data.h".
-/// Only the TensorFlow Lite implementation itself should include this
-/// file directly.
-#ifndef TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_
-#define TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_
+#include <pybind11/pybind11.h>
 
-#include "tflite/converter/core/c/builtin_op_data.h"  // IWYU pragma: export
-#include "tflite/core/c/common.h"  // IWYU pragma: export
-
-#endif  // TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_
+PYBIND11_MODULE(_dummy_pybind, m) { m.doc() = "Dummy pybind module."; }

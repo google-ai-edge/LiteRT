@@ -23,7 +23,7 @@ limitations under the License.
 #include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "flatbuffers/verifier.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_utils.h"
+#include "tflite/converter/schema/schema_utils.h"
 #include "tflite/core/tools/verifier.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/stderr_reporter.h"

@@ -38,7 +38,7 @@ tf_proto_library(
     protodeps = [
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_options_proto",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/debug:debug_options_proto",
+        "//tflite/converter/debug:debug_options_proto",
         ":types_proto",
     ],
     visibility = ["//visibility:public"],

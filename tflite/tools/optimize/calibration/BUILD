@@ -67,14 +67,14 @@ cc_library(
         "//tflite:framework",
         "//tflite:minimal_logging",
         "//tflite:string",
+        "//tflite/converter:allocation",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core:framework",
         "//tflite/core/api",
         "//tflite/core/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
     ],
 )
 

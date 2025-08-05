@@ -34,7 +34,7 @@ limitations under the License.
 #include <vector>
 
 #include "Eigen/Core"  // from @eigen_archive
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/array.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/delegates/nnapi/nnapi_delegate_plugin.h"

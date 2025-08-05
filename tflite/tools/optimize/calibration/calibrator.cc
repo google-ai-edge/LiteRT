@@ -26,8 +26,8 @@ limitations under the License.
 #include "absl/container/flat_hash_map.h"
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/allocation.h"
-#include "tensorflow/compiler/mlir/lite/schema/schema_utils.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/converter/schema/schema_utils.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/op_resolver.h"
 #include "tflite/core/c/common.h"

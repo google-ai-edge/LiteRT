@@ -19,7 +19,7 @@ limitations under the License.
 #include <string>
 #include <utility>
 
-#include "tensorflow/compiler/mlir/lite/tools/optimize/operator_property.h"
+#include "tflite/converter/tools/optimize/operator_property.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace tflite {

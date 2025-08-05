@@ -112,6 +112,10 @@ filegroup(
     name = "tflite_internal_cc_3p_api_deps_src_all",
     srcs = [
         ":tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/core/api:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/core/c:tflite_internal_cc_3p_api_deps_src",
+        "//tflite/converter/schema:tflite_internal_cc_3p_api_deps_src",
         "//tflite/core:macros.h",
         "//tflite/core/acceleration/configuration/c:tflite_internal_cc_3p_api_deps_src",
         "//tflite/core/api:tflite_internal_cc_3p_api_deps_src",
@@ -119,10 +123,6 @@ filegroup(
         "//tflite/kernels:tflite_internal_cc_3p_api_deps_src",
         "//tflite/kernels/internal:tflite_internal_cc_3p_api_deps_src",
         "//tflite/schema:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_internal_cc_3p_api_deps_src",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:tflite_internal_cc_3p_api_deps_src",
     ],
     visibility = tflite_internal_cc_3p_api_deps_src_all_visibility_allowlist(),
 )
@@ -482,13 +482,13 @@ cc_library(
     name = "allocation",
     hdrs = [
         "allocation.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation.h",
+        "//tflite/converter:allocation.h",
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts_warnings(),
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/api:error_reporter",
+        "//tflite/converter:allocation",
+        "//tflite/converter/core/api:error_reporter",
     ],
 )
 
@@ -880,9 +880,9 @@ cc_library(
     copts = tflite_copts_warnings(),
     deps = [
         ":string",
+        "//tflite/converter:string_utils",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:string_utils",
     ],
 )
 

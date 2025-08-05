@@ -104,7 +104,7 @@ typedef struct TfLiteExternalContext {
 
 // LINT.IfChange(optional_tensor)
 #define kTfLiteOptionalTensor (-1)
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/flatbuffer_export.cc:optional_tensor)
+// LINT.ThenChange(//tflite/converter/flatbuffer_export.cc:optional_tensor)
 
 /// Fixed size list of integers. Used for dimensions and inputs/outputs tensor
 /// indices
