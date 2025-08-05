@@ -81,6 +81,7 @@
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/prelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
@@ -492,6 +493,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflRelu6: {
       op_wrappers =
           ::qnn::BuildRelu6Op(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflPrelu: {
+      op_wrappers =
+          ::qnn::BuildPreluOp(tensor_pool, input_tensors, output_tensors);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLogistic: {

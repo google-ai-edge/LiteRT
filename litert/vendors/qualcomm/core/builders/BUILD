@@ -599,3 +599,17 @@ cc_library(
         "@qairt//:qnn_lib_headers",
     ],
 )
+
+cc_library(
+    name = "prelu_op_builder",
+    srcs = ["prelu_op_builder.cc"],
+    hdrs = ["prelu_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)

@@ -182,6 +182,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:pack_op_builder",
         "//litert/vendors/qualcomm/core/builders:pad_op_builder",
         "//litert/vendors/qualcomm/core/builders:pool2d_op_builder",
+        "//litert/vendors/qualcomm/core/builders:prelu_op_builder",
         "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
         "//litert/vendors/qualcomm/core/builders:reduce_op_builder",
         "//litert/vendors/qualcomm/core/builders:relu6_op_builder",
