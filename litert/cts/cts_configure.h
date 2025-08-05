@@ -23,6 +23,7 @@
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_rng.h"
 
 // Which backend to use as the "actual".
 ABSL_DECLARE_FLAG(std::string, backend);
@@ -71,6 +72,17 @@ class CtsConf {
   // the filter regex.
   bool ShouldRegister(const std::string& name) const;
   bool ShouldRegister(absl::string_view name) const;
+
+  // NPU library directories.
+  const std::string& DispatchDir() const { return dispatch_dir_; }
+  const std::string& PluginDir() const { return plugin_dir_; }
+
+  // Create the object that encapsulates the tensor data generation configured
+  // by the user.
+  RandomTensorDataBuilder CreateDataBuilder() const {
+    // TODO: Add flags and parse here (f32->f16 etc).
+    return RandomTensorDataBuilder();
+  }
 
  private:
   explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,

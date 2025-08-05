@@ -22,6 +22,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_rng.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
@@ -43,8 +44,8 @@ class BinaryNoBroadcastTest : public RngTest {};
 
 template <size_t Rank, typename T, LiteRtOpCode OpCode,
           ActivationFunctionType Fa>
-using GenForTest = BinaryNoBroadcast<SizeC<Rank>, T, OpCodeC<OpCode>, FaC<Fa>,
-                                     SizeC<64>, DummyRandomTensorBufferTraits>;
+using GenForTest =
+    BinaryNoBroadcast<SizeC<Rank>, T, OpCodeC<OpCode>, FaC<Fa>, SizeC<64>>;
 
 // clang-format off
 using BinaryNoBroadcastTestTypes = Types<
@@ -86,8 +87,11 @@ TYPED_TEST(BinaryNoBroadcastTest, TestLogic) {
               Each(Eq(2)));
 
   auto device = this->TracedDevice();
+  RandomTensorDataBuilder data_builder;
+  data_builder.SetIntDummy();
+  data_builder.SetFloatDummy();
   LITERT_ASSERT_OK_AND_ASSIGN(const auto inputs,
-                              gen.MakeInputs(device, params));
+                              gen.MakeInputs(data_builder, device, params));
   EXPECT_EQ(inputs.size(), 2);
 
   auto lhs = inputs[0].template AsView<DataType>();
