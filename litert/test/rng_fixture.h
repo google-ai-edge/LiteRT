@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_RNG_FIXTURE_H_
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -45,8 +46,9 @@ class RngTest : public ::testing::Test {
 
  protected:
   template <typename Device = DefaultDevice>
-  auto TracedDevice() {
-    return TraceSeedInfo(Device(CurrentSeed()));
+  auto TracedDevice(std::optional<int> seed = std::nullopt) {
+    const auto seed_to_use = seed ? *seed : CurrentSeed();
+    return TraceSeedInfo(Device(seed_to_use));
   }
 
   template <typename... Args>
