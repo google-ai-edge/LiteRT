@@ -1,4 +1,5 @@
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:build_def.bzl", "tflite_jni_binary", "tflite_jni_linkopts")
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
 
