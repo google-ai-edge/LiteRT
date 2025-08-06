@@ -67,6 +67,9 @@ jobject ToJavaElementType(JNIEnv* env, ElementType element_type) {
     case ElementType::Bool:
       element_type_name = "BOOLEAN";
       break;
+    case ElementType::Int64:
+      element_type_name = "INT64";
+      break;
     default:
       LITERT_LOG(LITERT_ERROR, "Unsupported element type in Kotlin: %d",
                  element_type);

@@ -109,6 +109,26 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteBoolean(
   }
 }
 
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle,
+                                                            jlongArray input) {
+  AUTO_CLEANUP_JNI_LONG_ARRAY(env, input);
+  auto num_elements = env->GetArrayLength(input);
+  auto input_span = absl::MakeConstSpan(input_array, num_elements);
+
+  auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
+  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto write_result = tensor_buffer.Write<jlong>(input_span);
+  if (!write_result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
+               write_result.Error().Message().c_str());
+    ThrowLiteRtException(env, write_result.Error().Status(),
+                         write_result.Error().Message());
+  }
+}
+
 JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                                                           jclass clazz,
@@ -225,6 +245,36 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
   jbooleanArray result = env->NewBooleanArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
   env->SetBooleanArrayRegion(result, 0, *num_elements, lock_and_addr->second);
+  return result;
+}
+
+JNIEXPORT jlongArray JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadLong(JNIEnv* env,
+                                                           jclass clazz,
+                                                           jlong handle) {
+  auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
+  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_type = tensor_buffer.TensorType();
+  if (!tensor_type) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
+               tensor_type.Error().Message().c_str());
+    ThrowLiteRtException(env, tensor_type.Error().Status(),
+                         "Failed to get tensor type.");
+    return nullptr;
+  }
+  auto num_elements = tensor_type->Layout().NumElements();
+  if (!num_elements) {
+    LITERT_LOG(LITERT_ERROR, "Failed to get tensor num elements.");
+    ThrowLiteRtException(env, kLiteRtStatusErrorUnsupported,
+                         "Failed to get tensor num elements.");
+    return nullptr;
+  }
+
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const jlong>(
+      tensor_buffer, litert::TensorBuffer::LockMode::kRead);
+  jlongArray result = env->NewLongArray(*num_elements);
+  // Copy the data from the locked tensor buffer to the JVM array.
+  env->SetLongArrayRegion(result, 0, *num_elements, lock_and_addr->second);
   return result;
 }
 

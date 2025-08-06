@@ -44,6 +44,12 @@ JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteBoolean(
     JNIEnv* env, jclass clazz, jlong handle, jbooleanArray input);
 
+JNIEXPORT void JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle,
+                                                            jlongArray input);
+
 JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                                                           jclass clazz,
@@ -63,6 +69,11 @@ JNIEXPORT jbooleanArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
                                                               jclass clazz,
                                                               jlong handle);
+
+JNIEXPORT jlongArray JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadLong(JNIEnv* env,
+                                                           jclass clazz,
+                                                           jlong handle);
 
 JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeDestroy(JNIEnv* env,

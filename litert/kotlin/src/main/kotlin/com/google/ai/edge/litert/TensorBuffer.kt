@@ -50,6 +50,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
   }
 
   @Throws(LiteRtException::class)
+  fun writeLong(data: LongArray) {
+    assertNotDestroyed()
+
+    nativeWriteLong(handle, data)
+  }
+
+  @Throws(LiteRtException::class)
   fun readInt(): IntArray {
     assertNotDestroyed()
 
@@ -77,6 +84,13 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     return nativeReadBoolean(handle)
   }
 
+  @Throws(LiteRtException::class)
+  fun readLong(): LongArray {
+    assertNotDestroyed()
+
+    return nativeReadLong(handle)
+  }
+
   protected override fun destroy() {
     nativeDestroy(handle)
   }
@@ -94,6 +108,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
 
     @JvmStatic private external fun nativeWriteBoolean(handle: Long, data: BooleanArray)
 
+    @JvmStatic private external fun nativeWriteLong(handle: Long, data: LongArray)
+
     @JvmStatic private external fun nativeReadInt(handle: Long): IntArray
 
     @JvmStatic private external fun nativeReadFloat(handle: Long): FloatArray
@@ -101,6 +117,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     @JvmStatic private external fun nativeReadInt8(handle: Long): ByteArray
 
     @JvmStatic private external fun nativeReadBoolean(handle: Long): BooleanArray
+
+    @JvmStatic private external fun nativeReadLong(handle: Long): LongArray
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }
