@@ -65,8 +65,6 @@ constexpr char kFindNanFlag[] = "find_nan";
 // Find numeric error specific flags.
 constexpr char kFindNumericErrorFlag[] = "find_numeric_error";
 constexpr char kMinNumericErrorFlag[] = "min_numeric_error";
-// GPU specific flags.
-constexpr char kGPUPrecisionLossAllowedFlag[] = "gpu_precision_loss_allowed";
 
 using ::tflite::Flag;
 using ::tflite::Flags;
@@ -119,8 +117,6 @@ void CulpritFinder::SetDefaultParams() {
   params_.AddParam(kFindNanFlag, ToolParam::Create<bool>(true));
   params_.AddParam(kFindNumericErrorFlag, ToolParam::Create<bool>(true));
   params_.AddParam(kMinNumericErrorFlag, ToolParam::Create<float>(0.0001));
-  params_.AddParam(kGPUPrecisionLossAllowedFlag, ToolParam::Create<bool>(true));
-
   delegate_list_util_.AddAllDelegateParams();
 }
 
@@ -141,8 +137,6 @@ void CulpritFinder::LogParams() {
                  true);
   LOG_TOOL_PARAM(params_, float, kMinNumericErrorFlag, "Min numeric error",
                  true);
-  LOG_TOOL_PARAM(params_, bool, kGPUPrecisionLossAllowedFlag,
-                 "Allow GPU precision loss", true);
   for (const std::unique_ptr<tflite::tools::DelegateProvider>&
            delegate_provider :
        tflite::tools::GetRegisteredDelegateProviders()) {
@@ -174,8 +168,6 @@ std::vector<tflite::Flag> CulpritFinder::GetFlags() {
       CreateFlag<float>(kMinNumericErrorFlag, &params_,
                         "Minimum absolute difference to consider an "
                         "inference as an error."),
-      CreateFlag<bool>(kGPUPrecisionLossAllowedFlag, &params_,
-                       "Allow GPU precision loss."),
   };
   delegate_list_util_.AppendCmdlineFlags(flag_list);
   return flag_list;
