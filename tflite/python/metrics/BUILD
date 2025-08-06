@@ -1,6 +1,7 @@
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_library")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "if_portable", "pybind_extension")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],

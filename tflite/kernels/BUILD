@@ -1,5 +1,7 @@
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_opts_nortti_if_android")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pybind_extension")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_combine_cc_tests", "tflite_copts", "tflite_self_contained_libs_test_suite")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite_combined")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")

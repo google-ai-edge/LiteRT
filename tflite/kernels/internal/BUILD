@@ -1,6 +1,8 @@
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "transitive_hdrs")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite_combined")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")

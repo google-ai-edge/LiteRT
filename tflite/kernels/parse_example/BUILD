@@ -1,5 +1,6 @@
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_test", "tf_features_nolayering_check_if_ios")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:special_rules.bzl", "nonportable_visibility_allowlist")
 
 # Kernel for custom parse_example
