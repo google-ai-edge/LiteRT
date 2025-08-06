@@ -53,27 +53,13 @@ This can be done by using the following debug flags that are present in the
 
 ### General flags supported
 
-| **Flag**               | **Type** | **Default Value** | **Description**              |
-| :--------------------- | :------- | :---------------- | :--------------------------- |
-| `--graph`              | `string` |                   | Path to the TFLite model     |
-:                        :          :                   : file to test. Required.      :
-| `--search_strategy`    | `string` | linear            | "Search strategy to use      |
-:                        :          :                   : (binary/linear). <br>The     :
-:                        :          :                   : default value is dependent   :
-:                        :          :                   : on the `--find_nan` and      :
-:                        :          :                   : `--find_numeric_error`       :
-:                        :          :                   : flags. <ul><li>`linear`\: if :
-:                        :          :                   : only                         :
-:                        :          :                   : `--find_numeric_error=true`. :
-:                        :          :                   : <li>`binary`\: if only       :
-:                        :          :                   : `--find_nan=true`.</ul>      :
-| `--find_nan`           | `bool`   | TRUE              | If specified, search for NAN |
-:                        :          :                   : culprits.                    :
-| `--find_numeric_error` | `bool`   | TRUE              | If specified, search for     |
-:                        :          :                   : numeric error culprits.      :
-| `--min_numeric_error`  | `float`  | 0.0001            | Minimum absolute difference  |
-:                        :          :                   : to consider an inference as  :
-:                        :          :                   : an error.                    :
+| **Flag**               | **Type** | **Default Value** | **Description** |
+| :--------------------- | :------- | :---------------- | :-------------- |
+| `--graph`              | `string` |                   | Path to the TFLite model file to test. Required. |
+| `--search_strategy`    | `string` | linear            | Search strategy to use (binary/linear). The default value is dependent on the `--find_nan` and `--find_numeric_error` flags: `linear` if only `--find_numeric_error=true`, `binary` if only `--find_nan=true`. |
+| `--find_nan`           | `bool`   | TRUE              | If specified, search for NAN culprits. |
+| `--find_numeric_error` | `bool`   | TRUE              | If specified, search for numeric error culprits. |
+| `--min_numeric_error`  | `float`  | 0.0001            | Minimum absolute difference to consider an inference as an error. |
 
 ### Search Strategy = Binary Search
 
@@ -81,17 +67,9 @@ This strategy uses binary search to find a range of culprit nodes.
 
 #### Flags supported
 
-| **Flag**                        | **Type** | **Default | **Description** |
-:                                 :          : Value**   :                 :
-| :------------------------------ | :------- | :-------- | :-------------- |
-| `--binary_search_reverse_sweep` | `bool`   | FALSE     | If true, do a   |
-:                                 :          :           : binary search   :
-:                                 :          :           : in reverse.     :
-:                                 :          :           : Default is      :
-:                                 :          :           : false. Useful   :
-:                                 :          :           : to check if     :
-:                                 :          :           : multiple        :
-:                                 :          :           : culprits exist. :
+| **Flag**                        | **Type** | **Default Value** | **Description** |
+| :------------------------------ | :------- | :---------------- | :-------------- |
+| `--binary_search_reverse_sweep` | `bool`   | FALSE             | If true, do a binary search in reverse. Default is false. Useful to check if multiple culprits exist. |
 
 #### Sample Output
 
@@ -167,38 +145,11 @@ INFO: ### Peak memory usage in MB: 2251.04
 
 #### Flags Supported
 
-| **Flag**                      | **Type** | **Default | **Description** |
-:                               :          : Value**   :                 :
-| :---------------------------- | :------- | :-------- | :-------------- |
-| `--linear_search_stride_size`  | int      | 1         | If provided,    |
-:                               :          :           : the culprit     :
-:                               :          :           : finder will run :
-:                               :          :           : the linear      :
-:                               :          :           : search for      :
-:                               :          :           : batches of this :
-:                               :          :           : size.           :
-| `--linear_search_node_filter` | string   |           | A comma         |
-:                               :          :           : separated list  :
-:                               :          :           : of TfLite Op    :
-:                               :          :           : types that the  :
-:                               :          :           : culprit finder  :
-:                               :          :           : will run on.    :
-| `--linear_search_report_count`| int      | 5         | Number of       |
-:                               :          :           : culprit nodes   :
-:                               :          :           : to show in the  :
-:                               :          :           : report. We show :
-:                               :          :           : 2 sections in   :
-:                               :          :           : the report; <ul>:
-:                               :          :           : <li>Top 5 node  :
-:                               :          :           : ranges with     :
-:                               :          :           : most errors     :
-:                               :          :           : sorted by       :
-:                               :          :           : absolute error  :
-:                               :          :           : values.         :
-:                               :          :           : <li> Top 5 node :
-:                               :          :           : types sorted by :
-:                               :          :           : counts of       :
-:                               :          :           :occurrences.</ul>:
+| **Flag**                       | **Type** | **Default Value** | **Description** |
+| :----------------------------- | :------- | :---------------- | :-------------- |
+| `--linear_search_stride_size`  | `int`    | 1                 | If provided, the culprit finder will run the linear search for batches of this size. |
+| `--linear_search_node_filter`  | `string` |                   | A comma separated list of TfLite Op types that the culprit finder will run on. |
+| `--linear_search_report_count` | `int`    | 5                 | Number of culprit nodes to show in the report. We show 2 sections in the report: Top 5 node ranges with most errors sorted by absolute error values and Top 5 node types sorted by counts of occurrences. |
 
 #### Sample Output
 
