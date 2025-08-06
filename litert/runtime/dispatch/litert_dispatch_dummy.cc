@@ -243,3 +243,9 @@ LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchInvocationContext* invocation_context) {
   return kLiteRtStatusErrorUnsupported;
 }
+
+LiteRtStatus LiteRtDispatchInvocationContextGetGraph(
+    LiteRtDispatchInvocationContext invocation_context,
+    LiteRtDispatchGraph* graph) {
+  return kLiteRtStatusErrorUnsupported;
+}
