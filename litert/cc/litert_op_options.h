@@ -126,6 +126,14 @@ enum FullyConnectedOptionsWeightsFormatType : uint32_t {
       kFullyConnectedOptionsWeightsFormatShuffled4x16Int8
 };
 
+using Padding = uint32_t;
+enum PaddingType : uint32_t {
+  kPaddingSame = 0,
+  kPaddingValid = 1,
+  kPaddingMin = kPaddingSame,
+  kPaddingMax = kPaddingValid,
+};
+
 // Struct to hold LiteRt composite ops.
 struct CompositeOptions : public OpOptions {
   // Name for special composites representing manual partitions.
@@ -278,6 +286,18 @@ struct SplitOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt Conv2d op.
+struct Conv2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t dilation_w_factor;
+  int32_t dilation_h_factor;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -351,6 +371,10 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, SplitOptions>) {
     SplitOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, Conv2dOptions>) {
+    Conv2dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {

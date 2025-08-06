@@ -306,4 +306,24 @@ LiteRtStatus SplitOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus Conv2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
