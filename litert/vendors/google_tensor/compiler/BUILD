@@ -47,6 +47,7 @@ litert_dynamic_lib(
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/google_tensor:adapter",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",

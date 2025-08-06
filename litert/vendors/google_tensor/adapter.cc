@@ -62,7 +62,7 @@ litert::Expected<void> Adapter::LoadSymbols(
   for (const auto& path : so_paths) {
     dlib_handle_ = dlopen(path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (dlib_handle_) {
-      void* init_func = dlsym(dlib_handle_, "Initialize");
+      void* init_func = dlsym(dlib_handle_, "GoogleTensorInitialize");
       if (init_func) {
         absl::LeakCheckDisabler disabler;
         (*reinterpret_cast<void (*)()>(init_func))();
@@ -79,9 +79,27 @@ litert::Expected<void> Adapter::LoadSymbols(
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
   }
 
-  api_->compile =
-      reinterpret_cast<Compile>(dlsym(dlib_handle_, "CompileFlatbuffer"));
+  api_->compile = reinterpret_cast<Compile>(
+      dlsym(dlib_handle_, "GoogleTensorCompileFlatbuffer"));
   if (!api_->compile) {
+    const std::string error_message =
+        "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
+    LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
+               error_message.c_str());  // Include dlerror()
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  }
+  api_->free_compiled_code = reinterpret_cast<CompilerFreeCompiledCode>(
+      dlsym(dlib_handle_, "GoogleTensorCompilerFreeCompiledCode"));
+  if (!api_->free_compiled_code) {
+    const std::string error_message =
+        "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
+    LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",
+               error_message.c_str());  // Include dlerror()
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
+  }
+  api_->free_error_message = reinterpret_cast<CompilerFreeErrorMessage>(
+      dlsym(dlib_handle_, "GoogleTensorCompilerFreeErrorMessage"));
+  if (!api_->free_error_message) {
     const std::string error_message =
         "Failed to load Tensor TPU compiler API: " + std::string(dlerror());
     LITERT_LOG(LITERT_ERROR, "Failed to load Tensor TPU compiler API: %s",

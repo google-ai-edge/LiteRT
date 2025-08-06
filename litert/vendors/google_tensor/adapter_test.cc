@@ -51,7 +51,7 @@ TEST(AdapterTest, CreateFailure) {
 }
 
 TEST(AdapterTest, CompileSuccess) {
-  static constexpr absl::string_view kSocModel = "P25";
+  static constexpr absl::string_view kSocModel = "g5";
 
   auto adapter_result = Adapter::Create(/*shared_library_dir=*/
                                         std::nullopt);
@@ -59,8 +59,15 @@ TEST(AdapterTest, CompileSuccess) {
     LITERT_LOG(LITERT_ERROR, "Failed to create Adapter: %s",
                adapter_result.Error().Message().c_str());
   }
+  const auto& api = adapter_result.Value()->api();
+
+  // Ensure all necessary API functions are loaded
+  ASSERT_NE(api.compile, nullptr);
+  ASSERT_NE(api.free_compiled_code, nullptr);
+  ASSERT_NE(api.free_error_message, nullptr);
 
   auto model = litert::testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_NE(model.Get(), nullptr);
   LiteRtModel litert_model = model.Get();
 
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
@@ -70,14 +77,13 @@ TEST(AdapterTest, CompileSuccess) {
   auto [data, size, offset] = buf.GetWeak();
 
   const auto opts = litert::SerializationOptions::Defaults();
-  auto status =
+  auto serialize_status =
       LiteRtSerializeModel(litert_model, &data, &size, &offset, false, opts);
-  if (status != kLiteRtStatusOk) {
-    LITERT_LOG(LITERT_ERROR, "Failed to serialize model");
-  }
+  ASSERT_EQ(serialize_status, kLiteRtStatusOk);
+  ASSERT_GT(buf.Size(), 0);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, ::litert::google_tensor::GoogleTensorOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options,
+                              ::litert::GoogleTensorOptions::Create());
   options.SetFloatTruncationType(kLiteRtGoogleTensorFloatTruncationTypeHalf);
   options.SetInt64ToInt32Truncation(true);
   options.SetOutputDir("/tmp/");

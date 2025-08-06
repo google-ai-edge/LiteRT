@@ -21,6 +21,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -341,6 +342,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                error_message.c_str());
     return kLiteRtStatusErrorRuntimeFailure;
   }
+  const auto& api = adapter_result.Value()->api();
+  if (!api.compile || !api.free_compiled_code || !api.free_error_message) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               "Compiler API functions not loaded correctly.");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
 
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
@@ -362,24 +369,49 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // TODO(b/398984678): add support for multiple bytecodes
   absl::string_view soc_model_view(soc_model);
-  std::string compiled;
+  absl::string_view model_buffer_view(buffer_str);
 
-  auto compile_status = adapter_result.Value()->api().compile(
-      buffer_str, soc_model_view, opaque_options, &compiled);
+  char* compiled_code_data = nullptr;
+  size_t compiled_code_size = 0;
+  char* error_message = nullptr;
 
-  if (!compile_status.ok()) {
-    LITERT_LOG(
-        LITERT_ERROR, "%s",
-        absl::StrCat("Failed to compile model: ", compile_status.message())
-            .c_str());
+  // Ensure memory allocated by the C API is freed.
+  absl::Cleanup error_cleanup = [&] {
+    if (error_message) {
+      api.free_error_message(error_message);
+    }
+  };
+  absl::Cleanup code_cleanup = [&] {
+    if (compiled_code_data) {
+      api.free_compiled_code(compiled_code_data);
+    }
+  };
+  auto compile_status =
+      api.compile(model_buffer_view.data(), model_buffer_view.size(),
+                  soc_model_view.data(), soc_model_view.size(),
+                  &compiled_code_data, &compiled_code_size, &error_message);
+
+  if (!compile_status) {
+    std::string error_str = "Failed to compile model";
+    if (error_message) {
+      absl::StrAppend(&error_str, ": ", error_message);
+    }
+    LITERT_LOG(LITERT_ERROR, "%s", error_str.c_str());
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
   // Result
   auto result = std::make_unique<LiteRtCompiledResultT>();
 
-  result->byte_code = std::string(compiled.data(), compiled.size());
-  // Generate per_op_data.
+  if (compiled_code_data && compiled_code_size > 0) {
+    result->byte_code.assign(compiled_code_data, compiled_code_size);
+  } else {
+    LITERT_LOG(LITERT_ERROR,
+               "Compilation reported OK but returned no byte code.");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // Generate per_op_data
   for (auto i = 0; i < num_partitions; ++i) {
     result->per_op_data.emplace_back(
         absl::StrFormat("Partition_%d", static_cast<int>(i)));

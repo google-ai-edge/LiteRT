@@ -17,23 +17,37 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <utility>
-#include <vector>
 
-#include "absl/log/log.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
-
-// Flags is a vector of key-value pairs. where key is the flag name and value is
-// the flag value. eg. {{"enable_reference", "true"}}
-using Flags = std::vector<std::pair<std::string, std::string>>;
-typedef absl::Status (*Compile)(absl::string_view serialized_tfl_buffer,
-                                absl::string_view soc_model,
-                                LiteRtOpaqueOptions options,
-                                std::string* compiled_code);
+// Type definition for a function pointer to an ABI stable function
+// used to compile a Flatbuffer model.
+//
+// Functions of this type are expected to:
+// @param tfl_buffer_data Pointer to the serialized TFLite model flatbuffer.
+// @param tfl_buffer_size Size of the flatbuffer.
+// @param soc_model_data Pointer to the string identifying the SOC model
+//        (e.g., "rio_a0").
+// @param soc_model_size Length of the SOC model string.
+// @param compiled_code_data On success, will be set to point to a newly
+//        allocated buffer containing the compiled code. The caller takes
+//        ownership of this buffer and is responsible for freeing it
+//        (e.g., using a companion *FreeCompiledCode() function).
+// @param compiled_code_size On success, will be set to the size of the
+//        buffer pointed to by *compiled_code_data.
+// @param out_error_message On failure, may be set to point to a newly allocated
+//        NULL-terminated string containing an error message. The caller
+//        takes ownership of this string and is responsible for freeing it
+//        (e.g., using a companion *FreeErrorMessage() function).
+// @return bool indicating whether the compilation was successful or not.
+typedef bool (*Compile)(const char* tfl_buffer_data, size_t tfl_buffer_size,
+                        const char* soc_model_data, size_t soc_model_size,
+                        char** compiled_code_data, size_t* compiled_code_size,
+                        char** out_error_message);
+typedef void (*CompilerFreeCompiledCode)(char* compiled_code_data);
+typedef void (*CompilerFreeErrorMessage)(char* error_message);
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class Adapter {
@@ -64,6 +78,8 @@ class Adapter {
 struct Adapter::Api {
   // The function pointer to the compiler wrapper API.
   Compile compile = nullptr;
+  CompilerFreeCompiledCode free_compiled_code = nullptr;
+  CompilerFreeErrorMessage free_error_message = nullptr;
 };
 
 }  // namespace litert::google_tensor
