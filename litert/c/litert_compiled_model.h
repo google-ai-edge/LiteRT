@@ -226,6 +226,21 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
 LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
     LiteRtCompiledModel compiled_model, const char* key);
 
+// Error reporter APIs
+
+// Reports an error to the compiled model's error reporter.
+// Note: This function accepts printf-style format strings.
+LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,
+                                            const char* format, ...);
+
+// Clears all errors (only available with buffer error reporter mode).
+LiteRtStatus LiteRtCompiledModelClearErrors(LiteRtCompiledModel compiled_model);
+
+// Gets all error messages as a single string (only available with buffer error
+// reporter mode). The caller is responsible for freeing the returned
+// `error_messages` buffer using `free`.
+LiteRtStatus LiteRtCompiledModelGetErrorMessages(
+    LiteRtCompiledModel compiled_model, char** error_messages);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

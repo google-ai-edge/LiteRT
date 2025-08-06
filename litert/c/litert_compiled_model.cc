@@ -16,6 +16,10 @@
 
 #include <stddef.h>
 
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -260,6 +264,64 @@ LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
   auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
       buffer_context->GetDispatchAnnotations());
   annotations.erase(key);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,
+                                            const char* format, ...) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && format != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+
+  va_list args;
+  va_start(args, format);
+  // Create a formatted string since ReportError expects format and variadic
+  // args
+  char* buffer = nullptr;
+  int len = vasprintf(&buffer, format, args);
+  if (len < 0 || buffer == nullptr) {
+    va_end(args);
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+  compiled_model->ReportError("%s", buffer);
+  va_end(args);
+  free(buffer);
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelClearErrors(
+    LiteRtCompiledModel compiled_model) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+
+  auto result = compiled_model->ClearErrors();
+  if (!result) {
+    return result.Error().Status();
+  }
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelGetErrorMessages(
+    LiteRtCompiledModel compiled_model, char** error_messages) {
+  LITERT_RETURN_IF_ERROR(compiled_model != nullptr && error_messages != nullptr,
+                         kLiteRtStatusErrorInvalidArgument);
+
+  auto result = compiled_model->GetErrorMessages();
+  if (!result) {
+    return result.Error().Status();
+  }
+
+  // Allocate and copy the string
+  size_t len = result->size();
+  *error_messages = static_cast<char*>(malloc(len + 1));
+  if (*error_messages == nullptr) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  memcpy(*error_messages, result->c_str(), len);
+  (*error_messages)[len] = '\0';
 
   return kLiteRtStatusOk;
 }

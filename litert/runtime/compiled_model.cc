@@ -15,6 +15,7 @@
 #include "litert/runtime/compiled_model.h"
 
 #include <algorithm>
+#include <cstdarg>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -53,7 +54,9 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/options.h"
@@ -119,6 +122,19 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       if ((*runtime_options)->enable_profiling) {
         profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
       }
+
+      // Create error reporter based on mode
+      switch ((*runtime_options)->error_reporter_mode) {
+        case LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone:
+          // No error reporter
+          break;
+        case LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr:
+          error_reporter_ = std::make_unique<litert::StderrReporter>();
+          break;
+        case LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer:
+          error_reporter_ = std::make_unique<litert::BufferErrorReporter>();
+          break;
+      }
     }
 
     if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
@@ -128,8 +144,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     }
   }
 
-  tflite::InterpreterBuilder builder(*fb_model_, resolver,
-                                     &interpreter_options);
+  tflite::InterpreterBuilder builder(
+      fb_model_->GetModel(), resolver, error_reporter_.get(),
+      &interpreter_options, fb_model_->allocation());
   builder(&interp_);
   if (interp_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -202,8 +219,8 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LITERT_LOG(
         LITERT_INFO,
         "Flatbuffer model initialized directly from incoming litert model.");
-    fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(tfl_buf.StrData(),
-                                                         tfl_buf.Size());
+    fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
+        tfl_buf.StrData(), tfl_buf.Size(), error_reporter_.get());
     fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
     return {};
   }
@@ -217,7 +234,8 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 
   model_buf_ = std::move(*serialized);
   fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size());
+      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
+      error_reporter_.get());
   if (fb_model_ == nullptr) {
     return Unexpected(kLiteRtStatusErrorFileIO,
                       "Failed to build flatbuffer from buffer");
@@ -746,6 +764,9 @@ Expected<void> LiteRtCompiledModelT::Run(
   }
 
   if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
+    if (error_reporter_) {
+      error_reporter_->Report("Failed to allocate tensors for execution");
+    }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate tensors");
   }
@@ -1007,3 +1028,52 @@ litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
 
   return {};
 }
+
+// Error reporter APIs implementation
+
+void LiteRtCompiledModelT::ReportError(const char* format, ...) {
+  if (!error_reporter_) {
+    return;  // No error reporter configured
+  }
+
+  va_list args;
+  va_start(args, format);
+  error_reporter_->Report(format, args);
+  va_end(args);
+}
+
+Expected<void> LiteRtCompiledModelT::ClearErrors() {
+  if (!error_reporter_) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "No error reporter configured");
+  }
+
+  auto* buffer_reporter =
+      dynamic_cast<litert::BufferErrorReporter*>(error_reporter_.get());
+  if (!buffer_reporter) {
+    return Unexpected(
+        kLiteRtStatusErrorUnsupported,
+        "Clear errors is only available with buffer error reporter");
+  }
+
+  buffer_reporter->Clear();
+  return {};
+}
+
+Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() {
+  if (!error_reporter_) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "No error reporter configured");
+  }
+
+  auto* buffer_reporter =
+      dynamic_cast<litert::BufferErrorReporter*>(error_reporter_.get());
+  if (!buffer_reporter) {
+    return Unexpected(
+        kLiteRtStatusErrorUnsupported,
+        "Get error messages is only available with buffer error reporter");
+  }
+
+  return buffer_reporter->message();
+}
+
