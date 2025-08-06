@@ -461,6 +461,32 @@ TEST(OpOptionsTest, GetConv3dOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetAveragePool2dOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflAveragePool2d);
+  tflite::Pool2DOptionsT options;
+  options.padding = tflite::Padding_VALID;
+  options.stride_w = 1;
+  options.stride_h = 2;
+  options.filter_width = 3;
+  options.filter_height = 4;
+  options.fused_activation_function = tflite::ActivationFunctionType_RELU;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_Pool2DOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<AveragePool2dOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->padding, kPaddingValid);
+  EXPECT_EQ(res->stride_w, 1);
+  EXPECT_EQ(res->stride_h, 2);
+  EXPECT_EQ(res->filter_width, 3);
+  EXPECT_EQ(res->filter_height, 4);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeRelu);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -482,6 +508,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<SplitOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<Conv2dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<Conv3dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<AveragePool2dOptions>(&op));
 }
 
 }  // namespace

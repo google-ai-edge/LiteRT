@@ -349,4 +349,24 @@ LiteRtStatus Conv3dOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus AveragePool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflAveragePool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetAveragePool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(LiteRtGetAveragePool2dFusedActivationOption(
+      op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

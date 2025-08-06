@@ -312,6 +312,18 @@ struct Conv3dOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt AveragePool2d op.
+struct AveragePool2dOptions : public OpOptions {
+  LiteRtOp op;
+  Padding padding;
+  int32_t stride_w;
+  int32_t stride_h;
+  int32_t filter_width;
+  int32_t filter_height;
+  ActivationFunction fused_activation_function;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -393,6 +405,10 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, Conv3dOptions>) {
     Conv3dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, AveragePool2dOptions>) {
+    AveragePool2dOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {
