@@ -1,4 +1,5 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite/core:special_rules.bzl", "delegate_registry_visibility_allowlist")
 load("//tflite/core/c:special_rules.bzl", "experimental_acceleration_api_allowlist")
 

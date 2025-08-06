@@ -1,5 +1,6 @@
 load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//tflite:build_def.bzl",
     "tflite_cc_library_with_c_headers_test",

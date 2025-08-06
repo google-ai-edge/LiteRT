@@ -20,6 +20,7 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config_root.bzl",
     "tf_gpu_tests_tags",
 )
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_cc_library_with_c_headers_test", "tflite_copts", "tflite_copts_warnings")
 load(
     "//tflite/core/acceleration/configuration/c:special_rules.bzl",

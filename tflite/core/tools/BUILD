@@ -1,4 +1,6 @@
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_self_contained_libs_test_suite")
 load("//tflite:special_rules.bzl", "verifier_internal_visibility_allowlist")
 load("//tflite/core:special_rules.bzl", "verifier_visibility_allowlist")
