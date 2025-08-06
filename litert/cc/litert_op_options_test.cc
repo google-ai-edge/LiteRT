@@ -431,6 +431,36 @@ TEST(OpOptionsTest, GetConv2dOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetConv3dOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflConv3d);
+  tflite::Conv3DOptionsT options;
+  options.padding = tflite::Padding_SAME;
+  options.stride_w = 1;
+  options.stride_h = 2;
+  options.stride_d = 3;
+  options.dilation_w_factor = 3;
+  options.dilation_h_factor = 4;
+  options.dilation_d_factor = 5;
+  options.fused_activation_function = tflite::ActivationFunctionType_NONE;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_Conv3DOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<Conv3dOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->padding, kPaddingSame);
+  EXPECT_EQ(res->stride_w, 1);
+  EXPECT_EQ(res->stride_h, 2);
+  EXPECT_EQ(res->stride_d, 3);
+  EXPECT_EQ(res->dilation_w_factor, 3);
+  EXPECT_EQ(res->dilation_h_factor, 4);
+  EXPECT_EQ(res->dilation_d_factor, 5);
+  EXPECT_EQ(res->fused_activation_function, kActivationFunctionTypeNone);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -451,6 +481,7 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<MeanOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<SplitOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<Conv2dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<Conv3dOptions>(&op));
 }
 
 }  // namespace

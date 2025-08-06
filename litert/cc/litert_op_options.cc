@@ -326,4 +326,27 @@ LiteRtStatus Conv2dOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus Conv3dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflConv3d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(LiteRtGetConv3dStrideDOption(op, &stride_d));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationWOption(op, &dilation_w_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationHOption(op, &dilation_h_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dDilationDOption(op, &dilation_d_factor));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetConv3dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
