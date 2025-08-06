@@ -37,6 +37,7 @@ def _litert_with_mtk_base(
         litert_rule_kwargs,
         data = select({
             "@org_tensorflow//tensorflow:linux_x86_64": [
+                "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
                 "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
                 "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
             ],
@@ -44,6 +45,7 @@ def _litert_with_mtk_base(
         }),
         linkopts = select({
             "@org_tensorflow//tensorflow:linux_x86_64": [
+                make_rpaths(["@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so"]),
                 make_rpaths(["@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so"]),
                 make_rpaths(["@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so"]),
             ],

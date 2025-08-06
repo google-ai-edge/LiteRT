@@ -26,7 +26,8 @@ def neuro_pilot():
         symlink_mapping = {
             "v8_latest": "v8_0_8",
             # Just let the compilation pass, we don't expect it to work...
-            # TODO: Remove this once we have a working V7 version.
+            # TODO: Remove this once we have a working V7 & V9 version.
             "v7_latest": "v8_0_8",
+            "v9_latest": "v8_0_8",
         },
     )

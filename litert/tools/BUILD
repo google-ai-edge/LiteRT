@@ -93,6 +93,7 @@ litert_bin(
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
         "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
         "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
+        "@neuro_pilot//:v9_latest/host/lib/libneuron_adapter.so",
         "@neuro_pilot//:v8_latest/host/lib/libneuron_adapter.so",
         "@neuro_pilot//:v7_latest/host/lib/libneuron_adapter.so",
     ],

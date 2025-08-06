@@ -89,6 +89,9 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8:
       sdk_path = "third_party/neuro_pilot/v8_latest/host/lib";
       break;
+    case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
+      sdk_path = "third_party/neuro_pilot/v9_latest/host/lib";
+      break;
     default:
       return litert::Error(kLiteRtStatusErrorInvalidArgument,
                            "Invalid sdk_version");
