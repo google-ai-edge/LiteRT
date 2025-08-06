@@ -2,6 +2,7 @@
 #   BenchmarkModel Android harness for TensorFlow Lite benchmarks.
 
 load("@build_bazel_rules_android//android:rules.bzl", "android_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("//tflite:build_def.bzl", "tflite_jni_binary")
 load("//tflite:special_rules.bzl", "tflite_hexagon_nn_skel_libraries")
 

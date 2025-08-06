@@ -7,6 +7,9 @@ load(
     "@org_tensorflow//tensorflow/core/platform:build_config.bzl",
     "tf_proto_library",
 )
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//tflite:build_def.bzl", "tflite_copts", "tflite_copts_warnings")
 load("//tflite:special_rules.bzl", "tflite_portable_test_suite")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "cc_library_with_tflite")
