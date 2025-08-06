@@ -154,6 +154,9 @@ class LiteRtCompiledModelT {
     return buffer_context_.get();
   }
 
+  // Returns the number of signatures in the model.
+  size_t GetNumSignatures() const { return signature_keys_.size(); }
+
   // Error reporter APIs
 
   // Reports an error. Thread-safe.
