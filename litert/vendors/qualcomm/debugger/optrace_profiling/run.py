@@ -11,13 +11,13 @@ from pathlib import Path
 import numpy as np
 
 _QNN_HOME = (
-    os.path.join(os.environ["LITERT_QAIRT_SDK"], "latest")
+    Path(os.environ["LITERT_QAIRT_SDK"]) / "latest"
     if "LITERT_QAIRT_SDK" in os.environ
     else Path(__file__).resolve().parents[5] / "third_party" / "qairt" / "latest"
 )
-_TOOLS_X86 = os.path.join(_QNN_HOME, "bin", "x86_64-linux-clang")
-_WRD = f"/data/local/tmp/{getpass.getuser()}/litert"
-_ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+_TOOLS_X86 = _QNN_HOME / "bin" / "x86_64-linux-clang"
+_DEVICE_WORKING_DIR = f"/data/local/tmp/{getpass.getuser()}/litert"
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
 def _generate_zero_inputs(ctx_bin_path: str) -> None:
@@ -28,10 +28,10 @@ def _generate_zero_inputs(ctx_bin_path: str) -> None:
         ctx_bin_path (str): Path to the context binary.
     """
     logging.info("Generating input data...")
-    json_path = os.path.join(_ASSETS_DIR, "tmp.json")
+    json_path = _ASSETS_DIR / "tmp.json"
     subprocess.run(
         [
-            os.path.join(_TOOLS_X86, "qnn-context-binary-utility"),
+            _TOOLS_X86 / "qnn-context-binary-utility",
             "--context_binary",
             f"{ctx_bin_path}",
             "--json_file",
@@ -42,9 +42,11 @@ def _generate_zero_inputs(ctx_bin_path: str) -> None:
 
     with open(json_path, "r", encoding="utf-8") as file:
         json_data = json.load(file)
-    assert (
-        len(json_data["info"]["graphs"]) == 1
-    ), "The input generator currently supports only one graph in context binary."
+    os.remove(json_path)
+    if len(json_data["info"]["graphs"]) != 1:
+        raise ValueError(
+            "The input generator currently supports only one graph in context binary."
+        )
     graph = json_data["info"]["graphs"][0]
     dtype_map = {
         "QNN_DATATYPE_INT_8": np.int8,
@@ -70,23 +72,20 @@ def _generate_zero_inputs(ctx_bin_path: str) -> None:
     for inp in graph["info"]["graphInputs"]:
         qnn_datatype = inp["info"]["dataType"]
         dtype = dtype_map.get(qnn_datatype, None)
-        assert dtype is not None, f"Assertion failed: Unknown datatype {qnn_datatype}"
+        if dtype is None:
+            raise TypeError(f"Unknown datatype {qnn_datatype}")
         input_tensor = np.zeros(inp["info"]["dimensions"]).astype(dtype)
         input_list.append(input_tensor)
     graph_name = graph["info"]["graphName"]
-    graph_input_path = os.path.join(_ASSETS_DIR, "inputs", graph_name)
+    graph_input_path = _ASSETS_DIR / "inputs" / graph_name
     os.makedirs(graph_input_path, exist_ok=True)
+    input_dirs = Path("inputs") / graph_name
+    lines = []
     for input_id, input_tensor in enumerate(input_list):
-        input_tensor.tofile(os.path.join(graph_input_path, f"input_{input_id}.raw"))
-    with open(
-        os.path.join(graph_input_path, "input_list.txt"), "w", encoding="utf-8"
-    ) as f:
-        for input_id, _ in enumerate(input_list):
-            inputs_path = os.path.join("inputs", graph_name, f"input_{input_id}.raw")
-            f.write(inputs_path)
-            if input_id != len(input_list) - 1:
-                f.write("\n")
-    os.remove(json_path)
+        input_tensor.tofile(graph_input_path / f"input_{input_id}.raw")
+        lines.append(str(input_dirs / f"input_{input_id}.raw"))
+    input_list_path = graph_input_path / "input_list.txt"
+    input_list_path.write_text(" ".join(lines) + "\n", encoding="utf-8")
 
 
 def _push_so(adb_cmd: str, htp_arch: str):
@@ -98,7 +97,7 @@ def _push_so(adb_cmd: str, htp_arch: str):
         _QNN_HOME (str): The root directory of the QNN SDK.
     """
     logging.info("Pushing .so files to the target device...")
-    cmd = f'{adb_cmd} shell "rm -rf {_WRD} && mkdir -p {_WRD}"'
+    cmd = f'{adb_cmd} shell "rm -rf {_DEVICE_WORKING_DIR} && mkdir -p {_DEVICE_WORKING_DIR}"'
     subprocess.run(cmd, check=True, shell=True)
     for file_path in [
         "bin/aarch64-android/qnn-net-run",
@@ -108,7 +107,7 @@ def _push_so(adb_cmd: str, htp_arch: str):
         f"lib/aarch64-android/libQnnHtp{htp_arch.upper()}Stub.so",
         f"lib/hexagon-{htp_arch.lower()}/unsigned/libQnnHtp{htp_arch.upper()}Skel.so",
     ]:
-        cmd = f"{adb_cmd} push {os.path.join(_QNN_HOME, file_path)} {_WRD}"
+        cmd = f"{adb_cmd} push {Path(_QNN_HOME) / file_path} {_DEVICE_WORKING_DIR}"
         logging.debug(cmd)
         subprocess.run(cmd, check=True, shell=True)
 
@@ -145,17 +144,15 @@ def _push_target(adb_cmd: str, ctx_bin_path: str) -> None:
     """
     logging.info("Pushing inputs, ctx binary, and .json files to the target device...")
     for file_path in [
-        os.path.join(_ASSETS_DIR, "inputs"),
-        os.path.join(_ASSETS_DIR, "htp_ext_config.json"),
-        os.path.join(_ASSETS_DIR, "config.json"),
-        os.path.abspath(ctx_bin_path),
+        _ASSETS_DIR / "inputs",
+        _ASSETS_DIR / "htp_ext_config.json",
+        _ASSETS_DIR / "config.json",
+        Path(ctx_bin_path).resolve(),
     ]:
-        cmd = f"{adb_cmd} push {file_path} {_WRD}"
-        subprocess.run(
-            cmd, check=True, shell=True, cwd=os.path.dirname(os.path.abspath(__file__))
-        )
+        cmd = f"{adb_cmd} push {file_path} {_DEVICE_WORKING_DIR}"
+        subprocess.run(cmd, check=True, shell=True, cwd=Path(__file__).resolve().parent)
         logging.debug(cmd)
-        if file_path.endswith("inputs"):
+        if file_path.name == "inputs":
             shutil.rmtree(file_path)
             logging.debug("Removing inputs...")
 
@@ -170,14 +167,14 @@ def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
     """
     logging.info("Exectuing qnn-net-run with the given context binary...")
     env_vars = (
-        f"export LD_LIBRARY_PATH={_WRD} && "
-        f"export ADSP_LIBRARY_PATH={_WRD} && "
-        f"cd {_WRD}"
+        f"export LD_LIBRARY_PATH={_DEVICE_WORKING_DIR} && "
+        f"export ADSP_LIBRARY_PATH={_DEVICE_WORKING_DIR} && "
+        f"cd {_DEVICE_WORKING_DIR}"
     )
     run_cmd = (
         "./qnn-net-run "
         "--backend libQnnHtp.so "
-        f"--retrieve_context {os.path.basename(ctx_bin_path)} "
+        f"--retrieve_context {Path(ctx_bin_path).name} "
         "--input_list inputs/qnn_partition_0/input_list.txt "
         "--output_dir output_htp "
         "--use_native_input_files "
@@ -204,29 +201,24 @@ def _generate_profiler_output(
     """
     logging.info("Exectuing qnn-profile-viewer with the outputs...")
     os.makedirs(output_dir, exist_ok=True)
-    cmd = f"{adb_cmd} pull {_WRD}/output_htp ./"
+    cmd = f"{adb_cmd} pull {_DEVICE_WORKING_DIR}/output_htp ./"
     subprocess.run(cmd, check=True, shell=True)
-    log_path = os.path.join("output_htp", "qnn-profiling-data_0.log")
+    log_path = Path("output_htp") / "qnn-profiling-data_0.log"
     cmd_lst = [
-        os.path.join(_QNN_HOME, "bin", "x86_64-linux-clang", "qnn-profile-viewer"),
+        _QNN_HOME / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer",
         "--input_log",
         log_path,
         "--config",
-        os.path.join(_ASSETS_DIR, "config_viewer.json"),
+        _ASSETS_DIR / "config_viewer.json",
         "--reader",
-        os.path.join(
-            _QNN_HOME,
-            "lib",
-            "x86_64-linux-clang",
-            "libQnnHtpOptraceProfilingReader.so",
-        ),
+        _QNN_HOME / "lib" / "x86_64-linux-clang" / "libQnnHtpOptraceProfilingReader.so",
         "--schematic",
         schematic_bin_path,
         "--output",
-        os.path.join(output_dir, "chromeTrace.json"),
+        Path(output_dir) / "chromeTrace.json",
     ]
     os.makedirs(output_dir, exist_ok=True)
-    logging.debug(" ".join(cmd_lst))
+    logging.debug(" ".join(str(item) for item in cmd_lst))
     subprocess.run(
         cmd_lst,
         check=True,
