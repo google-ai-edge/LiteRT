@@ -20,11 +20,6 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
-config_setting(
-    name = "openvino_native_dir_set",
-    values = {"define": "OPENVINO_NATIVE_DIR_SET=true"},
-)
-
 litert_dynamic_lib(
     name = "dispatch_api",
     srcs = [
@@ -61,21 +56,25 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
+        "//litert/c:litert_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/cleanup",
-    ] + select({
-        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
-        "//conditions:default": [],
-    }),
+        "@intel_openvino//:openvino",
+    ],
 )
 
 #Test targets for Openvino Dispatch
@@ -115,8 +114,6 @@ cc_test(
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-    ] + select({
-        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
-        "//conditions:default": [],
-    }),
+        "@intel_openvino//:openvino",
+    ],
 )
