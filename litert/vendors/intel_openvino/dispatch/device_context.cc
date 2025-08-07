@@ -131,8 +131,7 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
 
       auto remote_tensor = context.create_l0_host_tensor(
-        ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()}
-      );
+          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
       memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);

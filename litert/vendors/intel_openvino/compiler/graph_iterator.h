@@ -20,13 +20,13 @@
 #include <unordered_set>
 #include <vector>
 
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/frontend/tensorflow_lite/quantization_info.hpp"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
+#include "openvino/frontend/tensorflow_lite/decoder.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/frontend/tensorflow_lite/quantization_info.hpp"
 namespace litert {
 namespace openvino {
 

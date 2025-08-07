@@ -13,8 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "openvino/openvino.hpp"
-#include "openvino/runtime/core.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
@@ -26,6 +24,8 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
+#include "openvino/openvino.hpp"
+#include "openvino/runtime/core.hpp"
 
 namespace litert {
 namespace openvino {

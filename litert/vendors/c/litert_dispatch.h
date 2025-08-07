@@ -66,13 +66,15 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInitialize(
     LiteRtEnvironmentOptions environment_options, LiteRtOptions options);
 
 // Return the version of the Dispatch API runtime.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGetApiVersion(LiteRtApiVersion* api_version);
 
 // Return the vendor id of the Dispatch API runtime.
 //
 // This function returns a pointer to a statically allocated string that is the
 // ID of vendor providing the Dispatch API runtime.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetVendorId(const char** vendor_id);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGetVendorId(const char** vendor_id);
 
 // Return the build ID of the Dispatch API runtime.
 //
@@ -82,7 +84,8 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetBuildId(const char** build_id);
 
 // Return the capabilities supported by the Dispatch API runtime as a set of the
 // values specified in LiteRtDispatchCapabilities.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGetCapabilities(int* capabilities);
 
 // Create a `LiteRtDispatchDeviceContext` object.
 //
@@ -90,15 +93,15 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetCapabilities(int* capabilities)
 // the memory associated with the context and should call
 // LiteRtDispatchDeviceContextDestroy() to release it. Return NULL in case of
 // error.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextCreate(
-    LiteRtDispatchDeviceContext* device_context);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchDeviceContextCreate(LiteRtDispatchDeviceContext* device_context);
 
 // Release a `LiteRtDispatchDeviceContext` object.
 //
 // The given context should be release only after releasing all associated
 // objects.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDeviceContextDestroy(
-    LiteRtDispatchDeviceContext device_context);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchDeviceContextDestroy(LiteRtDispatchDeviceContext device_context);
 
 // Given a tensor type for an invocation context input, obtain the attributes
 // the HW requires for the associated tensor buffer. The returned
@@ -162,8 +165,8 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDetachOutput(
     LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
     LiteRtTensorBufferHandle tensor_buffer_handle);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvoke(
-    LiteRtDispatchInvocationContext invocation_context);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchInvoke(LiteRtDispatchInvocationContext invocation_context);
 
 // Start collection of HW-specific metrics at a specific level of detail (>= 0).
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchStartMetricsCollection(
@@ -176,14 +179,15 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchStopMetricsCollection(
     LiteRtDispatchInvocationContext invocation_context,
     LiteRtDispatchMetrics* metrics);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetNumMetrics(LiteRtDispatchMetrics metrics,
-                                         int* num_metrics);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGetNumMetrics(LiteRtDispatchMetrics metrics, int* num_metrics);
 
 // Fetch a specific metric. The runtime owns the returned object.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetMetric(LiteRtDispatchMetrics metrics,
-                                     int metric_index, LiteRtMetric* metric);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetMetric(
+    LiteRtDispatchMetrics metrics, int metric_index, LiteRtMetric* metric);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchDestroyMetrics(LiteRtDispatchMetrics metrics);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchDestroyMetrics(LiteRtDispatchMetrics metrics);
 
 // /////////////////////////////////////////////////////////////////////////////
 // Async Execution API
@@ -197,9 +201,9 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAttachInputEvent(
 // large output_events array, where this function will return newly created
 // LiteRtEvents, one for each invocation context output. The caller takes
 // ownership for the LiteRtEvents returned in output_events.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvokeAsync(
-    LiteRtDispatchInvocationContext invocation_context, int num_output_events,
-    LiteRtEvent* output_events);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchInvokeAsync(LiteRtDispatchInvocationContext invocation_context,
+                          int num_output_events, LiteRtEvent* output_events);
 
 // /////////////////////////////////////////////////////////////////////////////
 // Graph Execution API
@@ -222,48 +226,45 @@ typedef enum LiteRtDispatchNodeType {
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGraphCreate(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph** graph);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGraphDestroy(LiteRtDispatchGraph* graph);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchGraphDestroy(LiteRtDispatchGraph* graph);
 
 // Add a compute node to a given graph. Parameter node_id should be unique to
 // the graph.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAddNode(LiteRtDispatchGraph* graph,
-                                   LiteRtDispatchNodeId node_id,
-                                   LiteRtDispatchNodeType node_type);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchAddNode(LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id,
+                      LiteRtDispatchNodeType node_type);
 
 // Add an edge a given graph. Parameter edge_id should be unique to the graph.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAddEdge(LiteRtDispatchGraph* graph,
-                                   LiteRtDispatchEdgeId edge_id);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchAddEdge(LiteRtDispatchGraph* graph, LiteRtDispatchEdgeId edge_id);
 
 // Connect a given node's input.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeInput(LiteRtDispatchGraph* graph,
-                                            LiteRtDispatchNodeId node_id,
-                                            int input_index,
-                                            LiteRtDispatchEdgeId edge_id);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeInput(
+    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, int input_index,
+    LiteRtDispatchEdgeId edge_id);
 
 // Connect a given node's output.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeOutput(LiteRtDispatchGraph* graph,
-                                             LiteRtDispatchNodeId node_id,
-                                             int output_index,
-                                             LiteRtDispatchEdgeId edge_id);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectNodeOutput(
+    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, int output_index,
+    LiteRtDispatchEdgeId edge_id);
 
 // Connect a given graph's input.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphInput(LiteRtDispatchGraph* graph,
-                                             int input_index,
-                                             LiteRtDispatchEdgeId edge_id);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphInput(
+    LiteRtDispatchGraph* graph, int input_index, LiteRtDispatchEdgeId edge_id);
 
 // Connect a given graph's output.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphOutput(LiteRtDispatchGraph* graph,
-                                              int output_index,
-                                              LiteRtDispatchEdgeId edge_id);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchConnectGraphOutput(
+    LiteRtDispatchGraph* graph, int output_index, LiteRtDispatchEdgeId edge_id);
 
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchLoadExecutable(
     LiteRtDispatchDeviceContext device_context,
     LiteRtDispatchExecutableType type, const LiteRtMemBuffer* bytecode_buffer,
     LiteRtDispatchExecutableHandle* exec_handle);
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchUnloadExecutable(
-    LiteRtDispatchDeviceContext device_context,
-    LiteRtDispatchExecutableHandle exec_handle);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtDispatchUnloadExecutable(LiteRtDispatchDeviceContext device_context,
+                               LiteRtDispatchExecutableHandle exec_handle);
 
 // Assign an executable function to a graph node. Parameter `function_name` is
 // mandatory if the given executable includes multiple functions.
@@ -272,19 +273,20 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAssignNodeFunction(
     LiteRtDispatchExecutableHandle exec_handle, const char* function_name);
 
 // Add an annotation to an entire graph.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateGraph(LiteRtDispatchGraph* graph,
-                                         const char* key, const char* value);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateGraph(
+    LiteRtDispatchGraph* graph, const char* key, const char* value);
 
 // Add an annotation to a specified node.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateNode(LiteRtDispatchGraph* graph,
-                                        LiteRtDispatchNodeId node_id,
-                                        const char* key, const char* value);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateNode(
+    LiteRtDispatchGraph* graph, LiteRtDispatchNodeId node_id, const char* key,
+    const char* value);
 
 // Add an annotation to a specified edge.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateEdge(LiteRtDispatchGraph* graph,
-                                        LiteRtDispatchEdgeId edge_id,
-                                        const char* key, const char* value);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchAnnotateEdge(
+    LiteRtDispatchGraph* graph, LiteRtDispatchEdgeId edge_id, const char* key,
+    const char* value);
 
+// Create an invocation context from a given graph.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchInvocationContextCreateFromGraph(
     LiteRtDispatchDeviceContext device_context, LiteRtDispatchGraph* graph,
     LiteRtDispatchInvocationContext* invocation_context);
