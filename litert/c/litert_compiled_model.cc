@@ -36,6 +36,28 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 
+#if LITERT_WINDOWS_OS
+#include <stdarg.h>
+static int vasprintf(char** strp, const char* format, va_list ap) {
+  va_list ap_copy;
+  va_copy(ap_copy, ap);
+  int len = _vscprintf(format, ap_copy);
+  va_end(ap_copy);
+
+  if (len < 0) return -1;
+
+  *strp = static_cast<char*>(malloc(len + 1));
+  if (!*strp) return -1;
+
+  int result = vsnprintf(*strp, len + 1, format, ap);
+  if (result < 0) {
+    free(*strp);
+    *strp = nullptr;
+  }
+  return result;
+}
+#endif  // LITERT_WINDOWS_OS
+
 #ifdef __cplusplus
 extern "C" {
 #endif
