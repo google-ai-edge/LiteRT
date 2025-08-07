@@ -13,49 +13,12 @@ package(
 
 cc_library(
     name = "versioning",
-    srcs = [
-        "op_version.cc",
-        "runtime_version.cc",
-    ],
     hdrs = [
         "op_version.h",
-        "runtime_version.h",
     ],
     compatible_with = get_compatible_with_portable(),
     deps = [
-        ":op_signature",
-        "//tflite:builtin_op_data",
-        "//tflite:minimal_logging",
-        "//tflite/core/c:c_api_types",
-        "//tflite/core/c:common",
-        "//tflite/kernels/internal:compatibility",
-        "//tflite/schema:schema_fbs",
-        "//tflite/schema:schema_utils",
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/memory",
-        "@com_google_absl//absl/strings",
-        "@flatbuffers",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
-        "@org_tensorflow//tensorflow/core:tflite_portable_logging",
-    ],
-)
-
-tf_cc_test(
-    name = "versioning_test",
-    srcs = [
-        "op_version_test.cc",
-        "runtime_version_test.cc",
-    ],
-    deps = [
-        ":versioning",
-        "//tflite:builtin_op_data",
-        "//tflite/core/c:c_api_types",
-        "//tflite/core/c:common",
-        "//tflite/core/kernels:builtin_ops",
-        "//tflite/schema:schema_fbs",
-        "//tflite/schema:schema_fbs_with_mutable",
-        "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
     ],
 )
 

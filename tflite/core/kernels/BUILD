@@ -29,6 +29,7 @@ cc_test(
         "//tflite/c:common",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
     ],
 )
 
