@@ -87,9 +87,9 @@ using ::litert::Error;
 using ::litert::Expected;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
+using ::litert::internal::GetTensorIdentifier;
 using ::litert::internal::SerializeModel;
 using ::litert::internal::TfLiteTensorIdentifier;
-using ::litert::internal::GetTensorIdentifier;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options) {

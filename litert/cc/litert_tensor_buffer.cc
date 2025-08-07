@@ -170,6 +170,15 @@ bool TensorBuffer::IsWebGpuMemory() const {
   return ::IsWebGpuMemory(tensor_buffer_type);
 }
 
+bool TensorBuffer::IsMetalMemory() const {
+  LiteRtTensorBufferType tensor_buffer_type;
+  if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);
+      status != kLiteRtStatusOk) {
+    return false;
+  }
+  return ::IsMetalMemory(tensor_buffer_type);
+}
+
 bool TensorBuffer::IsVulkanMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;
   if (auto status = LiteRtGetTensorBufferType(Get(), &tensor_buffer_type);

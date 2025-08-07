@@ -686,9 +686,11 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_logging",
     "//litert/c:litert_metrics",
     "//litert/c:litert_model",
+    "//litert/c:litert_profiler_event",
     "//litert/c:litert_opaque_options",
     "//litert/c:litert_options",
     "//litert/c:litert_profiler",
+    "//litert/c:litert_custom_tensor_buffer",
     "//litert/c:litert_tensor_buffer",
     "//litert/c:litert_tensor_buffer_types",
     "//litert/c:litert_external_litert_buffer_context",
@@ -1302,6 +1304,36 @@ objc_library(
     ],
 )
 
+objc_library(
+    name = "litert_compiled_model_metal_test",
+    testonly = True,
+    srcs = [":litert_compiled_model_metal_test.mm"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+    ],
+    tags = [
+        "no_oss",
+        "notap",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_expected",
+        ":litert_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//third_party/apple_frameworks:XCTest",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # macos_unit_test(
 #     name = "litert_tensor_buffer_test_cc_macos",
@@ -1319,5 +1351,20 @@ objc_library(
 #         "notap",
 #     ],
 #     deps = [":LitertTensorBufferTestLibrary"],
+# )
+#
+# macos_unit_test(
+#     name = "litert_compiled_model_metal_test_cc_macos",
+#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+#     tags = ["notap"],
+#     deps = [":litert_compiled_model_metal_test"],
+# )
+#
+# ios_unit_test(
+#     name = "litert_compiled_model_metal_test_cc_ios",
+#     minimum_os_version = LITERT_MIN_IOS_VERSION,
+#     # copybara:uncomment runner = "@build_bazel_rules_apple//apple/testing/default_runner:ios_default_runner",
+#     tags = ["notap"],
+#     deps = [":litert_compiled_model_metal_test"],
 # )
 # copybara:uncomment_end(google-only)

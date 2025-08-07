@@ -246,6 +246,11 @@ class TensorBuffer
   // mistakes when using it.
   bool IsWebGpuMemory() const;
 
+  // Returns true if the tensor buffer is an Metal memory.
+  // Note: This function doesn't return Expected<bool> users can easily make
+  // mistakes when using it.
+  bool IsMetalMemory() const;
+
   // Returns true if the tensor buffer is a Vulkan memory.
   // Note: This function doesn't return Expected<bool> users can easily make
   // mistakes when using it.
