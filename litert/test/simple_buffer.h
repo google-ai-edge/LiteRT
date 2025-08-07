@@ -79,8 +79,14 @@ class SimpleBuffer {
     absl::Span<const Layout::Dim> dimensions;
     using Type = std::remove_const_t<T>;
     Layout::Dim NumElements() const {
-      return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
-                         std::multiplies<Layout::Dim>());
+      Layout::Dim num_elements = 1;
+      for (Layout::Dim dim : dimensions)
+        num_elements *= dim;
+
+      return num_elements;
+
+      // return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
+      //                   std::multiplies<Layout::Dim>());
     }
   };
 

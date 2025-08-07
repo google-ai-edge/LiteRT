@@ -96,8 +96,30 @@ load(
 
 python_wheel_version_suffix_repository(name = "tf_wheel_version_suffix")
 
+# Toolchains for ML projects hermetic builds.
+# Details: https://github.com/google-ml-infra/rules_ml_toolchain
+http_archive(
+    name = "rules_ml_toolchain",
+    sha256 = "40d1e8a2c2e91e0c8781bce80ade7fb34dface5861248d03cae88b24c38fb991",
+    strip_prefix = "rules_ml_toolchain-02fe7225d62af3036a541aa48b6f7bc86089ea5d",
+    urls = [
+        "https://github.com/google-ml-infra/rules_ml_toolchain/archive/02fe7225d62af3036a541aa48b6f7bc86089ea5d.tar.gz",
+    ],
+)
+
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
+    "@rules_ml_toolchain//cc/deps:cc_toolchain_deps.bzl",
+    "cc_toolchain_deps",
+)
+
+cc_toolchain_deps()
+
+register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64")
+
+register_toolchains("@rules_ml_toolchain//cc:linux_x86_64_linux_x86_64_cuda")
+
+load(
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_json_init_repository.bzl",
     "cuda_json_init_repository",
 )
 
@@ -109,7 +131,7 @@ load(
     "CUDNN_REDISTRIBUTIONS",
 )
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_redist_init_repositories.bzl",
     "cuda_redist_init_repositories",
     "cudnn_redist_init_repository",
 )
@@ -123,21 +145,21 @@ cudnn_redist_init_repository(
 )
 
 load(
-    "@local_xla//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
+    "@rules_ml_toolchain//third_party/gpus/cuda/hermetic:cuda_configure.bzl",
     "cuda_configure",
 )
 
 cuda_configure(name = "local_config_cuda")
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_redist_init_repository.bzl",
     "nccl_redist_init_repository",
 )
 
 nccl_redist_init_repository()
 
 load(
-    "@local_xla//third_party/nccl/hermetic:nccl_configure.bzl",
+    "@rules_ml_toolchain//third_party/nccl/hermetic:nccl_configure.bzl",
     "nccl_configure",
 )
 
