@@ -35,7 +35,8 @@ LITERT_DEFINE_HANDLE(LiteRtCompiledResult);
 // Plugin
 //
 
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version);
 
 // Name associated with the manufacturer this plugin relates to (e.g,
 // GoogleTensor, Qualcomm).
@@ -46,11 +47,12 @@ LITERT_CAPI_EXPORT const char* LiteRtGetCompilerPluginSocManufacturer();
 // while the plugin is alive. These are read-only (TODO: update api for const
 // correctness). It is OK for these to be null, in which case the plugin should
 // use default values.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
-                                        LiteRtEnvironmentOptions env,
-                                        LiteRtOptions options);
+LITERT_CAPI_EXPORT LiteRtStatus
+LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
+                           LiteRtEnvironmentOptions env, LiteRtOptions options);
 
-LITERT_CAPI_EXPORT void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin);
+LITERT_CAPI_EXPORT void LiteRtDestroyCompilerPlugin(
+    LiteRtCompilerPlugin compiler_plugin);
 
 // Return the HW supported by this plugin (e.g., GPU, NPU)
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(
@@ -70,23 +72,22 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 
 // Select desired ops for compilation. This will only be called once
 // per subgraph, plugins should select all supportable ops.
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
-                                           const char* soc_model,
-                                           LiteRtSubgraph subgraph,
-                                           LiteRtOpList selected_ops);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginPartition(
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    LiteRtSubgraph subgraph, LiteRtOpList selected_ops);
 
 // Prepare result to pass to the runtime for given model containing partitioned
 // subgraphs. Optionally, handles a SoC model (parameter `soc_model` can be NULL
 // to specify a default SoC model).
-LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginCompile(LiteRtCompilerPlugin compiler_plugin,
-                                         const char* soc_model,
-                                         LiteRtModel partitions,
-                                         LiteRtCompiledResult* compiled_result);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginCompile(
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    LiteRtModel partitions, LiteRtCompiledResult* compiled_result);
 //
 // Compiled Partition
 //
 
-LITERT_CAPI_EXPORT void LiteRtDestroyCompiledResult(LiteRtCompiledResult result);
+LITERT_CAPI_EXPORT void LiteRtDestroyCompiledResult(
+    LiteRtCompiledResult result);
 
 // Get the buffer for the compiled byte code for the given index.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultByteCode(

@@ -109,7 +109,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
       int64_t input_index, int64_t output_index)
       : m_tensor_meta_info(tensor_meta_info),
         input_index_(input_index),
-        output_index_(output_index) {};
+        output_index_(output_index){};
 
   ov::frontend::tensorflow_lite::TensorMetaInfo get_tensor_info()
       const override {

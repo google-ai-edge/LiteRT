@@ -60,10 +60,10 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType &tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
 #if defined(_WIN32)
-      kLiteRtTensorBufferTypeHostMemory,
+    kLiteRtTensorBufferTypeHostMemory,
 #else
-      kLiteRtTensorBufferTypeAhwb,
-      kLiteRtTensorBufferTypeDmaBuf,
+    kLiteRtTensorBufferTypeAhwb,
+    kLiteRtTensorBufferTypeDmaBuf,
 #endif
   };
 
@@ -101,7 +101,6 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
-
 #if defined(_WIN32)
   LITERT_ASSIGN_OR_RETURN(
       ov::intel_npu::level_zero::ZeroBufferTensor remote_tensor,
