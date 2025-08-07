@@ -369,4 +369,24 @@ LiteRtStatus AveragePool2dOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus MaxPool2dOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflMaxPool2d) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dPaddingOption(op, &padding));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideWOption(op, &stride_w));
+  LITERT_RETURN_IF_ERROR(LiteRtGetMaxPool2dStrideHOption(op, &stride_h));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterWidthOption(op, &filter_width));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFilterHeightOption(op, &filter_height));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetMaxPool2dFusedActivationOption(op, &fused_activation_function));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
