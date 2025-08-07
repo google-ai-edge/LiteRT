@@ -521,6 +521,39 @@ DispatchDelegateKernel::GetBufferRequirements(int node_idx,
         invocation_context, /*output_index=*/io_tensor_index,
         &litert_tensor_type, &tensor_buffer_requirements));
   }
+  // Check for MediaTek's contradictory buffer size for Float32 tensors
+  if (litert_tensor_type.element_type == kLiteRtElementTypeFloat32) {
+    size_t expected_elements = 1;
+    for (int i = 0; i < litert_tensor_type.layout.rank; ++i) {
+      expected_elements *= litert_tensor_type.layout.dimensions[i];
+    }
+    size_t expected_buffer_size = expected_elements * 4;  // Float32 is 4 bytes
+    size_t reported_buffer_size = tensor_buffer_requirements->BufferSize();
+
+    if (reported_buffer_size != expected_buffer_size) {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "MediaTek dispatch API returned contradictory buffer requirements "
+          "for Float32 tensor %p:\n"
+          "  Tensor type: Float32 (element_type=%d), dims=[%s], expected "
+          "size=%zu bytes\n"
+          "  But dispatch API returned: %zu bytes (%.1f bytes per element "
+          "instead of 4)",
+          io_tfl_tensor, litert_tensor_type.element_type,
+          [&litert_tensor_type]() -> std::string {
+            std::string dims;
+            for (int i = 0; i < litert_tensor_type.layout.rank; ++i) {
+              if (i > 0) dims += ",";
+              dims += std::to_string(litert_tensor_type.layout.dimensions[i]);
+            }
+            return dims;
+          }()
+                                         .c_str(),
+          expected_buffer_size, reported_buffer_size,
+          static_cast<float>(reported_buffer_size) / expected_elements);
+    }
+  }
+
   return LiteRtTensorBufferRequirementsPtr(tensor_buffer_requirements);
 }
 

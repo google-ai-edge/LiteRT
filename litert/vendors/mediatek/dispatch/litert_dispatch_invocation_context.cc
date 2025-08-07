@@ -332,6 +332,12 @@ LiteRtDispatchInvocationContextT::IoRequirementsBuilder::Create() {
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetInputRequirements(
     int input_index, const LiteRtRankedTensorType& tensor_type) {
+  // Log that MediaTek receives Float32 tensor type information
+  LITERT_LOG(LITERT_WARNING,
+             "MediaTek GetInputRequirements called for index %d, "
+             "tensor_type.element_type=%d (Float32=%d)",
+             input_index, tensor_type.element_type, kLiteRtElementTypeFloat32);
+
   if (input_index < 0 || input_index >= input_requirements_builders_.size()) {
     return litert::Error(
         kLiteRtStatusErrorInvalidArgument,
@@ -344,6 +350,14 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
             compilation_, input_index, &buffer_size) != NEURON_NO_ERROR) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Failed to get input padded size");
+    }
+
+    // Log the buffer size MediaTek returns for Float32 tensors
+    if (tensor_type.element_type == kLiteRtElementTypeFloat32) {
+      LITERT_LOG(LITERT_WARNING,
+                 "MediaTek compilation_get_input_padded_size returned %zu "
+                 "bytes for Float32 tensor at index %d",
+                 buffer_size, input_index);
     }
 
     // According to MediaTek, NeuronCompilation_getInputPaddedDimensions and
@@ -378,6 +392,11 @@ LiteRtDispatchInvocationContextT::GetInputRequirements(
 Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetOutputRequirements(
     int output_index, const LiteRtRankedTensorType& tensor_type) {
+  // Log that MediaTek receives Float32 tensor type information
+  LITERT_LOG(LITERT_WARNING,
+             "MediaTek GetOutputRequirements called for index %d, "
+             "tensor_type.element_type=%d (Float32=%d)",
+             output_index, tensor_type.element_type, kLiteRtElementTypeFloat32);
   if (output_index < 0 ||
       output_index >= output_requirements_builders_.size()) {
     return litert::Error(
@@ -391,6 +410,14 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
             compilation_, output_index, &buffer_size) != NEURON_NO_ERROR) {
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Failed to get output padded size");
+    }
+
+    // Log the buffer size MediaTek returns for Float32 tensors
+    if (tensor_type.element_type == kLiteRtElementTypeFloat32) {
+      LITERT_LOG(LITERT_WARNING,
+                 "MediaTek compilation_get_output_padded_size returned %zu "
+                 "bytes for Float32 tensor at index %d",
+                 buffer_size, output_index);
     }
 
     // According to MediaTek, NeuronCompilation_getInputPaddedDimensions and
