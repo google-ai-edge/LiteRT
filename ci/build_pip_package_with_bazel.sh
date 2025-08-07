@@ -87,7 +87,7 @@ case "${ARCH}" in
     ;;
 esac
 
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
 # Move the wheel file to the root directory since it is not accessible from the
@@ -101,20 +101,20 @@ find "./dist/"
 
 if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
   echo "Testing manylinux compliance..."
-  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt --config=monolithic --config=nogcp --config=nonccl \
+  bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
 fi
 
 # Vendor SDKs
 
 ## Qualcomm SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
 
 ## Mediatek SDK
-bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --config=monolithic --config=nogcp --config=nonccl \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/

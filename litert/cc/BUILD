@@ -688,6 +688,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_model",
     "//litert/c:litert_opaque_options",
     "//litert/c:litert_options",
+    "//litert/c:litert_profiler",
     "//litert/c:litert_tensor_buffer",
     "//litert/c:litert_tensor_buffer_types",
     "//litert/c:litert_external_litert_buffer_context",
