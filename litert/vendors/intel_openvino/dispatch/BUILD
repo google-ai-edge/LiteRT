@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_bin", "litert_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -74,6 +74,50 @@ litert_dynamic_lib(
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/cleanup",
         "@intel_openvino//:openvino",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtDispatch",
+    srcs = [
+        "device_context.cc",
+        "dispatch_api.cc",
+        "invocation_context.cc",
+    ],
+    linkshared = 1,
+    visibility = ["//litert:__subpackages__"],
+    copts = select({
+        "@org_tensorflow//tensorflow:windows": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/core/util:tensor_type_util",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/vendors/intel_openvino:ov_utils",
+        "@com_google_absl//absl/cleanup",
+        ":litert_dispatch_api",
+    ] + select({
+        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
+        "//conditions:default": [],
+    }),
+)
+
+litert_lib(
+    name = "litert_dispatch_api",
+    hdrs = [
+        "device_context.h",
+        "invocation_context.h",
     ],
 )
 

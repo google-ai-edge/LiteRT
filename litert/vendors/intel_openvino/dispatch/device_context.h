@@ -16,7 +16,9 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#if LITERT_HAS_AHWB_SUPPORT
 #include <sys/mman.h>
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
@@ -38,7 +40,11 @@ class LiteRtDispatchDeviceContextT {
   litert::Expected<void> UnregisterTensorBuffer(
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
+#if defined(_WIN32)
+  litert::Expected<ov::intel_npu::level_zero::ZeroBufferTensor> getRemoteTensor(
+#else
   litert::Expected<ov::RemoteTensor> getRemoteTensor(
+#endif
       const LiteRtTensorBufferHandle& handle) const {
     auto it = tensor_handle_map_.find(handle);
     if (it != tensor_handle_map_.end()) {
@@ -56,8 +62,13 @@ class LiteRtDispatchDeviceContextT {
   explicit LiteRtDispatchDeviceContextT()
       : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
   std::shared_ptr<ov::Core> core_;
+#if defined(_WIN32)
+  std::unordered_map<LiteRtTensorBufferHandle, ov::intel_npu::level_zero::ZeroBufferTensor>
+      tensor_handle_map_;
+#else
   std::unordered_map<LiteRtTensorBufferHandle, ov::RemoteTensor>
       tensor_handle_map_;
+#endif
   uint64_t next_handle_;
 };
 

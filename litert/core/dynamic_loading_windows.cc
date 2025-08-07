@@ -47,8 +47,6 @@ std::string ToWindowsLibName(absl::string_view lib_name) {
   // Replace .so with .dll
   if (absl::EndsWith(name, ".so")) {
     name = name.substr(0, name.length() - 3) + ".dll";
-  } else if (!absl::EndsWith(name, ".dll")) {
-    name += ".dll";
   }
   return name;
 }
