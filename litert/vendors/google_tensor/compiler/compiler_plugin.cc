@@ -388,7 +388,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   };
   auto compile_status =
       api.compile(model_buffer_view.data(), model_buffer_view.size(),
-                  soc_model_view.data(), soc_model_view.size(),
+                  soc_model_view.data(), soc_model_view.size(), opaque_options,
                   &compiled_code_data, &compiled_code_size, &error_message);
 
   if (!compile_status) {

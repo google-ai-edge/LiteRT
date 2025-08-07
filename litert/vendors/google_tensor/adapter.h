@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-#include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 
 namespace litert::google_tensor {
@@ -29,8 +29,9 @@ namespace litert::google_tensor {
 // @param tfl_buffer_data Pointer to the serialized TFLite model flatbuffer.
 // @param tfl_buffer_size Size of the flatbuffer.
 // @param soc_model_data Pointer to the string identifying the SOC model
-//        (e.g., "rio_a0").
+//        (e.g., "g4", "g5", etc.).
 // @param soc_model_size Length of the SOC model string.
+// @param options LiteRTOpaqueOptions to pass the compiler options.
 // @param compiled_code_data On success, will be set to point to a newly
 //        allocated buffer containing the compiled code. The caller takes
 //        ownership of this buffer and is responsible for freeing it
@@ -44,8 +45,8 @@ namespace litert::google_tensor {
 // @return bool indicating whether the compilation was successful or not.
 typedef bool (*Compile)(const char* tfl_buffer_data, size_t tfl_buffer_size,
                         const char* soc_model_data, size_t soc_model_size,
-                        char** compiled_code_data, size_t* compiled_code_size,
-                        char** out_error_message);
+                        LiteRtOpaqueOptions options, char** compiled_code_data,
+                        size_t* compiled_code_size, char** out_error_message);
 typedef void (*CompilerFreeCompiledCode)(char* compiled_code_data);
 typedef void (*CompilerFreeErrorMessage)(char* error_message);
 
