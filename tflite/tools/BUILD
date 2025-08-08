@@ -400,6 +400,7 @@ cc_library(
         "//tflite/core/c:common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/types:span",
+        "@eigen_archive//:eigen3",
     ],
 )
 

@@ -22,6 +22,7 @@ limitations under the License.
 #include <string>
 
 #include "absl/types/span.h"
+#include "Eigen/Core"  // from @eigen_archive
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
@@ -174,6 +175,10 @@ InputTensorData CreateRandomTensorData(std::string name, TfLiteType type,
       // is not supported.
       return CreateInputTensorData<bool>(
           num_elements, std::uniform_int_distribution<uint32_t>(0, 1));
+    }
+    case kTfLiteBFloat16: {
+      return CreateInputTensorData<Eigen::bfloat16>(
+          num_elements, std::uniform_real_distribution<float>(-0.5f, 0.5f));
     }
     default: {
       TFLITE_LOG(FATAL) << "Don't know how to populate tensor " << name
