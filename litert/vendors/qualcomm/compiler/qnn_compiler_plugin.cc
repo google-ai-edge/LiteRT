@@ -47,6 +47,7 @@
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
+#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/qnn_compose_graph.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
@@ -90,24 +91,6 @@ bool IsWeightSharingSupported(::qnn::DspArch dsp_arch) {
 #else
   return dsp_arch >= ::qnn::DspArch::V73;
 #endif
-}
-
-// TODO(Alen): share this utility with dispatch_api
-LiteRtStatus InitQnnOptions(
-    ::qnn::Options& qnn_options,
-    litert::qualcomm::QualcommOptions& qualcomm_options) {
-  qnn_options.SetLogLevel(
-      static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
-  qnn_options.SetProfiling(
-      static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
-  qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
-  qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
-  qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
-  qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
-      qualcomm_options.GetHtpPerformanceMode()));
-  qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
-  LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
-  return kLiteRtStatusOk;
 }
 
 bool SkipValidationOfQuantizeOp(const litert::Op& op) {
