@@ -81,7 +81,7 @@ LiteRtStatus LiteRtMetalMemoryCreate(GpuEnvironment* gpu_env,
 
   tflite::gpu::metal::MetalSpatialTensor tensor_memory;
   LITERT_RETURN_IF_ERROR(
-      tflite::gpu::metal::CreateTensor((__bridge id<MTLDevice>)(gpu_env->getMetalDevice()),
+      tflite::gpu::metal::CreateTensor((__bridge id<MTLDevice>)(gpu_env->GetMetalDevice()),
                                        *tensor_desc, &tensor_memory)
           .ok(),
       kLiteRtStatusErrorRuntimeFailure);
@@ -129,13 +129,13 @@ LiteRtStatus LiteRtMetalMemoryDownload(GpuEnvironment* gpu_env, void* metal_memo
                          kLiteRtStatusErrorRuntimeFailure);
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtMetalGpuMemoryDownloadImpl<TensorBool, bool>(*metal_tensor, bytes, data,
-                                                              gpu_env->getMetalDevice());
+                                                              gpu_env->GetMetalDevice());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtMetalGpuMemoryDownloadImpl<TensorInt32, int32_t>(*metal_tensor, bytes, data,
-                                                                  gpu_env->getMetalDevice());
+                                                                  gpu_env->GetMetalDevice());
   } else {
     return LiteRtMetalGpuMemoryDownloadImpl<TensorFloat32, float>(*metal_tensor, bytes, data,
-                                                                  gpu_env->getMetalDevice());
+                                                                  gpu_env->GetMetalDevice());
   }
   return kLiteRtStatusOk;
 }
@@ -181,13 +181,13 @@ LiteRtStatus LiteRtMetalMemoryUpload(GpuEnvironment* gpu_env, void* metal_memory
 
   if (tensor_desc->GetDataType() == DataType::BOOL) {
     return LiteRtMetalGpuMemoryUploadImpl<TensorBool, bool>(*metal_spatial_tensor, bytes, data,
-                                                            gpu_env->getMetalDevice());
+                                                            gpu_env->GetMetalDevice());
   } else if (tensor_desc->GetDataType() == DataType::INT32) {
     return LiteRtMetalGpuMemoryUploadImpl<TensorInt32, int32_t>(*metal_spatial_tensor, bytes, data,
-                                                                gpu_env->getMetalDevice());
+                                                                gpu_env->GetMetalDevice());
   } else {
     return LiteRtMetalGpuMemoryUploadImpl<TensorFloat32, float>(*metal_spatial_tensor, bytes, data,
-                                                                gpu_env->getMetalDevice());
+                                                                gpu_env->GetMetalDevice());
   }
   return kLiteRtStatusOk;
 }
