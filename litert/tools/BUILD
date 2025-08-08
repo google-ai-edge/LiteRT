@@ -107,8 +107,8 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@org_tensorflow//tensorflow:android": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
     deps = [
