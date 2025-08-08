@@ -120,6 +120,12 @@ class TensorWrapper final {
 
   Qnn_Tensor_t& GetQnnTensor() { return qnn_tensor_; }
 
+  uint32_t GetId() const { return qnn_tensor_.v1.id; }
+
+  const Qnn_Tensor_t& GetQnnTensor() const { return qnn_tensor_; }
+
+  std::string GetName() const { return qnn_tensor_.v1.name; }
+
   std::uint32_t GetRank() const;
 
   std::uint32_t GetDim(size_t index) const;
@@ -315,8 +321,6 @@ class TensorWrapper final {
     return absl::EndsWith(name_, kDumpSuffix) &&
            qnn_tensor_.v2.type == QNN_TENSOR_TYPE_APP_READ;
   }
-
-  std::string GetName() const { return name_; }
 
  private:
   void UpdateQnnQuantParams() {
