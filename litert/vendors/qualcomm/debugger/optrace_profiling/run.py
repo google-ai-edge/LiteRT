@@ -8,30 +8,73 @@ import argparse
 import logging
 import shutil
 from pathlib import Path
+import re
+from typing import Optional
 import numpy as np
 
-_QNN_HOME = (
-    Path(os.environ["LITERT_QAIRT_SDK"]) / "latest"
-    if "LITERT_QAIRT_SDK" in os.environ
-    else Path(__file__).resolve().parents[5] / "third_party" / "qairt" / "latest"
-)
-_TOOLS_X86 = _QNN_HOME / "bin" / "x86_64-linux-clang"
 _DEVICE_WORKING_DIR = f"/data/local/tmp/{getpass.getuser()}/litert"
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
 
-def _generate_zero_inputs(ctx_bin_path: str) -> None:
+def _extract_build_id(build_id_hdr: str) -> Optional[str]:
     """
-    Generate zero inputs using qnn-context-binary-utility.
+    Extract the build ID from the header file.
+
+    Parameters:
+        build_id_hdr (str): Path to the build ID header file.
+
+    Returns:
+        str: Build ID if found, None otherwise.
+    """
+    with open(build_id_hdr, "r", encoding="utf-8") as file:
+        content = file.read()
+
+    # Use regex to find the build ID
+    match = re.search(r'#define\s+QNN_SDK_BUILD_ID\s+"([^"]+)"', content)
+    if match:
+        return match.group(1)
+    else:
+        return None
+
+
+def _is_same_version(bin_build_id: str, sdk_build_id: str) -> bool:
+    """
+    Compare the version and build ID of the binary with the SDK build ID.
+
+    Parameters:
+        bin_build_id (str): Binary build ID.
+        sdk_build_id (str): SDK build ID.
+
+    Returns:
+        bool: True if the version and build ID match, False otherwise.
+    """
+    # Extract version and build_id from the string
+    bin_version = ".".join(bin_build_id.lstrip("v").split(".")[:3])
+    sdk_build_version = ".".join(sdk_build_id.lstrip("v").split(".")[:3])
+
+    # Convert version strings to tuples of integers for comparison
+    def version_tuple(v):
+        return tuple(map(int, v.split(".")))
+
+    # Compare version numbers
+    return version_tuple(bin_version) == version_tuple(sdk_build_version)
+
+
+def _get_ctx_bin_info(ctx_bin_path: str, qairt_sdk: Path) -> dict:
+    """
+    Get the context binary information.
 
     Parameters:
         ctx_bin_path (str): Path to the context binary.
+        qairt_sdk (str): Path to the QNN SDK.
+
+    Returns:
+        json_data (dict): Context binary information.
     """
-    logging.info("Generating input data...")
     json_path = _ASSETS_DIR / "tmp.json"
     subprocess.run(
         [
-            _TOOLS_X86 / "qnn-context-binary-utility",
+            qairt_sdk / "bin" / "x86_64-linux-clang" / "qnn-context-binary-utility",
             "--context_binary",
             f"{ctx_bin_path}",
             "--json_file",
@@ -43,11 +86,27 @@ def _generate_zero_inputs(ctx_bin_path: str) -> None:
     with open(json_path, "r", encoding="utf-8") as file:
         json_data = json.load(file)
     os.remove(json_path)
-    if len(json_data["info"]["graphs"]) != 1:
+    bin_id = json_data["info"]["buildId"]
+    qairt_id = _extract_build_id(qairt_sdk / "include" / "QNN" / "QnnSdkBuildId.h")
+    logging.info("Context Binary Build Id: %s", bin_id)
+    if _is_same_version(bin_id, qairt_id):
+        logging.info("Build ID matches.")
+    else:
+        logging.warning(
+            f"Ensure the context binary '{bin_id}' is built with the same SDK version '{qairt_id}'."
+        )
+    return json_data["info"]
+
+
+def _generate_zero_inputs(ctx_bin_info: dict) -> None:
+
+    logging.info("Generating input data...")
+
+    if len(ctx_bin_info["graphs"]) != 1:
         raise ValueError(
             "The input generator currently supports only one graph in context binary."
         )
-    graph = json_data["info"]["graphs"][0]
+    graph = ctx_bin_info["graphs"][0]
     dtype_map = {
         "QNN_DATATYPE_INT_8": np.int8,
         "QNN_DATATYPE_INT_16": np.int16,
@@ -88,13 +147,14 @@ def _generate_zero_inputs(ctx_bin_path: str) -> None:
     input_list_path.write_text(" ".join(lines) + "\n", encoding="utf-8")
 
 
-def _push_so(adb_cmd: str, htp_arch: str):
+def _push_so(adb_cmd: str, htp_arch: str, qairt_sdk: Path):
     """
     Push shared object (.so) and binary files required by qnn-net-run to the target device.
 
     Parameters:
         adb_cmd (str): The base adb command (e.g., "adb" or "adb -s <device_id>").
-        _QNN_HOME (str): The root directory of the QNN SDK.
+        htp_arch (str): The htp architecture of the target device (e.g., "V75").
+        qairt_sdk (Path): The path to the Qairt SDK.
     """
     logging.info("Pushing .so files to the target device...")
     cmd = f'{adb_cmd} shell "rm -rf {_DEVICE_WORKING_DIR} && mkdir -p {_DEVICE_WORKING_DIR}"'
@@ -107,7 +167,7 @@ def _push_so(adb_cmd: str, htp_arch: str):
         f"lib/aarch64-android/libQnnHtp{htp_arch.upper()}Stub.so",
         f"lib/hexagon-{htp_arch.lower()}/unsigned/libQnnHtp{htp_arch.upper()}Skel.so",
     ]:
-        cmd = f"{adb_cmd} push {Path(_QNN_HOME) / file_path} {_DEVICE_WORKING_DIR}"
+        cmd = f"{adb_cmd} push {qairt_sdk / file_path} {_DEVICE_WORKING_DIR}"
         logging.debug(cmd)
         subprocess.run(cmd, check=True, shell=True)
 
@@ -189,7 +249,7 @@ def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
 
 
 def _generate_profiler_output(
-    adb_cmd: str, schematic_bin_path: str, output_dir: str
+    adb_cmd: str, schematic_bin_path: str, output_dir: str, qairt_sdk: Path
 ) -> None:
     """
     Generate profiler output.
@@ -198,6 +258,7 @@ def _generate_profiler_output(
         adb_cmd (str): The adb command.
         schematic_bin_path (str): The path to the schematic binary.
         output_dir (str): The path to the output directory.
+        qairt_sdk (Path): The path to the QAIRT SDK.
     """
     logging.info("Exectuing qnn-profile-viewer with the outputs...")
     os.makedirs(output_dir, exist_ok=True)
@@ -205,13 +266,13 @@ def _generate_profiler_output(
     subprocess.run(cmd, check=True, shell=True)
     log_path = Path("output_htp") / "qnn-profiling-data_0.log"
     cmd_lst = [
-        _QNN_HOME / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer",
+        qairt_sdk / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer",
         "--input_log",
         log_path,
         "--config",
         _ASSETS_DIR / "config_viewer.json",
         "--reader",
-        _QNN_HOME / "lib" / "x86_64-linux-clang" / "libQnnHtpOptraceProfilingReader.so",
+        qairt_sdk / "lib" / "x86_64-linux-clang" / "libQnnHtpOptraceProfilingReader.so",
         "--schematic",
         schematic_bin_path,
         "--output",
@@ -260,12 +321,28 @@ if __name__ == "__main__":
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
+    parser.add_argument(
+        "--qairt_sdk",
+        type=Path,
+        help="Path to qairt sdk folder",
+        required=False,
+        default=(
+            Path(os.environ["LITERT_QAIRT_SDK"]) / "latest"
+            if "LITERT_QAIRT_SDK" in os.environ
+            else Path(__file__).resolve().parents[5]
+            / "third_party"
+            / "qairt"
+            / "latest"
+        ),
+    )
     args = parser.parse_args()
     _setup_logging(args.log_level)
-    _generate_zero_inputs(args.ctx_bin)
+    _generate_zero_inputs(_get_ctx_bin_info(args.ctx_bin, args.qairt_sdk))
     ADB_CMD = _get_adb_cmd(args.hostname, args.serial)
-    _push_so(ADB_CMD, args.htp_arch)
+    _push_so(ADB_CMD, args.htp_arch, args.qairt_sdk)
     _push_target(ADB_CMD, args.ctx_bin)
     _run_ctx_bin(ADB_CMD, args.ctx_bin)
-    _generate_profiler_output(ADB_CMD, args.schematic_bin, args.output_dir)
+    _generate_profiler_output(
+        ADB_CMD, args.schematic_bin, args.output_dir, args.qairt_sdk
+    )
     logging.info("Success! Profiling data is in %s", args.output_dir)
