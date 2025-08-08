@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
@@ -284,14 +285,14 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        "//litert/cc:litert_profiler",
         "//litert/cc:litert_tflite_error_status_builder",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
         "//litert/cc/internal:litert_gpu_options",
         "//litert/cc/internal:litert_options",
+        "//litert/cc/internal:litert_profiler",
+        "//litert/cc/internal:litert_runtime_options",
         "//litert/cc/internal:litert_tensor_buffer",
-        "//litert/cc/options:litert_runtime_options",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/tools:command_line_flags",
@@ -302,6 +303,16 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# # Ensure that benchmark tool is statically linked.
+# check_dependencies(
+#     of = [":benchmark_litert_model"],
+#     dont_depend_on = [
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#     ],
+# )
+# copybara:uncomment_end
 
 #copybara:comment_begin(google-only)
 cc_test(
