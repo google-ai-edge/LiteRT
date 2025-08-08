@@ -15,7 +15,10 @@
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
 #include <dlfcn.h>
+#include <errno.h>
+#include <sys/stat.h>
 
+#include <cerrno>
 #include <memory>
 #include <optional>
 #include <string>
@@ -37,11 +40,7 @@ namespace google_tensor {
 
 namespace {
 
-// The SouthBound APIs are implemented in the EdgeTPU libraries.
-// It used to be implemented in the libedgetpu_util.so and has been moved to
-// libedgetpu_litert.so in newer Android builds.
 constexpr const char* kLiteRtLibPath = "/vendor/lib64/libedgetpu_litert.so";
-constexpr const char* kEdgeTpuUtilLibPath = "/vendor/lib64/libedgetpu_util.so";
 
 }  // namespace
 
@@ -68,16 +67,16 @@ Expected<void> Southbound::LoadSymbols(
   // Always load the Southbound API library from the vendor partition.
   (void)shared_library_dir;
 
-  // Try loading the new EdgeTPU LiteRT library first. If it fails, it might be
-  // because the Android build is too old. In that case, load the old EdgeTPU
-  // utility library.
-  dlib_handle_ = ::dlopen(kLiteRtLibPath, RTLD_NOW | RTLD_LOCAL);
-  if (!dlib_handle_) {
-    dlib_handle_ = ::dlopen(kEdgeTpuUtilLibPath, RTLD_NOW | RTLD_LOCAL);
-    if (!dlib_handle_) {
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to load Southbound shared library");
-    }
+  if (struct stat buf; ::stat(kLiteRtLibPath, &buf) != 0 && errno == ENOENT) {
+    return Unexpected(
+        kLiteRtStatusErrorNotFound,
+        "Southbound shared library not found: newer Android build required");
+  }
+
+  if (dlib_handle_ = ::dlopen(kLiteRtLibPath, RTLD_NOW | RTLD_LOCAL);
+      !dlib_handle_) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to load Southbound shared library");
   }
 
   // Binds all supported symbols from the shared library to the function
