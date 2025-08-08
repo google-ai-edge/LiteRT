@@ -38,9 +38,6 @@ typedef QNN_INTERFACE_VER_TYPE QnnApi;
 typedef QNN_SYSTEM_INTERFACE_VER_TYPE QnnSystemApi;
 
 // QNN backend library should be on DT_RUNPATH (-rpath) (for linux).
-static const char kLibQnnHtpSo[] = "libQnnHtp.so";
-
-// QNN backend library should be on DT_RUNPATH (-rpath) (for linux).
 static const char kLibQnnSystemSo[] = "libQnnSystem.so";
 
 // Android only library.
