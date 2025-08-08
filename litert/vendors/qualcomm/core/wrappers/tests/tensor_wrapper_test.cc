@@ -34,12 +34,12 @@ TEST(TensorWrapperTest, SanityTest) {
   EXPECT_FALSE(tensor_wrapper.IsSubgraphInput());
   EXPECT_FALSE(tensor_wrapper.IsSubgraphOutput());
   EXPECT_FALSE(tensor_wrapper.IsTensorStatic());
-  EXPECT_EQ(tensor_wrapper.GetStaticTensorData<std::uint8_t>(), std::nullopt);
+  EXPECT_EQ(tensor_wrapper.GetTensorData<std::uint8_t>(), std::nullopt);
   std::vector<std::uint8_t> data = {1, 2, 3};
   // expect no use, since tensor type not correct
   tensor_wrapper.SetTensorData<std::uint8_t>(
       absl::MakeSpan(data.data(), data.size()));
-  EXPECT_EQ(tensor_wrapper.GetStaticTensorData<std::uint8_t>(), std::nullopt);
+  EXPECT_EQ(tensor_wrapper.GetTensorData<std::uint8_t>(), std::nullopt);
 }
 
 TEST(TensorWrapperTest, CopyTensorTest) {
@@ -61,10 +61,10 @@ TEST(TensorWrapperTest, CopyTensorTest) {
   EXPECT_FALSE(copied.IsSubgraphInput());
   EXPECT_FALSE(copied.IsSubgraphOutput());
   EXPECT_TRUE(copied.IsTensorStatic());
-  EXPECT_EQ(copied.GetStaticTensorData<std::uint8_t>(), std::nullopt);
+  EXPECT_EQ(copied.GetTensorData<std::uint8_t>(), std::nullopt);
   std::vector<std::uint8_t> data = {1, 2, 3};
   copied.SetTensorData<std::uint8_t>(absl::MakeSpan(data.data(), data.size()));
-  const auto tensor_data = copied.GetStaticTensorData<std::uint8_t>();
+  const auto tensor_data = copied.GetTensorData<std::uint8_t>();
   EXPECT_TRUE(tensor_data.has_value());
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ((*tensor_data)[i], data[i]);
@@ -97,7 +97,7 @@ TEST(TensorWrapperTest, MoveTensorTest) {
   EXPECT_FALSE(moved.IsSubgraphInput());
   EXPECT_FALSE(moved.IsSubgraphOutput());
   EXPECT_TRUE(moved.IsTensorStatic());
-  const auto tensor_data = moved.GetStaticTensorData<std::uint8_t>();
+  const auto tensor_data = moved.GetTensorData<std::uint8_t>();
   EXPECT_TRUE(tensor_data.has_value());
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ(tensor_data.value()[i], data[i]);
@@ -243,30 +243,30 @@ TEST(TensorWrapperTest, DumpTensorTest) {
   EXPECT_TRUE(tensor_wrapper.IsMarkedDump());
 }
 
-TEST(TensorWrapperTest, GetStaticTensorDataNonStaticTest) {
+TEST(TensorWrapperTest, GetTensorDataNonStaticTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
   TensorWrapper tensor_wrapper{"", QNN_TENSOR_TYPE_APP_WRITE,
                                QNN_DATATYPE_UFIXED_POINT_8, q_param,
                                dummy_dims};
-  EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<std::uint8_t>().has_value());
+  EXPECT_FALSE(tensor_wrapper.GetTensorData<std::uint8_t>().has_value());
 }
 
-TEST(TensorWrapperTest, GetStaticTensorDataTest) {
+TEST(TensorWrapperTest, GetTensorDataTest) {
   std::vector<std::uint32_t> dummy_dims = {1, 1, 3};
   ScaleOffsetQuantizeParamsWrapper q_param(1, 0);
   TensorWrapper tensor_wrapper{"", QNN_TENSOR_TYPE_STATIC,
                                QNN_DATATYPE_UFIXED_POINT_8, q_param,
                                dummy_dims};
 
-  EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<float>().has_value());
-  EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<std::int8_t>().has_value());
-  EXPECT_FALSE(tensor_wrapper.GetStaticTensorData<std::uint8_t>().has_value());
+  EXPECT_FALSE(tensor_wrapper.GetTensorData<float>().has_value());
+  EXPECT_FALSE(tensor_wrapper.GetTensorData<std::int8_t>().has_value());
+  EXPECT_FALSE(tensor_wrapper.GetTensorData<std::uint8_t>().has_value());
   std::vector<std::uint8_t> data = {1, 2, 3};
   tensor_wrapper.SetTensorData<std::uint8_t>(
       absl::MakeSpan(data.data(), data.size()));
   const auto tensor_data =
-      *(tensor_wrapper.GetStaticTensorData<std::uint8_t>());
+      *(tensor_wrapper.GetTensorData<std::uint8_t>());
   for (size_t i = 0; i < data.size(); i++) {
     EXPECT_EQ(tensor_data[i], data[i]);
   }
@@ -307,7 +307,7 @@ TEST(TensorWrapperTest, ConvertQint16ToQuint16Test) {
       std::get<ScaleOffsetQuantizeParamsWrapper>(uint16_q_param_ref)
           .GetZeroPoint();
   const auto uint16_data =
-      *(tensor_wrapper.GetStaticTensorData<std::uint16_t>());
+      *(tensor_wrapper.GetTensorData<std::uint16_t>());
   std::vector<float> deq_data;
   for (size_t i = 0; i < data.size(); i++) {
     deq_data.emplace_back(
