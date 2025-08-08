@@ -87,8 +87,8 @@ litert_bin(
     data = [
         # copybara:uncomment_begin(google-only)
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
-        # "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         # copybara:uncomment_end
+        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/examples:example_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",

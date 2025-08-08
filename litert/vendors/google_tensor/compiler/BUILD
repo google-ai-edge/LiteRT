@@ -23,6 +23,14 @@ litert_dynamic_lib(
     name = "compiler_plugin",
     srcs = ["compiler_plugin.cc"],
     hdrs = ["//litert/vendors/c:litert_compiler_plugin.h"],
+    copts = [
+        "-Os",
+        "-fno-exceptions",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
     export_litert_only = True,
     linkstatic = 1,
     shared_lib_name = "google_tensor_compiler_plugin_so",
@@ -33,6 +41,11 @@ litert_dynamic_lib(
         "no_oss",
         "notap",
     ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
@@ -78,7 +91,6 @@ cc_test(
     ],
     # This test can only be run on Android and Linux.
     target_compatible_with = select({
-        "@platforms//os:android": [],
         "@platforms//os:linux": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
