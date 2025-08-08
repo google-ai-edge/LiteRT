@@ -191,12 +191,23 @@ class ErrorStatusBuilder {
 
   static constexpr bool IsError(const litert::Unexpected&) { return true; }
 
+#if defined(LITERT_WINDOWS_OS)
+  // absl::Status::ok() is not constexpr-compatible on Windows MSVC.
+  static bool IsError(const absl::Status& s) { return !s.ok(); }
+
+  // absl::Status::ok() is not constexpr-compatible on Windows MSVC.
+  template <class T>
+  static bool IsError(const absl::StatusOr<T>& s) {
+    return !s.ok();
+  }
+#else
   static constexpr bool IsError(const absl::Status& s) { return !s.ok(); }
 
   template <class T>
   static constexpr bool IsError(const absl::StatusOr<T>& s) {
     return !s.ok();
   }
+#endif
 
   template <class T>
   static constexpr bool IsError(const litert::Expected<T>& expected) {
