@@ -83,6 +83,7 @@ package_group(
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
         "//litert/runtime/...",
         "//litert/samples/...",
         "//litert/tools/...",
