@@ -709,7 +709,7 @@ cc_shared_library(
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
-# Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
+# Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 cc_shared_library(
     name = "litert_tflite_runtime_c_api_so",
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
