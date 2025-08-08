@@ -114,7 +114,8 @@ class QnnManager {
 
   // Create a context handle for compilation.
   Expected<ContextHandle> CreateContextHandle(
-      absl::Span<const QnnContext_Config_t*> configs);
+      absl::Span<const QnnContext_Config_t*> configs,
+      ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
   Expected<ContextHandle> CreateContextHandle(
@@ -254,6 +255,7 @@ class QnnManager::ContextHandle {
   ContextHandle& operator=(const ContextHandle& other) = delete;
 
   Qnn_ContextHandle_t get() const noexcept { return context_handle_; }
+  Qnn_ProfileHandle_t get_profile_handle() const noexcept { return profile_; }
   explicit operator bool() const noexcept { return context_handle_ != nullptr; }
 
  private:
