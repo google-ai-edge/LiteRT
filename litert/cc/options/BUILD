@@ -174,6 +174,7 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_runtime_options"],
+        "@org_tensorflow//tensorflow:windows": ["//litert/c/options:litert_runtime_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_runtime_options"],
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",

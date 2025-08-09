@@ -20,13 +20,13 @@
 #include <unordered_set>
 #include <vector>
 
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
-#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
-#include "openvino/frontend/tensorflow_lite/quantization_info.hpp"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_model.h"
 #include "litert/vendors/intel_openvino/compiler/decoder.h"
+#include "openvino/frontend/tensorflow_lite/decoder.hpp"
+#include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
+#include "openvino/frontend/tensorflow_lite/quantization_info.hpp"
 namespace litert {
 namespace openvino {
 
@@ -87,7 +87,10 @@ class GraphIteratorDelegate
   /// If there is no query for specific sub-graph iterator shouldn't be created
   /// idx should be in range 0..get_subgraph_size()-1
   std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator> get_subgraph(
-      size_t idx) const override {};
+      size_t idx) const override {
+    LITERT_LOG(LITERT_ERROR, "get_subgraph not implemented");
+    return nullptr;
+  };
 
  private:
   size_t node_index_ = 0;

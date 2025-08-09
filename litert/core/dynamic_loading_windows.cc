@@ -19,8 +19,8 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/match.h"        // from @com_google_absl
+#include "absl/strings/str_cat.h"      // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -47,8 +47,6 @@ std::string ToWindowsLibName(absl::string_view lib_name) {
   // Replace .so with .dll
   if (absl::EndsWith(name, ".so")) {
     name = name.substr(0, name.length() - 3) + ".dll";
-  } else if (!absl::EndsWith(name, ".dll")) {
-    name += ".dll";
   }
   return name;
 }

@@ -25,7 +25,6 @@ package(
 cc_library(
     name = "dispatch",
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": ["litert_dispatch_dummy.cc"],
         "//conditions:default": ["litert_dispatch.cc"],
     }),
     hdrs = [
@@ -37,7 +36,6 @@ cc_library(
         "//litert/c:litert_metrics",
         "//litert/c:litert_model",
     ] + select({
-        "@org_tensorflow//tensorflow:windows": [],
         "//conditions:default": [
             "//litert/c:litert_environment_options",
             "//litert/c:litert_logging",
