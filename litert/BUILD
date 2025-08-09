@@ -54,6 +54,7 @@ package_group(
         "//litert/c/...",
         "//litert/compiler/...",
         "//litert/core/...",
+        "//litert/python/...",
         "//litert/runtime/...",
         "//litert/cts/...",
         "//litert/tools/...",
