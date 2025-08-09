@@ -241,3 +241,22 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
   *testing_flags = options->testing_flags;
   return kLiteRtStatusOk;
 }
+
+size_t LiteRtGoogleTensorOptionsGetTestingFlagsSize(
+    LiteRtGoogleTensorOptions options) {
+  if (options == nullptr) {
+    return 0;
+  }
+  return options->testing_flags.size();
+}
+
+void LiteRtGoogleTensorOptionsGetTestingFlag(LiteRtGoogleTensorOptions options,
+                                             size_t index, const char** key,
+                                             const char** value) {
+  if (options == nullptr || key == nullptr || value == nullptr ||
+      index >= options->testing_flags.size()) {
+    return;
+  }
+  *key = options->testing_flags[index][0].c_str();
+  *value = options->testing_flags[index][1].c_str();
+}
