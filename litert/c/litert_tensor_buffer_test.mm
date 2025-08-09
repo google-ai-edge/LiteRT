@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #import "third_party/odml/litert/litert/c/litert_tensor_buffer.h"
+#import <Metal/Metal.h>
 #import <XCTest/XCTest.h>
 #import <XCTest/XCTestAssertions.h>
 #include "litert/c/litert_any.h"
@@ -23,7 +24,6 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/runtime/metal_memory.h"
 
 @interface LitertTensorBufferTest : XCTestCase
 @end
@@ -38,7 +38,6 @@ constexpr const LiteRtRankedTensorType kTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32, ::litert::BuildLayout(kTensorDimensions)};
 
 - (void)testMetalBuffer {
-  XCTAssertTrue(litert::internal::MetalMemory::IsSupported());
 
   id<MTLDevice> device = MTLCreateSystemDefaultDevice();
   const void* kTestPtr = (__bridge void*)(device);

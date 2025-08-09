@@ -1,0 +1,36 @@
+{
+  "name": "litert-monorepo",
+  "private": true,
+  "license": "Apache-2.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "demos/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
+    "dev": "turbo watch dev",
+    "lint": "turbo lint",
+    "check-format": "prettier --check .",
+    "format": "prettier --write .",
+    "clean": "turbo clean && turbo daemon clean",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "pack": "turbo pack",
+    "publish-to-npm": "turbo build lint && changeset publish",
+    "publish-bundles-to-gcp": "turbo upload-to-gcp",
+    "docs": "npm run build && typedoc"
+  },
+  "packageManager": "npm@10.7.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.4",
+    "prettier": "^3.3.3",
+    "turbo": "^2.0.10",
+    "typedoc": "^0.28.7"
+  }
+}

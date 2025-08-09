@@ -136,8 +136,6 @@ cc_library(
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
-        "@platforms//os:ios": [":metal_memory"],
-        "@platforms//os:macos": [":metal_memory"],
         "//conditions:default": [],
     }),
 )

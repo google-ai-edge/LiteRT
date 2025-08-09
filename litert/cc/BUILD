@@ -17,7 +17,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "liter
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "13.0"
+# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
 # copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
@@ -1299,6 +1299,7 @@ objc_library(
         "//litert/c:litert_dispatch_headers",
         "//litert/runtime:metal_memory",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
         "//tflite/delegates/gpu/metal:metal_device",
         "//third_party/apple_frameworks:XCTest",
     ],
