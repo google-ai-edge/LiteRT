@@ -106,6 +106,16 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetTestingFlags(
 LiteRtStatus LiteRtGoogleTensorOptionsGetTestingFlags(
     LiteRtGoogleTensorOptions options,
     std::vector<std::vector<std::string>>* testing_flags);
+
+// Returns the number of testing flags.
+size_t LiteRtGoogleTensorOptionsGetTestingFlagsSize(
+    LiteRtGoogleTensorOptions options);
+
+// Returns the key-value pair of testing flags at the given index.
+// The returned strings are owned by the options object and should not be freed.
+void LiteRtGoogleTensorOptionsGetTestingFlag(LiteRtGoogleTensorOptions options,
+                                             size_t index, const char** key,
+                                             const char** value);
 }  // extern "C"
 #endif  // __cplusplus
 

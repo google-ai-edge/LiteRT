@@ -14,6 +14,7 @@
 
 #include "litert/c/litert_opaque_options.h"
 
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,15 +39,20 @@ LiteRtStatus LiteRtCreateOpaqueOptions(const char* payload_identifier,
   if (!payload_identifier || !payload_data || !payload_destructor || !options) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *options = new LiteRtOpaqueOptionsT(std::string(payload_identifier),
-                                      payload_data, payload_destructor);
+  void* buffer = malloc(sizeof(LiteRtOpaqueOptionsT));
+  if (!buffer) {
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  *options = new (buffer) LiteRtOpaqueOptionsT(
+      std::string(payload_identifier), payload_data, payload_destructor);
   return kLiteRtStatusOk;
 }
 
 void LiteRtDestroyOpaqueOptions(LiteRtOpaqueOptions options) {
   while (options) {
     LiteRtOpaqueOptions next = options->next;
-    delete options;
+    options->~LiteRtOpaqueOptionsT();
+    free(options);
     options = next;
   }
 }
