@@ -567,11 +567,12 @@ def litert_integration_test(
 # copybara:uncomment_begin(google-only)
 # # GUITAR UTIL ######################################################################################
 #
-# def litert_pixel_9_mh_guitar_test(targets):
+# def litert_pixel_9_mh_guitar_test(targets, dimension_model = "\"pixel 9\""):
 #     return guitar.Tests(
 #         args = [
 #             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
-#             "--dimension_model=\"pixel 9\"",
+#             "--dimension_model={}".format(dimension_model),
+#             "--dimension_build_type=userdebug",
 #             "--dimension_label=odml-test",
 #             "--run_as=xeno-mh-guitar",
 #         ],
