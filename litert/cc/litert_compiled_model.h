@@ -16,7 +16,9 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -408,6 +410,194 @@ class CompiledModel
     LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetProfiler(Get(), &profiler));
     return Profiler(profiler, OwnHandle::kNo);
   };
+
+  // Resizes the specified input tensor to support dynamic shapes.
+  //
+  // This function allows resizing input tensors at runtime, similar to TFLite's
+  // ResizeInputTensor API. After calling this function, the compiled model will
+  // reallocate internal buffers as needed to accommodate the new tensor shape.
+  //
+  // Note: After resizing, the previously obtained buffer requirements may be
+  // invalidated. Callers should re-query buffer requirements if needed.
+  //
+  // Parameters:
+  // - signature_index: The index of the signature in the model.
+  // - input_index: The index of the input tensor in the signature.
+  // - dims: The new dimensions for the input tensor.
+  //
+  // Returns:
+  // - Success if the resize operation completed successfully.
+  // - Error with appropriate status code on failure.
+  Expected<void> ResizeInputTensor(size_t signature_index, size_t input_index,
+                                   absl::Span<const int> dims) {
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelResizeInputTensor(
+        Get(), signature_index, input_index, dims.data(), dims.size()));
+    return {};
+  }
+
+  // Resizes the specified input tensor by name for the given signature.
+  Expected<void> ResizeInputTensor(size_t signature_index,
+                                   absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    LITERT_ASSIGN_OR_RETURN(size_t input_index,
+                            FindInputIndex(signature_index, input_name));
+    return ResizeInputTensor(signature_index, input_index, dims);
+  }
+
+  // Resizes the specified input tensor by name for the given signature name.
+  Expected<void> ResizeInputTensor(absl::string_view signature_name,
+                                   absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_name));
+    return ResizeInputTensor(signature_index, input_name, dims);
+  }
+
+  // Resizes the specified input tensor of the default signature by index.
+  Expected<void> ResizeInputTensor(size_t input_index,
+                                   absl::Span<const int> dims) {
+    return ResizeInputTensor(/*signature_index=*/0, input_index, dims);
+  }
+
+  // Resizes the specified input tensor of the default signature by name.
+  Expected<void> ResizeInputTensor(absl::string_view input_name,
+                                   absl::Span<const int> dims) {
+    return ResizeInputTensor(/*signature_index=*/0, input_name, dims);
+  }
+
+  // Reports an error to the compiled model's error reporter.
+  // Supports printf-style formatting for error messages.
+  template <typename... Args>
+  Expected<void> ReportError(const char* format, Args... args) const {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCompiledModelReportError(Get(), format, args...));
+    return {};
+  }
+
+  // Clears all errors from the error reporter.
+  // Note: This only works if the compiled model uses BufferErrorReporter,
+  // not StderrReporter.
+  Expected<void> ClearErrors() const {
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelClearErrors(Get()));
+    return {};
+  }
+
+  // Gets all error messages from the error reporter as a single string.
+  // Note: This only works if the compiled model uses BufferErrorReporter,
+  // not StderrReporter.
+  // The C++ wrapper automatically manages memory using RAII.
+  Expected<std::string> GetErrorMessages() const {
+    char* error_messages = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCompiledModelGetErrorMessages(Get(), &error_messages));
+
+    // Use unique_ptr with custom deleter to ensure automatic cleanup
+    std::unique_ptr<char, decltype(&std::free)> error_messages_ptr(
+        error_messages, &std::free);
+
+    if (!error_messages) {
+      return std::string();
+    }
+    return std::string(error_messages);
+  }
+
+  // Sets a dispatch annotation on the compiled model. These annotations will be
+  // propagated to dispatch graphs when they are created during model execution.
+  // The annotations provide runtime hints and metadata that can be used by
+  // hardware accelerators for optimization.
+  //
+  // Parameters:
+  // - signature_index: the index of the signature (zero-based).
+  // - key: the annotation key.
+  // - value: the annotation value.
+  //
+  // Example annotations:
+  // - "priority": "high|medium|low" - execution priority hints
+  // - "memory_type": "shared|dedicated" - memory allocation preferences
+  // - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
+  // - "precision": "fp32|fp16|int8" - computation precision requirements
+  Expected<void> SetDispatchAnnotation(size_t signature_index,
+                                       absl::string_view key,
+                                       absl::string_view value) {
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelSetDispatchAnnotation(
+        Get(), signature_index, key.data(), value.data()));
+    return {};
+  }
+
+  // Gets a dispatch annotation from the compiled model.
+  //
+  // Parameters:
+  // - signature_index: the index of the signature (zero-based).
+  // - key: the annotation key to look up.
+  //
+  // Returns:
+  // - The annotation value if found, or nullopt if the key doesn't exist.
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      size_t signature_index, absl::string_view key) {
+    const char* value = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetDispatchAnnotation(
+        Get(), signature_index, key.data(), &value));
+    if (value == nullptr) {
+      return Expected<std::optional<std::string>>(std::nullopt);
+    }
+    return Expected<std::optional<std::string>>(std::string(value));
+  }
+
+  // Removes a dispatch annotation from the compiled model.
+  //
+  // Parameters:
+  // - signature_index: the index of the signature (zero-based).
+  // - key: the annotation key to remove.
+  //
+  // Note: This function succeeds even if the key doesn't exist.
+  Expected<void> RemoveDispatchAnnotation(size_t signature_index,
+                                          absl::string_view key) {
+    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelRemoveDispatchAnnotation(
+        Get(), signature_index, key.data()));
+    return {};
+  }
+
+  // Overloaded version for the default signature (index 0).
+  Expected<void> SetDispatchAnnotation(absl::string_view key,
+                                       absl::string_view value) {
+    return SetDispatchAnnotation(0, key, value);
+  }
+
+  // Overloaded version for the default signature (index 0).
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      absl::string_view key) {
+    return GetDispatchAnnotation(0, key);
+  }
+
+  // Overloaded version for the default signature (index 0).
+  Expected<void> RemoveDispatchAnnotation(absl::string_view key) {
+    return RemoveDispatchAnnotation(0, key);
+  }
+
+  // Overloaded version that takes a signature name instead of index.
+  Expected<void> SetDispatchAnnotation(absl::string_view signature_name,
+                                       absl::string_view key,
+                                       absl::string_view value) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_name));
+    return SetDispatchAnnotation(signature_index, key, value);
+  }
+
+  // Overloaded version that takes a signature name instead of index.
+  Expected<std::optional<std::string>> GetDispatchAnnotation(
+      absl::string_view signature_name, absl::string_view key) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_name));
+    return GetDispatchAnnotation(signature_index, key);
+  }
+
+  // Overloaded version that takes a signature name instead of index.
+  Expected<void> RemoveDispatchAnnotation(absl::string_view signature_name,
+                                          absl::string_view key) {
+    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
+                            model_.GetSignatureIndex(signature_name));
+    return RemoveDispatchAnnotation(signature_index, key);
+  }
 
  private:
   // Returns the signature input index for the given input tensor name.

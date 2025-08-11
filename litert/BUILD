@@ -19,77 +19,105 @@ package(
     ],
 )
 
-# These are the internal packages that have access to the cc api linked against the runtime .so.
+# Controls visibility into LiteRT C++ and C APIs.
+# Access to LiteRT C++ API is controlled by :litert_cc_users_dynamic_link and
+# :litert_cc_users_static_link. Access to LiteRT C++ API implies access to LiteRT C API.
+# Access to LiteRT C API is controlled by :litert_c_users.
+
+# Users with access to the LiteRT C++ API linked dynamically (litert/cc).
+# Requires linking against libLiteRtRuntimeCApi.so.
+# For statically linked C++ API, use :litert_cc_users_static_link.
 package_group(
-    name = "litert_internal_users_with_public_cc",
-    # copybara:uncomment includes = ["//third_party/py/executorch:execufriends"],
+    name = "litert_cc_users_dynamic_link",
     packages = [
-        # Self packages.
-        "//ci/tools/...",
+        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
+        # copybara:uncomment "//platforms/darwinn/compiler/...",
+        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
+        # copybara:uncomment "//third_party/darwinn/tflite/...",
+        # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
+        # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
+        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
+        # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
+        "//third_party/odml/infra/genai/inference/executor/llm_context_handler/...",
+        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
+        # copybara:uncomment "//third_party/odml/litert_lm/...",
         "//litert/cc/...",
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
+        "//litert/runtime/accelerators/gpu/...",
+        "//litert/runtime/ml_drift_delegate/...",
         "//litert/rust/...",
-        "//litert/test/...",
+        "//litert/samples/...",
         "//litert/sdk_util/...",
+        "//litert/test/...",
+        "//litert/tools/...",
+        "//litert/vendors/...",
         # When litert_lm_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
-        # Users with access to core internal apis.
-        # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
-        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
+        # copybara:uncomment "//third_party/odml/litert/llm/...",
+        "//ci/tools/...",
+        # copybara:uncomment "//third_party/odml/litert/tensor/...",
     ],
 )
 
-# These are the internal packages that have access to the cc api linked statically.
+# Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/internal).
+# For dynamically linked C++ API, use :litert_cc_users_dynamic_link.
 package_group(
-    name = "litert_internal_users_with_internal_cc",
+    name = "litert_cc_users_static_link",
     packages = [
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
         # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        "//litert/c/...",
-        "//litert/compiler/...",
-        "//litert/core/...",
-        "//litert/runtime/...",
-        "//litert/cts/...",
-        "//litert/tools/...",
         "//litert/vendors/cc/...",
+        "//litert/python/...",
+        "//litert/cts/...",
         "//litert/vendors/qualcomm/...",
+        "//litert/vendors/google_tensor/...",
+        "//litert/vendors/mediatek/...",
         # When litert_lm_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
+        # TODO(b/424778444): Internal runtime should not call cc/internal. Remove below targets.
+        "//litert/runtime/...",
+        "//litert/compiler/...",
+        "//litert/tools/...",
     ],
 )
 
 # All packages with visibility to the internal apis.
 package_group(
     name = "litert_internal_users",
-    includes = [
-        ":litert_internal_users_with_internal_cc",
-        ":litert_internal_users_with_public_cc",
+    packages = [
+        "//third_party/odml/infra/genai/conversion/juno/npu/...",
+        "//third_party/odml/infra/ml_drift_delegate/...",
+        "//litert/c/...",
+        "//litert/compiler/...",
+        "//litert/core/...",
+        "//litert/cts/...",
+        "//litert/google/...",
+        "//litert/integration_test/...",
+        "//litert/python/...",
+        "//litert/runtime/...",
+        "//litert/test/...",
+        "//litert/tools/...",
+        "//ci/tools/...",
+        # TODO(b/424778444) Targets above C API boundary shouldn't call internal. Remove below.
+        "//third_party/darwinn/tflite/...",
+        "//litert/cc/...",
+        "//litert/cc/internal/...",
     ],
 )
 
-# Users with access to only the public stable abi + wrappers.
+# Users with access to the LiteRT C API.
 package_group(
-    name = "litert_external_users",
-    packages = [
-        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
-        # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
-        # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
-        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        "//litert/runtime/...",
-        "//litert/samples/...",
-        "//litert/tools/...",
-        "//litert/vendors/...",
-        # copybara:uncomment "//third_party/odml/litert/llm/...",
-        # copybara:uncomment "//third_party/odml/litert/tensor/...",
+    name = "litert_c_users",
+    includes = [
+        ":litert_cc_users_dynamic_link",
+        ":litert_cc_users_static_link",
+        ":litert_internal_users",
     ],
 )
 
@@ -98,7 +126,9 @@ package_group(
     name = "litert_public",
     # copybara:uncomment_begin(oss)
     # includes = [
-    # ":litert_external_users",
+    # ":litert_c_users",
+    # ":litert_cc_users_dynamic_link",
+    # ":litert_cc_users_static_link",
     # ":litert_internal_users",
     # ],
     # copybara:uncomment_end_and_comment_begin
