@@ -15,6 +15,7 @@ limitations under the License.
 #include "tflite/testing/message.h"
 
 #include <map>
+#include <sstream>
 #include <string>
 
 #include <gtest/gtest.h>
