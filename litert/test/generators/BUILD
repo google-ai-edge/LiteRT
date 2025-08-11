@@ -64,6 +64,7 @@ cc_test(
     deps = [
         ":common",
         ":example",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "@com_google_googletest//:gtest_main",
@@ -104,6 +105,7 @@ cc_test(
         ":binary_no_bcast",
         ":common",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/cc:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
@@ -137,6 +139,7 @@ cc_test(
         ":graph_helpers",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
         "//litert/test:matchers",

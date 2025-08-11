@@ -67,8 +67,9 @@ litert_dynamic_lib(
         "//litert/c:litert_environment_options",
         # Needed to build in OSS
         "//litert/core/util:tensor_type_util",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
+        "//litert/c:litert_runtime_c_api_hdrs",
+        "//litert/c:litert_runtime_c_api_import_so",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:dynamic_loading",

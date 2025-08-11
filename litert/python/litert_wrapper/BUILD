@@ -28,13 +28,11 @@ package(
 #         "testdata/simple_model_float.tflite",
 #         "testdata/simple_model_int.tflite",
 #     ],
-#     # Static linking is required because this loads a cc_binary as a shared
-#     # library, which would otherwise create ODR violations.
-#     # copybara:uncomment linking_mode = "static",
 #     tags = [
 #         "no_oss",  # TODO(b/190842754): Enable test in OSS.
 #     ],
 #     deps = [
+#         "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
 #         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
 #         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
 #         "//third_party/py/google/protobuf:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip

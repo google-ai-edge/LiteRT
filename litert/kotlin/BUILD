@@ -33,7 +33,7 @@ cc_library(
     name = "litert_jni_common",
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
@@ -51,7 +51,7 @@ cc_library(
     hdrs = ["src/main/jni/litert_environment_jni.h"],
     deps = [
         ":litert_jni_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_environment",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
@@ -72,7 +72,7 @@ cc_library(
     ],
     deps = [
         ":litert_jni_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
@@ -94,7 +94,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         ":litert_model_jni",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_tensor_buffer",
@@ -115,7 +115,7 @@ cc_library(
     hdrs = ["src/main/jni/litert_tensor_buffer_jni.h"],
     deps = [
         ":litert_jni_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/types:span",
@@ -142,6 +142,7 @@ cc_library(
 #         ":litert_environment_jni",
 #         ":litert_model_jni",
 #         ":litert_tensor_buffer_jni",
+#         "//litert/c:litert_runtime_c_api_import_so",
 #     ],
 # )
 # copybara:uncomment_end
@@ -161,6 +162,7 @@ tflite_jni_binary(
         ":litert_environment_jni",
         ":litert_model_jni",
         ":litert_tensor_buffer_jni",
+        "//litert/c:litert_runtime_c_api_import_so",
     ],
 )
 
@@ -176,7 +178,7 @@ android_library(
     name = "litert_kotlin_api_native_deps",
     exports = [
         ":litert_jni_lib",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_import_so",
         # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",
     ],
 )

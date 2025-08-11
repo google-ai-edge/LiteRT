@@ -488,9 +488,11 @@ cc_test(
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
+    linkstatic = False,  # Explicitly set to false for clarity, though it's often default.
     deps = [
         ":litert_environment_options",
-        ":litert_runtime_c_api_shared_lib",
+        ":litert_runtime_c_api_hdrs",  # Provides headers for C API.
+        ":litert_runtime_c_api_import_so",  # For linking the C API shared library.
         "//litert/test:common",
         "//litert/test:simple_model",
         "@com_google_absl//absl/log:absl_log",
@@ -783,35 +785,38 @@ config_setting(
     define_values = {"resolve_symbols_in_exec": "true"},
 )
 
-# This is cc_library target based on `libLiteRtRuntimeCApi.so`.
+# LiteRT C API headers. Use to resolve compile-time dependencies.
 cc_library(
-    name = "litert_runtime_c_api_shared_lib",
-    srcs = select({
-        ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_so"],
-    }),
+    name = "litert_runtime_c_api_hdrs",
     hdrs = glob(["litert_*.h"]) + [
         "//litert/c/options:options_headers",
-        "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h
-        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",  # Needed for litert/c/litert_model.h
+        "//tflite:builtin_ops.h",
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
         "//tflite/core/c:headers_filegroup",
     ],
-    linkstatic = 1,
+    data = [
+        ":litert_runtime_c_api_so",
+    ],
     deps = [
-        # only depend on headers
-        "@com_google_absl//absl/types:span",
-        "@opencl_headers",
-        "//litert/vendors/c:litert_dispatch_c_api",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
     ] + gles_headers(),
+)
+
+# Import for libLiteRtRuntimeCApi.so. Use to resolve link-time dependencies, i.e. to resolve LiteRt
+# symbols when creating final executable or library.
+cc_import(
+    name = "litert_runtime_c_api_import_so",
+    shared_library = ":litert_runtime_c_api_so",
 )
 
 # copybara:uncomment_begin(google-only)
 # # Check that litert runtime doesn't depend on MLIR.
 # check_dependencies(
-#     of = [":litert_runtime_c_api_shared_lib"],
+#     of = [":litert_runtime_c_api_hdrs"],
 #     dont_match_regexp = "^//third_party/llvm/llvm-project/mlir",
 # )
 # copybara:uncomment_end

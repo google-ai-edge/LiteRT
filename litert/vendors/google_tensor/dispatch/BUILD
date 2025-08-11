@@ -77,7 +77,8 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
         "//litert/c:litert_any",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
+        "//litert/c:litert_runtime_c_api_import_so",  #buildcleaner: keep
         "//litert/cc:litert_expected",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_macros",
@@ -97,6 +98,7 @@ litert_device_test(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_import_so",  #buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
@@ -134,6 +136,7 @@ litert_device_test(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_event",
+        "//litert/c:litert_runtime_c_api_import_so",  #buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment",

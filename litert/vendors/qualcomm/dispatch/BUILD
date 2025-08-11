@@ -55,12 +55,11 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_import_so",  #buildcleaner: keep
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_element_type",
@@ -93,7 +92,7 @@ litert_device_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_runtime_c_api_hdrs",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment",

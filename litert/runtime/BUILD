@@ -382,6 +382,7 @@ cc_test(
         "//litert/c:litert_environment",
         "//litert/c:litert_options",
         "//litert/c:litert_profiler",
+        "//litert/c:litert_runtime_c_api_import_so",  # buildcleaner: keep
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
