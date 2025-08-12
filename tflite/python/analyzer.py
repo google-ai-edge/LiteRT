@@ -20,7 +20,7 @@ import os
 if not os.path.splitext(__file__)[0].endswith(
     os.path.join("tflite_runtime", "analyzer")):
   # This file is part of tensorflow package.
-  from tensorflow.compiler.mlir.lite.python import wrap_converter
+  from tflite.converter.python import wrap_converter
   from tflite.python.analyzer_wrapper import _pywrap_analyzer_wrapper as _analyzer_wrapper
   from tensorflow.python.util.tf_export import tf_export as _tf_export
 else:

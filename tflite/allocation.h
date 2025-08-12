@@ -18,6 +18,6 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_ALLOCATION_H_
 #define TENSORFLOW_LITE_ALLOCATION_H_
 
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 
 #endif  // TENSORFLOW_LITE_ALLOCATION_H_

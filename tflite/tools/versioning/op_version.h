@@ -15,6 +15,6 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_TOOLS_VERSIONING_OP_VERSION_H_
 #define TENSORFLOW_LITE_TOOLS_VERSIONING_OP_VERSION_H_
 
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_version.h"
+#include "tflite/converter/tools/versioning/op_version.h"
 
 #endif  // TENSORFLOW_LITE_TOOLS_VERSIONING_OP_VERSION_H_

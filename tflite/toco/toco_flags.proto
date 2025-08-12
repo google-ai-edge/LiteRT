@@ -15,7 +15,7 @@ syntax = "proto2";
 
 package toco;
 
-import "tensorflow/compiler/mlir/lite/debug/debug_options.proto";
+import "tflite/converter/debug/debug_options.proto";
 import "tensorflow/compiler/mlir/quantization/stablehlo/quantization_config.proto";
 import "tensorflow/compiler/mlir/quantization/stablehlo/quantization_options.proto";
 import "tflite/toco/types.proto";

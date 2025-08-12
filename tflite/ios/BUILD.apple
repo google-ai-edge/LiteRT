@@ -96,7 +96,7 @@ strip_common_include_path_prefix(
         "//tflite/core/c:c_api_experimental.h",
         "//tflite/core/c:c_api_opaque.h",
         "//tflite/core/c:c_api_types.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_types.h",
+        "//tflite/converter/core/c:tflite_types.h",
         "//tflite/core/c:common.h",
         "//tflite/core/c:operator.h",
         "//tflite/core/async/c:types.h",
@@ -259,6 +259,7 @@ cc_library(
     name = "tensorflow_lite_c",
     hdrs = [
         "//tflite:builtin_ops.h",
+        "//tflite/converter/core/c:tflite_types.h",
         "//tflite/core/async/c:types.h",
         "//tflite/core/c:c_api.h",
         "//tflite/core/c:c_api_experimental.h",
@@ -269,7 +270,6 @@ cc_library(
         "//tflite/delegates/xnnpack:xnnpack_delegate.h",
         "//tflite/profiling/telemetry/c:profiler.h",
         "//tflite/profiling/telemetry/c:telemetry_setting.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_types.h",
     ],
     tags = [
         "nobuilder",
@@ -277,6 +277,7 @@ cc_library(
     ],
     deps = [
         "//tflite:builtin_ops",
+        "//tflite/converter/core/c:tflite_types",
         "//tflite/core/async/c:types",
         "//tflite/core/c:c_api",
         "//tflite/core/c:c_api_experimental",
@@ -285,7 +286,6 @@ cc_library(
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/profiling/telemetry/c:profiler",
         "//tflite/profiling/telemetry/c:telemetry_setting",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_types",
     ],
 )
 

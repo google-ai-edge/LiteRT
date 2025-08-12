@@ -20,7 +20,7 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_
 #define TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_
 
-#include "tensorflow/compiler/mlir/lite/core/c/builtin_op_data.h"  // IWYU pragma: export
+#include "tflite/converter/core/c/builtin_op_data.h"  // IWYU pragma: export
 #include "tflite/core/c/common.h"  // IWYU pragma: export
 
 #endif  // TENSORFLOW_LITE_CORE_C_BUILTIN_OP_DATA_H_

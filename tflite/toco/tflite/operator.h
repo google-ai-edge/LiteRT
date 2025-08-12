@@ -26,7 +26,7 @@ limitations under the License.
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "flatbuffers/vector.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/tools/versioning/op_signature.h"
+#include "tflite/converter/tools/versioning/op_signature.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/toco/model.h"
 

@@ -40,7 +40,7 @@ limitations under the License.
 extern "C" {
 #endif
 
-#include "tensorflow/compiler/mlir/lite/core/c/tflite_types.h"  // IWYU pragma: export
+#include "tflite/converter/core/c/tflite_types.h"  // IWYU pragma: export
 
 // clang-format off
 // NOLINTBEGIN(whitespace/line_length)

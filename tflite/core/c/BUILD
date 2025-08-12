@@ -51,8 +51,8 @@ filegroup(
         "c_api_types.h",
         "common.h",
         "operator.h",
+        "//tflite/converter/core/c:lite_headers_filegroup",
         "//tflite/core/async/c:types.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:lite_headers_filegroup",
     ],
     visibility = [
         # Temporary workaround to make visible to litert in OSS (default vis is not transformed correctly.)
@@ -300,11 +300,11 @@ tflite_cc_library_with_c_headers_test(
     copts = tflite_copts(),
     visibility = [
         "//tflite:__subpackages__",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/lrt:__subpackages__",
+        "//tflite/converter/experimental/lrt:__subpackages__",
         "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
     ] + c_api_visibility_allowlist(),
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_common",
+        "//tflite/converter/core/c:tflite_common",
     ],
 )
 
@@ -366,7 +366,7 @@ tflite_cc_library_with_c_headers_test(
     deps = [
         ":c_api_types",
         "//tflite:tflite_kernel_use_xnnpack_optional",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core/c:tflite_common",
+        "//tflite/converter/core/c:tflite_common",
     ] + select({
         "//tflite:tensorflow_profiler_config": [
             "//tflite:macros",

@@ -29,13 +29,13 @@ exports_files([
 
 flatbuffer_py_library(
     name = "schema_py",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"],
+    srcs = ["//tflite/converter/schema:schema.fbs"],
     visibility = ["//visibility:public"],
 )
 
 flatbuffer_py_library(
     name = "conversion_metadata_schema_py",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:conversion_metadata.fbs"],
+    srcs = ["//tflite/converter/schema:conversion_metadata.fbs"],
 )
 
 py_strict_library(
@@ -452,7 +452,7 @@ py_strict_library(
     name = "lite_constants",
     srcs = ["lite_constants.py"],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
+        "//tflite/converter:converter_flags_proto_py",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
         "@org_tensorflow//tensorflow/python/util:all_util",
         "@org_tensorflow//tensorflow/python/util:tf_export",
@@ -467,13 +467,13 @@ pytype_strict_library(
         ":convert_phase",
         ":lite_constants",
         ":util",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
+        "//tflite/converter:types_proto_py",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
+        "//tflite/converter/python:wrap_converter",
         "//tflite/python/metrics:metrics_wrapper",
         "//tflite/tools:flatbuffer_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:model_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:types_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_options_proto_py",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
@@ -510,9 +510,9 @@ pytype_strict_contrib_test(
         ":convert",
         ":interpreter",
         ":op_hint",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "//tflite/python/metrics:metrics_wrapper",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
         "@org_tensorflow//tensorflow/python/client:session",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
         "@org_tensorflow//tensorflow/python/framework:graph_util",
@@ -606,8 +606,8 @@ py_strict_library(
     srcs = ["convert_phase.py"],
     visibility = ["//tflite:__subpackages__"],
     deps = [
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "//tflite/python/metrics",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
     ],
 )
 
@@ -618,7 +618,7 @@ py_strict_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
+        "//tflite/converter/python:wrap_converter",
         "@org_tensorflow//tensorflow/python/util:tf_export",
     ] + if_pywrap(
         if_false = [
@@ -661,6 +661,7 @@ py_strict_library(
     name = "tflite_pywrap_deps",
     visibility = ["//visibility:public"],
     deps = [
+        "//tflite/converter/python:_pywrap_converter_api",
         "//tflite/experimental/genai:pywrap_genai_ops",
         "//tflite/python/analyzer_wrapper:_pywrap_analyzer_wrapper",
         "//tflite/python/interpreter_wrapper:_pywrap_tensorflow_interpreter_wrapper",
