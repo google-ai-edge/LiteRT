@@ -341,6 +341,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       continue;
     }
     if (SkipValidationOfQuantizeOp(op) ||
+        op.Code() == kLiteRtOpCodeTflReluN1To1 ||
+        op.Code() == kLiteRtOpCodeTflTile ||
         std::all_of(
             op_wrappers.begin(), op_wrappers.end(),
             [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
