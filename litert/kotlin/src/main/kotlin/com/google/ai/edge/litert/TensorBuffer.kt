@@ -152,13 +152,23 @@ enum class TensorBufferType(private val type: Int) {
   WebGpuTextureFp16(23),
   WebGpuImageBuffer(24),
   WebGpuImageBufferFp16(25),
-  WebGpuBufferPacked(26);
+  WebGpuBufferPacked(26),
 
   // 30-39 are reserved for Metal memory objects.
   // MetalBuffer(30),
   // MetalBufferFp16(31),
   // MetalTexture(32),
-  // MetalTextureFp16(33);
+  // MetalTextureFp16(33),
+
+  // 40-49 are reserved for Vulkan memory objects.
+  // WARNING: Vulkan support is experimental.
+  VulkanBuffer(40),
+  VulkanBufferFp16(41),
+  VulkanTexture(42),
+  VulkanTextureFp16(43),
+  VulkanImageBuffer(44),
+  VulkanImageBufferFp16(45),
+  VulkanBufferPacked(46);
 
   // LINT.ThenChange(../../../../../../../../../c/litert_tensor_buffer_types.h:tensor_buffer_types)
 

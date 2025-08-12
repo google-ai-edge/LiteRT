@@ -134,24 +134,24 @@ class GpuEnvironment {
   ~GpuEnvironment() = default;
 
 #if LITERT_HAS_OPENCL_SUPPORT
-  tflite::gpu::cl::CLDevice* getDevice() { return &device_; }
-  tflite::gpu::cl::CLContext* getContext() { return &context_; }
-  tflite::gpu::cl::CLCommandQueue* getCommandQueue() { return &command_queue_; }
+  tflite::gpu::cl::CLDevice* GetDevice() { return &device_; }
+  tflite::gpu::cl::CLContext* GetContext() { return &context_; }
+  tflite::gpu::cl::CLCommandQueue* GetCommandQueue() { return &command_queue_; }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-  EGLDisplay getEglDisplay() { return options_.egl_display; }
-  EGLContext getEglContext() { return options_.egl_context; }
+  EGLDisplay GetEglDisplay() { return options_.egl_display; }
+  EGLContext GetEglContext() { return options_.egl_context; }
 
 #if LITERT_HAS_WEBGPU_SUPPORT
-  WGPUDevice getWebGpuDevice() { return options_.webgpu_device; }
-  WGPUQueue getWebGpuQueue() { return options_.webgpu_queue; }
+  WGPUDevice GetWebGpuDevice() { return options_.webgpu_device; }
+  WGPUQueue GetWebGpuQueue() { return options_.webgpu_queue; }
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
-  void* getMetalDevice() { return metal_info_.get()->GetDevice(); }
+  void* GetMetalDevice() { return metal_info_.get()->GetDevice(); }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
-  void* getVulkanEnvironment() { return options_.vulkan_env; }
+  void* GetVulkanEnvironment() { return options_.vulkan_env; }
 #endif  // LITERT_HAS_VULKAN_SUPPORT
 
   // Create a GpuEnvironment with the given environment.
