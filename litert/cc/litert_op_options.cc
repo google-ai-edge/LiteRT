@@ -389,4 +389,31 @@ LiteRtStatus MaxPool2dOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus ResizeBilinearOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeBilinear) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearHalfPixelCenterOption(op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LeakyReluOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflLeakyRelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetLeakyReluAlphaOption(op, &alpha));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert

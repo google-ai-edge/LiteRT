@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -35,6 +36,7 @@ struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
+  std::string ir_json_dir;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -241,6 +243,28 @@ LiteRtStatus LiteRtQualcommOptionsGetProfiling(
   }
 
   *profiling = options->profiling;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char* ir_json_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->ir_json_dir = ir_json_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char** ir_json_dir) {
+  if (options == nullptr || ir_json_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *ir_json_dir = options->ir_json_dir.c_str();
 
   return kLiteRtStatusOk;
 }
