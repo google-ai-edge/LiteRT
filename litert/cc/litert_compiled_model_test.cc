@@ -28,13 +28,14 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
-#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/options/litert_runtime_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -381,7 +382,7 @@ TEST(CompiledModelTest, WithProfiler) {
   ASSERT_TRUE(model);
 
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
-    litert::Options::Create());
+                         litert::Options::Create());
   compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
@@ -464,6 +465,154 @@ TEST(CompiledModelTest, WithProfiler) {
       ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create Model with dynamic shapes.
+  Model model = testing::LoadTestFileModel(kDynamicModelFileName);
+  ASSERT_TRUE(model);
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+
+  // Test resizing input tensor by index - resize from (?, 2, 3) to (1, 2, 3)
+  {
+    const std::vector<int> new_dims = {1, 2, 3};
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
+
+    // Verify buffer requirements after resize
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements requirements,
+        compiled_model.GetInputBufferRequirements(/*input_index=*/size_t(0)));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t buffer_size, requirements.BufferSize());
+    EXPECT_EQ(buffer_size, 1 * 2 * 3 * sizeof(float));
+  }
+
+  // Test resizing input tensor by name - resize to (2, 2, 3)
+  {
+    const std::vector<int> new_dims = {2, 2, 3};
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        /*input_name=*/"arg0", absl::MakeConstSpan(new_dims)));
+
+    // Verify buffer requirements after resize
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements requirements,
+        compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t buffer_size, requirements.BufferSize());
+    EXPECT_EQ(buffer_size, 2 * 2 * 3 * sizeof(float));
+  }
+
+  // Test resizing with signature index
+  {
+    const std::vector<int> new_dims = {3, 2, 3};
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        /*signature_index=*/size_t(0), /*input_index=*/size_t(0),
+        absl::MakeConstSpan(new_dims)));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements requirements,
+        compiled_model.GetInputBufferRequirements(/*signature_index=*/size_t(0),
+                                                  /*input_index=*/size_t(0)));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t buffer_size, requirements.BufferSize());
+    EXPECT_EQ(buffer_size, 3 * 2 * 3 * sizeof(float));
+  }
+
+  // Test execution after resize, using tensor buffer APIs.
+  {
+    // Resize to specific shape for execution
+    const std::vector<int> exec_dims = {1, 2, 3};
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        /*input_index=*/size_t(0), absl::MakeConstSpan(exec_dims)));
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        /*input_index=*/size_t(1), absl::MakeConstSpan(exec_dims)));
+
+    // Create input and output buffers
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements req0,
+        compiled_model.GetInputBufferRequirements(size_t(0)));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t size0, req0.BufferSize());
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements req1,
+        compiled_model.GetInputBufferRequirements(size_t(1)));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t size1, req1.BufferSize());
+
+    // Get the element type from the original model.
+    LITERT_ASSERT_OK_AND_ASSIGN(const Signature& signature,
+                                model.GetSignature(0));
+    LITERT_ASSERT_OK_AND_ASSIGN(const Subgraph subgraph,
+                                model.Subgraph(signature.Key()));
+    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor0, subgraph.Input("arg0"));
+    LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type0,
+                                tensor0.RankedTensorType());
+    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor1, subgraph.Input("arg1"));
+    LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type1,
+                                tensor1.RankedTensorType());
+
+    // Manually create a new RankedTensorType with the new shape.
+    auto new_type0 = RankedTensorType(
+        type0.ElementType(),
+        Layout(Dimensions(exec_dims.begin(), exec_dims.end())));
+    auto new_type1 = RankedTensorType(
+        type1.ElementType(),
+        Layout(Dimensions(exec_dims.begin(), exec_dims.end())));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer input_buffer0,
+        TensorBuffer::CreateManaged(
+            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type0, size0));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer input_buffer1,
+        TensorBuffer::CreateManaged(
+            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type1, size1));
+    std::vector<TensorBuffer> input_buffers;
+    input_buffers.push_back(std::move(input_buffer0));
+    input_buffers.push_back(std::move(input_buffer1));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBufferRequirements out_req,
+        compiled_model.GetOutputBufferRequirements(size_t(0)));
+    LITERT_ASSERT_OK_AND_ASSIGN(size_t out_size, out_req.BufferSize());
+    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& out_tensor,
+                                subgraph.Output("tfl.add"));
+    LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& out_type,
+                                out_tensor.RankedTensorType());
+
+    auto new_out_type = RankedTensorType(
+        out_type.ElementType(),
+        Layout(Dimensions(exec_dims.begin(), exec_dims.end())));
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer output_buffer,
+        TensorBuffer::CreateManaged(env.Get(),
+                                    kLiteRtTensorBufferTypeHostMemory,
+                                    new_out_type, out_size));
+
+    std::vector<TensorBuffer> output_buffers;
+    output_buffers.push_back(std::move(output_buffer));
+
+    // Fill input buffers with test data
+    const float test_input[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    ASSERT_TRUE(input_buffers[0].Write<float>(absl::MakeConstSpan(test_input)));
+    ASSERT_TRUE(input_buffers[1].Write<float>(absl::MakeConstSpan(test_input)));
+
+    // Execute model
+    LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+    // Verify output
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffers[0], TensorBuffer::LockMode::kRead));
+    auto output = absl::MakeSpan(lock_and_addr.second, 6);
+
+    // For an add operation, expected output is input + input
+    const float expected_output[] = {2.0f, 4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
   }
 }
 }  // namespace
