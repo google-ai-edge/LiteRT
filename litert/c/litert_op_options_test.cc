@@ -276,7 +276,7 @@ TEST(GetOpOptionTest, TestGetSumOptions) {
   ASSERT_EQ(keepdims, true);
 }
 
-TEST(GetOpOptionTest, TestGetMaxOptions) {
+TEST(GetOpOptionTest, TestGetReduceMaxOptions) {
   auto model = litert::testing::LoadTestFileModel("simple_reducemax_op.tflite");
   auto subgraph = model.MainSubgraph();
   EXPECT_TRUE(subgraph);
@@ -286,6 +286,45 @@ TEST(GetOpOptionTest, TestGetMaxOptions) {
 
   bool keepdims;
   LITERT_ASSERT_OK(LiteRtGetReduceMaxKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceMinOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reducemin_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceMinKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceAnyOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reduceany_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceAnyKeepDimsOption(op, &keepdims));
+  ASSERT_EQ(keepdims, false);
+}
+
+TEST(GetOpOptionTest, TestGetReduceAllOptions) {
+  auto model = litert::testing::LoadTestFileModel("simple_reduceall_op.tflite");
+  auto subgraph = model.MainSubgraph();
+  EXPECT_TRUE(subgraph);
+
+  auto ops = subgraph->Ops();
+  auto op = ops.front().Get();
+
+  bool keepdims;
+  LITERT_ASSERT_OK(LiteRtGetReduceAllKeepDimsOption(op, &keepdims));
   ASSERT_EQ(keepdims, false);
 }
 
