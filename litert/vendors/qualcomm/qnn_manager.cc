@@ -491,12 +491,18 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
     LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
                options.GetHtpPerformanceMode());
-    perf_control_ =
-        std::make_unique<PerfControl>(Api(), options.GetHtpPerformanceMode());
-    QnnHtpDevice_Arch_t local_arch =
-        device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
-            ->onChipDevice.arch;
-    if (auto status = perf_control_->Init(local_arch); !status) {
+    if (device_platform_info_) {
+      perf_control_ =
+          std::make_unique<PerfControl>(Api(), options.GetHtpPerformanceMode());
+      QnnHtpDevice_Arch_t local_arch =
+          device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
+              ->onChipDevice.arch;
+      if (auto status = perf_control_->Init(local_arch); !status) {
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+    } else {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cannot set HTP performance mode since no platforminfo found");
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }

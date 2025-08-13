@@ -62,6 +62,7 @@ package_group(
         # When litert_lm_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
+        # copybara:uncomment "//platforms/darwinn/toolchain/...",
     ],
 )
 
@@ -82,9 +83,8 @@ package_group(
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
-        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
+        # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        "//litert/runtime/...",
         "//litert/samples/...",
         "//litert/tools/...",
         "//litert/vendors/...",
