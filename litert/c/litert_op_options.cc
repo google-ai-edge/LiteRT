@@ -381,6 +381,45 @@ LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceMin) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceMin OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceAny) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceAny OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceAll) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceAll OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetPackAxisOption(LiteRtOp op, int32_t* axis) {
   if (op->OpCode() != kLiteRtOpCodeTflPack) {
     return kLiteRtStatusErrorInvalidArgument;
