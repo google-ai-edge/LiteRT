@@ -129,7 +129,7 @@ py_strict_library(
     name = "mlir_convert",
     srcs = ["mlir_convert.py"],
     data = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:tf_tfl_translate",
+        "//tflite/converter:tf_tfl_translate",
     ],
     deps = [
         ":zip_test_utils",

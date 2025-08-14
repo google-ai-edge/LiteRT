@@ -61,7 +61,7 @@ constexpr int kBwAuxWeightsTensor = 11;  // Optional.
 constexpr int kFwOutputTensor = 0;
 constexpr int kBwOutputTensor = 1;  // Only if merge_outputs is false.
 
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/quantize_weights.cc)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/quantize_weights.cc)
 
 // Temporary tensors.
 enum TemporaryTensor {

@@ -27,8 +27,8 @@ limitations under the License.
 #include <vector>
 
 #include "ruy/denormal.h"  // from @ruy
-#include "tensorflow/compiler/mlir/lite/allocation.h"
-#include "tensorflow/compiler/mlir/lite/experimental/remat/metadata_util.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/converter/experimental/remat/metadata_util.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/c/c_api_types.h"

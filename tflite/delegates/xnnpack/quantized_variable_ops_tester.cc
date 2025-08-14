@@ -28,7 +28,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/schema/schema_conversion_utils.h"
+#include "tflite/converter/schema/schema_conversion_utils.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/core/kernels/register.h"

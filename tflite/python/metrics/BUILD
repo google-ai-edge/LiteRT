@@ -57,8 +57,8 @@ pytype_strict_library(
     srcs = ["wrapper/metrics_wrapper.py"],
     deps = [
         ":_pywrap_tensorflow_lite_metrics_wrapper",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
+        "//tflite/converter/python:wrap_converter",
     ],
 )
 
@@ -103,7 +103,7 @@ pytype_strict_library(
     visibility = ["//tflite:__subpackages__"],
     deps = if_portable(
         if_false = [
-            "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
+            "//tflite/converter/metrics:converter_error_data_proto_py",
             ":metrics_wrapper",
             "@org_tensorflow//tensorflow/python/eager:monitoring",
         ],
@@ -131,7 +131,7 @@ py_strict_test(
         #internal proto upb dep
         "@org_tensorflow//third_party/py/numpy",
         "@org_tensorflow//tensorflow:tensorflow_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "@org_tensorflow//tensorflow/core:protos_all_py",
         "//tflite/python:convert",
         "//tflite/python:lite",

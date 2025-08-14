@@ -48,7 +48,7 @@ void PortableSymmetricQuantizeFloats(const float* values, const int size,
 void PortableSymmetricQuantizeFloats(const float* values, const int size,
                                      int8_t* quantized_values, float min_value,
                                      float max_value, float* scaling_factor);
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/portable_tensor_utils.h:portable_symmetric_quantize_floats)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/portable_tensor_utils.h:portable_symmetric_quantize_floats)
 
 void PortableAsymmetricQuantizeFloats(const float* values, const int size,
                                       int8_t* quantized_values,
