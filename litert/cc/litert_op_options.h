@@ -336,6 +336,28 @@ struct MaxPool2dOptions : public OpOptions {
   LiteRtStatus InitFromOp(LiteRtOp op) override;
 };
 
+// Struct to hold LiteRt ResizeBilinear op.
+struct ResizeBilinearOptions : public OpOptions {
+  LiteRtOp op;
+  bool align_corners;
+  bool half_pixel_centers;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt LeakyRelu op.
+struct LeakyReluOptions : public OpOptions {
+  LiteRtOp op;
+  float alpha;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
+// Struct to hold LiteRt SpaceToDepth op.
+struct SpaceToDepthOptions : public OpOptions {
+  LiteRtOp op;
+  int32_t block_size;
+  LiteRtStatus InitFromOp(LiteRtOp op) override;
+};
+
 // Returns the composite info for the given op if it is a composite op.
 template <typename OptionsT>
 Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
@@ -425,6 +447,18 @@ Expected<OptionsT> GetOptionsAs(LiteRtOp op) {
     return options;
   } else if constexpr (std::is_same_v<OptionsT, MaxPool2dOptions>) {
     MaxPool2dOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, ResizeBilinearOptions>) {
+    ResizeBilinearOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, LeakyReluOptions>) {
+    LeakyReluOptions options;
+    LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
+    return options;
+  } else if constexpr (std::is_same_v<OptionsT, SpaceToDepthOptions>) {
+    SpaceToDepthOptions options;
     LITERT_RETURN_IF_ERROR(options.InitFromOp(op));
     return options;
   } else {
