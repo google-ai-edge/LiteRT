@@ -30,6 +30,7 @@ cc_library(
     hdrs = ["miscs.h"],
     deps = [
         ":log",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -51,4 +52,18 @@ litert_device_exec(
     name = "utils_device_test",
     backend_id = "qualcomm",
     target = ":utils_test",
+)
+
+cc_library(
+    name = "qnn_model",
+    srcs = ["qnn_model.cc"],
+    hdrs = ["qnn_model.h"],
+    deps = [
+        ":log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
+    ],
 )

@@ -36,7 +36,7 @@ std::vector<OpWrapper> TransformToSelectOp(
   auto& mul_static_tensor =
       original_ops[start_index + pattern_size - 1].GetInputTensor(1);
   auto static_tensor_data =
-      mul_static_tensor.GetStaticTensorData<std::int16_t>();
+      mul_static_tensor.GetTensorData<std::int16_t>();
   if (!static_tensor_data) {
     QNN_LOG_ERROR("[G2G] Get tensor data failed when transforming mask model.");
     return {};
