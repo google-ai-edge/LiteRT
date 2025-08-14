@@ -193,6 +193,10 @@ bool AbslParseFlag(absl::string_view text,
     *options = kLiteRtQualcommProfilingLinting;
     return true;
   }
+  if (text == "optrace") {
+    *options = kLiteRtQualcommProfilingOptrace;
+    return true;
+  }
   *error = "Unknown htp performance mode";
   return false;
 }
@@ -207,6 +211,8 @@ std::string AbslUnparseFlag(LiteRtQualcommOptionsProfiling options) {
       return "detailed";
     case kLiteRtQualcommProfilingLinting:
       return "linting";
+    case kLiteRtQualcommProfilingOptrace:
+      return "optrace";
   }
 }
 // NOLINTEND(*alien-types*)
