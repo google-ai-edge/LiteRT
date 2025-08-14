@@ -23,6 +23,7 @@ load(
     "litert_metal_opts",
 )
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
+load("//third_party/bazel_rules/rules_cc/cc:objc_library.bzl", "objc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -136,8 +137,6 @@ cc_library(
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
-        "@platforms//os:ios": [":metal_memory"],
-        "@platforms//os:macos": [":metal_memory"],
         "//conditions:default": [],
     }),
 )
@@ -207,10 +206,17 @@ GPU_ENVIRONMENT_DEPS = [
 
 cc_library(
     name = "gpu_environment_header",
-    hdrs = ["gpu_environment.h"],
+    hdrs = [
+        "gpu_environment.h",
+    ] + select({
+        # "@platforms//os:ios": ["gpu_environment_metal.h"],
+        # "@platforms//os:macos": ["gpu_environment_metal.h"],
+        "//tools/cc_target_os:apple": ["gpu_environment_metal.h"],
+        "//conditions:default": [],
+    }),
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps_without_gpu_environment(),
+    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps(),
 )
 
 cc_library(
@@ -327,7 +333,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_tensor_buffer_utils",
-        "//litert/cc/internal:litert_event",
         "//litert/cc/internal:litert_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:buffer_error_reporter",
@@ -425,7 +430,6 @@ cc_test(
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_platform_support",
-        "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
@@ -544,6 +548,11 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_darwinn_options",
+    hdrs = ["litert_darwinn_options.h"],
+)
+
 cc_test(
     name = "profiler_test",
     srcs = ["profiler_test.cc"],
@@ -619,13 +628,25 @@ objc_library(
     ] + litert_metal_deps(),
 )
 
-objc_library(
+cc_library(
     name = "gpu_environment_metal",
-    srcs = ["gpu_environment_metal.mm"],
-    aspect_hints = [
-        # copybara:uncomment_begin (google-only)
-        # "//tools/build_defs/swift:no_module",
-        # copybara:uncomment_end
-    ],
-    deps = [":gpu_environment_header"] + litert_metal_deps_without_gpu_environment(),
+    srcs = select({
+        "@platforms//os:ios": ["gpu_environment_metal.cc"],
+        "@platforms//os:macos": ["gpu_environment_metal.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["gpu_environment_metal.h"],
+    aspect_hints = ["//tools/build_defs/swift:no_module"],
+    copts = litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
+    # Need to define this flag to include the metal headers in .so file.
+    local_defines = select({
+        "@platforms//os:ios": ["LITERT_HAS_METAL_SUPPORT=1"],
+        "@platforms//os:macos": ["LITERT_HAS_METAL_SUPPORT=1"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//litert/c:litert_common",
+    ] + litert_metal_deps_without_gpu_environment(),
+    alwayslink = True,
 )

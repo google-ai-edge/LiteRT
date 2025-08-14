@@ -1,0 +1,7 @@
+{
+  "extends": "@litertjs/tsconfig/tsconfig.json",
+  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    "outDir": "dist"
+  }
+}

@@ -17,7 +17,7 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "liter
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "13.0"
+# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
 # copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
@@ -1056,11 +1056,13 @@ cc_test(
     name = "litert_compiled_model_test",
     srcs = ["litert_compiled_model_test.cc"],
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_layout",
         ":litert_macros",
         ":litert_model",
         ":litert_options",
@@ -1079,6 +1081,7 @@ cc_test(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -1297,8 +1300,8 @@ objc_library(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
-        "//litert/runtime:metal_memory",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
         "//tflite/delegates/gpu/metal:metal_device",
         "//third_party/apple_frameworks:XCTest",
     ],
