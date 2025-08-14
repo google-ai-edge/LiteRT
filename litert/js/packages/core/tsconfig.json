@@ -1,0 +1,9 @@
+{
+  "extends": "@litertjs/tsconfig/tsconfig.json",
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*_test.ts"],
+  "compilerOptions": {
+    "types": ["@webgpu/types"],
+    "outDir": "dist"
+  }
+}
