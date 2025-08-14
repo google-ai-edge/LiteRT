@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 #define ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -163,6 +164,49 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
     return dispatch_annotations_;
   }
 
+  // Sets dispatch annotations for a specific signature.
+  void SetSignatureDispatchAnnotation(size_t signature_index,
+                                      const std::string& key,
+                                      const std::string& value) {
+    per_signature_annotations_[signature_index][key] = value;
+  }
+
+  // Gets a dispatch annotation for a specific signature.
+  const std::string* GetSignatureDispatchAnnotation(
+      size_t signature_index, const std::string& key) const {
+    auto sig_it = per_signature_annotations_.find(signature_index);
+    if (sig_it == per_signature_annotations_.end()) {
+      return nullptr;
+    }
+    auto ann_it = sig_it->second.find(key);
+    if (ann_it == sig_it->second.end()) {
+      return nullptr;
+    }
+    return &ann_it->second;
+  }
+
+  // Removes a dispatch annotation for a specific signature.
+  void RemoveSignatureDispatchAnnotation(size_t signature_index,
+                                         const std::string& key) {
+    auto sig_it = per_signature_annotations_.find(signature_index);
+    if (sig_it != per_signature_annotations_.end()) {
+      sig_it->second.erase(key);
+      if (sig_it->second.empty()) {
+        per_signature_annotations_.erase(sig_it);
+      }
+    }
+  }
+
+  // Gets all dispatch annotations for a specific signature.
+  const std::unordered_map<std::string, std::string>*
+  GetSignatureDispatchAnnotations(size_t signature_index) const {
+    auto it = per_signature_annotations_.find(signature_index);
+    if (it == per_signature_annotations_.end()) {
+      return nullptr;
+    }
+    return &it->second;
+  }
+
  private:
   LiteRtEnvironment env_;
   std::unordered_map<const TfLiteOpaqueTensor*,
@@ -180,7 +224,13 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
 
   // Dispatch annotations from the compiled model to be propagated to dispatch
   // graphs.
+  // TODO (b/436921503): Remove this field once the per-signature annotations
+  // are fully supported.
   std::unordered_map<std::string, std::string> dispatch_annotations_;
+
+  // Per-signature dispatch annotations.
+  std::unordered_map<size_t, std::unordered_map<std::string, std::string>>
+      per_signature_annotations_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
