@@ -30,7 +30,10 @@ cc_library(
     hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_element_type",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/vendors/qualcomm/core:common",
         "@qairt//:qnn_lib_headers",
     ],
 )
