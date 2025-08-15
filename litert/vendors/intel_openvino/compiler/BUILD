@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "litert_bin")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -49,6 +49,40 @@ litert_dynamic_lib(
         "//litert/cc:litert_model",
         "@com_google_absl//absl/strings",
         "@intel_openvino//:openvino",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtCompilerPlugin",
+    srcs = ["openvino_compiler_plugin.cc"],
+    visibility = ["//visibility:public"],
+    linkshared = 1,
+    copts = select({
+        "@org_tensorflow//tensorflow:windows": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":graph_iterator",
+        "//litert/c:litert_common",
+        "//litert/c:litert_dispatch_headers",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        ":litert_compiler_plugin_c_api"
+    ] + select({
+        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
+        "//conditions:default": [],
+    }),
+)
+
+litert_lib(
+    name = "litert_compiler_plugin_c_api",
+    hdrs = [
+        "//litert/vendors/c:litert_compiler_plugin.h",
     ],
 )
 
@@ -144,6 +178,7 @@ litert_test(
     target_compatible_with = select({
         "@platforms//os:android": [],
         "@platforms//os:linux": [],
+        "@platforms//os:windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,

@@ -21,6 +21,18 @@
 extern "C" {
 #endif  // __cplusplus
 
+// Define LITERT_CAPI_EXPORT macro to export a function properly with a shared
+// library.
+#if defined(_WIN32)
+#ifdef LITERT_COMPILE_LIBRARY
+#define LITERT_CAPI_EXPORT __declspec(dllexport)
+#else
+#define LITERT_CAPI_EXPORT
+#endif  // LITERT_COMPILE_LIBRARY
+#else
+#define LITERT_CAPI_EXPORT __attribute__((visibility("default")))
+#endif  // _WIN32
+
 // Declares canonical opaque type.
 
 #ifdef __cplusplus

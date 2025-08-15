@@ -61,7 +61,7 @@ Expected<UniqueTestDirectory> UniqueTestDirectory::Create() {
     if (std::filesystem::create_directory(path)) {
       LITERT_LOG(LITERT_INFO, "Created unique temporary directory %s",
                  path.c_str());
-      return UniqueTestDirectory(path);
+      return UniqueTestDirectory(path.string());
     }
   }
 

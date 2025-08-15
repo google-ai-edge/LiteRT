@@ -14,7 +14,9 @@
 
 #include "litert/vendors/c/litert_dispatch.h"
 
+#if !defined(_WIN32)
 #include <dlfcn.h>
+#endif  // !defined(_WIN32)
 
 #include <any>
 #include <string>

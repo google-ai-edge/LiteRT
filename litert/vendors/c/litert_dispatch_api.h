@@ -238,7 +238,7 @@ typedef struct LiteRtDispatchApi {
   LiteRtDispatchGraphInterface* graph_interface;
 } LiteRtDispatchApi;
 
-LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api);
 
 #ifdef __cplusplus
 }
