@@ -59,7 +59,6 @@
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/mean_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/pad_op_builder.h"
@@ -82,7 +81,6 @@
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/prelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
@@ -517,14 +515,6 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                          output_tensors, adj_x, adj_y);
       break;
     }
-    case LiteRtOpCode::kLiteRtOpCodeTflMean: {
-      bool keep_dims{};
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetMeanKeepDimsOption(litert_op.Get(), &keep_dims));
-      op_wrappers = ::qnn::BuildMeanOp(tensor_pool, input_tensors,
-                                       output_tensors, keep_dims);
-      break;
-    }
     case LiteRtOpCode::kLiteRtOpCodeTflQuantize: {
       op_wrappers =
           ::qnn::BuildQuantizeOp(tensor_pool, input_tensors, output_tensors);
@@ -543,11 +533,43 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                             output_tensors, keep_dims);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflMean: {
+      bool keep_dims{};
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetMeanKeepDimsOption(litert_op.Get(), &keep_dims));
+      op_wrappers = ::qnn::BuildReduceMeanOp(tensor_pool, input_tensors,
+                                             output_tensors, keep_dims);
+      break;
+    }
     case LiteRtOpCode::kLiteRtOpCodeTflReduceMax: {
       bool keep_dims{};
       LITERT_RETURN_IF_ERROR(
           LiteRtGetReduceMaxKeepDimsOption(litert_op.Get(), &keep_dims));
       op_wrappers = ::qnn::BuildReduceMaxOp(tensor_pool, input_tensors,
+                                            output_tensors, keep_dims);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceMin: {
+      bool keep_dims{};
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetReduceMinKeepDimsOption(litert_op.Get(), &keep_dims));
+      op_wrappers = ::qnn::BuildReduceMinOp(tensor_pool, input_tensors,
+                                            output_tensors, keep_dims);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceAll: {
+      bool keep_dims{};
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetReduceAllKeepDimsOption(litert_op.Get(), &keep_dims));
+      op_wrappers = ::qnn::BuildReduceAllOp(tensor_pool, input_tensors,
+                                            output_tensors, keep_dims);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflReduceAny: {
+      bool keep_dims{};
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetReduceAnyKeepDimsOption(litert_op.Get(), &keep_dims));
+      op_wrappers = ::qnn::BuildReduceAnyOp(tensor_pool, input_tensors,
                                             output_tensors, keep_dims);
       break;
     }
