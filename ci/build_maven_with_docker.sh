@@ -49,20 +49,22 @@ else
 
   cd /third_party_tensorflow
 
-  # Run configure.
-  configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
-    'N'
-    'N'
-    'Y'
-    '/usr/lib/llvm-18/bin/clang'
-    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'y'
-    '/android/sdk'
-  )
-  printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
+  if [[ "${USE_GIT_SUBMODULES}" == "true" ]]; then
+    # Run configure.
+    configs=(
+      '/usr/bin/python3'
+      '/usr/lib/python3/dist-packages'
+      'N'
+      'N'
+      'Y'
+      '/usr/lib/llvm-18/bin/clang'
+      '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
+      'y'
+      '/android/sdk'
+    )
+    printf '%s\n' "${configs[@]}" | ./configure
+    cp .tf_configure.bazelrc /root_dir
+  fi
 
   cd /root_dir
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
