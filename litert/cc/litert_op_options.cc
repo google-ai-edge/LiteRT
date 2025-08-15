@@ -389,4 +389,95 @@ LiteRtStatus MaxPool2dOptions::InitFromOp(LiteRtOp op) {
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus ResizeBilinearOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeBilinear) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeBilinearHalfPixelCenterOption(op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LeakyReluOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflLeakyRelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetLeakyReluAlphaOption(op, &alpha));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus SpaceToDepthOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflSpaceToDepth) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetSpaceToDepthBlockSizeOption(op, &block_size));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DepthToSpaceOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflDepthToSpace) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetDepthToSpaceBlockSizeOption(op, &block_size));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus ResizeNearestNeighborOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflResizeNearestNeighbor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetResizeNearestNeighborAlignCornersOption(op, &align_corners));
+  LITERT_RETURN_IF_ERROR(LiteRtGetResizeNearestNeighborHalfPixelCenterOption(
+      op, &half_pixel_centers));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus CumSumOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflCumsum) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetCumsumExclusiveOption(op, &exclusive));
+  LITERT_RETURN_IF_ERROR(LiteRtGetCumsumReverseOption(op, &reverse));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GeluOptions::InitFromOp(LiteRtOp op) {
+  LiteRtOpCode opcode;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpCode(op, &opcode));
+  if (opcode != kLiteRtOpCodeTflGelu) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(LiteRtGetGeluApproximateOption(op, &approximate));
+  this->op = op;
+
+  return kLiteRtStatusOk;
+}
 }  // namespace litert
