@@ -14,7 +14,7 @@
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_public"],
+    default_visibility = ["//litert:litert_c_users"],
 )
 
 cc_library(
@@ -194,6 +194,21 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# DARWINN ##########################################################################################
+
+cc_library(
+    name = "litert_darwinn_runtime_options",
+    srcs = ["litert_darwinn_runtime_options.cc"],
+    hdrs = ["litert_darwinn_runtime_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:litert_darwinn_options",
     ],
 )
 
