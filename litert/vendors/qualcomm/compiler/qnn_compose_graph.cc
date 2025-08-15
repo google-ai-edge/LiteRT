@@ -26,6 +26,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -85,6 +86,7 @@
 #include "litert/vendors/qualcomm/core/builders/prelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
@@ -1091,6 +1093,18 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
                                      tensor_pool, input_tensors, output_tensors,
                                      op_wrappers));
+
+    if (!op.Outputs().empty()) {
+      // Add op namespace based on the first output tensor name.
+      if (size_t pos = op.Outputs()[0].Name().find(";");
+          pos != std::string_view::npos) {
+        auto op_namespace = op.Outputs()[0].Name().substr(0, pos);
+        for (auto& op_wrapper : op_wrappers) {
+          op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
+        }
+      }
+    }
+    // Move op_wrappers to graph_op_wrappers.
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
@@ -1129,6 +1143,12 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
           error);
     }
     return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // Dump IR Json to understand Qnn graph.
+  if (!options.GetIrJsonDir().empty()) {
+    ::qnn::DumpIrJson(created_tensors, graph_op_wrappers,
+                      options.GetIrJsonDir(), qnn_graph_name);
   }
 
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(graph_mapper.Finalize());

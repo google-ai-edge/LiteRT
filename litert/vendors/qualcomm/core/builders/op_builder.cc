@@ -214,9 +214,9 @@ OpWrapper& CreateOpWrapper(std::vector<OpWrapper>& ops, const char* op_type) {
           {QNN_OP_UN_PACK, QnnOpCode::kUnPack},
       };
 
-  const auto op_count = ops.size();
-  const auto name = "op_type_" + std::string(op_type) + "_op_count_" +
-                    std::to_string(op_count);
+  // TODO(jiunkaiy): Remove the static op_index to ensure each op has a unique name.
+  static uint32_t op_index = 0;
+  const auto name = std::string(op_type) + "_" + std::to_string(op_index++);
 
   return ops.emplace_back(std::move(name), op_type, code_type_map->at(op_type));
 }
