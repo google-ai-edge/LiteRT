@@ -28,7 +28,6 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_platform_support.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/runtime/metal_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #import "third_party/tensorflow/lite/delegates/gpu/metal/metal_device.h"
 
@@ -46,7 +45,6 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
 
 - (void)testTensorBufferMetalMemory {
   XCTAssertTrue(litert::HasMetalSupport());
-  XCTAssertTrue(litert::internal::MetalMemory::IsSupported());
 
   // auto metal_device = std::make_unique<tflite::gpu::metal::MetalDevice>();
   auto metal_device = tflite::gpu::metal::MetalDevice();
@@ -61,8 +59,8 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   const litert::RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
-                                                           kTensorType, sizeof(kTensorData));
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(
+      env->Get(), kTensorBufferType, kTensorType, sizeof(kTensorData));
 
   auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);

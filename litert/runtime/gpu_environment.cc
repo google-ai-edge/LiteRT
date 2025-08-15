@@ -22,6 +22,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 
+#if LITERT_HAS_METAL_SUPPORT
+#include "litert/runtime/metal_info.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
@@ -116,8 +120,8 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
       environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
   if (metal_device_option.has_value() &&
       metal_device_option->type == kLiteRtAnyTypeVoidPtr) {
-    options.metal_info = MetalInfo::CreateWithDevice(
-        const_cast<void*>(metal_device_option->ptr_value));
+    LiteRtCreateWithDevice(const_cast<void*>(metal_device_option->ptr_value),
+                           &options.metal_info);
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
@@ -193,18 +197,20 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
 
   // Set up remaining properties.
+#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
 #if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+  // Set up GL interop properties when OpenCL and OpenGL are both supported.
   properties_.is_gl_sharing_supported =
       tflite::gpu::cl::IsGlSharingSupported(device_);
   properties_.is_gl_to_cl_fast_sync_supported =
       tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
-#endif  // LITERT_HAS_OPENCL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+
 #if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT && \
     LITERT_HAS_AHWB_SUPPORT
   properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
@@ -230,7 +236,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
           tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
           << "Failed to create EGL environment";
       egl_env_ = std::move(egl_env);
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
     } else {
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
@@ -251,7 +257,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
 #else
       LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
     }
     if (options_.IsGlAware() && properties_.is_gl_sharing_supported) {
       auto status = tflite::gpu::cl::CreateCLGLContext(
@@ -293,23 +299,21 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #if LITERT_HAS_METAL_SUPPORT
   // Set up Metal.
   if (options_.metal_info) {
-    properties_.is_metal_available = options_.metal_info->IsMetalAvailable();
     metal_info_ = std::move(options_.metal_info);
     LITERT_LOG(LITERT_INFO, "Created Metal device from provided device id");
   } else {
-    MetalInfoPtr metal_info = MetalInfo::Create();
-    if (metal_info->GetDevice() == nullptr) {
+    MetalInfoPtr metal_info_ptr = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateMetalInfo(&metal_info_ptr));
+    if (metal_info_ptr == nullptr) {
       LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
       return {};
     }
-    properties_.is_metal_available = metal_info->IsMetalAvailable();
-    metal_info_ = std::move(metal_info);
+    metal_info_ = std::move(metal_info_ptr);
     LITERT_LOG(LITERT_INFO, "Created default Metal device.");
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   return {};
 }
-
 }  // namespace internal
 }  // namespace litert
