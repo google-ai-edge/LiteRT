@@ -46,31 +46,33 @@ genrule(
 # This includes the dependencies that lives in litert/python/
 # TODO(weiyiw): Walk the dependencies and pull in related files.
 # TODO(weiyiw): Support data files.
-ALL_PY_SRC_MODULES = [
-    "//litert/python/aot:prepare_for_npu",
-    "//litert/python/aot:aot_compile",
-    "//litert/python/aot/ai_pack:export_lib",
-    "//litert/python/aot/core:common",
-    "//litert/python/aot/core:types",
-    "//litert/python/aot/core:apply_plugin",
-    "//litert/python/aot/core:mlir_transforms",
-    "//litert/python/aot/core:components",
-    "//litert/python/aot/core:tflxx_util",
-    "//litert/python/aot/vendors:import_vendor",
-    "//litert/python/aot/vendors",
-    "//litert/python/aot/vendors:fallback_backend",
-    "//litert/python/aot/vendors/example:example_backend",
-    "//litert/python/aot/vendors/mediatek:mediatek_backend",
-    "//litert/python/aot/vendors/mediatek:target",
-    "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
-    "//litert/python/aot/vendors/qualcomm:target",
-]
+ALL_PY_SRC_MODULES = select({
+    "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert/python/aot:prepare_for_npu",
+        "//litert/python/aot:aot_compile",
+        "//litert/python/aot/ai_pack:export_lib",
+        "//litert/python/aot/core:common",
+        "//litert/python/aot/core:types",
+        "//litert/python/aot/core:apply_plugin",
+        "//litert/python/aot/core:mlir_transforms",
+        "//litert/python/aot/core:components",
+        "//litert/python/aot/core:tflxx_util",
+        "//litert/python/aot/vendors:import_vendor",
+        "//litert/python/aot/vendors",
+        "//litert/python/aot/vendors:fallback_backend",
+        "//litert/python/aot/vendors/example:example_backend",
+        "//litert/python/aot/vendors/mediatek:mediatek_backend",
+        "//litert/python/aot/vendors/mediatek:target",
+        "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
+        "//litert/python/aot/vendors/qualcomm:target",
+    ],
+    "//conditions:default": [],
+})
 
 # This includes the dependencies that lives outside of litert/python/. e.g. litert/tools/
-PACKAGE_DATA = [
-    "//litert/tools:apply_plugin_main",
-] + select({
+PACKAGE_DATA = select({
     "@org_tensorflow//tensorflow:linux_x86_64": [
+        "//litert/tools:apply_plugin_main",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
     ],
@@ -82,7 +84,6 @@ py_wheel(
     srcs = [
         ":fixed_protos",
         ":fixed_pydeps",
-        "//litert/c:libLiteRtRuntimeCApi.so",
         "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",

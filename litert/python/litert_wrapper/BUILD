@@ -46,7 +46,7 @@ package(
 #
 # OUT_DIR = "$(RULEDIR)"
 #
-# CONVERTER = "@org_tensorflow//tensorflow/compiler/mlir/lite:tf_tfl_translate"
+# CONVERTER = "//tflite/converter:tf_tfl_translate"
 #
 # CMD = """
 # for mlir_file in $(SRCS); do

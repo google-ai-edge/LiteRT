@@ -21,8 +21,8 @@
 
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/cc/litert_macros.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
-#include "tensorflow/compiler/mlir/lite/core/model_builder_base.h"
+#include "tflite/converter/allocation.h"
+#include "tflite/converter/core/model_builder_base.h"
 
 #ifndef NDEBUG
 // Make flatbuffers verifier `assert` in debug mode.

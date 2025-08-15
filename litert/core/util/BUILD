@@ -42,13 +42,13 @@ cc_library_with_testonly_vis(
         "//litert/core:filesystem",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
+        "//tflite/converter:allocation",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 

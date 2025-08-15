@@ -48,7 +48,7 @@ pywrap_library(
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 10,
+    pywrap_count = 11,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",

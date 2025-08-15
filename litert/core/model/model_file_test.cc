@@ -27,7 +27,7 @@
 // through flatbuffer_tools.h via model.h) have the same #ifdef, thus this line
 // need to be put at the top to ensure we get the "mutable" version.
 #if 1
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #endif
 
 #include <unordered_map>

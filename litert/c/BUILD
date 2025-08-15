@@ -244,8 +244,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//tflite/c:c_api_types",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
