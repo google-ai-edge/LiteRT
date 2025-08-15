@@ -49,10 +49,6 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if LITERT_HAS_METAL_SUPPORT
-// #error "metal is supported"
-#include "litert/runtime/metal_memory.h"
-#endif  // LITERT_HAS_METAL_SUPPORT
 
 using litert::BufferTypeToString;
 using litert::Expected;
@@ -425,7 +421,7 @@ Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto packed_size,
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
                           litert::internal::GetNumPackedBytes(tensor_type));
   auto buffer = litert::internal::CustomBuffer::Alloc(
       env, tensor_type, buffer_type, buffer_size, packed_size);
@@ -440,44 +436,25 @@ LiteRtTensorBufferT::CreateManagedWebGpuBuffer(
   return tensor_buffer;
 }
 
-#if LITERT_HAS_METAL_SUPPORT
-Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
-    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, void* metal_buffer, size_t buffer_size,
-    LiteRtMetalDeallocator deallocator) {
-  Ptr tensor_buffer(
-      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  auto metal_memory = std::make_unique<litert::internal::MetalMemory>(
-      gpu_env, tensor_type, buffer_type, metal_buffer, buffer_size,
-      deallocator);
-  tensor_buffer->buffer_
-      .emplace<std::unique_ptr<litert::internal::MetalMemory>>(
-          std::move(metal_memory));
-  return tensor_buffer;
-}
-
+// TODO b/426869066 - Add CreateFromMetalMemory to support zero-copy scenarios
+// of Metal memory.
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(env));
-  LITERT_ASSIGN_OR_RETURN(auto buffer,
-                          litert::internal::MetalMemory::Alloc(
-                              gpu_env, tensor_type, buffer_type, buffer_size));
-
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
+  auto buffer = litert::internal::CustomBuffer::Alloc(
+      env, tensor_type, buffer_type, buffer_size, packed_size);
+  if (!buffer) {
+    return Unexpected(buffer.Error());
+  }
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
-
-  auto metal_memory =
-      std::make_unique<litert::internal::MetalMemory>(std::move(buffer));
-
-  tensor_buffer->buffer_
-      .emplace<std::unique_ptr<litert::internal::MetalMemory>>(
-          std::move(metal_memory));
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(*buffer));
   return tensor_buffer;
 }
-#endif  // LITERT_HAS_METAL_SUPPORT
 
 // TODO b/426869066 - Add CreateFromVulkanMemory to support zero-copy scenarios
 // of Vulkan memory.
@@ -590,13 +567,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeMetalBufferFp16:
     case kLiteRtTensorBufferTypeMetalTexture:
     case kLiteRtTensorBufferTypeMetalTextureFp16: {
-#if LITERT_HAS_METAL_SUPPORT
       return CreateManagedMetalMemory(env, tensor_type, buffer_type,
                                       buffer_size);
-#else
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Metal memory is not supported.");
-#endif  // LITERT_HAS_METAL_SUPPORT
     }
     case kLiteRtTensorBufferTypeVulkanBuffer:
     case kLiteRtTensorBufferTypeVulkanBufferFp16:
@@ -716,20 +688,6 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
                       BufferTypeToString(buffer_type_)));
 }
 
-#if LITERT_HAS_METAL_SUPPORT
-Expected<litert::internal::MetalMemory*> LiteRtTensorBufferT::GetMetalMemory() {
-  if (IsMetalMemory(buffer_type_)) {
-    return std::get<std::unique_ptr<litert::internal::MetalMemory>>(buffer_)
-        .get();
-  }
-  return Unexpected(
-      kLiteRtStatusErrorRuntimeFailure,
-      absl::StrFormat("Cannot get %s buffer from %s tensor buffer",
-                      BufferTypeToString(kLiteRtTensorBufferTypeMetalBuffer),
-                      BufferTypeToString(buffer_type_)));
-}
-
-#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<litert::internal::OpenClMemory*>
@@ -840,7 +798,8 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 
 Expected<litert::internal::CustomBuffer*>
 LiteRtTensorBufferT::GetCustomBuffer() {
-  if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_)) {
+  if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_) ||
+      IsMetalMemory(buffer_type_)) {
     return &std::get<litert::internal::CustomBuffer>(buffer_);
   }
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -917,6 +876,10 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeWebGpuImageBuffer:
     case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
     case kLiteRtTensorBufferTypeVulkanBuffer:
     case kLiteRtTensorBufferTypeVulkanBufferFp16:
     case kLiteRtTensorBufferTypeVulkanTexture:
@@ -928,20 +891,6 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
       LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
                               custom_buffer->Lock(mode));
       return host_memory_ptr;
-    }
-    case kLiteRtTensorBufferTypeMetalBuffer:
-    case kLiteRtTensorBufferTypeMetalBufferFp16:
-    case kLiteRtTensorBufferTypeMetalTexture:
-    case kLiteRtTensorBufferTypeMetalTextureFp16: {
-#if LITERT_HAS_METAL_SUPPORT
-      LITERT_ASSIGN_OR_ABORT(auto metal_memory, GetMetalMemory());
-      LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              metal_memory->Lock<float>(mode));
-      return host_memory_ptr;
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Metal buffers are not supported");
-#endif  // LITERT_HAS_METAL_SUPPORT
     }
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown: {
@@ -992,6 +941,10 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeWebGpuImageBuffer:
     case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+    case kLiteRtTensorBufferTypeMetalBuffer:
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalTexture:
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
     case kLiteRtTensorBufferTypeVulkanBuffer:
     case kLiteRtTensorBufferTypeVulkanBufferFp16:
     case kLiteRtTensorBufferTypeVulkanTexture:
@@ -1001,18 +954,6 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeVulkanBufferPacked: {
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
-    }
-    case kLiteRtTensorBufferTypeMetalBuffer:
-    case kLiteRtTensorBufferTypeMetalBufferFp16:
-    case kLiteRtTensorBufferTypeMetalTexture:
-    case kLiteRtTensorBufferTypeMetalTextureFp16: {
-#if LITERT_HAS_METAL_SUPPORT
-      LITERT_ASSIGN_OR_RETURN(auto metal_buffer, GetMetalMemory());
-      return metal_buffer->Unlock<float>();
-#else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Metal buffers are not supported");
-#endif  // LITERT_HAS_METAL_SUPPORT
     }
     case kLiteRtTensorBufferTypeHostMemory:
     case kLiteRtTensorBufferTypeIon:
