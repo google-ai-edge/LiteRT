@@ -19,7 +19,7 @@ package(
     default_visibility = [
         # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_internal_users_with_internal_cc",
+        # "//litert:litert_cc_users_static_link",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -170,10 +170,8 @@ cc_library(
     hdrs = ["//litert/cc:litert_options.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_internal_users_with_internal_cc",
-        # # OSS build needs static lib.
-        # "//litert/vendors/google_tensor/dispatch:__pkg__",
-        # "//litert/vendors/mediatek/dispatch:__pkg__",
+        # "//litert:litert_cc_users_static_link",
+        # "//litert:litert_internal_users",  # TODO(b/424778444): Remove this.
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end

@@ -119,7 +119,7 @@ def prepare_build_tree(tree_path, args, project_name: str):
   for src in args.src:
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
 
-  for src in args.py_src:
+  for src in args.py_src or []:
     dest = os.path.join(src_dir, src.removeprefix("litert/python/"))
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     shutil.copyfile(
@@ -131,17 +131,18 @@ def prepare_build_tree(tree_path, args, project_name: str):
   create_init_files(src_dir, meta_dict)
 
   # Copy package data files to the build tree, after filling the __init__.
-  for src in args.package_data:
-    def get_dest(file_path: str):
-      delimiter = "litert/"
-      index = file_path.find(delimiter)
-      if index != -1:
-        return file_path[index + len(delimiter):]
-      else:
-        return file_path
-    dest = os.path.join(src_dir, get_dest(src))
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    shutil.copyfile(src, dest)
+  if args.package_data is not None:
+    for src in args.package_data:
+      def get_dest(file_path: str):
+        delimiter = "litert/"
+        index = file_path.find(delimiter)
+        if index != -1:
+          return file_path[index + len(delimiter):]
+        else:
+          return file_path
+      dest = os.path.join(src_dir, get_dest(src))
+      os.makedirs(os.path.dirname(dest), exist_ok=True)
+      shutil.copyfile(src, dest)
 
 
 def build_pyproject_wheel(

@@ -327,7 +327,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_tensor_buffer_utils",
-        "//litert/cc/internal:litert_event",
         "//litert/cc/internal:litert_options",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:buffer_error_reporter",
@@ -425,7 +424,6 @@ cc_test(
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_platform_support",
-        "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
@@ -542,6 +540,11 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
     ],
+)
+
+cc_library(
+    name = "litert_darwinn_options",
+    hdrs = ["litert_darwinn_options.h"],
 )
 
 cc_test(

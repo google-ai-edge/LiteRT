@@ -137,7 +137,8 @@ class CustomBuildPy(_build_py):
                 f'File {filepath_in_build} (from data_files) not found in build'
                 ' directory.'
             )
-    assert files_updated > 0, 'No files were updated.'
+    if files_updated == 0:
+      self.warn('No files were updated.')
 
 
 setuptools.setup(
