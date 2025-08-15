@@ -26,6 +26,40 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/examples/example_plugin_common.h"
 
+#if LITERT_WINDOWS_OS
+#include <stdarg.h>
+#include <cstdio>
+static int asprintf(char** strp, const char* format, ...) {
+  va_list args;
+  va_start(args, format);
+
+  va_list args_copy;
+  va_copy(args_copy, args);
+  int len = _vscprintf(format, args_copy);
+  va_end(args_copy);
+
+  if (len < 0) {
+    va_end(args);
+    return -1;
+  }
+
+  *strp = static_cast<char*>(malloc(len + 1));
+  if (!*strp) {
+    va_end(args);
+    return -1;
+  }
+
+  int result = vsnprintf(*strp, len + 1, format, args);
+  va_end(args);
+
+  if (result < 0) {
+    free(*strp);
+    *strp = nullptr;
+  }
+  return result;
+}
+#endif  // LITERT_WINDOWS_OS
+
 // A simple compiler plugin example that implements everything directly.
 // This plugin matches on mul ops, and emits "byte code" that is simply
 // a string representative of the ops consumed.

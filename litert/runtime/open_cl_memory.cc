@@ -88,7 +88,7 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
   if (lock_state == LockState::kReadLocked ||
       lock_state == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-      LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
+      LITERT_RETURN_IF_ERROR(gpu_env_->GetCommandQueue()
                                  ->EnqueueReadBuffer(GetMemoryPtr(),
                                                      cpu_buffer_size_, data_,
                                                      /*async=*/false)
@@ -118,7 +118,7 @@ Expected<void> OpenClMemory::Unlock() {
   if (lock_state_ == LockState::kWriteLocked ||
       lock_state_ == LockState::kReadWriteLocked) {
     if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-      LITERT_RETURN_IF_ERROR(gpu_env_->getCommandQueue()
+      LITERT_RETURN_IF_ERROR(gpu_env_->GetCommandQueue()
                                  ->EnqueueWriteBuffer(GetMemoryPtr(),
                                                       cpu_buffer_size_, data_,
                                                       /*async=*/true)
@@ -155,7 +155,7 @@ Expected<OpenClMemory> OpenClMemory::Alloc(
   if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
     tflite::gpu::cl::Buffer buffer;
     LITERT_RETURN_IF_ERROR(tflite::gpu::cl::CreateReadWriteBuffer(
-                               bytes_size, gpu_env->getContext(), &buffer)
+                               bytes_size, gpu_env->GetContext(), &buffer)
                                .ok());
     return Expected<OpenClMemory>(gpu_env, tensor_type, buffer_type,
                                   std::move(buffer));
@@ -185,7 +185,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
       0,
   };
 
-  cl_context context = gpu_env->getContext()->context();
+  cl_context context = gpu_env->GetContext()->context();
   LITERT_RETURN_IF_ERROR(IsAhwbToClInteropSupported(),
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "clImportMemoryARM is not supported"));
@@ -210,7 +210,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     GlBuffer& gl_buffer) {
-  tflite::gpu::cl::CLContext* context = gpu_env->getContext();
+  tflite::gpu::cl::CLContext* context = gpu_env->GetContext();
   cl_int error;
   cl_mem buffer = tflite::gpu::cl::clCreateFromGLBuffer(
       context->context(), CL_MEM_READ_WRITE, gl_buffer.id(), &error);

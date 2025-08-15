@@ -513,6 +513,124 @@ TEST(OpOptionsTest, GetMaxPool2dOptions) {
   EXPECT_EQ(&op, res->op);
 }
 
+TEST(OpOptionsTest, GetResizeBilinearOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflResizeBilinear);
+  tflite::ResizeBilinearOptionsT options;
+  options.align_corners = true;
+  options.half_pixel_centers = false;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ResizeBilinearOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ResizeBilinearOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->align_corners, true);
+  EXPECT_EQ(res->half_pixel_centers, false);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetLeakyReluOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflLeakyRelu);
+  tflite::LeakyReluOptionsT options;
+  options.alpha = 0.1;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_LeakyReluOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<LeakyReluOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_FLOAT_EQ(res->alpha, 0.1);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetSpaceToDepthOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflSpaceToDepth);
+  tflite::SpaceToDepthOptionsT options;
+  options.block_size = 1;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_SpaceToDepthOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<SpaceToDepthOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->block_size, 1);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetDepthToSpaceOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflDepthToSpace);
+  tflite::DepthToSpaceOptionsT options;
+  options.block_size = 1;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_DepthToSpaceOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<DepthToSpaceOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->block_size, 1);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetResizeNearestNeighborOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflResizeNearestNeighbor);
+  tflite::ResizeNearestNeighborOptionsT options;
+  options.align_corners = true;
+  options.half_pixel_centers = false;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_ResizeNearestNeighborOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<ResizeNearestNeighborOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->align_corners, true);
+  EXPECT_EQ(res->half_pixel_centers, false);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetCumSumOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflCumsum);
+  tflite::CumsumOptionsT options;
+  options.exclusive = true;
+  options.reverse = false;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_CumsumOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<CumSumOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->exclusive, true);
+  EXPECT_EQ(res->reverse, false);
+  EXPECT_EQ(&op, res->op);
+}
+
+TEST(OpOptionsTest, GetGeluOptions) {
+  LiteRtOpT op;
+  op.SetOpCode(kLiteRtOpCodeTflGelu);
+  tflite::GeluOptionsT options;
+  options.approximate = true;
+  internal::TflOptions tfl_options;
+  tfl_options.type = ::tflite::BuiltinOptions_GeluOptions;
+  tfl_options.Set(std::move(options));
+  litert::internal::SetTflOptions(op, std::move(tfl_options));
+
+  auto res = GetOptionsAs<GeluOptions>(&op);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(res->approximate, true);
+  EXPECT_EQ(&op, res->op);
+}
+
 TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeShloComposite);
@@ -536,6 +654,13 @@ TEST(OpOptionsTest, TestGetOptionsAsInvalidOpOptions) {
   ASSERT_FALSE(GetOptionsAs<Conv3dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<AveragePool2dOptions>(&op));
   ASSERT_FALSE(GetOptionsAs<MaxPool2dOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ResizeBilinearOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<LeakyReluOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<SpaceToDepthOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<DepthToSpaceOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<ResizeNearestNeighborOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<CumSumOptions>(&op));
+  ASSERT_FALSE(GetOptionsAs<GeluOptions>(&op));
 }
 
 }  // namespace
