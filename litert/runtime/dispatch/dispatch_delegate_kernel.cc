@@ -460,6 +460,8 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
               kLiteRtStatusOk &&
           graph != nullptr) {
         // Apply annotations to the dispatch graph
+        // TODO (b/436921503): Dispatch graph should map to compiled model's
+        // subgraph
         for (const auto& [key, value] : annotations) {
           if (auto status = LiteRtDispatchAnnotateGraph(&graph, key.c_str(),
                                                         value.c_str());
