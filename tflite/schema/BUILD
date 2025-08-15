@@ -45,11 +45,11 @@ py_strict_library(
         "upgrade_schema.py",
     ],
     data = [
+        "//tflite/converter/schema:schema_v0.fbs",
+        "//tflite/converter/schema:schema_v1.fbs",
+        "//tflite/converter/schema:schema_v2.fbs",
+        "//tflite/converter/schema:schema_v3.fbs",
         "@flatbuffers//:flatc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_v0.fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_v1.fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_v2.fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_v3.fbs",
     ],
     deps = [
         "@org_tensorflow//tensorflow:tensorflow_py",
@@ -101,7 +101,7 @@ exports_files([
 # copybara:uncomment_begin(google-only)
 # flatbuffer_cc_library(
 #     name = "schema_fbs",
-#     srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"],
+#     srcs = ["//tflite/converter/schema:schema.fbs"],
 #     compatible_with = get_compatible_with_portable(),
 # )
 # copybara:uncomment_end(google-only)
@@ -110,18 +110,18 @@ cc_library(
     name = "schema_fbs",  # copybara:comment_replace name = "schema_fbs_for_oss",
     hdrs = [
         ":schema_generated.h",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_generated.h",
+        "//tflite/converter/schema:schema_generated.h",
     ],
     deps = [
+        "//tflite/converter/schema:schema_fbs",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
     ],
 )
 
 # Generic schema for flatbuffer converter (but with mutable makes bigger).
 flatbuffer_cc_library(
     name = "schema_fbs_with_mutable",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"],
+    srcs = ["//tflite/converter/schema:schema.fbs"],
     compatible_with = get_compatible_with_portable(),
     flatc_args = [
         "--gen-mutable",
@@ -133,7 +133,7 @@ flatbuffer_cc_library(
 # Generic schema for inference on device (but with reflections makes bigger).
 flatbuffer_cc_library(
     name = "schema_fbs_with_reflection",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"],
+    srcs = ["//tflite/converter/schema:schema.fbs"],
     compatible_with = get_compatible_with_portable(),
     flatc_args = [
         "--reflect-types",
@@ -149,7 +149,7 @@ cc_library(
     hdrs = ["schema_utils.h"],
     compatible_with = get_compatible_with_portable(),
     visibility = ["//visibility:public"],
-    deps = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils"],
+    deps = ["//tflite/converter/schema:schema_utils"],
 )
 
 cc_library(
@@ -157,12 +157,12 @@ cc_library(
     hdrs = ["schema_conversion_utils.h"],
     compatible_with = get_compatible_with_portable(),
     visibility = ["//visibility:public"],
-    deps = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils"],
+    deps = ["//tflite/converter/schema:schema_conversion_utils"],
 )
 
 flatbuffer_cc_library(
     name = "conversion_metadata_fbs",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:conversion_metadata.fbs"],
+    srcs = ["//tflite/converter/schema:conversion_metadata.fbs"],
     compatible_with = get_compatible_with_portable(),
 )
 

@@ -27,9 +27,9 @@ cc_test(
         ":builtin_ops",
         "//tflite:mutable_op_resolver",
         "//tflite/c:common",
+        "//tflite/converter/tools/versioning",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
     ],
 )
 

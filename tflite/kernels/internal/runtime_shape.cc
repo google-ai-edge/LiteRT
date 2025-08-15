@@ -62,4 +62,4 @@ int RuntimeShape::FlatSize() const {
 
 }  // namespace tflite
 
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/kernels/internal/runtime_shape.cc)
+// LINT.ThenChange(//tflite/converter/kernels/internal/runtime_shape.cc)

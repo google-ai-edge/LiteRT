@@ -300,6 +300,6 @@ inline int Offset(const RuntimeShape& shape, int* index) {
 
 }  // namespace tflite
 
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/kernels/internal/runtime_shape.h)
+// LINT.ThenChange(//tflite/converter/kernels/internal/runtime_shape.h)
 
 #endif  // TENSORFLOW_LITE_KERNELS_INTERNAL_RUNTIME_SHAPE_H_

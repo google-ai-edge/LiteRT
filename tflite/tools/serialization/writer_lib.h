@@ -45,7 +45,7 @@ limitations under the License.
 //
 //  The '#if' here prevents automatic reordering of this #include.
 #if 1
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 #endif
 
 #include "absl/container/flat_hash_map.h"

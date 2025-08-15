@@ -15,7 +15,7 @@ load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
 load("//tflite/delegates/flex:build_def.bzl", "tflite_flex_cc_library", "tflite_flex_shared_library")
 
 default_visibility = [
-    "@org_tensorflow//tensorflow/compiler/mlir/lite:__subpackages__",
+    "//tflite/converter:__subpackages__",
     "//tflite/android:__subpackages__",
     "//tflite/toco/tflite:__subpackages__",
 ]
@@ -384,8 +384,8 @@ tf_cc_test(
     features = tf_features_nolayering_check_if_ios(),
     deps = [
         ":delegate",
+        "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/delegates/flex:allowlisted_flex_ops_lib",
     ] + if_mobile([
         "@org_tensorflow//tensorflow/core:portable_tensorflow_lib_lite",
     ]) + if_not_mobile([

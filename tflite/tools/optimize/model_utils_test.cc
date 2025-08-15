@@ -60,7 +60,7 @@ TEST(ModelUtilsTest, HasMinMax) {
   tensor.quantization->max.push_back(1.5);
   EXPECT_TRUE(HasMinMax(&tensor));
 }
-// LINT.ThenChange(//third_party/tensorflow/tensorflow/compiler/mlir/lite/quantization/lite/toco_legacy/model_utils_test.cc:HasMinMaxTest)
+// LINT.ThenChange(//tflite/converter/quantization/lite/toco_legacy/model_utils_test.cc:HasMinMaxTest)
 
 }  // namespace
 }  // namespace utils

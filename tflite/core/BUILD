@@ -62,6 +62,8 @@ cc_library(
         "//tflite:type_to_tflitetype",
         "//tflite:util",
         "//tflite/c:common_internal",
+        "//tflite/converter/core:model_builder_base",
+        "//tflite/converter/experimental/remat:metadata_util",
         "//tflite/core/api",
         "//tflite/core/async:async_signature_runner",
         "//tflite/core/c:common",
@@ -73,8 +75,6 @@ cc_library(
         "//tflite/profiling/telemetry/c:telemetry_setting_internal",
         "//tflite/schema:schema_fbs",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
     ],
 )
 
@@ -133,6 +133,8 @@ cc_library(
         "//tflite:type_to_tflitetype",
         "//tflite:util",
         "//tflite/c:common_internal",
+        "//tflite/converter/core:model_builder_base",
+        "//tflite/converter/experimental/remat:metadata_util",
         "//tflite/core/api",
         "//tflite/core/async:async_signature_runner",
         "//tflite/core/c:common",
@@ -144,8 +146,6 @@ cc_library(
         "//tflite/profiling/telemetry/c:telemetry_setting_internal",
         "//tflite/schema:schema_fbs",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
     ],
     alwayslink = 1,  # TODO(b/161243354): eliminate this.
 )
@@ -205,6 +205,10 @@ cc_library(
         "//tflite:util",
         "//tflite:version",
         "//tflite/c:common_internal",
+        "//tflite/converter/core:model_builder_base",
+        "//tflite/converter/experimental/remat:metadata_util",
+        "//tflite/converter/schema:schema_fbs",
+        "//tflite/converter/schema:schema_utils",
         "//tflite/core/api",
         "//tflite/core/api:verifier",
         "//tflite/core/async:async_signature_runner",
@@ -226,10 +230,6 @@ cc_library(
         "//tflite/schema:schema_fbs",
         "//tflite/schema:schema_utils",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_utils",
         "@ruy//ruy:denormal",
     ],
     alwayslink = 1,
@@ -282,6 +282,8 @@ cc_library(
         "//tflite:type_to_tflitetype",
         "//tflite:util",
         "//tflite/c:common_internal",
+        "//tflite/converter/core:model_builder_base",
+        "//tflite/converter/experimental/remat:metadata_util",
         "//tflite/core/api",
         "//tflite/core/async:async_signature_runner",
         "//tflite/core/c:c_api_types",
@@ -294,8 +296,6 @@ cc_library(
         "//tflite/profiling/telemetry/c:telemetry_setting_internal",
         "//tflite/schema:schema_fbs",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
     ],
     alwayslink = 1,  # TODO(b/161243354): eliminate this.
 )
@@ -308,8 +308,8 @@ cc_library(
     visibility = internal_visibility_allowlist(),
     deps = [
         "//tflite:stderr_reporter",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/core/api:error_reporter",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
     alwayslink = 1,
 )
@@ -346,10 +346,10 @@ cc_test(
         ":framework",
         ":signature_runner",
         "//tflite:model_builder",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/core/kernels:builtin_ops",
         "//tflite/testing:util",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -384,6 +384,7 @@ cc_test(
         ":framework",
         "//tflite:framework",
         "//tflite:string_util",
+        "//tflite/converter:allocation",
         "//tflite/core/api",
         "//tflite/core/api:verifier",
         "//tflite/core/c:common",
@@ -392,7 +393,6 @@ cc_test(
         "//tflite/testing:util",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
     ],
 )
 
@@ -486,6 +486,7 @@ cc_library(
         "//tflite:minimal_logging",
         "//tflite:util",
         "//tflite/c:common_internal",
+        "//tflite/converter/experimental/remat:metadata_util",
         "//tflite/core/api",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
@@ -493,7 +494,6 @@ cc_library(
         "//tflite/profiling:root_profiler",
         "//tflite/profiling/telemetry",
         "//tflite/schema:schema_fbs",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/experimental/remat:metadata_util",
     ] + select({
         "//tflite:tflite_use_simple_memory_planner": [
             "//tflite:simple_planner",

@@ -17,7 +17,7 @@ limitations under the License.
 
 #include <memory>
 
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/allocation.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/api/op_resolver.h"
