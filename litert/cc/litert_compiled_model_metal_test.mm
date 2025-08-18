@@ -113,9 +113,9 @@ const float kTolerance = 1e-5;
     for (auto i = 0; i < kTestOutputSize; ++i) {
       LITERT_LOG(LITERT_INFO, "Result: %f\t%f", output[i], kTestOutputTensor[i]);
     }
-    XCTAssertTrue(testing::Matches(testing::Pointwise(testing::FloatNear(kTolerance),
-                                                      absl::MakeConstSpan(kTestOutputTensor,
-                                                                          kTestOutputSize)))(output));
+    XCTAssertTrue(testing::Matches(testing::Pointwise(
+        testing::FloatNear(kTolerance), absl::MakeConstSpan(kTestOutputTensor, kTestOutputSize)))(
+        output));
   }
 
   return;
