@@ -61,8 +61,8 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   const litert::RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
-                                                           kTensorType, sizeof(kTensorData));
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(
+      env->Get(), kTensorBufferType, kTensorType, sizeof(kTensorData));
 
   auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);

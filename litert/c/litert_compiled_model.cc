@@ -36,6 +36,28 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/compiled_model.h"
 
+#if LITERT_WINDOWS_OS
+#include <stdarg.h>
+static int vasprintf(char** strp, const char* format, va_list ap) {
+  va_list ap_copy;
+  va_copy(ap_copy, ap);
+  int len = _vscprintf(format, ap_copy);
+  va_end(ap_copy);
+
+  if (len < 0) return -1;
+
+  *strp = static_cast<char*>(malloc(len + 1));
+  if (!*strp) return -1;
+
+  int result = vsnprintf(*strp, len + 1, format, ap);
+  if (result < 0) {
+    free(*strp);
+    *strp = nullptr;
+  }
+  return result;
+}
+#endif  // LITERT_WINDOWS_OS
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -201,9 +223,16 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
 }
 
 LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key, const char* value) {
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char* value) {
   if (!compiled_model || !key || !value) {
     LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Validate signature index
+  if (signature_index >= compiled_model->GetNumSignatures()) {
+    LITERT_LOG(LITERT_ERROR, "Invalid signature index: %zu (max: %zu)",
+               signature_index, compiled_model->GetNumSignatures() - 1);
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -214,17 +243,23 @@ LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
-      buffer_context->GetDispatchAnnotations());
-  annotations[key] = value;
+  buffer_context->SetSignatureDispatchAnnotation(signature_index, key, value);
 
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key, const char** value) {
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char** value) {
   if (!compiled_model || !key || !value) {
     LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Validate signature index
+  if (signature_index >= compiled_model->GetNumSignatures()) {
+    LITERT_LOG(LITERT_ERROR, "Invalid signature index: %zu (max: %zu)",
+               signature_index, compiled_model->GetNumSignatures() - 1);
+    *value = nullptr;
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -236,10 +271,10 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  const auto& annotations = buffer_context->GetDispatchAnnotations();
-  auto it = annotations.find(key);
-  if (it != annotations.end()) {
-    *value = it->second.c_str();
+  const auto* annotation_value =
+      buffer_context->GetSignatureDispatchAnnotation(signature_index, key);
+  if (annotation_value) {
+    *value = annotation_value->c_str();
   } else {
     *value = nullptr;
   }
@@ -248,9 +283,16 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
 }
 
 LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key) {
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key) {
   if (!compiled_model || !key) {
     LITERT_LOG(LITERT_ERROR, "Invalid arguments: null pointers provided");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // Validate signature index
+  if (signature_index >= compiled_model->GetNumSignatures()) {
+    LITERT_LOG(LITERT_ERROR, "Invalid signature index: %zu (max: %zu)",
+               signature_index, compiled_model->GetNumSignatures() - 1);
     return kLiteRtStatusErrorInvalidArgument;
   }
 
@@ -261,9 +303,7 @@ LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
-  auto& annotations = const_cast<std::unordered_map<std::string, std::string>&>(
-      buffer_context->GetDispatchAnnotations());
-  annotations.erase(key);
+  buffer_context->RemoveSignatureDispatchAnnotation(signature_index, key);
 
   return kLiteRtStatusOk;
 }
