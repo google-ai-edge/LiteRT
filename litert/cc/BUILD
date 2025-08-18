@@ -17,16 +17,20 @@ load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "liter
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "13.0"
+# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
 # copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # By default, this package is private to avoid mistaken under-restricted visibility. Each target
-        # is explicitly given visibility individually.
-        "//visibility:private",
+        # By default, visibility is restricted to litert_cc_users_dynamic_link. Individual targets can be
+        # made public by setting their visibility to litert_public.
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_cc_users_dynamic_link",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
@@ -212,9 +216,6 @@ cc_test(
 cc_library(
     name = "litert_source_location",
     hdrs = ["litert_source_location.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
 )
 
 cc_test(
@@ -554,9 +555,6 @@ cc_test(
 cc_library(
     name = "litert_platform_support",
     hdrs = ["litert_platform_support.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [
         "//litert/c:litert_platform_support",
     ],
@@ -655,9 +653,6 @@ cc_test(
 cc_library(
     name = "litert_numerics",
     hdrs = ["litert_numerics.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
     deps = [":litert_detail"],
 )
 
@@ -709,10 +704,6 @@ cc_library(
     hdrs = [
         "litert_dispatch_delegate.h",
     ],
-    visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/runtime/dispatch:dispatch_delegate",
@@ -728,10 +719,6 @@ cc_library(
     name = "litert_custom_op_kernel",
     srcs = ["litert_custom_op_kernel.cc"],
     hdrs = ["litert_custom_op_kernel.h"],
-    visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-    ],
     deps = [
         ":litert_expected",
         ":litert_handle",
@@ -786,10 +773,11 @@ cc_library(
     name = "litert_event",
     hdrs = ["litert_event.h"],
     visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-        # TODO - b/416800841: Update none litert/ code to use proper internal/public cc targets.
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         ":litert_expected",
@@ -837,20 +825,6 @@ cc_library(
     hdrs = [
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
-    ],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # # TOOD: Update non-litert/ code to use proper internal/public cc targets.
-        # "//litert:litert_external_users",
-        # "//litert:litert_internal_users_with_public_cc",
-        # "//third_party/odml/infra/ml_drift_delegate:__pkg__",
-        # "//third_party/odml/infra/genai/inference/executor/google_tensor:__pkg__",
-        # "//third_party/odml/infra/genai/inference/executor/llm_context_handler:__pkg__",
-        # "//third_party/odml/infra/genai/inference/ml_drift/llm:__pkg__",
-        # "//third_party/odml/infra/genai/inference/executor:__pkg__",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
     ],
     deps = [
         ":litert_detail",
@@ -930,10 +904,6 @@ cc_library(
     hdrs = [
         "litert_tensor_buffer_requirements.h",
     ],
-    visibility = [
-        "//litert:litert_external_users",
-        "//litert:litert_internal_users_with_public_cc",
-    ],
     deps = [
         ":litert_expected",
         ":litert_handle",
@@ -967,14 +937,6 @@ cc_test(
 cc_library(
     name = "litert_environment",
     hdrs = ["litert_environment.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_external_users",
-        # "//litert:litert_internal_users_with_public_cc",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
     deps = [
         ":litert_any",
         ":litert_environment_options",
@@ -1020,14 +982,6 @@ cc_library(
     name = "litert_compiled_model",
     srcs = ["litert_compiled_model.cc"],
     hdrs = ["litert_compiled_model.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_external_users",
-        # "//litert:litert_internal_users_with_public_cc",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
     deps = [
         ":litert_custom_op_kernel",
         ":litert_environment",
@@ -1056,11 +1010,13 @@ cc_test(
     name = "litert_compiled_model_test",
     srcs = ["litert_compiled_model_test.cc"],
     data = [
+        "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
     deps = [
         ":litert_compiled_model",
         ":litert_environment",
+        ":litert_layout",
         ":litert_macros",
         ":litert_model",
         ":litert_options",
@@ -1079,6 +1035,7 @@ cc_test(
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -1210,14 +1167,6 @@ litert_device_test(
 cc_library(
     name = "litert_options",
     hdrs = ["litert_options.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_external_users",
-        # "//litert:litert_internal_users_with_public_cc",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
     deps = [
         ":litert_custom_op_kernel",
         ":litert_expected",
@@ -1237,14 +1186,6 @@ cc_library(
 cc_library(
     name = "litert_profiler",
     hdrs = ["litert_profiler.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_external_users",
-        # "//litert:litert_internal_users_with_public_cc",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
     deps = [
         ":litert_expected",
         ":litert_handle",
@@ -1262,9 +1203,6 @@ cc_library(
 cc_library(
     name = "litert_external_litert_buffer_context",
     hdrs = ["litert_external_litert_buffer_context.h"],
-    visibility = [
-        "//litert:litert_internal_users_with_internal_cc",
-    ],
     deps = [
         ":litert_environment",
         ":litert_expected",
@@ -1297,8 +1235,8 @@ objc_library(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_headers",
-        "//litert/runtime:metal_memory",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
         "//tflite/delegates/gpu/metal:metal_device",
         "//third_party/apple_frameworks:XCTest",
     ],
