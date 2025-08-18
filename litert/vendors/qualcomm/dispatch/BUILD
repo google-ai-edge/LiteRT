@@ -60,11 +60,11 @@ litert_dynamic_lib(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c:litert_options",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/vendors/cc:options_helper",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment_options",
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",

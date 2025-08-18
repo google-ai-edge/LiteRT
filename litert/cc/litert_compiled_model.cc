@@ -120,7 +120,7 @@ Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(
   for (int i = 0; i < tensor_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         TensorBuffer tensor_buffer,
-        CreateInputOutputBuffer(signature.Key(), tensor_names[i], is_input));
+        CreateInputOutputBuffer(signature_index, tensor_names[i], is_input));
     tensor_buffers.push_back(std::move(tensor_buffer));
   }
 
