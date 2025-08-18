@@ -273,6 +273,10 @@ LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,
   LITERT_RETURN_IF_ERROR(compiled_model != nullptr && format != nullptr,
                          kLiteRtStatusErrorInvalidArgument);
 
+#if defined(LITERT_WINDOWS_OS)
+  LITERT_LOG(LITERT_ERROR, "Report error not implemented");
+  return kLiteRtStatusErrorUnsupported;
+#else
   va_list args;
   va_start(args, format);
   // Create a formatted string since ReportError expects format and variadic
@@ -288,6 +292,7 @@ LiteRtStatus LiteRtCompiledModelReportError(LiteRtCompiledModel compiled_model,
   free(buffer);
 
   return kLiteRtStatusOk;
+#endif
 }
 
 LiteRtStatus LiteRtCompiledModelClearErrors(

@@ -125,7 +125,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
   /// \brief No attributes for tensor
   ov::Any get_attribute(const std::string &name) const override {
     LITERT_LOG(LITERT_ERROR, "get_attribute not implemented");
-    return nullptr;
+    return ov::Any{};
   }
 
   /// \brief No inputs for tensor
@@ -143,8 +143,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
 
   /// \brief No operation for tensor
   const std::string &get_op_type() const override {
-    LITERT_LOG(LITERT_ERROR, "get_op_type not implemented");
-    return "not implemented";
+    return op_type_;
   };
 
   /// \brief No operation name for tensor
@@ -157,6 +156,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
   ov::frontend::tensorflow_lite::TensorMetaInfo m_tensor_meta_info;
   int64_t input_index_;
   int64_t output_index_;
+  std::string op_type_;
 };
 
 }  // namespace openvino

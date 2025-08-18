@@ -72,11 +72,9 @@ litert_bin(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
-        ":litert_compiler_plugin_c_api"
-    ] + select({
-        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
-        "//conditions:default": [],
-    }),
+        ":litert_compiler_plugin_c_api",
+        "@intel_openvino//:openvino",
+    ],
 )
 
 litert_lib(

@@ -107,10 +107,8 @@ litert_bin(
         "//litert/vendors/intel_openvino:ov_utils",
         "@com_google_absl//absl/cleanup",
         ":litert_dispatch_api",
-    ] + select({
-        ":openvino_native_dir_set": ["@intel_openvino//:openvino"],
-        "//conditions:default": [],
-    }),
+        "@intel_openvino//:openvino",
+    ],
 )
 
 litert_lib(
