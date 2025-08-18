@@ -167,13 +167,13 @@ TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
       env_options.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
   ABSL_LOG(INFO) << "WebGPU device id: "
                  << reinterpret_cast<WGPUDevice>(
-                        std::any_cast<int64_t>(wegpu_device_id));
+                        std::get<int64_t>(wegpu_device_id));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_command_queue,
       env_options.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
   ABSL_LOG(INFO) << "WebGPU command queue: "
                  << reinterpret_cast<WGPUQueue>(
-                        std::any_cast<int64_t>(wegpu_command_queue));
+                        std::get<int64_t>(wegpu_command_queue));
 }
 
 INSTANTIATE_TEST_SUITE_P(CompiledModelWebGpuTest, CompiledModelWebGpuTest,

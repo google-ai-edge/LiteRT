@@ -15,7 +15,6 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 #define ODML_LITERT_LITERT_CC_LITERT_ENVIRONMENT_H_
 
-#include <any>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
@@ -55,7 +54,7 @@ class Environment
 
   struct Option {
     OptionTag tag;
-    std::any value;
+    LiteRtVariant value;
   };
 
   Expected<EnvironmentOptions> GetOptions() const {
