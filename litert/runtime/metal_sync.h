@@ -15,16 +15,18 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_METAL_SYNC_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_METAL_SYNC_H_
 
-#import <Metal/Metal.h>
-
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/runtime/gpu_environment.h"
+#if LITERT_HAS_METAL_SUPPORT
+#import <Metal/Metal.h>
+
 #include "tflite/delegates/gpu/metal/metal_device.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 namespace litert::internal {
-
+#if LITERT_HAS_METAL_SUPPORT
 // Creates a Metal memory object with the given tensor type and buffer type.
 // The buffer size is the size of the tensor in bytes.
 // The created Metal memory object is returned in id<MTLBuffer>.
@@ -45,6 +47,29 @@ LiteRtStatus LiteRtMetalMemoryUpload(GpuEnvironment* gpu_env,
                                      const LiteRtRankedTensorType* tensor_type,
                                      LiteRtTensorBufferType buffer_type,
                                      size_t bytes, const void* data);
+
+#else
+// Stub implementations when Metal support is disabled
+inline LiteRtStatus LiteRtMetalMemoryCreate(
+    GpuEnvironment* gpu_env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, void** metal_memory) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+inline LiteRtStatus LiteRtMetalMemoryDownload(
+    GpuEnvironment* gpu_env, void* metal_memory,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, void* data) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+inline LiteRtStatus LiteRtMetalMemoryUpload(
+    GpuEnvironment* gpu_env, void* metal_memory,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, const void* data) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 }  // namespace litert::internal
 
