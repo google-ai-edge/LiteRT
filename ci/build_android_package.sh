@@ -28,14 +28,18 @@ GEN_DIR="${SCRIPT_DIR}/gen"
 #
 # Args:
 # 1. POM_FILE destination path of generated pom.
-# 2. TFLITE_ARTIFACT which artifact is to be generated
-# 3. TFLITE_VERSION the version of the artifact.
-# 4. DEPENDS_API --depends-api to add com.google.ai.edge.litert:litert-api into
+# 2. TFLITE_ARTIFACT which artifact is to be generated, e.g. "litert-api".
+# 3. TITLE brief human-readable title of the Maven package, e.g. "LiteRT API".
+# 4. TFLITE_VERSION the version of the artifact.
+# 5. --depends-api to add com.google.ai.edge.litert:litert-api into
+#    POM dependency.
+# 6. --depends-gpu-api to add com.google.ai.edge.litert:litert-gpu-api into
 #    POM dependency.
 build_pom_file() {
   local POM_FILE="$1"
   local TFLITE_ARTIFACT="$2"
-  local TFLITE_VERSION="$3"
+  local TITLE="$3"
+  local TFLITE_VERSION="$4"
 
   API_DEPENDENCY=""
   GPU_API_DEPENDENCY=""
@@ -49,7 +53,7 @@ build_pom_file() {
   # Please note that TFLite runtime libraries depend on the API library with
   # exact same version, so that an old runtime never pulls in a new API (which
   # may has new methods / classes which are not implemented in the runtime).
-  if [[ "$4" == "--depends-api" ]]; then
+  if [[ "$5" == "--depends-api" ]]; then
     API_DEPENDENCY=$(cat <<-END
     <dependency>
       <groupId>com.google.ai.edge.litert</groupId>
@@ -59,7 +63,7 @@ build_pom_file() {
 END
 )
   fi
-  if [[ "$5" == "--depends-gpu-api" ]]; then
+  if [[ "$6" == "--depends-gpu-api" ]]; then
     GPU_API_DEPENDENCY=$(cat <<-END
     <dependency>
       <groupId>com.google.ai.edge.litert</groupId>
@@ -82,9 +86,9 @@ END
   <version>${TFLITE_VERSION}</version>
   <packaging>aar</packaging>
 
-  <name>LiteRT</name>
+  <name>${TITLE}</name>
   <url>https://tensorflow.org/lite/</url>
-  <description>A library helps deploy machine learning models on mobile devices</description>
+  <description>A library that helps deploy machine learning models on mobile devices</description>
 
   <licenses>
     <license>
@@ -140,15 +144,17 @@ function make_placeholder_jar() {
 # Prepares POM and jar/aar artifacts in ${GEN_DIR}.
 #
 # Args:
-# - 1. Package name
-# - 2. Artifact path
-# - 3. Version
-# - 4. --depends-api to add litert-api into dependencies
-# - 5. --depends-gpu-api to add litert-gpu-api into dependencies
+# - 1. Package name, e.g. `litert-api`.
+# - 2. Package title, e.g. `LiteRT API`.
+# - 3. Artifact path
+# - 4. Version
+# - 5. --depends-api to add litert-api into dependencies
+# - 6. --depends-gpu-api to add litert-gpu-api into dependencies
 prepare_pom_and_artifact() {
   local PACKAGE="$1"
-  local ARTIFACT_PATH="$2"
-  local VERSION="$3"
+  local TITLE="$2"
+  local ARTIFACT_PATH="$3"
+  local VERSION="$4"
   NAME="${PACKAGE}-${VERSION}"
   DST_DIR="${GEN_DIR}/${NAME}"
 
@@ -157,7 +163,7 @@ prepare_pom_and_artifact() {
   mv "${ARTIFACT_PATH}" "${DST_DIR}/${NAME}.aar"
 
   POM_FILE="${DST_DIR}/${NAME}.pom"
-  build_pom_file "${POM_FILE}" "${PACKAGE}" "${VERSION}" "$4" "$5"
+  build_pom_file "${POM_FILE}" "${PACKAGE}" "${TITLE}" "${VERSION}" "$5" "$6"
 
   # Source JAR, javadoc JAR and pgp signs are required to publish to OSSRH.
   # https://central.sonatype.org/publish/requirements/
@@ -201,17 +207,17 @@ bazel build "${BUILD_FLAGS[@]}" \
 
 export VERSION="${RELEASE_VERSION:-0.0.0-nightly-SNAPSHOT}"
 
-prepare_pom_and_artifact "litert-api" \
+prepare_pom_and_artifact "litert-api" "LiteRT API" \
     "bazel-bin/tflite/java/tensorflow-lite-api.aar" "${VERSION}"
-prepare_pom_and_artifact "litert" \
+prepare_pom_and_artifact "litert" "LiteRT implementation" \
     "bazel-bin/tflite/java/tensorflow-lite.aar" "${VERSION}" \
     --depends-api
-prepare_pom_and_artifact "litert-gpu-api" \
+prepare_pom_and_artifact "litert-gpu-api" "LiteRT GPU API" \
     "bazel-bin/tflite/java/tensorflow-lite-gpu-api.aar" "${VERSION}"
-prepare_pom_and_artifact "litert-gpu" \
+prepare_pom_and_artifact "litert-gpu" "LiteRT GPU implementation" \
     "bazel-bin/tflite/java/tensorflow-lite-gpu.aar" "${VERSION}" \
     --depends-api --depends-gpu-api
-# prepare_pom_and_artifact "litert-hexagon" \
+# prepare_pom_and_artifact "litert-hexagon" "LiteRT Hexagon" \
 #     "bazel-bin/tflite/delegates/hexagon/java/tensorflow-lite-hexagon.aar" \
 #     "${VERSION}"
 
@@ -221,10 +227,10 @@ if [[ "$VERSION" == "0.0.0-nightly-SNAPSHOT" ]]; then
       --define=tflite_keep_symbols=true \
       //tflite/java:tensorflow-lite \
       //tflite/java:tensorflow-lite-gpu
-  prepare_pom_and_artifact "litert" \
+  prepare_pom_and_artifact "litert" "LiteRT implementation" \
       "bazel-bin/tflite/java/tensorflow-lite.aar" \
       "0.0.0-nightly-debug-SNAPSHOT" --depends-api
-  prepare_pom_and_artifact "litert-gpu" \
+  prepare_pom_and_artifact "litert-gpu" "LiteRT GPU implementation" \
       "bazel-bin/tflite/java/tensorflow-lite-gpu.aar" \
       "0.0.0-nightly-debug-SNAPSHOT" --depends-api
 fi
@@ -235,6 +241,6 @@ fi
 #     --copt=-mno-sse4 --copt=-mno-sse4a --copt=-mno-sse4.1 --copt=-mno-sse4.2 \
 #     //tflite/java:tensorflow-lite-select-tf-ops
 
-# prepare_pom_and_artifact "litert-select-tf-ops" \
+# prepare_pom_and_artifact "litert-select-tf-ops" "LiteRT with selected TF Ops" \
 #     "bazel-bin/tflite/java/tensorflow-lite-select-tf-ops.aar" \
 #     "${VERSION}"
