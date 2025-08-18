@@ -107,8 +107,8 @@ litert_bin(
         "nosan",
     ],
     target_compatible_with = select({
-        "@org_tensorflow//tensorflow:android": ["@platforms//:incompatible"],
-        "//conditions:default": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
     deps = [
@@ -381,6 +381,7 @@ cc_binary(
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ] + select({
