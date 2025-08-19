@@ -213,9 +213,15 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   CompilerPlugin plugin;
   LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.data());
 
-  LITERT_ASSIGN_OR_RETURN(
-      plugin.lib_,
-      SharedLibrary::Load(lib_path, RtldFlags::Now().Local().DeepBind()));
+#ifdef __ANDROID__
+  // Unloading the library on android can lead to crashes.
+  auto flags = RtldFlags::Lazy().Local().NoDelete();
+#else
+  auto flags = RtldFlags::Now().Local().DeepBind();
+  ;
+#endif
+
+  LITERT_ASSIGN_OR_RETURN(plugin.lib_, SharedLibrary::Load(lib_path, flags));
   LITERT_LOG(LITERT_INFO, "Loaded plugin at: %s", lib_path.data());
 
   LITERT_RETURN_IF_ERROR(ResolvePluginApi(plugin.lib_, plugin.plugin_api_));
