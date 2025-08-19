@@ -14,6 +14,7 @@ import numpy as np
 
 _DEVICE_WORKING_DIR = f"/data/local/tmp/{getpass.getuser()}/litert"
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+_LITERT_ROOT = Path(__file__).resolve().parents[5]
 
 
 def _extract_build_id(build_id_hdr: str) -> Optional[str]:
@@ -208,14 +209,20 @@ def _push_target(adb_cmd: str, ctx_bin_path: str) -> None:
             logging.debug("Removing inputs...")
 
 
-def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
+def _run_ctx_bin(
+    adb_cmd: str, ctx_bin_path: str, htp_arch: str, qairt_sdk: Path
+) -> None:
     """
     Run qnn-net-run with the given context binary.
 
     Parameters:
         adb_cmd (str): The adb command.
         ctx_bin_name (str): The path of the context binary.
+        htp_arch (str): The htp architecture of the target device (e.g., "V75").
+        qairt_sdk (Path): The path to the Qairt SDK.
     """
+    _push_so(adb_cmd, htp_arch, qairt_sdk)
+    _push_target(adb_cmd, ctx_bin_path)
     logging.info("Exectuing qnn-net-run with the given context binary...")
     env_vars = (
         f"export LD_LIBRARY_PATH={_DEVICE_WORKING_DIR} && "
@@ -240,14 +247,14 @@ def _run_ctx_bin(adb_cmd: str, ctx_bin_path: str) -> None:
 
 
 def _generate_profiler_output(
-    adb_cmd: str, schematic_bin_path: str, output_dir: str, qairt_sdk: Path
+    adb_cmd: str, ctx_bin_name: str, output_dir: str, qairt_sdk: Path
 ) -> None:
     """
     Generate profiler output.
 
     Parameters:
         adb_cmd (str): The adb command.
-        schematic_bin_path (str): The path to the schematic binary.
+        ctx_bin_name (str): The name of the context binary.
         output_dir (str): The path to the output directory.
         qairt_sdk (Path): The path to the QAIRT SDK.
     """
@@ -256,6 +263,16 @@ def _generate_profiler_output(
     cmd = f"{adb_cmd} pull {_DEVICE_WORKING_DIR}/output_htp ./"
     subprocess.run(cmd, check=True, shell=True)
     log_path = Path("output_htp") / "qnn-profiling-data_0.log"
+    schematic_path = (
+        _LITERT_ROOT
+        / "bazel-bin"
+        / "litert"
+        / "tools"
+        / "apply_plugin_main.runfiles"
+        / "litert"
+        / f"{ctx_bin_name}_schematic.bin"
+    )
+    logging.info("schematic_path %s", schematic_path)
     cmd_lst = [
         qairt_sdk / "bin" / "x86_64-linux-clang" / "qnn-profile-viewer",
         "--input_log",
@@ -265,12 +282,12 @@ def _generate_profiler_output(
         "--reader",
         qairt_sdk / "lib" / "x86_64-linux-clang" / "libQnnHtpOptraceProfilingReader.so",
         "--schematic",
-        schematic_bin_path,
+        schematic_path,
         "--output",
         Path(output_dir) / "chromeTrace.json",
     ]
     os.makedirs(output_dir, exist_ok=True)
-    logging.debug(" ".join(str(item) for item in cmd_lst))
+    logging.info(" ".join(str(item) for item in cmd_lst))
     subprocess.run(
         cmd_lst,
         check=True,
@@ -284,15 +301,78 @@ def _setup_logging(level_name):
     )
 
 
+def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
+    """
+    Generate the ctx.bin file from a given model.
+    Parameters:
+        model_path (Path): The path to the model.
+        soc_model (str): The SOC model to use.
+
+    Returns:
+        Optional[Path]: The path to the generated ctx.bin file, or None if the generation failed.
+    """
+    tmp_tflite_path = _ASSETS_DIR / "tmp.tflite"
+    bazel_run = [
+        "bazel",
+        "run",
+        "-c",
+        "opt",
+        "--cxxopt=--std=c++17",
+        "--nocheck_visibility",
+    ]
+    apply_pluin_main_cmd = [
+        *bazel_run,
+        "//litert/tools:apply_plugin_main",
+        "--",
+        f"--libs={_LITERT_ROOT / 'bazel-bin/litert/vendors/qualcomm/compiler'}",
+        "--cmd=apply",
+        f"--model={model_path}",
+        f"--o={tmp_tflite_path}",
+        "--soc_manufacturer=Qualcomm",
+        f"--soc_model={soc_model.upper()}",
+        "--qualcomm_profiling=optrace",
+    ]
+    logging.debug(" ".join(str(item) for item in apply_pluin_main_cmd))
+    # TODO(jiunkaiy): Set check=True after seg fault fix.
+    subprocess.run(
+        apply_pluin_main_cmd, check=False, cwd=Path(__file__).resolve().parent
+    )
+
+    extract_bytecode_lst = [
+        *bazel_run,
+        "//litert/tools:extract_bytecode",
+        "--",
+        f"--model_path={tmp_tflite_path}",
+        f"--output_dir={_ASSETS_DIR}",
+    ]
+    logging.debug(" ".join(str(item) for item in extract_bytecode_lst))
+    result = subprocess.run(
+        extract_bytecode_lst,
+        check=True,
+        cwd=Path(__file__).resolve().parent,
+        capture_output=True,
+        text=True,
+    )
+    os.remove(tmp_tflite_path)
+    logging.info("Subprocess output:\n%s", result.stderr)
+    # Parse the stderr to extract the path to the generated ctx.bin file.
+    # "Wrote ... bytes to '<context binary path>"
+    match = re.search(r"bytes to '([^']+)'", result.stderr)
+    output_path = None
+    if match:
+        output_path = Path(match.group(1))
+        logging.info("Extracted path:\n%s", output_path)
+    else:
+        raise RuntimeError("Failed to generate context binary.")
+    return output_path
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Given a ctx bin, generate QNN HTP Optrace Profiling."
     )
     parser.add_argument(
-        "--ctx_bin", type=str, help="path to the context binary", required=True
-    )
-    parser.add_argument(
-        "--schematic_bin", type=str, help="path to the schematic binary", required=True
+        "--model", "-m", type=str, help="path to the tflite model", required=True
     )
     parser.add_argument(
         "--output_dir", "-o", type=str, help="path to output folder", required=True
@@ -304,7 +384,10 @@ if __name__ == "__main__":
         "--serial", "-s", type=str, help="serial for adb", required=True
     )
     parser.add_argument(
-        "--htp_arch", "-a", type=str, help="HTP Arch (e.g. V75)", required=True
+        "--soc_model", type=str, help="SoC Model (e.g. SM8650)", required=True
+    )
+    parser.add_argument(
+        "--htp_arch", type=str, help="HTP Arch (e.g. V75)", required=True
     )
     parser.add_argument(
         "--log_level",
@@ -328,12 +411,15 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     _setup_logging(args.log_level)
-    _generate_zero_inputs(_get_ctx_bin_info(args.ctx_bin, args.qairt_sdk))
+    ctx_bin = _generate_ctx_bin(args.model, args.soc_model)
+    _generate_zero_inputs(_get_ctx_bin_info(ctx_bin, args.qairt_sdk))
     ADB_CMD = _get_adb_cmd(args.hostname, args.serial)
-    _push_so(ADB_CMD, args.htp_arch, args.qairt_sdk)
-    _push_target(ADB_CMD, args.ctx_bin)
-    _run_ctx_bin(ADB_CMD, args.ctx_bin)
+    _run_ctx_bin(ADB_CMD, ctx_bin, args.htp_arch, args.qairt_sdk)
     _generate_profiler_output(
-        ADB_CMD, args.schematic_bin, args.output_dir, args.qairt_sdk
+        ADB_CMD,
+        str(ctx_bin.name).replace("_0.bin", ""),
+        args.output_dir,
+        args.qairt_sdk,
     )
+    os.remove(ctx_bin)
     logging.info("Success! Profiling data is in %s", args.output_dir)
