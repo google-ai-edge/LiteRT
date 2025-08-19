@@ -45,7 +45,11 @@ class RegisterFunctor {
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
       } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
-        ABSL_CHECK(false) << "NPU backend not supported yet.";
+        BuildParamsAndRegister<Fixture<Logic, NpuCompiledModelExecutor>>(
+            device, typename NpuCompiledModelExecutor::Args{
+                        options_.DispatchDir(),
+                        options_.PluginDir(),
+                    });
       }
     }
   }
