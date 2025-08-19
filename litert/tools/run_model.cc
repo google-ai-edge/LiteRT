@@ -56,7 +56,7 @@ ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
 ABSL_FLAG(std::string, accelerator, "cpu", "Which backend to use.");
-ABSL_FLAG(size_t, signature_index, 1, "Index of the signature to run.");
+ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
           "Decide if random value should be filled into tensor buffer to "

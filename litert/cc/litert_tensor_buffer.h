@@ -178,13 +178,17 @@ class TensorBuffer
 #endif
   }
 
-#if LITERT_HAS_METAL_SUPPORT
   Expected<void*> GetMetalBuffer() const {
-    void* metal_buf;
-    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferMetalMemory(Get(), &metal_buf));
-    return metal_buf;
-  }
+#if LITERT_HAS_METAL_SUPPORT
+    HwMemoryHandle hw_memory_handle;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferMetalMemory(Get(), &hw_memory_handle));
+    return hw_memory_handle;
+#else
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Metal is not supported on this platform");
 #endif  // LITERT_HAS_METAL_SUPPORT
+  }
 
   Expected<HwMemoryHandle> GetVulkanMemory() const {
 #if LITERT_HAS_VULKAN_SUPPORT

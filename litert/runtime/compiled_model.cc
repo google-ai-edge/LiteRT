@@ -46,7 +46,6 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
@@ -796,12 +795,8 @@ Expected<void> LiteRtCompiledModelT::Run(
     // synchronization events that have been attached to the outputs.
     for (auto& tb : output_buffers) {
       if (tb->HasEvent()) {
-        auto event = tb->GetEvent();
-        if (auto status = litert::Event(*event, litert::OwnHandle::kNo)
-                              .Wait(/*timeout_in_ms=*/-1);
-            !status) {
-          return status;
-        }
+        LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event, tb->GetEvent());
+        LITERT_RETURN_IF_ERROR(event->Wait(/*timeout_in_ms=*/-1));
       }
     }
   }
