@@ -425,7 +425,6 @@ cc_test(
         "//litert/c:litert_event_type",
         "//litert/c:litert_gl_types",
         "//litert/c:litert_platform_support",
-        "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
