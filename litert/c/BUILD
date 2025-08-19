@@ -18,7 +18,7 @@ load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gle
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "13.0"
+# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
 # copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
 
@@ -26,7 +26,7 @@ package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_public",
+        # "//litert:litert_c_users",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -827,10 +827,9 @@ objc_library(
         ":litert_common",
         ":litert_dispatch_headers",
         ":litert_tensor_buffer",
-        "//litert/c:litert_environment",
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
-        "//litert/runtime:metal_memory",
+        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
         "//third_party/apple_frameworks:XCTest",
     ],
 )

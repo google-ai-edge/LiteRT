@@ -186,6 +186,7 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
 //
 // Parameters:
 // - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature (zero-based).
 // - key: the annotation key (must not be null).
 // - value: the annotation value (must not be null).
 //
@@ -195,12 +196,14 @@ LiteRtStatus LiteRtCompiledModelResizeInputTensor(
 // - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
 // - "precision": "fp32|fp16|int8" - computation precision requirements
 LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key, const char* value);
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char* value);
 
 // Gets a dispatch annotation from the compiled model.
 //
 // Parameters:
 // - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature (zero-based).
 // - key: the annotation key to look up (must not be null).
 // - value: pointer to store the annotation value (will be set to null if key
 //   not found).
@@ -212,7 +215,8 @@ LiteRtStatus LiteRtCompiledModelSetDispatchAnnotation(
 // Note: The returned value pointer is owned by the compiled model and should
 // not be freed or outlive the compiled model.
 LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key, const char** value);
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key, const char** value);
 
 // Removes a dispatch annotation from the compiled model.
 //
@@ -224,7 +228,8 @@ LiteRtStatus LiteRtCompiledModelGetDispatchAnnotation(
 // - kLiteRtStatusOk if successful (even if key not found).
 // - kLiteRtStatusErrorInvalidArgument if inputs are invalid.
 LiteRtStatus LiteRtCompiledModelRemoveDispatchAnnotation(
-    LiteRtCompiledModel compiled_model, const char* key);
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    const char* key);
 
 // Error reporter APIs
 
