@@ -148,6 +148,7 @@ typedef enum LiteRtQualcommOptionsProfiling {
   kLiteRtQualcommProfilingBasic,
   kLiteRtQualcommProfilingDetailed,
   kLiteRtQualcommProfilingLinting,
+  kLiteRtQualcommProfilingOptrace,
 } LiteRtQualcommOptionsProfiling;
 
 LiteRtStatus LiteRtQualcommOptionsSetProfiling(

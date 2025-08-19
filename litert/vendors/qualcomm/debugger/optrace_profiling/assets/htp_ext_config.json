@@ -1,0 +1,14 @@
+{
+    "devices": [
+        {
+            "cores": [
+                {
+                    "perf_profile": "burst",
+                    "rpc_polling_time": 9999,
+                    "rpc_control_latency": 100
+                }
+            ],
+            "profiling_level": "linting"
+        }
+    ]
+}

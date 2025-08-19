@@ -147,7 +147,7 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name) {
 
 LiteRtStatus GraphMapper::Finalize() {
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
-      qnn_.Api()->graphFinalize(QnnGraph(), nullptr, nullptr));
+      qnn_.Api()->graphFinalize(QnnGraph(), profile_handle_, nullptr));
   return kLiteRtStatusOk;
 }
 
