@@ -985,8 +985,8 @@ cc_test(
 )
 
 litert_device_test(
-    name = "litert_compiled_model_npu_test",
-    srcs = ["litert_compiled_model_npu_test.cc"],
+    name = "litert_compiled_model_google_tensor_test",
+    srcs = ["litert_compiled_model_google_tensor_test.cc"],
     backend_id = "google_tensor",
     data = [
         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
