@@ -179,30 +179,16 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
-LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
-    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
-    LiteRtTensorBufferType buffer_type, void* metal_buffer,
-    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
-    LiteRtTensorBuffer* buffer) {
-  if (!tensor_type || !buffer) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
-                          LiteRtTensorBufferT::CreateFromMetalMemory(
-                              env, *tensor_type, buffer_type, metal_buffer,
-                              metal_buffer_size, deallocator));
-  *buffer = created_tensor_buffer.release();
-  return kLiteRtStatusOk;
-}
 
 LiteRtStatus LiteRtGetTensorBufferMetalMemory(
-    LiteRtTensorBuffer tensor_buffer, void** metal_buffer_addr) {
-  if (!tensor_buffer || !metal_buffer_addr) {
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
+  if (!tensor_buffer || !hw_memory_handle) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_ASSIGN_OR_RETURN(auto metal_memory, tensor_buffer->GetMetalMemory());
-  void* metal_buffer_ptr = metal_memory->GetMemoryPtr();
-  *metal_buffer_addr = metal_buffer_ptr;
+  LITERT_ASSIGN_OR_RETURN(litert::internal::CustomBuffer * custom_buffer,
+                          tensor_buffer->GetCustomBuffer());
+
+  *hw_memory_handle = custom_buffer->hw_buffer_handle();
   return kLiteRtStatusOk;
 }
 
