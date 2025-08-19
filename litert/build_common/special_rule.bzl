@@ -62,5 +62,8 @@ def litert_metal_deps_without_gpu_environment():
     })
 
 def litert_metal_deps():
-    """This is a no-op outside of Google."""
-    return []
+    return litert_metal_deps_without_gpu_environment() + select({
+        "@platforms//os:ios": ["//litert/runtime:gpu_environment_metal"],
+        "@platforms//os:macos": ["//litert/runtime:gpu_environment_metal"],
+        "//conditions:default": [],
+    })

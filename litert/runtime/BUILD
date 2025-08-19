@@ -628,5 +628,7 @@ objc_library(
         # "//tools/build_defs/swift:no_module",
         # copybara:uncomment_end
     ],
+    copts = ["--std=gnu++20"] + litert_metal_opts(),
+    linkopts = litert_metal_linkopts(),
     deps = [":gpu_environment_header"] + litert_metal_deps_without_gpu_environment(),
 )
