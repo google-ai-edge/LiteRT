@@ -65,6 +65,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",
+        "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",

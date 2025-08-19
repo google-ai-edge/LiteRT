@@ -193,18 +193,20 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
 
   // Set up remaining properties.
+#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
 #if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+  // Set up GL interop properties when OpenCL and OpenGL are both supported.
   properties_.is_gl_sharing_supported =
       tflite::gpu::cl::IsGlSharingSupported(device_);
   properties_.is_gl_to_cl_fast_sync_supported =
       tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
-#endif  // LITERT_HAS_OPENGL_SUPPORT
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
-#endif  // LITERT_HAS_OPENCL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+
 #if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT && \
     LITERT_HAS_AHWB_SUPPORT
   properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
@@ -230,7 +232,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
           tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
           << "Failed to create EGL environment";
       egl_env_ = std::move(egl_env);
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
     } else {
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
@@ -251,7 +253,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
 #else
       LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
-#endif  // LITERT_HAS_OPENGL_SUPPORT
+#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
     }
     if (options_.IsGlAware() && properties_.is_gl_sharing_supported) {
       auto status = tflite::gpu::cl::CreateCLGLContext(
