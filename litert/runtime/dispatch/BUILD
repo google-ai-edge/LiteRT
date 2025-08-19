@@ -20,24 +20,73 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
+# copybara:uncomment_begin(google-only)
+# config_setting(
+#     name = "windows_msvc",
+#     constraint_values = [
+#         "@platforms//os:windows",
+#     ],
+#     flag_values = {"//tools/cpp:compiler": "msvc"},
+# )
+# copybara:uncomment_end
+
+# copybara:comment_begin(oss-only)
+config_setting(
+    name = "windows_msvc",
+    values = {
+        "compiler": "msvc",
+        "cpu": "x64_windows",
+    },
+)
+# copybara:comment_end
+
+# copybara:uncomment_begin(google-only)
+# config_setting(
+#     name = "windows_lexan",
+#     constraint_values = [
+#         "@platforms//os:windows",
+#     ],
+#     flag_values = {"//tools/cpp:compiler": "lexan"},
+# )
+# copybara:uncomment_end
+
+# copybara:comment_begin(oss-only)
+config_setting(
+    name = "windows_lexan",
+    values = {
+        "compiler": "lexan",
+        "cpu": "x64_windows",
+    },
+)
+# copybara:comment_end
+
 # Dispatch API implementation, it is used by the dispatch delegate to call the vendor's dispatch
 # API.
 cc_library(
     name = "dispatch",
     srcs = select({
-        "@org_tensorflow//tensorflow:windows": ["litert_dispatch_dummy.cc"],
         "//conditions:default": ["litert_dispatch.cc"],
     }),
     hdrs = [
         "//litert/vendors/c:litert_dispatch.h",
         "//litert/vendors/c:litert_dispatch_api.h",
     ],
+    copts = select({
+        ":windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        ":windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model",
     ] + select({
-        "@org_tensorflow//tensorflow:windows": [],
         "//conditions:default": [
             "//litert/c:litert_environment_options",
             "//litert/c:litert_logging",

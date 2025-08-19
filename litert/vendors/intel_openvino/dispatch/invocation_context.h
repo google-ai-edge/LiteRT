@@ -17,6 +17,7 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
 #include "openvino/runtime/core.hpp"
+#include "openvino/runtime/infer_request.hpp"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
@@ -32,17 +33,17 @@ class LiteRtDispatchInvocationContextT {
   ~LiteRtDispatchInvocationContextT() = default;
 
   static litert::Expected<Ptr> Create(
-      LiteRtDispatchDeviceContextT &device_context,
+      LiteRtDispatchDeviceContextT& device_context,
       LiteRtDispatchExecutableType exec_type,
-      const LiteRtMemBuffer *exec_bytecode_buffer, const char *function_name,
+      const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
       int num_inputs, int num_outputs);
 
   litert::Expected<LiteRtTensorBufferRequirements> GetTensorBufferRequirements(
-      const LiteRtRankedTensorType &tensor_type);
+      const LiteRtRankedTensorType& tensor_type);
   litert::Expected<LiteRtTensorBufferRequirements> GetInputRequirements(
-      int input_index, const LiteRtRankedTensorType &tensor_type);
+      int input_index, const LiteRtRankedTensorType& tensor_type);
   litert::Expected<LiteRtTensorBufferRequirements> GetOutputRequirements(
-      int output_index, const LiteRtRankedTensorType &tensor_type);
+      int output_index, const LiteRtRankedTensorType& tensor_type);
 
   litert::Expected<void> AttachInput(
       int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle);
@@ -64,11 +65,11 @@ class LiteRtDispatchInvocationContextT {
   litert::Expected<void> Invoke();
 
  private:
-  LiteRtDispatchInvocationContextT(ov::InferRequest &infer_request,
-                                   LiteRtDispatchDeviceContextT &device_context,
+  LiteRtDispatchInvocationContextT(ov::InferRequest& infer_request,
+                                   LiteRtDispatchDeviceContextT& device_context,
                                    int num_inputs, int num_outputs)
-      : infer_request_(infer_request), device_context_(device_context) {}
-  LiteRtDispatchDeviceContextT &device_context_;
+      : device_context_(device_context), infer_request_(infer_request) {}
+  LiteRtDispatchDeviceContextT& device_context_;
   ov::InferRequest infer_request_;
   // Timeout is in milliseconds
   static constexpr int kInferRequestTimeoutMs = 10000;

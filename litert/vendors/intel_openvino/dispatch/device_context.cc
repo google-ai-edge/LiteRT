@@ -14,11 +14,18 @@
 // limitations under the License.
 
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
+
+#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
 
 #include <string.h>
+
+#include <cstdint>
+#include <vector>
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <sys/socket.h>
 #include <unistd.h>
@@ -117,6 +124,26 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   switch (tensor_buffer_type) {
+    case kLiteRtTensorBufferTypeHostMemory: {
+      void* buffer_host_addr;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get HostMemory buffer"));
+
+      auto context = core_->get_default_context("NPU")
+                         .as<ov::intel_npu::level_zero::ZeroContext>();
+      std::vector<int32_t> ov_shape_vec(tensor_type.layout.rank);
+      for (int i = 0; i < ov_shape_vec.size(); i++)
+        ov_shape_vec[i] = tensor_type.layout.dimensions[i];
+
+      auto remote_tensor = context.create_l0_host_tensor(
+          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
+      memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
+      tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
+                                 remote_tensor);
+      return next_handle_++;
+    }
     case kLiteRtTensorBufferTypeDmaBuf: {
 #if LITERT_HAS_DMABUF_SUPPORT
       int buffer_fd;

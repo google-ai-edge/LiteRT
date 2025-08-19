@@ -17,9 +17,27 @@
 
 #include <stddef.h>
 
+// Define LITERT_WINDOWS_OS if the current OS is Windows.
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
+    defined(__NT__) || defined(_WIN64)
+#define LITERT_WINDOWS_OS 1
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
+
+// Define LITERT_CAPI_EXPORT macro to export a function properly with a shared
+// library.
+#if defined(LITERT_WINDOWS_OS)
+#ifdef LITERT_COMPILE_LIBRARY
+#define LITERT_CAPI_EXPORT __declspec(dllexport)
+#else
+#define LITERT_CAPI_EXPORT __declspec(dllimport)
+#endif  // LITERT_COMPILE_LIBRARY
+#else
+#define LITERT_CAPI_EXPORT __attribute__((visibility("default")))
+#endif  // LITERT_WINDOWS_OS
 
 // Declares canonical opaque type.
 

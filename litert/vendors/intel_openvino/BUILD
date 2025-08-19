@@ -27,5 +27,6 @@ cc_library(
     deps = [
         "//litert/c:litert_model",
         "//litert/cc:litert_model",
+        "@intel_openvino//:openvino",
     ],
 )

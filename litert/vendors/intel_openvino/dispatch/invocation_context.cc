@@ -59,8 +59,12 @@ litert::Expected<LiteRtTensorBufferRequirements>
 LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType &tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
+#if defined(LITERT_WINDOWS_OS)
+      kLiteRtTensorBufferTypeHostMemory,
+#else
       kLiteRtTensorBufferTypeAhwb,
       kLiteRtTensorBufferTypeDmaBuf,
+#endif
   };
 
   int num_supported_tensor_buffer_types =
@@ -97,9 +101,15 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+#if defined(LITERT_WINDOWS_OS)
+  LITERT_ASSIGN_OR_RETURN(
+      ov::intel_npu::level_zero::ZeroBufferTensor remote_tensor,
+      device_context_.getRemoteTensor(tensor_buffer_handle));
+#else
   LITERT_ASSIGN_OR_RETURN(
       ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
+#endif
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_input_tensor(graph_input_index, remote_tensor);
@@ -108,9 +118,15 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
+#if defined(LITERT_WINDOWS_OS)
+  LITERT_ASSIGN_OR_RETURN(
+      ov::intel_npu::level_zero::ZeroBufferTensor remote_tensor,
+      device_context_.getRemoteTensor(tensor_buffer_handle));
+#else
   LITERT_ASSIGN_OR_RETURN(
       ov::RemoteTensor remote_tensor,
       device_context_.getRemoteTensor(tensor_buffer_handle));
+#endif
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
   infer_request_.set_output_tensor(graph_output_index, remote_tensor);

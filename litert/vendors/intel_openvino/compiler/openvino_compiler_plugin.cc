@@ -22,7 +22,6 @@
 
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/openvino.hpp"
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
