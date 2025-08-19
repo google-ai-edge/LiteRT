@@ -80,7 +80,7 @@ class ImageSegmentationHelper(private val context: Context) {
 
   private class Segmenter(
     // TODO: Add CompiledModel argument
-    private val coloredLabels: List<ColoredLabel>,
+    private val coloredLabels: List<ColoredLabel>
   ) {
     // TODO: Add input/output buffers private vals
 
@@ -91,10 +91,7 @@ class ImageSegmentationHelper(private val context: Context) {
     fun segment(bitmap: Bitmap, rotationDegrees: Int): SegmentationResult {
       // TODO: The user will implement this method in the tutorial.
       // For now, we'll just return an empty result.
-        return SegmentationResult(
-            Segmentation(emptyList(), emptyList()),
-            0
-        )
+      return SegmentationResult(Segmentation(emptyList(), emptyList()), 0)
     }
 
     private fun rot90Clockwise(image: Bitmap, numRotation: Int): Bitmap {
@@ -125,7 +122,9 @@ class ImageSegmentationHelper(private val context: Context) {
 
       image.getPixels(pixelsIntArray, 0, width, 0, 0, width, height)
 
-      for ((pixel, i) in pixelsIntArray.withIndex()) {
+      for (i in 0 until numPixels) {
+        val pixel = pixelsIntArray[i]
+
         // Extract channels (ARGB_8888 format assumed)
         val (r, g, b) =
           Triple(
@@ -186,13 +185,14 @@ class ImageSegmentationHelper(private val context: Context) {
     var hue = Random.nextDouble()
 
     return List(labels.size) { i ->
-      val color = if (i == 0) {
-        Color.BLACK
-      } else {
-        hue += goldenRatioConjugate
-        hue %= 1.0
-        Color.HSVToColor(floatArrayOf(hue.toFloat() * 360, 0.7f, 0.8f))
-      }
+      val color =
+        if (i == 0) {
+          Color.BLACK
+        } else {
+          hue += goldenRatioConjugate
+          hue %= 1.0
+          Color.HSVToColor(floatArrayOf(hue.toFloat() * 360, 0.7f, 0.8f))
+        }
       ColoredLabel(labels[i], "", color)
     }
   }
@@ -220,6 +220,6 @@ class ImageSegmentationHelper(private val context: Context) {
   private companion object {
     const val TAG = "ImageSegmentation"
     const val goldenRatioConjugate = 0.618033988749895
-    //TODO: Add toAccelerator method in the tutorial
+    // TODO: Add toAccelerator method in the tutorial
   }
 }
