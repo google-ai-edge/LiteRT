@@ -62,22 +62,6 @@ class CtsTest : public RngTest {
  public:
   using Executor = TestExecutor;
 
-  // Fixture that skips the test body. Used "skip" filtered out test rather
-  // than not registering them at all.
-  class SkippedTest : public ::testing::Test {
-   public:
-    static Expected<void> Register(const std::string& suite_name,
-                                   const std::string& test_name) {
-      RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
-                   __FILE__, __LINE__, []() { return new SkippedTest(); });
-      return {};
-    }
-
-    void TestBody() override {
-      GTEST_SKIP() << "Test explicitly filtered out via --filter flag.";
-    }
-  };
-
   static std::string FmtSuiteName(size_t id) {
     return absl::StrFormat("%s_cts_%lu_%s", TestExecutor::Name(), id,
                            Logic::Name().data());

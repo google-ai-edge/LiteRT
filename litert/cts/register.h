@@ -75,10 +75,12 @@ class RegisterFunctor {
 
     if (!options_.ShouldRegister(
             absl::StrFormat("%s.%s", suite_name, test_name))) {
-      TestClass::SkippedTest::Register(suite_name, test_name);
-    } else if (auto status = TestClass::Register(
-                   suite_name, test_name, std::move(*params), std::move(args));
-               !status) {
+      return;
+    }
+
+    if (auto status = TestClass::Register(suite_name, test_name,
+                                          std::move(*params), std::move(args));
+        !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
                  status.Error().Message().c_str());
