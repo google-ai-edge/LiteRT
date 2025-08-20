@@ -21,6 +21,7 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -58,12 +59,7 @@ namespace litert::internal {
 DispatchDelegateKernel::~DispatchDelegateKernel() {
   // Detach all buffer handles from invocation contexts.
   {
-    absl::flat_hash_set<TfLiteOpaqueTensor*> all_tfl_tensors;
-    all_tfl_tensors.insert(input_tensors_.begin(), input_tensors_.end());
-    all_tfl_tensors.insert(output_tensors_.begin(), output_tensors_.end());
-    all_tfl_tensors.insert(internal_tensors_.begin(), internal_tensors_.end());
-
-    for (auto& tfl_tensor : all_tfl_tensors) {
+    for (const auto& [tfl_tensor, tensor_info] : tensor_buffer_infos_) {
       auto itpc_it = io_tensors_port_connections_.find(tfl_tensor);
       if (itpc_it == io_tensors_port_connections_.end()) {
         LITERT_LOG(LITERT_ERROR,
@@ -232,18 +228,63 @@ Expected<void> DispatchDelegateKernel::InitHelper(
     node_invocation_contexts_.push_back(node_invocation_contexts);
   }
 
+  // Store tensor IDs for later pointer refresh
+  input_tensor_ids_.clear();
+  input_tensor_ids_.reserve(params.input_tensors->size);
+  for (int i = 0; i < params.input_tensors->size; ++i) {
+    input_tensor_ids_.push_back(params.input_tensors->data[i]);
+  }
+
+  output_tensor_ids_.clear();
+  output_tensor_ids_.reserve(params.output_tensors->size);
+  for (int i = 0; i < params.output_tensors->size; ++i) {
+    output_tensor_ids_.push_back(params.output_tensors->data[i]);
+  }
+
   LITERT_ASSIGN_OR_RETURN(auto input_tensors,
                           GetTensors(context, *params.input_tensors));
-  std::swap(input_tensors_, input_tensors);
 
   LITERT_ASSIGN_OR_RETURN(auto output_tensors,
                           GetTensors(context, *params.output_tensors));
-  std::swap(output_tensors_, output_tensors);
 
   LITERT_ASSIGN_OR_RETURN(
       auto internal_tensors,
-      GetInternalTensors(context, nodes_, input_tensors_, output_tensors_));
-  std::swap(internal_tensors_, internal_tensors);
+      GetInternalTensors(context, nodes_, input_tensors, output_tensors));
+
+  // Store internal tensor IDs
+  for (auto* node : nodes_) {
+    const int* node_inputs = nullptr;
+    int num_inputs = 0;
+    TfLiteOpaqueNodeInputs(node, &node_inputs, &num_inputs);
+
+    const int* node_outputs = nullptr;
+    int num_outputs = 0;
+    TfLiteOpaqueNodeOutputs(node, &node_outputs, &num_outputs);
+
+    // Check if any node inputs/outputs are internal tensors
+    for (int i = 0; i < num_inputs; ++i) {
+      int tensor_id = node_inputs[i];
+      auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+      if (std::find(internal_tensors.begin(), internal_tensors.end(), tensor) !=
+          internal_tensors.end()) {
+        if (std::find(internal_tensor_ids_.begin(), internal_tensor_ids_.end(),
+                      tensor_id) == internal_tensor_ids_.end()) {
+          internal_tensor_ids_.push_back(tensor_id);
+        }
+      }
+    }
+    for (int i = 0; i < num_outputs; ++i) {
+      int tensor_id = node_outputs[i];
+      auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+      if (std::find(internal_tensors.begin(), internal_tensors.end(), tensor) !=
+          internal_tensors.end()) {
+        if (std::find(internal_tensor_ids_.begin(), internal_tensor_ids_.end(),
+                      tensor_id) == internal_tensor_ids_.end()) {
+          internal_tensor_ids_.push_back(tensor_id);
+        }
+      }
+    }
+  }
 
   LITERT_RETURN_IF_ERROR(ComputeTensorPortConnections(context));
 
@@ -260,11 +301,16 @@ Expected<void> DispatchDelegateKernel::PrepareHelper(
 
 Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
                                                   TfLiteOpaqueNode* node) {
-  LITERT_RETURN_IF_ERROR(AllocateTensorBuffersIfNeeded());
+  LITERT_RETURN_IF_ERROR(AllocateTensorBuffersIfNeeded(context));
   LITERT_RETURN_IF_ERROR(AttachBuffersToInvocationContextsIfNeeded(context));
 
-  // Copy input buffers from CPU, if needed.  invocation contexts, if available.
-  for (auto* tfl_tensor : input_tensors_) {
+  // Copy input buffers from CPU, if needed.
+  for (int tensor_id : input_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
+
     if (auto& tensor_buffer_info =
             tensor_buffer_infos_.find(tfl_tensor)->second;
         tensor_buffer_info.maybe_sync_with_cpu) {
@@ -289,8 +335,12 @@ Expected<void> DispatchDelegateKernel::EvalHelper(TfLiteOpaqueContext* context,
     LITERT_RETURN_IF_ERROR(ScheduleSyncExecution(context));
   }
 
-  // Copy output buffers to CPU, if needed.
-  for (auto* tfl_tensor : output_tensors_) {
+  for (int tensor_id : output_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
+
     if (auto& tensor_buffer_info =
             tensor_buffer_infos_.find(tfl_tensor)->second;
         tensor_buffer_info.maybe_sync_with_cpu) {
@@ -594,10 +644,23 @@ Expected<void> DispatchDelegateKernel::ComputeRequirements(
   return {};
 }
 
-Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
+Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
+    TfLiteOpaqueContext* context) {
   absl::flat_hash_set<TfLiteOpaqueTensor*> io_tensors;
-  io_tensors.insert(input_tensors_.begin(), input_tensors_.end());
-  io_tensors.insert(output_tensors_.begin(), output_tensors_.end());
+  // Get input tensors and add to io_tensors set
+  for (int tensor_id : input_tensor_ids_) {
+    auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tensor) {
+      io_tensors.insert(tensor);
+    }
+  }
+  // Get output tensors and add to io_tensors set
+  for (int tensor_id : output_tensor_ids_) {
+    auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tensor) {
+      io_tensors.insert(tensor);
+    }
+  }
 
   // First allocate I/O tensor buffers. However, note that if a tensor buffer is
   // already associated with a given I/O, we use that one; otherwise allocate a
@@ -611,8 +674,9 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
 
   std::set<LiteRtTensorBufferHandle> unused_buffer_handles;
 
-  auto allocate_and_register = [this, &unused_buffer_handles, &io_tensors](
-                                   auto* tfl_tensor) -> Expected<void> {
+  auto allocate_and_register =
+      [this, context, &unused_buffer_handles,
+       &io_tensors](auto* tfl_tensor) -> Expected<void> {
     auto iter = tensor_buffer_infos_.find(tfl_tensor);
     if (iter != tensor_buffer_infos_.end()) {
       auto& tensor_buffer_info = iter->second;
@@ -658,8 +722,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
       unused_buffer_handles.insert(tensor_buffer_info.buffer_handle);
 
       // Register the tensor buffer with the dispatch API.
-      LITERT_RETURN_IF_ERROR(
-          RegisterBufferWithDispatchApi(tfl_tensor, std::move(tensor_buffer)));
+      LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+          context, tfl_tensor, std::move(tensor_buffer)));
 
       return {};
     }
@@ -685,14 +749,25 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
 
     // Register the tensor buffer with the dispatch API.
     LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
-        tfl_tensor, LiteRtTensorBufferPtr(litert_tensor_buffer)));
+        context, tfl_tensor, LiteRtTensorBufferPtr(litert_tensor_buffer)));
     return {};
   };
 
-  for (auto* tfl_tensor : input_tensors_) {
+  // Allocate buffers for input tensors
+  for (int tensor_id : input_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
     LITERT_RETURN_IF_ERROR(allocate_and_register(tfl_tensor));
   }
-  for (auto* tfl_tensor : output_tensors_) {
+
+  // Allocate buffers for output tensors
+  for (int tensor_id : output_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
     LITERT_RETURN_IF_ERROR(allocate_and_register(tfl_tensor));
   }
 
@@ -706,7 +781,13 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
   //
   // TODO: implement logic to share tensor buffers across intermediate tensors,
   // whenever possible.
-  for (auto* tfl_tensor : internal_tensors_) {
+  // Allocate buffers for internal tensors
+  for (int tensor_id : internal_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
+
     if (auto iter = tensor_buffer_infos_.find(tfl_tensor);
         iter != tensor_buffer_infos_.end()) {
       // A tensor buffer was already allocated for tfl_tensor.
@@ -723,8 +804,8 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded() {
     LITERT_ASSIGN_OR_RETURN(LiteRtTensorBufferPtr tensor_buffer,
                             AllocateTensorBuffer(tfl_tensor));
     // Register an allocated tensor buffer with the dispatch API.
-    LITERT_RETURN_IF_ERROR(
-        RegisterBufferWithDispatchApi(tfl_tensor, std::move(tensor_buffer)));
+    LITERT_RETURN_IF_ERROR(RegisterBufferWithDispatchApi(
+        context, tfl_tensor, std::move(tensor_buffer)));
   }
 
   for (auto buffer_handle : unused_buffer_handles) {
@@ -756,13 +837,53 @@ Expected<LiteRtTensorBufferPtr> DispatchDelegateKernel::AllocateTensorBuffer(
 }
 
 Expected<void> DispatchDelegateKernel::RegisterBufferWithDispatchApi(
-    TfLiteOpaqueTensor* tfl_tensor, LiteRtTensorBufferPtr&& tensor_buffer) {
-  LiteRtTensorBufferHandle buffer_handle;
-  LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterTensorBuffer(
-      device_context_, tensor_buffer.get(), &buffer_handle));
-  auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
+    TfLiteOpaqueContext* context, TfLiteOpaqueTensor* tfl_tensor,
+    LiteRtTensorBufferPtr&& tensor_buffer) {
+  LiteRtTensorBufferHandle buffer_handle = 0;
+  if (tensor_buffer && tensor_buffer.get()) {
+    LITERT_RETURN_IF_ERROR(LiteRtDispatchRegisterTensorBuffer(
+        device_context_, tensor_buffer.get(), &buffer_handle));
+  } else {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Invalid tensor buffer");
+  }
+
+  auto iter = tensor_buffer_infos_.find(tfl_tensor);
+  if (iter == tensor_buffer_infos_.end()) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure, "TensorInfo not found");
+  }
+
+  auto& tensor_buffer_info = iter->second;
   tensor_buffer_info.tensor_buffer = std::move(tensor_buffer);
   tensor_buffer_info.buffer_handle = buffer_handle;
+
+  // Check if it's an input tensor
+  for (int tensor_id : input_tensor_ids_) {
+    auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tensor == tfl_tensor) {
+      tensor_idx_to_handle_[tensor_id] = buffer_handle;
+      return {};
+    }
+  }
+
+  // Check if it's an output tensor
+  for (int tensor_id : output_tensor_ids_) {
+    auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tensor == tfl_tensor) {
+      tensor_idx_to_handle_[tensor_id] = buffer_handle;
+      return {};
+    }
+  }
+
+  // Check if it's an internal tensor
+  for (int tensor_id : internal_tensor_ids_) {
+    auto* tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (tensor == tfl_tensor) {
+      tensor_idx_to_handle_[tensor_id] = buffer_handle;
+      return {};
+    }
+  }
+
   return {};
 }
 
@@ -773,31 +894,42 @@ DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
     auto* node = nodes_[node_idx];
     auto invocation_context = node_invocation_contexts_[node_idx];
 
-    auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
+    // Process inputs using tensor ID to handle mapping
+    const int* input_indices = nullptr;
+    int num_node_inputs = 0;
+    TfLiteOpaqueNodeInputs(node, &input_indices, &num_node_inputs);
     for (auto i = 0; i < num_node_inputs; ++i) {
-      auto* tfl_tensor = const_cast<TfLiteOpaqueTensor*>(
-          TfLiteOpaqueNodeGetInput(context, node, i));
-      if (!tfl_tensor) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      int tensor_idx = input_indices[i];
+
+      // Look up buffer handle by tensor ID
+      auto handle_iter = tensor_idx_to_handle_.find(tensor_idx);
+      if (handle_iter == tensor_idx_to_handle_.end()) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Buffer handle not found for input tensor");
       }
-      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
-      if (!tensor_buffer_info.attached) {
-        LITERT_RETURN_IF_ERROR(LiteRtDispatchAttachInput(
-            invocation_context, i, tensor_buffer_info.buffer_handle));
-      }
+
+      LiteRtTensorBufferHandle buffer_handle = handle_iter->second;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtDispatchAttachInput(invocation_context, i, buffer_handle));
     }
 
-    auto num_node_outputs = TfLiteOpaqueNodeNumberOfOutputs(node);
+    // Process outputs using tensor ID to handle mapping
+    const int* output_indices = nullptr;
+    int num_node_outputs = 0;
+    TfLiteOpaqueNodeOutputs(node, &output_indices, &num_node_outputs);
     for (auto i = 0; i < num_node_outputs; ++i) {
-      auto* tfl_tensor = TfLiteOpaqueNodeGetOutput(context, node, i);
-      if (!tfl_tensor) {
-        return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Tensor not found");
+      int tensor_idx = output_indices[i];
+
+      // Look up buffer handle by tensor ID
+      auto handle_iter = tensor_idx_to_handle_.find(tensor_idx);
+      if (handle_iter == tensor_idx_to_handle_.end()) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Buffer handle not found for output tensor");
       }
-      auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
-      if (!tensor_buffer_info.attached) {
-        LITERT_RETURN_IF_ERROR(LiteRtDispatchAttachOutput(
-            invocation_context, i, tensor_buffer_info.buffer_handle));
-      }
+
+      LiteRtTensorBufferHandle buffer_handle = handle_iter->second;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtDispatchAttachOutput(invocation_context, i, buffer_handle));
     }
   }
 
@@ -850,7 +982,11 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
 Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
     TfLiteOpaqueContext* context) {
   // Deal with any events attached to inputs.
-  for (auto* tfl_tensor : input_tensors_) {
+  for (int tensor_id : input_tensor_ids_) {
+    auto* tfl_tensor = TfLiteOpaqueContextGetOpaqueTensor(context, tensor_id);
+    if (!tfl_tensor) {
+      continue;
+    }
     auto& tensor_buffer_info = tensor_buffer_infos_.find(tfl_tensor)->second;
     if (tensor_buffer_info.tensor_buffer->HasEvent()) {
       LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event,

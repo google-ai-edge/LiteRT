@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -100,11 +101,12 @@ class DispatchDelegateKernel
   Expected<void> ComputeRequirements(TfLiteOpaqueContext* context);
   Expected<void> ComputeTensorPortConnections(TfLiteOpaqueContext* context);
 
-  Expected<void> AllocateTensorBuffersIfNeeded();
+  Expected<void> AllocateTensorBuffersIfNeeded(TfLiteOpaqueContext* context);
   Expected<LiteRtTensorBufferPtr> AllocateTensorBuffer(
       TfLiteOpaqueTensor* tfl_tensor);
   Expected<void> RegisterBufferWithDispatchApi(
-      TfLiteOpaqueTensor* tfl_tensor, LiteRtTensorBufferPtr&& tensor_buffer);
+      TfLiteOpaqueContext* context, TfLiteOpaqueTensor* tfl_tensor,
+      LiteRtTensorBufferPtr&& tensor_buffer);
 
   Expected<void> AttachBuffersToInvocationContextsIfNeeded(
       TfLiteOpaqueContext* context);
@@ -125,9 +127,13 @@ class DispatchDelegateKernel
   LiteRtExternalLiteRtBufferContextT* buffer_context_ = nullptr;
   std::vector<TfLiteOpaqueNode*> nodes_;
   std::vector<LiteRtDispatchInvocationContext> node_invocation_contexts_;
-  std::vector<TfLiteOpaqueTensor*> input_tensors_;
-  std::vector<TfLiteOpaqueTensor*> output_tensors_;
-  std::vector<TfLiteOpaqueTensor*> internal_tensors_;
+
+  // Store tensor IDs - get tensors on demand to avoid stale pointers
+  std::vector<int> input_tensor_ids_;
+  std::vector<int> output_tensor_ids_;
+  std::vector<int> internal_tensor_ids_;
+
+  std::unordered_map<int, LiteRtTensorBufferHandle> tensor_idx_to_handle_;  // NOLINT
 
   struct TensorInfo {
     LiteRtTensorBufferPtr tensor_buffer;
