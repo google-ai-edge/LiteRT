@@ -112,9 +112,7 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

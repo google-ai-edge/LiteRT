@@ -31,9 +31,8 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "neuron_litert_schema",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        ":neuron_litert_schema",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings:str_format",
         "@flatbuffers//:runtime_cc",

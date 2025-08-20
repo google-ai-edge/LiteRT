@@ -25,7 +25,7 @@ cc_library(
         "notap",
     ],
     deps = [
-        "//litert/c:litert_model",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
         "@intel_openvino//:openvino",
     ],

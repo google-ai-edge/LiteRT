@@ -38,12 +38,7 @@ litert_dynamic_lib(
     deps = [
         ":compile_model",
         ":create_model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
@@ -65,10 +60,7 @@ cc_library(
     srcs = ["create_model.cc"],
     hdrs = ["create_model.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
@@ -109,8 +101,7 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/vendors/mediatek:neuron_adapter_api",
@@ -153,9 +144,7 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model_predicates",

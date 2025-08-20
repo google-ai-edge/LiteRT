@@ -64,7 +64,6 @@ litert_dynamic_lib(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@neuro_pilot//:v8_latest_host_headers",
-        "//litert/c:litert_environment_options",
         # Needed to build in OSS
         "//litert/core/util:tensor_type_util",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -89,8 +88,7 @@ litert_device_test(
     ],
     deps = [
         ":dispatch_api",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment",
         "//litert/cc/internal:litert_options",

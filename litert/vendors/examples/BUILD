@@ -33,12 +33,7 @@ litert_dynamic_lib(
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
@@ -55,9 +50,7 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":example_plugin",  # buildcleaner: keep
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
@@ -75,9 +68,7 @@ cc_library(
     visibility = ["//litert/vendors/cc:__pkg__"],
     deps = [
         ":example_ir",
-        "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -96,7 +87,7 @@ cc_test(
     deps = [
         ":example_conversion_impl",
         ":example_ir",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
         "//litert/core/model:model_graph_testonly",
         "//litert/core/model:model_testonly",
@@ -116,7 +107,7 @@ cc_library(
     hdrs = ["example_ir.h"],
     visibility = ["//litert/vendors/cc:__pkg__"],
     deps = [
-        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/vendors/cc:backend_ir",
         "//litert/vendors/cc:ir_types",
     ],
@@ -132,10 +123,7 @@ cc_library(
     deps = [
         ":example_conversion_impl",
         ":example_ir",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_model",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/vendors/c:litert_compiler_plugin",
@@ -151,8 +139,7 @@ cc_test(
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":example_plugin_with_conversions",  # buildcleaner: keep
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
