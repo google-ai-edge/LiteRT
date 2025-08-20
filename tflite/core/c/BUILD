@@ -362,7 +362,10 @@ tflite_cc_library_with_c_headers_test(
     ],
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts(),
-    visibility = ["//tflite:__subpackages__"] + common_header_visibility_allowlist(),
+    visibility = [
+        "//tflite:__subpackages__",
+        "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+    ] + common_header_visibility_allowlist(),
     deps = [
         ":c_api_types",
         "//tflite:tflite_kernel_use_xnnpack_optional",
