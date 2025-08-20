@@ -54,7 +54,7 @@ package_group(
         "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
-        # When litert_lm_link_capi_so=false
+        # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert/llm/...",
         "//ci/tools/...",
         # copybara:uncomment "//third_party/odml/litert/tensor/...",
@@ -77,7 +77,7 @@ package_group(
         "//litert/vendors/qualcomm/...",
         "//litert/vendors/google_tensor/...",
         "//litert/vendors/mediatek/...",
-        # When litert_lm_link_capi_so=false
+        # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
         # copybara:uncomment "//platforms/darwinn/toolchain/third_party/...",
