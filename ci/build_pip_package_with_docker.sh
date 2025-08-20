@@ -42,6 +42,7 @@ if [ ! -d /root_dir ]; then
     -e TEST_MANYLINUX_COMPLIANCE="${TEST_MANYLINUX_COMPLIANCE}" \
     -e RELEASE_VERSION=${RELEASE_VERSION} \
     -e TEST_WHEEL=${TEST_WHEEL:-false} \
+    -e USE_LOCAL_TF=${USE_LOCAL_TF:-false} \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \
     tflite-builder
   exit 0
@@ -50,22 +51,25 @@ else
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
 
-  # Running inside docker container
-  cd /third_party_tensorflow
 
-  # Run configure
-  configs=(
-    '/usr/bin/python3'
-    '/usr/lib/python3/dist-packages'
-    'N'
-    'N'
-    'Y'
-    '/usr/lib/llvm-18/bin/clang'
-    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'N'
-  )
-  printf '%s\n' "${configs[@]}" | ./configure
-  cp .tf_configure.bazelrc /root_dir
+  if [[ "${USE_LOCAL_TF}" == "true" ]]; then
+    # Running inside docker container
+    cd /third_party_tensorflow
+
+    # Run configure
+    configs=(
+      '/usr/bin/python3'
+      '/usr/lib/python3/dist-packages'
+      'N'
+      'N'
+      'Y'
+      '/usr/lib/llvm-18/bin/clang'
+      '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
+      'N'
+    )
+    printf '%s\n' "${configs[@]}" | ./configure
+    cp .tf_configure.bazelrc /root_dir
+  fi
 
   ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
 

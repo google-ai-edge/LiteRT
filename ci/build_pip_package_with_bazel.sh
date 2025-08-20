@@ -32,7 +32,6 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissive
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   rpi0)
@@ -41,25 +40,21 @@ case "${TENSORFLOW_TARGET}" in
       --copt=-O3 --copt=-fno-tree-pre --copt=-fpermissivec
       --define tensorflow_mkldnn_contraction_kernel=0
       --define=raspberry_pi_with_neon=true
-      --config=use_local_tf
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   aarch64)
     BAZEL_FLAGS="--config=release_arm64_linux
       --define tensorflow_mkldnn_contraction_kernel=0
       --copt=-O3
-      --config=use_local_tf
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   native)
     BAZEL_FLAGS="--copt=-O3
       --copt=-march=native
-      --config=use_local_tf
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
   *)
     BAZEL_FLAGS="--copt=-O3
-      --config=use_local_tf
       --repo_env=USE_PYWRAP_RULES=True"
     ;;
 esac
@@ -70,6 +65,11 @@ fi
 
 if [ ! -z "${NIGHTLY_RELEASE_DATE}" ]; then
   BAZEL_FLAGS="${BAZEL_FLAGS} --//ci/tools/python/wheel:nightly_iso_date=${NIGHTLY_RELEASE_DATE}"
+fi
+
+# Conditionally use local submodules vs http_archve tf
+if [[ "${USE_LOCAL_TF}" == "true" ]]; then
+  BUILD_FLAGS+=("--config=use_local_tf")
 fi
 
 # Set linkopt for arm64 architecture, and remote_cache for x86_64.

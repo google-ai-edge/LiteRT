@@ -23,7 +23,6 @@ TEST_LANG_FILTERS="${TEST_LANG_FILTERS:-cc,py}"
 
 BUILD_FLAGS=(
     "--config=bulk_test_cpu"
-    "--config=use_local_tf"
     "--test_lang_filters=${TEST_LANG_FILTERS}"
     "--keep_going"
     "--repo_env=USE_PYWRAP_RULES=True"
@@ -31,6 +30,11 @@ BUILD_FLAGS=(
 
 # Add Bazel --config flags based on kokoro injected env ie. --config=public_cache
 BUILD_FLAGS+=(${BAZEL_CONFIG_FLAGS})
+
+# Conditionally use local submodules vs http_archve tf
+if [[ "${USE_LOCAL_TF}" == "true" ]]; then
+  BUILD_FLAGS+=("--config=use_local_tf")
+fi
 
 # TODO: (b/381310257) - Investigate failing test not included in cpu_full
 # TODO: (b/381110338) - Clang errors
