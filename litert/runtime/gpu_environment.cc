@@ -47,9 +47,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
     return options;
   }
 
-// TODO(b/422216633): Remove the !LITERT_HAS_METAL_SUPPORT once Metal is fully
-// supported.
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
   auto device_option =
       environment->GetOption(kLiteRtEnvOptionTagOpenClDeviceId);
   if (device_option.has_value() && device_option->type == kLiteRtAnyTypeInt) {
@@ -77,7 +75,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
   auto egl_display_option =
       environment->GetOption(kLiteRtEnvOptionTagEglDisplay);
   if (egl_display_option.has_value() &&
@@ -94,7 +92,7 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
   }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_WEBGPU_SUPPORT
   auto wgpu_device_option =
       environment->GetOption(kLiteRtEnvOptionTagWebGpuDevice);
   if (wgpu_device_option.has_value() &&
@@ -166,7 +164,7 @@ bool SupportsAhwbGlInteropHelper() {
 }  // namespace
 
 Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up OpenCL.
   LITERT_RETURN_IF_ERROR(tflite::gpu::cl::LoadOpenCL().ok())
       << "Failed to load OpenCL for LiteRT.";
@@ -176,7 +174,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
   // Set up options.
   options_ = CreateGpuEnvironmentOptions(environment);
 
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up device.
   if (options_.device_id && options_.platform_id) {
     device_ =
@@ -190,11 +188,11 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
         << "Failed to create default OpenCL device";
     LITERT_LOG(LITERT_INFO, "Created default OpenCL device.");
   }
-#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
   // Set up remaining properties.
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
   // Set up GL interop properties when OpenCL and OpenGL are both supported.
   properties_.is_gl_sharing_supported =
       tflite::gpu::cl::IsGlSharingSupported(device_);
@@ -202,17 +200,16 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       tflite::gpu::cl::IsClEventFromEglSyncSupported(device_);
   properties_.is_cl_to_gl_fast_sync_supported =
       tflite::gpu::cl::IsEglSyncFromClEventSupported();
-#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
   properties_.is_ahwb_cl_interop_supported =
       SupportsAhwbClInteropHelper(device_);
-#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT && \
-    LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
   properties_.is_ahwb_gl_interop_supported = SupportsAhwbGlInteropHelper();
 #endif  // LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
 
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
   // Set up context.
   if (options_.context) {
     if (options_.IsGlAware()) {
@@ -220,7 +217,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       // We currently assume that user configured context properly.
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
       LITERT_RETURN_IF_ERROR(eglGetCurrentContext() == options_.egl_context)
           << "EGL context is not the same as provided context";
       LITERT_RETURN_IF_ERROR(eglGetCurrentDisplay() == options_.egl_display)
@@ -232,7 +229,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
           tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
           << "Failed to create EGL environment";
       egl_env_ = std::move(egl_env);
-#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
     } else {
       context_ = tflite::gpu::cl::CLContext(options_.context,
                                             /*has_ownership=*/false);
@@ -242,7 +239,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
     // If no CL context is provided and no EGL options are set, attempt to
     // create a default EGL Environment.
     if (!options_.IsGlAware()) {
-#if !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#if LITERT_HAS_OPENGL_SUPPORT
       std::unique_ptr<tflite::gpu::gl::EglEnvironment> egl_env;
       LITERT_RETURN_IF_ERROR(
           tflite::gpu::gl::EglEnvironment::NewEglEnvironment(&egl_env).ok())
@@ -253,7 +250,7 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       LITERT_LOG(LITERT_INFO, "Created default EGL environment.");
 #else
       LITERT_LOG(LITERT_INFO, "No default EGL environment created.");
-#endif  // !LITERT_HAS_METAL_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
+#endif  // LITERT_HAS_OPENGL_SUPPORT
     }
     if (options_.IsGlAware() && properties_.is_gl_sharing_supported) {
       auto status = tflite::gpu::cl::CreateCLGLContext(
