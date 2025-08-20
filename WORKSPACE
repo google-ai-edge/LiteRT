@@ -19,6 +19,20 @@ rules_shell_dependencies()
 
 rules_shell_toolchains()
 
+# Download coremltools of the same version of tensorflow, but with a custom patchcmd until
+# tensorflow is updated to do the same patchcmd.
+http_archive(
+    name = "coremltools",
+    build_file = "@//third_party/coremltools:coremltools.BUILD",
+    patch_cmds = [
+        # Append "mlmodel/format/" to the import path of all proto files.
+        "sed -i -e 's|import public \"|import public \"mlmodel/format/|g' mlmodel/format/*.proto",
+    ],
+    sha256 = "37d4d141718c70102f763363a8b018191882a179f4ce5291168d066a84d01c9d",
+    strip_prefix = "coremltools-8.0",
+    url = "https://github.com/apple/coremltools/archive/8.0.tar.gz",
+)
+
 # Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
 load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
@@ -26,9 +40,7 @@ tensorflow_source_repo(
     name = "org_tensorflow",
     sha256 = "",
     strip_prefix = "tensorflow-master",
-    urls = [
-        "https://github.com/tensorflow/tensorflow/archive/master.tar.gz",
-    ],
+    urls = ["https://github.com/tensorflow/tensorflow/archive/master.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
@@ -61,6 +73,7 @@ python_init_repositories(
         "3.10": "@org_tensorflow//:requirements_lock_3_10.txt",
         "3.11": "@org_tensorflow//:requirements_lock_3_11.txt",
         "3.12": "@org_tensorflow//:requirements_lock_3_12.txt",
+        "3.13": "@org_tensorflow//:requirements_lock_3_13.txt",
     },
 )
 
