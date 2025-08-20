@@ -21,8 +21,7 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_compiler_plugin",
     ],
@@ -33,9 +32,7 @@ cc_library(
     hdrs = ["conversion.h"],
     deps = [
         ":backend_ir",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -53,8 +50,7 @@ cc_library(
     hdrs = ["partition_with_capabilities.h"],
     deps = [
         ":conversion",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
     ],
@@ -65,8 +61,7 @@ cc_library(
     hdrs = ["convert_graph.h"],
     deps = [
         ":conversion",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
     ],
@@ -86,9 +81,7 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
