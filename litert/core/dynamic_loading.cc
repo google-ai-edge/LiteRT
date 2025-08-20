@@ -107,7 +107,7 @@ static const char kDispatchLibPatternFmt[] = "Dispatch";
 
 LiteRtStatus FindLiteRtDispatchSharedLibs(absl::string_view search_path,
                                           std::vector<std::string>& results) {
-  std::string root(search_path.data());
+  std::string root(search_path.data(), search_path.size());
   const std::string lib_pattern =
       absl::StrCat(kLiteRtSharedLibPrefix, kDispatchLibPatternFmt);
   return FindLiteRtSharedLibsHelper(root, lib_pattern, /*full_match=*/false,
