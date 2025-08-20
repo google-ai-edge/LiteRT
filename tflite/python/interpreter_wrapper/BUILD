@@ -40,12 +40,15 @@ cc_library(
         "//tflite/core/api",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/delegates/utils/experimental/stable_delegate:delegate_loader",
+        "//tflite/delegates/utils/experimental/stable_delegate:tflite_settings_json_parser",
         "//tflite/delegates/xnnpack:xnnpack_delegate",
         "//tflite/kernels:reference_ops",
         "//tflite/kernels/internal:compatibility",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@flatbuffers",
         "@local_xla//third_party/python_runtime:headers",  # buildcleaner: keep
     ],
 )
