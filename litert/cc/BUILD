@@ -1010,6 +1010,7 @@ cc_test(
     name = "litert_compiled_model_test",
     srcs = ["litert_compiled_model_test.cc"],
     data = [
+        "//litert/test:testdata/constant_output_tensor.tflite",
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
     ],
@@ -1105,6 +1106,7 @@ litert_device_test(
 #     name = "litert_compiled_model_gpu_test",
 #     srcs = ["litert_compiled_model_gpu_test.cc"],
 #     data = [
+#         "//litert/test:testdata/constant_output_tensor.tflite",
 #         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
 #         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",

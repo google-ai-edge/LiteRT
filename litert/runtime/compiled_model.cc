@@ -603,6 +603,34 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                             "Failed to register tensor buffer");
         }
+
+        // TODO(b/439926974): Move this to LiteRtCompiledModelT::Run()
+        // Handle constant output tensors for hardware backends (GPU/NPU)
+        if (!is_input && tensor->allocation_type == kTfLiteMmapRo &&
+            tensor->data.raw != nullptr) {
+          const void* const_data_ptr = tensor->data.raw;
+          size_t const_data_size = tensor->bytes;
+
+          LITERT_LOG(LITERT_INFO,
+                     "Uploading constant output tensor %s data to hardware "
+                     "buffer (type=%d)",
+                     tensor_name ? tensor_name : "<unnamed>",
+                     buffer->buffer_type());
+
+          void* buffer_ptr = nullptr;
+          if (auto status = LiteRtLockTensorBuffer(
+                  buffer, &buffer_ptr, kLiteRtTensorBufferLockModeWrite);
+              status == kLiteRtStatusOk) {
+            memcpy(buffer_ptr, const_data_ptr, const_data_size);
+            LiteRtUnlockTensorBuffer(buffer);
+          } else {
+            LITERT_LOG(LITERT_WARNING,
+                       "Failed to lock hardware buffer for constant tensor %s, "
+                       "status=%d",
+                       tensor_name ? tensor_name : "<unnamed>", status);
+          }
+        }
+
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;
@@ -659,9 +687,26 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(buffer));
       } else {
         locked_buffers.push_back(buffer);
-        runner->SetCustomAllocationForOutputTensor(tensor_name,
-                                                   custom_allocation,
-                                                   /*flags=*/0);
+        if (tensor->allocation_type == kTfLiteMmapRo) {
+          if (tensor->data.raw != nullptr) {
+            // This is a constant output tensor - copy data to CPU buffer
+            const void* const_data_ptr = tensor->data.raw;
+            size_t const_data_size = tensor->bytes;
+
+            LITERT_LOG(LITERT_INFO,
+                       "Uploading constant output tensor %s data to CPU buffer",
+                       tensor_name ? tensor_name : "<unnamed>");
+            memcpy(host_mem_addr, const_data_ptr, const_data_size);
+          } else {
+            return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Constant output tensor has null data pointer");
+          }
+        } else {  // tensor->allocation_type != kTfLiteMmapRo
+          // Normal output tensor - set custom allocation
+          runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                     custom_allocation,
+                                                     /*flags=*/0);
+        }
       }
       return {};
     }
@@ -686,8 +731,23 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       runner->SetCustomAllocationForInputTensor(tensor_name, custom_allocation,
                                                 /*flags=*/0);
     } else {
-      runner->SetCustomAllocationForOutputTensor(tensor_name, custom_allocation,
-                                                 /*flags=*/0);
+      if (tensor->allocation_type == kTfLiteMmapRo &&
+          tensor->data.raw != nullptr) {
+        // This is a constant output tensor - copy data to CPU buffer
+        const void* const_data_ptr = tensor->data.raw;
+        size_t const_data_size = tensor->bytes;
+
+        LITERT_LOG(
+            LITERT_INFO,
+            "Uploading constant output tensor %s data to shared CPU buffer",
+            tensor_name ? tensor_name : "<unnamed>");
+        memcpy(host_mem_addr, const_data_ptr, const_data_size);
+      } else if (tensor->allocation_type != kTfLiteMmapRo) {
+        // Normal output tensor - set custom allocation
+        runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                   custom_allocation,
+                                                   /*flags=*/0);
+      }
     }
     return {};
   }

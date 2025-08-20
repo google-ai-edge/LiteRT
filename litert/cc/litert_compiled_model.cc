@@ -29,6 +29,7 @@
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -101,7 +102,6 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
                           buffer_requirements_expected);
   LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
                           tensor.RankedTensorType());
-
   return CreateBufferImpl(env_, buffer_requirements, tensor_type);
 }
 
@@ -245,8 +245,8 @@ Expected<CompiledModel::Metrics> CompiledModel::StopMetricsCollection() {
 
 Expected<bool> CompiledModel::IsFullyAccelerated() {
   bool fully_accelerated = false;
-  LITERT_RETURN_IF_ERROR(LiteRtCompiledModelIsFullyAccelerated(
-      Get(), &fully_accelerated));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtCompiledModelIsFullyAccelerated(Get(), &fully_accelerated));
   return fully_accelerated;
 }
 
