@@ -299,8 +299,14 @@ cc_library(
 cc_library(
     name = "compiled_model",
     srcs = ["compiled_model.cc"],
-    hdrs = ["compiled_model.h"],
-    copts = litert_metal_opts(),
+    hdrs = [
+        "compiled_model.h",
+        "stub_op_resolver.h",
+    ],
+    copts = litert_metal_opts() + select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     linkopts = litert_metal_linkopts(),
     deps = [
         ":accelerator",
@@ -339,13 +345,14 @@ cc_library(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:model_builder",
+        "//tflite:mutable_op_resolver",
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types_opaque_delegate",
         "//tflite/c:common",
         "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",
         "//tflite/delegates/utils:simple_opaque_delegate",
-        "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -355,7 +362,10 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
-    ],
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }),
 )
 
 cc_test(

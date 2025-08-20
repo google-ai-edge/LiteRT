@@ -170,3 +170,15 @@ config_setting(
     name = "litert_link_capi_static",
     values = {"define": "litert_link_capi_so=false"},
 )
+
+# Configuration for building with built-in kernels (default)
+config_setting(
+    name = "with_builtin_ops",
+    values = {"define": "litert_builtin_ops=true"},
+)
+
+# Configuration for building without built-in kernels
+config_setting(
+    name = "without_builtin_ops",
+    values = {"define": "litert_builtin_ops=false"},
+)

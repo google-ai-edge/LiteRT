@@ -79,8 +79,14 @@
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
+#ifndef LITERT_NO_BUILTIN_OPS
 #include "tflite/kernels/register.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 #include "tflite/model_builder.h"
+
+#ifdef LITERT_NO_BUILTIN_OPS
+#include "litert/runtime/stub_op_resolver.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 
 using ::litert::Error;
 using ::litert::Expected;
@@ -92,7 +98,15 @@ using ::litert::internal::TfLiteTensorIdentifier;
 
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options) {
+#ifdef LITERT_NO_BUILTIN_OPS
+  // Use StubOpResolver which provides minimal stub implementations for all
+  // builtin ops. These stubs allow the model to pass validation, but the
+  // actual operations will be handled by LiteRT's accelerator system
+  // (NPU > GPU > CPU) through their respective delegates.
+  litert::internal::StubOpResolver resolver;
+#else
   tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+#endif  // LITERT_NO_BUILTIN_OPS
 
   // Apply custom ops.
   if (jit_compilation_options) {
@@ -1071,4 +1085,3 @@ Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() {
 
   return buffer_reporter->message();
 }
-
