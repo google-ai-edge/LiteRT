@@ -1,6 +1,12 @@
-# Release 1.4.0
+# Release 2.0.2a1
 
-## LiteRT Next
+## LiteRT
+
+<!---
+INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
+-->
+
+### Major Features and Improvements
 
 <!---
 INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
@@ -41,6 +47,9 @@ SubGraph::ReplaceNodeSubsetsWithDelegateKernels() will cause
 Delegate::Prepare() to fail, ultimately leading
 InterpreterBuilder::operator() or Interpreter::ModifyGraphWithDelegate() to
 return an error.
+* Added Profiler API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_profiler.h).
+* Added Error reporter API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/d65ffb98ce708a7fb40640546af0c3a6f0f8a763/litert/cc/options/litert_runtime_options.h#L44).
+* Added resize input tensor API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_compiled_model.h#L431).
 
 ### Bug Fixes and Other Changes
 
