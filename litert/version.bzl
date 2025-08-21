@@ -2,7 +2,7 @@
 
 # The next version of LiteRT.
 # The minor version code should be bumped after every release.
-LITERT_FULL_VERSION = "1.4.0"
+LITERT_FULL_VERSION = "2.0.2a1"
 
 # The next version of LiteRT SDK for Qualcomm.
 # The minor version code should be bumped after every release.
