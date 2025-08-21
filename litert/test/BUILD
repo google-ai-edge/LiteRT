@@ -262,7 +262,7 @@ cc_library(
     name = "simple_buffer",
     hdrs = ["simple_buffer.h"],
     deps = [
-        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_dispatch_headers",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",

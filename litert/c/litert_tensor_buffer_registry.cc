@@ -12,27 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_TENSOR_BUFFER_REGISTRY_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_TENSOR_BUFFER_REGISTRY_H_
-
-#include <stddef.h>
+#include "litert/c/litert_tensor_buffer_registry.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/runtime/tensor_buffer_registry.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-
-// Registers custom tensor buffer handlers for the given buffer type.
 LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     LiteRtTensorBufferType buffer_type, CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
-    UnlockCustomTensorBuffer unlock_func);
-
-#ifdef __cplusplus
+    UnlockCustomTensorBuffer unlock_func) {
+  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  litert::internal::CustomTensorBufferHandlers handlers = {
+      .create_func = create_func,
+      .destroy_func = destroy_func,
+      .lock_func = lock_func,
+      .unlock_func = unlock_func,
+  };
+  LITERT_RETURN_IF_ERROR(registry.RegisterHandlers(buffer_type, handlers));
+  return kLiteRtStatusOk;
 }
-#endif  // __cplusplus
-
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_C_INTERNAL_LITERT_TENSOR_BUFFER_REGISTRY_H_

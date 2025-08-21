@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/litert_accelerator_registration.h"
 
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_opaque_options.h"

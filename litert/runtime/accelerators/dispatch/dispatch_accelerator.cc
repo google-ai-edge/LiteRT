@@ -16,7 +16,7 @@
 
 #include <memory>
 
-#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment_options.h"
