@@ -14,6 +14,7 @@
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+load("//third_party/bazel_rules/rules_cc/cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -80,6 +81,27 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:darwinn_options",
+        "//litert/vendors/cc:options_helper",
+    ],
+)
+
+cc_test(
+    name = "darwinn_options_test",
+    srcs = ["darwinn_options_test.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:darwinn_options",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
