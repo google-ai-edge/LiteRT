@@ -28,7 +28,6 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_options.h"
 #include "litert/core/filesystem.h"
-#include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"

@@ -20,7 +20,6 @@
 #include <string>
 #include <vector>
 
-#include "absl/strings/string_view.h"
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"

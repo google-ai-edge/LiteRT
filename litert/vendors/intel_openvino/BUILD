@@ -20,10 +20,6 @@ package(
 cc_library(
     name = "ov_utils",
     hdrs = ["utils.h"],
-    tags = [
-        "nobuilder",
-        "notap",
-    ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
