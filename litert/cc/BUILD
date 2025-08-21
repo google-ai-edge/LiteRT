@@ -1154,6 +1154,7 @@ litert_device_test(
 #     name = "litert_compiled_model_gpu_device_test",
 #     backend_id = "gpu",
 #     data = [
+#         "//litert/test:testdata/constant_output_tensor.tflite",
 #         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
 #         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
