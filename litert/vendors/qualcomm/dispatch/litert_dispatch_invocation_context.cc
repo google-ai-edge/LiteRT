@@ -408,7 +408,7 @@ Expected<void> LiteRtDispatchInvocationContextT::ConvertToInt16(
     return Unexpected(status, "Failed to lock the tensor buffer");
   }
   auto uint16_data = absl::MakeSpan(static_cast<const std::uint16_t*>(mem_addr),
-                                    bytes / sizeof(std::int16_t));
+                                    bytes / sizeof(std::uint16_t));
   std::vector<std::int16_t> int16_data;
   qnn::ConvertDataFromUInt16toInt16(uint16_data, int16_data);
   std::memcpy(mem_addr, int16_data.data(), bytes);
