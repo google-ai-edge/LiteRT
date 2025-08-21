@@ -137,7 +137,7 @@ cc_library(
             "//tflite/delegates/gpu/gl:gl_texture",
         ],
         "//conditions:default": [],
-    }),
+    }) + litert_metal_deps(),
 )
 
 cc_library(
@@ -205,10 +205,12 @@ GPU_ENVIRONMENT_DEPS = [
 
 cc_library(
     name = "gpu_environment_header",
-    hdrs = ["gpu_environment.h"],
+    hdrs = [
+        "gpu_environment.h",
+    ],
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps_without_gpu_environment(),
+    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps(),
 )
 
 cc_library(
@@ -631,15 +633,19 @@ objc_library(
     ] + litert_metal_deps(),
 )
 
-objc_library(
-    name = "gpu_environment_metal",
-    srcs = ["gpu_environment_metal.mm"],
-    aspect_hints = [
-        # copybara:uncomment_begin (google-only)
-        # "//tools/build_defs/swift:no_module",
-        # copybara:uncomment_end
-    ],
-    copts = ["--std=gnu++20"] + litert_metal_opts(),
+cc_library(
+    name = "metal_info",
+    srcs = select({
+        "@platforms//os:ios": ["metal_info.cc"],
+        "@platforms//os:macos": ["metal_info.cc"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["metal_info.h"],
+    copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
-    deps = [":gpu_environment_header"] + litert_metal_deps_without_gpu_environment(),
+    deps = [
+        "//litert/c:litert_common",
+        "@com_google_absl//absl/log:absl_log",
+    ] + litert_metal_deps_without_gpu_environment(),
+    alwayslink = True,
 )

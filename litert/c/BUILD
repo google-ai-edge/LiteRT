@@ -326,15 +326,7 @@ cc_library(
         "//litert/runtime:tensor_buffer",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
-    ] + gles_deps() + select({
-        "@platforms//os:ios": [
-            "//litert/runtime:metal_memory",
-        ],
-        "@platforms//os:macos": [
-            "//litert/runtime:metal_memory",
-        ],
-        "//conditions:default": [],
-    }),
+    ] + gles_deps(),
     alwayslink = 1,
 )
 

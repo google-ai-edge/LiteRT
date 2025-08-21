@@ -24,11 +24,9 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
 
-#if LITERT_HAS_METAL_SUPPORT
-#include "litert/runtime/metal_memory.h"
-#endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>

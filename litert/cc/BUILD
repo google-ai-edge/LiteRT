@@ -1204,7 +1204,6 @@ objc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer_types",
-        "//litert/runtime:metal_memory",
         "//litert/runtime:tensor_buffer",
         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
         "//tflite/delegates/gpu/metal:metal_device",

@@ -63,7 +63,7 @@ def litert_metal_deps_without_gpu_environment():
 
 def litert_metal_deps():
     return litert_metal_deps_without_gpu_environment() + select({
-        "@platforms//os:ios": ["//litert/runtime:gpu_environment_metal"],
-        "@platforms//os:macos": ["//litert/runtime:gpu_environment_metal"],
+        "@platforms//os:ios": ["//litert/runtime:metal_info"],
+        "@platforms//os:macos": ["//litert/runtime:metal_info"],
         "//conditions:default": [],
     })

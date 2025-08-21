@@ -22,6 +22,10 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 
+#if LITERT_HAS_METAL_SUPPORT
+#include "litert/runtime/metal_info.h"
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #include "tflite/delegates/gpu/cl/cl_command_queue.h"
@@ -114,8 +118,8 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
       environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
   if (metal_device_option.has_value() &&
       metal_device_option->type == kLiteRtAnyTypeVoidPtr) {
-    options.metal_info = MetalInfo::CreateWithDevice(
-        const_cast<void*>(metal_device_option->ptr_value));
+    LiteRtCreateWithDevice(const_cast<void*>(metal_device_option->ptr_value),
+                           &options.metal_info);
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
@@ -292,23 +296,21 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #if LITERT_HAS_METAL_SUPPORT
   // Set up Metal.
   if (options_.metal_info) {
-    properties_.is_metal_available = options_.metal_info->IsMetalAvailable();
     metal_info_ = std::move(options_.metal_info);
     LITERT_LOG(LITERT_INFO, "Created Metal device from provided device id");
   } else {
-    MetalInfoPtr metal_info = MetalInfo::Create();
-    if (metal_info->GetDevice() == nullptr) {
+    MetalInfoPtr metal_info_ptr = nullptr;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateMetalInfo(&metal_info_ptr));
+    if (metal_info_ptr == nullptr) {
       LITERT_LOG(LITERT_ERROR, "Failed to create default Metal device.");
       return {};
     }
-    properties_.is_metal_available = metal_info->IsMetalAvailable();
-    metal_info_ = std::move(metal_info);
+    metal_info_ = std::move(metal_info_ptr);
     LITERT_LOG(LITERT_INFO, "Created default Metal device.");
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   return {};
 }
-
 }  // namespace internal
 }  // namespace litert

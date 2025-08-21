@@ -43,25 +43,7 @@ typedef struct WGPUQueueImpl* WGPUQueue;
 namespace litert::internal {
 
 #if LITERT_HAS_METAL_SUPPORT
-class MetalInfo;
-typedef std::unique_ptr<struct MetalInfo> MetalInfoPtr;
-
-class MetalInfo {
- public:
-  virtual ~MetalInfo() = default;
-
-  // Returns an underlying Metal device.
-  virtual void* GetDevice() = 0;
-
-  // Whether Metal is available on the system.
-  virtual bool IsMetalAvailable() = 0;
-
-  // Create a MetalInfo instance with the default Metal device.
-  static MetalInfoPtr Create();
-
-  // Create a MetalInfo instance with the given Metal device.
-  static MetalInfoPtr CreateWithDevice(void* device);
-};
+#include "litert/runtime/metal_info.h"
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 struct GpuEnvironmentProperties {
@@ -147,7 +129,7 @@ class GpuEnvironment {
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
-  void* GetMetalDevice() { return metal_info_.get()->GetDevice(); }
+  void* GetMetalDevice() { return metal_info_->metal_info; }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
 #if LITERT_HAS_VULKAN_SUPPORT
