@@ -570,69 +570,6 @@ cc_test(
     ],
 )
 
-objc_library(
-    name = "metal_memory",
-    srcs = ["metal_memory.mm"],
-    hdrs = [
-        "metal_memory.h",
-        "tensor_buffer_lockstate.h",
-    ],
-    aspect_hints = [
-        # copybara:uncomment_begin (google-only)
-        # "//tools/build_defs/swift:no_module",
-        # copybara:uncomment_end
-    ],
-    copts = ["--std=gnu++20"] + litert_metal_opts(),
-    linkopts = litert_metal_linkopts(),
-    deps = [
-        ":gpu_environment",
-        ":metal_sync",
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_dispatch_headers",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/core/util:tensor_type_util",
-        "//tflite/delegates/gpu/metal:buffer",
-        "//tflite/delegates/gpu/metal:common",
-        "//tflite/delegates/gpu/metal:gpu_object",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/synchronization",
-    ] + litert_metal_deps(),
-    alwayslink = True,
-)
-
-objc_library(
-    name = "metal_sync",
-    srcs = ["metal_sync.mm"],
-    hdrs = [
-        "litert_gpu_util.h",
-        "metal_sync.h",
-    ],
-    aspect_hints = [
-        # copybara:uncomment_begin (google-only)
-        # "//tools/build_defs/swift:no_module",
-        # copybara:uncomment_end
-    ],
-    copts = ["--std=gnu++20"] + litert_metal_opts(),
-    linkopts = litert_metal_linkopts(),
-    deps = [
-        ":gpu_environment",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_macros",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
-        "//tflite/delegates/gpu/common:tensor",
-        "//tflite/delegates/gpu/common/task:tensor_desc",
-        "//tflite/delegates/gpu/metal:metal_spatial_tensor",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-    ] + litert_metal_deps(),
-)
-
 cc_library(
     name = "metal_info",
     srcs = select({
