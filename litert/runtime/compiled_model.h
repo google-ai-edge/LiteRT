@@ -249,6 +249,15 @@ class LiteRtCompiledModelT {
   // If the signature key is not found, returns nullptr.
   tflite::SignatureRunner* GetSignatureRunner(absl::string_view signature_key);
 
+  // Structure to track constant output tensors and their locked buffer
+  // addresses
+  struct ConstantOutputInfo {
+    LiteRtTensorBuffer buffer;
+    void* locked_address;
+    const char* tensor_name;
+    size_t data_size;
+  };
+
   // Registers the TensorBuffer for the given tensor with the SignatureRunner.
   // If the TensorBuffer can be directly consumed as CPU Tensors, they'll be
   // locked and use it with CustomAllocation. The locked buffer is kept in the
@@ -258,7 +267,8 @@ class LiteRtCompiledModelT {
   litert::Expected<void> RegisterBuffer(
       tflite::SignatureRunner* runner, TfLiteTensor* tensor,
       const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
-      std::vector<LiteRtTensorBuffer>& locked_buffers);
+      std::vector<LiteRtTensorBuffer>& locked_buffers,
+      std::vector<ConstantOutputInfo>& constant_outputs);
 
   void RegisterDelegate(Delegate&& delegate) {
     delegates_.push_back(std::move(delegate));
