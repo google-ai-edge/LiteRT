@@ -39,9 +39,7 @@ package(
 cc_library(
     name = "litert_c_types_printing",
     hdrs = ["litert_c_types_printing.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_logging",
         "//litert/c:litert_layout",
@@ -69,9 +67,7 @@ cc_test(
 cc_library(
     name = "litert_any",
     hdrs = ["litert_any.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_expected",
         ":litert_macros",
@@ -109,9 +105,7 @@ cc_test(
 cc_library(
     name = "litert_consts",
     hdrs = ["litert_consts.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
 )
 
 cc_library(
@@ -147,9 +141,7 @@ cc_library(
 cc_test(
     name = "litert_model_test",
     srcs = ["litert_model_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-    ],
+    data = ["//litert/test:mlir_test_data"],
     deps = [
         ":litert_element_type",
         ":litert_layout",
@@ -314,9 +306,7 @@ cc_test(
 cc_library(
     name = "litert_detail",
     hdrs = ["litert_detail.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -354,9 +344,7 @@ cc_library(
     name = "litert_model_predicates",
     srcs = ["litert_model_predicates.cc"],
     hdrs = ["litert_model_predicates.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_detail",
         ":litert_element_type",
@@ -401,9 +389,7 @@ cc_test(
 cc_test(
     name = "litert_model_predicates_test",
     srcs = ["litert_model_predicates_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-    ],
+    data = ["//litert/test:mlir_test_data"],
     deps = [
         ":litert_element_type",
         ":litert_model",
@@ -421,9 +407,7 @@ cc_library(
     name = "litert_tensor_buffer_utils",
     srcs = ["litert_tensor_buffer_utils.cc"],
     hdrs = ["litert_tensor_buffer_utils.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer_types",
@@ -434,9 +418,7 @@ cc_library(
     name = "litert_op_options",
     srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_expected",
         ":litert_macros",
@@ -521,12 +503,8 @@ cc_test(
 cc_library(
     name = "litert_opaque_options",
     srcs = ["litert_opaque_options.cc"],
-    hdrs = [
-        "litert_opaque_options.h",
-    ],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    hdrs = ["litert_opaque_options.h"],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_expected",
         ":litert_handle",
@@ -555,17 +533,13 @@ cc_test(
 cc_library(
     name = "litert_platform_support",
     hdrs = ["litert_platform_support.h"],
-    deps = [
-        "//litert/c:litert_platform_support",
-    ],
+    deps = ["//litert/c:litert_platform_support"],
 )
 
 cc_library(
     name = "litert_logging",
     hdrs = ["litert_logging.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -586,9 +560,7 @@ cc_test(
 cc_library(
     name = "litert_environment_options",
     hdrs = ["litert_environment_options.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_any",
         ":litert_expected",
@@ -616,9 +588,7 @@ cc_library(
     name = "litert_rng",
     srcs = ["litert_rng.cc"],
     hdrs = ["litert_rng.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = ["//litert:litert_public"],
     deps = [
         ":litert_detail",
         ":litert_expected",
@@ -719,9 +689,7 @@ cc_library(
 cc_test(
     name = "litert_custom_op_test",
     srcs = ["litert_custom_op_test.cc"],
-    data = [
-        "//litert/test:testdata/simple_model_custom_op.tflite",
-    ],
+    data = ["//litert/test:testdata/simple_model_custom_op.tflite"],
     deps = [
         ":litert_compiled_model",
         ":litert_custom_op_kernel",
@@ -779,9 +747,7 @@ cc_test(
     name = "litert_event_test",
     srcs = ["litert_event_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-        ],
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }) + gles_linkopts(),
     deps = [
@@ -882,9 +848,7 @@ litert_device_exec(
 
 cc_library(
     name = "litert_tensor_buffer_requirements",
-    hdrs = [
-        "litert_tensor_buffer_requirements.h",
-    ],
+    hdrs = ["litert_tensor_buffer_requirements.h"],
     deps = [
         ":litert_expected",
         ":litert_handle",
@@ -902,9 +866,7 @@ cc_library(
 
 cc_test(
     name = "litert_tensor_buffer_requirements_test",
-    srcs = [
-        "litert_tensor_buffer_requirements_test.cc",
-    ],
+    srcs = ["litert_tensor_buffer_requirements_test.cc"],
     deps = [
         ":litert_handle",
         ":litert_tensor_buffer",
@@ -937,9 +899,7 @@ cc_library(
 
 cc_test(
     name = "litert_environment_test",
-    srcs = [
-        "litert_environment_test.cc",
-    ],
+    srcs = ["litert_environment_test.cc"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-llog"],
         "//conditions:default": [],
@@ -1089,9 +1049,7 @@ litert_device_test(
 #         "//litert/test:testdata/simple_cast_and_add_op.tflite",
 #         "//litert/test:testdata/simple_model.tflite",
 #     ],
-#     tags = [
-#         "requires-gpu-nvidia",
-#     ],
+#     tags = ["requires-gpu-nvidia"],
 #     deps = [
 #         ":litert_compiled_model",
 #         ":litert_environment",
@@ -1211,37 +1169,32 @@ objc_library(
     ],
 )
 
-objc_library(
-    name = "litert_compiled_model_metal_test",
-    testonly = True,
-    srcs = [":litert_compiled_model_metal_test.mm"],
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
-    tags = [
-        "no_oss",
-        "notap",
-    ],
-    deps = [
-        ":litert_compiled_model",
-        ":litert_environment",
-        ":litert_expected",
-        ":litert_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/cc/options:litert_gpu_options",
-        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model",
-        "//third_party/apple_frameworks:XCTest",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 # copybara:uncomment_begin(google-only)
+# objc_library(
+#     name = "litert_compiled_model_metal_test",
+#     testonly = True,
+#     srcs = [":litert_compiled_model_metal_test.mm"],
+#     data = ["//litert/test:testdata/simple_model.tflite"],
+#     tags = ["notap"],
+#     deps = [
+#         ":litert_compiled_model",
+#         ":litert_environment",
+#         ":litert_expected",
+#         ":litert_options",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings",
+#         "@com_google_absl//absl/types:span",
+#         "//third_party/apple_frameworks:XCTest",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment_options",
+#         "//litert/cc/options:litert_gpu_options",
+#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model",
+#     ],
+# )
+#
 # macos_unit_test(
 #     name = "litert_tensor_buffer_test_cc_macos",
 #     minimum_os_version = LITERT_MIN_MACOS_VERSION,
