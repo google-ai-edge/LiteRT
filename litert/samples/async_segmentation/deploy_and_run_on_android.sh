@@ -129,7 +129,7 @@ DEVICE_NPU_LIBRARY_DIR="${DEVICE_BASE_DIR}/npu"
 HOST_SHADER_DIR="${PACKAGE_LOCATION}/shaders"
 HOST_TEST_IMAGE_DIR="${PACKAGE_LOCATION}/test_images"
 HOST_MODEL_DIR="${PACKAGE_LOCATION}/models"
-HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/litert/runtime/accelerators/gpu/"
+HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/runtime/accelerators/gpu/"
 
 # Set NPU library path based on the --npu_dispatch_lib_path flag
 if [[ -z "$HOST_NPU_LIB" ]]; then
@@ -164,6 +164,17 @@ case "$PHONE" in
         exit 1
         ;;
 esac
+
+
+# --- Model Selection ---
+MODEL_FILENAME="selfie_multiclass_256x256.tflite"
+if [[ "$ACCELERATOR" == "npu" ]]; then
+    if [[ "$PHONE" == "s24" ]]; then
+        MODEL_FILENAME="selfie_multiclass_256x256_SM8650.tflite"
+    elif [[ "$PHONE" == "s25" ]]; then
+        MODEL_FILENAME="selfie_multiclass_256x256_SM8750.tflite"
+    fi
+fi
 
 
 # --- Script Logic ---
@@ -206,11 +217,7 @@ adb push "${HOST_TEST_IMAGE_DIR}/image.jpeg" "${DEVICE_TEST_IMAGE_DIR}/"
 echo "Pushed test images."
 
 # Push model files
-if [[ "$PHONE" == "s25" ]]; then
-    adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256_SM8750.tflite" "${DEVICE_MODEL_DIR}/"
-else
-    adb push "${HOST_MODEL_DIR}/selfie_multiclass_256x256.tflite" "${DEVICE_MODEL_DIR}/"
-fi
+adb push "${HOST_MODEL_DIR}/${MODEL_FILENAME}" "${DEVICE_MODEL_DIR}/"
 echo "Pushed segmentation models."
 
 # Push c api shared library
@@ -250,12 +257,7 @@ echo ""
 echo "Deployment complete."
 echo "To run the async segmentation on the device, use a command like this:"
 
-MODEL_PATH=""
-if [[ "$PHONE" == "s25" ]]; then
-    MODEL_PATH="./models/selfie_multiclass_256x256_SM8750.tflite"
-else
-    MODEL_PATH="./models/selfie_multiclass_256x256.tflite"
-fi
+MODEL_PATH="./models/${MODEL_FILENAME}"
 
 RUN_COMMAND="./${DEVICE_EXEC_NAME} ${MODEL_PATH} ./test_images/image.jpeg ./output_segmented.png"
 if [[ "$ACCELERATOR" == "gpu" ]] && $USE_GL_BUFFERS; then
