@@ -98,7 +98,7 @@ def validation_model(
     if scale:
         scale_arg = "--scale=" + scale
         zeropoint_arg = "--zero_point=" + zeropoint
-    schema_location = "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"
+    schema_location = "//tflite/converter/schema:schema.fbs"
     native.genrule(
         name = name,
         testonly = testonly,

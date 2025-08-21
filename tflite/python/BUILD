@@ -1,7 +1,7 @@
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_py_library")
 load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_test", "pytype_strict_library")
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_binary", "py_strict_library", "py_strict_test")
-load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable", "pywrap_binaries", "pywrap_library", "tf_python_pybind_extension")
 load("@org_tensorflow//tensorflow/core/platform:build_config_root.bzl", "if_pywrap")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tflite:special_rules.bzl", "internal_visibility_allowlist")
@@ -29,13 +29,13 @@ exports_files([
 
 flatbuffer_py_library(
     name = "schema_py",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema.fbs"],
+    srcs = ["//tflite/converter/schema:schema.fbs"],
     visibility = ["//visibility:public"],
 )
 
 flatbuffer_py_library(
     name = "conversion_metadata_schema_py",
-    srcs = ["@org_tensorflow//tensorflow/compiler/mlir/lite/schema:conversion_metadata.fbs"],
+    srcs = ["//tflite/converter/schema:conversion_metadata.fbs"],
 )
 
 py_strict_library(
@@ -452,7 +452,7 @@ py_strict_library(
     name = "lite_constants",
     srcs = ["lite_constants.py"],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
+        "//tflite/converter:converter_flags_proto_py",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
         "@org_tensorflow//tensorflow/python/util:all_util",
         "@org_tensorflow//tensorflow/python/util:tf_export",
@@ -467,13 +467,13 @@ pytype_strict_library(
         ":convert_phase",
         ":lite_constants",
         ":util",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
+        "//tflite/converter:types_proto_py",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
+        "//tflite/converter/python:wrap_converter",
         "//tflite/python/metrics:metrics_wrapper",
         "//tflite/tools:flatbuffer_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:model_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:types_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_config_proto_py",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/stablehlo:quantization_options_proto_py",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
@@ -510,9 +510,9 @@ pytype_strict_contrib_test(
         ":convert",
         ":interpreter",
         ":op_hint",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "//tflite/python/metrics:metrics_wrapper",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:converter_flags_proto_py",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
         "@org_tensorflow//tensorflow/python/client:session",
         "@org_tensorflow//tensorflow/python/framework:dtypes",
         "@org_tensorflow//tensorflow/python/framework:graph_util",
@@ -606,8 +606,8 @@ py_strict_library(
     srcs = ["convert_phase.py"],
     visibility = ["//tflite:__subpackages__"],
     deps = [
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "//tflite/python/metrics",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
     ],
 )
 
@@ -618,7 +618,7 @@ py_strict_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/python:wrap_converter",
+        "//tflite/converter/python:wrap_converter",
         "@org_tensorflow//tensorflow/python/util:tf_export",
     ] + if_pywrap(
         if_false = [
@@ -650,6 +650,16 @@ py_strict_test(
     ],
 )
 
+# TODO(ecalubaquib): Remove this once the bug b/435507187
+tf_python_pybind_extension(
+    name = "_dummy_pybind",
+    srcs = ["dummy_pybind.cc"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@pybind11",
+    ],
+)
+
 # Use pywrap_library to avoid duplicate registration of pybind11 modules.
 # A great example on how to use pywrap_library is
 # https://github.com/vam-google/symbol-locations/blob/main/pybind/BUILD
@@ -669,7 +679,17 @@ py_strict_library(
         "//tflite/testing:_pywrap_string_util",
         "//tflite/tools/optimize/python:_pywrap_modify_model_interface",
         "//tflite/tools/optimize/sparsity:format_converter_wrapper_pybind11",
-    ],
+    ] + select({
+        # This is a dummy pybind module that is never used.
+        # Its to allow using select with pywrap_library till b/435507187 is fixed.
+        # Using this allows a constant number for pywrap_count in pywrap_library.
+        "//conditions:default": [":_dummy_pybind"],
+        # Only include the pywrap_converter_api when disable_tf_lite_py is set
+        # which is only when building under LiteRT repo.
+        "@org_tensorflow//tensorflow:disable_tf_lite_py": [
+            "//tflite/converter/python:_pywrap_converter_api",
+        ],
+    }),
 )
 
 pywrap_library(
@@ -684,7 +704,7 @@ pywrap_library(
             "//conditions:default": "pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 8,
+    pywrap_count = 9,
     visibility = ["//visibility:public"],
     deps = [
         ":tflite_pywrap_deps",

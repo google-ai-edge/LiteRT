@@ -12,9 +12,9 @@ py_strict_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//tflite/converter/metrics:converter_error_data_proto_py",
         "//tflite/python:convert",
         "//tflite/python:lite",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/metrics:converter_error_data_proto_py",
         "@org_tensorflow//tensorflow/python/util:tf_export",
     ],
 )

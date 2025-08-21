@@ -859,9 +859,9 @@ cc_test(
         ":status_codes",
         "//tflite:allocation",
         "//tflite:stderr_reporter",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ] + select({
         clean_dep("@org_tensorflow//tensorflow:android"): [
             ":embedded_runner_executable",
@@ -992,6 +992,7 @@ cc_test(
         "//tflite/acceleration/configuration:configuration_fbs",
         "//tflite/acceleration/configuration:flatbuffer_to_proto",
         "//tflite/acceleration/configuration:proto_to_flatbuffer",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/core:model_builder",
         "//tflite/core/acceleration/configuration:nnapi_plugin",
         "//tflite/experimental/acceleration/mini_benchmark/model_modifier:custom_validation_embedder",
@@ -999,7 +1000,6 @@ cc_test(
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ] + select({
         clean_dep("@org_tensorflow//tensorflow:android"): [
             "//tflite/acceleration/configuration:gpu_plugin",

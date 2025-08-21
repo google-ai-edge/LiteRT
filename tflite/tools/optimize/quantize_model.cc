@@ -31,7 +31,7 @@ limitations under the License.
 #include "flatbuffers/flexbuffers.h"
 #include "absl/strings/str_cat.h"
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
-#include "tensorflow/compiler/mlir/lite/tools/optimize/operator_property.h"
+#include "tflite/converter/tools/optimize/operator_property.h"
 #include "tflite/context.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/core/model.h"

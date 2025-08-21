@@ -1,4 +1,4 @@
-/* Copyright 2024 The TensorFlow Authors. All Rights Reserved.
+/* Copyright 2025 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -12,16 +12,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
+#include <pybind11/pybind11.h>
 
-#ifndef TENSORFLOW_COMPILER_MLIR_LITE_STABLEHLO_TRANSFORMS_COMPOSITE_LOWERING_PASS_H_
-#define TENSORFLOW_COMPILER_MLIR_LITE_STABLEHLO_TRANSFORMS_COMPOSITE_LOWERING_PASS_H_
-
-namespace mlir {
-namespace odml {
-
-std::unique_ptr<Pass> CreateCompositeLoweringPass();
-
-}  // namespace odml
-}  // namespace mlir
-
-#endif  // TENSORFLOW_COMPILER_MLIR_LITE_STABLEHLO_TRANSFORMS_COMPOSITE_LOWERING_PASS_H_
+PYBIND11_MODULE(_dummy_pybind, m) { m.doc() = "Dummy pybind module."; }

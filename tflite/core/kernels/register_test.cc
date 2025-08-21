@@ -18,7 +18,7 @@ limitations under the License.
 #include <string>
 
 #include <gtest/gtest.h>
-#include "tensorflow/compiler/mlir/lite/tools/versioning/runtime_version.h"
+#include "tflite/converter/tools/versioning/runtime_version.h"
 #include "tflite/c/common.h"
 #include "tflite/mutable_op_resolver.h"
 #include "tflite/schema/schema_generated.h"

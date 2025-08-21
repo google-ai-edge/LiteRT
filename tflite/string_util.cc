@@ -22,7 +22,7 @@ limitations under the License.
 #include <cstring>
 #include <vector>
 
-#include "tensorflow/compiler/mlir/lite/utils/string_utils.h"
+#include "tflite/converter/utils/string_utils.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
 

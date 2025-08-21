@@ -1,5 +1,0 @@
-converter_staging/tflite/converter/core/special_rules.bzl:
-converter_staging/tflite/converter/glob_lit_test.bzl:
-converter_staging/tflite/converter/schema/conversion_metadata_generated.h:
-converter_staging/tflite/converter/schema/schema_generated.h:
-converter_staging/tflite/converter/special_rules.bzl:

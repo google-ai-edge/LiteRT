@@ -25,7 +25,7 @@ limitations under the License.
 // (non-virtual) accessor methods and API functions to be declared.
 // The code here uses those methods, so we need to make sure that we get
 // the mutable variant of this header.
-#include "tensorflow/compiler/mlir/lite/schema/mutable/schema_generated.h"
+#include "tflite/converter/schema/mutable/schema_generated.h"
 
 #include "tflite/python/optimize/calibration_wrapper.h"
 // clang-format on
@@ -50,7 +50,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "tensorflow/compiler/mlir/lite/offset_buffer.h"
+#include "tflite/converter/offset_buffer.h"
 #include "tflite/core/c/common.h"
 #include "tflite/core/interpreter.h"
 #include "tflite/core/kernels/register.h"

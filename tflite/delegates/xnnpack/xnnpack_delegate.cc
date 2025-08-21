@@ -39,8 +39,8 @@ limitations under the License.
 #include "Eigen/Core"  // from @eigen_archive
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "pthreadpool.h"  // from @pthreadpool
-#include "tensorflow/compiler/mlir/lite/kernels/internal/compatibility_macros.h"
-#include "tensorflow/compiler/mlir/lite/tools/optimize/reduced_precision_metadata.h"
+#include "tflite/converter/kernels/internal/compatibility_macros.h"
+#include "tflite/converter/tools/optimize/reduced_precision_metadata.h"
 #include "tflite/array.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/builtin_op_data.h"

@@ -26,7 +26,7 @@ cc_library(
     visibility = ["//platforms/darwinn/tflite/serialization:__subpackages__"],
     deps = [
         "//tflite:builtin_op_data",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -46,6 +46,9 @@ cc_library(
         "//tflite:builtin_op_data",
         "//tflite:framework",
         "//tflite:schema_fbs_version",
+        "//tflite/converter/schema:schema_conversion_utils",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
+        "//tflite/converter/tools/versioning",
         "//tflite/core:framework_stable",
         "//tflite/core:model_builder",
         "//tflite/core/c:common",
@@ -54,9 +57,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@flatbuffers//:runtime_cc",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_conversion_utils",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/tools/versioning",
     ],
 )
 
@@ -92,6 +92,7 @@ cc_test(
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite:util",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/core:framework",
         "//tflite/core/c:c_api_types",
         "//tflite/core/c:common",
@@ -101,7 +102,6 @@ cc_test(
         "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest_main",
         "@local_tsl//tsl/platform:logging",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
