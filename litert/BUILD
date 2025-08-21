@@ -34,6 +34,7 @@ package_group(
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
+        # copybara:uncomment "//third_party/deepmind/lyria_live/internal/odml/...",
         # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
