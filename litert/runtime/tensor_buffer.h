@@ -104,6 +104,10 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateManaged(
       LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+  static litert::Expected<Ptr> CreateManagedWithAlignment(
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+      size_t alignment);
 
 #if LITERT_HAS_OPENCL_SUPPORT
   static litert::Expected<Ptr> CreateFromOpenClMemory(
@@ -224,6 +228,9 @@ class LiteRtTensorBufferT {
 
   static litert::Expected<Ptr> CreateManagedOnHostMemory(
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+  static litert::Expected<Ptr> CreateManagedOnHostMemory(
+      const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+      size_t alignment);
 
   static litert::Expected<Ptr> CreateManagedAhwbBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
