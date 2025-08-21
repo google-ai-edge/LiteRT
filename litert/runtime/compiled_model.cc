@@ -71,7 +71,7 @@
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
 #include "tflite/core/api/profiler.h"

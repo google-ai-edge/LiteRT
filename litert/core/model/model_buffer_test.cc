@@ -26,7 +26,7 @@
 #include "litert/core/model/model_load.h"
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_builder.h"
 #include "tflite/kernels/register.h"

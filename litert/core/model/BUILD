@@ -45,13 +45,13 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_logging",
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/core/c:private_c_api_types",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -94,10 +94,10 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:flatbuffer_tools",
+        "//tflite/converter/core:model_builder_base",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/core:model_builder_base",
     ],
 )
 
@@ -128,11 +128,11 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:test_models",
+        "//tflite/converter/schema:schema_fbs_with_mutable",
         "//tflite/schema:schema_fbs_with_mutable",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite/schema:schema_fbs_with_mutable",
     ],
 )
 
@@ -336,12 +336,12 @@ cc_test(
         "//tflite:model_builder",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
+        "//tflite/converter:allocation",
         "//tflite/core:private_cc_api_stable",
         "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
     ],
 )
 

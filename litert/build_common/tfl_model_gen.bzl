@@ -24,7 +24,7 @@ def tfl_model_gen(name, srcs, subdir = "testdata"):
       subdir: subdirectory to place the generated tflite files.
     """
     OUT_DIR = "$(RULEDIR)"
-    CONVERTER = "@org_tensorflow//tensorflow/compiler/mlir/lite:tf_tfl_translate"
+    CONVERTER = "//tflite/converter:tf_tfl_translate"
     CMD = """
     for mlir_file in $(SRCS); do
         $(location {converter}) --input-mlir $$mlir_file --o={out_dir}/{subdir}/$$(basename $$mlir_file .mlir).tflite

@@ -28,7 +28,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_expected.h"
-#include "tensorflow/compiler/mlir/lite/allocation.h"
+#include "tflite/converter/allocation.h"
 #include "tflite/model_builder.h"
 #include "tflite/schema/schema_generated.h"
 

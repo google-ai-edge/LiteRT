@@ -349,6 +349,7 @@ cc_library(
         "//tflite/c:c_api_opaque",
         "//tflite/c:c_api_types_opaque_delegate",
         "//tflite/c:common",
+        "//tflite/converter:allocation",
         "//tflite/core:private_cc_api_stable",
         "//tflite/core/api",
         "//tflite/delegates/utils:simple_opaque_delegate",
@@ -361,7 +362,6 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-        "@org_tensorflow//tensorflow/compiler/mlir/lite:allocation",
     ] + select({
         "//litert:without_builtin_ops": [],
         "//conditions:default": ["//tflite/kernels:builtin_ops"],
