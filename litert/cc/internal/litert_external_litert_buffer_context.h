@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
 #include "litert/c/litert_common.h"
@@ -107,4 +107,4 @@ class ExternalLiteRtBufferContext
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_

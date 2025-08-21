@@ -12,19 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_registration.h"
 
 #include <memory>
 #include <utility>
 
-#include "litert/c/litert_accelerator.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment.h"
-#include "litert/c/litert_metrics.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerator.h"
+#include "litert/runtime/accelerator_registry.h"
 
 LiteRtStatus LiteRtCreateAccelerator(LiteRtAccelerator* accelerator) {
   if (!accelerator) {

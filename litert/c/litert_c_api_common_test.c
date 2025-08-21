@@ -19,15 +19,12 @@
 #endif
 
 // Include all the header files in the litert/c directory.
-#include "litert/c/litert_accelerator.h"  // NOLINT
-#include "litert/c/litert_accelerator_registration.h"  // NOLINT
 #include "litert/c/litert_any.h"             // NOLINT
 #include "litert/c/litert_common.h"          // NOLINT
 #include "litert/c/litert_compiled_model.h"  // NOLINT
 #include "litert/c/litert_custom_tensor_buffer.h"  // NOLINT
 #include "litert/c/litert_dispatch_delegate.h"  // NOLINT
 #include "litert/c/litert_event.h"  // NOLINT
-#include "litert/c/litert_external_litert_buffer_context.h"  // NOLINT
 #include "litert/c/litert_layout.h"          // NOLINT
 #include "litert/c/litert_logging.h"         // NOLINT
 #include "litert/c/litert_metrics.h"         // NOLINT
@@ -39,7 +36,10 @@
 #include "litert/c/litert_profiler_event.h"  // NOLINT
 #include "litert/c/litert_tensor_buffer.h"   // NOLINT
 #include "litert/c/litert_tensor_buffer_requirements.h"  // NOLINT
-#include "litert/c/litert_tensor_buffer_registry.h"  // NOLINT
+#include "litert/c/internal/litert_accelerator.h"  // NOLINT
+#include "litert/c/internal/litert_accelerator_registration.h"  // NOLINT
+#include "litert/c/internal/litert_external_litert_buffer_context.h"  // NOLINT
+#include "litert/c/internal/litert_tensor_buffer_registry.h"  // NOLINT
 #include "litert/c/options/litert_cpu_options.h"  // NOLINT
 #include "litert/c/options/litert_google_tensor_options.h"  // NOLINT
 #include "litert/c/options/litert_google_tensor_options_type.h"  // NOLINT

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_external_litert_buffer_context.h"
+#include "litert/c/internal/litert_external_litert_buffer_context.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_macros.h"

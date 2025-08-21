@@ -49,7 +49,6 @@ litert_dynamic_lib(
     deps = [
         ":graph_iterator",
         "//litert/c:litert_common",
-        "//litert/c:litert_dispatch_headers",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
@@ -137,7 +136,6 @@ litert_lib(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_dispatch_headers",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model",

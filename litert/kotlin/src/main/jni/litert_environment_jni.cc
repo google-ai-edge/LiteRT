@@ -22,7 +22,7 @@
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_accelerator.h"
+#include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_logging.h"
