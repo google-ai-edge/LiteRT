@@ -3,7 +3,7 @@ load("//ci/tools/python/wheel/utils:platforms.bzl", "get_wheel_platform_name")
 load("//ci/tools/python/wheel/utils:py_manylinux_compliance_test.bzl", "verify_manylinux_compliance_test")
 load("//ci/tools/python/wheel/utils:py_wheel.bzl", "py_wheel")
 load("//litert:litert.bzl", "MANYLINUX_LEVEL")
-load("//litert:version.bzl", "LITERT_FULL_VERSION")
+load("//litert:version.bzl", "LITERT_EXPERIMENTAL_VERSION")
 
 package(
     default_visibility = ["//ci/tools/python:__subpackages__"],
@@ -97,7 +97,7 @@ py_wheel(
     project_name = "ai_edge_litert",
     py_srcs = ALL_PY_SRC_MODULES,
     setup_py = ":setup_py",
-    version = LITERT_FULL_VERSION,
+    version = LITERT_EXPERIMENTAL_VERSION,
 )
 
 verify_manylinux_compliance_test(
