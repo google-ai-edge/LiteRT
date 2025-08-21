@@ -23,7 +23,6 @@ limitations under the License.
 #include <cstdlib>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "absl/strings/string_view.h"
 #include "tflite/core/model_builder.h"
