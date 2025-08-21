@@ -17,11 +17,11 @@
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_dispatch_delegate.h"
+#include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"

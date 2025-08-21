@@ -29,7 +29,7 @@ package(
 cc_library(
     name = "litert_dispatch_delegate",
     hdrs = [
-        "//litert/cc:litert_dispatch_delegate.h",
+        "litert_dispatch_delegate.h",
     ],
     deps = [
         "//litert/c:litert_common",
@@ -365,3 +365,5 @@ litert_device_exec(
     ],
     target = ":litert_compiled_model_webgpu_test",
 )
+
+exports_files(["litert_dispatch_delegate.h"])

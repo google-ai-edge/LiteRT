@@ -696,24 +696,6 @@ LITERT_C_API_DEPS = [
     "//tflite/kernels:builtin_ops",
 ]
 
-# Dispatch Delegate of LiteRt.
-# Warning: This API is not ABI stable and is subject to change.
-cc_library(
-    name = "litert_dispatch_delegate",
-    hdrs = [
-        "litert_dispatch_delegate.h",
-    ],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/runtime/dispatch:dispatch_delegate",
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_opaque",
-        "//tflite/c:c_api_types",
-        "//tflite/c:common",
-        "//tflite/delegates/utils:simple_opaque_delegate",
-    ],
-)
-
 cc_library(
     name = "litert_custom_op_kernel",
     srcs = ["litert_custom_op_kernel.cc"],
@@ -1196,21 +1178,6 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
-)
-
-# TODO: b/439610227 - Remove this.
-cc_library(
-    name = "litert_external_litert_buffer_context",
-    hdrs = ["litert_external_litert_buffer_context.h"],
-    deps = [
-        ":litert_environment",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_macros",
-        ":litert_tensor_buffer",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//tflite/c:common",
-    ],
 )
 
 exports_files(glob([

@@ -586,7 +586,7 @@ objc_library(
         ":gpu_environment",
         ":metal_sync",
         "//litert/c:litert_common",
-        "//litert/c:litert_dispatch_headers",
+        "//litert/c/internal:litert_dispatch_headers",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:tensor_type_util",

@@ -92,6 +92,23 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_dispatch_delegate",
+    hdrs = ["litert_dispatch_delegate.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_metrics",
+        "//litert/runtime/dispatch:dispatch_delegate",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
+        "//tflite/delegates/utils:simple_opaque_delegate",
+    ],
+)
+
+cc_library(
     name = "litert_tensor_buffer_registry",
     srcs = ["litert_tensor_buffer_registry.cc"],
     hdrs = ["litert_tensor_buffer_registry.h"],
@@ -103,13 +120,65 @@ cc_library(
     ],
 )
 
+# Collection of headers for dispatch APIs.
+# Warning: Do not use this target to include common C API headers. Use individual targets instead.
+cc_library(
+    name = "litert_dispatch_headers",
+    hdrs = [
+        # Internal C API headers.
+        ":litert_accelerator.h",
+        ":litert_accelerator_registration.h",
+        ":litert_dispatch_delegate.h",
+        ":litert_external_litert_buffer_context.h",
+        ":litert_tensor_buffer_registry.h",
+        "//litert/c:litert_any.h",
+        "//litert/c:litert_common.h",
+        "//litert/c:litert_compiled_model.h",
+        "//litert/c:litert_custom_tensor_buffer.h",
+        "//litert/c:litert_custom_op_kernel.h",
+        "//litert/c:litert_environment.h",
+        "//litert/c:litert_environment_options.h",
+        "//litert/c:litert_event.h",
+        "//litert/c:litert_event_type.h",
+        "//litert/c:litert_gl_types.h",
+        "//litert/c:litert_layout.h",
+        "//litert/c:litert_logging.h",
+        "//litert/c:litert_metrics.h",
+        "//litert/c:litert_model.h",
+        "//litert/c:litert_op_code.h",
+        "//litert/c:litert_op_options.h",
+        "//litert/c:litert_opaque_options.h",
+        "//litert/c:litert_options.h",
+        "//litert/c:litert_platform_support.h",
+        "//litert/c:litert_tensor_buffer.h",
+        "//litert/c:litert_tensor_buffer_requirements.h",
+        "//litert/c:litert_tensor_buffer_types.h",
+        # Needed for litert/c/litert_op_code.h
+        "//tflite:builtin_ops.h",
+        # Needed for litert/c/litert_model.h
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",
+        "//tflite/c:tensorflowlite_c_impl_hdrs_filegroup",
+    ],  # Export all header files (.h) in this directory
+    visibility = [
+        "//litert/runtime:__pkg__",  # Temporaray only for metal_memory
+        "//litert/runtime/dispatch:__pkg__",
+        "//litert/vendors/c:__pkg__",
+    ],
+    deps = [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
+    ],
+)
+
 cc_library(
     name = "litert_external_litert_buffer_context",
     srcs = ["litert_external_litert_buffer_context.cc"],
     hdrs = ["litert_external_litert_buffer_context.h"],
     deps = [
+        ":litert_dispatch_headers",
         "//litert/c:litert_common",
-        "//litert/c:litert_dispatch_headers",
         "//litert/cc:litert_macros",
         "//litert/runtime:external_litert_buffer_context",
         "//tflite/c:common",

@@ -23,11 +23,11 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_dispatch_delegate.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_compiled_model.h"
-#include "litert/cc/litert_dispatch_delegate.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
