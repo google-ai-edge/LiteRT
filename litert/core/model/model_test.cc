@@ -189,6 +189,25 @@ TEST(ModelSubgraphTest, EmplaceOp) {
   EXPECT_THAT(subgraph.Ops(), ElementsAreArray({&op}));
 }
 
+TEST(ModelSubgraphTest, TransferOpsFrom) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSubgraphT other_subgraph;
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  other_subgraph.TransferOpsFrom(subgraph.OpsAllocation(), 0);
+  EXPECT_EQ(subgraph.Ops().size(), 0);
+  EXPECT_EQ(other_subgraph.Ops().size(), 1);
+  EXPECT_EQ(other_subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(ModelSubgraphTest, TransferTensorsFrom) {
+  LiteRtSubgraphT subgraph;
+  LiteRtSubgraphT other_subgraph;
+  subgraph.EmplaceTensor();
+  other_subgraph.TransferTensorsFrom(subgraph.TensorsAllocation());
+  EXPECT_EQ(subgraph.Tensors().size(), 0);
+  EXPECT_EQ(other_subgraph.Tensors().size(), 1);
+}
 //
 // Op
 //

@@ -636,6 +636,20 @@ class LiteRtSubgraphT {
     return tensors_.RemoveIf(pred);
   }
 
+  // Transfers the ownership of ops from the given allocator to this subgraph.
+  // Ops are appended in order.
+  void TransferOpsFrom(LiteRtOpT::Alloc& other, size_t index) {
+    ops_.TransferFrom(other, index);
+  }
+  // Transfers the ownership of tensors from the given allocator to this
+  // subgraph. Tensors are appended in order.
+  void TransferTensorsFrom(LiteRtTensorT::Alloc& other) {
+    tensors_.TransferFrom(other);
+  }
+
+  LiteRtOpT::Alloc& OpsAllocation() { return ops_; }
+  LiteRtTensorT::Alloc& TensorsAllocation() { return tensors_; }
+
   // IR is generally, default constructible and movable but not copyable.
   LiteRtSubgraphT() = default;
   LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
