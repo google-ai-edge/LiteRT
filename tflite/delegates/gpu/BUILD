@@ -376,8 +376,11 @@ cc_test(
     ],
     deps = [
         ":android_hardware_buffer",
+        ":api",
         ":async_buffers",
         ":delegate",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/gl:egl_environment",
         "@com_google_googletest//:gtest_main",
     ],
 )
