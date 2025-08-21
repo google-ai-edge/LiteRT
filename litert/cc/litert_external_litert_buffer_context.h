@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
-#include "litert/c/internal/litert_external_litert_buffer_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_external_litert_buffer_context.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"

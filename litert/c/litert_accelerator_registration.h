@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_C_LITERT_INTERNAL_ACCELERATOR_REGISTRATION_H_
-#define ODML_LITERT_LITERT_C_LITERT_INTERNAL_ACCELERATOR_REGISTRATION_H_
+#ifndef ODML_LITERT_LITERT_C_LITERT_ACCELERATOR_REGISTRATION_H_
+#define ODML_LITERT_LITERT_C_LITERT_ACCELERATOR_REGISTRATION_H_
 
 #include <stdbool.h>  // NOLINT
 
@@ -106,4 +106,4 @@ LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
 }  // extern "C"
 #endif
 
-#endif  // ODML_LITERT_LITERT_C_LITERT_INTERNAL_ACCELERATOR_REGISTRATION_H_
+#endif  // ODML_LITERT_LITERT_C_LITERT_ACCELERATOR_REGISTRATION_H_

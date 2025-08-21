@@ -22,11 +22,11 @@ cc_library(
     srcs = ["dispatch_accelerator.cc"],
     hdrs = ["dispatch_accelerator.h"],
     deps = [
+        "//litert/c:litert_accelerator_registration",
         "//litert/c:litert_common",
         "//litert/c:litert_dispatch_delegate",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
-        "//litert/c/internal:litert_accelerator_registration",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_dispatch_delegate",

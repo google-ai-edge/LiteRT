@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/internal/litert_accelerator.h"
+#include "litert/c/litert_accelerator.h"
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"

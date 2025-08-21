@@ -197,8 +197,8 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   }
 }
 
-#if LITERT_HAS_OPENGL_SUPPORT
 void FillGlBuffer1(LiteRtGLuint id, size_t size) {
+#if LITERT_HAS_OPENGL_SUPPORT
   std::string shader_source = R"( #version 310 es
     precision highp float;
     layout(local_size_x = 1, local_size_y = 1) in;
@@ -233,9 +233,11 @@ void FillGlBuffer1(LiteRtGLuint id, size_t size) {
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
   glDeleteProgram(to_buffer_program);
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
 void FillGlBuffer2(LiteRtGLuint id, size_t size) {
+#if LITERT_HAS_OPENGL_SUPPORT
   std::string shader_source = R"( #version 310 es
     precision highp float;
     layout(local_size_x = 1, local_size_y = 1) in;
@@ -270,6 +272,7 @@ void FillGlBuffer2(LiteRtGLuint id, size_t size) {
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
   glDeleteProgram(to_buffer_program);
   ABSL_CHECK(glGetError() == GL_NO_ERROR);
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 }
 
 TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
@@ -375,7 +378,6 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
 }
-#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 }  // namespace
 }  // namespace litert
