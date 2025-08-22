@@ -46,13 +46,13 @@ TEST(EnvironmentSingletonTest, OpenClEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtAny context_id,
-      litert::ToLiteRtAny(
-          std::any(reinterpret_cast<int64_t>(env.context().context()))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.context().context()))));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtAny queue_id,
-      litert::ToLiteRtAny(
-          std::any(reinterpret_cast<int64_t>(env.queue()->queue()))));
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(env.queue()->queue()))));
 
   const std::array<LiteRtEnvOption, 2> environment_options = {
       LiteRtEnvOption{

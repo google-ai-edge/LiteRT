@@ -37,7 +37,7 @@ class EnvironmentOptions
 
   using OptionTag = LiteRtEnvOptionTag;
 
-  Expected<std::any> GetOption(OptionTag tag) const {
+  Expected<LiteRtVariant> GetOption(OptionTag tag) const {
     if (Get() == nullptr) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Environment options are null");
