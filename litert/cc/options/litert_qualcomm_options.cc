@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -134,6 +135,17 @@ std::vector<std::int32_t> QualcommOptions::GetDumpTensorIds() {
     dump_ids.emplace_back(ids[i]);
   }
   return dump_ids;
+}
+
+void QualcommOptions::SetIrJsonDir(const std::string& ir_json_dir) {
+  internal::AssertOk(LiteRtQualcommOptionsSetIrJsonDir, Data(),
+                     ir_json_dir.c_str());
+}
+
+absl::string_view QualcommOptions::GetIrJsonDir() {
+  const char* ir_json_dir;
+  internal::AssertOk(LiteRtQualcommOptionsGetIrJsonDir, Data(), &ir_json_dir);
+  return absl::string_view(ir_json_dir);
 }
 
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {

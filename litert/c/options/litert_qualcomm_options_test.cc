@@ -153,6 +153,23 @@ TEST(LiteRtQualcommOptionsTest, Profiling) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetIrJsonDir(qualcomm_options, "tmp/"));
+
+  const char* ir_json_dir;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetIrJsonDir(qualcomm_options, &ir_json_dir));
+  EXPECT_STREQ(ir_json_dir, "tmp/");
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -213,6 +230,10 @@ TEST(QualcommOptionsTest, CppApi) {
   for (size_t i = 0; i < kDumpTensorIds.size(); i++) {
     EXPECT_EQ(ids[i], kDumpTensorIds[i]);
   }
+
+  EXPECT_EQ(options->GetIrJsonDir(), "");
+  options->SetIrJsonDir("tmp");
+  EXPECT_EQ(options->GetIrJsonDir(), "tmp");
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

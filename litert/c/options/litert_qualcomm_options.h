@@ -41,7 +41,7 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options);
 // type erased options.
 const char* LiteRtQualcommOptionsGetIdentifier();
 
-// Attempt to retrieve qualcomm options from the opaque options. Fails unlesss
+// Attempt to retrieve qualcomm options from the opaque options. Fails unless
 // the opaque options are of another type.
 LiteRtStatus LiteRtQualcommOptionsGet(LiteRtOpaqueOptions options,
                                       LiteRtQualcommOptions* options_data);
@@ -155,6 +155,12 @@ LiteRtStatus LiteRtQualcommOptionsSetProfiling(
 
 LiteRtStatus LiteRtQualcommOptionsGetProfiling(
     LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling);
+
+LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char* ir_json_dir);
+
+LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
+                                               const char** ir_json_dir);
 
 #ifdef __cplusplus
 }  // extern "C"

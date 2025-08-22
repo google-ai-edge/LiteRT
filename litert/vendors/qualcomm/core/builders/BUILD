@@ -16,6 +16,7 @@ cc_library(
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@com_google_absl//absl/strings",
         "@qairt//:qnn_lib_headers",
     ],
 )
