@@ -300,6 +300,7 @@ cc_library(
         "//tflite/tools:utils",
         "//tflite/tools/benchmark:benchmark_model_lib",
         "//tflite/tools/benchmark:benchmark_params",
+        "//tflite/tools/benchmark/proto:benchmark_result_cc",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],

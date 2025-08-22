@@ -18,6 +18,8 @@ limitations under the License.
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include <fstream>
+#include <ios>
 #include <string>
 #include <utility>
 
@@ -101,6 +103,75 @@ TEST(BenchmarkLiteRtModelTest, GPUAccelerationWithProfiler) {
   BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
 
   EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+}
+
+TEST(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+
+#if defined(__ANDROID__)
+  std::string result_file_path = "/data/local/tmp/benchmark_result.pb";
+#else
+  std::string result_file_path = "/tmp/benchmark_result.pb";
+#endif
+  params.Set<std::string>("result_file_path", result_file_path);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+  TestBenchmarkListener listener;
+  benchmark.AddListener(&listener);
+
+  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+
+  std::ifstream in_file(result_file_path, std::ios::binary | std::ios::in);
+  BenchmarkResult result;
+  result.ParseFromIstream(&in_file);
+
+  // Verify latency metrics.
+  EXPECT_FLOAT_EQ(result.latency_metrics().init_ms(),
+                  listener.results_.startup_latency_us() / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().first_inference_ms(),
+                  listener.results_.warmup_time_us().first() / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().average_warm_up_ms(),
+                  listener.results_.warmup_time_us().avg() / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().avg_ms(),
+                  listener.results_.inference_time_us().avg() / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().min_ms(),
+                  listener.results_.inference_time_us().min() / 1000.0);
+  EXPECT_FLOAT_EQ(result.latency_metrics().max_ms(),
+                  listener.results_.inference_time_us().max() / 1000.0);
+  EXPECT_FLOAT_EQ(
+      result.latency_metrics().stddev_ms(),
+      listener.results_.inference_time_us().std_deviation() / 1000.0);
+  EXPECT_FLOAT_EQ(
+      result.latency_metrics().median_ms(),
+      listener.results_.inference_time_us().percentile(50) / 1000.0);
+  EXPECT_FLOAT_EQ(
+      result.latency_metrics().p95_ms(),
+      listener.results_.inference_time_us().percentile(95) / 1000.0);
+  EXPECT_FLOAT_EQ(
+      result.latency_metrics().p5_ms(),
+      listener.results_.inference_time_us().percentile(5) / 1000.0);
+
+  // Verify memory metrics.
+  EXPECT_EQ(result.memory_metrics().init_footprint_kb(),
+            listener.results_.init_mem_usage().mem_footprint_kb);
+  EXPECT_EQ(result.memory_metrics().overall_footprint_kb(),
+            listener.results_.overall_mem_usage().mem_footprint_kb);
+  EXPECT_EQ(result.memory_metrics().has_peak_mem_mb(), false);
+
+  // Verify misc metrics.
+  EXPECT_FLOAT_EQ(result.misc_metrics().model_size_mb(),
+                  listener.results_.model_size_mb());
+  EXPECT_EQ(result.misc_metrics().num_runs(),
+            listener.results_.inference_time_us().count());
+  EXPECT_EQ(result.misc_metrics().num_warmup_runs(),
+            listener.results_.warmup_time_us().count());
+  EXPECT_FLOAT_EQ(result.misc_metrics().model_throughput_in_mb_per_sec(),
+                  listener.results_.throughput_MB_per_second());
 }
 }  // namespace
 }  // namespace benchmark

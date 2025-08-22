@@ -29,7 +29,7 @@
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
-#include "tflite/profiling/proto/model_runtime_info.proto.h"
+#include "tflite/profiling/proto/model_runtime_info.pb.h"
 #include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/delegates/delegate_provider.h"
 #include "tflite/tools/model_loader.h"

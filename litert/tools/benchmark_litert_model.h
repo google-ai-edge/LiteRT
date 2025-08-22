@@ -39,14 +39,28 @@ limitations under the License.
 #include "tflite/c/common.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
+#include "tflite/tools/benchmark/proto/benchmark_result.pb.h"
 #include "tflite/tools/command_line_flags.h"
 #include "tflite/tools/utils.h"
 
 namespace litert {
 namespace benchmark {
+using ::tflite::tools::benchmark::BenchmarkResult;
+
 // Custom logging listener with better output
 class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
+ private:
+  std::string result_file_path_ = "";
+
  public:
+  void OnBenchmarkStart(
+      const ::tflite::benchmark::BenchmarkParams& params) override {
+    if (!params.Get<std::string>("result_file_path").empty()) {
+      result_file_path_ =
+          std::string(params.Get<std::string>("result_file_path"));
+    }
+  }
+
   void OnBenchmarkEnd(
       const ::tflite::benchmark::BenchmarkResults& results) override {
     auto inference_us = results.inference_time_us();
@@ -99,6 +113,55 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
       }
     }
     LITERT_LOG(LITERT_INFO, "======================================\n");
+    if (!result_file_path_.empty()) {
+      BenchmarkResult result;
+      result.mutable_latency_metrics()->set_init_ms(init_us / 1000.0);
+      result.mutable_latency_metrics()->set_first_inference_ms(
+          warmup_us.first() / 1000.0);
+      result.mutable_latency_metrics()->set_average_warm_up_ms(warmup_us.avg() /
+                                                               1000.0);
+      result.mutable_latency_metrics()->set_min_ms(inference_us.min() / 1000.0);
+      result.mutable_latency_metrics()->set_max_ms(inference_us.max() / 1000.0);
+      result.mutable_latency_metrics()->set_stddev_ms(
+          inference_us.std_deviation() / 1000.0);
+      result.mutable_latency_metrics()->set_avg_ms(inference_us.avg() / 1000.0);
+      result.mutable_latency_metrics()->set_median_ms(
+          inference_us.percentile(50) / 1000.0);
+      result.mutable_latency_metrics()->set_p5_ms(inference_us.percentile(5) /
+                                                  1000.0);
+      result.mutable_latency_metrics()->set_p95_ms(inference_us.percentile(95) /
+                                                   1000.0);
+      if (init_mem_usage.IsSupported()) {
+        result.mutable_memory_metrics()->set_init_footprint_kb(
+            init_mem_usage.mem_footprint_kb);
+        result.mutable_memory_metrics()->set_overall_footprint_kb(
+            overall_mem_usage.mem_footprint_kb);
+        if (results.peak_mem_mb() > 0) {
+          result.mutable_memory_metrics()->set_peak_mem_mb(
+              results.peak_mem_mb());
+        }
+      }
+
+      result.mutable_misc_metrics()->set_model_size_mb(results.model_size_mb());
+      result.mutable_misc_metrics()->set_num_runs(inference_us.count());
+      result.mutable_misc_metrics()->set_num_warmup_runs(warmup_us.count());
+      result.mutable_misc_metrics()->set_model_throughput_in_mb_per_sec(
+          results.throughput_MB_per_second());
+
+      std::ofstream out_file(result_file_path_,
+                             std::ios::binary | std::ios::out);
+      if (out_file.good()) {
+        LITERT_LOG(LITERT_INFO, "Saving benchmark result to: %s",
+                   result_file_path_.c_str());
+        result.SerializeToOstream(&out_file);
+        out_file.close();
+        LITERT_LOG(LITERT_INFO, "Saved benchmark result to: %s",
+                   result_file_path_.c_str());
+      } else {
+        LITERT_LOG(LITERT_ERROR, "Failed to save benchmark result to: %s",
+                   result_file_path_.c_str());
+      }
+    }
   }
 };
 
@@ -135,6 +198,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
+                            BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
@@ -263,6 +328,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "gpu_backend", &params_,
         "GPU backend to use when using GPU accelerator."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "result_file_path", &params_,
+        "Path to save the benchmark result in binary proto format."));
     return flags;
   }
 
