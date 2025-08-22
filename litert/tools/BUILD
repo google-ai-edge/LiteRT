@@ -111,6 +111,7 @@ litert_bin(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
+    visibility = ["//litert:litert_public"],
     deps = [
         ":apply_plugin",
         ":outstream",
