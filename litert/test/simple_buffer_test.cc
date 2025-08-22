@@ -91,7 +91,8 @@ TEST(TensorBufferHelperTest, ReadNonDividingSizedData) {
   EXPECT_THAT(buf.Span<uint8_t>(), ElementsAre('a', 'b', 'c', 'd', 'e'));
   auto wide_span = buf.Span<uint16_t>();
   auto bytes_span = absl::Span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(wide_span.data()), wide_span.size() * 2);
+      reinterpret_cast<const uint8_t*>(wide_span.data()),
+      wide_span.size() * sizeof(uint16_t));
   EXPECT_THAT(bytes_span, ElementsAre('a', 'b', 'c', 'd'));
 }
 
