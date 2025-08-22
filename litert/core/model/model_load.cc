@@ -33,7 +33,6 @@
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/model_graph.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/schema/schema_generated.h"
 

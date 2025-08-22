@@ -23,7 +23,9 @@ package(
 
 cc_library_with_testonly_vis(
     name = "model",
-    srcs = ["model.cc"],
+    srcs = [
+        "model.cc",
+    ],
     hdrs = [
         "model.h",
         "//litert/c:litert_model_hdrs",
@@ -38,9 +40,12 @@ cc_library_with_testonly_vis(
         ":ir_allocator",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
+        "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_c_types_printing",
+        "//litert/cc:litert_consts",
+        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_logging",
         "//litert/core:build_stamp",
@@ -48,8 +53,11 @@ cc_library_with_testonly_vis(
         "//tflite/converter/core:model_builder_base",
         "//tflite/core/c:private_c_api_types",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -86,7 +94,6 @@ cc_library(
         ":buffer_manager",
         ":flatbuffer_to_litert",
         ":model",
-        ":model_graph",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -262,33 +269,12 @@ cc_test(
     ],
 )
 
-cc_library_with_testonly_vis(
-    name = "model_graph",
-    srcs = ["model_graph.cc"],
-    hdrs = [
-        "model_graph.h",
-    ],
-    deps = [
-        ":model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_consts",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/log:absl_check",
-    ],
-)
-
 cc_library(
     name = "graph_validation",
     srcs = ["graph_validation.cc"],
     hdrs = ["graph_validation.h"],
     deps = [
         ":model",
-        ":model_graph",
         "//litert/c:litert_logging",
         "//litert/cc:litert_detail",
     ],
@@ -311,7 +297,6 @@ cc_test(
         ":graph_validation",
         ":ir_allocator",
         ":model",
-        ":model_graph",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "@com_google_absl//absl/strings:string_view",
