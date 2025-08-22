@@ -31,7 +31,6 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
-        "//litert/c:litert_opaque_options",
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_opaque_options",
     ],

@@ -15,16 +15,19 @@
 #include "litert/runtime/tfl_utils.h"
 
 #include <cstddef>
+#include <cstring>
 #include <utility>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/core/options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
@@ -32,6 +35,33 @@
 #include "tflite/interpreter.h"
 
 namespace litert::internal {
+
+TfLiteStatus SetCustomAllocationForInputTensor(
+    tflite::Interpreter* interpreter,
+    const LiteRtExternalTensorBinding& binding) {
+  if (!interpreter) {
+    return kTfLiteError;
+  }
+  if (!binding.data) {
+    return kTfLiteError;
+  }
+
+  const char* signature_name =
+      binding.signature_name.empty() ? nullptr : binding.signature_name.c_str();
+  auto* signature_runner = interpreter->GetSignatureRunner(signature_name);
+  if (!signature_runner) {
+    LITERT_LOG(LITERT_INFO, "Signature %s not found in interpreter",
+               binding.signature_name.c_str());
+    return kTfLiteError;
+  }
+
+  const TfLiteCustomAllocation custom_allocation = {binding.data,
+                                                    binding.size_bytes};
+  signature_runner->SetCustomAllocationForInputTensor(
+      binding.tensor_name.c_str(), custom_allocation);
+
+  return kTfLiteOk;
+}
 
 Expected<ElementType> ConvertElementType(TfLiteType tfl_type) {
   switch (tfl_type) {

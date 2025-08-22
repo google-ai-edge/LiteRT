@@ -193,9 +193,10 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
   for (int i = 0; i < num_inputs; ++i) {
     absl::string_view input_name = input_tensors[i].Name();
     auto it = input_map.find(input_name);
+    // if the input is not provided in the input map, we set it to nullptr.
     if (it == input_map.end()) {
-      return Unexpected(kLiteRtStatusErrorNotFound,
-                        "The given map is missing some input TensorBuffers");
+      input_buffers_ptr[i] = nullptr;
+      continue;
     }
     input_buffers_ptr[i] = it->second.Get();
   }

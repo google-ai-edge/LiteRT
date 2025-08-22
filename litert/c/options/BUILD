@@ -148,6 +148,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/core:options",
         "//litert/runtime:litert_runtime_options",
     ],
 )

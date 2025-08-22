@@ -20,6 +20,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -29,11 +30,14 @@
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_profiler_event.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
@@ -883,6 +887,65 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
                             FloatNear(3.0f, 1e-5), FloatNear(4.0f, 1e-5)))
         << "Constant output should not change with different inputs";
   }
+}
+
+TEST(CompiledModelTest, ExternalTensorBinding) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create Model.
+  Model model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
+
+  // Create weight tensor buffer.
+  alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,
+                                                                        2.0f};
+  constexpr int kWeightSize = sizeof(kWeightTensor);
+
+  // Create Compilation options and bind weight tensor.
+  LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
+  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  LITERT_ASSERT_OK(compilation_options.AddExternalTensorBinding(
+      /*signature_name=*/"", /*tensor_name=*/"arg1", kWeightTensor,
+      kWeightSize));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, compilation_options));
+
+  // Create and fill input and output buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output_map;
+  output_map["tfl.add"] = std::move(output_buffers[0]);
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
+  float kInputTensor[] = {1.0f, 1.0f};
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBufferRequirements requirements,
+                              compiled_model.GetInputBufferRequirements(0));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer arg0_buffer,
+      TensorBuffer::CreateManaged(
+          env.Get(), buffer_type[0],
+          RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
+          sizeof(kInputTensor)));
+  LITERT_ASSERT_OK(
+      arg0_buffer.Write<float>(absl::MakeConstSpan(kInputTensor, 2)));
+  input_map["arg0"] = std::move(arg0_buffer);
+
+  // Execute model with input and output buffers.
+  LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map));
+
+  // Check model output.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto lock_and_addr,
+      litert::TensorBufferScopedLock::Create<const float>(
+          output_map["tfl.add"], TensorBuffer::LockMode::kRead));
+  auto output = absl::MakeSpan(lock_and_addr.second, 2);
+  constexpr float kExpectedOutput[] = {2.0f, 3.0f};
+  EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kExpectedOutput));
 }
 
 INSTANTIATE_TEST_SUITE_P(CompiledModelGpuTest, CompiledModelGpuTest,

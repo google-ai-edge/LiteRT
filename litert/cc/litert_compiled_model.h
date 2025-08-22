@@ -351,6 +351,8 @@ class CompiledModel
 
   // Runs the model of the given signature key synchronously with the provided
   // input/output TensorBuffer map.
+  // If you have bind the input with external buffers through Options,
+  // you can skip providing the input buffers in the map.
   Expected<void> Run(
       absl::string_view signature_key,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
@@ -362,6 +364,8 @@ class CompiledModel
 
   // Runs the model of the default signature synchronously with the provided
   // input/output TensorBuffer map.
+  // If you have bind the input with external buffers through Options,
+  // you can skip providing the input buffers in the map.
   Expected<void> Run(
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)

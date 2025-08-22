@@ -15,12 +15,28 @@
 #ifndef ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/cc/litert_opaque_options.h"
+
+// New structure to define a binding between a tensor name and an external
+// buffer.
+struct LiteRtExternalTensorBinding {
+  // The name of the signature in the TFLite model.
+  std::string signature_name;
+  // The name of the tensor in the TFLite model graph.
+  std::string tensor_name;
+  // Pointer to the external data buffer. The lifetime of this buffer must
+  // exceed the lifetime of the CompiledModel.
+  void* data;
+  // Size of the external data buffer in bytes. This must match the tensor's
+  // expected size.
+  size_t size_bytes;
+};
 
 struct LiteRtOptionsT {
   struct CustomOpOption {
@@ -41,6 +57,7 @@ struct LiteRtOptionsT {
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
   litert::OpaqueOptions options;
   std::vector<CustomOpOption> custom_op_options;
+  std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_

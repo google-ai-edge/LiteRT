@@ -23,11 +23,20 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_model.h"
+#include "litert/core/options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/interpreter.h"
 
 namespace litert::internal {
+
+// Binds an external memory buffer to a specific input tensor in the
+// interpreter. This function sets the tensor's allocation type to
+// kTfLiteCustom, making it appear as a constant tensor with a pre-allocated
+// buffer.
+TfLiteStatus SetCustomAllocationForInputTensor(
+    tflite::Interpreter* interpreter,
+    const LiteRtExternalTensorBinding& binding);
 
 Expected<ElementType> ConvertElementType(TfLiteType tfl_type);
 

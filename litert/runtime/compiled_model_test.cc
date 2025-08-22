@@ -34,9 +34,12 @@
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
@@ -1002,6 +1005,106 @@ TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
   auto profiler = compiled_model->GetProfiler();
   EXPECT_TRUE(profiler);
   EXPECT_NE(*profiler, nullptr);
+
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, BindExternalWeightBuffer) {
+  // This test verifies that an external buffer can be bound to a weight tensor
+  // using the runtime options.
+
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+  std::string signature_key = std::string(model->Signatures()[0]->Key());
+
+  // Define the external weight buffer. The values should be added to the input.
+  alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,
+                                                                        2.0f};
+
+  // Create the tensor binding structure.
+  LiteRtExternalTensorBinding weight_binding = {
+      .signature_name = "",
+      .tensor_name = "arg1",
+      .data = kWeightTensor,
+      .size_bytes = sizeof(kWeightTensor),
+  };
+
+  // Create CompiledModel with options that include the external binding.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  // Add the binding to the options.
+  reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)
+      ->external_tensor_bindings.push_back(weight_binding);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_buffer,
+      TensorBuffer::CreateManaged(
+          env_ptr, kLiteRtTensorBufferTypeHostMemory,
+          RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
+          2 * sizeof(float)));
+  // The model has two inputs: "input" and "weight". We only provide the buffer
+  // for "input". The "weight" buffer is bound externally.
+  std::vector<LiteRtTensorBuffer> input_buffers;
+  input_buffers.push_back(std::move(input_buffer.Get()));
+  input_buffers.push_back(nullptr);  // The weight buffer is bound externally.
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(
+          env_ptr, *model, LiteRtSignatureT::kDefaultSignatureKey,
+          *compiled_model));
+  ASSERT_EQ(output_buffers.size(), 1);
+
+  // Provide data for the non-weight input tensor.
+  std::vector<float> input_data = {5.0f, 6.0f};
+  // The first input is the data input.
+  input_buffer.Write<float>(absl::MakeConstSpan(input_data));
+
+  // Execute model.
+  bool async = false;
+  // We only need to pass the buffer for the "input" tensor. The "weight" tensor
+  // is already bound.
+  LITERT_ASSERT_OK(
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async));
+
+  // Check model output.
+  {
+    void* host_mem_addr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(output_buffers[0], &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    absl::Span<const float> output =
+        absl::MakeSpan(static_cast<const float*>(host_mem_addr), 2);
+    std::vector<float> expected_output = {6.0f, 8.0f};  // input_data + weights
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(output_buffers[0]), kLiteRtStatusOk);
+  }
+
+  // Cleanup.
+  for (auto& input_buffer : input_buffers) {
+    if (input_buffer != nullptr) {
+      LiteRtDestroyTensorBuffer(input_buffer);
+    }
+  }
+  for (auto& output_buffer : output_buffers) {
+    LiteRtDestroyTensorBuffer(output_buffer);
+  }
 
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(env_ptr);

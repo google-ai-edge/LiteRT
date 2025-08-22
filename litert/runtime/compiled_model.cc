@@ -167,6 +167,24 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   }
   interp_->SetNumThreads(num_threads);
 
+  if (jit_compilation_options) {
+    const auto& bindings =
+        reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)
+            ->external_tensor_bindings;
+    for (const auto& binding : bindings) {
+      if (litert::internal::SetCustomAllocationForInputTensor(
+              interp_.get(), binding) != kTfLiteOk) {
+        ReportError("Failed to set custom allocation for tensor: %s",
+                    binding.tensor_name.c_str());
+        return litert::Unexpected(
+            kLiteRtStatusErrorInvalidArgument,
+            absl::StrFormat("Failed to apply external tensor binding for "
+                            "signature %s, tensor %s.",
+                            binding.signature_name, binding.tensor_name));
+      }
+    }
+  }
+
   if (profiler_ != nullptr) {
     interp_->SetProfiler(profiler_);
   }
@@ -774,8 +792,11 @@ Expected<void> LiteRtCompiledModelT::Run(
   }
   size_t num_inputs = input_buffers.size();
   if (num_inputs != runner->subgraph_input_names().size()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "Input buffer size mismatch");
+    std::string error_message = absl::StrCat(
+        "Input buffer size mismatch: number of inputs:",
+        runner->subgraph_input_names().size(), " vs buffers:", num_inputs);
+
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure, error_message);
   }
   size_t num_outputs = output_buffers.size();
   if (num_outputs != runner->subgraph_output_names().size()) {
@@ -807,6 +828,11 @@ Expected<void> LiteRtCompiledModelT::Run(
   for (int i = 0; i < num_inputs; ++i) {
     const auto& input_name = runner->subgraph_input_names()[i];
     auto* input_tensor = runner->input_tensor(input_name);
+    if (input_buffers[i] == nullptr) {
+      // skip if the input buffer is set to nullptr, indicating the input has
+      // been bound to an external buffer.
+      continue;
+    }
     auto res =
         RegisterBuffer(runner, input_tensor, input_name, input_buffers[i],
                        /*is_input=*/true, locked_buffers);

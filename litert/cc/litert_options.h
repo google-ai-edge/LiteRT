@@ -15,11 +15,11 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
+#include <cstddef>
 #include <string>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_expected.h"
@@ -84,6 +84,20 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
                              custom_op_kernel.OpVersion(),
                              custom_op_kernel.GetLiteRtCustomOpKernel(),
                              static_cast<void*>(&custom_op_kernel));
+  }
+
+  // Binds an external memory buffer to a specific tensor in the model.
+  // This function sets the tensor's allocation type to kTfLiteCustom, making it
+  // appear as a constant tensor with a pre-allocated buffer.
+  //
+  // Note: `data` is owned by the caller and must outlive the lifetime of the
+  // CompiledModel. `size_bytes` must match the tensor's expected size.
+  Expected<void> AddExternalTensorBinding(const std::string& signature_name,
+                                          const std::string& tensor_name,
+                                          void* data, size_t size_bytes) {
+    LITERT_RETURN_IF_ERROR(LiteRtAddExternalTensorBinding(
+        Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
+    return {};
   }
 };
 
