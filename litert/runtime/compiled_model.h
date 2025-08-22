@@ -144,6 +144,15 @@ class LiteRtCompiledModelT {
   // Returns the profiler used by the compiled model.
   litert::Expected<LiteRtProfilerT*> GetProfiler() { return profiler_; }
 
+  // Returns the TFLite interpreter used by the compiled model.
+  litert::Expected<::tflite::Interpreter*> GetInterpreter() {
+    if (interp_ == nullptr) {
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Interpreter is not initialized");
+    }
+    return interp_.get();
+  }
+
   // Resizes the specified input tensor to support dynamic shapes.
   litert::Expected<void> ResizeInputTensor(size_t signature_index,
                                            size_t input_index,

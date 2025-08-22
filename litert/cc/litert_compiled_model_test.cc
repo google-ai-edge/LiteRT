@@ -42,6 +42,7 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
+#include "tflite/interpreter.h"
 
 using ::testing::ElementsAre;
 using ::testing::FloatNear;
@@ -1222,6 +1223,23 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   auto output = absl::MakeSpan(lock_and_addr.second, 2);
   constexpr float kExpectedOutput[] = {2.0f, 3.0f};
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kExpectedOutput));
+}
+
+TEST(CompiledModelTest, GetInterpreter) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create Model.
+  Model model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(::tflite::Interpreter * interpreter,
+                              compiled_model.GetInterpreter());
+  EXPECT_NE(interpreter, nullptr);
 }
 
 }  // namespace

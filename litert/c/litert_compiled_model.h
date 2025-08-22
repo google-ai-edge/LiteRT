@@ -154,6 +154,10 @@ LiteRtStatus LiteRtCompiledModelIsFullyAccelerated(
 LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
                                             LiteRtProfiler* profiler);
 
+// Gets the interpreter for the model. CompiledModel owns the interpreter.
+LiteRtStatus LiteRtCompiledModelGetInterpreter(
+    LiteRtCompiledModel compiled_model, void** interpreter_ptr);
+
 // Resizes the specified input tensor to support dynamic shapes.
 //
 // This function allows resizing input tensors at runtime, similar to TFLite's
