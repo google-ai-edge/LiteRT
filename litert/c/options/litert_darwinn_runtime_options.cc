@@ -133,3 +133,27 @@ LiteRtStatus LiteRtGetDarwinnInferencePriority(
   *priority = opts->inference_priority;
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtSetDarwinnAtomicInference(
+    LiteRtDarwinnRuntimeOptions options, bool atomic_inference) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+
+  auto* opts = reinterpret_cast<litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  opts->atomic_inference = atomic_inference;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetDarwinnAtomicInference(
+    LiteRtDarwinnRuntimeOptionsConst options, bool* atomic_inference) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(atomic_inference,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "atomic_inference is null.";
+
+  auto* opts =
+      reinterpret_cast<const litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  *atomic_inference = opts->atomic_inference;
+  return kLiteRtStatusOk;
+}

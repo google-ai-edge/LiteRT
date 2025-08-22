@@ -52,6 +52,10 @@ class DarwinnRuntimeOptions : public OpaqueOptions {
   // Scheduling setters/getters
   Expected<void> SetInferencePriority(int8_t priority);
   Expected<int8_t> GetInferencePriority() const;
+
+  // Atomic inference setters/getters. To disable TPU firmware concurrency.
+  Expected<void> SetAtomicInference(bool atomic_inference);
+  Expected<bool> GetAtomicInference() const;
 };
 
 // Note: FindOpaqueOptions template specializations are not needed.

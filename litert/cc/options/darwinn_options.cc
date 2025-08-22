@@ -113,4 +113,24 @@ Expected<int8_t> DarwinnRuntimeOptions::GetInferencePriority() const {
       LiteRtGetDarwinnInferencePriority(darwinn_options, &priority));
   return priority;
 }
+
+Expected<void> DarwinnRuntimeOptions::SetAtomicInference(
+    bool atomic_inference) {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetDarwinnAtomicInference(darwinn_options, atomic_inference));
+  return {};
+}
+
+Expected<bool> DarwinnRuntimeOptions::GetAtomicInference() const {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  bool atomic_inference = false;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDarwinnAtomicInference(darwinn_options, &atomic_inference));
+  return atomic_inference;
+}
 }  // namespace litert

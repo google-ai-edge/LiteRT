@@ -31,6 +31,9 @@ struct LiteRtDarwinnRuntimeOptionsT {
   // Scheduling - may change per workload
   int8_t inference_priority = -1;  // -1 means default
 
+  // Whether to run inference atomically
+  bool atomic_inference = false;
+
   static const char* Identifier() { return "darwinn_runtime_options"; }
 };
 
