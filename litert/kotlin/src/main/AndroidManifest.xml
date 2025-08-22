@@ -17,7 +17,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.google.ai.edge.litert">
 
-    <uses-sdk android:minSdkVersion="21" />
+    <uses-sdk android:minSdkVersion="23" />
 
     <!-- NOTE: Developers need to copy permission declarations to their app's manifest. -->
     <!-- Required for downloading AiPack models. -->

@@ -53,6 +53,7 @@ return an error.
 
 ### Bug Fixes and Other Changes
 
+* The Android `minSdkVersion` has increased to 23.
 * Update tests to provide `kLiteRtHwAcceleratorNpu` for fully AOT compiled
 models.
 <!---
