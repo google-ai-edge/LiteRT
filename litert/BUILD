@@ -82,7 +82,6 @@ package_group(
         # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-        # copybara:uncomment "//platforms/darwinn/toolchain/third_party/...",
         # TODO(b/424778444): Internal runtime should not call cc/internal. Remove below targets.
         "//litert/runtime/...",
         "//litert/compiler/...",
@@ -107,6 +106,7 @@ package_group(
         "//litert/test/...",
         "//litert/tools/...",
         "//ci/tools/...",
+        # copybara:uncomment "//platforms/darwinn/toolchain/third_party/...",
         # TODO(b/424778444) Targets above C API boundary shouldn't call internal. Remove below.
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         "//litert/cc/...",
