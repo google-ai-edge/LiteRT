@@ -116,10 +116,15 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
 #if LITERT_HAS_METAL_SUPPORT
   auto metal_device_option =
       environment->GetOption(kLiteRtEnvOptionTagMetalDevice);
+  auto metal_command_queue_option =
+      environment->GetOption(kLiteRtEnvOptionTagMetalCommandQueue);
   if (metal_device_option.has_value() &&
-      metal_device_option->type == kLiteRtAnyTypeVoidPtr) {
-    LiteRtCreateWithDevice(const_cast<void*>(metal_device_option->ptr_value),
-                           &options.metal_info);
+      metal_device_option->type == kLiteRtAnyTypeVoidPtr &&
+      metal_command_queue_option.has_value() &&
+      metal_command_queue_option->type == kLiteRtAnyTypeVoidPtr) {
+    LiteRtCreateWithCommandQueue(
+        const_cast<void*>(metal_command_queue_option->ptr_value),
+        const_cast<void*>(metal_device_option->ptr_value), &options.metal_info);
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
 

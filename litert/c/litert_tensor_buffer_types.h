@@ -51,6 +51,7 @@ typedef enum {
   kLiteRtTensorBufferTypeMetalBufferFp16 = 31,
   kLiteRtTensorBufferTypeMetalTexture = 32,
   kLiteRtTensorBufferTypeMetalTextureFp16 = 33,
+  kLiteRtTensorBufferTypeMetalBufferPacked = 34,
 
   // 40-49 are reserved for Vulkan memory objects.
   // WARNING: Vulkan support is experimental.
@@ -88,7 +89,8 @@ inline bool IsMetalMemory(LiteRtTensorBufferType buffer_type) {
   return buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
          buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeMetalTexture ||
-         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16;
+         buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked;
 }
 
 inline bool IsVulkanMemory(LiteRtTensorBufferType buffer_type) {
@@ -111,6 +113,7 @@ inline bool IsGpuBuffer(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeWebGpuBufferPacked ||
          buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
          buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
+         buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked ||
          buffer_type == kLiteRtTensorBufferTypeVulkanBuffer ||
          buffer_type == kLiteRtTensorBufferTypeVulkanBufferFp16 ||
          buffer_type == kLiteRtTensorBufferTypeVulkanBufferPacked;

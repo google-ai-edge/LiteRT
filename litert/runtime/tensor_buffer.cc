@@ -177,6 +177,7 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
     case kLiteRtTensorBufferTypeMetalBufferFp16:
     case kLiteRtTensorBufferTypeMetalTexture:
     case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
       // internal metal buffer is auto-disposed by the
       // litert::internal::MetalMemory destructor.
       break;
@@ -566,7 +567,8 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     case kLiteRtTensorBufferTypeMetalBuffer:
     case kLiteRtTensorBufferTypeMetalBufferFp16:
     case kLiteRtTensorBufferTypeMetalTexture:
-    case kLiteRtTensorBufferTypeMetalTextureFp16: {
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked: {
       return CreateManagedMetalMemory(env, tensor_type, buffer_type,
                                       buffer_size);
     }
@@ -878,6 +880,7 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
     case kLiteRtTensorBufferTypeMetalBuffer:
     case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
     case kLiteRtTensorBufferTypeMetalTexture:
     case kLiteRtTensorBufferTypeMetalTextureFp16:
     case kLiteRtTensorBufferTypeVulkanBuffer:
@@ -943,6 +946,7 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeWebGpuBufferPacked:
     case kLiteRtTensorBufferTypeMetalBuffer:
     case kLiteRtTensorBufferTypeMetalBufferFp16:
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
     case kLiteRtTensorBufferTypeMetalTexture:
     case kLiteRtTensorBufferTypeMetalTextureFp16:
     case kLiteRtTensorBufferTypeVulkanBuffer:

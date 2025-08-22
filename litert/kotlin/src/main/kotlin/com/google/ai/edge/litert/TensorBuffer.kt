@@ -159,6 +159,7 @@ enum class TensorBufferType(private val type: Int) {
   // MetalBufferFp16(31),
   // MetalTexture(32),
   // MetalTextureFp16(33),
+  // MetalBufferPacked(34),
 
   // 40-49 are reserved for Vulkan memory objects.
   // WARNING: Vulkan support is experimental.

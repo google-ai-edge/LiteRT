@@ -34,6 +34,7 @@ typedef void* MetalInfoHandle;
 typedef struct MetalInfo {
   virtual ~MetalInfo() = default;
   MetalInfoHandle metal_info;
+  MetalInfoHandle metal_command_queue;
 } MetalInfo;
 
 typedef MetalInfo* MetalInfoPtr;
@@ -54,6 +55,9 @@ LiteRtStatus LiteRtCreateWithDevice(void* device, MetalInfoPtr* metal_info);
 // by metal_info. It's safe to pass nullptr to this function, in which case
 // the function has no effect.
 void LiteRtDeleteMetalInfo(MetalInfoPtr metal_info);
+
+LiteRtStatus LiteRtCreateWithCommandQueue(void* command_queue, void* device,
+                                          MetalInfoPtr* metal_info);
 
 #ifdef __cplusplus
 }  // extern "C"

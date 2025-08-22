@@ -75,6 +75,8 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "MetalTexture";
     case kLiteRtTensorBufferTypeMetalTextureFp16:
       return "MetalTextureFp16";
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+      return "MetalBufferPacked";
     case kLiteRtTensorBufferTypeVulkanBuffer:
       return "VulkanBuffer";
     case kLiteRtTensorBufferTypeVulkanBufferFp16:
