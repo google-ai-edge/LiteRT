@@ -93,6 +93,8 @@ LiteRtElementType MapElementType(TflElementType type) {
       return kLiteRtElementTypeFloat16;
     case tflite::TensorType_BFLOAT16:
       return kLiteRtElementTypeBFloat16;
+    case tflite::TensorType_COMPLEX64:
+      return kLiteRtElementTypeComplex64;
     case tflite::TensorType_INT32:
       return kLiteRtElementTypeInt32;
     case tflite::TensorType_UINT32:
