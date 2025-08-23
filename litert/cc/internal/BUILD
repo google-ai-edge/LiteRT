@@ -316,7 +316,6 @@ cc_test(
     data = ["//litert/test:testdata/simple_model.tflite"],
     tags = [
         "no_oss",
-        "notap",  # TODO(byungchul): Re-enable once flaky leak check is fixed.
         "requires-gpu-nvidia",
     ],
     deps = [
