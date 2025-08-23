@@ -58,6 +58,19 @@ class TensorBufferRequirements
                                     OwnHandle::kYes);
   }
 
+  static Expected<TensorBufferRequirements> CreateWithAlignment(
+      absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
+      size_t alignment,
+      absl::Span<const uint32_t> strides =
+          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+    LiteRtTensorBufferRequirements tensor_buffer_requirements;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirementsWithAlignment(
+        buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
+        strides.data(), alignment, &tensor_buffer_requirements));
+    return TensorBufferRequirements(tensor_buffer_requirements,
+                                    OwnHandle::kYes);
+  }
+
   Expected<std::vector<LiteRtTensorBufferType>> SupportedTypes() const {
     int num_types;
     LITERT_RETURN_IF_ERROR(
@@ -85,6 +98,13 @@ class TensorBufferRequirements
     LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferRequirementsStrides(
         Get(), &num_strides, &strides));
     return absl::MakeSpan(strides, num_strides);
+  }
+
+  Expected<size_t> Alignment() const {
+    size_t alignment;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferRequirementsAlignment(Get(), &alignment));
+    return alignment;
   }
 
   friend Expected<TensorBufferRequirements> Join(

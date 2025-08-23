@@ -258,6 +258,14 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType* tensor_type, size_t buffer_size,
     LiteRtTensorBuffer* buffer);
+// Create a managed TensorBuffer from buffer requirements.
+// This function will use the alignment specified in the requirements.
+//
+// Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
+// calling LiteRtDestroyTensorBuffer() to release the object.
+LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements requirements, LiteRtTensorBuffer* buffer);
 
 // Create a duplicate of the current tensor buffer. It will increase the
 // reference count of a managed tensor buffer. And the number decreases when
