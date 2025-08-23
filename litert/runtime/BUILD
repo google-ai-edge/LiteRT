@@ -153,15 +153,15 @@ cc_library(
         "tensor_buffer_registry.h",
         "//litert/c:litert_custom_tensor_buffer.h",
     ],
-    visibility = [
-        "//litert/c:__subpackages__",
-    ],
+    visibility = ["//litert/c:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_tensor_buffer_utils",
+        "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings",
     ],
 )

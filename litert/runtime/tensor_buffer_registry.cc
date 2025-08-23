@@ -14,8 +14,10 @@
 
 #include "litert/runtime/tensor_buffer_registry.h"
 
+#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
@@ -24,8 +26,8 @@ namespace litert {
 namespace internal {
 
 TensorBufferRegistry& TensorBufferRegistry::GetInstance() {
-  static TensorBufferRegistry* instance_ = new TensorBufferRegistry();
-  return *instance_;
+  static auto* instance = absl::IgnoreLeak(new TensorBufferRegistry());
+  return *instance;
 }
 
 litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
@@ -39,6 +41,9 @@ litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
                      BufferTypeToString(buffer_type)));
   }
   handlers_[buffer_type] = handlers;
+  LITERT_LOG(LITERT_INFO,
+             "Custom tensor buffer handler is registered for buffer type %s",
+             BufferTypeToString(buffer_type).c_str());
   return {};
 }
 

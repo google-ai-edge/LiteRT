@@ -139,10 +139,6 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
 class CompiledModelGpuTest : public ::testing::TestWithParam<bool> {};
 
 TEST_P(CompiledModelGpuTest, Basic) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -150,10 +146,6 @@ TEST_P(CompiledModelGpuTest, Basic) {
 }
 
 TEST_P(CompiledModelGpuTest, Basic2nd) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -163,10 +155,6 @@ TEST_P(CompiledModelGpuTest, Basic2nd) {
 }
 
 TEST_P(CompiledModelGpuTest, WithProfiler) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -242,10 +230,6 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
 }
 
 TEST_P(CompiledModelGpuTest, GpuEnvironment) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -288,10 +272,6 @@ TEST_P(CompiledModelGpuTest, GpuEnvironment) {
 }
 
 TEST_P(CompiledModelGpuTest, Async) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -371,10 +351,6 @@ TEST_P(CompiledModelGpuTest, Async) {
 }
 
 TEST_P(CompiledModelGpuTest, PartialDelegation) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -454,11 +430,6 @@ TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
   constexpr const int32_t kInt32TestOutputTensor[] = {11, 22, 33, 44, 55, 66};
   constexpr const size_t kInt32TestInput0Size = 6;
   constexpr const size_t kInt32TestOutputSize = 6;
-
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
@@ -591,10 +562,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
+
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -681,10 +649,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
+
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 

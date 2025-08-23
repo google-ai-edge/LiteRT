@@ -116,10 +116,6 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
 class CompiledModelWebGpuTest : public ::testing::TestWithParam<bool> {};
 
 TEST_P(CompiledModelWebGpuTest, Basic) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -127,10 +123,6 @@ TEST_P(CompiledModelWebGpuTest, Basic) {
 }
 
 TEST_P(CompiledModelWebGpuTest, Basic2nd) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -143,10 +135,6 @@ typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 
 TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported in MSAN";
-#endif
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
