@@ -66,6 +66,16 @@ class QualcommOptions : public OpaqueOptions {
   void SetIrJsonDir(const std::string& ir_json_dir);
   absl::string_view GetIrJsonDir();
 
+  void SetVtcmSize(const std::uint32_t& vtcm_size);
+  std::uint32_t GetVtcmSize();
+
+  void SetHvxThread(const std::uint32_t& hvx_thread);
+  std::uint32_t GetHvxThread();
+
+  void SetOptimizationLevel(
+      LiteRtQualcommOptionsOptimizationLevel optimization_level);
+  LiteRtQualcommOptionsOptimizationLevel GetOptimizationLevel();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

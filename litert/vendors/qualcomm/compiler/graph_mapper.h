@@ -52,7 +52,8 @@ class GraphMapper {
 
   // Initialize QNN Graph with given name. Call this after parsing
   // LiteRtSubgraph.
-  LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name);
+  LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name,
+                            const ::qnn::Options& options);
 
   // Finalize QNN Graph. Call this after all ops have been mapped.
   LiteRtStatus Finalize();
@@ -62,7 +63,8 @@ class GraphMapper {
   }
 
   // Pick graph config based on subgraph.
-  absl::Span<const QnnGraph_Config_t*> PickGraphConfigHeuristic();
+  absl::Span<const QnnGraph_Config_t*> PickGraphConfigHeuristic(
+      const ::qnn::Options& options);
 
   inline bool IsTensorOutput(LiteRtTensor litert_tensor) {
     return graph_outpus_.contains(litert_tensor);

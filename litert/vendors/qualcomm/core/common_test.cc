@@ -119,6 +119,36 @@ TEST(QnnOptionTest, SetIrJsonDir) {
   EXPECT_TRUE(options.GetIrJsonDir().empty());
 }
 
+TEST(QnnOptionTest, SetVtcmSize) {
+  Options options;
+  options.SetVtcmSize(4);
+  EXPECT_FALSE(options.GetVtcmSize(), 0);
+  EXPECT_EQ(options.GetVtcmSize(), 4);
+  options.SetVtcmSize(0);
+  EXPECT_TRUE(options.GetVtcmSize(), 0);
+}
+
+TEST(QnnOptionTest, SetHvxThread) {
+  Options options;
+  options.SetHvxThread(4);
+  EXPECT_FALSE(options.GetHvxThread(), 0);
+  EXPECT_EQ(options.GetHvxThread(), 4);
+  options.SetHvxThread(0);
+  EXPECT_TRUE(options.GetHvxThread(), 0);
+}
+
+TEST(QnnOptionTest, SetOptimizationLevel) {
+  Options options;
+  options.SetOptimizationLevel(OptimizationLevel::kOptimizationLevel3);
+  EXPECT_FALSE(options.GetOptimizationLevel(),
+               OptimizationLevel::kOptimizationLevelOff);
+  EXPECT_EQ(options.GetOptimizationLevel(),
+            OptimizationLevel::kOptimizationLevel3);
+  options.SetOptimizationLevel(OptimizationLevel::kOptimizationLevelOff);
+  EXPECT_TRUE(options.GetOptimizationLevel(),
+              OptimizationLevel::kOptimizationLevelOff);
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);
@@ -128,6 +158,10 @@ TEST(QnnOptionTest, Default) {
   EXPECT_FALSE(options.GetEnableWeightSharing());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
+  EXPECT_TRUE(options.GetVtcmSize(), 0);
+  EXPECT_TRUE(options.GetHvxThread(), 0);
+  EXPECT_TRUE(options.GetOptimizationLevel(),
+              OptimizationLevel::kOptimizationLevelOff);
 }
 
 }  // namespace
