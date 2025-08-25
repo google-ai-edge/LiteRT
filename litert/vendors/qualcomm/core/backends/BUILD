@@ -9,16 +9,6 @@ package(
 )
 
 cc_library(
-    name = "htp_device_config",
-    srcs = ["htp_device_config.cc"],
-    hdrs = ["htp_device_config.h"],
-    deps = [
-        "//litert/vendors/qualcomm/core/schema:soc_table",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
     name = "htp_perf_control",
     srcs = ["htp_perf_control.cc"],
     hdrs = ["htp_perf_control.h"],
@@ -37,6 +27,7 @@ cc_library(
     deps = [
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
         "@qairt//:qnn_lib_headers",
     ],
 )
@@ -49,6 +40,36 @@ cc_library(
         ":qnn_backend",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "htp_backend",
+    srcs = ["htp_backend.cc"],
+    hdrs = ["htp_backend.h"],
+    deps = [
+        ":qnn_backend",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_test(
+    name = "qnn_backend_test",
+    srcs = [
+        "qnn_backend_test.cc",
+    ],
+    deps = [
+        "//litert/vendors/qualcomm/core/backends:qnn_backend",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
+        "//litert/vendors/qualcomm/core/backends:htp_perf_control",
+        "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
+        "@com_google_googletest//:gtest_main",
         "@qairt//:qnn_lib_headers",
     ],
 )
