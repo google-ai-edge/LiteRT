@@ -37,6 +37,10 @@ struct LiteRtQualcommOptionsT {
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
+  std::uint32_t vtcm_size = 0;
+  std::uint32_t num_hvx_threads = 0;
+  LiteRtQualcommOptionsOptimizationLevel optimization_level =
+      kHtpOptimizeForInferenceO3;
 };
 
 LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -265,6 +269,74 @@ LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
   }
 
   *ir_json_dir = options->ir_json_dir.c_str();
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
+                                              std::uint32_t vtcm_size) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->vtcm_size = vtcm_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetVtcmSize(LiteRtQualcommOptions options,
+                                              std::uint32_t* vtcm_size) {
+  if (options == nullptr || vtcm_size == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *vtcm_size = options->vtcm_size;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetNumHvxThreads(
+    LiteRtQualcommOptions options, std::uint32_t num_hvx_threads) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->num_hvx_threads = num_hvx_threads;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetNumHvxThreads(
+    LiteRtQualcommOptions options, std::uint32_t* num_hvx_threads) {
+  if (options == nullptr || num_hvx_threads == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *num_hvx_threads = options->num_hvx_threads;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel optimization_level) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->optimization_level = optimization_level;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel* optimization_level) {
+  if (options == nullptr || optimization_level == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *optimization_level = options->optimization_level;
 
   return kLiteRtStatusOk;
 }

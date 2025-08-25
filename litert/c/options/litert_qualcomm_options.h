@@ -162,6 +162,32 @@ LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
 LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
                                                const char** ir_json_dir);
 
+LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
+                                              uint32_t vtcm_size);
+
+LiteRtStatus LiteRtQualcommOptionsGetVtcmSize(LiteRtQualcommOptions options,
+                                              uint32_t* vtcm_size);
+
+LiteRtStatus LiteRtQualcommOptionsSetNumHvxThreads(
+    LiteRtQualcommOptions options, uint32_t num_hvx_threads);
+
+LiteRtStatus LiteRtQualcommOptionsGetNumHvxThreads(
+    LiteRtQualcommOptions options, uint32_t* num_hvx_threads);
+
+typedef enum LiteRtQualcommOptionsOptimizationLevel {
+  kHtpOptimizeForInference = 0,
+  kHtpOptimizeForPrepare,
+  kHtpOptimizeForInferenceO3,
+} LiteRtQualcommOptionsOptimizationLevel;
+
+LiteRtStatus LiteRtQualcommOptionsSetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel optimization_level);
+
+LiteRtStatus LiteRtQualcommOptionsGetOptimizationLevel(
+    LiteRtQualcommOptions options,
+    LiteRtQualcommOptionsOptimizationLevel* optimization_level);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

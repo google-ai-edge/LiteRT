@@ -241,6 +241,38 @@ TEST(ProfilingTest, Parse) {
   }
 }
 
+TEST(OptimizationLevelTest, Parse) {
+  std::string error;
+  LiteRtQualcommOptionsOptimizationLevel value;
+
+  {
+    static constexpr absl::string_view kOptimizationLevel = "off";
+    static constexpr LiteRtQualcommOptionsOptimizationLevel
+        kOptimizationLevelEnum = kHtpOptimizeForInference;
+    EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
+    EXPECT_EQ(value, kOptimizationLevelEnum);
+    EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kOptimizationLevel = "1";
+    static constexpr LiteRtQualcommOptionsOptimizationLevel
+        kOptimizationLevelEnum = kHtpOptimizeForPrepare;
+    EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
+    EXPECT_EQ(value, kOptimizationLevelEnum);
+    EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
+  }
+
+  {
+    static constexpr absl::string_view kOptimizationLevel = "2";
+    static constexpr LiteRtQualcommOptionsOptimizationLevel
+        kOptimizationLevelEnum = kHtpOptimizeForInferenceO3;
+    EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
+    EXPECT_EQ(value, kOptimizationLevelEnum);
+    EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
+  }
+}
+
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptionsFromFlags();
   ASSERT_TRUE(options.HasValue());
@@ -252,6 +284,9 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             kLiteRtQualcommHtpPerformanceModeBurst);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
+  EXPECT_EQ(options.Value().GetVtcmSize(), 0);
+  EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
+  EXPECT_EQ(options.Value().GetOptimizationLevel(), kHtpOptimizeForInferenceO3);
 }
 
 }  // namespace

@@ -50,6 +50,18 @@ ABSL_DECLARE_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
+
+ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
+
+ABSL_DECLARE_FLAG(LiteRtQualcommOptionsOptimizationLevel,
+                  qualcomm_optimization_level);
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtQualcommOptionsOptimizationLevel* optimization_level,
+                   std::string* error);
+std::string AbslUnparseFlag(
+    LiteRtQualcommOptionsOptimizationLevel optimization_level);
+
 #endif
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
