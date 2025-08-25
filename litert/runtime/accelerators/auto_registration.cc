@@ -14,6 +14,7 @@
 
 #include "litert/runtime/accelerators/auto_registration.h"
 
+#include <array>
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -47,21 +48,35 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   }
 
   // Register the GPU accelerator.
-  if (auto gpu_registration = RegisterSharedObjectAccelerator(
-          environment, /*plugin_path=*/"libLiteRtGpuAccelerator.so",
-          /*registration_function_name=*/"LiteRtRegisterAcceleratorGpuOpenCl");
-      gpu_registration.HasValue()) {
-    LITERT_LOG(LITERT_INFO, "Dynamically loaded GPU accelerator registered.");
-  } else {
-    LITERT_LOG(
-        LITERT_INFO,
-        "GPU accelerator could not be dynamically loaded and registered: %s.",
-        gpu_registration.Error().Message().c_str());
+  // The following is list of plugins that are loaded in the order they are
+  // listed. The first plugin that is loaded and registered successfully will
+  // be used.
+  static constexpr std::array<absl::string_view, 3> gpu_accelerator_libs = {
+      "libLiteRtGpuClWebGpuAccelerator.so", "libLiteRtGpuAccelerator.so",
+      "libLiteRtWebGpuAccelerator.so"};
+  bool gpu_accelerator_registered = false;
+  for (const auto& plugin_path : gpu_accelerator_libs) {
+    if (auto registration = RegisterSharedObjectAccelerator(
+            environment, plugin_path, "LiteRtRegisterGpuAccelerator");
+        registration.HasValue()) {
+      LITERT_LOG(LITERT_INFO,
+                 "Dynamically loaded GPU accelerator(%s) registered.",
+                 plugin_path.data());
+      gpu_accelerator_registered = true;
+      break;
+    }
+  }
+  if (!gpu_accelerator_registered) {
     if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
         LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
             kLiteRtStatusOk) {
       LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
+      gpu_accelerator_registered = true;
     }
+  }
+  if (!gpu_accelerator_registered) {
+    LITERT_LOG(LITERT_WARNING,
+               "GPU accelerator could not be loaded and registered.");
   }
 
   // Register the CPU accelerator.
