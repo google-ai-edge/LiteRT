@@ -1027,7 +1027,7 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
                       const ::qnn::Options& options) {
   GraphMapper graph_mapper(subgraph, qnn, context_handle);
   LITERT_RETURN_IF_ERROR(graph_mapper.IsLiteRtSubgraphSupported());
-  LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name));
+  LITERT_RETURN_IF_ERROR(graph_mapper.InitQnnGraph(qnn_graph_name, options));
 
   //
   // Legalize subgraph inputs and update tensors in scope
