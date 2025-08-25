@@ -42,6 +42,7 @@
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "tflite/interpreter.h"
 
 namespace litert {
 
@@ -413,6 +414,15 @@ class CompiledModel
     LiteRtProfiler profiler = nullptr;
     LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetProfiler(Get(), &profiler));
     return Profiler(profiler, OwnHandle::kNo);
+  };
+
+  // Returns the interpreter used by the compiled model.
+  // The returned Interpreter doesn't own the underlying ::tflite::Interpreter.
+  Expected<::tflite::Interpreter*> GetInterpreter() {
+    void* interpreter_ptr = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCompiledModelGetInterpreter(Get(), &interpreter_ptr));
+    return (::tflite::Interpreter*)interpreter_ptr;
   };
 
   // Resizes the specified input tensor to support dynamic shapes.

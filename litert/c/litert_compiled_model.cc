@@ -190,6 +190,15 @@ LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCompiledModelGetInterpreter(
+    LiteRtCompiledModel compiled_model, void** interpreter_ptr) {
+  LITERT_RETURN_IF_ERROR(
+      compiled_model != nullptr && interpreter_ptr != nullptr,
+      kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSIGN_OR_RETURN(*interpreter_ptr, compiled_model->GetInterpreter());
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompiledModelResizeInputTensor(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex input_index, const int* dims, size_t dims_size) {
