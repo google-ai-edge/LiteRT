@@ -37,6 +37,13 @@ enum class HtpPerformanceMode {
   kExtremePowerSaver = 9,
 };
 
+enum class OptimizationLevel {
+  kOptimizationLevelOff = 0,
+  kOptimizationLevel1 = 1,
+  kOptimizationLevel2 = 2,
+  kOptimizationLevel3 = 3
+};
+
 class Options {
  public:
   Options() = default;
@@ -66,6 +73,15 @@ class Options {
   absl::string_view GetIrJsonDir() const;
   void SetIrJsonDir(absl::string_view ir_json_dir);
 
+  std::uint8_t GetVtcmSize() const;
+  void SetVtcmSize(std::uint8_t vtcm_size);
+
+  std::uint8_t GetHvxThread() const;
+  void SetHvxThread(std::uint8_t hvx_thread);
+
+  void SetOptimizationLevel(const OptimizationLevel optimization_level);
+  OptimizationLevel GetOptimizationLevel() const;
+
   std::string Dump() const;
 
  private:
@@ -77,6 +93,10 @@ class Options {
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
+  std::uint8_t vtcm_size_;
+  std::uint8_t hvx_thread_;
+  OptimizationLevel optimization_level_ =
+      OptimizationLevel::kOptimizationLevelOff;
 };
 
 }  // namespace qnn

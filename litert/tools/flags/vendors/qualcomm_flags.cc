@@ -215,6 +215,51 @@ ABSL_FLAG(
     "Qnn IR JSON directory. If provided, you can obtain Qnn IR in Qnn JSON "
     "format.");
 
+ABSL_FLAG(std::uint8_t, qualcomm_vtcm_size, 0,
+          "The vtcm size of the target device.");
+
+ABSL_FLAG(std::uint8_t, qualcomm_hvx_thread, 0,
+          "The number of hvx threads for the target device.");
+
+ABSL_FLAG(LiteRtQualcommOptionsOptimizationLevel, qualcomm_optimization_level,
+          kLiteRtQualcommOptimizationLevelOff, "QNN optimization level");
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtQualcommOptionsOptimizationLevel* options,
+                   std::string* error) {
+  if (text == "off") {
+    *options = kLiteRtQualcommOptimizationLevelOff;
+    return true;
+  }
+  if (text == "1") {
+    *options = kLiteRtQualcommOptimizationLevel1;
+    return true;
+  }
+  if (text == "2") {
+    *options = kLiteRtQualcommOptimizationLevel2;
+    return true;
+  }
+  if (text == "3") {
+    *options = kLiteRtQualcommOptimizationLevel3;
+    return true;
+  }
+  *error = "Unknown optimization level";
+  return false;
+}
+
+std::string AbslUnparseFlag(LiteRtQualcommOptionsOptimizationLevel options) {
+  switch (options) {
+    case kLiteRtQualcommOptimizationLevelOff:
+      return "off";
+    case kLiteRtQualcommOptimizationLevel1:
+      return "1";
+    case kLiteRtQualcommOptimizationLevel2:
+      return "2";
+    case kLiteRtQualcommOptimizationLevel3:
+      return "3";
+  }
+}
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -253,6 +298,16 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);
+
+  const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
+  opts.SetVtcmSize(vtcm_size);
+
+  const auto hvx_thread = absl::GetFlag(FLAGS_qualcomm_hvx_thread);
+  opts.SetHvxThread(hvx_thread);
+
+  const auto optimization_level =
+      absl::GetFlag(FLAGS_qualcomm_optimization_level);
+  opts.SetOptimizationLevel(optimization_level);
 
   return opts;
 }

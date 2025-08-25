@@ -115,6 +115,9 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
+  qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
+  qnn_options.SetHvxThread(qualcomm_options.GetHvxThread());
+  qnn_options.SetOptimizationLevel(qualcomm_options.GetOptimizationLevel());
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;

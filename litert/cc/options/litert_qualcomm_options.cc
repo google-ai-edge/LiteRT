@@ -148,6 +148,37 @@ absl::string_view QualcommOptions::GetIrJsonDir() {
   return absl::string_view(ir_json_dir);
 }
 
+void QualcommOptions::SetVtcmSize(const std::uint8_t& vtcm_size) {
+  internal::AssertOk(LiteRtQualcommOptionsSetVtcmSize, Data(), vtcm_size);
+}
+
+std::uint8_t QualcommOptions::GetVtcmSize() {
+  std::uint8_t vtcm_size;
+  internal::AssertOk(LiteRtQualcommOptionsGetVtcmSize, Data(), &vtcm_size);
+  return vtcm_size;
+}
+
+void QualcommOptions::SetHvxThread(const std::uint8_t& hvx_thread) {
+  internal::AssertOk(LiteRtQualcommOptionsSetHvxThread, Data(),
+                     hvx_thread);
+}
+
+std::uint8_t QualcommOptions::GetHvxThread() {
+  std::uint8_t hvx_thread;
+  internal::AssertOk(LiteRtQualcommOptionsGetHvxThread, Data(), &hvx_thread);
+  return hvx_thread;
+}
+
+void QualcommOptions::SetOptimizationLevel(LiteRtQualcommOptionsOptimizationLevel optimization_level) {
+  internal::AssertOk(LiteRtQualcommOptionsSetOptimizationLevel, Data(), optimization_level);
+}
+
+LiteRtQualcommOptionsOptimizationLevel QualcommOptions::GetOptimizationLevel() {
+  LiteRtQualcommOptionsOptimizationLevel optimization_level;
+  internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(), &optimization_level);
+  return optimization_level;
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {

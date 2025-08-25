@@ -64,6 +64,25 @@ void Options::SetIrJsonDir(absl::string_view ir_json_dir) {
   ir_json_dir_ = ir_json_dir;
 }
 
+std::uint8_t Options::GetVtcmSize() const { return vtcm_size_; }
+
+void Options::SetVtcmSize(std::uint8_t vtcm_size) { vtcm_size_ = vtcm_size; }
+
+std::uint8_t Options::GetHvxThread() const { return hvx_thread_; }
+
+void Options::SetHvxThread(std::uint8_t hvx_thread) {
+  hvx_thread_ = hvx_thread;
+}
+
+OptimizationLevel Options::GetOptimizationLevel() const {
+  return optimization_level_;
+}
+
+void Options::SetOptimizationLevel(const OptimizationLevel optimization_level) {
+  optimization_level_ = optimization_level;
+}
+
+
 std::string Options::Dump() const {
   static constexpr absl::string_view kQnnOptionsDumpFormat =
       "\
@@ -75,14 +94,18 @@ UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
 HtpPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
-IrJsonDir: %s\n";  // NOLINT
+IrJsonDir: %s\n\
+VtcmSize: %s\n\
+HvxThread: %s\n\
+OptimizationLevel: %s\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
                          enable_weight_sharing_, htp_performance_mode_,
-                         dump_tensor_ids, ir_json_dir_);
+                         dump_tensor_ids, ir_json_dir_, vtcm_size_, hvx_thread_,
+                         optimization_level_);
 }
 
 }  // namespace qnn
