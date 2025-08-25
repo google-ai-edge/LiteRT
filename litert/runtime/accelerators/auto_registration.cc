@@ -51,11 +51,24 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   // The following is list of plugins that are loaded in the order they are
   // listed. The first plugin that is loaded and registered successfully will
   // be used.
-  static constexpr std::array<absl::string_view, 3> gpu_accelerator_libs = {
-      "libLiteRtGpuClWebGpuAccelerator.so", "libLiteRtGpuAccelerator.so",
-      "libLiteRtWebGpuAccelerator.so"};
+  static constexpr absl::string_view kGpuAcceleratorLibs[] = {
+    "libLiteRtGpuAccelerator.so",
+#if LITERT_HAS_OPENCL_SUPPORT
+    "libLiteRtOpenClAccelerator.so",
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
+    "libLiteRtMetalAccelerator.so",
+#endif  // LITERT_HAS_METAL_SUPPORT
+#if LITERT_HAS_WEBGPU_SUPPORT
+    "libLiteRtWebGpuAccelerator.so",
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_VULKAN_SUPPORT
+    "libLiteRtVulkanAccelerator.so",
+#endif  // LITERT_HAS_VULKAN_SUPPORT
+  };
   bool gpu_accelerator_registered = false;
-  for (const auto& plugin_path : gpu_accelerator_libs) {
+  for (auto plugin_path : kGpuAcceleratorLibs) {
+    LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).", plugin_path.data());
     if (auto registration = RegisterSharedObjectAccelerator(
             environment, plugin_path, "LiteRtRegisterGpuAccelerator");
         registration.HasValue()) {
@@ -97,6 +110,10 @@ Expected<void> RegisterSharedObjectAccelerator(
     absl::string_view registration_function_name) {
   auto maybe_lib = SharedLibrary::Load(plugin_path, RtldFlags::Lazy().Local());
   if (!maybe_lib.HasValue()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Failed to load shared library %s: %s, %s", plugin_path.data(),
+               LiteRtGetStatusString(maybe_lib.Error().Status()),
+               maybe_lib.Error().Message().data());
     maybe_lib = SharedLibrary::Load(RtldFlags::kDefault);
   }
   // Note: the Load(kDefault) overload always succeeds, so we are sure that
