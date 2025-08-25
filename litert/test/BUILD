@@ -33,7 +33,11 @@ package(
 symlink_files(
     name = "mlir_test_data",
     srcs = ["@models"],
-    declared_outputs = [f.replace(".mlir", ".tflite") for f in glob(["testdata/*.mlir"])],
+    declared_outputs = [
+        f.replace(".mlir", ".tflite")
+        for f in glob(["testdata/*.mlir"])
+        if not glob([f.replace(".mlir", ".tflite")])
+    ],
     dst = "testdata",
     flatten = True,
 )
