@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.CAMERA" />
 
     <uses-sdk
-      android:minSdkVersion="21"
+      android:minSdkVersion="23"
       android:targetSdkVersion="33" />
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
