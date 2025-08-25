@@ -208,6 +208,7 @@ TEST(ModelSubgraphTest, TransferTensorsFrom) {
   EXPECT_EQ(subgraph.Tensors().size(), 0);
   EXPECT_EQ(other_subgraph.Tensors().size(), 1);
 }
+
 //
 // Op
 //

@@ -341,3 +341,19 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "rewriter_test",
+    srcs = ["rewriter_test.cc"],
+    deps = [
+        ":buffer_manager",
+        ":model",
+        ":model_serialize",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

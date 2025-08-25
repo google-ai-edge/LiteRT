@@ -29,6 +29,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -743,6 +744,74 @@ class LiteRtSignatureT {
 // Make a basic signature from information in the given subgraph. Used with the
 // main subgraph when no explicit signatures have been authored.
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph);
+
+// Rewriter (Experimental feature)
+
+// The LiteRtRewriterT class provides an interface to build and modify
+// LiteRtSubgraphT instances in a transactional manner. It allows for the
+// creation of new tensors and operators, cloning existing ones, and marking
+// operators for erasure. Changes are accumulated within the rewriter and
+// applied to a target subgraph only when ApplyChanges() is called. This ensures
+// atomic updates to the graph structure.
+
+class LiteRtRewriterT {
+ public:
+  LiteRtRewriterT() = default;
+  LiteRtRewriterT(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT(LiteRtRewriterT&&) = default;
+  LiteRtRewriterT& operator=(const LiteRtRewriterT&) = delete;
+  LiteRtRewriterT& operator=(LiteRtRewriterT&&) = default;
+
+  // Get the subgraph that is being rewritten.
+  LiteRtSubgraphT& Subgraph() { return subgraph_; }
+
+  // Returns the set of ops that are marked for erases.
+  absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
+
+  // Builds a new LiteRt tensor owned by the rewriter.
+  LiteRtTensorT& BuildTensor(const LiteRtWeightsT& weights,
+                             Quantization quantization, TensorType tensor_type,
+                             std::optional<std::string> name = std::nullopt);
+
+  // Builds a new LiteRt tensor owned by the rewriter, clone of src.
+  LiteRtTensorT& BuildTensor(const LiteRtTensorT& src);
+
+  // Builds a new LiteRt op owned by the rewriter.
+  LiteRtOpT& BuildOp(LiteRtOpCode code, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // Builds a new LiteRt op owned by the rewriter, clone of src.
+  LiteRtOpT& BuildOp(LiteRtOpT& src, std::vector<LiteRtTensor> inputs,
+                     std::vector<LiteRtTensor> outputs);
+
+  // Checks if op is allocated in rewriter.
+  bool IsOpAllocated(LiteRtOp op) const { return allocated_ops_.contains(op); }
+
+  // Checks if tensor is allocated in rewriter.
+  bool IsTensorAllocated(LiteRtTensor tensor) const {
+    return allocated_tensors_.contains(tensor);
+  }
+
+  // Transactionally erases an op, changes won't be applied until ApplyChanges
+  // is called.
+  void EraseOp(LiteRtOp opToErase);
+
+  // Applies all changes to the given subgraph, that was recorded by the
+  // rewriter.
+  //
+  // Note: This internal function is intentionally not exposed to the public
+  // API, to avoid users from accidentally applying changes mid-computation.
+  void ApplyChanges(LiteRtSubgraphT* subgraph_to_apply);
+
+ private:
+  // Subgraph to hold the IR.
+  LiteRtSubgraphT subgraph_;
+
+  // Records of transactions.
+  absl::flat_hash_set<LiteRtOp> erases_;
+  absl::flat_hash_set<LiteRtTensor> allocated_tensors_;
+  absl::flat_hash_set<LiteRtOp> allocated_ops_;
+};
 
 //
 // Model

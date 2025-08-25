@@ -37,6 +37,10 @@
 #include "litert/core/build_stamp.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
+using ::litert::internal::AttachInput;
+using ::litert::internal::AttachOutput;
+using ::litert::internal::DCE;
+using ::litert::internal::Drop;
 using ::litert::internal::TflBuffer;
 using ::litert::internal::TflBufferPtr;
 using ::litert::internal::TflOpCode;
@@ -184,6 +188,118 @@ LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
   res.buffer_manager_ = LiteRtModelT::StoredBufferManager(Buffers());
 
   return res;
+}
+
+LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtWeightsT& weights,
+                                            Quantization quantization,
+                                            TensorType tensor_type,
+                                            std::optional<std::string> name) {
+  LiteRtTensorT& tensor = subgraph_.EmplaceTensor();
+  tensor.SetType(tensor_type);
+  tensor.SetQarams(quantization);
+  tensor.Weights().SetBufferId(weights.GetBufferId());
+  tensor.Weights().SetBufferManager(weights.GetBufferManager());
+  if (name.has_value()) {
+    tensor.SetName(*name);
+  }
+  allocated_tensors_.insert(&tensor);
+  return tensor;
+}
+
+LiteRtTensorT& LiteRtRewriterT::BuildTensor(const LiteRtTensorT& src) {
+  return BuildTensor(src.Weights(), src.Qparams(), src.Type(),
+                     std::string(src.Name()));
+}
+
+LiteRtOpT& LiteRtRewriterT::BuildOp(LiteRtOpCode code,
+                                    std::vector<LiteRtTensor> inputs,
+                                    std::vector<LiteRtTensor> outputs) {
+  LiteRtOpT& op = subgraph_.EmplaceOp();
+  op.SetOpCode(code);
+  // Only use AttachInput/AttachOutput for tensors that are allocated in the
+  // rewriter.
+  for (const LiteRtTensor& input : inputs) {
+    ABSL_DCHECK(input != nullptr) << "Input tensor is null";
+    if (IsTensorAllocated(input)) {
+      AttachInput(input, op);
+    } else {
+      op.Inputs().push_back(input);
+      subgraph_.Inputs().push_back(input);
+    }
+  }
+  for (const LiteRtTensor& output : outputs) {
+    ABSL_DCHECK(output != nullptr) << "Output tensor is null";
+    if (IsTensorAllocated(output)) {
+      AttachOutput(output, op);
+    } else {
+      op.Outputs().push_back(output);
+      subgraph_.Outputs().push_back(output);
+    }
+  }
+  // LITERT_LOG(LITERT_INFO, "BuildOp: %d", code);
+  allocated_ops_.insert(&op);
+  return op;
+}
+
+LiteRtOpT& LiteRtRewriterT::BuildOp(LiteRtOpT& src,
+                                    std::vector<LiteRtTensor> inputs,
+                                    std::vector<LiteRtTensor> outputs) {
+  return BuildOp(src.OpCode(), inputs, outputs);
+}
+
+void LiteRtRewriterT::EraseOp(LiteRtOp opToErase) {
+  ABSL_DCHECK(opToErase != nullptr) << "Op to erase is null";
+  erases_.insert(opToErase);
+}
+
+void LiteRtRewriterT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
+  // Remove all ops that are marked for erases.
+  for (LiteRtOp op : erases_) {
+    Drop(*op);
+  }
+
+  // Clear dead ops and tensors in user defined subgraph.
+  DCE(subgraph_);
+
+  // Recover the graph connectivity after transferring, for inputs and
+  // outputs of the rewriter subgraph.
+  auto const is_a_io_tensor = [](const LiteRtTensor& tensor,
+                                 const std::vector<LiteRtTensor>& io_Tensors) {
+    return std::any_of(
+        io_Tensors.begin(), io_Tensors.end(),
+        [&tensor](const LiteRtTensor& input) { return input == tensor; });
+  };
+
+  for (auto& op : subgraph_.Ops()) {
+    for (auto& input : op->Inputs()) {
+      if (is_a_io_tensor(input, subgraph_.Inputs())) {
+        input->Users().push_back(op);
+        input->UserArgInds().push_back(op->Inputs().size() - 1);
+      }
+    }
+    for (auto& output : op->Outputs()) {
+      if (is_a_io_tensor(output, subgraph_.Outputs())) {
+        output->SetDefiningOp(*op, op->Outputs().size() - 1);
+      }
+    }
+  }
+
+  // Transfer ownership of tensors and ops to the root subgraph.
+  // Note: Maintain the original topological order of the ops.
+  size_t splice_index = subgraph_to_apply->Ops().size() - 1;
+  LITERT_LOG(LITERT_DEBUG, "splice_index starting: %zu", splice_index);
+  for (size_t original_op_index = 0;
+       original_op_index < subgraph_to_apply->Ops().size();
+       ++original_op_index) {
+    for (LiteRtOp op_to_erase : erases_) {
+      if (subgraph_to_apply->Ops().at(original_op_index) == op_to_erase) {
+        splice_index = std::min(splice_index, original_op_index);
+      }
+    }
+  }
+  DCE(*subgraph_to_apply);
+  subgraph_to_apply->TransferOpsFrom(subgraph_.OpsAllocation(), splice_index);
+  subgraph_to_apply->TransferTensorsFrom(subgraph_.TensorsAllocation());
 }
 
 namespace litert::internal {
