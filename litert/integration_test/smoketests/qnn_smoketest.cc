@@ -25,6 +25,7 @@ namespace {
 static constexpr absl::string_view kDispatch = "libLiteRtDispatch_Qualcomm.so";
 static constexpr absl::string_view kPlugin =
     "libLiteRtCompilerPlugin_Qualcomm.so";
+static constexpr absl::string_view kLibQnnHtpSo = "libQnnHtp.so";
 
 using ::litert::qnn::QnnManager;
 
@@ -47,9 +48,8 @@ TEST(QnnSmokeTest, LoadLibsFromEnvPath) {
 }
 
 TEST(QnnSmokeTest, QnnManagerCreate) {
-  auto configs = QnnManager::DefaultBackendConfigs();
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(configs, options);
+  auto qnn = QnnManager::Create(options);
   EXPECT_TRUE(qnn);
 }
 

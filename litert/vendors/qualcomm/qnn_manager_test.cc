@@ -28,16 +28,14 @@ using ::testing::HasSubstr;
 // the QNN SDK instance can be properly initialized and destroyed.
 
 TEST(QnnManagerTest, SetupQnnManager) {
-  auto configs = QnnManager::DefaultBackendConfigs();
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(configs, options);
+  auto qnn = QnnManager::Create(options);
   ASSERT_TRUE(qnn);
 }
 
 TEST(QnnManagerTest, Dump) {
-  auto configs = QnnManager::DefaultBackendConfigs();
   auto options = ::qnn::Options();
-  auto qnn = QnnManager::Create(configs, options);
+  auto qnn = QnnManager::Create(options);
   ASSERT_TRUE(qnn);
 
   auto dump = Dump(**qnn);
@@ -45,6 +43,5 @@ TEST(QnnManagerTest, Dump) {
   EXPECT_THAT(dump, HasSubstr("< QnnInterface_t >"));
   EXPECT_THAT(dump, HasSubstr("< QnnSystemInterface_t >"));
 }
-
 
 }  // namespace

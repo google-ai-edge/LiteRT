@@ -4,22 +4,31 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_IR_BACKEND_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_BACKENDS_IR_BACKEND_H_
 
-#include "IR/QnnIrCommon.h"
-#include "IR/QnnIrGraph.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "IR/QnnIrCommon.h"  // from @qairt
+#include "IR/QnnIrGraph.h"  // from @qairt
 
 namespace qnn {
 
 class IrBackend : public QnnBackend {
  public:
-  static const char *GetLibraryName() { return "libQnnIr.so"; }
+  static const char* GetLibraryName() { return "libQnnIr.so"; }
 
-  IrBackend(const QNN_INTERFACE_VER_TYPE *qnn_api);
+  static const Qnn_Version_t GetExpectedBackendVersion() {
+    Qnn_Version_t backend_version;
+    backend_version.major = QNN_IR_API_VERSION_MAJOR;
+    backend_version.minor = QNN_IR_API_VERSION_MINOR;
+    backend_version.patch = QNN_IR_API_VERSION_PATCH;
+    return backend_version;
+  }
+
+  IrBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
   ~IrBackend();
 
-  bool Init(Qnn_LogHandle_t log_handle, const Options &options) override;
+  bool Init(const Options& options,
+            std::optional<::qnn::SocInfo> soc_info) override;
 
  private:
 };

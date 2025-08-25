@@ -41,17 +41,9 @@ TEST(QnnOptionTest, BackendType) {
   options.SetBackendType(kUndefined);
   EXPECT_EQ(options.GetBackendType(), kUndefined);
 
-  static constexpr BackendType kGpu = BackendType::kGpuBackend;
-  options.SetBackendType(kGpu);
-  EXPECT_EQ(options.GetBackendType(), kGpu);
-
   static constexpr BackendType kHtp = BackendType::kHtpBackend;
   options.SetBackendType(kHtp);
   EXPECT_EQ(options.GetBackendType(), kHtp);
-  
-  static constexpr BackendType kDsp = BackendType::kDspBackend;
-  options.SetBackendType(kDsp);
-  EXPECT_EQ(options.GetBackendType(), kDsp);
 
   static constexpr BackendType kIr = BackendType::kIrBackend;
   options.SetBackendType(kIr);
