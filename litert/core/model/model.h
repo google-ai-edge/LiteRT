@@ -860,7 +860,12 @@ class LiteRtModelT {
   const LiteRtSubgraphT* MainSubgraph() const {
     return &Subgraph(kMainSubgraphIndex);
   }
-  LiteRtSubgraph MainSubgraph() { return &Subgraph(kMainSubgraphIndex); }
+  LiteRtSubgraph MainSubgraph() {
+    if (kMainSubgraphIndex >= NumSubgraphs()) {
+      return nullptr;
+    }
+    return &Subgraph(kMainSubgraphIndex);
+  }
 
   // Look up signature by key.
   litert::Expected<LiteRtSignatureT::Ref> FindSignature(

@@ -39,6 +39,8 @@
 namespace litert::internal {
 namespace {
 
+constexpr absl::string_view kLlmModelTypeName = "odml.infra.LlmModelType";
+
 // Provides a view of model-level resources when constructing litert graph.
 class FlatbufferContext {
  public:
@@ -268,7 +270,8 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
 
   // Unpack ops, pass litert_subgraph so they can look up the new litert
   // tensors.
-  const auto num_ops = tfl_subgraph.operators()->size();
+  const auto num_ops =
+      tfl_subgraph.operators() ? tfl_subgraph.operators()->size() : 0;
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
@@ -276,12 +279,14 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   }
 
   // Update subgraph I/O.
-  const auto num_inputs = tfl_subgraph.inputs()->size();
+  const auto num_inputs =
+      tfl_subgraph.inputs() ? tfl_subgraph.inputs()->size() : 0;
   for (auto i = 0; i < num_inputs; ++i) {
     const auto tfl_input_ind = tfl_subgraph.inputs()->Get(i);
     litert_subgraph.Inputs().push_back(&litert_subgraph.Tensor(tfl_input_ind));
   }
-  const auto num_outputs = tfl_subgraph.outputs()->size();
+  const auto num_outputs =
+      tfl_subgraph.outputs() ? tfl_subgraph.outputs()->size() : 0;
   for (auto i = 0; i < num_outputs; ++i) {
     const auto tfl_output_ind = tfl_subgraph.outputs()->Get(i);
     litert_subgraph.Outputs().push_back(
@@ -380,7 +385,7 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
       tfl_signatures.push_back(TflSignaturePtr(tfl_signature->UnPack()));
     }
     LITERT_RETURN_IF_ERROR(UnpackSignatures(tfl_signatures, *litert_model));
-  } else {
+  } else if (litert_model->MainSubgraph()) {
     litert_model->EmplaceSignature(
         MakeDefaultSignature(litert_model->MainSubgraph()));
   }
@@ -390,6 +395,11 @@ Expected<LiteRtModelT::Ptr> UnpackModel(FlatbufferWrapper&& flatbuffer) {
     for (auto i = 0; i < num_metadata; ++i) {
       const auto* tfl_metadata = packed_model->metadata()->Get(i);
       auto name = tfl_metadata->name()->str();
+      // kLlmModelTypeName is used to store an LlmModelType enum value rather
+      // than a buffer index.
+      if (name == kLlmModelTypeName) {
+        continue;
+      }
       const auto buf_id = tfl_metadata->buffer();
       auto buf = ReadBuffer(context, buf_id);
       if (!buf) {
