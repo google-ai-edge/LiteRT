@@ -194,7 +194,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("compiler_plugin_library_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("require_full_delegation",
-                            BenchmarkParam::Create<bool>(true));
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_profiler",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
