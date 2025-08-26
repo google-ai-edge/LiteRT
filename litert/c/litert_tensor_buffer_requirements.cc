@@ -20,6 +20,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 
@@ -32,13 +33,26 @@ LiteRtStatus LiteRtCreateTensorBufferRequirements(
     const LiteRtTensorBufferType* supported_tensor_buffer_types,
     size_t buffer_size, int num_strides, const uint32_t* strides,
     LiteRtTensorBufferRequirements* requirements) {
+  // Call the version with alignment using the default alignment
+  return LiteRtCreateTensorBufferRequirementsWithAlignment(
+      num_supported_tensor_buffer_types, supported_tensor_buffer_types,
+      buffer_size, num_strides, strides,
+      LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, requirements);
+}
+
+LiteRtStatus LiteRtCreateTensorBufferRequirementsWithAlignment(
+    int num_supported_tensor_buffer_types,
+    const LiteRtTensorBufferType* supported_tensor_buffer_types,
+    size_t buffer_size, int num_strides, const uint32_t* strides,
+    size_t alignment, LiteRtTensorBufferRequirements* requirements) {
   if (num_supported_tensor_buffer_types < 1 || !supported_tensor_buffer_types ||
-      !requirements) {
+      !requirements || alignment == 0 || (alignment & (alignment - 1)) != 0) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   *requirements = new LiteRtTensorBufferRequirementsT(
       num_supported_tensor_buffer_types, supported_tensor_buffer_types,
-      buffer_size, std::vector<uint32_t>(strides, strides + num_strides));
+      buffer_size, std::vector<uint32_t>(strides, strides + num_strides),
+      alignment);
   return kLiteRtStatusOk;
 }
 
@@ -80,6 +94,15 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsStrides(
   auto& s = requirements->Strides();
   *num_strides = s.size();
   *strides = s.data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetTensorBufferRequirementsAlignment(
+    LiteRtTensorBufferRequirements requirements, size_t* alignment) {
+  if (!requirements || !alignment) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *alignment = requirements->Alignment();
   return kLiteRtStatusOk;
 }
 

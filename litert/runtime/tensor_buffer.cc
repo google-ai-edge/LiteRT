@@ -215,9 +215,17 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOnHostMemory(
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+  return CreateManagedOnHostMemory(tensor_type, buffer_size,
+                                   LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+}
+
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedOnHostMemory(
+    const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+    size_t alignment) {
   void* host_memory_ptr;
-  if (auto rc = posix_memalign(
-          &host_memory_ptr, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, buffer_size);
+  if (auto rc = posix_memalign(&host_memory_ptr, alignment, buffer_size);
+
       rc) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
@@ -521,9 +529,18 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlTexture(
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManaged(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
+  return CreateManagedWithAlignment(env, buffer_type, tensor_type, buffer_size,
+                                    LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+}
+
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateManagedWithAlignment(
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
+    size_t alignment) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
-      return CreateManagedOnHostMemory(tensor_type, buffer_size);
+      return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);
     case kLiteRtTensorBufferTypeAhwb:
       return CreateManagedAhwbBuffer(env, tensor_type, buffer_size);
     case kLiteRtTensorBufferTypeIon:
