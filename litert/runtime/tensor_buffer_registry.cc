@@ -34,10 +34,20 @@ litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
     LiteRtTensorBufferType buffer_type,
     const CustomTensorBufferHandlers& handlers) {
   if (auto it = handlers_.find(buffer_type); it != handlers_.end()) {
+    if (it->second.create_func == handlers.create_func &&
+        it->second.destroy_func == handlers.destroy_func &&
+        it->second.lock_func == handlers.lock_func &&
+        it->second.unlock_func == handlers.unlock_func) {
+      LITERT_LOG(LITERT_INFO,
+                 "Same custom tensor buffer handler has already been registered"
+                 " for buffer type %s",
+                 BufferTypeToString(buffer_type).c_str());
+      return {};
+    }
     return litert::Unexpected(
         kLiteRtStatusErrorAlreadyExists,
-        absl::StrCat("Custom tensor buffer handler is already registered for "
-                     "buffer type ",
+        absl::StrCat("Different custom tensor buffer handler has already been"
+                     " registered for buffer type ",
                      BufferTypeToString(buffer_type)));
   }
   handlers_[buffer_type] = handlers;

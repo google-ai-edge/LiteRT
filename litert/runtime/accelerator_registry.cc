@@ -17,14 +17,28 @@
 #include <cstddef>
 #include <utility>
 
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/runtime/accelerator.h"
 
 namespace litert::internal {
+namespace {
+
+const char* GetAcceleratorName(LiteRtAcceleratorT* accelerator) {
+  const char* name = nullptr;
+  if (accelerator && accelerator->GetName) {
+    accelerator->GetName(accelerator, &name);
+  }
+  return name;
+}
+
+}  // namespace
 
 void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
+  ABSL_LOG(INFO) << "DestroyAccelerator: ptr=" << accelerator
+                 << ", name=" << GetAcceleratorName(accelerator);
   if (accelerator && accelerator->ReleaseData) {
     accelerator->env = nullptr;
     accelerator->ReleaseData(accelerator->data);
@@ -34,6 +48,8 @@ void AcceleratorRegistry::DestroyAccelerator(LiteRtAcceleratorT* accelerator) {
 
 Expected<LiteRtAcceleratorT*> AcceleratorRegistry::RegisterAccelerator(
     Ptr accelerator) {
+  ABSL_LOG(INFO) << "RegisterAccelerator: ptr=" << accelerator.get()
+                 << ", name=" << GetAcceleratorName(accelerator.get());
   if (!accelerator) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Cannot register a null accelerator.");

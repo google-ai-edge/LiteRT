@@ -474,6 +474,7 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
+        "@com_google_absl//absl/log:absl_log",
     ],
 )
 
