@@ -101,7 +101,7 @@ cc_library(
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_event",
         "//litert/c:litert_gl_types",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_detail",

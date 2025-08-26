@@ -84,20 +84,18 @@ cc_library(
     }),
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_logging",
         "//litert/c:litert_metrics",
         "//litert/c:litert_model",
-    ] + select({
-        "//conditions:default": [
-            "//litert/c:litert_environment_options",
-            "//litert/c:litert_logging",
-            "//litert/cc:litert_environment_options",
-            "//litert/cc:litert_expected",
-            "//litert/cc:litert_macros",
-            "//litert/cc:litert_shared_library",
-            "//litert/core:dynamic_loading",
-            "//litert/core:version",
-        ],
-    }),
+        "//litert/c:litert_model_types",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_shared_library",
+        "//litert/core:dynamic_loading",
+        "//litert/core:version",
+    ],
     alwayslink = 1,
 )
 

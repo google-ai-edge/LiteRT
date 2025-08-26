@@ -21,7 +21,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 
 #ifdef __cplusplus
 extern "C" {

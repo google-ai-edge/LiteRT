@@ -28,7 +28,6 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"

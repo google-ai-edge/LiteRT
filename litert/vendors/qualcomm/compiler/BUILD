@@ -60,7 +60,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_qualcomm_options",

@@ -20,7 +20,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
