@@ -64,6 +64,7 @@ cc_test(
     deps = [
         ":common",
         ":example",
+        "//litert/cc:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
         "@com_google_googletest//:gtest_main",

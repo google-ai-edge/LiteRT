@@ -20,6 +20,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/cc/litert_rng.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
@@ -72,8 +73,11 @@ TYPED_TEST(ExampleTestLogicTest, TestLogic) {
               HasTypeAspect(TypeParam::kElementType, expected_shape));
 
   auto device = this->TracedDevice();
+  RandomTensorDataBuilder data_builder;
+  data_builder.SetFloatDummy();
+  data_builder.SetIntDummy();
   LITERT_ASSERT_OK_AND_ASSIGN(const auto inputs,
-                              gen.MakeInputs(device, params));
+                              gen.MakeInputs(data_builder, device, params));
   EXPECT_EQ(inputs.size(), 1);
 
   auto lhs = inputs[0].template AsView<DataType>();

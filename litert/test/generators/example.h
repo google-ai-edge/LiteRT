@@ -134,11 +134,11 @@ struct ExampleTestLogic {
   // Initialize input buffers with random data, these will be passed to the
   // compiled model api.
   template <typename Rng>
-  Expected<typename Traits::InputBuffers> MakeInputs(Rng& rng,
-                                                     const Params& params) {
+  Expected<typename Traits::InputBuffers> MakeInputs(
+      const RandomTensorDataBuilder& data_builder, Rng& rng,
+      const Params& params) {
     LITERT_ASSIGN_OR_RETURN(auto input, SimpleBuffer::Create<T>(params.shape));
-    LITERT_RETURN_IF_ERROR(
-        (input.template WriteRandom<T, DummyGenerator>(rng)));
+    LITERT_RETURN_IF_ERROR((input.template WriteRandom<T>(data_builder, rng)));
     return typename Traits::InputBuffers{std::move(input)};
   }
 
