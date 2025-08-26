@@ -30,8 +30,12 @@
 #include "litert/c/litert_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/cc/options_helper.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
@@ -46,7 +50,7 @@ char BuildId[256];
 
 LiteRtEnvironmentOptions TheEnvironmntOptions;
 LiteRtOptions TheOptions;
-
+std::unique_ptr<litert::DarwinnRuntimeOptions> TheDarwinnOptions;
 }  // namespace
 
 namespace litert {
@@ -73,6 +77,19 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                         LiteRtOptions options) {
   TheEnvironmntOptions = environment_options;
   TheOptions = options;
+
+  // Parse Darwinn runtime options from the opaque options
+  auto [env, opts, opq_opts, darwinn_opts] =
+      litert::ParseOptions<litert::DarwinnRuntimeOptions>(environment_options,
+                                                          options);
+
+  if (darwinn_opts) {
+    TheDarwinnOptions = std::make_unique<litert::DarwinnRuntimeOptions>(
+        std::move(*darwinn_opts));
+    LITERT_LOG(LITERT_INFO, "Found Darwinn runtime options");
+  } else {
+    LITERT_LOG(LITERT_INFO, "No Darwinn runtime options found, using defaults");
+  }
 
   auto shared_library_dir_opt = GetSharedLibraryDir(environment_options);
 
@@ -131,7 +148,9 @@ LiteRtStatus GetCapabilities(int* capabilities) {
 }
 
 LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
-  if (auto result = LiteRtDispatchDeviceContextT::Create(*TheSouthbound);
+  if (auto result = LiteRtDispatchDeviceContextT::Create(
+          *TheSouthbound, TheDarwinnOptions.get());
+
       result) {
     *device_context = result->release();
     return kLiteRtStatusOk;
