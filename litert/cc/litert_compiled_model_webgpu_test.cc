@@ -119,25 +119,30 @@ TEST_P(CompiledModelWebGpuTest, Basic) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
+  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
+  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
+  // test function right after absl::LeakCheckDisabler helps to avoid the memory
+  // leak reporting in tab presubmit.
   BasicTest(CompiledModelWebGpuTest::GetParam());
 }
 
+// Run the test twice to verify that WebGPU environment is shared between
+// instances.
 TEST_P(CompiledModelWebGpuTest, Basic2nd) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  // Run the test twice to verify that the CL environment is shared between
-  // instances.
+  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
+  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
+  // test function right after absl::LeakCheckDisabler helps to avoid the memory
+  // leak reporting in tab presubmit.
   BasicTest(CompiledModelWebGpuTest::GetParam());
 }
 
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
 
-TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
+void GpuEnvironmentTest(bool no_immutable_external_tensors_mode) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -146,7 +151,7 @@ TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, CreateGpuOptions(CompiledModelWebGpuTest::GetParam()));
+      auto options, CreateGpuOptions(no_immutable_external_tensors_mode));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(*env, model, options));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env->GetOptions());
@@ -162,6 +167,17 @@ TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
   ABSL_LOG(INFO) << "WebGPU command queue: "
                  << reinterpret_cast<WGPUQueue>(
                         std::any_cast<int64_t>(wegpu_command_queue));
+}
+
+TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
+  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
+  // test function right after absl::LeakCheckDisabler helps to avoid the memory
+  // leak reporting in tab presubmit.
+  GpuEnvironmentTest(CompiledModelWebGpuTest::GetParam());
 }
 
 INSTANTIATE_TEST_SUITE_P(CompiledModelWebGpuTest, CompiledModelWebGpuTest,
