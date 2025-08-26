@@ -46,11 +46,7 @@
 #include "litert/tools/tensor_utils.h"
 #include "tflite/profiling/time.h"
 
-ABSL_FLAG(std::string, graph,
-          "/data/local/tmp/run_model_test/"
-          "static_a16w4-float-rms_qpa_quantized_model_fixed_float_embed_input_"
-          "mt6991.tflite",
-          "Model filename to use for testing.");
+ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
