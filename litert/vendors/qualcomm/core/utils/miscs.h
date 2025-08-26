@@ -8,10 +8,13 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <optional>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 namespace qnn {
 constexpr uint32_t kUint16ZeroPoint = -std::numeric_limits<std::int16_t>::min();
 constexpr uint32_t kQuantBitWidth4 = 4;
@@ -43,5 +46,6 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
 
+std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name);
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

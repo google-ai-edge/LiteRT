@@ -46,7 +46,7 @@ std::vector<OpWrapper> BuildReverseOp(
     return {};
   }
 
-  auto axis_values = axis_tensor.GetStaticTensorData<std::int32_t>();
+  auto axis_values = axis_tensor.GetTensorData<std::int32_t>();
   if (!axis_values) {
     QNN_LOG_ERROR("ReverseV2 axis tensor not contain static tensor.");
     return {};
