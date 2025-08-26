@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
 
+#include <bitset>
 #include <iostream>
 #include <optional>
 #include <ostream>
@@ -211,6 +212,50 @@ class ReinterpretGenerator<D, Dist,
   ReinterpretGenerator& operator=(const ReinterpretGenerator&) = default;
   ReinterpretGenerator(ReinterpretGenerator&&) = default;
   ReinterpretGenerator& operator=(ReinterpretGenerator&&) = default;
+};
+
+template <typename D>
+class F16InF32Generator final {};
+
+// Generates valid f16 values stored as f32.
+// TODO: Add first class support for f16 in litert.
+template <>
+class F16InF32Generator<float> final {
+ public:
+  // This works by generating 32 random bits and then masking and moving things
+  // around so there are a maximum of 10 significant mantissa bits and an
+  // an exponent component between 2^-14 and 2^15.
+  // NOTE: We will replace this in the future with a proper f16 -> f32
+  // converter.
+  template <typename Rng>
+  float operator()(Rng& rng) {
+    std::bitset<32> b = rng();
+    // Mask out trailing mantissa bits that an f16 doesn't have.
+    std::bitset<32> mant_mask = ~((1u << 13) - 1);
+    // Value for the final left 4 bits of the exponent. Uses the fourth
+    // bit from left of the initial exponent componenet to determine which of
+    // the 2 possible values the final exponent 4 bit prefix can take.
+    std::bitset<32> exp_prefix = ((b[27] + 7u) << 27);
+    // Masks out the top 4 bits of the exponent, after the final prefix has
+    // been computed.
+    std::bitset<32> exp_mask = ~(((1u << 4) - 1) << 27);
+
+    // Apply the masks and prefix to return a valid f16 value stored as f32.
+    b = (b & mant_mask & exp_mask) | exp_prefix;
+
+    // Add or subtract one from the exponent to avoid super or sub normals.
+    if ((b[30] == b[26]) && (b[30] == b[25]) && (b[30] == b[24]) &&
+        (b[30] == b[23])) {
+      b.flip(23);
+    }
+
+    // Reinterpret as float.
+    const auto res = b.to_ulong();
+    float f_res;
+    memcpy(&f_res, &res, sizeof(f_res));
+
+    return f_res;
+  }
 };
 
 // Dummy primitive generator that returns a monotonically increasing sequence.
@@ -484,6 +529,11 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  RandomTensorDataBuilder& SetF16InF32() {
+    float_config_ = F16InF32();
+    return *this;
+  }
+
   template <typename D, typename Functor, typename... Args>
   auto Call(Args&&... args) const {
     if constexpr (std::is_same_v<D, int32_t>) {
@@ -505,6 +555,9 @@ class RandomTensorDataBuilder {
       } else if (std::holds_alternative<NullOpt>(float_config_)) {
         RandomTensorData<D, DefaultGenerator> data;
         return Functor()(data, std::forward<Args>(args)...);
+      } else if (std::holds_alternative<F16InF32>(float_config_)) {
+        RandomTensorData<D, F16InF32Generator> data;
+        return Functor()(data, std::forward<Args>(args)...);
       } else {
         auto [min, max] = std::get<std::pair<D, D>>(float_config_);
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
@@ -518,12 +571,16 @@ class RandomTensorDataBuilder {
  private:
   struct Dummy {};
   struct NullOpt {};
+  struct F16InF32 {};
 
   template <typename D>
-  using Config = std::variant<std::pair<D, D>, Dummy, NullOpt>;
+  using IntConfig = std::variant<std::pair<D, D>, Dummy, NullOpt>;
+  template <typename D>
+  using FloatConfig =
+      std::variant<std::pair<float, float>, Dummy, NullOpt, F16InF32>;
 
-  Config<int32_t> int_config_ = NullOpt();
-  Config<float> float_config_ = NullOpt();
+  IntConfig<int32_t> int_config_ = NullOpt();
+  FloatConfig<float> float_config_ = NullOpt();
 };
 
 }  // namespace litert

@@ -14,10 +14,12 @@
 
 #include "litert/cc/litert_rng.h"
 
+#include <bitset>
 #include <chrono>  // NOLINT
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <type_traits>
 #include <vector>
@@ -371,6 +373,46 @@ TYPED_TEST(RandomTensorDataTest, BuilderWithDummy) {
   std::iota(expected.begin(), expected.end(), 0);
 
   EXPECT_EQ(buf, expected);
+}
+
+struct FloatGenerator {
+  template <typename... Floats>
+  explicit FloatGenerator(Floats&&... vals)
+      : vals({std::forward<Floats>(vals)...}) {}
+
+  uint32_t operator()() {
+    auto res = vals[cur];
+    cur = (cur + 1) % vals.size();
+    return (*reinterpret_cast<uint32_t*>(&res));
+  }
+
+  size_t NumValues() const { return vals.size(); }
+
+ private:
+  std::vector<float> vals;
+  size_t cur = 0;
+};
+
+TEST(F16InF23Test, Works) {
+  FloatGenerator device(
+      3.14f, .314f, -3.14f, 0.0061328127f, std::numeric_limits<float>::max(),
+      std::numeric_limits<float>::lowest(), std::numeric_limits<float>::min());
+
+  F16InF32Generator<float> f16_gen;
+  // Leaking a bit of the implementation here but the generator algorithm
+  // will emit (f16) subnormals but not infinities.
+  static constexpr auto kSmallestF16SNormal = 0.00006103515625f;
+  static constexpr auto kLargestF16Normal = 65504.0f;
+
+  for (int i = 0; i < device.NumValues(); ++i) {
+    const float f = std::abs(f16_gen(device));
+    EXPECT_GE(f, kSmallestF16SNormal);
+    EXPECT_LE(f, kLargestF16Normal);
+    const auto mant_bits = std::bitset<32>(f);
+    for (int i = 0; i < 13; ++i) {
+      EXPECT_FALSE(mant_bits.test(mant_bits.size() - 1 - i));
+    }
+  }
 }
 
 }  // namespace
