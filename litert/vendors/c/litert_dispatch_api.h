@@ -18,7 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
 #ifdef __cplusplus
