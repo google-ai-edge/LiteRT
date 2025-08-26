@@ -217,7 +217,7 @@ litert_device_test(
 #     "//litert/runtime/dispatch:dispatch_delegate_cascade_google_tensor_test",
 #     "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_google_tensor_test",
 #     "//litert/cc:litert_compiled_model_gpu_device_test",
-#     "//litert/cc:litert_compiled_model_npu_test",
+#     "//litert/cc:litert_compiled_model_google_tensor_test",
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
 #     "//litert/runtime:gl_buffer_device_test",
