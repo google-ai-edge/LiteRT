@@ -51,10 +51,10 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   // The following is list of plugins that are loaded in the order they are
   // listed. The first plugin that is loaded and registered successfully will
   // be used.
-  static constexpr std::array<absl::string_view, 3> gpu_accelerator_libs = {
-      "libLiteRtGpuClWebGpuAccelerator.so", "libLiteRtGpuAccelerator.so",
-      "libLiteRtWebGpuAccelerator.so"};
   bool gpu_accelerator_registered = false;
+  static constexpr std::array<absl::string_view, 3> gpu_accelerator_libs = {
+      "libLiteRtGpuAccelerator.so", "libLiteRtOpenClAccelerator.so",
+      "libLiteRtWebGpuAccelerator.so"};
   for (const auto& plugin_path : gpu_accelerator_libs) {
     if (auto registration = RegisterSharedObjectAccelerator(
             environment, plugin_path, "LiteRtRegisterGpuAccelerator");
