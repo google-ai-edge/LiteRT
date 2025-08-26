@@ -37,6 +37,7 @@ typedef enum {
   kLiteRtEnvOptionTagMetalCommandQueue = 11,
   // WARNING: Vulkan support is experimental.
   kLiteRtEnvOptionTagVulkanEnvironment = 12,
+  kLiteRtEnvOptionTagVulkanCommandPool = 13,
 } LiteRtEnvOptionTag;
 
 typedef struct {
