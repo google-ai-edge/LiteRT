@@ -29,6 +29,22 @@ _SHARED_LIB_SUFFIX = "_so"
 
 # Public
 
+def if_oss(oss_value, google_value = []):  # buildifier: disable=unused-variable
+    """Returns one of the arguments based on the non-configurable build env.
+
+    Specifically, it does not return a `select`, and can be used to e.g.
+    compute elements of list attributes.
+    """
+    return oss_value  # copybara:comment_replace return google_value
+
+def if_google(google_value, oss_value = []):  # buildifier: disable=unused-variable
+    """Returns one of the arguments based on the non-configurable build env.
+
+    Specifically, it does not return a `select`, and can be used to e.g.
+    compute elements of list attributes.
+    """
+    return oss_value  # copybara:comment_replace return google_value
+
 def make_linkopt(opt):
     return "-Wl,{}".format(opt)
 
@@ -73,7 +89,7 @@ def absolute_label(label, package_name = None):
     Returns:
       The absolute label.
     """
-    if label.startswith("//"):
+    if label.startswith("//") or label.startswith("@"):
         if ":" in label:
             return label
         return "%s:%s" % (label, label.rsplit("/", 1)[-1])

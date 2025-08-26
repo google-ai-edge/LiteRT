@@ -16,15 +16,13 @@
 This module defines the `run_on_device` macro, which helps to execute a binary target on a device.
 """
 
-load("@org_tensorflow//tensorflow:tensorflow.bzl", "if_oss")
-
 # copybara:uncomment_begin(google-only)
 # load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
 # load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
 # load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar")
 #
 # copybara:uncomment_end
-load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
+load("//litert/build_common:litert_build_defs.bzl", "absolute_label", "if_oss")
 
 # MISCELLANEOUS ####################################################################################
 
@@ -46,6 +44,23 @@ def hidden_test_tags():
 
 # DEVICE PATHS #####################################################################################
 
+def _strip_double_prefix():
+    return "perl -ne \"s/(^|\\s)litert\\/litert/\\1litert/g; print;\""
+
+def _add_external_prefix():
+    return "perl -ne \"s/(^|\\s)(?!litert)([^\\s]+)/\\1external\\/\\2/g; print;\""
+
+def _change_delim(before, after):
+    return "sed \"s/{before}/{after}/g\"".format(before = before, after = after)
+
+def _transform_str(s, *cmds):
+    if not cmds:
+        return s
+    cmds_ = ["echo {}".format(s)]
+    cmds_.extend(*cmds)
+    cmds_str = " | ".join(cmds_)
+    return "$$({})".format(cmds_str)
+
 DEVICE_RLOCATION_ROOT = "/data/local/tmp/runfiles"
 
 def device_rlocation(label = None, get_parent = False):
@@ -61,7 +76,7 @@ def device_rlocation(label = None, get_parent = False):
     if not label:
         return DEVICE_RLOCATION_ROOT
     abs_label = absolute_label(label)
-    res = DEVICE_RLOCATION_ROOT + "/" + abs_label.replace("//", "").replace(":", "/")
+    res = DEVICE_RLOCATION_ROOT + "/" + abs_label.replace("@", "external/").replace("//", "").replace(":", "/")
     if get_parent:
         return res[:res.rfind("/")]
     return res
@@ -382,9 +397,13 @@ def litert_device_exec(
     data.extend(backend.libs)
     exec_env_vars.extend(backend.env_paths)
 
+    path_transforms = if_oss([_strip_double_prefix(), _add_external_prefix()])
+
+    bin_path_str = _transform_str("$(rlocationpath {})".format(target), path_transforms)
+
     call_mobile_install = """
     echo '$(location {driver}) \
-        --bin=$(rlocationpath {target}) \
+        --bin={bin_path_str} \
         --data={data} \
         --do_exec=true \
         --exec_args={exec_args} \
@@ -394,8 +413,7 @@ def litert_device_exec(
         > $@
     """
 
-    concat_targ_data = "$$(echo \"$(rlocationpaths {})\" | sed \"s/ /,/g\")"
-    data_str = ",".join([concat_targ_data.format(d) for d in data])
+    data_str = ",".join([_transform_str("$(rlocationpaths {})".format(d), path_transforms + [_change_delim(" ", ",")]) for d in data])
 
     # NOTE: Tilde delimiter here (also see driver script) to allow passing list args to underlying
     # binary.
@@ -407,7 +425,7 @@ def litert_device_exec(
 
     cmd = call_mobile_install.format(
         driver = driver_sh,
-        target = target,
+        bin_path_str = bin_path_str,
         data = data_str,
         exec_args = exec_args_str,
         exec_env_vars = exec_env_vars_str,
