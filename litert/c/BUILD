@@ -368,9 +368,7 @@ cc_test(
 cc_library(
     name = "litert_options",
     srcs = ["litert_options.cc"],
-    hdrs = [
-        "litert_options.h",
-    ],
+    hdrs = ["litert_options.h"],
     deps = [
         ":litert_common",
         ":litert_logging",
@@ -415,9 +413,7 @@ cc_library(
 
 cc_test(
     name = "litert_compiled_model_test",
-    srcs = [
-        "litert_compiled_model_test.cc",
-    ],
+    srcs = ["litert_compiled_model_test.cc"],
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
@@ -443,9 +439,7 @@ cc_test(
 # The same test as `litert_compiled_model_test` but using the shared library `libLiteRtRuntimeCApi.so`.
 cc_test(
     name = "litert_compiled_model_shared_lib_test",
-    srcs = [
-        "litert_compiled_model_test.cc",
-    ],
+    srcs = ["litert_compiled_model_test.cc"],
     data = [
         "//litert/test:testdata/dynamic_add_model.tflite",
         "//litert/test:testdata/simple_model.tflite",
@@ -640,9 +634,7 @@ cc_library(
         ":resolve_symbols_in_exec": [],
         "//conditions:default": [":litert_runtime_c_api_so"],
     }),
-    hdrs = glob([
-        "*.h",
-    ]) + [
+    hdrs = glob(["*.h"]) + [
         "//litert/c/internal:internal_headers",
         "//litert/c/options:options_headers",
         "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h

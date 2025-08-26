@@ -109,15 +109,36 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_tensor_buffer_registry",
-    srcs = ["litert_tensor_buffer_registry.cc"],
+    name = "litert_tensor_buffer_registry_header",
     hdrs = ["litert_tensor_buffer_registry.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer_registry",
+    srcs = ["litert_tensor_buffer_registry.cc"],
+    hdrs = ["litert_tensor_buffer_registry.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert/c:__subpackages__",
+        # "//litert/runtime/accelerators:__subpackages__",
+        # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer_registry",
     ],
+    alwayslink = True,
 )
 
 # Collection of headers for dispatch APIs.
