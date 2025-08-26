@@ -560,7 +560,8 @@ tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
 Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor,
     const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
-    std::vector<LiteRtTensorBuffer>& locked_buffers) {
+    std::vector<LiteRtTensorBuffer>& locked_buffers,
+    std::vector<ConstantOutputInfo>& constant_outputs) {
   LITERT_DEBUG_CODE({
     absl::string_view io = is_input ? "input" : "output";
     auto buffer_type = litert::BufferTypeToString(buffer->buffer_type());
@@ -569,6 +570,10 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                "LiteRtTensorBuffer %p of type %s",
                io.data(), tensor, buffer, buffer_type.data());
   });
+
+  bool is_constant_output = !is_input &&
+                            tensor->allocation_type == kTfLiteMmapRo &&
+                            tensor->data.raw != nullptr;
 
   // Automatic shape detection for input tensors.
   if (is_input) {
@@ -622,33 +627,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                             "Failed to register tensor buffer");
         }
 
-        // TODO(b/439926974): Move this to LiteRtCompiledModelT::Run()
-        // Handle constant output tensors for hardware backends (GPU/NPU)
-        if (!is_input && tensor->allocation_type == kTfLiteMmapRo &&
-            tensor->data.raw != nullptr) {
-          const void* const_data_ptr = tensor->data.raw;
-          size_t const_data_size = tensor->bytes;
-
-          LITERT_LOG(LITERT_INFO,
-                     "Uploading constant output tensor %s data to hardware "
-                     "buffer (type=%d)",
-                     tensor_name ? tensor_name : "<unnamed>",
-                     buffer->buffer_type());
-
-          void* buffer_ptr = nullptr;
-          if (auto status = LiteRtLockTensorBuffer(
-                  buffer, &buffer_ptr, kLiteRtTensorBufferLockModeWrite);
-              status == kLiteRtStatusOk) {
-            memcpy(buffer_ptr, const_data_ptr, const_data_size);
-            LiteRtUnlockTensorBuffer(buffer);
-          } else {
-            LITERT_LOG(LITERT_WARNING,
-                       "Failed to lock hardware buffer for constant tensor %s, "
-                       "status=%d",
-                       tensor_name ? tensor_name : "<unnamed>", status);
-          }
-        }
-
         // Mark the tensor as non-CPU to avoid TFLite from allocating it.
         tensor->allocation_type = kTfLiteNonCpu;
         tensor->data.data = nullptr;
@@ -697,6 +675,15 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                                     tensor->name ? tensor->name : "<unnamed>"));
       }
       TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
+      // If this is a constant output, save the locked address for later data
+      // copying
+      if (is_constant_output) {
+        constant_outputs.push_back({buffer, host_mem_addr, tensor_name,
+                                    static_cast<size_t>(tensor->bytes)});
+        LITERT_LOG(LITERT_INFO,
+                   "Tracked constant output tensor %s with locked address",
+                   tensor_name);
+      }
       if (is_input) {
         runner->SetCustomAllocationForInputTensor(tensor_name,
                                                   custom_allocation,
@@ -705,22 +692,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(buffer));
       } else {
         locked_buffers.push_back(buffer);
-        if (tensor->allocation_type == kTfLiteMmapRo) {
-          if (tensor->data.raw != nullptr) {
-            // This is a constant output tensor - copy data to CPU buffer
-            const void* const_data_ptr = tensor->data.raw;
-            size_t const_data_size = tensor->bytes;
 
-            LITERT_LOG(LITERT_INFO,
-                       "Uploading constant output tensor %s data to CPU buffer",
-                       tensor_name ? tensor_name : "<unnamed>");
-            memcpy(host_mem_addr, const_data_ptr, const_data_size);
-          } else {
-            return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Constant output tensor has null data pointer");
-          }
-        } else {  // tensor->allocation_type != kTfLiteMmapRo
-          // Normal output tensor - set custom allocation
+        // Skip SetCustomAllocationForOutputTensor for constant tensors
+        // TFLite doesn't allow custom allocation for read-only memory-mapped
+        // tensors
+        if (!is_constant_output) {
           runner->SetCustomAllocationForOutputTensor(tensor_name,
                                                      custom_allocation,
                                                      /*flags=*/0);
@@ -743,25 +719,22 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           status, absl::StrFormat("Failed to lock the tensor buffer: %s",
                                   tensor->name ? tensor->name : "<unnamed>"));
     }
-    locked_buffers.push_back(buffer);
+    // If this is a constant output, save the locked address for later data
+    // copying
+    if (is_constant_output) {
+      constant_outputs.push_back({buffer, host_mem_addr, tensor_name,
+                                  static_cast<size_t>(tensor->bytes)});
+      LITERT_LOG(LITERT_INFO,
+                 "Tracked CPU constant output tensor %s with locked address",
+                 tensor_name);
+    }
     TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
     if (is_input) {
       runner->SetCustomAllocationForInputTensor(tensor_name, custom_allocation,
                                                 /*flags=*/0);
     } else {
-      if (tensor->allocation_type == kTfLiteMmapRo &&
-          tensor->data.raw != nullptr) {
-        // This is a constant output tensor - copy data to CPU buffer
-        const void* const_data_ptr = tensor->data.raw;
-        size_t const_data_size = tensor->bytes;
-
-        LITERT_LOG(
-            LITERT_INFO,
-            "Uploading constant output tensor %s data to shared CPU buffer",
-            tensor_name ? tensor_name : "<unnamed>");
-        memcpy(host_mem_addr, const_data_ptr, const_data_size);
-      } else if (tensor->allocation_type != kTfLiteMmapRo) {
-        // Normal output tensor - set custom allocation
+      // Skip SetCustomAllocationForOutputTensor for constant tensors
+      if (!is_constant_output) {
         runner->SetCustomAllocationForOutputTensor(tensor_name,
                                                    custom_allocation,
                                                    /*flags=*/0);
@@ -817,6 +790,8 @@ Expected<void> LiteRtCompiledModelT::Run(
   // the inference is done.
   std::vector<LiteRtTensorBuffer> locked_buffers;
   locked_buffers.reserve(num_inputs + num_outputs);
+  // Vector to track only constant output tensors.
+  std::vector<ConstantOutputInfo> constant_outputs;
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
     for (auto locked_buffer : locked_buffers) {
       if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
@@ -835,7 +810,8 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
     auto res =
         RegisterBuffer(runner, input_tensor, input_name, input_buffers[i],
-                       /*is_input=*/true, locked_buffers);
+                       /*is_input=*/true, locked_buffers, constant_outputs);
+
     if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                         absl::StrCat("Failed to register input tensor buffer: ",
@@ -846,9 +822,11 @@ Expected<void> LiteRtCompiledModelT::Run(
   for (int i = 0; i < runner->subgraph_output_names().size(); ++i) {
     const auto& output_name = runner->subgraph_output_names()[i];
     auto* output_tensor = runner->output_tensor(output_name);
-    auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
-                              output_name, output_buffers[i],
-                              /*is_input=*/false, locked_buffers);
+    auto res =
+        RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
+                       output_name, output_buffers[i],
+                       /*is_input=*/false, locked_buffers, constant_outputs);
+
     if (!res) {
       return Unexpected(
           kLiteRtStatusErrorRuntimeFailure,
@@ -875,6 +853,28 @@ Expected<void> LiteRtCompiledModelT::Run(
 
   if (auto res = runner->Invoke(); res != kTfLiteOk) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
+  }
+  // Copy constant data to constant output tensors after invoke
+  // This only iterates through constant outputs that were identified during
+  // RegisterBuffer
+  for (const auto& constant_output : constant_outputs) {
+    // Get the constant tensor to access its data
+    auto* output_tensor = runner->output_tensor(constant_output.tensor_name);
+    if (output_tensor && output_tensor->data.raw != nullptr) {
+      const void* const_data_ptr = output_tensor->data.raw;
+      if (constant_output.locked_address != nullptr) {
+        LITERT_LOG(
+            LITERT_INFO,
+            "Copying constant output tensor %s data to already-locked buffer",
+            constant_output.tensor_name);
+        memcpy(constant_output.locked_address, const_data_ptr,
+               constant_output.data_size);
+      } else {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to obtain CPU view for constant output tensor %s",
+                   constant_output.tensor_name);
+      }
+    }
   }
 
   if (profiler_ && profiler_->IsProfiling()) {
