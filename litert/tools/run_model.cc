@@ -29,6 +29,7 @@
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -51,7 +52,10 @@ ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
-ABSL_FLAG(std::string, accelerator, "cpu", "Which backend to use.");
+ABSL_FLAG(std::string, accelerator, "cpu",
+          "Which backend to use. Comma delimited string of accelerators (e.g. "
+          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
+          "specified in this flag.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
@@ -70,15 +74,19 @@ using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
 
-LiteRtHwAccelerators GetAccelerator() {
-  const auto accelerator = absl::GetFlag(FLAGS_accelerator);
-  if (accelerator == "gpu") {
-    return kLiteRtHwAcceleratorGpu;
-  } else if (accelerator == "npu") {
-    return kLiteRtHwAcceleratorNpu;
-  } else {
-    return kLiteRtHwAcceleratorCpu;
+LiteRtHwAcceleratorSet GetAccelerator() {
+  const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
+  LiteRtHwAcceleratorSet accelerators = 0;
+  for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
+    if (accelerator == "gpu") {
+      accelerators |= kLiteRtHwAcceleratorGpu;
+    } else if (accelerator == "npu") {
+      accelerators |= kLiteRtHwAcceleratorNpu;
+    } else if (accelerator == "cpu") {
+      accelerators |= kLiteRtHwAcceleratorCpu;
+    }
   }
+  return accelerators;
 }
 
 Expected<Environment> GetEnvironment() {
