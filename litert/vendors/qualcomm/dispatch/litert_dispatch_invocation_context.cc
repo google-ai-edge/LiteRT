@@ -153,11 +153,8 @@ LiteRtDispatchInvocationContextT::Create(
   }
 
   auto configs = QnnManager::DefaultContextConfigs();
-
-  // TODO: Add profiling_level as an option & related test code with different
-  // profiling level after having option interface
-  auto profiling_level = ::qnn::Profiling::kOff;
-
+  
+  auto profiling_level = qnn.GetOptions().GetProfiling();
   Qnn_ProfileHandle_t profile_handle = nullptr;
   if (profiling_level != ::qnn::Profiling::kOff) {
     if (auto status = qnn.Api()->profileCreate(

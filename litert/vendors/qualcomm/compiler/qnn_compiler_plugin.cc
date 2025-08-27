@@ -238,8 +238,6 @@ class LiteRtCompilerPluginT {
     if (qualcomm_options_.HasValue()) {
       InitQnnOptions(qnn_options_, qualcomm_options_.Value());
     }
-    // Reset performance options to default for compilation.
-    qnn_options_.SetHtpPerformanceMode(::qnn::HtpPerformanceMode::kDefault);
   }
 
   const ::qnn::Options& Options() const { return qnn_options_; }

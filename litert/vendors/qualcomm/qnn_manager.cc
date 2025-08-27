@@ -356,14 +356,15 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  switch (options.GetBackendType()) {
+  options_ = options;
+  switch (options_.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::HtpBackend::GetExpectedBackendVersion()));
 
       backend_ = std::make_unique<::qnn::HtpBackend>(Api());
-      LITERT_RETURN_IF_ERROR(backend_->Init(options, soc_info));
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));
       auto* htp_backend = dynamic_cast<::qnn::HtpBackend*>(backend_.get());
       if (!htp_backend) {
         LITERT_LOG(LITERT_ERROR, "dynamic_cast to HtpBackend failed");
@@ -379,13 +380,13 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
           ResolveApi(::qnn::IrBackend::GetExpectedBackendVersion()));
 
       backend_ = std::make_unique<::qnn::IrBackend>(Api());
-      LITERT_RETURN_IF_ERROR(backend_->Init(options, std::nullopt));
+      LITERT_RETURN_IF_ERROR(backend_->Init(options_, std::nullopt));
 
       break;
     }
     default: {
       LITERT_LOG(LITERT_ERROR, "Unsupported backend type: %d",
-                 options.GetBackendType());
+                 options_.GetBackendType());
       return kLiteRtStatusErrorRuntimeFailure;
     }
   }

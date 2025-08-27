@@ -134,6 +134,8 @@ class QnnManager {
   // called.
   Qnn_BackendHandle_t BackendHandle() { return backend_->GetBackendHandle(); }
 
+  const ::qnn::Options& GetOptions() const { return options_; }
+
  private:
   QnnManager() = default;
 
@@ -182,6 +184,7 @@ class QnnManager {
 
   std::unique_ptr<::qnn::QnnBackend> backend_ = nullptr;
   ::qnn::SocInfo soc_info_ = ::qnn::kSocInfos[7];  // V75
+  ::qnn::Options options_;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because
