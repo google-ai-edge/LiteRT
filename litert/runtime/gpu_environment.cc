@@ -51,6 +51,21 @@ GpuEnvironmentOptions CreateGpuEnvironmentOptions(
     return options;
   }
 
+  auto callback_option =
+      environment->GetOption(kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy);
+  if (callback_option.has_value() &&
+      callback_option->type == kLiteRtAnyTypeVoidPtr) {
+    options.callback_on_destroy = reinterpret_cast<void (*)(void*)>(
+        const_cast<void*>(callback_option->ptr_value));
+    auto user_data_option = environment->GetOption(
+        kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy);
+    if (user_data_option.has_value() &&
+        user_data_option->type == kLiteRtAnyTypeVoidPtr) {
+      options.callback_user_data_on_destroy = reinterpret_cast<void*>(
+          const_cast<void*>(user_data_option->ptr_value));
+    }
+  }
+
 #if LITERT_HAS_OPENCL_SUPPORT
   auto device_option =
       environment->GetOption(kLiteRtEnvOptionTagOpenClDeviceId);
@@ -171,6 +186,12 @@ bool SupportsAhwbGlInteropHelper() {
 #endif  // LITERT_HAS_OPENGL_SUPPORT && LITERT_HAS_AHWB_SUPPORT
 
 }  // namespace
+
+GpuEnvironment::~GpuEnvironment() {
+  if (options_.callback_on_destroy) {
+    options_.callback_on_destroy(options_.callback_user_data_on_destroy);
+  }
+}
 
 Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -317,5 +338,6 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
 
   return {};
 }
+
 }  // namespace internal
 }  // namespace litert

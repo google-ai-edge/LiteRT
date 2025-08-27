@@ -70,6 +70,9 @@ struct GpuEnvironmentProperties {
 };
 
 struct GpuEnvironmentOptions {
+  void (*callback_on_destroy)(void*) = nullptr;
+  void* callback_user_data_on_destroy = nullptr;
+
   // If any of these objects are set, created environment will use them instead
   // of creating/choosing own instances.
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -113,7 +116,7 @@ class GpuEnvironment {
   GpuEnvironment(const GpuEnvironment&) = delete;
   GpuEnvironment& operator=(const GpuEnvironment&) = delete;
   GpuEnvironment() = default;
-  ~GpuEnvironment() = default;
+  ~GpuEnvironment();
 
 #if LITERT_HAS_OPENCL_SUPPORT
   tflite::gpu::cl::CLDevice* GetDevice() { return &device_; }

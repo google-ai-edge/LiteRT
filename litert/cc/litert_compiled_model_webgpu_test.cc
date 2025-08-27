@@ -55,7 +55,12 @@ Expected<Options> CreateGpuOptions(bool no_immutable_external_tensors_mode) {
   return std::move(options);
 }
 
-void BasicTest(bool no_immutable_external_tensors_mode) {
+class CompiledModelWebGpuTest : public ::testing::TestWithParam<bool> {};
+
+TEST_P(CompiledModelWebGpuTest, Basic) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -64,7 +69,7 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, CreateGpuOptions(no_immutable_external_tensors_mode));
+      auto options, CreateGpuOptions(CompiledModelWebGpuTest::GetParam()));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(*env, model, options));
 
@@ -113,71 +118,58 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
   }
 }
 
-class CompiledModelWebGpuTest : public ::testing::TestWithParam<bool> {};
-
-TEST_P(CompiledModelWebGpuTest, Basic) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
-  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
-  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
-  // test function right after absl::LeakCheckDisabler helps to avoid the memory
-  // leak reporting in tab presubmit.
-  BasicTest(CompiledModelWebGpuTest::GetParam());
-}
-
-// Run the test twice to verify that WebGPU environment is shared between
-// instances.
-TEST_P(CompiledModelWebGpuTest, Basic2nd) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
-  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
-  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
-  // test function right after absl::LeakCheckDisabler helps to avoid the memory
-  // leak reporting in tab presubmit.
-  BasicTest(CompiledModelWebGpuTest::GetParam());
-}
-
 typedef struct WGPUDeviceImpl* WGPUDevice;
 typedef struct WGPUQueueImpl* WGPUQueue;
-
-void GpuEnvironmentTest(bool no_immutable_external_tensors_mode) {
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
-
-  auto env = litert::Environment::Create({});
-  ASSERT_TRUE(env);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto options, CreateGpuOptions(no_immutable_external_tensors_mode));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(*env, model, options));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env->GetOptions());
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_device_id,
-      env_options.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
-  ABSL_LOG(INFO) << "WebGPU device id: "
-                 << reinterpret_cast<WGPUDevice>(
-                        std::any_cast<int64_t>(wegpu_device_id));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_command_queue,
-      env_options.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
-  ABSL_LOG(INFO) << "WebGPU command queue: "
-                 << reinterpret_cast<WGPUQueue>(
-                        std::any_cast<int64_t>(wegpu_command_queue));
-}
 
 TEST_P(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  // Though it's not clear why, absl::IgnoreLeak() on webgpu environment
-  // singleton doesn't seem to work perfectly. Calling GetParam() with a util
-  // test function right after absl::LeakCheckDisabler helps to avoid the memory
-  // leak reporting in tab presubmit.
-  GpuEnvironmentTest(CompiledModelWebGpuTest::GetParam());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+
+  auto env_1 = litert::Environment::Create({});
+  ASSERT_TRUE(env_1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_1, CreateGpuOptions(CompiledModelWebGpuTest::GetParam()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
+                              CompiledModel::Create(*env_1, model, options_1));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_device_id_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+  ABSL_LOG(INFO) << "WebGPU device id: "
+                 << reinterpret_cast<WGPUDevice>(
+                        std::any_cast<int64_t>(wegpu_device_id_1));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_command_queue_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+  ABSL_LOG(INFO) << "WebGPU command queue: "
+                 << reinterpret_cast<WGPUQueue>(
+                        std::any_cast<int64_t>(wegpu_command_queue_1));
+
+  // Check if the 2nd LiteRT environment can get the same WebGPU device and
+  // command queue.
+  auto env_2 = litert::Environment::Create({});
+  ASSERT_TRUE(env_2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_2, CreateGpuOptions(CompiledModelWebGpuTest::GetParam()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2,
+                              CompiledModel::Create(*env_2, model, options_2));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_device_id_2,
+      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+  EXPECT_EQ(std::any_cast<int64_t>(wegpu_device_id_1),
+            std::any_cast<int64_t>(wegpu_device_id_2));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_command_queue_2,
+      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+  EXPECT_EQ(std::any_cast<int64_t>(wegpu_command_queue_1),
+            std::any_cast<int64_t>(wegpu_command_queue_2));
 }
 
 INSTANTIATE_TEST_SUITE_P(CompiledModelWebGpuTest, CompiledModelWebGpuTest,

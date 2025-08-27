@@ -38,6 +38,8 @@ typedef enum {
   // WARNING: Vulkan support is experimental.
   kLiteRtEnvOptionTagVulkanEnvironment = 12,
   kLiteRtEnvOptionTagVulkanCommandPool = 13,
+  kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy = 14,
+  kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy = 15,
 } LiteRtEnvOptionTag;
 
 typedef struct {

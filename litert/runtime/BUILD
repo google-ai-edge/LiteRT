@@ -205,9 +205,7 @@ GPU_ENVIRONMENT_DEPS = [
 
 cc_library(
     name = "gpu_environment_header",
-    hdrs = [
-        "gpu_environment.h",
-    ],
+    hdrs = ["gpu_environment.h"],
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps(),
