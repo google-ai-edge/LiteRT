@@ -165,7 +165,7 @@ cc_library(
         "//litert/c:litert_layout.h",
         "//litert/c:litert_logging.h",
         "//litert/c:litert_metrics.h",
-        "//litert/c:litert_model.h",
+        "//litert/c:litert_model_types.h",
         "//litert/c:litert_op_code.h",
         "//litert/c:litert_op_options.h",
         "//litert/c:litert_opaque_options.h",

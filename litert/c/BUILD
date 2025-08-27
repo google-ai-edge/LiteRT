@@ -179,12 +179,23 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_model_types",
+    hdrs = ["litert_model_types.h"],
+    deps = [
+        ":litert_common",
+        ":litert_layout",
+        ":litert_op_code",
+    ],
+)
+
+cc_library(
     name = "litert_model",
     srcs = ["litert_model.cc"],
     hdrs = ["litert_model.h"],
     deps = [
         ":litert_common",
         ":litert_layout",
+        ":litert_model_types",
         ":litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
@@ -193,19 +204,6 @@ cc_library(
         "//litert/core/model:model_serialize",
         "//tflite/core/c:private_c_api_types",
         "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-# Headers only lib for users who require only types and want to avoid
-# potential circular dependencies.
-cc_library(
-    name = "litert_model_types",
-    hdrs = ["litert_model.h"],
-    deps = [
-        ":litert_common",
-        ":litert_layout",
-        ":litert_op_code",
-        "//tflite/core/c:private_c_api_types",
     ],
 )
 
@@ -319,7 +317,7 @@ cc_library(
         ":litert_event",
         ":litert_gl_types",
         ":litert_logging",
-        ":litert_model",
+        ":litert_model_types",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -482,7 +480,7 @@ cc_library(
     hdrs = ["litert_custom_tensor_buffer.h"],
     deps = [
         ":litert_common",
-        ":litert_model",
+        ":litert_model_types",
         ":litert_tensor_buffer_types",
     ],
 )
@@ -533,7 +531,10 @@ filegroup(
 
 filegroup(
     name = "litert_model_hdrs",
-    srcs = ["litert_model.h"],
+    srcs = [
+        "litert_model.h",
+        "litert_model_types.h",
+    ],
     visibility = ["//litert/core/model:__pkg__"],
 )
 
@@ -550,6 +551,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_logging",
     ":litert_metrics",
     ":litert_model",
+    ":litert_model_types",
     ":litert_op_code",
     ":litert_op_options",
     ":litert_profiler",

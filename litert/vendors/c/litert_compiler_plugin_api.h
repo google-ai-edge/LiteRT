@@ -18,9 +18,6 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 
 // Wrapper for dynamically loaded LiteRtCompilerPlugin library. See

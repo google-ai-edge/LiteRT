@@ -30,7 +30,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_numerics.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"

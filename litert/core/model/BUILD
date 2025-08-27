@@ -41,6 +41,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_logging",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_c_types_printing",
