@@ -28,8 +28,8 @@ namespace litert::internal {
 namespace {
 
 TEST(LiteRtEnvironmentT, CreateWithOptions) {
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny any_path,
-                              ToLiteRtAny(std::any("sample path")));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny any_path, ToLiteRtAny(litert::LiteRtVariant("sample path")));
   const std::array<LiteRtEnvOption, 1> environment_options = {
       LiteRtEnvOption{
           kLiteRtEnvOptionTagCompilerPluginLibraryDir,
@@ -50,8 +50,8 @@ TEST(LiteRtEnvironmentT, CheckStringCopy) {
 
   // The passed string becomes obsolete after the scope.
   {
-    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny any_path,
-                                ToLiteRtAny(std::any("sample path")));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtAny any_path, ToLiteRtAny(litert::LiteRtVariant("sample path")));
     const std::array<LiteRtEnvOption, 1> environment_options = {
         LiteRtEnvOption{
             kLiteRtEnvOptionTagCompilerPluginLibraryDir,

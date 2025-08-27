@@ -577,6 +577,7 @@ cc_test(
     name = "litert_environment_options_test",
     srcs = ["litert_environment_options_test.cc"],
     deps = [
+        ":litert_any",
         ":litert_environment",
         ":litert_environment_options",
         ":litert_expected",

@@ -52,6 +52,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_any",
         "//litert/cc:litert_environment",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",

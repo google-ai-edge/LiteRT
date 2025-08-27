@@ -44,10 +44,10 @@ constexpr const LiteRtRankedTensorType kTensorType = {
   id<MTLCommandQueue> commandQueue = [device newCommandQueue];
   const void* kCommandQueuePtr = (__bridge void*)(commandQueue);
 
-  auto status = litert::ToLiteRtAny(std::any(kTestPtr));
+  auto status = litert::ToLiteRtAny(litert::LiteRtVariant(kTestPtr));
   auto null_deivce_id = &status;
 
-  auto command_queue_status = litert::ToLiteRtAny(std::any(kCommandQueuePtr));
+  auto command_queue_status = litert::ToLiteRtAny(litert::LiteRtVariant(kCommandQueuePtr));
   auto null_command_queue_id = &command_queue_status;
 
   const std::array<LiteRtEnvOption, 2> environment_options = {

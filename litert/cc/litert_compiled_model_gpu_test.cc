@@ -250,25 +250,25 @@ TEST_P(CompiledModelGpuTest, GpuEnvironment) {
       env_options.GetOption(kLiteRtEnvOptionTagOpenClDeviceId));
   ABSL_LOG(INFO) << "OpenCL device id: "
                  << reinterpret_cast<cl_device_id>(
-                        std::any_cast<int64_t>(opencl_device_id));
+                        std::get<int64_t>(opencl_device_id));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto opencl_platform_id,
       env_options.GetOption(kLiteRtEnvOptionTagOpenClPlatformId));
   ABSL_LOG(INFO) << "OpenCL platform id: "
                  << reinterpret_cast<cl_platform_id>(
-                        std::any_cast<int64_t>(opencl_platform_id));
+                        std::get<int64_t>(opencl_platform_id));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto opencl_context,
       env_options.GetOption(kLiteRtEnvOptionTagOpenClContext));
   ABSL_LOG(INFO) << "OpenCL context: "
                  << reinterpret_cast<cl_context>(
-                        std::any_cast<int64_t>(opencl_context));
+                        std::get<int64_t>(opencl_context));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto opencl_command_queue,
       env_options.GetOption(kLiteRtEnvOptionTagOpenClCommandQueue));
   ABSL_LOG(INFO) << "OpenCL command queue: "
                  << reinterpret_cast<cl_command_queue>(
-                        std::any_cast<int64_t>(opencl_command_queue));
+                        std::get<int64_t>(opencl_command_queue));
 }
 
 TEST_P(CompiledModelGpuTest, Async) {

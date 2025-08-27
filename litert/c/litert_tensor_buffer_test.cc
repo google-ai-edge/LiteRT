@@ -382,8 +382,9 @@ TEST(TensorBuffer, OpenCL) {
 
   // Create an option with opencl device id zero. This trick initializes the
   // OpenCL environment at the LiteRtEnvironment creation time.
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny null_deivce_id,
-                              litert::ToLiteRtAny(std::any(INT64_C(0))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny null_deivce_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(INT64_C(0))));
   const std::array<LiteRtEnvOption, 1> environment_options = {
       LiteRtEnvOption{
           /*.tag=*/kLiteRtEnvOptionTagOpenClDeviceId,
@@ -454,8 +455,9 @@ TEST(TensorBuffer, GlBuffer) {
 
   // Create an option with opengl display id zero. This trick initializes the
   // OpenGL environment at the LiteRtEnvironment creation time.
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny null_display_id,
-                              litert::ToLiteRtAny(std::any(INT64_C(0))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny null_display_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(INT64_C(0))));
   const std::array<LiteRtEnvOption, 1> environment_options = {
       LiteRtEnvOption{
           /*.tag=*/kLiteRtEnvOptionTagEglDisplay,
