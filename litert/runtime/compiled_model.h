@@ -168,6 +168,9 @@ class LiteRtCompiledModelT {
   // Gets all error messages (only available in buffer mode)
   litert::Expected<std::string> GetErrorMessages();
 
+  friend litert::Expected<::tflite::Interpreter*> GetInterpreter(
+      LiteRtCompiledModelT* compiled_model);
+
  private:
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(
@@ -306,9 +309,8 @@ class LiteRtCompiledModelT {
   // buffers, they don't register TensorBufferRequirements. Instead, the
   // CompiledModel creates the TensorBufferRequirements and stores them
   // in this map.
-  absl::flat_hash_map<TfLiteTensorIdentifier,
-                      LiteRtTensorBufferRequirementsPtr, TensorIdentifierHash,
-                      TensorIdentifierEqual>
+  absl::flat_hash_map<TfLiteTensorIdentifier, LiteRtTensorBufferRequirementsPtr,
+                      TensorIdentifierHash, TensorIdentifierEqual>
       cpu_buffer_requirements_;
 
   // Map from signature key to SignatureRunner. This is used to lazy calling
