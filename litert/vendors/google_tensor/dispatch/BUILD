@@ -80,6 +80,10 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:darwinn_options",
+        "//litert/vendors/cc:options_helper",
     ],
 )
 

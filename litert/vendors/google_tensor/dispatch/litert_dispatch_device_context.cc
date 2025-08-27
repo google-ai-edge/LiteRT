@@ -26,6 +26,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/options/darwinn_options.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
@@ -33,6 +34,14 @@
 using litert::Error;
 using litert::Expected;
 using litert::Unexpected;
+
+namespace {
+constexpr char kInferencePowerStateAttribute[] = "inference_power_state";
+constexpr char kInferenceMemoryPowerStateAttribute[] =
+    "inference_memory_power_state";
+constexpr char kInferencePriorityAttribute[] = "inference_priority";
+constexpr char kAtomicInferenceAttribute[] = "atomic_inference";
+}  // namespace
 
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
   if (!thr_graphs_.empty()) {
@@ -58,7 +67,8 @@ LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
 
 Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create(
-    const litert::google_tensor::Southbound& southbound) {
+    const litert::google_tensor::Southbound& southbound,
+    const litert::DarwinnRuntimeOptions* darwinn_options) {
   Ptr device_context(new LiteRtDispatchDeviceContextT(southbound));
 
   auto thr_context_create = southbound.api().thr_context_create;
@@ -68,6 +78,75 @@ LiteRtDispatchDeviceContextT::Create(
   }
 
   device_context->thr_context_ = thr_context_create();
+  // Apply Darwinn runtime options if provided
+  if (darwinn_options && device_context->thr_context_) {
+    auto thr_vendor_set_system_attribute_int64 =
+        southbound.api().thr_vendor_set_system_attribute_int64;
+
+    if (thr_vendor_set_system_attribute_int64) {
+      // Apply power management settings
+      auto power_state = darwinn_options->GetInferencePowerState();
+      if (power_state) {
+        if (auto status = thr_vendor_set_system_attribute_int64(
+                device_context->thr_context_, kInferencePowerStateAttribute,
+                static_cast<int64_t>(*power_state));
+            status != kThrStatusSuccess) {
+          LITERT_LOG(LITERT_WARNING, "Failed to set inference_power_state: %d",
+                     status);
+        } else {
+          LITERT_LOG(LITERT_INFO, "Set inference_power_state to %u",
+                     *power_state);
+        }
+      }
+
+      auto memory_power_state = darwinn_options->GetInferenceMemoryPowerState();
+      if (memory_power_state) {
+        if (auto status = thr_vendor_set_system_attribute_int64(
+                device_context->thr_context_,
+                kInferenceMemoryPowerStateAttribute,
+                static_cast<int64_t>(*memory_power_state));
+            status != kThrStatusSuccess) {
+          LITERT_LOG(LITERT_WARNING,
+                     "Failed to set inference_memory_power_state: %d", status);
+        } else {
+          LITERT_LOG(LITERT_INFO, "Set inference_memory_power_state to %u",
+                     *memory_power_state);
+        }
+      }
+
+      // Apply scheduling settings
+      auto priority = darwinn_options->GetInferencePriority();
+      if (priority && *priority != -1) {
+        if (auto status = thr_vendor_set_system_attribute_int64(
+                device_context->thr_context_, kInferencePriorityAttribute,
+                static_cast<int64_t>(*priority));
+            status != kThrStatusSuccess) {
+          LITERT_LOG(LITERT_WARNING, "Failed to set inference_priority: %d",
+                     status);
+        } else {
+          LITERT_LOG(LITERT_INFO, "Set inference_priority to %d", *priority);
+        }
+      }
+
+      auto atomic_inference = darwinn_options->GetAtomicInference();
+      if (atomic_inference) {
+        if (auto status = thr_vendor_set_system_attribute_int64(
+                device_context->thr_context_, kAtomicInferenceAttribute,
+                static_cast<int64_t>(*atomic_inference));
+            status != kThrStatusSuccess) {
+          LITERT_LOG(LITERT_WARNING, "Failed to set atomic_inference: %d",
+                     status);
+        } else {
+          LITERT_LOG(LITERT_INFO, "Set atomic_inference to %s",
+                     *atomic_inference ? "true" : "false");
+        }
+      }
+    } else {
+      LITERT_LOG(LITERT_WARNING,
+                 "thr_vendor_set_system_attribute_int64 not found, "
+                 "cannot apply Darwinn runtime options");
+    }
+  }
   return device_context;
 }
 

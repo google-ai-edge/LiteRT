@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_tensor_buffer.h"
@@ -25,6 +26,10 @@
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 #include "litert/vendors/google_tensor/dispatch/southbound.h"
 
+namespace litert {
+class DarwinnRuntimeOptions;
+}  // namespace litert
+
 class LiteRtDispatchDeviceContextT {
  public:
   using Ptr = std::unique_ptr<LiteRtDispatchDeviceContextT>;
@@ -32,7 +37,8 @@ class LiteRtDispatchDeviceContextT {
   ~LiteRtDispatchDeviceContextT();
 
   static litert::Expected<Ptr> Create(
-      const litert::google_tensor::Southbound& southbound);
+      const litert::google_tensor::Southbound& southbound,
+      const litert::DarwinnRuntimeOptions* darwinn_options = nullptr);
 
   litert::Expected<LiteRtTensorBufferHandle> RegisterTensorBuffer(
       LiteRtTensorBuffer tensor_buffer);
