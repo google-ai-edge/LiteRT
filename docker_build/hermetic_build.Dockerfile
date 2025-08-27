@@ -94,8 +94,11 @@ RUN mkdir -p ${ANDROID_SDK_HOME}/platform-tools
 # Make android SDK and NDK executable to all users
 RUN chmod -R go=u ${ANDROID_DEV_HOME}
 
-# Install Python dependencies
-RUN pip3 install --break-system-packages numpy six absl-py wheel setuptools pybind11
+# Copy Python requirements file for secure installation with hash verification
+COPY requirements.txt /tmp/requirements.txt
+
+# Install Python dependencies securely using requirements file with hash verification
+RUN pip3 install --break-system-packages --require-hashes -r /tmp/requirements.txt
 
 # Set up environment variables for auto-configuration
 ENV PYTHON_BIN_PATH=/usr/bin/python3
