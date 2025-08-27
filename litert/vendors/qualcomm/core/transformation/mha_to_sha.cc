@@ -62,18 +62,20 @@ constexpr size_t kReshape3Index = 15;
 // set the 3rd axis "end" value, we need to access ranges[3 * 2 + 2 - 1 = 7].
 constexpr size_t kSlice3rdAxisEndIndex = 7;
 
-// attn.tflite
-constexpr size_t kAttnMulQ = 0;
-constexpr size_t kAttnMulK = 1;
-constexpr size_t kAttnTransposeK = 3;
-constexpr size_t kAttnMatMulQK = 4;
-constexpr size_t kAttnReshape = 5;
-constexpr size_t kAttnNotEqual = 6;
+// attn (attention mask)
 constexpr size_t kAttnSelect = 7;
-constexpr size_t kAttnSoftmax = 8;
-constexpr size_t kAttnTransposeIn = 9;
-constexpr size_t kAttnMatMul = 10;
-constexpr size_t kAttnTransposeOut = 11;
+constexpr size_t kAttnNotEqual = 6;
+constexpr size_t kAttnReshape = 5;
+// attn (QK)
+constexpr int32_t kAttnMulQ = -4;
+constexpr int32_t kAttnMulK = -3;
+constexpr int32_t kAttnTransposeK = -1;
+constexpr int32_t kAttnMatMulQK = 0;
+// attn (Softmax & V)
+constexpr int32_t kAttnSoftmax = 1;
+constexpr int32_t kAttnTransposeIn = 2;
+constexpr int32_t kAttnMatMul = 3;
+constexpr int32_t kAttnTransposeOut = 4;
 
 // Emplaces the operator with updated inputs/outputs into new_ops.
 // This function copies the source_op and updates the tensors according to
@@ -86,6 +88,27 @@ void EmplaceOpWithIO(
   OpWrapper ret = source_op;
   ret.UpdateTensors(inputs, outputs);
   new_ops.emplace_back(ret);
+}
+
+int GetOpIndexWithInput(const std::vector<OpWrapper>& ops, QnnOpCode opcode,
+                        const qnn::TensorWrapper& input_tensor,
+                        size_t start_ind = 0) {
+  for (size_t i = start_ind; i < ops.size(); ++i) {
+    if (ops[i].IsOpCode(opcode) && ops[i].GetInputTensor(0) == input_tensor) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+int GetOpIndexWithOutput(const std::vector<OpWrapper>& ops, QnnOpCode opcode,
+                         const qnn::TensorWrapper& output_tensor) {
+  for (size_t i = 0; i < ops.size(); ++i) {
+    if (ops[i].IsOpCode(opcode) && ops[i].GetOutputTensor(0) == output_tensor) {
+      return i;
+    }
+  }
+  return -1;
 }
 
 TensorWrapper& BuildSingleSHA(std::vector<OpWrapper>& ops, size_t start_index,
@@ -426,86 +449,45 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   return 1;
 }
 
+size_t GetOpCountWithInput(const std::vector<OpWrapper>& ops, QnnOpCode opcode,
+                           const qnn::TensorWrapper& input_tensor) {
+  size_t cnt = 0;
+  for (size_t i = 0; i < ops.size(); ++i) {
+    if (ops[i].IsOpCode(opcode) && ops[i].GetInputTensor(0) == input_tensor) {
+      cnt++;
+    }
+  }
+  return cnt;
+}
+
 size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t start_index,
                        TensorPool& tensor_pool, size_t pattern_size) {
   QNN_LOG_INFO("[G2G] MHA optimization (Attn)");
-  // QKV Unpack
-  const auto& mul_q_in = ops[start_index + kAttnMulQ].GetInputTensor(0);
-  auto q_unpack_dims = mul_q_in.GetDims();
-  uint32_t num_heads = q_unpack_dims[2];
-  const auto& mul_k_in = ops[start_index + kAttnMulK].GetInputTensor(0);
-  auto k_unpack_dims = mul_k_in.GetDims();
-  const auto& transpose_v_in =
-      ops[start_index + kAttnTransposeIn].GetInputTensor(0);
-  auto transpose_v_perm =
-      ops[start_index + kAttnTransposeIn].GetTensorPararm(0).GetTensor();
-  std::vector<uint32_t> perm_data = {0, 2, 1};
-  auto perm_tensor = tensor_pool.CreateStaticTensor(
-      transpose_v_perm.GetDataType(), transpose_v_perm.GetQuantParams(), {3},
-      perm_data.size() * sizeof(perm_data[0]), perm_data.data());
-  auto v_unpack_dims = transpose_v_in.GetDims();
-  const auto& mha_out = ops[start_index + kAttnTransposeOut].GetOutputTensor(0);
-  auto mha_out_dims = mha_out.GetDims();
-  if (!(num_heads == k_unpack_dims[2] && num_heads == v_unpack_dims[2] &&
-        num_heads == mha_out_dims[2])) {
-    printf("[G2G] num_heads match...\n");
+
+  auto attn_reshape_op = ops[start_index + kAttnReshape];
+  auto attn_not_equal_op = ops[start_index + kAttnNotEqual];
+  // NotEqual
+  const auto& reshape_in = attn_reshape_op.GetInputTensor(0);
+  size_t num_out = GetOpCountWithInput(ops, QnnOpCode::kElementWiseSelect,
+                                       attn_not_equal_op.GetOutputTensor(0));
+  QNN_LOG_INFO(
+      "[G2G] MHA optimization (Attn) - NotEqual op with %u output tensors",
+      num_out);
+  if (num_out <= 0) {
+    QNN_LOG_WARNING("[G2G] Rolling back to the original graph.", num_out);
     return 1;
   }
-  q_unpack_dims.erase(q_unpack_dims.begin() + 2);
-  k_unpack_dims.erase(k_unpack_dims.begin() + 2);
-  v_unpack_dims.erase(v_unpack_dims.begin() + 2);
-  mha_out_dims.erase(mha_out_dims.begin() + 2);
-  // Prepare inputs and outputs for num_heads SHAs.
-  std::vector<::qnn::TensorWrapperRef> q_sha_inputs;
-  std::vector<::qnn::TensorWrapperRef> k_sha_inputs;
-  std::vector<::qnn::TensorWrapperRef> v_sha_inputs;
-  std::vector<::qnn::TensorWrapperRef> sha_outputs;
-  q_sha_inputs.reserve(num_heads);
-  k_sha_inputs.reserve(num_heads);
-  v_sha_inputs.reserve(num_heads);
-  sha_outputs.reserve(num_heads);
+  // Handle masking input
   std::vector<OpWrapper> new_ops;
-  for (int i = 0; i < num_heads; ++i) {
-    auto& q_unpack = tensor_pool.CloneNativeTensorFrom(mul_q_in, q_unpack_dims);
-    q_sha_inputs.emplace_back(q_unpack);
-
-    auto& k_unpack = tensor_pool.CloneNativeTensorFrom(mul_k_in, k_unpack_dims);
-    k_sha_inputs.emplace_back(k_unpack);
-
-    auto& v_unpack =
-        tensor_pool.CloneNativeTensorFrom(transpose_v_in, v_unpack_dims);
-    v_sha_inputs.emplace_back(v_unpack);
-    auto& sha_out = tensor_pool.CloneNativeTensorFrom(mha_out, mha_out_dims);
-    sha_outputs.emplace_back(sha_out);
-  }
-  auto unpack_q_op =
-      BuildUnpackOp(tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_q_in)},
-                    q_sha_inputs, 2);
-  std::move(unpack_q_op.begin(), unpack_q_op.end(),
-            std::back_inserter(new_ops));
-  auto unpack_k_op =
-      BuildUnpackOp(tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_k_in)},
-                    k_sha_inputs, 2);
-  std::move(unpack_k_op.begin(), unpack_k_op.end(),
-            std::back_inserter(new_ops));
-  auto unpack_v_op = BuildUnpackOp(
-      tensor_pool, {const_cast<::qnn::TensorWrapper&>(transpose_v_in)},
-      v_sha_inputs, 2);
-  std::move(unpack_v_op.begin(), unpack_v_op.end(),
-            std::back_inserter(new_ops));
-  // NotEqual
-  const auto& reshape_in = ops[start_index + kAttnReshape].GetInputTensor(0);
-  const auto& not_equal_out =
-      ops[start_index + kAttnNotEqual].GetOutputTensor(0);
+  const auto& not_equal_out = attn_not_equal_op.GetOutputTensor(0);
   auto not_equal_out_dims = not_equal_out.GetDims();
   not_equal_out_dims.erase(not_equal_out_dims.begin() + 1);
   auto& select_mask =
       tensor_pool.CloneNativeTensorFrom(not_equal_out, not_equal_out_dims);
-
-  // [NotEqual] Option 1: Equal -> Cast -> Mul
+  // [NotEqual] Equal -> Cast -> Mul
   // element == 0 will become -inf in the next Mul output
-  const auto& zero_tensor = ops[start_index + kAttnNotEqual].GetInputTensor(1);
+  const auto& zero_tensor = attn_not_equal_op.GetInputTensor(1);
   auto equal_op =
       BuildElementwiseEqualOp(tensor_pool,
                               {const_cast<::qnn::TensorWrapper&>(reshape_in),
@@ -527,80 +509,164 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       tensor_pool, {mul_in, const_cast<::qnn::TensorWrapper&>(select_const)},
       {add_in});
   std::move(mul_select.begin(), mul_select.end(), std::back_inserter(new_ops));
-  //   // [NotEqual] Option 2: NotEqual
-  //   EmplaceOpWithIO(new_ops, ops[start_index + kAttnNotEqual],
-  //                   {const_cast<::qnn::TensorWrapper&>(reshape_in),
-  //                   std::nullopt}, {select_mask});
 
-  for (int i = 0; i < num_heads; ++i) {
-    auto& q_matmul_in = tensor_pool.CloneNativeTensorFrom(q_sha_inputs[i]);
-    EmplaceOpWithIO(new_ops, ops[start_index + kAttnMulQ],
-                    {q_sha_inputs[i], std::nullopt}, {q_matmul_in});
-    auto& k_transpose_in = tensor_pool.CloneNativeTensorFrom(k_sha_inputs[i]);
-    EmplaceOpWithIO(new_ops, ops[start_index + kAttnMulK],
-                    {k_sha_inputs[i], std::nullopt}, {k_transpose_in});
-    auto& k_matmul_in = tensor_pool.CloneNativeTensorFrom(
-        k_transpose_in, {k_unpack_dims[0], k_unpack_dims[2], k_unpack_dims[1]});
-    auto transpose_op = BuildTransposeOp(
-        tensor_pool, {k_transpose_in, perm_tensor}, {k_matmul_in});
-    std::move(transpose_op.begin(), transpose_op.end(),
+  size_t select_index = 0;
+  for (size_t output_index = 0; output_index < num_out; ++output_index) {
+    select_index = GetOpIndexWithInput(ops, QnnOpCode::kElementWiseSelect,
+                                       attn_not_equal_op.GetOutputTensor(0),
+                                       select_index + 1);
+    QNN_LOG_WARNING("[G2G] Select %u: ops[%u]", output_index, select_index);
+    size_t matmul_qk_index = GetOpIndexWithOutput(
+        ops, QnnOpCode::kMatMul, ops[select_index].GetInputTensor(1));
+    QNN_LOG_WARNING("[G2G] MatMul_QK %u: ops[%u]", output_index,
+                    matmul_qk_index);
+    // Begin: MHA->SHA
+    // QKV Unpack
+    const auto& mul_q_in = ops[matmul_qk_index + kAttnMulQ].GetInputTensor(0);
+    auto q_unpack_dims = mul_q_in.GetDims();
+    uint32_t num_heads = q_unpack_dims[2];
+    const auto& mul_k_in = ops[matmul_qk_index + kAttnMulK].GetInputTensor(0);
+    auto k_unpack_dims = mul_k_in.GetDims();
+    const auto& transpose_v_in =
+        ops[select_index + kAttnTransposeIn].GetInputTensor(0);
+    auto transpose_v_perm =
+        ops[select_index + kAttnTransposeIn].GetTensorPararm(0).GetTensor();
+    std::vector<uint32_t> perm_data = {0, 2, 1};
+    auto perm_tensor = tensor_pool.CreateStaticTensor(
+        transpose_v_perm.GetDataType(), transpose_v_perm.GetQuantParams(), {3},
+        perm_data.size() * sizeof(perm_data[0]), perm_data.data());
+    auto v_unpack_dims = transpose_v_in.GetDims();
+    const auto& mha_out =
+        ops[select_index + kAttnTransposeOut].GetOutputTensor(0);
+    auto mha_out_dims = mha_out.GetDims();
+    if (!(num_heads == k_unpack_dims[2] && num_heads == v_unpack_dims[2] &&
+          num_heads == mha_out_dims[2])) {
+      printf("[G2G] num_heads match...\n");
+      return 1;
+    }
+    q_unpack_dims.erase(q_unpack_dims.begin() + 2);
+    k_unpack_dims.erase(k_unpack_dims.begin() + 2);
+    v_unpack_dims.erase(v_unpack_dims.begin() + 2);
+    mha_out_dims.erase(mha_out_dims.begin() + 2);
+    // Prepare inputs and outputs for num_heads SHAs.
+    std::vector<::qnn::TensorWrapperRef> q_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> k_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> v_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> sha_outputs;
+    q_sha_inputs.reserve(num_heads);
+    k_sha_inputs.reserve(num_heads);
+    v_sha_inputs.reserve(num_heads);
+    sha_outputs.reserve(num_heads);
+
+    for (int i = 0; i < num_heads; ++i) {
+      auto& q_unpack =
+          tensor_pool.CloneNativeTensorFrom(mul_q_in, q_unpack_dims);
+      q_sha_inputs.emplace_back(q_unpack);
+
+      auto& k_unpack =
+          tensor_pool.CloneNativeTensorFrom(mul_k_in, k_unpack_dims);
+      k_sha_inputs.emplace_back(k_unpack);
+
+      auto& v_unpack =
+          tensor_pool.CloneNativeTensorFrom(transpose_v_in, v_unpack_dims);
+      v_sha_inputs.emplace_back(v_unpack);
+      auto& sha_out = tensor_pool.CloneNativeTensorFrom(mha_out, mha_out_dims);
+      sha_outputs.emplace_back(sha_out);
+    }
+    auto unpack_q_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_q_in)},
+        q_sha_inputs, 2);
+    std::move(unpack_q_op.begin(), unpack_q_op.end(),
               std::back_inserter(new_ops));
-    // MatMul
-    const auto& matmul_qk_out =
-        ops[start_index + kAttnMatMulQK].GetOutputTensor(0);
-    auto& select_in = tensor_pool.CloneNativeTensorFrom(
-        matmul_qk_out,
-        {q_matmul_in.GetDim(0), q_matmul_in.GetDim(1), k_matmul_in.GetDim(2)});
-    EmplaceOpWithIO(new_ops, ops[start_index + kAttnMatMulQK],
-                    {q_matmul_in, k_matmul_in}, {select_in});
-
-    // Select
-    // [Select] Option 1: Add
-    auto& softmax_in =
-        tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
-    auto add_select =
-        BuildElementwiseAddOp(tensor_pool, {select_in, add_in}, {softmax_in});
-    std::move(add_select.begin(), add_select.end(),
+    auto unpack_k_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_k_in)},
+        k_sha_inputs, 2);
+    std::move(unpack_k_op.begin(), unpack_k_op.end(),
+              std::back_inserter(new_ops));
+    auto unpack_v_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(transpose_v_in)},
+        v_sha_inputs, 2);
+    std::move(unpack_v_op.begin(), unpack_v_op.end(),
               std::back_inserter(new_ops));
 
-    // // [Select] Option 2: Select directly
-    // auto& softmax_in =
-    //     tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
-    // EmplaceOpWithIO(new_ops, ops[start_index + kAttnSelect],
-    //                 {select_mask, select_in, std::nullopt}, {softmax_in});
+    for (int i = 0; i < num_heads; ++i) {
+      auto& q_matmul_in = tensor_pool.CloneNativeTensorFrom(q_sha_inputs[i]);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulQ],
+                      {q_sha_inputs[i], std::nullopt}, {q_matmul_in});
+      auto& k_transpose_in = tensor_pool.CloneNativeTensorFrom(k_sha_inputs[i]);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulK],
+                      {k_sha_inputs[i], std::nullopt}, {k_transpose_in});
+      auto& k_matmul_in = tensor_pool.CloneNativeTensorFrom(
+          k_transpose_in,
+          {k_unpack_dims[0], k_unpack_dims[2], k_unpack_dims[1]});
+      auto transpose_op = BuildTransposeOp(
+          tensor_pool, {k_transpose_in, perm_tensor}, {k_matmul_in});
+      std::move(transpose_op.begin(), transpose_op.end(),
+                std::back_inserter(new_ops));
+      // MatMul
+      const auto& matmul_qk_out =
+          ops[matmul_qk_index + kAttnMatMulQK].GetOutputTensor(0);
+      auto& select_in = tensor_pool.CloneNativeTensorFrom(
+          matmul_qk_out, {q_matmul_in.GetDim(0), q_matmul_in.GetDim(1),
+                          k_matmul_in.GetDim(2)});
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMatMulQK],
+                      {q_matmul_in, k_matmul_in}, {select_in});
 
-    // Softmax
-    auto& qk_softmax =
-        tensor_pool.CloneNativeTensorFrom(softmax_in, select_out_dims);
-    EmplaceOpWithIO(new_ops, ops[start_index + kAttnSoftmax], {softmax_in},
-                    {qk_softmax});
-    // MatMul
-    const auto& matmul_out = ops[start_index + kAttnMatMul].GetOutputTensor(0);
-    auto matmul_out_dims = matmul_out.GetDims();
-    matmul_out_dims.erase(matmul_out_dims.begin() + 1);
-    EmplaceOpWithIO(new_ops, ops[start_index + kAttnMatMulQK],
-                    {qk_softmax, v_sha_inputs[i]}, {sha_outputs[i]});
+      // Select as Add
+      auto& softmax_in =
+          tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
+      auto add_select =
+          BuildElementwiseAddOp(tensor_pool, {select_in, add_in}, {softmax_in});
+      std::move(add_select.begin(), add_select.end(),
+                std::back_inserter(new_ops));
+
+      // Softmax
+      auto& qk_softmax =
+          tensor_pool.CloneNativeTensorFrom(softmax_in, select_out_dims);
+      EmplaceOpWithIO(new_ops, ops[select_index + kAttnSoftmax], {softmax_in},
+                      {qk_softmax});
+      // MatMul
+      const auto& matmul_out =
+          ops[select_index + kAttnMatMul].GetOutputTensor(0);
+      auto matmul_out_dims = matmul_out.GetDims();
+      matmul_out_dims.erase(matmul_out_dims.begin() + 1);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMatMulQK],
+                      {qk_softmax, v_sha_inputs[i]}, {sha_outputs[i]});
+    }
+    auto pack_op = BuildPackOp(tensor_pool, sha_outputs,
+                               {const_cast<::qnn::TensorWrapper&>(mha_out)}, 2);
+    std::move(pack_op.begin(), pack_op.end(), std::back_inserter(new_ops));
+    const bool is_valid =
+        std::all_of(new_ops.begin(), new_ops.end(),
+                    [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                      return validate_op_config(op_wrapper);
+                    });
+    if (is_valid) {
+      // Adjust the name to avoid a name collision in the Qnn JSON dump.
+      for (size_t i = 0; i < new_ops.size(); ++i) {
+        new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+      }
+      // Replace the matched pattern with a newly generated subgraph.
+      ops.insert(ops.begin() + select_index + kAttnTransposeOut + 1,
+                 std::make_move_iterator(new_ops.begin()),
+                 std::make_move_iterator(new_ops.end()));
+      // Erase original pattern backwards.
+      ops.erase(ops.begin() + select_index,
+                ops.begin() + select_index + kAttnTransposeOut + 1);
+      if (output_index == 0) {
+        ops.erase(ops.begin() + start_index + kAttnNotEqual);
+        ops.erase(ops.begin() + start_index + kAttnReshape);
+      }
+      ops.erase(ops.begin() + matmul_qk_index + kAttnMulQ,
+                ops.begin() + matmul_qk_index + 1);
+    } else {
+      QNN_LOG_ERROR(
+          "[G2G] Validation failed. Rolling back to the original graph.");
+      return 1;
+    }
+    new_ops.clear();
+    // End: MHA->SHA
   }
-  auto pack_op = BuildPackOp(tensor_pool, sha_outputs,
-                             {const_cast<::qnn::TensorWrapper&>(mha_out)}, 2);
-  std::move(pack_op.begin(), pack_op.end(), std::back_inserter(new_ops));
-  const bool is_valid =
-      std::all_of(new_ops.begin(), new_ops.end(),
-                  [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
-                    return validate_op_config(op_wrapper);
-                  });
-  if (is_valid) {
-    // Replace the matched pattern with a newly generated subgraph.
-    size_t step_size = new_ops.size();
-    ops.insert(ops.begin() + start_index + pattern_size,
-               std::make_move_iterator(new_ops.begin()),
-               std::make_move_iterator(new_ops.end()));
-    ops.erase(ops.begin() + start_index,
-              ops.begin() + start_index + pattern_size);
-    return step_size;
-  }
-  QNN_LOG_WARNING(
-      "[G2G] Validation failed. Rolling back to the original graph.");
   return 1;
 }
 }  // namespace qnn
