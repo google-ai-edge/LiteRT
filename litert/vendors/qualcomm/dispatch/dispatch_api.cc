@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <any>
 #include <cstdio>
 #include <memory>
 #include <optional>
@@ -69,10 +68,10 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
 
   const char* dispatch_lib_dir = nullptr;
   if (env) {
-    auto dispatch_lib_dir_any =
+    auto dispatch_lib_dir_variant =
         env->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-    if (dispatch_lib_dir_any) {
-      dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
+    if (dispatch_lib_dir_variant) {
+      dispatch_lib_dir = std::get<const char*>(*dispatch_lib_dir_variant);
     }
   }
 
