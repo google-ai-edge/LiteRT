@@ -13,6 +13,9 @@
 # limitations under the License.
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
