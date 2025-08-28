@@ -72,7 +72,7 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
     auto dispatch_lib_dir_any =
         env->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
     if (dispatch_lib_dir_any) {
-      dispatch_lib_dir = std::any_cast<const char*>(*dispatch_lib_dir_any);
+      dispatch_lib_dir = std::get<const char*>(*dispatch_lib_dir_any);
     }
   }
 

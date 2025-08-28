@@ -62,7 +62,7 @@ std::optional<std::string> GetSharedLibraryDir(
                dispatch_lib_dir_any.Error().Message().c_str());
     return std::nullopt;
   }
-  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
+  return std::string(std::get<const char*>(*dispatch_lib_dir_any));
 }
 
 LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
