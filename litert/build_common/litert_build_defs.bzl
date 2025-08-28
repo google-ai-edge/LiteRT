@@ -19,6 +19,7 @@
 # copybara:uncomment_end
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 
 ####################################################################################################
 # Util
@@ -384,8 +385,7 @@ def litert_dynamic_lib(
     if export_litert_only:
         user_link_flags = export_lrt_only_linkopt()
         additional_linker_inputs = export_lrt_only_script()
-
-    native.cc_shared_library(
+    cc_shared_library(
         name = shared_lib_name,
         shared_lib_name = so_name,
         user_link_flags = user_link_flags,

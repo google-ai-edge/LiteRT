@@ -79,6 +79,7 @@ bzl_library(
     deps = [
         "//devtools/build_cleaner/skylark:build_defs_lib",
         "@bazel_skylib//lib:selects",
+        "@rules_cc//cc:core_rules",
     ],
 )
 
