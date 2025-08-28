@@ -148,6 +148,19 @@ struct BinaryNoBroadcast {
     LITERT_ASSIGN_OR_RETURN(auto rhs, SimpleBuffer::Create<T>(params.shape));
     LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T>(data_builder, rng)));
     LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T>(data_builder, rng)));
+    static const auto kScale = 3.0f;
+    const auto [min, max] = data_builder.Bounds<T>();
+    // Prevent overflow.
+    for (T& val : lhs.template Span<T>()) {
+      if (val > (max / kScale)) {
+        val = static_cast<T>(max / kScale);
+      }
+    }
+    for (T& val : rhs.template Span<T>()) {
+      if (val > (max / kScale)) {
+        val = static_cast<T>(max / kScale);
+      }
+    }
     return typename Traits::InputBuffers{std::move(lhs), std::move(rhs)};
   }
 
