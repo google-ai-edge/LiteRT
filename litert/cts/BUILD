@@ -156,3 +156,19 @@ litert_define_cts(
         "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
     ],
 )
+
+litert_define_cts(
+    name = "qualcomm_cts",
+    backend = "qualcomm",
+    dont_register = [
+        ".*5d.*",  # Filter out 5d tests.
+        ".*6d.*",  # Filter out 6d tests.
+        ".*f32.*",  # Filter out f32 tests. TODO: Debug float numerics issue.
+        # NOTE: Comment above and uncomment to run one of the fp tests with numerics issues.
+        # "^(?:(?!npu_cts_87).)*$$",
+    ],
+    extra_flags = [
+        "--f16_range_for_f32=true",
+        "--data_seed=42",
+    ],
+)

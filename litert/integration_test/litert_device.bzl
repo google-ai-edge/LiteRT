@@ -406,7 +406,7 @@ def litert_device_exec(
         --bin={bin_path_str} \
         --data={data} \
         --do_exec=true \
-        --exec_args={exec_args} \
+        --exec_args=\"{exec_args}\" \
         --exec_env_vars={exec_env_vars} \
         -- "$$@" \
         '\

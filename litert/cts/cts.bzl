@@ -16,13 +16,14 @@
 Macros to define pre-configured CTS test suites and run through the litert_device* macros.
 """
 
-load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
+load("//litert/integration_test:litert_device.bzl", "dispatch_device_rlocation", "is_npu_backend", "litert_device_exec", "plugin_device_rlocation")
 
 def litert_define_cts(
         name,
         backend,
         dont_register = [],
-        param_seeds = {}):
+        param_seeds = {},
+        extra_flags = []):
     """Defines a pre-configured CTS test suite.
 
     Args:
@@ -31,16 +32,37 @@ def litert_define_cts(
       dont_register: A list of regular expressions for tests that should not be registered.
       param_seeds: A dictionary of parameter seeds for the test suite.
     """
-    dont_reg_str = "({})".format("|".join(dont_register))
-    seeds_str = ",".join(["{}:{}".format(k, v) for k, v in param_seeds.items()])
+    exec_args = [
+        "--quiet=true",
+    ] + extra_flags
+
+    if is_npu_backend(backend):
+        exec_args += [
+            "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(backend)),
+            "--plugin_dir=\"{}\"".format(plugin_device_rlocation(backend)),
+            "--backend=npu",
+        ]
+    else:
+        exec_args.append(
+            "--backend=\"{}\"".format(backend),
+        )
+
+    if dont_register:
+        if len(dont_register) == 1:
+            dont_register_str = dont_register[0]
+        else:
+            dont_register_str = "({})".format("|".join(dont_register))
+        exec_args.append(
+            "--dont_register=\\\"{}\\\"".format(dont_register_str),
+        )
+    if param_seeds:
+        exec_args.append(
+            "--seeds=\"{}\"".format(",".join(["{}:{}".format(k, v) for k, v in param_seeds.items()])),
+        )
+
     litert_device_exec(
         name = name,
         target = "//litert/cts:cts",
         backend_id = backend,
-        exec_args = [
-            "--backend={}".format(backend),
-            "--dont_register=\"{}\"".format(dont_reg_str),
-            "--seeds=\"{}\"".format(seeds_str),
-            "--quiet=false",
-        ],
+        exec_args = exec_args,
     )
