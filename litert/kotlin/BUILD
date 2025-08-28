@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
 load(
     "//tflite:build_def.bzl",

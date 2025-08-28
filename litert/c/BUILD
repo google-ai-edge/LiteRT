@@ -13,6 +13,9 @@
 # limitations under the License.
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script", "export_lrt_tflite_runtime_linkopt", "export_lrt_tflite_runtime_script")
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "litert_metal_linkopts", "litert_metal_opts")
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")

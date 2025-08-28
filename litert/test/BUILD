@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:symlink_files.bzl", "symlink_files")  # @unused
 load("//litert/build_common:tfl_model_gen.bzl", "tfl_model_gen")  # @unused
 

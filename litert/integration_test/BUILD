@@ -13,6 +13,9 @@
 # limitations under the License.
 
 # copybara:uncomment load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar", "guitar_workflow_test")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
 # copybara:uncomment load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_cpu_mh_guitar_test", "litert_device_test", "litert_integration_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 # copybara:comment_begin(oss-only)
 load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
