@@ -14,6 +14,7 @@
 
 #include "litert/cts/cts_configure.h"
 
+#include <optional>
 #include <regex>  // NOLINT
 #include <string>
 #include <utility>
@@ -28,6 +29,10 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_rng.h"
+
+ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
+          "Seed for the buffer data generation.");
 
 ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
           "Comma-separated test-generator/seed pairings in the form "
@@ -52,6 +57,10 @@ ABSL_FLAG(
     std::string, dont_register, "^$",
     "Regex for test selection. This is a negative search match, if the pattern "
     "can be found anywhere in the test name, it will be skipped.");
+
+ABSL_FLAG(
+    bool, f16_range_for_f32, false,
+    "If true, will generate values f16 values stored as f32 for f32 tensors.");
 
 namespace litert::testing {
 
@@ -98,13 +107,22 @@ void Setup(const CtsConf& options) {
 Expected<CtsConf> CtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
-  CtsConf res(std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
-              absl::GetFlag(FLAGS_dispatch_dir),
-              absl::GetFlag(FLAGS_plugin_dir),
-              std::regex(absl::GetFlag(FLAGS_dont_register),
-                         std::regex_constants::ECMAScript));
+  CtsConf res(
+      std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
+      absl::GetFlag(FLAGS_dispatch_dir), absl::GetFlag(FLAGS_plugin_dir),
+      std::regex(absl::GetFlag(FLAGS_dont_register),
+                 std::regex_constants::ECMAScript),
+      absl::GetFlag(FLAGS_f16_range_for_f32), absl::GetFlag(FLAGS_data_seed));
   Setup(res);
   return res;
+}
+
+RandomTensorDataBuilder CtsConf::CreateDataBuilder() const {
+  RandomTensorDataBuilder builder;
+  if (f16_range_for_f32_) {
+    builder.SetF16InF32();
+  }
+  return builder;
 }
 
 int CtsConf::GetSeedForParams(absl::string_view name) const {

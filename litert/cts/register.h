@@ -78,9 +78,9 @@ class RegisterFunctor {
       return;
     }
 
-    if (auto status =
-            TestClass::Register(suite_name, test_name, std::move(*params),
-                                std::move(args), options_.CreateDataBuilder());
+    if (auto status = TestClass::Register(
+            suite_name, test_name, std::move(*params), std::move(args),
+            options_.CreateDataBuilder(), options_.DataSeed());
         !status) {
       LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),

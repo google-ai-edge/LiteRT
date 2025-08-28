@@ -25,6 +25,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_rng.h"
 
+// Seed for the data generation.
+ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
+
 // Which backend to use as the "actual".
 ABSL_DECLARE_FLAG(std::string, backend);
 
@@ -45,6 +48,9 @@ ABSL_DECLARE_FLAG(std::string, plugin_dir);
 
 // Regex to filter tests.
 ABSL_DECLARE_FLAG(std::string, dont_register);
+
+// Will generate values for f32 tensors in the range of f16 values.
+ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
 namespace litert::testing {
 
@@ -79,21 +85,24 @@ class CtsConf {
 
   // Create the object that encapsulates the tensor data generation configured
   // by the user.
-  RandomTensorDataBuilder CreateDataBuilder() const {
-    // TODO: @lukeboyer - Add flags and parse here (f32->f16 etc).
-    return RandomTensorDataBuilder();
-  }
+  RandomTensorDataBuilder CreateDataBuilder() const;
+
+  // Seed for the data generation.
+  std::optional<int> DataSeed() const { return data_seed_; }
 
  private:
   explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
-                   std::regex&& re)
+                   std::regex&& re, bool f16_range_for_f32,
+                   std::optional<int> data_seed)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
         dispatch_dir_(std::move(dispatch_dir)),
         plugin_dir_(std::move(plugin_dir)),
-        re_(std::move(re)) {}
+        re_(std::move(re)),
+        f16_range_for_f32_(f16_range_for_f32),
+        data_seed_(data_seed) {}
 
   SeedMap seeds_for_params_;
   ExecutionBackend backend_;
@@ -101,6 +110,8 @@ class CtsConf {
   std::string dispatch_dir_;
   std::string plugin_dir_;
   std::regex re_;
+  bool f16_range_for_f32_;
+  std::optional<int> data_seed_;
 };
 
 }  // namespace litert::testing
