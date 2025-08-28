@@ -55,14 +55,14 @@ namespace mediatek {
 std::optional<std::string> GetSharedLibraryDir(
     LiteRtEnvironmentOptions environment_options) {
   litert::EnvironmentOptions env_options(environment_options);
-  auto dispatch_lib_dir_any =
+  auto dispatch_lib_dir_variant =
       env_options.GetOption(kLiteRtEnvOptionTagDispatchLibraryDir);
-  if (!dispatch_lib_dir_any) {
+  if (!dispatch_lib_dir_variant) {
     LITERT_LOG(LITERT_INFO, "No dispatch library dir option found: %s",
-               dispatch_lib_dir_any.Error().Message().c_str());
+               dispatch_lib_dir_variant.Error().Message().c_str());
     return std::nullopt;
   }
-  return std::string(std::any_cast<const char*>(*dispatch_lib_dir_any));
+  return std::string(std::get<const char*>(*dispatch_lib_dir_variant));
 }
 
 LiteRtStatus LiteRtInitialize(LiteRtEnvironmentOptions environment_options,
