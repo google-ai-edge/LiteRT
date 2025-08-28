@@ -19,15 +19,15 @@
 #include <optional>
 #include <string>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 
@@ -82,8 +82,7 @@ TEST(AdapterTest, CompileSuccess) {
   ASSERT_EQ(serialize_status, kLiteRtStatusOk);
   ASSERT_GT(buf.Size(), 0);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options,
-                              ::litert::GoogleTensorOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, GoogleTensorOptions::Create());
   options.SetFloatTruncationType(kLiteRtGoogleTensorFloatTruncationTypeHalf);
   options.SetInt64ToInt32Truncation(true);
   options.SetOutputDir("/tmp/");
@@ -93,11 +92,30 @@ TEST(AdapterTest, CompileSuccess) {
   LITERT_LOG(LITERT_INFO, "buffer_str size: %d", buf.Size());
   LITERT_LOG(LITERT_INFO, "Compling model...");
 
-  std::string compiled_code;
-  auto compile_status = adapter_result.Value()->api().compile(
-      buf.StrView(), kSocModel, options.Get(), &compiled_code);
-  ASSERT_OK(compile_status);
-  ASSERT_FALSE(compiled_code.empty());
+  char* compiled_code_data = nullptr;
+  size_t compiled_code_size = 0;
+  char* error_message = nullptr;
+
+  absl::string_view soc_model_view(kSocModel);
+  absl::string_view model_buffer_view(buf.StrView());
+  // Ensure memory allocated by the C API is freed.
+  absl::Cleanup error_cleanup = [&] {
+    if (error_message) {
+      api.free_error_message(error_message);
+    }
+  };
+  absl::Cleanup code_cleanup = [&] {
+    if (compiled_code_data) {
+      api.free_compiled_code(compiled_code_data);
+    }
+  };
+  auto compile_status =
+      api.compile(model_buffer_view.data(), model_buffer_view.size(),
+                  soc_model_view.data(), soc_model_view.size(), options.Get(),
+                  &compiled_code_data, &compiled_code_size, &error_message);
+  ASSERT_TRUE(compile_status);
+  ASSERT_NE(compiled_code_data, nullptr);
+  ASSERT_GT(compiled_code_size, 0);
 }
 
 }  // namespace google_tensor

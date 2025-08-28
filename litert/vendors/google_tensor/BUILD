@@ -78,11 +78,12 @@ cc_test(
     deps = [
         ":adapter",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/test:common",
         "//litert/test:matchers",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
