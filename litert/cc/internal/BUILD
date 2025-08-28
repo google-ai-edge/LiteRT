@@ -356,4 +356,51 @@ litert_device_exec(
     target = ":litert_compiled_model_webgpu_test",
 )
 
+cc_test(
+    name = "litert_compiled_model_vulkan_test",
+    srcs = ["//litert/cc:litert_compiled_model_vulkan_test.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    tags = [
+        "no_oss",
+        "notap",  # TODO(byungchul): Enable tap presubmit once the flakiness is fixed.
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":litert_compiled_model",
+        ":litert_environment",
+        ":litert_event",
+        ":litert_gpu_options",
+        ":litert_options",
+        ":litert_runtime_options",
+        ":litert_tensor_buffer",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_event",
+        "//litert/c:litert_event_type",
+        "//litert/c:litert_profiler_event",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_platform_support",
+        "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//third_party/vulkan_loader",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_device_exec(
+    name = "litert_compiled_model_vulkan_device_test",
+    backend_id = "gpu",
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    target = ":litert_compiled_model_vulkan_test",
+)
+
 exports_files(["litert_dispatch_delegate.h"])

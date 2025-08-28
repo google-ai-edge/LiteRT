@@ -37,7 +37,6 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
-using testing::Eq;
 using testing::FloatNear;
 using testing::Pointwise;
 
@@ -45,14 +44,13 @@ namespace litert {
 namespace {
 
 using TestParams =
-    std::tuple<bool, LiteRtDelegatePrecision, LiteRtDelegateBufferStorageType>;
+    std::tuple<LiteRtDelegatePrecision, LiteRtDelegateBufferStorageType>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
-  LITERT_RETURN_IF_ERROR(
-      gpu_options.EnableNoExternalTensorsMode(std::get<0>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetDelegatePrecision(std::get<1>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
+  LITERT_RETURN_IF_ERROR(gpu_options.EnableNoExternalTensorsMode(false));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetDelegatePrecision(std::get<0>(params)));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<1>(params)));
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
@@ -95,10 +93,10 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
-  EXPECT_TRUE(input_buffers[0].IsWebGpuMemory());
+  EXPECT_TRUE(input_buffers[0].IsVulkanMemory());
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
-  EXPECT_TRUE(input_buffers[1].IsWebGpuMemory());
+  EXPECT_TRUE(input_buffers[1].IsVulkanMemory());
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
@@ -109,7 +107,7 @@ TEST_P(ParameterizedTest, Basic) {
   auto output_names = signatures[0].OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
-  EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
+  EXPECT_TRUE(output_buffers[0].IsVulkanMemory());
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
         output_buffers[0], TensorBuffer::LockMode::kRead);
@@ -124,8 +122,7 @@ TEST_P(ParameterizedTest, Basic) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
-                       ::testing::ValuesIn<LiteRtDelegatePrecision>({
+    ::testing::Combine(::testing::ValuesIn<LiteRtDelegatePrecision>({
                            kLiteRtDelegatePrecisionDefault,
                            kLiteRtDelegatePrecisionFp16,
                            kLiteRtDelegatePrecisionFp32,
@@ -136,10 +133,7 @@ INSTANTIATE_TEST_SUITE_P(
                            kLiteRtDelegateBufferStorageTypeTexture2D,
                        })));
 
-typedef struct WGPUDeviceImpl* WGPUDevice;
-typedef struct WGPUQueueImpl* WGPUQueue;
-
-TEST(CompiledModelWebGpuTest, GpuEnvironment) {
+TEST(CompiledModelVulkanTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
@@ -152,23 +146,23 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({false, kLiteRtDelegatePrecisionDefault,
+      CreateGpuOptions({kLiteRtDelegatePrecisionDefault,
                         kLiteRtDelegateBufferStorageTypeDefault}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
                               CompiledModel::Create(*env_1, model, options_1));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
+
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_device_id_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
-  ABSL_LOG(INFO) << "WebGPU device id: "
-                 << reinterpret_cast<WGPUDevice>(
-                        std::get<int64_t>(wegpu_device_id_1));
+      auto vulkan_env_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagVulkanEnvironment));
+  ABSL_LOG(INFO) << "Vulkan env: "
+                 << reinterpret_cast<void*>(std::get<int64_t>(vulkan_env_1));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_command_queue_1,
-      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
-  ABSL_LOG(INFO) << "WebGPU command queue: "
-                 << reinterpret_cast<WGPUQueue>(
-                        std::get<int64_t>(wegpu_command_queue_1));
+      auto command_pool_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagVulkanCommandPool));
+  ABSL_LOG(INFO) << "Vulkan command pool: "
+                 << reinterpret_cast<void*>(std::get<int64_t>(command_pool_1));
 
   // Check if the 2nd LiteRT environment can get the same WebGPU device and
   // command queue.
@@ -177,21 +171,22 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_2,
-      CreateGpuOptions({true, kLiteRtDelegatePrecisionFp32,
+      CreateGpuOptions({kLiteRtDelegatePrecisionFp32,
                         kLiteRtDelegateBufferStorageTypeTexture2D}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2,
                               CompiledModel::Create(*env_2, model, options_2));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
+
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_device_id_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
-  EXPECT_EQ(std::get<int64_t>(wegpu_device_id_1),
-            std::get<int64_t>(wegpu_device_id_2));
+      auto vulkan_env_2,
+      env_options_2.GetOption(kLiteRtEnvOptionTagVulkanEnvironment));
+  EXPECT_EQ(std::get<int64_t>(vulkan_env_1), std::get<int64_t>(vulkan_env_2));
+
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto wegpu_command_queue_2,
-      env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
-  EXPECT_EQ(std::get<int64_t>(wegpu_command_queue_1),
-            std::get<int64_t>(wegpu_command_queue_2));
+      auto command_pool_2,
+      env_options_2.GetOption(kLiteRtEnvOptionTagVulkanCommandPool));
+  EXPECT_EQ(std::get<int64_t>(command_pool_1),
+            std::get<int64_t>(command_pool_2));
 }
 
 }  // namespace
