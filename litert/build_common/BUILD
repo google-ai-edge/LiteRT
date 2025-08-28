@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@bazel_skylib//lib:selects.bzl", "selects")
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 
@@ -65,26 +64,3 @@ exports_files(srcs = [
     "export_litert_tflite_runtime_darwin.lds",
     "export_litert_tflite_runtime_linux.lds",
 ])
-
-bzl_library(
-    name = "special_rule_bzl",
-    srcs = ["special_rule.bzl"],
-    visibility = ["//visibility:private"],
-)
-
-bzl_library(
-    name = "litert_build_defs_bzl",
-    srcs = ["litert_build_defs.bzl"],
-    visibility = ["//visibility:private"],
-    deps = [
-        "//devtools/build_cleaner/skylark:build_defs_lib",
-        "@bazel_skylib//lib:selects",
-        "@rules_cc//cc:core_rules",
-    ],
-)
-
-bzl_library(
-    name = "tfl_model_gen_bzl",
-    srcs = ["tfl_model_gen.bzl"],
-    visibility = ["//visibility:private"],
-)
