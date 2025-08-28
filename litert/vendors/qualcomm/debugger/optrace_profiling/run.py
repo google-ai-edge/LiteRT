@@ -369,7 +369,7 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Given a ctx bin, generate QNN HTP Optrace Profiling."
+        description="Given a context binary, generate QNN HTP Optrace Profiling."
     )
     parser.add_argument(
         "--model", "-m", type=str, help="path to the tflite model", required=True
