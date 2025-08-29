@@ -24,8 +24,7 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_compiler_plugin",
     ],
@@ -36,9 +35,7 @@ cc_library(
     hdrs = ["conversion.h"],
     deps = [
         ":backend_ir",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -48,7 +45,7 @@ cc_library(
 cc_library(
     name = "backend_ir",
     hdrs = ["backend_ir.h"],
-    deps = ["//litert/c:litert_common"],
+    deps = ["//litert/c:litert_runtime_c_api_shared_lib"],
 )
 
 cc_library(
@@ -56,8 +53,7 @@ cc_library(
     hdrs = ["partition_with_capabilities.h"],
     deps = [
         ":conversion",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
     ],
@@ -68,8 +64,7 @@ cc_library(
     hdrs = ["convert_graph.h"],
     deps = [
         ":conversion",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_model",
     ],
@@ -89,9 +84,7 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
@@ -105,8 +98,7 @@ cc_test(
     srcs = ["partition_with_capabilities_test.cc"],
     deps = [
         ":partition_with_capabilities",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/core/util:flatbuffer_tools_testonly",
@@ -123,9 +115,7 @@ cc_test(
     deps = [
         ":backend_ir",
         ":convert_graph",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
@@ -145,13 +135,12 @@ cc_test(
     srcs = ["options_helper_test.cc"],
     deps = [
         ":options_helper",
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc/internal:litert_options",
+        "//litert/cc:litert_options",
         "@com_google_googletest//:gtest_main",
     ],
 )
