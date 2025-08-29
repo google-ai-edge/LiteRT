@@ -1082,7 +1082,7 @@ litert_device_test(
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/cc/options:litert_runtime_options",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",

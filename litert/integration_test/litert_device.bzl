@@ -257,6 +257,9 @@ def _GpuSpec():
     return {
         "gpu": BackendSpec(
             id = "gpu",
+            libs = [
+                ("//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so", "LD_LIBRARY_PATH"),
+            ],
         ),
     }
 
