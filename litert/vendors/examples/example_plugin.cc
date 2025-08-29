@@ -14,17 +14,16 @@
 
 #include <cstdlib>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
-#include "litert/vendors/examples/example_plugin_common.h"
 
 #if LITERT_WINDOWS_OS
 #include <stdarg.h>
@@ -66,6 +65,114 @@ static int asprintf(char** strp, const char* format, ...) {
 
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {};
+
+namespace litert::example {
+namespace {
+
+constexpr char kPluginManufacturer[] = "ExampleSocManufacturer";
+constexpr char kPluginSocModel[] = "ExampleSocModel";
+
+}  // namespace
+}  // namespace litert::example
+
+LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
+  if (!api_version) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  api_version->major = LITERT_API_VERSION_MAJOR;
+  api_version->minor = LITERT_API_VERSION_MINOR;
+  api_version->patch = LITERT_API_VERSION_PATCH;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtHwAccelerators* supported_hardware) {
+  if (!compiler_plugin || !supported_hardware) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *supported_hardware = kLiteRtHwAcceleratorCpu;
+  return kLiteRtStatusOk;
+}
+
+const char* LiteRtGetCompilerPluginSocManufacturer() {
+  return litert::example::kPluginManufacturer;
+}
+
+LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtParamIndex* num_supported_soc_models) {
+  if (!compiler_plugin || !num_supported_soc_models) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_supported_soc_models = 1;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
+    const char** soc_model_name) {
+  if (!compiler_plugin || !soc_model_name) {
+    return kLiteRtStatusErrorInvalidArgument;
+  } else if (soc_model_idx != 0) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+  *soc_model_name = litert::example::kPluginSocModel;
+  return kLiteRtStatusOk;
+}
+
+//
+// Compiled Result Definition
+//
+
+// Simple compiled result def holds byte code and per op data.
+struct LiteRtCompiledResultT {
+  std::vector<std::string> byte_code;
+  std::vector<std::string> per_op_data;
+};
+
+LiteRtStatus LiteRtGetCompiledResultByteCode(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
+    const void** byte_code, size_t* byte_code_size) {
+  if (!compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *byte_code = compiled_result->byte_code[byte_code_idx].data();
+  *byte_code_size = compiled_result->byte_code[byte_code_idx].size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledResultCallInfo(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
+    const void** call_info, size_t* call_info_size,
+    LiteRtParamIndex* byte_code_idx) {
+  if (call_idx >= compiled_result->per_op_data.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *call_info = compiled_result->per_op_data.at(call_idx).data();
+  *call_info_size = compiled_result->per_op_data.at(call_idx).size();
+  *byte_code_idx = 0;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetNumCompiledResultCalls(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls) {
+  if (!compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_calls = compiled_result->per_op_data.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
+  *num_byte_code = compiled_result->byte_code.size();
+  return kLiteRtStatusOk;
+}
+
+void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
+  delete compiled_result;
+}
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
