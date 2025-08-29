@@ -58,6 +58,8 @@ struct LiteRtGpuOptionsPayloadT {
   // List of external tensor patterns which are not affected by the no immutable
   // external tensors mode.
   std::vector<std::string> external_tensor_patterns;
+  // Same as above, but for output tensors read by CPU at the end of inference.
+  std::vector<std::string> external_tensor_patterns_for_cpu_read;
   // Added in version 1.4.0.
   // GPU backend to use.
   LiteRtGpuBackend gpu_backend = kLiteRtGpuBackendAutomatic;
@@ -143,6 +145,15 @@ LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->external_tensor_patterns.push_back(std::string(pattern));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddGpuOptionsExternalTensorPatternForCpuRead(
+    LiteRtOpaqueOptions gpu_options, const char* pattern) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->external_tensor_patterns_for_cpu_read.push_back(
+      std::string(pattern));
   return kLiteRtStatusOk;
 }
 
@@ -366,6 +377,17 @@ LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus
+LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatternsForCpuRead(
+    int* num_patterns, LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_patterns, ErrorStatusBuilder::InvalidArgument())
+      << "`num_patterns` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_patterns = payload->external_tensor_patterns_for_cpu_read.size();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
     const char** external_tensor_pattern, int pattern_index,
     LiteRtGpuOptionsPayload payload) {
@@ -376,5 +398,19 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
       << "`payload` cannot be null.";
   *external_tensor_pattern =
       payload->external_tensor_patterns[pattern_index].c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPatternForCpuRead(
+    const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(external_tensor_pattern,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`external_tensor_pattern` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *external_tensor_pattern =
+      payload->external_tensor_patterns_for_cpu_read[pattern_index].c_str();
   return kLiteRtStatusOk;
 }
