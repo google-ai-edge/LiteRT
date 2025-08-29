@@ -15,7 +15,6 @@
 #include "litert/cc/options/litert_gpu_options.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
@@ -98,6 +97,11 @@ LiteRtStatus GpuOptions::EnableNoExternalTensorsMode(bool enabled) {
 
 LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
   return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
+}
+
+LiteRtStatus GpuOptions::AddExternalTensorPatternForCpuRead(
+    const char* pattern) {
+  return LiteRtAddGpuOptionsExternalTensorPatternForCpuRead(Get(), pattern);
 }
 
 }  // namespace litert

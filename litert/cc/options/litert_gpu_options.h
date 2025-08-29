@@ -44,6 +44,7 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
   LiteRtStatus EnableNoExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
+  LiteRtStatus AddExternalTensorPatternForCpuRead(const char* pattern);
   LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
 };
 

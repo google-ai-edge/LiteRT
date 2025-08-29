@@ -62,6 +62,12 @@ LiteRtStatus LiteRtSetGpuOptionsNoExternalTensorsMode(
 // names begin with "kv_cache_" will be exempted from NoExternalTensorsMode.
 LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
     LiteRtOpaqueOptions gpu_options, const char* pattern);
+// Same as above, but it's for output tensors read by CPU at the end of
+// inference. Its distinction from above is meaningful in benchmark mode as
+// the delegate doesn't wait for GPU jobs to be completed during benchmark if
+// outputs read by CPU synchronize with GPU at the end of inference anyway.
+LiteRtStatus LiteRtAddGpuOptionsExternalTensorPatternForCpuRead(
+    LiteRtOpaqueOptions gpu_options, const char* pattern);
 
 // This enables dynamic range quantization of the input tensor for large sized
 // fully connected and convolution operations, if the device supports it. This
@@ -178,8 +184,15 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
 
 LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
     int* num_patterns, LiteRtGpuOptionsPayload payload);
+LiteRtStatus
+LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatternsForCpuRead(
+    int* num_patterns, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
+    const char** external_tensor_pattern, int pattern_index,
+    LiteRtGpuOptionsPayload payload);
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPatternForCpuRead(
     const char** external_tensor_pattern, int pattern_index,
     LiteRtGpuOptionsPayload payload);
 
