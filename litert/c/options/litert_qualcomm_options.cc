@@ -106,6 +106,30 @@ LiteRtStatus LiteRtQualcommOptionsGetLogLevel(
   return kLiteRtStatusOk;
 }
 
+// Profiling -------------------------------------------------------------------
+
+LiteRtStatus LiteRtQualcommOptionsSetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->profiling = profiling;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetProfiling(
+    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling) {
+  if (options == nullptr || profiling == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *profiling = options->profiling;
+
+  return kLiteRtStatusOk;
+}
+
 // COMPILATION OPTIONS /////////////////////////////////////////////////////////
 
 LiteRtStatus LiteRtQualcommOptionsSetUseHtpPreference(
@@ -221,28 +245,6 @@ LiteRtStatus LiteRtQualcommOptionsGetHtpPerformanceMode(
   }
 
   *htp_performance_mode = options->htp_performance_mode;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtQualcommOptionsSetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling profiling) {
-  if (options == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  options->profiling = profiling;
-
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtQualcommOptionsGetProfiling(
-    LiteRtQualcommOptions options, LiteRtQualcommOptionsProfiling* profiling) {
-  if (options == nullptr || profiling == nullptr) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-
-  *profiling = options->profiling;
 
   return kLiteRtStatusOk;
 }

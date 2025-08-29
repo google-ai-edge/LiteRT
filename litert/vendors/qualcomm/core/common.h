@@ -22,7 +22,13 @@ enum class LogLevel {
   kDebug = 5,
 };
 
-enum class Profiling { kOff = 0, kBasic = 1, kDetailed = 2 };
+enum class Profiling {
+  kOff = 0,
+  kBasic = 1,
+  kDetailed = 2,
+  kLinting = 3,
+  kOptrace = 4
+};
 
 enum class HtpPerformanceMode {
   kDefault = 0,

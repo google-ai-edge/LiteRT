@@ -34,12 +34,14 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"  // IWYU pragma: keep
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -420,7 +422,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         context_configs = QnnManager::DefaultContextConfigs();
       }
       auto context_handle =
-          (*qnn_manager)->CreateContextHandle(context_configs);
+          (*qnn_manager)
+              ->CreateContextHandle(context_configs,
+                                    compiler_plugin->Options().GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s",
                    context_handle.Error().Message().c_str());
@@ -450,6 +454,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
         **qnn_manager, context_handles[context_handle_idx].get(),
+        context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, compiler_plugin->Options()));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }

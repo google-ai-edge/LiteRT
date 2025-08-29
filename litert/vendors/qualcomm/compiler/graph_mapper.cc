@@ -22,9 +22,8 @@
 #include <array>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpGraph.h"  // from @qairt
@@ -147,7 +146,7 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name) {
 
 LiteRtStatus GraphMapper::Finalize() {
   LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
-      qnn_.Api()->graphFinalize(QnnGraph(), nullptr, nullptr));
+      qnn_.Api()->graphFinalize(QnnGraph(), profile_handle_, nullptr));
   return kLiteRtStatusOk;
 }
 

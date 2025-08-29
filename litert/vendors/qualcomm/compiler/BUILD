@@ -60,6 +60,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
         "//litert/cc:litert_opaque_options",
         "//litert/cc:litert_options",
         "//litert/cc/options:litert_qualcomm_options",
@@ -229,6 +230,7 @@ litert_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],
 )
