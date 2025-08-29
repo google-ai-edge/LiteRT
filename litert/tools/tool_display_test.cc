@@ -36,36 +36,40 @@ TEST(TestToolDisplay, Display) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Display() << kDisplayInfo;
-  EXPECT_EQ(out.view(), kDisplayInfo);
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, kDisplayInfo);
 }
 
 TEST(TestToolDisplay, Indented) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Indented() << kDisplayInfo;
-  EXPECT_EQ(out.view(), absl::StrFormat("\t%s", kDisplayInfo));
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, absl::StrFormat("\t%s", kDisplayInfo));
 }
 
 TEST(TestToolDisplay, Labeled) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Labeled() << kDisplayInfo;
-  EXPECT_EQ(out.view(), absl::StrFormat("%s %s", kLabel, kDisplayInfo));
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, absl::StrFormat("%s %s", kLabel, kDisplayInfo));
 }
 
 TEST(TestToolDisplay, LabeledNoToolName) {
   std::stringstream out;
   ToolDisplay display(out);
   display.Labeled() << kDisplayInfo;
-  EXPECT_EQ(out.view(),
-            absl::StrFormat("%s %s", "[LITERT_TOOLS]", kDisplayInfo));
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, absl::StrFormat("%s %s", "[LITERT_TOOLS]", kDisplayInfo));
 }
 
 TEST(TestToolDisplay, Start) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Start(kStartLabel);
-  EXPECT_EQ(out.view(),
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str,
             absl::StrFormat("%s Starting %s...\n", kLabel, kStartLabel));
 }
 
@@ -73,15 +77,16 @@ TEST(TestToolDisplay, Done) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Done(kStartLabel);
-  EXPECT_EQ(out.view(),
-            absl::StrFormat("%s \t%s Done!\n", kLabel, kStartLabel));
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, absl::StrFormat("%s \t%s Done!\n", kLabel, kStartLabel));
 }
 
 TEST(TestToolDisplay, Fail) {
   std::stringstream out;
   ToolDisplay display(out, kToolName);
   display.Fail();
-  EXPECT_EQ(out.view(), absl::StrFormat("%s \tFailed\n", kLabel));
+  const auto out_str = out.str();
+  EXPECT_EQ(out_str, absl::StrFormat("%s \tFailed\n", kLabel));
 }
 
 TEST(TestLoggedScope, EnterExit) {
@@ -90,10 +95,11 @@ TEST(TestLoggedScope, EnterExit) {
   {
     auto s = display.StartS(kStartLabel);
   }
-  EXPECT_THAT(out.view(), StartsWith(absl::StrFormat("%s Starting %s...\n",
-                                                     kLabel, kStartLabel)));
-  EXPECT_THAT(out.view(), EndsWith(absl::StrFormat("%s \t%s Done!\n", kLabel,
-                                                   kStartLabel)));
+  const auto out_str = out.str();
+  EXPECT_THAT(out_str, StartsWith(absl::StrFormat("%s Starting %s...\n", kLabel,
+                                                  kStartLabel)));
+  EXPECT_THAT(out_str, EndsWith(absl::StrFormat("%s \t%s Done!\n", kLabel,
+                                                kStartLabel)));
 }
 
 }  // namespace
