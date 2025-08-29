@@ -44,6 +44,7 @@ package_group(
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         "//litert/cc/...",
+        "//litert/compiler/plugin/...",
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
@@ -86,6 +87,7 @@ package_group(
         # TODO(b/424778444): Internal runtime should not call cc/internal. Remove below targets.
         "//litert/runtime/...",
         "//litert/compiler/...",
+        "//litert/core/model/...",
         "//litert/tools/...",
     ],
 )

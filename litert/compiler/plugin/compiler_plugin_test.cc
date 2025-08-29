@@ -23,7 +23,6 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_op_options.h"
@@ -31,7 +30,6 @@
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
-#include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 
 namespace litert::internal {

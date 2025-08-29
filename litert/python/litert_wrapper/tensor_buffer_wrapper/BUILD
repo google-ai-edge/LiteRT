@@ -38,7 +38,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_model",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/python/litert_wrapper/common:litert_wrapper_utils",
         "//tflite:framework",
@@ -62,8 +62,8 @@ pybind_extension(
     wrap_py_init = True,
     deps = [
         ":tensor_buffer_wrapper_lib",
-        "//litert/cc:litert_model",
         "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_model",
         "//litert/cc/internal:litert_tensor_buffer",
         "//tflite:framework",
         "@com_google_absl//absl/container:flat_hash_map",

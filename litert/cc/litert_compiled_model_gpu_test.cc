@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <any>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -21,7 +20,6 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -139,25 +137,16 @@ void BasicTest(bool no_immutable_external_tensors_mode) {
 class CompiledModelGpuTest : public ::testing::TestWithParam<bool> {};
 
 TEST_P(CompiledModelGpuTest, Basic) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   BasicTest(CompiledModelGpuTest::GetParam());
 }
 
 TEST_P(CompiledModelGpuTest, Basic2nd) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   // Run the test twice to verify that the CL environment is shared between
   // instances.
   BasicTest(CompiledModelGpuTest::GetParam());
 }
 
 TEST_P(CompiledModelGpuTest, WithProfiler) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -230,9 +219,6 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
 }
 
 TEST_P(CompiledModelGpuTest, GpuEnvironment) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -272,9 +258,6 @@ TEST_P(CompiledModelGpuTest, GpuEnvironment) {
 }
 
 TEST_P(CompiledModelGpuTest, Async) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
@@ -351,9 +334,6 @@ TEST_P(CompiledModelGpuTest, Async) {
 }
 
 TEST_P(CompiledModelGpuTest, PartialDelegation) {
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   constexpr const char* kModelPartilaFileName = "simple_cast_and_add_op.tflite";
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
@@ -563,9 +543,6 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
 
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
-
   // Check input and output path
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
@@ -649,9 +626,6 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   if (!IsGlClInteropSupported()) {
     GTEST_SKIP() << "GPU tests are not supported in this configuration";
   }
-
-  // To workaround the memory leak in Nvidia's driver
-  absl::LeakCheckDisabler disable_leak_check;
 
   // Check input and output path
   LITERT_ASSERT_OK_AND_ASSIGN(

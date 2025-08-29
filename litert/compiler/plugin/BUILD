@@ -36,8 +36,8 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_op_options",
         "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_op_options",
         "//litert/core:build_stamp",
         "//litert/core:dynamic_loading",
         "//litert/core:environment",
@@ -63,6 +63,10 @@ cc_library(
 #         "//litert/test:mlir_test_data",
 #         "//litert/vendors/examples:example_plugin_so",
 #     ],
+#     # Workaround to disable mismatched-size-delete.
+#     # A compiler plugin uses `libLiteRtRuntimeCApi.so` but `compiler_plugin` is a static library for runtime.
+#     # So mixing of the two will cause mismatched-size-delete error.
+#     malloc = "//base:system_malloc",
 #     tags = [
 #         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
 #         "noasan",
@@ -72,16 +76,15 @@ cc_library(
 #     ],
 #     deps = [
 #         ":compiler_plugin",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
 #         "@com_google_absl//absl/strings:string_view",
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_op_code",
-#         "//litert/cc:litert_op_options",
 #         "//litert/cc/internal:litert_environment",
+#         "//litert/cc/internal:litert_op_options",
 #         "//litert/core:build_stamp",
 #         "//litert/core:filesystem",
 #         "//litert/core/model",
-#         "//litert/core/model:model_serialize",
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/tools:dump",
@@ -118,8 +121,8 @@ cc_test(
         ":algo",
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_model_predicates",
+        "//litert/cc/internal:litert_model",
         "//litert/core/model",
         "//litert/core/model:graph_validation",
         "//litert/core/model:model_serialize",

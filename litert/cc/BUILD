@@ -112,56 +112,6 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_model",
-    srcs = ["litert_model.cc"],
-    hdrs = ["litert_model.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_public",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
-    deps = [
-        ":litert_buffer_ref",
-        ":litert_consts",
-        ":litert_detail",
-        ":litert_element_type",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_layout",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-cc_test(
-    name = "litert_model_test",
-    srcs = ["litert_model_test.cc"],
-    data = ["//litert/test:mlir_test_data"],
-    deps = [
-        ":litert_element_type",
-        ":litert_layout",
-        ":litert_model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_model",
-        "//litert/c:litert_op_code",
-        "//litert/core/model",
-        "//litert/test:common",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_handle",
     hdrs = ["litert_handle.h"],
     visibility = [
@@ -418,47 +368,6 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_op_options",
-    srcs = ["litert_op_options.cc"],
-    hdrs = ["litert_op_options.h"],
-    visibility = ["//litert:litert_public"],
-    deps = [
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c:litert_model",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/c:litert_op_options",
-        "@com_google_absl//absl/strings:string_view",
-        "@flatbuffers//:runtime_cc",
-    ],
-)
-
-cc_test(
-    name = "litert_op_options_test",
-    srcs = ["litert_op_options_test.cc"],
-    data = [
-        "//litert/test:mlir_test_data",
-        "//litert/test:tflite_test_data",
-    ],
-    deps = [
-        ":litert_buffer_ref",
-        ":litert_expected",
-        ":litert_op_options",
-        "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/core/model",
-        "//litert/core/model:buffer_manager",
-        "//litert/core/util:flatbuffer_tools",
-        "//litert/test:common",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_shared_library",
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
@@ -634,10 +543,12 @@ cc_library(
 ### LiteRT C++ APIs which will use libLiteRtRuntimeCApi.so.
 # - litert::Environment
 # - litert::Event
+# - litert::Model
 # - litert::TensorBuffer
 # - litert::TensorBufferRequirements
 # - litert::CompiledModel
 # - litert::Options
+# - litert::OpOptions
 # - litert::CustomOpKernel
 # - litert::DispatchDelegate
 # - litert::ExternalLiteRtBufferContext
@@ -660,6 +571,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_profiler_event",
     "//litert/c:litert_opaque_options",
     "//litert/c:litert_options",
+    "//litert/c:litert_op_code",
     "//litert/c:litert_profiler",
     "//litert/c:litert_custom_tensor_buffer",
     "//litert/c:litert_tensor_buffer",
@@ -770,6 +682,102 @@ litert_device_exec(
     name = "litert_event_device_test",
     backend_id = "cpu",
     target = ":litert_event_test",
+)
+
+cc_library(
+    name = "litert_model",
+    srcs = ["litert_model.cc"],
+    hdrs = ["litert_model.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_consts",
+        ":litert_detail",
+        ":litert_element_type",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_layout",
+        ":litert_macros",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_test(
+    name = "litert_model_test",
+    srcs = ["litert_model_test.cc"],
+    data = ["//litert/test:mlir_test_data"],
+    deps = [
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "litert_op_options",
+    srcs = ["litert_op_options.cc"],
+    hdrs = ["litert_op_options.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":litert_expected",
+        ":litert_macros",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers//:runtime_cc",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:macos": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_test(
+    name = "litert_op_options_test",
+    srcs = ["litert_op_options_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_expected",
+        ":litert_op_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:common",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -1067,22 +1075,15 @@ litert_device_test(
 #         ":litert_platform_support",
 #         ":litert_profiler",
 #         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",  # To workaround the memory leak in Nvidia's driver
 #         "@com_google_absl//absl/container:flat_hash_map",
-#         "@com_google_absl//absl/debugging:leak_check",
 #         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_environment_options",
-#         "//litert/c:litert_event",
-#         "//litert/c:litert_event_type",
-#         "//litert/c:litert_profiler_event",
-#         "//litert/c:litert_tensor_buffer",
-#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/c:litert_runtime_c_api_shared_lib",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/cc/options:litert_runtime_options",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #         "//litert/test:simple_model",
@@ -1098,17 +1099,6 @@ litert_device_test(
 #     }),
 # )
 #
-# litert_device_exec(
-#     name = "litert_compiled_model_gpu_device_test",
-#     backend_id = "gpu",
-#     data = [
-#         "//litert/test:testdata/constant_output_tensor.tflite",
-#         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
-#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     target = ":litert_compiled_model_gpu_test",
-# )
 # copybara:uncomment_end
 
 cc_library(
