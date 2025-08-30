@@ -49,6 +49,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_npu = params.Get<bool>("use_npu");
   auto use_cpu = params.Get<bool>("use_cpu");
   auto gpu_backend = params.Get<std::string>("gpu_backend");
+  auto allow_fp16 = params.Get<bool>("allow_fp16");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -78,6 +79,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (gpu_backend == "webgpu") {
       gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
     }
+    if (allow_fp16 == false) {
+      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+    }
     compilation_options.AddOpaqueOptions(std::move(gpu_options));
   }
 
@@ -98,6 +102,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 }
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {
+  if (!params.Get<bool>("use_npu")) {
+    // If NPU is not used, we don't need to set the dispatch library directory.
+    return litert::Environment::Create({});
+  }
   auto dispatch_library_path = params.Get<std::string>("dispatch_library_path");
   LITERT_LOG(LITERT_INFO, "dispatch_library_path: %s",
              dispatch_library_path.c_str());

@@ -25,6 +25,27 @@ package(
     default_visibility = ["//litert:litert_internal_users"],
 )
 
+GPU_ACCELERATOR_DEPS = select({
+    # copybara:uncomment_begin(google-only)
+    # "@platforms//os:linux": [
+    # "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",
+    # ],
+    # "@platforms//os:macos": [
+    # "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+    # ],
+    # "@platforms//os:ios": [
+    # "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+    # ],
+    # "@platforms//os:windows": [
+    # "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",
+    # ],
+    # "@org_tensorflow//tensorflow:android": [
+    # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",
+    # ],
+    # copybara:uncomment_end
+    "//conditions:default": [],
+})
+
 cc_library(
     name = "apply_plugin",
     srcs = ["apply_plugin.cc"],
@@ -389,14 +410,7 @@ cc_binary(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            # copybara:uncomment_begin(google-only)
-            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-            # copybara:uncomment_end
-        ],
-        "//conditions:default": [],
-    }),
+    ] + GPU_ACCELERATOR_DEPS,
 )
 
 cc_binary(
@@ -453,18 +467,7 @@ cc_binary(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            # copybara:uncomment_begin(google-only)
-            # "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",  # buildcleaner: keep
-            # copybara:uncomment_end
-        ],
-        "//conditions:default": [
-            # copybara:uncomment_begin(google-only)
-            # "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",
-            # copybara:uncomment_end
-        ],
-    }),
+    ] + GPU_ACCELERATOR_DEPS,
 )
 
 cc_binary(
@@ -505,14 +508,7 @@ cc_binary(
     name = "benchmark_model",
     deps = [
         ":benchmark_model_main",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            # copybara:uncomment_begin(google-only)
-            # "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",  # buildcleaner: keep
-            # copybara:uncomment_end
-        ],
-        "//conditions:default": [],
-    }),
+    ] + GPU_ACCELERATOR_DEPS,
 )
 
 cc_library(
