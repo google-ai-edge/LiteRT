@@ -30,12 +30,30 @@ if ! docker info &> /dev/null; then
     exit 1
 fi
 
-echo "Building Docker image..."
-docker build -t litert_build_env -f ./hermetic_build.Dockerfile .
+SKIP_BUILD=0
+for arg in "$@"; do
+  case "$arg" in
+    --use_existing_image)
+      SKIP_BUILD=1
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--use_existing_image]"
+      echo "  --use_existing_image  Skip 'docker build' and use the existing image 'litert_build_env'"
+      exit 0
+      ;;
+  esac
+done
 
-if [ $? -ne 0 ]; then
-  echo "Error: Docker build failed."
-  exit 1
+if [ "$SKIP_BUILD" -eq 0 ]; then
+  echo "Building Docker image..."
+  docker build -t litert_build_env -f ./hermetic_build.Dockerfile .
+  if [ $? -ne 0 ]; then
+    echo "Error: Docker build failed."
+    exit 1
+  fi
+else
+  echo "Using existing Docker image 'litert_build_env' (skipping build)"
+
 fi
 
 CONTAINER_NAME="litert_build_container"
@@ -47,7 +65,23 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
   docker start -ai ${CONTAINER_NAME}
 else
   echo "Running build in new Docker container..."
-  docker run --name ${CONTAINER_NAME} --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v $(pwd)/..:/litert_build litert_build_env
+  # If host is macOS on Apple Silicon, disable SVE for Bazel JVM inside container
+  HOST_OS=$(uname -s || echo unknown)
+  HOST_ARCH=$(uname -m || echo unknown)
+  DISABLE_SVE_ARG=()
+  if [ "$HOST_OS" = "Darwin" ] && { [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; }; then
+    DISABLE_SVE_ARG=(-e DISABLE_SVE_FOR_BAZEL=1)
+  fi
+
+  # Relax seccomp to allow JVM feature probes and other syscalls in container
+  docker run --name ${CONTAINER_NAME} \
+    --security-opt seccomp=unconfined \
+    --user $(id -u):$(id -g) \
+    -e HOME=/litert_build \
+    -e USER=$(id -un) \
+    "${DISABLE_SVE_ARG[@]}" \
+    -v $(pwd)/..:/litert_build \
+    litert_build_env
 fi
 
 if [ $? -ne 0 ]; then
