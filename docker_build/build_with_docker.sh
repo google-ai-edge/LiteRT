@@ -46,8 +46,14 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
   echo "To remove it and start fresh, run: docker rm -f ${CONTAINER_NAME}"
   docker start -ai ${CONTAINER_NAME}
 else
-  echo "Running build in new Docker container..."
-  docker run --name ${CONTAINER_NAME} --user $(id -u):$(id -g) -e HOME=/litert_build -e USER=$(id -un) -v $(pwd)/..:/litert_build litert_build_env
+  # Relax seccomp to allow JVM feature probes and other syscalls in container
+  docker run --name ${CONTAINER_NAME} \
+    --security-opt seccomp=unconfined \
+    --user $(id -u):$(id -g) \
+    -e HOME=/litert_build \
+    -e USER=$(id -un) \
+    -v $(pwd)/..:/litert_build \
+    litert_build_env
 fi
 
 if [ $? -ne 0 ]; then
