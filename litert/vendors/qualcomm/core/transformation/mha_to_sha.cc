@@ -299,6 +299,17 @@ std::vector<OpWrapper> TransformToSHA(
   return new_ops;
 }
 
+size_t GetOpCountWithInput(const std::vector<OpWrapper>& ops, QnnOpCode opcode,
+                           const qnn::TensorWrapper& input_tensor) {
+  size_t cnt = 0;
+  for (size_t i = 0; i < ops.size(); ++i) {
+    if (ops[i].IsOpCode(opcode) && ops[i].GetInputTensor(0) == input_tensor) {
+      cnt++;
+    }
+  }
+  return cnt;
+}
+
 }  // namespace
 
 size_t OptimizeMHAPrefill(std::function<bool(OpWrapper&)> validate_op_config,
@@ -449,33 +460,21 @@ size_t OptimizeMHADecode(std::function<bool(OpWrapper&)> validate_op_config,
   return 1;
 }
 
-size_t GetOpCountWithInput(const std::vector<OpWrapper>& ops, QnnOpCode opcode,
-                           const qnn::TensorWrapper& input_tensor) {
-  size_t cnt = 0;
-  for (size_t i = 0; i < ops.size(); ++i) {
-    if (ops[i].IsOpCode(opcode) && ops[i].GetInputTensor(0) == input_tensor) {
-      cnt++;
-    }
-  }
-  return cnt;
-}
-
 size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
                        std::vector<OpWrapper>& ops, size_t start_index,
                        TensorPool& tensor_pool, size_t pattern_size) {
+  // Connection check
+  if (!(IS_CONNECTED(kAttnReshape, 0, kAttnNotEqual, 0))) {
+    return 1;
+  }
   QNN_LOG_INFO("[G2G] MHA optimization (Attn)");
-
   auto attn_reshape_op = ops[start_index + kAttnReshape];
   auto attn_not_equal_op = ops[start_index + kAttnNotEqual];
-  // NotEqual
+  // Count the operations that have NotEqual as their source op
   const auto& reshape_in = attn_reshape_op.GetInputTensor(0);
   size_t num_out = GetOpCountWithInput(ops, QnnOpCode::kElementWiseSelect,
                                        attn_not_equal_op.GetOutputTensor(0));
-  QNN_LOG_INFO(
-      "[G2G] MHA optimization (Attn) - NotEqual op with %u output tensors",
-      num_out);
   if (num_out <= 0) {
-    QNN_LOG_WARNING("[G2G] Rolling back to the original graph.", num_out);
     return 1;
   }
   // Handle masking input
@@ -485,8 +484,7 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
   not_equal_out_dims.erase(not_equal_out_dims.begin() + 1);
   auto& select_mask =
       tensor_pool.CloneNativeTensorFrom(not_equal_out, not_equal_out_dims);
-  // [NotEqual] Equal -> Cast -> Mul
-  // element == 0 will become -inf in the next Mul output
+  // NotEqual as Equal -> Cast -> Mul
   const auto& zero_tensor = attn_not_equal_op.GetInputTensor(1);
   auto equal_op =
       BuildElementwiseEqualOp(tensor_pool,
@@ -504,10 +502,17 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
             std::back_inserter(new_ops));
 
   const auto& select_const = ops[start_index + kAttnSelect].GetInputTensor(2);
+  // TODO(jiunkaiy): Remove this magic number (-65472) after HTP resolves
+  // accuracy issues.
+  float mul_const_value =
+      std::max(select_const.GetStaticTensorData<float>().value()[0], -65472.f);
+  QNN_LOG_INFO("[G2G] mask value %f", mul_const_value);
+  auto& mul_const = tensor_pool.CreateStaticTensor(
+      select_const.GetDataType(), select_const.GetQuantParams(),
+      select_const.GetDims(), select_const.GetTensorBytes(), &mul_const_value);
   auto& add_in = tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
-  auto mul_select = BuildElementwiseMulOp(
-      tensor_pool, {mul_in, const_cast<::qnn::TensorWrapper&>(select_const)},
-      {add_in});
+  auto mul_select =
+      BuildElementwiseMulOp(tensor_pool, {mul_in, mul_const}, {add_in});
   std::move(mul_select.begin(), mul_select.end(), std::back_inserter(new_ops));
 
   size_t select_index = 0;
@@ -515,12 +520,10 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     select_index = GetOpIndexWithInput(ops, QnnOpCode::kElementWiseSelect,
                                        attn_not_equal_op.GetOutputTensor(0),
                                        select_index + 1);
-    QNN_LOG_WARNING("[G2G] Select %u: ops[%u]", output_index, select_index);
     size_t matmul_qk_index = GetOpIndexWithOutput(
         ops, QnnOpCode::kMatMul, ops[select_index].GetInputTensor(1));
-    QNN_LOG_WARNING("[G2G] MatMul_QK %u: ops[%u]", output_index,
-                    matmul_qk_index);
-    // Begin: MHA->SHA
+
+    // MHA->SHA
     // QKV Unpack
     const auto& mul_q_in = ops[matmul_qk_index + kAttnMulQ].GetInputTensor(0);
     auto q_unpack_dims = mul_q_in.GetDims();
@@ -541,7 +544,8 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
     auto mha_out_dims = mha_out.GetDims();
     if (!(num_heads == k_unpack_dims[2] && num_heads == v_unpack_dims[2] &&
           num_heads == mha_out_dims[2])) {
-      printf("[G2G] num_heads match...\n");
+      QNN_LOG_WARNING(
+          "[G2G] Num heads mismatches. Rolling back to the original graph.");
       return 1;
     }
     q_unpack_dims.erase(q_unpack_dims.begin() + 2);
@@ -665,7 +669,6 @@ size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
       return 1;
     }
     new_ops.clear();
-    // End: MHA->SHA
   }
   return 1;
 }
