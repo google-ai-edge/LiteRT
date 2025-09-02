@@ -525,7 +525,7 @@ cc_library(
         "@flatbuffers//:runtime_cc",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_model",
         "//tflite:model_builder",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
