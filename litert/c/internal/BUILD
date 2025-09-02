@@ -76,6 +76,8 @@ cc_library(
         "//litert/runtime:accelerator",
         "//litert/runtime:accelerator_registry",
     ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_test(
@@ -138,7 +140,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer_registry",
     ],
-    alwayslink = True,
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 # Collection of headers for dispatch APIs.

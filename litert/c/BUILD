@@ -16,10 +16,17 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "export_lrt_runtime_only_linkopt", "export_lrt_runtime_only_script", "export_lrt_tflite_runtime_linkopt", "export_lrt_tflite_runtime_script")
+load(
+    "//litert/build_common:litert_build_defs.bzl",
+    # copybara:uncomment "copy_file",
+    "export_lrt_runtime_only_linkopt",
+    "export_lrt_runtime_only_script",
+    "export_lrt_tflite_runtime_linkopt",
+    "export_lrt_tflite_runtime_script",
+)
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "litert_metal_linkopts", "litert_metal_opts")
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
-# copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
+# copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_dylib", "macos_unit_test")
 
 # copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
@@ -102,6 +109,15 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_environment_header",
+    hdrs = ["litert_environment.h"],
+    deps = [
+        ":litert_common",
+        ":litert_environment_options",
+    ],
+)
+
+cc_library(
     name = "litert_environment",
     srcs = ["litert_environment.cc"],
     hdrs = ["litert_environment.h"],
@@ -114,6 +130,8 @@ cc_library(
         "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
     ],
+    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_library(
@@ -587,17 +605,30 @@ cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
     shared_lib_name = "libLiteRtRuntimeCApi.so",
-    user_link_flags = export_lrt_runtime_only_linkopt() + select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-            "-Wl,-soname=libLiteRtRuntimeCApi.so",
-        ],
-        "@org_tensorflow//tensorflow:ios": [],
-        "@org_tensorflow//tensorflow:macos": [],
-        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
+    user_link_flags = export_lrt_runtime_only_linkopt() + [
+        "-Wl,-soname=libLiteRtRuntimeCApi.so",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
 )
+
+# copybara:uncomment_begin(google-only)
+# macos_dylib(
+#     name = "build_litert_runtime_c_api_dylib",
+#     exported_symbols_lists = export_lrt_runtime_only_script(),
+#     linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
+#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+#     deps = LITERT_C_API_COMMON_DEPS,
+# )
+#
+# copy_file(
+#     name = "litert_runtime_c_api_dylib",
+#     src = ":build_litert_runtime_c_api_dylib",
+#     target = "libLiteRtRuntimeCApi.dylib",
+# )
+# copybara:uncomment_end
 
 # Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 cc_shared_library(
@@ -605,13 +636,8 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-            "-Wl,-soname=libLiteRtRuntimeCApi.so",
-        ],
-        "@org_tensorflow//tensorflow:ios": [],
-        "@org_tensorflow//tensorflow:macos": [],
-        "//conditions:default": ["-Wl,-soname=libLiteRtRuntimeCApi.so"],
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
     }),
     deps = LITERT_C_API_COMMON_DEPS + [
         "//tflite/c:c_api",
@@ -623,6 +649,16 @@ cc_shared_library(
 filegroup(
     name = "libLiteRtRuntimeCApi.so",
     srcs = [":litert_runtime_c_api_so"],
+)
+
+# Select libLiteRtRuntimeCApi.so or libLiteRtRuntimeCApi.dylib depending on the platform.
+filegroup(
+    name = "litert_runtime_c_api_so_or_dylib",
+    srcs = select({
+        "@org_tensorflow//tensorflow:ios": [":litert_runtime_c_api_dylib"],
+        "@org_tensorflow//tensorflow:macos": [":litert_runtime_c_api_dylib"],
+        "//conditions:default": [":litert_runtime_c_api_so"],
+    }),
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
@@ -637,7 +673,7 @@ cc_library(
     name = "litert_runtime_c_api_shared_lib",
     srcs = select({
         ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_so"],
+        "//conditions:default": [":litert_runtime_c_api_so_or_dylib"],
     }),
     hdrs = glob(["*.h"]) + [
         "//litert/c/internal:internal_headers",
@@ -646,6 +682,11 @@ cc_library(
         "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",  # Needed for litert/c/litert_model.h
         "//tflite/core/c:headers_filegroup",
     ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:ios": ["-Wl,-rpath,@loader_path"],
+        "@org_tensorflow//tensorflow:macos": ["-Wl,-rpath,@loader_path"],
+        "//conditions:default": [],
+    }),
     linkstatic = 1,
     deps = [
         # only depend on headers

@@ -60,7 +60,6 @@ cc_library(
         "//litert/cc:litert_opaque_options",
     ] + select({
         "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_gpu_options"],
-        "@org_tensorflow//tensorflow:macos": ["//litert/c/options:litert_gpu_options"],
         "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_gpu_options"],
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",

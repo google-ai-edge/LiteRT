@@ -14,7 +14,6 @@
 
 #include "litert/runtime/accelerators/auto_registration.h"
 
-#include <array>
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -51,33 +50,42 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   // The following is list of plugins that are loaded in the order they are
   // listed. The first plugin that is loaded and registered successfully will
   // be used.
+#if defined(__APPLE__)
+#define SO_EXT ".dylib"
+#else
+#define SO_EXT ".so"
+#endif
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
-    "libLiteRtGpuAccelerator.so",
+    "libLiteRtGpuAccelerator" SO_EXT,
 #if LITERT_HAS_OPENCL_SUPPORT
-    "libLiteRtOpenClAccelerator.so",
+    "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
-    "libLiteRtMetalAccelerator.so",
+    "libLiteRtMetalAccelerator" SO_EXT,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
-    "libLiteRtWebGpuAccelerator.so",
+    "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_VULKAN_SUPPORT
-    "libLiteRtVulkanAccelerator.so",
+    "libLiteRtVulkanAccelerator" SO_EXT,
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
   bool gpu_accelerator_registered = false;
   for (auto plugin_path : kGpuAcceleratorLibs) {
     LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).", plugin_path.data());
-    if (auto registration = RegisterSharedObjectAccelerator(
-            environment, plugin_path, "LiteRtRegisterGpuAccelerator");
-        registration.HasValue()) {
+    auto registration = RegisterSharedObjectAccelerator(
+        environment, plugin_path, "LiteRtRegisterGpuAccelerator");
+    if (registration.HasValue()) {
       LITERT_LOG(LITERT_INFO,
                  "Dynamically loaded GPU accelerator(%s) registered.",
                  plugin_path.data());
       gpu_accelerator_registered = true;
       break;
     }
+    LITERT_LOG(LITERT_DEBUG, "Failed to load GPU accelerator(%s): %s, %s.",
+               plugin_path.data(),
+               LiteRtGetStatusString(registration.Error().Status()),
+               registration.Error().Message().data());
   }
   if (!gpu_accelerator_registered) {
     if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
