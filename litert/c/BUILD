@@ -709,26 +709,26 @@ cc_library(
 
 exports_files(srcs = glob(["litert_*.h"]))
 
-objc_library(
-    name = "litert_tensor_buffer_test_library",
-    testonly = True,
-    srcs = ["litert_tensor_buffer_test.mm"],
-    deps = [
-        ":litert_any",
-        ":litert_common",
-        ":litert_environment",
-        ":litert_environment_options",
-        ":litert_model",
-        ":litert_tensor_buffer",
-        ":litert_tensor_buffer_types",
-        "//litert/cc:litert_any",
-        "//litert/cc:litert_layout",
-        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//third_party/apple_frameworks:XCTest",
-    ],
-)
-
 # copybara:uncomment_begin(google-only)
+# objc_library(
+#     name = "litert_tensor_buffer_test_library",
+#     testonly = True,
+#     srcs = ["litert_tensor_buffer_test.mm"],
+#     deps = [
+#         ":litert_any",
+#         ":litert_common",
+#         ":litert_environment",
+#         ":litert_environment_options",
+#         ":litert_model",
+#         ":litert_tensor_buffer",
+#         ":litert_tensor_buffer_types",
+#         "//third_party/apple_frameworks:XCTest",
+#         "//litert/cc:litert_any",
+#         "//litert/cc:litert_layout",
+#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+#     ],
+# )
+#
 # macos_unit_test(
 #     name = "litert_tensor_buffer_test_macos",
 #     minimum_os_version = LITERT_MIN_MACOS_VERSION,

@@ -1142,33 +1142,33 @@ exports_files(glob([
     "*.cc",
 ]))
 
-objc_library(
-    name = "LitertTensorBufferTestLibrary",
-    testonly = True,
-    srcs = ["litert_tensor_buffer_test.mm"],
-    deps = [
-        ":litert_environment",
-        ":litert_event",
-        ":litert_expected",
-        ":litert_handle",
-        ":litert_layout",
-        ":litert_macros",
-        ":litert_model",
-        ":litert_platform_support",
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_environment_options",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/runtime:tensor_buffer",
-        "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
-        "//tflite/delegates/gpu/metal:metal_device",
-        "//third_party/apple_frameworks:XCTest",
-    ],
-)
-
 # copybara:uncomment_begin(google-only)
+# objc_library(
+#     name = "LitertTensorBufferTestLibrary",
+#     testonly = True,
+#     srcs = ["litert_tensor_buffer_test.mm"],
+#     deps = [
+#         ":litert_environment",
+#         ":litert_event",
+#         ":litert_expected",
+#         ":litert_handle",
+#         ":litert_layout",
+#         ":litert_macros",
+#         ":litert_model",
+#         ":litert_platform_support",
+#         ":litert_tensor_buffer",
+#         "//third_party/apple_frameworks:XCTest",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c:litert_model_types",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/runtime:tensor_buffer",
+#         "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
+#         "//tflite/delegates/gpu/metal:metal_device",
+#     ],
+# )
+#
 # objc_library(
 #     name = "litert_compiled_model_metal_test",
 #     testonly = True,
