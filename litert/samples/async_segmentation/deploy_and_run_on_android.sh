@@ -129,7 +129,7 @@ DEVICE_NPU_LIBRARY_DIR="${DEVICE_BASE_DIR}/npu"
 HOST_SHADER_DIR="${PACKAGE_LOCATION}/shaders"
 HOST_TEST_IMAGE_DIR="${PACKAGE_LOCATION}/test_images"
 HOST_MODEL_DIR="${PACKAGE_LOCATION}/models"
-HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert/litert/runtime/accelerators/gpu/"
+HOST_GPU_LIBRARY_DIR="${BINARY_BUILD_PATH}/${PACKAGE_LOCATION}/${PACKAGE_NAME}.runfiles/litert_gpu/jni/arm64-v8a/"
 
 # Set NPU library path based on the --npu_dispatch_lib_path flag
 if [[ -z "$HOST_NPU_LIB" ]]; then
