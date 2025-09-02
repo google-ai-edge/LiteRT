@@ -20,10 +20,10 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
-#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -164,22 +164,26 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
 // TODO (abhirs): Revisit this struct after updating the compiler api wrapper to
 // return multiple bytecodes.
 struct LiteRtCompiledResultT {
-  std::string byte_code;
+  std::vector<std::string> byte_codes;
   std::vector<std::string> per_op_data;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
     const void** byte_code, size_t* byte_code_size) {
-  if (!compiled_result || !byte_code || !byte_code_size ||
-      (byte_code_idx != 0)) {
+  if (!compiled_result || !byte_code || !byte_code_size) {
     LITERT_LOG(LITERT_ERROR, "%s",
-               "compiled_result or byte_code or byte_code_size"
-               "or byte_code_idx is nullptr");
+               "compiled_result or byte_code or byte_code_size is nullptr");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *byte_code = compiled_result->byte_code.data();
-  *byte_code_size = compiled_result->byte_code.size();
+  if (byte_code_idx >= compiled_result->byte_codes.size()) {
+    LITERT_LOG(LITERT_ERROR, "byte_code_idx (%d) is out of bounds (size %d)",
+               static_cast<int>(byte_code_idx),
+               static_cast<int>(compiled_result->byte_codes.size()));
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *byte_code = compiled_result->byte_codes[byte_code_idx].data();
+  *byte_code_size = compiled_result->byte_codes[byte_code_idx].size();
   return kLiteRtStatusOk;
 }
 
@@ -190,7 +194,7 @@ LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
                "compiled_result or num_byte_code is nullptr");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *num_byte_code = 1;
+  *num_byte_code = compiled_result->byte_codes.size();
   return kLiteRtStatusOk;
 }
 
@@ -209,7 +213,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = call_idx;
 
   return kLiteRtStatusOk;
 }
@@ -304,6 +308,14 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   return kLiteRtStatusOk;
 }
 
+void MakeUniqueSignatureKeysPerSubgraph(LiteRtModelT* model,
+                                        size_t num_subgraphs,
+                                        char** signature_keys) {
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    signature_keys[i] = strdup(absl::StrCat("subgraph_", i, "_fn").c_str());
+  }
+}
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -313,24 +325,30 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   }
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
+
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
-  if (num_partitions > 1) {
-    LITERT_LOG(
-        LITERT_ERROR,
-        "Compiler plugin does not support multiple subgraphs or multisignature "
-        "models");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
 
   // Serialize model.
   LITERT_LOG(LITERT_INFO, "%s", "Serializing model");
   litert::OwningBufferRef buf;
   auto [data, size, offset] = buf.GetWeak();
   const auto opts = litert::SerializationOptions::Defaults();
-  LITERT_RETURN_IF_ERROR(
-      LiteRtSerializeModel(partitions, &data, &size, &offset, false, opts));
+  char** signatures =
+      static_cast<char**>(calloc(num_partitions, sizeof(char*)));
+
+  MakeUniqueSignatureKeysPerSubgraph(model.Get(), num_partitions, signatures);
+  LITERT_RETURN_IF_ERROR(LiteRtSerializeModelWithSignatures(
+      partitions, &data, &size, &offset, false, signatures, num_partitions,
+      opts));
+
+  for (size_t i = 0; i < num_partitions; ++i) {
+    if (signatures[i] != nullptr) {
+      free(signatures[i]);  // Free each individual signature.
+    }
+  }
+  free(signatures);
   // TODO(abhirs): add support for serializing subgraphs
 
   absl::string_view buffer_str(reinterpret_cast<const char*>(buf.Data()),
@@ -390,25 +408,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   absl::string_view soc_model_view(valid_soc_model);
   absl::string_view model_buffer_view(buffer_str);
 
-  char* compiled_code_data = nullptr;
-  size_t compiled_code_size = 0;
+  char** compiled_code_data = nullptr;
+  size_t* compiled_code_sizes = nullptr;
+  size_t num_bytecodes = 0;
   char* error_message = nullptr;
 
   // Ensure memory allocated by the C API is freed.
-  absl::Cleanup error_cleanup = [&] {
-    if (error_message) {
-      api.free_error_message(error_message);
-    }
-  };
+  absl::Cleanup error_cleanup = [&] { api.free_error_message(error_message); };
   absl::Cleanup code_cleanup = [&] {
-    if (compiled_code_data) {
-      api.free_compiled_code(compiled_code_data);
-    }
+    api.free_compiled_code(compiled_code_data, compiled_code_sizes,
+                           num_partitions);
   };
-  auto compile_status =
-      api.compile(model_buffer_view.data(), model_buffer_view.size(),
-                  soc_model_view.data(), soc_model_view.size(), opaque_options,
-                  &compiled_code_data, &compiled_code_size, &error_message);
+  auto compile_status = api.compile(
+      model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
+      soc_model_view.size(), opaque_options, &compiled_code_data,
+      &compiled_code_sizes, &num_bytecodes, &error_message);
 
   if (!compile_status) {
     std::string error_str = "Failed to compile model";
@@ -422,16 +436,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Result
   auto result = std::make_unique<LiteRtCompiledResultT>();
 
-  if (compiled_code_data && compiled_code_size > 0) {
-    result->byte_code.assign(compiled_code_data, compiled_code_size);
-  } else {
+  if (num_bytecodes != num_partitions) {
     LITERT_LOG(LITERT_ERROR,
-               "Compilation reported OK but returned no byte code.");
+               "Compiler returned unexpected number of bytecodes.Expected: "
+               "%d, Actual: %d",
+               num_partitions, num_bytecodes);
     return kLiteRtStatusErrorRuntimeFailure;
   }
 
+  result->byte_codes.resize(num_partitions);
   // Generate per_op_data
   for (auto i = 0; i < num_partitions; ++i) {
+    result->byte_codes[i].assign(compiled_code_data[i], compiled_code_sizes[i]);
     result->per_op_data.emplace_back(
         absl::StrFormat("Partition_%d", static_cast<int>(i)));
   }
