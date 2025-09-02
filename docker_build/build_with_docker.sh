@@ -46,12 +46,22 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
   echo "To remove it and start fresh, run: docker rm -f ${CONTAINER_NAME}"
   docker start -ai ${CONTAINER_NAME}
 else
+  echo "Running build in new Docker container..."
+  # If host is macOS on Apple Silicon, disable SVE for Bazel JVM inside container
+  HOST_OS=$(uname -s || echo unknown)
+  HOST_ARCH=$(uname -m || echo unknown)
+  DISABLE_SVE_ARG=()
+  if [ "$HOST_OS" = "Darwin" ] && { [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; }; then
+    DISABLE_SVE_ARG=(-e DISABLE_SVE_FOR_BAZEL=1)
+  fi
+
   # Relax seccomp to allow JVM feature probes and other syscalls in container
   docker run --name ${CONTAINER_NAME} \
     --security-opt seccomp=unconfined \
     --user $(id -u):$(id -g) \
     -e HOME=/litert_build \
     -e USER=$(id -un) \
+    "${DISABLE_SVE_ARG[@]}" \
     -v $(pwd)/..:/litert_build \
     litert_build_env
 fi

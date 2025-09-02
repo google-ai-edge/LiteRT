@@ -160,4 +160,21 @@ exec "$@"\n\
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Immediately execute a build.
-CMD ["bash", "-c", "./docker_build/verify_android_env.sh && USE_BAZEL_VERSION=7.4.1 bazel build //litert/runtime:metrics"]
+# Add a wrapper script to optionally disable SVE for Bazel's host JVM on AArch64
+RUN echo '#!/bin/bash\n\
+set -euo pipefail\n\
+\n\
+./docker_build/verify_android_env.sh\n\
+\n\
+EXTRA_STARTUP=""\n\
+arch=$(uname -m || echo unknown)\n\
+if [ "${DISABLE_SVE_FOR_BAZEL:-}" = "1" ] && { [ "$arch" = "aarch64" ] || [ "$arch" = "arm64" ]; }; then\n\
+  EXTRA_STARTUP="--host_jvm_args=-XX:UseSVE=0"\n\
+  echo "[run_build] AArch64 detected; disabling SVE for Bazel host JVM" >&2\n\
+fi\n\
+\
+bazel ${EXTRA_STARTUP} build //litert/runtime:metrics\n\
+' > /run_build.sh && chmod +x /run_build.sh
+
+# Default command runs the wrapper
+CMD ["/run_build.sh"]
