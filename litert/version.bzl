@@ -8,7 +8,7 @@ LITERT_FULL_VERSION = "1.5.0"
 #
 # The patched version should be bumped after every release during
 # alpha. Once leaving alpha, the version is 2.1.0.
-LITERT_EXPERIMENTAL_VERSION = "2.0.2a1"
+LITERT_EXPERIMENTAL_VERSION = "2.0.3a1"
 
 # The next version of LiteRT SDK for Qualcomm.
 # The minor version code should be bumped after every release.
