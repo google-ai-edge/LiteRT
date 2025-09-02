@@ -545,6 +545,7 @@ test:bulk_test_cpu --build_tests_only
 # TODO: b/397625618 Enable bzlmod
 common --noenable_bzlmod
 
+# BEGIN-INTERNAL
 # Flags for tensorflow source rules to use local_repository rather than http_archive.
 # NOTE: due to bazel caching, when switching from http_archive to local_repository,
 # do a bazel clean --expunge --async before building or use the
@@ -553,3 +554,4 @@ build:use_local_tf --action_env=USE_LOCAL_TF=true
 build:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
 test:use_local_tf --action_env=USE_LOCAL_TF=true
 test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
+# END-INTERNAL
