@@ -47,14 +47,12 @@ if [ ! -d /root_dir ]; then
     tflite-builder
   exit 0
 else
+  # Running inside docker container
+  cd /root_dir
+
   export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
   export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
-
-
-  if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-    # Running inside docker container
-    cd /third_party_tensorflow
 
     # Run configure
     configs=(
@@ -68,12 +66,9 @@ else
       'N'
     )
     printf '%s\n' "${configs[@]}" | ./configure
-    cp .tf_configure.bazelrc /root_dir
-  fi
 
   ${CI_BUILD_PYTHON} -m pip install pip setuptools wheel
 
-  cd /root_dir
   if [[ "${TEST_WHEEL}" == "true" ]]; then
     # Source test_pip_package.sh to get environment variables.
     source /script_dir/test_pip_package.sh

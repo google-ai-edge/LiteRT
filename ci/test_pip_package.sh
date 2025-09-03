@@ -72,6 +72,20 @@ function initialize_pip_wheel_environment {
 
 }
 
+function configure_litert_environment {
+  configs=(
+    '/usr/bin/python3'
+    '/usr/lib/python3/dist-packages'
+    'N'
+    'N'
+    'Y'
+    '/usr/lib/llvm-18/bin/clang'
+    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
+    'N'
+  )
+  printf '%s\n' "${configs[@]}" | ./configure
+}
+
 function install_sdk {
   local qc_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
   SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${qc_dist_pkg?} --ignore-installed
@@ -121,6 +135,7 @@ function test_ai_edge_litert {
   echo "===== Test AI Edge Litert ====="
 
   create_venv
+  configure_litert_environment
   initialize_pip_wheel_environment
   ./ci/build_pip_package_with_bazel.sh
   install_sdk

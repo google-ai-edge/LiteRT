@@ -25,4 +25,4 @@ cmake-build-debug/
 /bazel-*
 .vscode/
 *.whl
-/.tf_configure.bazelrc
+/.litert_configure.bazelrc

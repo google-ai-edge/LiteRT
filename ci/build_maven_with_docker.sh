@@ -41,6 +41,7 @@ if [ ! -d /root_dir ]; then
   exit 0
 else
   # Running inside docker container, download the SDK first.
+  cd /root_dir
   licenses=('y' 'y' 'y' 'y' 'y' 'y' 'y')
   printf '%s\n' "${licenses[@]}" | sdkmanager --licenses
   sdkmanager \
@@ -48,25 +49,20 @@ else
     "platform-tools" \
     "platforms;android-${ANDROID_API_LEVEL}"
 
-  if [[ "${USE_LOCAL_TF}" == "true" ]]; then
-    cd /third_party_tensorflow
-    # Run configure.
-    configs=(
-      '/usr/bin/python3'
-      '/usr/lib/python3/dist-packages'
-      'N'
-      'N'
-      'Y'
-      '/usr/lib/llvm-18/bin/clang'
-      '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-      'y'
-      '/android/sdk'
-    )
-    printf '%s\n' "${configs[@]}" | ./configure
-    cp .tf_configure.bazelrc /root_dir
-  fi
+  # Run configure.
+  configs=(
+    '/usr/bin/python3'
+    '/usr/lib/python3/dist-packages'
+    'N'
+    'N'
+    'Y'
+    '/usr/lib/llvm-18/bin/clang'
+    '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
+    'y'
+    '/android/sdk'
+  )
+  printf '%s\n' "${configs[@]}" | ./configure
 
-  cd /root_dir
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
   bash /script_dir/build_android_package.sh
 
