@@ -199,6 +199,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("gpu_backend",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("allow_fp16", BenchmarkParam::Create<bool>(true));
     default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
     return default_params;
@@ -328,6 +329,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "gpu_backend", &params_,
         "GPU backend to use when using GPU accelerator."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "allow_fp16", &params_, "Whether to allow FP16."));
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "result_file_path", &params_,
         "Path to save the benchmark result in binary proto format."));

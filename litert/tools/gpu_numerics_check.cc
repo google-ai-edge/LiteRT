@@ -44,7 +44,7 @@
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
 ABSL_FLAG(float, epsilon, 1e-4f,
-          "Threshold value for npu / cpu inference comparison");
+          "Threshold value for gpu / cpu inference comparison");
 ABSL_FLAG(bool, check_element_type, false,
           "Whether to check the element type of the output buffers.");
 ABSL_FLAG(std::string, gpu_backend, "opencl",
@@ -138,7 +138,7 @@ Expected<std::vector<TensorBuffer>> CreateOutputBuffers(
 
 // Compares a single pair of output buffers and prints the results.
 Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
-                                         TensorBuffer& npu_buffer,
+                                         TensorBuffer& gpu_buffer,
                                          size_t buffer_index, float epsilon) {
   std::vector<std::pair<float, int>> all_diffs;
   const int kMaxPrint = 20;
@@ -148,15 +148,15 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   float mean_diff = 0;
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_type, cpu_buffer.TensorType());
-  LITERT_ASSIGN_OR_RETURN(auto npu_type, npu_buffer.TensorType());
+  LITERT_ASSIGN_OR_RETURN(auto gpu_type, gpu_buffer.TensorType());
   if (absl::GetFlag(FLAGS_check_element_type)) {
-    if (cpu_type.ElementType() != npu_type.ElementType()) {
+    if (cpu_type.ElementType() != gpu_type.ElementType()) {
       return Error(kLiteRtStatusErrorInvalidArgument,
-                   "Element type mismatch between CPU and NPU.");
+                   "Element type mismatch between CPU and GPU.");
     }
     LITERT_ASSIGN_OR_RETURN(size_t cpu_size, cpu_buffer.Size());
-    LITERT_ASSIGN_OR_RETURN(size_t npu_size, npu_buffer.Size());
-    if (cpu_size != npu_size) {
+    LITERT_ASSIGN_OR_RETURN(size_t gpu_size, gpu_buffer.Size());
+    if (cpu_size != gpu_size) {
       return Error(
           kLiteRtStatusErrorInvalidArgument,
           absl::StrFormat("Size mismatch for output buffer %d", buffer_index));
@@ -167,10 +167,10 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   // dimensions are the same.
   size_t total_elements = 1;
   const auto& cpu_layout = cpu_type.Layout();
-  const auto& npu_layout = npu_type.Layout();
+  const auto& gpu_layout = gpu_type.Layout();
   for (size_t d = 0; d < cpu_layout.Rank(); ++d) {
     total_elements *= cpu_layout.Dimensions()[d];
-    if (cpu_layout.Dimensions()[d] != npu_layout.Dimensions()[d]) {
+    if (cpu_layout.Dimensions()[d] != gpu_layout.Dimensions()[d]) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    absl::StrFormat("Dimension mismatch for output buffer %d",
                                    buffer_index));
@@ -224,15 +224,15 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   };
 
   std::vector<float> cpu_data(total_elements);
-  std::vector<float> npu_data(total_elements);
+  std::vector<float> gpu_data(total_elements);
   get_val(cpu_buffer, cpu_data);
-  get_val(npu_buffer, npu_data);
+  get_val(gpu_buffer, gpu_data);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     const float abs_diff =
-        fabs(cpu_data[element_index] - npu_data[element_index]);
+        fabs(cpu_data[element_index] - gpu_data[element_index]);
     const double diff_square =
-        (cpu_data[element_index] - npu_data[element_index]) *
-        (cpu_data[element_index] - npu_data[element_index]);
+        (cpu_data[element_index] - gpu_data[element_index]) *
+        (cpu_data[element_index] - gpu_data[element_index]);
     mean_squared_error += diff_square;
     mean_diff += abs_diff;
 
@@ -241,8 +241,8 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
       total_different++;
       if (printed < kMaxPrint) {
         std::cout << "Element #" << element_index << ": CPU value - "
-                  << cpu_data[element_index] << ", NPU value - "
-                  << npu_data[element_index] << ", abs diff - " << abs_diff
+                  << cpu_data[element_index] << ", GPU value - "
+                  << gpu_data[element_index] << ", abs diff - " << abs_diff
                   << std::endl;
         printed++;
       }
@@ -266,7 +266,7 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
     std::cout << "Top " << ii << " diff: " << all_diffs[reversed_index].first
               << " @ element #: " << all_diffs[reversed_index].second
               << ", CPU val: " << cpu_data[all_diffs[reversed_index].second]
-              << " , NPU val: " << npu_data[all_diffs[reversed_index].second]
+              << " , GPU val: " << gpu_data[all_diffs[reversed_index].second]
               << std::endl;
   }
 
@@ -280,19 +280,19 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
 
 Expected<void> CompareOutputBuffers(
     std::vector<TensorBuffer>& cpu_output_buffers,
-    std::vector<TensorBuffer>& npu_output_buffers) {
-  if (cpu_output_buffers.size() != npu_output_buffers.size()) {
+    std::vector<TensorBuffer>& gpu_output_buffers) {
+  if (cpu_output_buffers.size() != gpu_output_buffers.size()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Number of output buffers mismatch between CPU and NPU.");
+                 "Number of output buffers mismatch between CPU and GPU.");
   }
 
   float epsilon = absl::GetFlag(FLAGS_epsilon);
   size_t num_output_buffers = cpu_output_buffers.size();
   for (size_t i = 0; i < num_output_buffers; ++i) {
     auto& cpu_buffer = cpu_output_buffers[i];
-    auto& npu_buffer = npu_output_buffers[i];
+    auto& gpu_buffer = gpu_output_buffers[i];
     LITERT_RETURN_IF_ERROR(
-        CompareSingleOutputBuffer(cpu_buffer, npu_buffer, i, epsilon));
+        CompareSingleOutputBuffer(cpu_buffer, gpu_buffer, i, epsilon));
   }
   return {};
 }
@@ -330,7 +330,7 @@ Expected<void> RunModel() {
       CreateAndFillInputBuffers(compiled_model_cpu, signature_index,
                                 input_scale));
   LITERT_ASSIGN_OR_RETURN(
-      auto npu_input_buffers,
+      auto gpu_input_buffers,
       CreateAndFillInputBuffers(compiled_model_gpu, signature_index,
                                 input_scale));
 
@@ -346,7 +346,7 @@ Expected<void> RunModel() {
   LITERT_RETURN_IF_ERROR(compiled_model_cpu.Run(
       signature_index, cpu_input_buffers, cpu_output_buffers));
   LITERT_RETURN_IF_ERROR(compiled_model_gpu.Run(
-      signature_index, npu_input_buffers, gpu_output_buffers));
+      signature_index, gpu_input_buffers, gpu_output_buffers));
 
   // Compare output buffers
   LITERT_RETURN_IF_ERROR(
