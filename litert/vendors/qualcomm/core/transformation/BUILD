@@ -29,6 +29,7 @@ cc_test(
         "//litert/vendors/qualcomm/core/builders:op_builder",
         "//litert/vendors/qualcomm/core/builders:quantize_op_builder",
         "//litert/vendors/qualcomm/core/builders:reshape_op_builder",
+        "//litert/vendors/qualcomm/core/builders:select_op_builder",
         "//litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
         "//litert/vendors/qualcomm/core/builders:split_op_builder",
