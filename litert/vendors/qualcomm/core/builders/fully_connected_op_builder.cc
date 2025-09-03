@@ -10,6 +10,7 @@
 
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnOpDef.h"  // from @qairt
@@ -32,7 +33,32 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
   fully_connected_op.AddInputTensor(weight_tensor);
   if (inputs.size() - 1 >= kBiasIdx) {
     TensorWrapper& bias_tensor = inputs[kBiasIdx];
-    fully_connected_op.AddInputTensor(bias_tensor);
+    if (bias_tensor.IsTensorStatic() &&
+        bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
+      const auto original_data = bias_tensor.GetStaticTensorData<int64_t>();
+      if (!original_data.has_value()) {
+        QNN_LOG_ERROR(
+            "Failed to get static tensor data when convert bias tensor from "
+            "int64 to int32.");
+        return {};
+      }
+      const auto num_elements = bias_tensor.GetTensorNumElements();
+      std::vector<int32_t> converted_data(num_elements);
+      for (size_t i = 0; i < num_elements; ++i) {
+        converted_data[i] = static_cast<int32_t>((*original_data)[i]);
+      }
+      auto& converted_bias_tensor = tensor_pool.CreateStaticTensor(
+          QNN_DATATYPE_SFIXED_POINT_32, bias_tensor.GetQuantParams(),
+          bias_tensor.GetDims(),
+          num_elements * sizeof(decltype(converted_data)::value_type),
+          converted_data.data());
+
+      fully_connected_op.AddInputTensor(converted_bias_tensor);
+      QNN_LOG_WARNING(
+          "Convert bias tensor in fully connected op from int64 to int32.");
+    } else {
+      fully_connected_op.AddInputTensor(bias_tensor);
+    }
   }
 
   TensorWrapper& output_tensor = outputs[0];
