@@ -81,6 +81,7 @@ EXCLUDED_TARGETS=(
         "-//tflite/java/..."
         "-//tflite/tools/benchmark/experimental/..."
         "-//tflite/delegates/gpu/..."
+        "-//tflite/delegates/nnapi/..."
         # TODO: (b/410925271) - Targets not migrated to pywrap_rules yet
 )
 
