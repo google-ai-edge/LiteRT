@@ -1,0 +1,140 @@
+// Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <memory>
+
+#include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/test/matchers.h"
+#include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
+
+namespace litert::example {
+namespace {
+
+struct DeviceDeleter {
+  explicit DeviceDeleter(LiteRtDispatchInterface& api) : api(api) {}
+
+  DeviceDeleter(const DeviceDeleter&) noexcept = default;
+  DeviceDeleter(DeviceDeleter&&) noexcept = default;
+
+  void operator()(LiteRtDispatchDeviceContext device_context) {
+    api.device_context_destroy(device_context);
+  }
+
+  LiteRtDispatchInterface& api;
+};
+
+using DevicePtr = std::unique_ptr<LiteRtDispatchDeviceContextT, DeviceDeleter>;
+
+DevicePtr CreateDevicePtr(LiteRtDispatchInterface& api,
+                          LiteRtDispatchDeviceContext device_context) {
+  return DevicePtr(device_context, DeviceDeleter(api));
+}
+
+struct InvocationContextDeleter {
+  explicit InvocationContextDeleter(LiteRtDispatchInterface& api) : api(api) {}
+
+  InvocationContextDeleter(const InvocationContextDeleter&) noexcept = default;
+  InvocationContextDeleter(InvocationContextDeleter&&) noexcept = default;
+
+  void operator()(LiteRtDispatchInvocationContext invocation_context) {
+    api.invocation_context_destroy(invocation_context);
+  }
+
+  LiteRtDispatchInterface& api;
+};
+
+using InvocationContextPtr =
+    std::unique_ptr<LiteRtDispatchInvocationContextT, InvocationContextDeleter>;
+
+InvocationContextPtr CreateInvocationContextPtr(
+    LiteRtDispatchInterface& api,
+    LiteRtDispatchInvocationContext invocation_context) {
+  return InvocationContextPtr(invocation_context,
+                              InvocationContextDeleter(api));
+}
+
+class ExampleDispatchTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    LITERT_ASSERT_OK(LiteRtDispatchGetApi(&api_));
+    ASSERT_NE(api_.interface, nullptr);
+  }
+
+  LiteRtDispatchInterface& Api() { return *api_.interface; }
+
+ private:
+  LiteRtDispatchApi api_;
+};
+
+TEST_F(ExampleDispatchTest, GetVendorId) {
+  const char* vendor_id;
+  LITERT_ASSERT_OK(Api().get_vendor_id(&vendor_id));
+  EXPECT_STREQ(vendor_id, "Example");
+}
+
+TEST_F(ExampleDispatchTest, GetBuildId) {
+  const char* build_id;
+  LITERT_ASSERT_OK(Api().get_build_id(&build_id));
+  EXPECT_STREQ(build_id, "ExampleBuild");
+}
+
+TEST_F(ExampleDispatchTest, GetCapabilities) {
+  int capabilities;
+  LITERT_ASSERT_OK(Api().get_capabilities(&capabilities));
+  EXPECT_EQ(capabilities, kLiteRtDispatchCapabilitiesBasic);
+}
+
+TEST_F(ExampleDispatchTest, DeviceContextCreate) {
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
+}
+
+TEST_F(ExampleDispatchTest, InvocationContextCreate) {
+  // clang-format off
+  static constexpr absl::string_view kSchema = R"(inputs:0,1
+outputs:2
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2))";
+  // clang-format on
+  static constexpr absl::string_view kFunctionName = "partition_0";
+
+  static constexpr int kNumInputs = 2;
+  static constexpr int kNumOutputs = 1;
+
+  LiteRtMemBuffer exec_bytecode_buffer;
+  exec_bytecode_buffer.base_addr = kSchema.data();
+  exec_bytecode_buffer.size = kSchema.size();
+  exec_bytecode_buffer.fd = -1;
+  exec_bytecode_buffer.offset = 0;
+
+  static constexpr LiteRtDispatchExecutableType kExecType =
+      kLiteRtDispatchExecutableTypeMlModel;
+
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  auto device_context_ptr = CreateDevicePtr(Api(), device_context);
+
+  LiteRtDispatchInvocationContext invocation_context;
+  LITERT_ASSERT_OK(Api().invocation_context_create(
+      device_context, kExecType, &exec_bytecode_buffer, kFunctionName.data(),
+      kNumInputs, kNumOutputs, &invocation_context));
+  auto invocation_context_ptr =
+      CreateInvocationContextPtr(Api(), invocation_context);
+}
+
+}  // namespace
+}  // namespace litert::example
