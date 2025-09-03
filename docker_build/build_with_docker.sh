@@ -30,12 +30,30 @@ if ! docker info &> /dev/null; then
     exit 1
 fi
 
-echo "Building Docker image..."
-docker build -t litert_build_env -f ./hermetic_build.Dockerfile .
+SKIP_BUILD=0
+for arg in "$@"; do
+  case "$arg" in
+    --use_existing_image)
+      SKIP_BUILD=1
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--use_existing_image]"
+      echo "  --use_existing_image  Skip 'docker build' and use the existing image 'litert_build_env'"
+      exit 0
+      ;;
+  esac
+done
 
-if [ $? -ne 0 ]; then
-  echo "Error: Docker build failed."
-  exit 1
+if [ "$SKIP_BUILD" -eq 0 ]; then
+  echo "Building Docker image..."
+  docker build -t litert_build_env -f ./hermetic_build.Dockerfile .
+  if [ $? -ne 0 ]; then
+    echo "Error: Docker build failed."
+    exit 1
+  fi
+else
+  echo "Using existing Docker image 'litert_build_env' (skipping build)"
+
 fi
 
 CONTAINER_NAME="litert_build_container"
