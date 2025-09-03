@@ -106,6 +106,8 @@ cc_library(
         ":litert_common",
         "//litert/runtime:metrics",
     ],
+    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_library(
@@ -428,6 +430,8 @@ cc_library(
         "//tflite/c:c_api_types",
         "@com_google_absl//absl/types:span",
     ],
+    # Keep symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_test(

@@ -127,7 +127,8 @@ cc_library(
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
-        # "//litert/runtime/accelerators:__subpackages__",
+        # "//litert/cc/internal:__subpackages__",
+        # "//litert/runtime:__subpackages__",
         # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",

@@ -31,6 +31,9 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
     UnlockCustomTensorBuffer unlock_func);
 
+// Retrieves a singleton instance of the tensor buffer registry.
+LiteRtStatus LiteRtGetTensorBufferRegistry(void** registry);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

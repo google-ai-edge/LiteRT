@@ -63,7 +63,7 @@ cc_library(
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
-        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_without_registry",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_layout",
@@ -130,8 +130,10 @@ cc_library(
     ],
 )
 
+# Same as :litert_tensor_buffer, but without the registry dependency.
+# This is for accelerator shared libs not to depend on the registry, but depend on CAPI.so instead.
 cc_library(
-    name = "litert_tensor_buffer",
+    name = "litert_tensor_buffer_without_registry",
     srcs = ["//litert/cc:litert_tensor_buffer.cc"],
     hdrs = [
         "//litert/cc:litert_tensor_buffer.h",
@@ -147,6 +149,35 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer",
+    hdrs = [
+        "//litert/cc:litert_tensor_buffer.h",
+        "//litert/cc:litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        ":litert_event",
+        ":litert_model",
+        ":litert_tensor_buffer_without_registry",
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_event",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",

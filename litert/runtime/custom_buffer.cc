@@ -16,8 +16,10 @@
 
 #include <stdlib.h>
 
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -26,20 +28,30 @@
 
 namespace litert {
 namespace internal {
+namespace {
+
+Expected<litert::internal::TensorBufferRegistry*> GetTensorBufferRegistry() {
+  litert::internal::TensorBufferRegistry* registry = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetTensorBufferRegistry(reinterpret_cast<void**>(&registry)));
+  return registry;
+}
+
+}  // namespace
 
 CustomBuffer::~CustomBuffer() {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_ABORT(auto registry, GetTensorBufferRegistry());
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer_handlers,
-                         registry.GetCustomHandlers(buffer_type_));
+                         registry->GetCustomHandlers(buffer_type_));
   if (hw_memory_info_) {
     custom_buffer_handlers.destroy_func(env_, hw_memory_info_);
   }
 }
 
 Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry());
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
-                          registry.GetCustomHandlers(buffer_type_));
+                          registry->GetCustomHandlers(buffer_type_));
   void* host_memory_ptr = nullptr;
   auto status = custom_buffer_handlers.lock_func(env_, hw_memory_info_, mode,
                                                  &host_memory_ptr);
@@ -50,9 +62,9 @@ Expected<void*> CustomBuffer::Lock(LiteRtTensorBufferLockMode mode) {
 }
 
 Expected<void> CustomBuffer::Unlock() {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry());
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
-                          registry.GetCustomHandlers(buffer_type_));
+                          registry->GetCustomHandlers(buffer_type_));
   auto status = custom_buffer_handlers.unlock_func(env_, hw_memory_info_);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to unlock custom tensor buffer.");
@@ -64,9 +76,9 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, size_t buffer_size,
     size_t packed_buffer_size) {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry());
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
-                          registry.GetCustomHandlers(buffer_type));
+                          registry->GetCustomHandlers(buffer_type));
   HwMemoryInfoPtr hw_memory_info = nullptr;
   auto status = custom_buffer_handlers.create_func(
       env, &tensor_type, buffer_type, buffer_size, packed_buffer_size,
@@ -79,3 +91,14 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
 
 }  // namespace internal
 }  // namespace litert
+
+// A workaround to avoid linkage error in TAP presubmits not using custom
+// buffers.
+LiteRtStatus __attribute__((weak)) LiteRtGetTensorBufferRegistry(
+    void** registry) {
+  LITERT_LOG(LITERT_WARNING,
+             "LiteRtGetTensorBufferRegistry might be wrongly linked.");
+  *registry = reinterpret_cast<void*>(
+      &litert::internal::TensorBufferRegistry::GetInstance());
+  return kLiteRtStatusOk;
+}

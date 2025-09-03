@@ -34,3 +34,9 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
   LITERT_RETURN_IF_ERROR(registry.RegisterHandlers(buffer_type, handlers));
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtGetTensorBufferRegistry(void** registry) {
+  *registry = reinterpret_cast<void*>(
+      &litert::internal::TensorBufferRegistry::GetInstance());
+  return kLiteRtStatusOk;
+}
