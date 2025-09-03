@@ -43,6 +43,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "sentencepiece/src/sentencepiece_processor.h"  // from @com_google_sentencepiece
 
 // Command-line flags for the model paths and input sentences
@@ -227,6 +228,10 @@ absl::Status RealMain() {
   LITERT_ASSIGN_OR_RETURN(auto embedder_model_def,
                           Model::CreateFromFile(embedder_path));
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  // Set CPU compilation options.
+  LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
+  LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
+  options.AddOpaqueOptions(std::move(cpu_compilation_options));
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_model,
