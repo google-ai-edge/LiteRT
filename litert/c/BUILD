@@ -635,6 +635,10 @@ cc_shared_library(
 # copybara:uncomment_end
 
 # Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
+# Warning:Don't build it together with `litert_runtime_c_api_so` in one command.
+# When bazel analyzed the build graph, it detected that two different actions would
+# produce the same output file path. This violates bazel's fundamental principle that
+# each output file must have exactly one producer action. Hence the error:
 cc_shared_library(
     name = "litert_tflite_runtime_c_api_so",
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
