@@ -245,16 +245,6 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
       LITERT_LOG(LITERT_ERROR, "Run failed");
       return kTfLiteError;
     }
-
-    // Lock output buffers to wait Hardware buffer for ready to read.
-    for (const auto& buffer : *output_buffers_) {
-      auto lock_and_addr =
-          TensorBufferScopedLock::Create(buffer, TensorBuffer::LockMode::kRead);
-      if (!lock_and_addr) {
-        LITERT_LOG(LITERT_ERROR, "Failed to lock output buffer");
-      }
-    }
-    return kTfLiteOk;
   }
 
   uint64_t ComputeInputBytes() override {

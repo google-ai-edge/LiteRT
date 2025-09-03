@@ -73,9 +73,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
     // Enable no external tensors mode.
     gpu_options.EnableNoExternalTensorsMode(/*enabled=*/true);
-    // To compare result with TFLite Benchmark, disable benchmark mode since it
-    // makes inference slower.
-    gpu_options.EnableBenchmarkMode(/*enabled=*/false);
+    // Enable benchmark mode to run clFinish() after each inference.
+    gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     if (gpu_backend == "webgpu") {
       gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
     }
