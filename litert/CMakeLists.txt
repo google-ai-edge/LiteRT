@@ -26,10 +26,59 @@ option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
 option(LITERT_BUILD_TESTS "Build LiteRT tests" OFF)
 option(LITERT_USE_GPU "Enable GPU support" ON)
 option(LITERT_USE_NPU "Enable NPU support" ON)
+option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
 
 # Find TFLite package - we depend on it being built first
 set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/../tflite_build" CACHE PATH "Path to TFLite build directory")
 set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tflite" CACHE PATH "Path to TFLite source directory")
+
+# Check if TFLite has been built
+if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
+    if(LITERT_AUTO_BUILD_TFLITE)
+        message(STATUS "TFLite not found at ${TFLITE_BUILD_DIR}, building it automatically...")
+        message(STATUS "This may take 5-10 minutes on first build...")
+        message(STATUS "To skip automatic build, set -DLITERT_AUTO_BUILD_TFLITE=OFF")
+
+        # Create TFLite build directory
+        file(MAKE_DIRECTORY "${TFLITE_BUILD_DIR}")
+
+        # Configure TFLite
+        message(STATUS "Configuring TFLite...")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} "${TFLITE_SOURCE_DIR}"
+                -DTFLITE_ENABLE_XNNPACK=ON
+                -DTFLITE_ENABLE_GPU=ON
+                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+            WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
+            RESULT_VARIABLE TFLITE_CONFIGURE_RESULT
+            OUTPUT_VARIABLE TFLITE_CONFIGURE_OUTPUT
+            ERROR_VARIABLE TFLITE_CONFIGURE_ERROR
+        )
+
+        if(NOT TFLITE_CONFIGURE_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to configure TFLite:\n${TFLITE_CONFIGURE_ERROR}")
+        endif()
+
+        # Build TFLite
+        message(STATUS "Building TFLite (this will take several minutes)...")
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} --build . -- -j
+            WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
+            RESULT_VARIABLE TFLITE_BUILD_RESULT
+            OUTPUT_QUIET
+            ERROR_VARIABLE TFLITE_BUILD_ERROR
+        )
+
+        if(NOT TFLITE_BUILD_RESULT EQUAL 0)
+            message(FATAL_ERROR "Failed to build TFLite:\n${TFLITE_BUILD_ERROR}")
+        endif()
+
+        message(STATUS "TFLite build completed successfully")
+    else()
+        message(FATAL_ERROR "TFLite not found at ${TFLITE_BUILD_DIR}. Please build TFLite first or set LITERT_AUTO_BUILD_TFLITE=ON")
+    endif()
+endif()
+
 
 # Get TensorFlow source directory from TFLite build
 if(EXISTS "${TFLITE_BUILD_DIR}")
