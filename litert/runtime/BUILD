@@ -89,6 +89,7 @@ cc_library(
         "tensor_buffer_requirements.h",
         "//litert/c:litert_custom_tensor_buffer.h",
         "//litert/c:litert_tensor_buffer.h",
+        "//litert/c:litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
     linkopts = gles_linkopts() + litert_metal_linkopts(),

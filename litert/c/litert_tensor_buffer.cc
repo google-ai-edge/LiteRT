@@ -26,6 +26,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_requirements.h"
 
 
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -328,6 +329,30 @@ LiteRtStatus LiteRtCreateManagedTensorBuffer(
   LITERT_ASSIGN_OR_RETURN(auto created_tensor_buffer,
                           LiteRtTensorBufferT::CreateManaged(
                               env, buffer_type, *tensor_type, buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements requirements,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !requirements || !tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  // Get the first supported buffer type from requirements
+  if (requirements->SupportedBufferTypes().empty()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LiteRtTensorBufferType buffer_type = requirements->SupportedBufferTypes()[0];
+  size_t buffer_size = requirements->BufferSize();
+  size_t alignment = requirements->Alignment();
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateManagedWithAlignment(
+          env, buffer_type, *tensor_type, buffer_size, alignment));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }

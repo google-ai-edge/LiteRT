@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
@@ -30,17 +31,20 @@ class LiteRtTensorBufferRequirementsT {
   LiteRtTensorBufferRequirementsT(
       int num_supported_tensor_buffer_types,
       const LiteRtTensorBufferType* supported_tensor_buffer_types,
-      size_t buffer_size, std::vector<uint32_t>&& strides)
+      size_t buffer_size, std::vector<uint32_t>&& strides,
+      size_t alignment = LITERT_HOST_MEMORY_BUFFER_ALIGNMENT)
       : supported_buffer_types_(
             supported_tensor_buffer_types,
             supported_tensor_buffer_types + num_supported_tensor_buffer_types),
         buffer_size_(buffer_size),
-        strides_(std::move(strides)) {}
+        strides_(std::move(strides)),
+        alignment_(alignment) {}
   const std::vector<LiteRtTensorBufferType>& SupportedBufferTypes() const {
     return supported_buffer_types_;
   }
   size_t BufferSize() const { return buffer_size_; }
   const std::vector<uint32_t>& Strides() const { return strides_; }
+  size_t Alignment() const { return alignment_; }
   std::string ToString() const;
 
  private:
@@ -52,6 +56,8 @@ class LiteRtTensorBufferRequirementsT {
   size_t buffer_size_;
   // Stride per each dimension.
   std::vector<uint32_t> strides_;
+  // Memory alignment requirement in bytes.
+  size_t alignment_;
 };
 
 namespace litert::internal {

@@ -26,7 +26,7 @@ extern "C" {
 #endif  // __cplusplus
 
 // Create a LiteRtTensorBufferRequirements from a list of supported tensor
-// buffer types, buffer size, and strides.
+// buffer types, buffer size, strides, and alignment.
 //
 // Caller owns the returned LiteRtTensorBufferRequirements. The owner is
 // responsible for calling LiteRtDestroyTensorBufferRequirements() to release
@@ -36,6 +36,18 @@ LiteRtStatus LiteRtCreateTensorBufferRequirements(
     const LiteRtTensorBufferType* supported_tensor_buffer_types,
     size_t buffer_size, int num_strides, const uint32_t* strides,
     LiteRtTensorBufferRequirements* requirements);
+
+// Create a LiteRtTensorBufferRequirements from a list of supported tensor
+// buffer types, buffer size, strides, and alignment.
+//
+// Caller owns the returned LiteRtTensorBufferRequirements. The owner is
+// responsible for calling LiteRtDestroyTensorBufferRequirements() to release
+// the object.
+LiteRtStatus LiteRtCreateTensorBufferRequirementsWithAlignment(
+    int num_supported_tensor_buffer_types,
+    const LiteRtTensorBufferType* supported_tensor_buffer_types,
+    size_t buffer_size, int num_strides, const uint32_t* strides,
+    size_t alignment, LiteRtTensorBufferRequirements* requirements);
 
 LiteRtStatus LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
     LiteRtTensorBufferRequirements requirements, int* num_types);
@@ -50,6 +62,9 @@ LiteRtStatus LiteRtGetTensorBufferRequirementsBufferSize(
 LiteRtStatus LiteRtGetTensorBufferRequirementsStrides(
     LiteRtTensorBufferRequirements requirements, int* num_strides,
     const uint32_t** strides);
+
+LiteRtStatus LiteRtGetTensorBufferRequirementsAlignment(
+    LiteRtTensorBufferRequirements requirements, size_t* alignment);
 
 // Join requirements from two sources and return an error if the join returns an
 // empty set of requirements.

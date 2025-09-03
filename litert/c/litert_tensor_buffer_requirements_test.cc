@@ -66,6 +66,13 @@ TEST(TensorBufferRequirements, NoStrides) {
             kLiteRtStatusOk);
   ASSERT_EQ(size, kBufferSize);
 
+  // Test default alignment
+  size_t alignment;
+  ASSERT_EQ(
+      LiteRtGetTensorBufferRequirementsAlignment(requirements, &alignment),
+      kLiteRtStatusOk);
+  ASSERT_EQ(alignment, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
+
   LiteRtDestroyTensorBufferRequirements(requirements);
 }
 
@@ -89,4 +96,121 @@ TEST(TensorBufferRequirements, WithStrides) {
   }
 
   LiteRtDestroyTensorBufferRequirements(requirements);
+}
+
+TEST(TensorBufferRequirements, CustomAlignment) {
+  constexpr size_t kCustomAlignment = 256;
+  constexpr std::array<uint32_t, 2> kStrides = {100, 4};
+
+  LiteRtTensorBufferRequirements requirements;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                kBufferSize, kStrides.size(), kStrides.data(), kCustomAlignment,
+                &requirements),
+            kLiteRtStatusOk);
+
+  // Verify custom alignment was set
+  size_t alignment;
+  ASSERT_EQ(
+      LiteRtGetTensorBufferRequirementsAlignment(requirements, &alignment),
+      kLiteRtStatusOk);
+  ASSERT_EQ(alignment, kCustomAlignment);
+
+  // Verify other fields are still correct
+  size_t size;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(requirements, &size),
+            kLiteRtStatusOk);
+  ASSERT_EQ(size, kBufferSize);
+
+  int num_types;
+  ASSERT_EQ(LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(
+                requirements, &num_types),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_types, kNumSupportedTensorBufferTypes);
+
+  LiteRtDestroyTensorBufferRequirements(requirements);
+}
+
+TEST(TensorBufferRequirements, InvalidAlignment) {
+  constexpr std::array<uint32_t, 2> kStrides = {100, 4};
+  LiteRtTensorBufferRequirements requirements;
+
+  // Test non-power-of-2 alignment (should fail)
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                kBufferSize, kStrides.size(), kStrides.data(),
+                100,  // Not a power of 2
+                &requirements),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Test zero alignment (should fail)
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                kBufferSize, kStrides.size(), kStrides.data(),
+                0,  // Zero is invalid
+                &requirements),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(TensorBufferRequirements, JoinWithDifferentAlignments) {
+  constexpr std::array<uint32_t, 2> kStrides = {100, 4};
+
+  // Create first requirements with alignment 64
+  LiteRtTensorBufferRequirements req1;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                1000, kStrides.size(), kStrides.data(), &req1),
+            kLiteRtStatusOk);
+
+  // Create second requirements with alignment 256
+  LiteRtTensorBufferRequirements req2;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                2000, kStrides.size(), kStrides.data(), 256, &req2),
+            kLiteRtStatusOk);
+
+  // Join them
+  LiteRtTensorBufferRequirements joined;
+  ASSERT_EQ(LiteRtJoinTensorBufferRequirements(req1, req2, &joined),
+            kLiteRtStatusOk);
+
+  // Verify joined requirements has max alignment (256)
+  size_t alignment;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsAlignment(joined, &alignment),
+            kLiteRtStatusOk);
+  ASSERT_EQ(alignment, 256);
+
+  // Verify joined requirements has max buffer size (2000)
+  size_t buffer_size;
+  ASSERT_EQ(LiteRtGetTensorBufferRequirementsBufferSize(joined, &buffer_size),
+            kLiteRtStatusOk);
+  ASSERT_EQ(buffer_size, 2000);
+
+  LiteRtDestroyTensorBufferRequirements(req1);
+  LiteRtDestroyTensorBufferRequirements(req2);
+  LiteRtDestroyTensorBufferRequirements(joined);
+}
+
+TEST(TensorBufferRequirements, MultipleAlignmentValues) {
+  // Test various power-of-2 alignment values
+  constexpr size_t alignments[] = {32, 64, 128, 256, 512, 1024};
+  constexpr std::array<uint32_t, 2> kStrides = {100, 4};
+
+  for (size_t alignment : alignments) {
+    LiteRtTensorBufferRequirements requirements;
+    ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                  kNumSupportedTensorBufferTypes, kSupportedTensorBufferTypes,
+                  kBufferSize, kStrides.size(), kStrides.data(), alignment,
+                  &requirements),
+              kLiteRtStatusOk);
+
+    // Verify alignment was set correctly
+    size_t actual_alignment;
+    ASSERT_EQ(LiteRtGetTensorBufferRequirementsAlignment(requirements,
+                                                         &actual_alignment),
+              kLiteRtStatusOk);
+    ASSERT_EQ(actual_alignment, alignment);
+
+    LiteRtDestroyTensorBufferRequirements(requirements);
+  }
 }

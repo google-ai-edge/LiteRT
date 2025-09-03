@@ -34,7 +34,8 @@ std::string LiteRtTensorBufferRequirementsT::ToString() const {
      << "supported_types: "
      << litert::internal::ToString(supported_buffer_types_)
      << ", buffer_size: " << buffer_size_
-     << ", strides: " << litert::internal::ToString(strides_) << "]";
+     << ", strides: " << litert::internal::ToString(strides_)
+     << ", alignment: " << alignment_ << "]";
   return os.str();
 }
 
@@ -73,10 +74,12 @@ litert::Expected<std::unique_ptr<LiteRtTensorBufferRequirementsT>> Join(
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Can't join requirements due to incompatible strides");
   }
+  // Take the max alignment requirement.
+  auto alignment = std::max(src1.Alignment(), src2.Alignment());
 
   return std::make_unique<LiteRtTensorBufferRequirementsT>(
-      buffer_types.size(), buffer_types.data(), buffer_size,
-      std::move(strides));
+      buffer_types.size(), buffer_types.data(), buffer_size, std::move(strides),
+      alignment);
 }
 
 }  // namespace litert::internal
