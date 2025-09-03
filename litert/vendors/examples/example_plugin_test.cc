@@ -79,7 +79,9 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
-  ASSERT_EQ(byte_code_string, "Partition_0_with_2_muls:");
+  ASSERT_EQ(byte_code_string,
+            "inputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]\nops:mul(0,"
+            "0)(2)~mul(2,1)(3)");
 
   LiteRtParamIndex byte_code_idx;
   const void* op_data;
@@ -90,7 +92,7 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
   absl::string_view op_data_string(reinterpret_cast<const char*>(op_data),
                                    op_data_size);
-  ASSERT_EQ(op_data_string, "Partition_0");
+  ASSERT_EQ(op_data_string, "partition_0");
 
   LiteRtDestroyCompiledResult(compiled);
 }
