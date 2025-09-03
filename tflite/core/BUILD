@@ -180,9 +180,10 @@ cc_library(
     ],
     compatible_with = get_compatible_with_portable(),
     visibility = [
-        "//tflite:__subpackages__",
         "@org_tensorflow//third_party/deepmind/lyria_live/internal/odml:__subpackages__",
-        "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+        # copybara:uncomment "@org_tensorflow//third_party/odml/litert/litert:__subpackages__",
+        # "@org_tensorflow//third_party/odml/litert:__subpackages__",  # copybara:uncomment
+        "//tflite:__subpackages__",
     ] + core_cc_api_stable_visibility_allowlist(),
     deps = [
         ":model_builder",
