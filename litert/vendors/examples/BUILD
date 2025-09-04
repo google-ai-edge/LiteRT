@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 
@@ -32,10 +33,14 @@ litert_dynamic_lib(
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:__subpackages__"],
     deps = [
+        ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_op_options",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -53,6 +58,60 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "example_common",
+    srcs = ["example_common.cc"],
+    hdrs = ["example_common.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_test(
+    name = "example_common_test",
+    srcs = ["example_common_test.cc"],
+    deps = [
+        ":example_common",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "example_dispatch",
+    srcs = ["example_dispatch.cc"],
+    deps = [
+        ":example_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "example_dispatch_test",
+    srcs = ["example_dispatch_test.cc"],
+    deps = [
+        ":example_dispatch",  # buildcleaner: keep
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
