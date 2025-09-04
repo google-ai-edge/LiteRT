@@ -49,26 +49,26 @@ class TensorBufferRequirements
   static Expected<TensorBufferRequirements> Create(
       absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
       absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0),
+      OwnHandle owned = OwnHandle::kYes) {
     LiteRtTensorBufferRequirements tensor_buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
         buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
         strides.data(), &tensor_buffer_requirements));
-    return TensorBufferRequirements(tensor_buffer_requirements,
-                                    OwnHandle::kYes);
+    return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
   static Expected<TensorBufferRequirements> CreateWithAlignment(
       absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
       size_t alignment,
       absl::Span<const uint32_t> strides =
-          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0)) {
+          absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0),
+      OwnHandle owned = OwnHandle::kYes) {
     LiteRtTensorBufferRequirements tensor_buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirementsWithAlignment(
         buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
         strides.data(), alignment, &tensor_buffer_requirements));
-    return TensorBufferRequirements(tensor_buffer_requirements,
-                                    OwnHandle::kYes);
+    return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
   Expected<std::vector<LiteRtTensorBufferType>> SupportedTypes() const {

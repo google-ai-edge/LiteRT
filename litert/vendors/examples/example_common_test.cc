@@ -120,5 +120,29 @@ TEST(ParseExampleGraphTest, MultipleOps) {
                                 ExampleOp{OpCode::kSub, Inds{2, 2}, Inds{3}}}));
 }
 
+TEST(ExecuteTest, SingleOp) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto graph,
+      ExampleGraph::Parse(BufferRef<uint8_t>(kSingleOpExampleGraph.data(),
+                                             kSingleOpExampleGraph.size())));
+  const std::vector<float> lhs = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<float> rhs = {5.0f, 6.0f, 7.0f, 8.0f};
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, Execute(graph, {lhs, rhs}));
+  ASSERT_EQ(outputs.size(), 1);
+  EXPECT_THAT(outputs.front(), ElementsAreArray({5.0f, 12.0f, 21.0f, 32.0f}));
+}
+
+TEST(ExecuteTest, MultipleOps) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto graph,
+      ExampleGraph::Parse(BufferRef<uint8_t>(kMultipleOpsExampleGraph.data(),
+                                             kMultipleOpsExampleGraph.size())));
+  const std::vector<float> lhs = {1.0f, 2.0f, 3.0f, 4.0f};
+  const std::vector<float> rhs = {5.0f, 6.0f, 7.0f, 8.0f};
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, Execute(graph, {lhs, rhs}));
+  ASSERT_EQ(outputs.size(), 1);
+  EXPECT_THAT(outputs.front(), Each(Eq(0.0f)));
+}
+
 }  // namespace
 }  // namespace litert::example
