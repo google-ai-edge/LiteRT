@@ -1,6 +1,6 @@
 # LiteRT
 <p align="center">
-  <img src="./docs/sources/litert_logo.png" alt="LiteRT Logo" width="400"/>
+  <img src="./docs/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
 </p>
 
 Google's On-device framework for high-performance ML & GenAI deployment on edge
