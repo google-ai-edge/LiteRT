@@ -608,6 +608,7 @@ cc_test(
 cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
+    features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + [
         "-Wl,-soname=libLiteRtRuntimeCApi.so",
@@ -642,6 +643,7 @@ cc_shared_library(
 cc_shared_library(
     name = "litert_tflite_runtime_c_api_so",
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
+    features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
