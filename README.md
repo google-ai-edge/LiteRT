@@ -1,8 +1,5 @@
 # LiteRT
 
-Google's On-device framework for high-performance ML & GenAI deployment on edge
-platforms, via efficient conversion, runtime, and optimization
-
 📖 [Get Started](#-installation) | 🤝 [Contributing](#-contributing) | 📜
 [License](#-license) | 🛡 [Security Policy](SECURITY.md) | 📄
 [Documentation](#-getting-help)
@@ -12,6 +9,8 @@ platforms, via efficient conversion, runtime, and optimization
 </p>
 
 ## Description
+Google's On-device framework for high-performance ML & GenAI deployment on edge
+platforms, via efficient conversion, runtime, and optimization
 
 LiteRT continues the legacy of TensorFlow Lite as the trusted, high-performance
 runtime for on-device AI.
