@@ -57,9 +57,9 @@ LiteRT is designed for cross-platform deployment on a wide range of hardware.
 | 🍎 iOS      | ✅          | Metal\*               | ANE\*                                                    |
 | 🐧 Linux    | ✅          | WebGPU\*              | N/A                                                      |
 | 🍎 macOS    | ✅          | Metal\*               | ANE\*                                                    |
-| Windows     | ✅          | WebGPU\*              | Intel\*                                                  |
+| 💻 Windows  | ✅          | WebGPU\*              | Intel\*                                                  |
 | 🌐 Web      | Coming soon | Coming soon           | Coming soon                                              |
-| 🌿 Embedded |             |                       | Broadcom\*<br>Raspberry Pi\*                             |
+| 🧩 Embedded |             |                       | Broadcom\*<br>Raspberry Pi\*                             |
 
 *\*Coming soon*
 
