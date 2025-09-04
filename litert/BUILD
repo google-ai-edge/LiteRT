@@ -111,6 +111,7 @@ package_group(
         "//ci/tools/...",
         # copybara:uncomment "//platforms/darwinn/toolchain/third_party/...",
         # TODO(b/424778444) Targets above C API boundary shouldn't call internal. Remove below.
+        # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         "//litert/cc/...",
         "//litert/cc/internal/...",
