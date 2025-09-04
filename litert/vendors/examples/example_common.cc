@@ -53,7 +53,7 @@ struct SchemaLine {
 
 Expected<SchemaLine> ParseSchemaLine(absl::string_view str) {
   const std::vector<std::string> split = absl::StrSplit(str, kLineDelim);
-  if (std::size(split) != 2) {
+  if (split.size() != 2) {
     LITERT_LOG(LITERT_ERROR, "Invalid schema line format, expected 2 colons");
     return Error(kLiteRtStatusErrorInvalidArgument);
   }
@@ -178,6 +178,55 @@ Expected<ExampleGraph> ExampleGraph::Parse(BufferRef<uint8_t> serialized) {
   LITERT_ASSIGN_OR_RETURN(graph.ops_, ParseOps(schema.ops));
 
   return graph;
+}
+
+Expected<std::vector<Data>> Execute(const ExampleGraph& graph,
+                                    const std::vector<Data>& inputs) {
+  // Validate.
+  if (inputs.size() != graph.Inputs().size()) {
+    LITERT_LOG(LITERT_ERROR, "Expected %d inputs, got %d",
+               graph.Inputs().size(), inputs.size());
+    return Error(kLiteRtStatusErrorInvalidArgument);
+  }
+
+  // Setup state
+  std::vector<Data> intermediates;
+  for (const auto& tensor : graph.Tensors()) {
+    intermediates.push_back(Data(tensor.NumElements()));
+  }
+  for (auto i = 0; i < graph.Inputs().size(); ++i) {
+    intermediates[graph.Inputs()[i]] = inputs[i];
+  }
+
+  auto binary = [](float lhs, float rhs, float& result, OpCode code) {
+    if (code == OpCode::kMul) {
+      result = lhs * rhs;
+    } else {
+      result = lhs - rhs;
+    }
+  };
+
+  // Execute loop.
+  for (const auto& op : graph.Ops()) {
+    if (op.code == OpCode::kRmsNorm) {
+      LITERT_LOG(LITERT_ERROR, "RmsNorm not supported");
+      return Error(kLiteRtStatusErrorUnsupported);
+    }
+
+    const auto num_elements = intermediates[op.inputs[0]].size();
+    for (auto i = 0; i < num_elements; ++i) {
+      binary(intermediates[op.inputs[0]][i], intermediates[op.inputs[1]][i],
+             intermediates[op.outputs[0]][i], op.code);
+    }
+  }
+
+  // Move results back to caller.
+  std::vector<Data> results(graph.Outputs().size());
+  for (auto i = 0; i < graph.Outputs().size(); ++i) {
+    results[i] = std::move(intermediates[graph.Outputs()[i]]);
+  }
+
+  return results;
 }
 
 }  // namespace litert::example

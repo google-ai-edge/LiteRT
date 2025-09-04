@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -90,6 +91,10 @@ struct ExampleTensor {
 
   bool operator!=(const ExampleTensor& other) const {
     return !(*this == other);
+  }
+
+  size_t NumElements() const {
+    return absl::c_accumulate(dims, 1, std::multiplies<Dim>());
   }
 
   Dims dims;
@@ -201,6 +206,10 @@ ops:%s)";
   Inds inputs_;
   Inds outputs_;
 };
+
+// Executes the graph, returning output tensors.
+Expected<std::vector<Data>> Execute(const ExampleGraph& graph,
+                                    const std::vector<Data>& inputs);
 
 }  // namespace litert::example
 
