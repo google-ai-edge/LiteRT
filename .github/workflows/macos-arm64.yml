@@ -92,19 +92,18 @@ jobs:
 
       - name: Run bazel build on MacOS
         run: |
-          bazel build \
-            --disk_cache=~/.cache/bazel-macos \
-            -c opt \
-            -s \
-            --apple_platform_type=ios \
-            --copt=-Wno-c++-narrowing \
-            --cxxopt=-std=c++17 \
-            --swiftcopt=-enable-testing \
-            --define=use_coreml_delegate=0 \
-            --define=use_metal_delegate=1 \
-            --verbose_failures \
-            -- \
-            //tflite/swift:Tests
+          bazel test 
+            --disk_cache=~/.cache/bazel-macos 
+            -c opt 
+            -s 
+            --apple_platform_type=ios 
+            --copt=-Wno-c++-narrowing 
+            --cxxopt=-std=c++17 
+            --swiftcopt=-enable-testing 
+            --define=use_coreml_delegate=0 
+            --define=use_metal_delegate=1 
+            --verbose_failures 
+            -- //litert/...
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
