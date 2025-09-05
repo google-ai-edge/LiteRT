@@ -188,3 +188,10 @@ config_setting(
     name = "without_builtin_ops",
     values = {"define": "litert_builtin_ops=false"},
 )
+
+# Configuration for building Android builds that can't depend on libandroid.so
+config_setting(
+    name = "litert_android_no_jni",
+    constraint_values = ["@platforms//os:android"],
+    values = {"define": "litert_android_no_jni=true"},
+)

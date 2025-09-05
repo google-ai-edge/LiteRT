@@ -332,6 +332,7 @@ cc_library(
     copts = litert_metal_opts(),
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//litert:litert_android_no_jni": ["-lnativewindow"],
         "//conditions:default": [],
     }) + gles_linkopts() + litert_metal_linkopts(),
     deps = [
