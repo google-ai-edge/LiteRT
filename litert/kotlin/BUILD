@@ -33,6 +33,10 @@ package(
 cc_library(
     name = "litert_jni_common",
     hdrs = ["src/main/jni/litert_jni_common.h"],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
@@ -50,6 +54,10 @@ cc_library(
     name = "litert_environment_jni",
     srcs = ["src/main/jni/litert_environment_jni.cc"],
     hdrs = ["src/main/jni/litert_environment_jni.h"],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -72,6 +80,10 @@ cc_library(
         "src/main/jni/litert_model_jni.h",
         "src/main/jni/litert_model_wrapper.h",
     ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -93,6 +105,10 @@ cc_library(
     name = "litert_compiled_model_jni",
     srcs = ["src/main/jni/litert_compiled_model_jni.cc"],
     hdrs = ["src/main/jni/litert_compiled_model_jni.h"],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":litert_jni_common",
         ":litert_model_jni",
@@ -115,6 +131,10 @@ cc_library(
     name = "litert_tensor_buffer_jni",
     srcs = ["src/main/jni/litert_tensor_buffer_jni.cc"],
     hdrs = ["src/main/jni/litert_tensor_buffer_jni.h"],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
