@@ -133,4 +133,23 @@ Expected<bool> DarwinnRuntimeOptions::GetAtomicInference() const {
       LiteRtGetDarwinnAtomicInference(darwinn_options, &atomic_inference));
   return atomic_inference;
 }
+
+Expected<void> DarwinnRuntimeOptions::SetPreferCoherent(bool prefer_coherent) {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetDarwinnPreferCoherent(darwinn_options, prefer_coherent));
+  return {};
+}
+
+Expected<bool> DarwinnRuntimeOptions::GetPreferCoherent() const {
+  LiteRtDarwinnRuntimeOptions darwinn_options;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindDarwinnRuntimeOptions(Get(), &darwinn_options));
+  bool prefer_coherent = false;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetDarwinnPreferCoherent(darwinn_options, &prefer_coherent));
+  return prefer_coherent;
+}
 }  // namespace litert

@@ -42,6 +42,7 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   EXPECT_TRUE(darwinn_options->SetInferenceMemoryPowerState(2));
   EXPECT_TRUE(darwinn_options->SetInferencePriority(10));
   EXPECT_TRUE(darwinn_options->SetAtomicInference(false));
+  EXPECT_TRUE(darwinn_options->SetPreferCoherent(false));
 
   // Create a C++ wrapper for the LiteRT options
   Options cc_options(litert_options, OwnHandle::kNo);
@@ -64,6 +65,10 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   auto priority = found_darwinn->GetInferencePriority();
   ASSERT_TRUE(priority);
   EXPECT_EQ(*priority, 10);
+
+  auto prefer_coherent = found_darwinn->GetPreferCoherent();
+  ASSERT_TRUE(prefer_coherent);
+  EXPECT_EQ(*prefer_coherent, false);
 
   // Clean up
   LiteRtDestroyOptions(litert_options);

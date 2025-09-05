@@ -157,3 +157,27 @@ LiteRtStatus LiteRtGetDarwinnAtomicInference(
   *atomic_inference = opts->atomic_inference;
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtSetDarwinnPreferCoherent(
+    LiteRtDarwinnRuntimeOptions options, bool prefer_coherent) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+
+  auto* opts = reinterpret_cast<litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  opts->prefer_coherent = prefer_coherent;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetDarwinnPreferCoherent(
+    LiteRtDarwinnRuntimeOptionsConst options, bool* prefer_coherent) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(prefer_coherent,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "prefer_coherent is null.";
+
+  auto* opts =
+      reinterpret_cast<const litert::LiteRtDarwinnRuntimeOptionsT*>(options);
+  *prefer_coherent = opts->prefer_coherent;
+  return kLiteRtStatusOk;
+}

@@ -34,6 +34,9 @@ struct LiteRtDarwinnRuntimeOptionsT {
   // Whether to run inference atomically
   bool atomic_inference = false;
 
+  // Memory coherency preference
+  bool prefer_coherent = false;  // Whether to prefer coherent memory allocation
+
   static const char* Identifier() { return "darwinn_runtime_options"; }
 };
 

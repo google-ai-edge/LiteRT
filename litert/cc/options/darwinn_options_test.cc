@@ -55,6 +55,7 @@ TEST(DarwinnRuntimeOptionsTest, CheckDefaultValues) {
   EXPECT_THAT(options.GetInferencePowerState(), IsOkAndHolds(0));
   EXPECT_THAT(options.GetInferenceMemoryPowerState(), IsOkAndHolds(0));
   EXPECT_THAT(options.GetInferencePriority(), IsOkAndHolds(-1));
+  EXPECT_THAT(options.GetPreferCoherent(), IsOkAndHolds(false));
 }
 
 }  // namespace

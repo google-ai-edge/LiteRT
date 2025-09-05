@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
@@ -139,5 +140,20 @@ litert_device_test(
         "//litert/test:matchers",
         "//litert/test:simple_model_npu",
         "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+cc_test(
+    name = "darwinn_options_test",
+    srcs = ["darwinn_options_test.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:darwinn_options",
+        "@com_google_googletest//:gtest_main",
     ],
 )

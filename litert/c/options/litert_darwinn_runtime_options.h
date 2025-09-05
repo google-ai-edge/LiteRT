@@ -60,6 +60,12 @@ LiteRtStatus LiteRtSetDarwinnAtomicInference(
 LiteRtStatus LiteRtGetDarwinnAtomicInference(
     LiteRtDarwinnRuntimeOptionsConst options, bool* atomic_inference);
 
+// Memory coherency preference setter/getter
+LiteRtStatus LiteRtSetDarwinnPreferCoherent(
+    LiteRtDarwinnRuntimeOptions options, bool prefer_coherent);
+LiteRtStatus LiteRtGetDarwinnPreferCoherent(
+    LiteRtDarwinnRuntimeOptionsConst options, bool* prefer_coherent);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
