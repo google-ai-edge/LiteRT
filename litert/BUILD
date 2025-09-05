@@ -46,6 +46,7 @@ package_group(
         "//litert/cc/...",
         "//litert/compiler/plugin/...",
         "//litert/google/...",
+        # copybara:uncomment "//third_party/odml/genai_modules/rag_pipeline/core/models/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
