@@ -416,10 +416,12 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
 
-  if (options.GetLogLevel() != ::qnn::LogLevel::kOff) {
+  options_ = options;
+
+  if (options_.GetLogLevel() != ::qnn::LogLevel::kOff) {
     if (auto status = Api()->logCreate(
             GetDefaultStdOutLogger(),
-            static_cast<QnnLog_Level_t>(options.GetLogLevel()), &LogHandle());
+            static_cast<QnnLog_Level_t>(options_.GetLogLevel()), &LogHandle());
         status != QNN_SUCCESS) {
       LITERT_LOG(LITERT_ERROR, "Failed to create QNN logger: %d", status);
       return kLiteRtStatusErrorRuntimeFailure;
@@ -491,12 +493,14 @@ LiteRtStatus QnnManager::Init(absl::Span<const QnnBackend_Config_t*> configs,
   }
 
   // HTP Performance Settings
-  if (options.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
+  // Note that PerformanceMode should be set to kDefault during x86 compilation
+  // since no device_platform_info_ can be acquired at this stage.
+  if (options_.GetHtpPerformanceMode() != ::qnn::HtpPerformanceMode::kDefault) {
     LITERT_LOG(LITERT_INFO, "Set HTP performance mode: %d",
-               options.GetHtpPerformanceMode());
+               options_.GetHtpPerformanceMode());
     if (device_platform_info_) {
-      perf_control_ =
-          std::make_unique<PerfControl>(Api(), options.GetHtpPerformanceMode());
+      perf_control_ = std::make_unique<PerfControl>(
+          Api(), options_.GetHtpPerformanceMode());
       QnnHtpDevice_Arch_t local_arch =
           device_platform_info_->v1.hwDevices->v1.deviceInfoExtension
               ->onChipDevice.arch;
