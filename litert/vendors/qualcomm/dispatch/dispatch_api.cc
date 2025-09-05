@@ -81,7 +81,7 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
           ? std::make_optional(std::string(dispatch_lib_dir))
           : std::nullopt;
 
-  auto configs = QnnManager::DefaultBackendConfigs();
+  // TODO(Alen): initialize qnn_options from LiteRtOptions
   ::qnn::Options qnn_options;
   if (qnn_opts) {
     InitQnnOptions(qnn_options, qnn_opts.Value());
@@ -91,7 +91,6 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                qnn_opts.Error().Message().c_str());
   }
   if (auto qnn_manager = QnnManager::Create(
-          /*configs=*/configs,
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
           /*soc_model*/ std::nullopt);

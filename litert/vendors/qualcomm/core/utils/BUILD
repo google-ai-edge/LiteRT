@@ -33,6 +33,7 @@ cc_library(
     deps = [
         ":log",
         "@com_google_absl//absl/types:span",
+        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -44,6 +45,8 @@ cc_test(
     deps = [
         ":log",
         ":miscs",
+        "//litert/vendors/qualcomm/core/backends:htp_backend",
+        "//litert/vendors/qualcomm/core/backends:ir_backend",
         "//litert/vendors/qualcomm/core:common",
         "@com_google_googletest//:gtest_main",
     ],
