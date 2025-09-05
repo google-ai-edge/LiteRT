@@ -59,6 +59,7 @@
 #include "litert/vendors/qualcomm/core/builders/hard_swish_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/mean_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
@@ -623,6 +624,12 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
         float epsilon = 9.99999997E-7;
         op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
                                             output_tensors, epsilon);
+      }
+      if (info->name == CompositeOptions::kL2Norm) {
+        // TODO(jiunkaiy): Support custom epsilon for L2 Norm.
+        float epsilon = 9.99999997E-7;
+        op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
+                                           output_tensors, epsilon);
       }
       break;
     }

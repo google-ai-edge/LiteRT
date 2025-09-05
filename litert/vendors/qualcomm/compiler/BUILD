@@ -191,6 +191,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:resize_op_builder",
         "//litert/vendors/qualcomm/core/builders:reverse_op_builder",
         "//litert/vendors/qualcomm/core/builders:rms_norm_op_builder",
+        "//litert/vendors/qualcomm/core/builders:l2_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:select_op_builder",
         "//litert/vendors/qualcomm/core/builders:slice_op_builder",
         "//litert/vendors/qualcomm/core/builders:softmax_op_builder",
