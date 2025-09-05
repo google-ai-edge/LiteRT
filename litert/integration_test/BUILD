@@ -367,6 +367,7 @@ litert_device_test(
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
+#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek",
 #     ],
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
@@ -379,6 +380,9 @@ litert_device_test(
 #             litert_pixel_9_mh_guitar_test(
 #                 dimension_model = "pixel 9",
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
+#             ),
+#             litert_mediatek_mh_guitar_test(
+#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek"],
 #             ),
 #         ],
 #     ),
