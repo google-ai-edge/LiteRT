@@ -24,11 +24,13 @@
 #include <string>
 #include <vector>
 
+#include "QnnCommon.h"                     // from @qairt
+#include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"               // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
@@ -56,7 +58,6 @@
 #include "litert/vendors/qualcomm/core/builders/gather_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gathernd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
-#include "litert/vendors/qualcomm/core/builders/hard_swish_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
@@ -70,6 +71,7 @@
 #include "litert/vendors/qualcomm/core/builders/reduce_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/relu6_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/relu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/relu_0to1_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/resize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reverse_op_builder.h"
@@ -92,8 +94,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {
@@ -346,6 +346,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
           ::qnn::BuildBroadcastToOp(tensor_pool, input_tensors, output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflCeil: {
+      op_wrappers = ::qnn::BuildElementwiseCeilOp(tensor_pool, input_tensors,
+                                                  output_tensors);
+      break;
+    }
     case LiteRtOpCode::kLiteRtOpCodeTflCos: {
       op_wrappers = ::qnn::BuildElementwiseCosOp(tensor_pool, input_tensors,
                                                  output_tensors);
@@ -435,6 +440,16 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                                      output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflElu: {
+      op_wrappers = ::qnn::BuildElementwiseEluOp(tensor_pool, input_tensors,
+                                                 output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflFloor: {
+      op_wrappers = ::qnn::BuildElementwiseFloorOp(tensor_pool, input_tensors,
+                                                   output_tensors);
+      break;
+    }
     case LiteRtOpCode::kLiteRtOpCodeTflFloorDiv: {
       op_wrappers = ::qnn::BuildElementwiseFloorDivOp(
           tensor_pool, input_tensors, output_tensors);
@@ -443,6 +458,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflNotEqual: {
       op_wrappers = ::qnn::BuildElementwiseNotEqualOp(
           tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflLogicalOr: {
+      op_wrappers = ::qnn::BuildElementwiseOrOp(tensor_pool, input_tensors,
+                                                output_tensors);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflEmbeddingLookup: {
@@ -490,6 +510,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflRelu: {
       op_wrappers =
           ::qnn::BuildReluOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflRelu0To1: {
+      op_wrappers =
+          ::qnn::BuildRelu0To1Op(tensor_pool, input_tensors, output_tensors);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflRelu6: {
@@ -836,8 +861,8 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflHardSwish: {
-      op_wrappers =
-          ::qnn::BuildHardSwishOp(tensor_pool, input_tensors, output_tensors);
+      op_wrappers = ::qnn::BuildElementwiseHardSwishOp(
+          tensor_pool, input_tensors, output_tensors);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflLeakyRelu: {
@@ -977,6 +1002,16 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflNeg: {
       op_wrappers = ::qnn::BuildElementwiseNegOp(tensor_pool, input_tensors,
                                                  output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflRound: {
+      op_wrappers = ::qnn::BuildElementwiseRoundOp(tensor_pool, input_tensors,
+                                                   output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflSign: {
+      op_wrappers = ::qnn::BuildElementwiseSignOp(tensor_pool, input_tensors,
+                                                  output_tensors);
       break;
     }
     default: {

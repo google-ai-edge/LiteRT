@@ -25,24 +25,24 @@ package(
 )
 
 # copybara:uncomment_begin(internal)
-# tfl_model_gen(
-#     name = "mlir_test_data",
-#     srcs = glob(["testdata/*.mlir"]),
-# )
+tfl_model_gen(
+    name = "mlir_test_data",
+    srcs = glob(["testdata/*.mlir"]),
+)
 # copybara:uncomment_end
 
 # copybara:comment_begin(external)
-symlink_files(
-    name = "mlir_test_data",
-    srcs = ["@models"],
-    declared_outputs = [
-        f.replace(".mlir", ".tflite")
-        for f in glob(["testdata/*.mlir"])
-        if not glob([f.replace(".mlir", ".tflite")])
-    ],
-    dst = "testdata",
-    flatten = True,
-)
+# symlink_files(
+#     name = "mlir_test_data",
+#     srcs = ["@models"],
+#     declared_outputs = [
+#         f.replace(".mlir", ".tflite")
+#         for f in glob(["testdata/*.mlir"])
+#         if not glob([f.replace(".mlir", ".tflite")])
+#     ],
+#     dst = "testdata",
+#     flatten = True,
+# )
 # copybara:comment_end
 
 filegroup(
