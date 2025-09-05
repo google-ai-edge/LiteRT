@@ -1,0 +1,240 @@
+// Copyright 2024 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <cstdint>
+#include <memory>
+#include <utility>
+
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/c/litert_dispatch_api.h"
+#include "litert/vendors/examples/example_common.h"
+
+class LiteRtDispatchDeviceContextT {
+ public:
+  LiteRtDispatchDeviceContextT() = default;
+  ~LiteRtDispatchDeviceContextT() = default;
+
+ private:
+};
+
+class LiteRtDispatchInvocationContextT {
+ public:
+  using Ptr = std::unique_ptr<LiteRtDispatchInvocationContextT>;
+  static ::litert::Expected<LiteRtDispatchInvocationContextT::Ptr> Create(
+      LiteRtDispatchDeviceContext device_context,
+      LiteRtDispatchExecutableType exec_type,
+      const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
+      int num_inputs, int num_outputs) {
+    if (device_context == nullptr || exec_bytecode_buffer == nullptr ||
+        function_name == nullptr) {
+      return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                             "Inputs are null");
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto example_graph,
+        ::litert::example::ExampleGraph::Parse(::litert::BufferRef<uint8_t>(
+            exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size)));
+
+    return Ptr(new LiteRtDispatchInvocationContextT(
+        device_context, exec_type, absl::string_view(function_name),
+        std::move(example_graph)));
+  }
+
+  absl::string_view FunctionName() const { return function_name_; }
+  LiteRtDispatchDeviceContextT& DeviceContext() const {
+    return *device_context_;
+  }
+  LiteRtDispatchExecutableType ExecType() const { return exec_type_; }
+
+  ~LiteRtDispatchInvocationContextT() = default;
+
+ private:
+  LiteRtDispatchInvocationContextT(
+      LiteRtDispatchDeviceContext device_context,
+      LiteRtDispatchExecutableType exec_type, absl::string_view function_name,
+      ::litert::example::ExampleGraph example_graph)
+      : device_context_(device_context),
+        exec_type_(exec_type),
+        function_name_(function_name),
+        example_graph_(std::move(example_graph)) {}
+  LiteRtDispatchDeviceContext device_context_;
+  LiteRtDispatchExecutableType exec_type_;
+  absl::string_view function_name_;
+  ::litert::example::ExampleGraph example_graph_;
+};
+
+namespace litert::example {
+namespace {
+
+LiteRtEnvironmentOptions the_environment_options = nullptr;
+LiteRtOptions the_options = nullptr;
+
+LiteRtStatus GetVendorId(const char** vendor_id) {
+  *vendor_id = "Example";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetBuildId(const char** build_id) {
+  *build_id = "ExampleBuild";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetCapabilities(int* capabilities) {
+  *capabilities = kLiteRtDispatchCapabilitiesBasic;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
+                        LiteRtOptions options) {
+  the_environment_options = environment_options;
+  the_options = options;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DeviceContextCreate(LiteRtDispatchDeviceContext* device_context) {
+  *device_context = new LiteRtDispatchDeviceContextT();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
+  delete device_context;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetInputRequirements(
+    LiteRtDispatchInvocationContext invocation_context, int input_index,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus GetOutputRequirements(
+    LiteRtDispatchInvocationContext invocation_context, int output_index,
+    const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus RegisterTensorBuffer(
+    LiteRtDispatchDeviceContext device_context, LiteRtTensorBuffer buffer,
+    LiteRtTensorBufferHandle* tensor_buffer_handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
+                                    LiteRtTensorBufferHandle handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus InvocationContextCreate(
+    LiteRtDispatchDeviceContext device_context,
+    LiteRtDispatchExecutableType exec_type,
+    const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
+    int num_inputs, int num_outputs,
+    LiteRtDispatchInvocationContext* invocation_context) {
+  LITERT_ASSIGN_OR_RETURN(auto invocation_context_ptr,
+                          LiteRtDispatchInvocationContextT::Create(
+                              device_context, exec_type, exec_bytecode_buffer,
+                              function_name, num_inputs, num_outputs));
+  *invocation_context = invocation_context_ptr.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus InvocationContextDestroy(
+    LiteRtDispatchInvocationContext invocation_context) {
+  delete invocation_context;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
+                         int graph_input_index,
+                         LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
+                          int graph_output_index,
+                          LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
+                         int graph_input_index,
+                         LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
+                          int graph_output_index,
+                          LiteRtTensorBufferHandle tensor_buffer_handle) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
+  // TODO
+  return kLiteRtStatusErrorUnsupported;
+}
+
+// /////////////////////////////////////////////////////////////////////////////
+
+LiteRtDispatchInterface ExampleInterface = {
+    /*.initialize=*/Initialize,
+    /*.get_vendor_id=*/GetVendorId,
+    /*.get_build_id=*/GetBuildId,
+    /*.get_capabilities=*/GetCapabilities,
+    /*.device_context_create=*/DeviceContextCreate,
+    /*.device_context_destroy=*/DeviceContextDestroy,
+    /*.get_input_requirements=*/GetInputRequirements,
+    /*.get_output_requirements=*/GetOutputRequirements,
+    /*.register_tensor_buffer=*/RegisterTensorBuffer,
+    /*.unregister_tensor_buffer=*/UnregisterTensorBuffer,
+    /*.invocation_context_create=*/InvocationContextCreate,
+    /*.invocation_context_destroy=*/InvocationContextDestroy,
+    /*.attach_input=*/AttachInput,
+    /*.attach_output=*/AttachOutput,
+    /*.detach_input=*/DetachInput,
+    /*.detach_output=*/DetachOutput,
+    /*.invoke=*/Invoke,
+};
+
+LiteRtDispatchApi ExampleApi = {
+    /*.version=*/{/*.major=*/LITERT_API_VERSION_MAJOR,
+                  /*.minor=*/LITERT_API_VERSION_MINOR,
+                  /*.patch=*/LITERT_API_VERSION_PATCH},
+    /*.interface=*/&ExampleInterface,
+    /*.async_interface=*/nullptr,
+    /*.graph_interface=*/nullptr,
+};
+
+}  // namespace
+}  // namespace litert::example
+
+LiteRtStatus LiteRtDispatchGetApi(LiteRtDispatchApi* api) {
+  *api = ::litert::example::ExampleApi;
+  return kLiteRtStatusOk;
+}
