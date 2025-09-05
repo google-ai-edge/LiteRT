@@ -18,6 +18,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <sstream>
@@ -1062,7 +1063,9 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
   // TODO: make ConvertOp accept a vector and append OpWrapper in it.
   std::vector<::qnn::OpWrapper> graph_op_wrappers;
   std::ostringstream dump;
-  for (const auto& op : graph_mapper.Graph().Ops()) {
+  auto ops = graph_mapper.Graph().Ops();
+  for (auto it = ops.begin(); it != ops.end(); ++it) {
+    const auto& op = *it;
     std::vector<::qnn::TensorWrapperRef> input_tensors;
     for (const auto& input : op.Inputs()) {
       if (const auto it = litert_tensor_to_wrapper.find(input.Get());
@@ -1093,7 +1096,12 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     LITERT_RETURN_IF_ERROR(ConvertOp(options.GetUseHtpPreference(), op,
                                      tensor_pool, input_tensors, output_tensors,
                                      op_wrappers));
-
+    for (auto& op_wrapper : op_wrappers) {
+      // Add litert op id to qnn op name to preserve op mapping
+      std::size_t idx = std::distance(std::begin(ops), it);
+      op_wrapper.AddSuffixToName(
+          absl::StrCat("_LiteRt_OpId_", std::to_string(idx)));
+    }
     if (!op.Outputs().empty()) {
       // Add op namespace based on the first output tensor name.
       if (size_t pos = op.Outputs()[0].Name().find(';');
