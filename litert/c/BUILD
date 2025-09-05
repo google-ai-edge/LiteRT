@@ -49,6 +49,7 @@ cc_library(
     hdrs = ["litert_common.h"],
 )
 
+# THIS IS A TEST
 cc_test(
     name = "litert_common_test",
     srcs = ["litert_common_test.cc"],
