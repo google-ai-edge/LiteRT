@@ -173,6 +173,36 @@ TEST(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   EXPECT_FLOAT_EQ(result.misc_metrics().model_throughput_in_mb_per_sec(),
                   listener.results_.throughput_MB_per_second());
 }
+
+TEST(BenchmarkLiteRtModelTest, BenchmarkWithModelRuntimeInfoFilePath) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+  std::string model_runtime_info_output_file;
+#if defined(__ANDROID__)
+  model_runtime_info_output_file = "/data/local/tmp/model_runtime_info.pb";
+#else
+  model_runtime_info_output_file = "/tmp/model_runtime_info.pb";
+#endif
+  params.Set<std::string>("model_runtime_info_output_file",
+                          model_runtime_info_output_file);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+
+  std::ifstream in_file(model_runtime_info_output_file,
+                        std::ios::binary | std::ios::in);
+  tflite::profiling::ModelRuntimeDetails model_runtime_details;
+  model_runtime_details.ParseFromIstream(&in_file);
+  EXPECT_EQ(model_runtime_details.subgraphs_size(), 1);
+  EXPECT_GT(model_runtime_details.subgraphs(0).execution_plan_size(), 0);
+  EXPECT_GT(model_runtime_details.subgraphs(0).nodes_size(), 0);
+  EXPECT_GT(model_runtime_details.subgraphs(0).edges_size(), 0);
+}
+
 }  // namespace
 }  // namespace benchmark
 }  // namespace litert
