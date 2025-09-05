@@ -13,6 +13,7 @@
 # limitations under the License.
 
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -331,8 +332,8 @@ cc_library(
     ],
     copts = litert_metal_opts(),
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//litert:litert_android_no_jni": ["-lnativewindow"],
+        "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
     }) + gles_linkopts() + litert_metal_linkopts(),
     deps = [
@@ -377,7 +378,7 @@ cc_test(
     name = "litert_tensor_buffer_requirements_test",
     srcs = ["litert_tensor_buffer_requirements_test.cc"],
     linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
     }),
     deps = [
@@ -614,7 +615,7 @@ cc_shared_library(
     user_link_flags = export_lrt_runtime_only_linkopt() + [
         "-Wl,-soname=libLiteRtRuntimeCApi.so",
     ] + select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
     }),
     deps = LITERT_C_API_COMMON_DEPS,
@@ -636,6 +637,70 @@ cc_shared_library(
 # )
 # copybara:uncomment_end
 
+# Target for windows libLiteRtRuntimeCApi.dll.
+cc_binary(
+    name = "libLiteRtRuntimeCApi",
+    linkshared = 1,
+    tags = [
+        "nobuilder",
+        "notap",
+        "windows",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    visibility = ["//visibility:private"],
+    win_def_file = ":windows_exported_symbols.def",
+    deps = LITERT_C_API_COMMON_DEPS,
+)
+
+alias(
+    name = "litert_runtime_c_api_dll",
+    actual = ":libLiteRtRuntimeCApi",
+)
+
+filegroup(
+    name = "litert_runtime_c_api_dll_interface_lib",
+    srcs = [":litert_runtime_c_api_dll"],
+    output_group = "interface_library",
+)
+
+# Import library to link libLiteRtRuntimeCApi.dll.
+cc_import(
+    name = "litert_runtime_c_api_dll_import",
+    interface_library = ":litert_runtime_c_api_dll_interface_lib",
+    shared_library = ":litert_runtime_c_api_dll",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+genrule(
+    name = "litert_runtime_c_api_exe_interface_lib",
+    srcs = [":windows_exported_symbols.def"],
+    outs = ["litert_runtime_c_api_exe_import.lib"],
+    # Prepend LIBRARY name before building the import library.
+    cmd = "echo 'LIBRARY litert_lm_main.exe' > $(RULEDIR)/def.tmp; " +
+          "cat $(SRCS) >> $(RULEDIR)/def.tmp; " +
+          "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
+          "rm $(RULEDIR)/def.tmp",
+    toolchains = ["//tools/cpp:toolchain_type"],
+)
+
+# Import library to resolve symbols in executables.
+cc_import(
+    name = "litert_runtime_c_api_exe_import",
+    interface_library = ":litert_runtime_c_api_exe_interface_lib",
+    system_provided = True,
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+alias(
+    name = "litert_runtime_c_api_import",
+    actual = select({
+        ":resolve_symbols_in_exec": ":litert_runtime_c_api_exe_import",
+        "//conditions:default": ":litert_runtime_c_api_dll_import",
+    }),
+)
+
+exports_files(srcs = ["windows_exported_symbols.def"])
+
 # Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 # Warning:Don't build it together with `litert_runtime_c_api_so` in one command.
 # When bazel analyzed the build graph, it detected that two different actions would
@@ -647,7 +712,7 @@ cc_shared_library(
     features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
     }),
     deps = LITERT_C_API_COMMON_DEPS + [
@@ -662,16 +727,6 @@ filegroup(
     srcs = [":litert_runtime_c_api_so"],
 )
 
-# Select libLiteRtRuntimeCApi.so or libLiteRtRuntimeCApi.dylib depending on the platform.
-filegroup(
-    name = "litert_runtime_c_api_so_or_dylib",
-    srcs = select({
-        "@org_tensorflow//tensorflow:ios": [":litert_runtime_c_api_dylib"],
-        "@org_tensorflow//tensorflow:macos": [":litert_runtime_c_api_dylib"],
-        "//conditions:default": [":litert_runtime_c_api_so"],
-    }),
-)
-
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
 # resolve the symbols, not from libLiteRtRuntimeCApi.so.
 config_setting(
@@ -684,7 +739,12 @@ cc_library(
     name = "litert_runtime_c_api_shared_lib",
     srcs = select({
         ":resolve_symbols_in_exec": [],
-        "//conditions:default": [":litert_runtime_c_api_so_or_dylib"],
+        # copybara:uncomment_begin(google-only)
+        # "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
+        # "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
+        # copybara:uncomment_end
+        "@platforms//os:windows": [],
+        "//conditions:default": [":litert_runtime_c_api_so"],
     }),
     hdrs = glob(["*.h"]) + [
         "//litert/c/internal:internal_headers",
@@ -694,8 +754,8 @@ cc_library(
         "//tflite/core/c:headers_filegroup",
     ],
     linkopts = select({
-        "@org_tensorflow//tensorflow:ios": ["-Wl,-rpath,@loader_path"],
-        "@org_tensorflow//tensorflow:macos": ["-Wl,-rpath,@loader_path"],
+        "@platforms//os:ios": ["-Wl,-rpath,@loader_path"],
+        "@platforms//os:macos": ["-Wl,-rpath,@loader_path"],
         "//conditions:default": [],
     }),
     linkstatic = 1,
@@ -707,7 +767,11 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
-    ] + gles_headers(),
+    ] + gles_headers() + select({
+        ":resolve_symbols_in_exec": [],
+        "@platforms//os:windows": [":litert_runtime_c_api_import"],
+        "//conditions:default": [],
+    }),
 )
 
 # copybara:uncomment_begin(google-only)

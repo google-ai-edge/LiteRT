@@ -50,7 +50,9 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   // The following is list of plugins that are loaded in the order they are
   // listed. The first plugin that is loaded and registered successfully will
   // be used.
-#if defined(__APPLE__)
+#if defined(LITERT_WINDOWS_OS)
+#define SO_EXT ".dll"
+#elif defined(__APPLE__)
 #define SO_EXT ".dylib"
 #else
 #define SO_EXT ".so"

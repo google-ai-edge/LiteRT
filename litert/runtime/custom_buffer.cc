@@ -92,6 +92,7 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
 }  // namespace internal
 }  // namespace litert
 
+#if !defined(LITERT_WINDOWS_OS)
 // A workaround to avoid linkage error in TAP presubmits not using custom
 // buffers.
 LiteRtStatus __attribute__((weak)) LiteRtGetTensorBufferRegistry(
@@ -102,3 +103,4 @@ LiteRtStatus __attribute__((weak)) LiteRtGetTensorBufferRegistry(
       &litert::internal::TensorBufferRegistry::GetInstance());
   return kLiteRtStatusOk;
 }
+#endif  // !LITERT_WINDOWS_OS

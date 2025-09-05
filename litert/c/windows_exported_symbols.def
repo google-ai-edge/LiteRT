@@ -1,0 +1,77 @@
+; Copyright 2025 Google LLC.
+;
+; Licensed under the Apache License, Version 2.0 (the "License");
+; you may not use this file except in compliance with the License.
+; You may obtain a copy of the License at
+;
+;      http://www.apache.org/licenses/LICENSE-2.0
+;
+; Unless required by applicable law or agreed to in writing, software
+; distributed under the License is distributed on an "AS IS" BASIS,
+; WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+; See the License for the specific language governing permissions and
+; limitations under the License.
+
+; Exports symbols from C API DLL or executables when C API is statically linked.
+; The list of symbols here doesn't cover all symbols of C API, but added as
+; needed when linker fails to find symbols. Currently, they are used by
+; litert_lm_main.exe when --define=litert_link_capi_so=true and by
+; libLiteRtWebGpuAccelerator.dll when --define=resolve_symbols_from_exec=true.
+
+EXPORTS
+  LiteRtAddGpuOptionsExternalTensorPattern
+  LiteRtAddOpaqueOptions
+  LiteRtCompiledModelIsFullyAccelerated
+  LiteRtCompiledModelStartMetricsCollection
+  LiteRtCompiledModelStopMetricsCollection
+  LiteRtCreateAccelerator
+  LiteRtCreateCompiledModel
+  LiteRtCreateCpuOptions
+  LiteRtCreateEnvironment
+  LiteRtCreateGpuOptions
+  LiteRtCreateMetrics
+  LiteRtCreateOptions
+  LiteRtDestroyCompiledModel
+  LiteRtDestroyEnvironment
+  LiteRtDestroyMetrics
+  LiteRtDestroyOptions
+  LiteRtFindCpuOptions
+  LiteRtGetCompiledModelEnvironment
+  LiteRtGetCompiledModelInputBufferRequirements
+  LiteRtGetCompiledModelOutputBufferRequirements
+  LiteRtGetCpuOptionsIdentifier
+  LiteRtGetCpuOptionsNumThread
+  LiteRtGetCpuOptionsXNNPackFlags
+  LiteRtGetCpuOptionsXnnPackWeightCachePath
+  LiteRtGetEnvironmentOptions
+  LiteRtGetGpuOptionsPayloadIdentifier
+  LiteRtGetMetric
+  LiteRtGetNumMetrics
+  LiteRtGetTensorBufferRegistry
+  LiteRtGpuEnvironmentCreate
+  LiteRtRegisterAccelerator
+  LiteRtRegisterTensorBufferHandlers
+  LiteRtRunCompiledModel
+  LiteRtRunCompiledModelAsync
+  LiteRtSetAcceleratorGetHardwareSupport
+  LiteRtSetAcceleratorGetName
+  LiteRtSetAcceleratorGetVersion
+  LiteRtSetCpuOptionsNumThread
+  LiteRtSetCpuOptionsXNNPackFlags
+  LiteRtSetCpuOptionsXnnPackWeightCachePath
+  LiteRtSetDelegateFunction
+  LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
+  LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey
+  LiteRtSetGpuAcceleratorCompilationOptionsPrecision
+  LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights
+  LiteRtSetGpuAcceleratorCompilationOptionsSerializationDir
+  LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors
+  LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache
+  LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType
+  LiteRtSetGpuOptionsBenchmarkMode
+  LiteRtSetGpuOptionsConstantTensorSharing
+  LiteRtSetGpuOptionsGpuBackend
+  LiteRtSetGpuOptionsInfiniteFloatCapping
+  LiteRtSetGpuOptionsNoExternalTensorsMode
+  LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
+  LiteRtSetOptionsHardwareAccelerators
