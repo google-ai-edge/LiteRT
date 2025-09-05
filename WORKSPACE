@@ -264,3 +264,5 @@ openvino_configure(
     name = "intel_openvino",
     build_file = "//third_party/intel_openvino:openvino.bazel",
 )
+
+# A dummy comment to trigger kokoro presubmit for all platforms.
