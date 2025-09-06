@@ -147,6 +147,7 @@ struct CompositeOptions : public OpOptions {
   // Name for special composites representing manual partitions.
   static constexpr absl::string_view kNpuCall = "odml.npu_call";
   static constexpr absl::string_view kRmsNorm = "odml.rms_norm";
+  static constexpr absl::string_view kL2Norm = "odml.l2_norm";
 
   // The root op.
   LiteRtOp op;
