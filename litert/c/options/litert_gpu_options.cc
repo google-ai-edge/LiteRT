@@ -61,6 +61,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Added in version 1.4.0.
   // GPU backend to use.
   LiteRtGpuBackend gpu_backend = kLiteRtGpuBackendAutomatic;
+  // Added in version 2.0.2a1.
+  // GPU priority to use.
+  LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityNormal;
 };
 
 namespace litert {
@@ -143,6 +146,14 @@ LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_options));
   payload->external_tensor_patterns.push_back(std::string(pattern));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetGpuOptionsGpuPriority(LiteRtOpaqueOptions gpu_options,
+                                            LiteRtGpuPriority priority) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_options));
+  payload->gpu_priority = priority;
   return kLiteRtStatusOk;
 }
 
@@ -266,6 +277,16 @@ LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *enabled = payload->experimental_no_external_tensors_mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                            LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(priority, ErrorStatusBuilder::InvalidArgument())
+      << "`priority` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *priority = payload->gpu_priority;
   return kLiteRtStatusOk;
 }
 

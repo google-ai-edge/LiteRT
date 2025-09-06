@@ -45,6 +45,7 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus EnableNoExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
   LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
+  LiteRtStatus SetGpuPriority(LiteRtGpuPriority priority);
 };
 
 }  // namespace litert

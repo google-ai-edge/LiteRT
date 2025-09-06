@@ -63,6 +63,12 @@ LiteRtStatus LiteRtSetGpuOptionsNoExternalTensorsMode(
 LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
     LiteRtOpaqueOptions gpu_options, const char* pattern);
 
+// Sets the GPU priority. Low priority helps to unblock UI workloads.
+//
+// WARNING: This is an experimental feature and subject to change.
+LiteRtStatus LiteRtSetGpuOptionsGpuPriority(LiteRtOpaqueOptions gpu_options,
+                                            LiteRtGpuPriority priority);
+
 // This enables dynamic range quantization of the input tensor for large sized
 // fully connected and convolution operations, if the device supports it. This
 // will result in accuracy loss, since the input tensor will be quantized to
@@ -182,6 +188,9 @@ LiteRtStatus LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns(
 LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
     const char** external_tensor_pattern, int pattern_index,
     LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
+                                            LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"

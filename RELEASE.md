@@ -50,6 +50,8 @@ return an error.
 * Added Profiler API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_profiler.h).
 * Added Error reporter API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/d65ffb98ce708a7fb40640546af0c3a6f0f8a763/litert/cc/options/litert_runtime_options.h#L44).
 * Added resize input tensor API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_compiled_model.h#L431).
+* Added WebGPU support with GPU Accelerator.
+* Added an option to control GPU inference priority.
 
 ### Bug Fixes and Other Changes
 

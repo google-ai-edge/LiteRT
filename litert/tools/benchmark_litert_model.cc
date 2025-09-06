@@ -50,6 +50,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_cpu = params.Get<bool>("use_cpu");
   auto gpu_backend = params.Get<std::string>("gpu_backend");
   auto allow_fp16 = params.Get<bool>("allow_fp16");
+  auto gpu_low_priority = params.Get<bool>("gpu_low_priority");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
@@ -80,6 +81,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (allow_fp16 == false) {
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+    }
+    if (gpu_low_priority) {
+      gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
     }
     compilation_options.AddOpaqueOptions(std::move(gpu_options));
   }

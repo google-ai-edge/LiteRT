@@ -100,4 +100,8 @@ LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
   return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
 }
 
+LiteRtStatus GpuOptions::SetGpuPriority(LiteRtGpuPriority priority) {
+  return LiteRtSetGpuOptionsGpuPriority(Get(), priority);
+}
+
 }  // namespace litert
