@@ -1,0 +1,103 @@
+name: "CI-LiteRT-Mac"
+
+on:
+  push:
+    tags:
+      - v*.*.*
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "0 10 * * *"  # Daily cache refresh
+  workflow_dispatch:
+    inputs:
+      REFRESH_CACHE:
+        description: 'Refresh cache to remove unused files'
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  presubmit-mac:
+    name: "Presubmit-Mac-LiteRT"
+    runs-on: macos-latest
+    permissions:
+      actions: write
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REFRESH_CACHE: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.REFRESH_CACHE) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure TensorFlow & Python path
+        run: |
+          chmod +x configure.py
+          export PYTHON_BIN_PATH=$(which python3)
+          export PYTHON_LIB_PATH=$(python3 -c 'import site; print(site.getsitepackages()[0])')
+          export TF_NEED_ROCM=0
+          export TF_NEED_CUDA=0
+          export TF_SET_ANDROID_WORKSPACE=0
+          export CC_OPT_FLAGS='-Wno-sign-compare'
+          python3 configure.py
+      - name: Set up cache keys
+        id: cache-keys
+        run: |
+          CACHE_RESTORE_KEY_2="${{ github.workflow }}"
+          CACHE_RESTORE_KEY_1="$CACHE_RESTORE_KEY_2-${{ hashFiles('**/WORKSPACE', '**/.bazelrc') }}"
+          CACHE_RESTORE_KEY_0="$CACHE_RESTORE_KEY_1-${{ hashFiles('**/BUILD*') }}"
+          CACHE_RESTORE_KEY_HEAD="$CACHE_RESTORE_KEY_0-${{ github.event.pull_request.base.sha }}"
+          CACHE_KEY="$CACHE_RESTORE_KEY_0-${{ github.sha }}"
+          echo "CACHE_RESTORE_KEY_2=$CACHE_RESTORE_KEY_2" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_1=$CACHE_RESTORE_KEY_1" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_0=$CACHE_RESTORE_KEY_0" >> "$GITHUB_OUTPUT"
+          echo "CACHE_RESTORE_KEY_HEAD=$CACHE_RESTORE_KEY_HEAD" >> "$GITHUB_OUTPUT"
+          echo "CACHE_KEY=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+      - name: Clean build outputs if refreshing cache
+        if: env.REFRESH_CACHE == 'true'
+        run: bazel clean --expunge
+
+      - name: Restore Bazel cache
+        id: bazel-cache
+        if: env.REFRESH_CACHE != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/bazel-macos
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
+          restore-keys: |
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
+            ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+      - name: Build LiteRT targets
+        run: |
+          bazel build --disk_cache=~/.cache/bazel-macos \
+            //litert/python/... \
+            //litert/core/... 
+      - name: Run LiteRT tests
+        run: |
+          bazel test --disk_cache=~/.cache/bazel-macos \
+            --test_output=errors \
+            //litert/python/... \
+            //litert/core/... 
+      - name: Remove cache if refreshing
+        if: env.REFRESH_CACHE == 'true'
+        continue-on-error: true
+        run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
+
+      - name: Save Bazel cache
+        uses: actions/cache/save@v4
+        if: env.REFRESH_CACHE == 'true' || steps.bazel-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/bazel-macos
+          key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
