@@ -78,6 +78,7 @@ package_group(
         "//litert/python/...",
         "//litert/cts/...",
         "//litert/google/...",
+        "//litert/test/...",
         "//litert/vendors/qualcomm/...",
         "//litert/vendors/google_tensor/...",
         "//litert/vendors/mediatek/...",
