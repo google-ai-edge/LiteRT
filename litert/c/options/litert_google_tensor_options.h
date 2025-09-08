@@ -88,6 +88,13 @@ LiteRtStatus LiteRtGoogleTensorOptionsSetEnableLargeModelSupport(
 LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
     LiteRtGoogleTensorOptions options, bool* enable_large_model_support);
 
+// enable_4bit_compilation -----------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool enable_4bit_compilation);
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool* enable_4bit_compilation);
+
 // sharding intensity ---------------------------------------------------------
 
 LiteRtStatus LiteRtGoogleTensorOptionsSetShardingIntensity(
