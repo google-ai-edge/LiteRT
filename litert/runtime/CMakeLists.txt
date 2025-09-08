@@ -71,6 +71,9 @@ target_link_libraries(litert_runtime
         litert_core
         litert_core_model
         litert_c_api
+        litert_c_options
+        litert_cc_api
+        litert_cc_options
         litert_cc_internal
         litert_compiler_plugin
         absl::status
@@ -80,6 +83,7 @@ target_link_libraries(litert_runtime
         absl::flat_hash_map
         absl::synchronization
         flatbuffers::flatbuffers
+        tensorflow-lite
     PRIVATE
         Threads::Threads
 )

@@ -105,6 +105,28 @@ include_directories(
     ${TENSORFLOW_SOURCE_DIR}
 )
 
+# Add OpenCL headers include directory if GPU is enabled
+if(LITERT_USE_GPU AND EXISTS "${TFLITE_BUILD_DIR}/opencl_headers")
+    include_directories(${TFLITE_BUILD_DIR}/opencl_headers)
+endif()
+
+# Add FP16 headers include directory
+if(EXISTS "${TFLITE_BUILD_DIR}/FP16-source/include")
+    include_directories(${TFLITE_BUILD_DIR}/FP16-source/include)
+endif()
+
+# Find FlatBuffers
+find_package(flatbuffers REQUIRED
+    PATHS ${TFLITE_BUILD_DIR}/_deps/flatbuffers-build
+    NO_DEFAULT_PATH
+)
+
+# Find Abseil
+find_package(absl REQUIRED
+    PATHS ${TFLITE_BUILD_DIR}/_deps/abseil-cpp-build
+    NO_DEFAULT_PATH
+)
+
 # Platform detection
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     set(LITERT_PLATFORM_MACOS ON)
