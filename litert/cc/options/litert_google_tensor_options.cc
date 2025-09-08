@@ -117,6 +117,20 @@ bool GoogleTensorOptions::GetEnableLargeModelSupport() const {
   return enable_large_model_support;
 }
 
+void GoogleTensorOptions::SetEnable4BitCompilation(
+    bool enable_4bit_compilation) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetEnable4BitCompilation, Data(),
+                     enable_4bit_compilation);
+}
+
+bool GoogleTensorOptions::GetEnable4BitCompilation() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  bool enable_4bit_compilation;
+  LiteRtGoogleTensorOptionsGetEnable4BitCompilation(options_data,
+                                                    &enable_4bit_compilation);
+  return enable_4bit_compilation;
+}
+
 void GoogleTensorOptions::SetShardingIntensity(
     LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity) {
   internal::AssertOk(LiteRtGoogleTensorOptionsSetShardingIntensity, Data(),

@@ -27,6 +27,7 @@ struct LiteRtGoogleTensorOptionsT {
   std::string output_dir = "";
   bool dump_op_timings = false;
   bool enable_large_model_support = false;
+  bool enable_4bit_compilation = false;
   LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
       kLiteRtGoogleTensorShardingIntensityMinimal;
   std::vector<std::vector<std::string>> testing_flags = {};

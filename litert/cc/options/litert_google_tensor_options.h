@@ -60,6 +60,10 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   void SetEnableLargeModelSupport(bool enable_large_model_support);
 
+  bool GetEnable4BitCompilation() const;
+
+  void SetEnable4BitCompilation(bool enable_4bit_compilation);
+
   void SetShardingIntensity(
       LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity);
 
