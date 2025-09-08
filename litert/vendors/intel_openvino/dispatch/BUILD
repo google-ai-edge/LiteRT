@@ -149,7 +149,6 @@ cc_test(
     tags = [
         "no-remote-exec",
         "no_oss",
-        "nobuilder",
         "notap",
     ],
     deps = [

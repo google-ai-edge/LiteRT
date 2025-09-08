@@ -134,7 +134,6 @@ litert_test(
         "//litert/test:tflite_test_data",
     ],
     tags = [
-        "nobuilder",
         "notap",
     ],
     deps = [
@@ -165,7 +164,6 @@ litert_test(
         "no-remote-exec",
         "notap",
         "no_oss",
-        "nobuilder",
     ],
     target_compatible_with = select({
         "@platforms//os:android": [],
