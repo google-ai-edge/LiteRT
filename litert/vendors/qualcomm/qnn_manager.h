@@ -139,6 +139,8 @@ class QnnManager {
   // called.
   Qnn_BackendHandle_t& BackendHandle() { return backend_handle_; }
 
+  const ::qnn::Options& GetOptions() const { return options_; }
+
  private:
   QnnManager() = default;
 
@@ -210,6 +212,7 @@ class QnnManager {
   // For dispatch options
   std::unique_ptr<PerfControl> perf_control_{nullptr};
   const QnnDevice_PlatformInfo_t* device_platform_info_ = nullptr;
+  ::qnn::Options options_;
 };
 
 // Unfortunately we can't use std::unique_ptr with a deleter because

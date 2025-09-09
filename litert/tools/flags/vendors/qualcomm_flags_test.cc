@@ -259,7 +259,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeBurst);
+            kLiteRtQualcommHtpPerformanceModeDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
 }
 

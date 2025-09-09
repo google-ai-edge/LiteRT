@@ -91,9 +91,11 @@ ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
           "Whether to automatically convert a quantized int16 model into a "
           "quantized uin16 model.");
 
+// Default should be kLiteRtQualcommHtpPerformanceModeDefault since we need
+// default performance model during compilation.
 ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
-          qualcomm_htp_performance_mode, kLiteRtQualcommHtpPerformanceModeBurst,
-          "HTP performance mode.");
+          qualcomm_htp_performance_mode,
+          kLiteRtQualcommHtpPerformanceModeDefault, "HTP performance mode.");
 
 ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
