@@ -223,6 +223,7 @@ cc_library(
     copts = litert_metal_opts(),
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options",
+        "//litert/cc:litert_any",
         "//litert/core:environment",
     ] + litert_metal_deps(),
 )
