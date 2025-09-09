@@ -61,8 +61,8 @@ cc_test(
     deps = [
         ":gen_device_test_lib",
         "//litert/c:litert_logging",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/tools:dump",
@@ -82,10 +82,10 @@ cc_library(
     hdrs = ["gen_device_test_lib.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model",
+        "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_model",
+        "//litert/cc/internal:litert_tensor_buffer",
         "//litert/core/model",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -224,7 +224,7 @@ litert_device_test(
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_google_tensor_test",
 #     "//litert/vendors/google_tensor/dispatch:dispatch_api_async_google_tensor_test",
 #     "//litert/runtime:gl_buffer_device_test",
-#     "//litert/cc:litert_tensor_buffer_device_test",
+#     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(
@@ -264,7 +264,7 @@ litert_device_test(
 #     "//litert/runtime/compiler:jit_compilation_qualcomm_test",
 #     "//litert/runtime:gl_buffer_device_test",
 #     "//litert/cc:litert_compiled_model_qualcomm_test",
-#     "//litert/cc:litert_tensor_buffer_device_test",
+#     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
 # guitar_workflow_test(

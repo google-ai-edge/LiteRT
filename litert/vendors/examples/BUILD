@@ -35,8 +35,8 @@ litert_dynamic_lib(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_op_options",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_op_options",
     ],
 )
 
@@ -49,7 +49,7 @@ cc_test(
     deps = [
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",

@@ -480,7 +480,7 @@ cc_binary(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_logging",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_model",
         "//litert/core/model",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
