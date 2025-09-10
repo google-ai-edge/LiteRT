@@ -1,7 +1,7 @@
 {
   "name": "@litertjs/eslint-config",
   "private": "true",
-  "version": "0.5.0",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/google-ai-edge/LiteRT.git",
