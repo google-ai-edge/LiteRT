@@ -66,12 +66,32 @@ The C++ code is organized into `ImageUtils` and `ImageProcessor`, and
 
 ## Prerequisites
 
-1.  **Bazel**: Installed.
-2.  **ADB**: Installed and in PATH.
-3.  **LiteRT**: [LiteRT libraries](https://github.com/google-ai-edge/LiteRT).
+1.  **clang or gcc**: Installed.
+2.  **Android NDK and SDK**: Installed. (Tested with NDK=25c, SDK=34)
+3.  **Bazel**: Installed.
+4.  **ADB**: Installed and in PATH.
+5.  **LiteRT**: [LiteRT libraries](https://github.com/google-ai-edge/LiteRT).
 
 ### Build Instructions
+
 All commands should be run from the root of the LiteRT repository.
+
+Configure the build tools:
+```bash
+./configure
+# default python
+# default python lib path
+# N to ROCm support
+# N to CUDA support
+# Best tested with clang (tested with 18.1.3)
+# default opt flags
+# configure ./WORKSPACE for Android builds (y)
+# Min Android NDK level (at least 26)
+# configure path to sdk
+# specify Android SDK API level (tested with 34)
+# specify Android build tools (tested with 34.0.0)
+```
+
 ```bash
 bazel build //litert/samples/async_segmentation:async_segmentation_cpu --config=android_arm64
 bazel build //litert/samples/async_segmentation:async_segmentation_gpu --config=android_arm64
