@@ -223,5 +223,8 @@ cc_library(
 filegroup(
     name = "options_headers",
     srcs = glob(["litert_*.h"]),
-    visibility = ["//litert/c:__pkg__"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
+    ],
 )

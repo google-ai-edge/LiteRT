@@ -6,12 +6,6 @@
 INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 -->
 
-### Major Features and Improvements
-
-<!---
-INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
--->
-
 ### Breaking Changes
 
 <!---
@@ -40,6 +34,10 @@ INSERT SMALL BLURB ABOUT RELEASE FOCUS AREA AND POTENTIAL TOOLCHAIN CHANGES
 * <IF RELEASE CONTAINS MULTIPLE FEATURES FROM SAME AREA, GROUP THEM TOGETHER>
 -->
 
+* Added Profiler API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_profiler.h).
+* Added Error reporter API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/d65ffb98ce708a7fb40640546af0c3a6f0f8a763/litert/cc/options/litert_runtime_options.h#L44).
+* Added resize input tensor API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_compiled_model.h#L431).
+
 * [tflite] Add error detection in TfLiteRegistration::init(). When a Delegate
 kernel returns `TfLiteKernelInitFailed()`, it is treated
 as a critical failure on Delegate. This error will be detected in
@@ -47,11 +45,18 @@ SubGraph::ReplaceNodeSubsetsWithDelegateKernels() will cause
 Delegate::Prepare() to fail, ultimately leading
 InterpreterBuilder::operator() or Interpreter::ModifyGraphWithDelegate() to
 return an error.
-* Added Profiler API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_profiler.h).
-* Added Error reporter API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/d65ffb98ce708a7fb40640546af0c3a6f0f8a763/litert/cc/options/litert_runtime_options.h#L44).
-* Added resize input tensor API in Compiled Model: [source](https://github.com/google-ai-edge/LiteRT/blob/main/litert/cc/litert_compiled_model.h#L431).
+
+#### LiteRT GPU Accelerator
+
 * Added WebGPU support with GPU Accelerator.
 * Added an option to control GPU inference priority.
+
+#### LiteRT API Refactoring
+
+* Introduced target `litert/cc:litert_api_with_dynamic_runtime`
+  This is a convenience Bazel target contains LiteRt C++ and C APIs. Users
+  of this library are responsible to bundle LiteRT C API Runtime
+  `libLiteRtRuntimeCApi.so`.
 
 ### Bug Fixes and Other Changes
 

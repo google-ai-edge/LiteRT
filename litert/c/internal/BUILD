@@ -215,5 +215,8 @@ exports_files(srcs = glob(["litert_*.h"]))
 filegroup(
     name = "internal_headers",
     srcs = glob(["litert_*.h"]),
-    visibility = ["//litert/c:__pkg__"],
+    visibility = [
+        "//litert/c:__pkg__",
+        "//litert/cc:__pkg__",
+    ],
 )

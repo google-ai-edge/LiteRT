@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:special_rule.bzl", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 # copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
@@ -1217,3 +1217,91 @@ exports_files(glob([
 #     deps = [":litert_compiled_model_metal_test"],
 # )
 # copybara:uncomment_end(google-only)
+
+# User facing C/C++ API target that depends on the dynamic runtime `libLiteRtRuntimeCApi.so`.
+cc_library(
+    name = "litert_api_with_dynamic_runtime",
+    hdrs = [
+        # C++ API headers.
+        "litert_any.h",
+        "litert_buffer_ref.h",
+        "litert_c_types_printing.h",
+        "litert_compiled_model.h",
+        "litert_consts.h",
+        "litert_custom_op_kernel.h",
+        "litert_detail.h",
+        "litert_element_type.h",
+        "litert_environment.h",
+        "litert_environment_options.h",
+        "litert_event.h",
+        "litert_expected.h",
+        "litert_handle.h",
+        "litert_layout.h",
+        "litert_logging.h",
+        "litert_macros.h",
+        "litert_model.h",
+        "litert_numerics.h",
+        "litert_opaque_options.h",
+        "litert_options.h",
+        "litert_profiler.h",
+        "litert_source_location.h",
+        "litert_tensor_buffer.h",
+        "litert_tensor_buffer_requirements.h",
+        "//litert/cc/options:litert_gpu_options.h",
+        "//litert/cc/options:litert_cpu_options.h",
+        "//litert/cc/options:litert_runtime_options.h",
+    ] + [
+        # Other headers needed by the C++ API headers.
+        "//litert/c:c_api_headers",
+        "//litert/c/internal:internal_headers",
+        "//litert/c/options:options_headers",
+        "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h
+        "//tflite/c:tensorflowlite_c_api_hdrs_filegroup",  # Needed for litert/c/litert_model.h
+        "//tflite/core/c:headers_filegroup",
+    ],
+    deps = [
+        # C++ API targets.
+        ":litert_compiled_model",
+        ":litert_custom_op_kernel",
+        ":litert_environment",
+        ":litert_event",
+        ":litert_model",
+        ":litert_op_options",
+        ":litert_options",
+        ":litert_profiler",
+        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
+    ] + [
+        # C++ Options API targets.
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_runtime_options",
+    ] + [
+        # Other (static) C++ API targets.
+        ":litert_any",
+        ":litert_expected",
+        ":litert_macros",
+        ":litert_handle",
+        ":litert_c_types_printing",
+        ":litert_buffer_ref",
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_opaque_options",
+        ":litert_environment_options",
+    ] + [
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "//tflite/profiling:profile_buffer",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
+    ] + gles_headers(),
+)

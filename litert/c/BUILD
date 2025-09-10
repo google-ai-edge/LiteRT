@@ -734,6 +734,12 @@ config_setting(
     define_values = {"resolve_symbols_in_exec": "true"},
 )
 
+filegroup(
+    name = "c_api_headers",
+    srcs = glob(["litert_*.h"]),
+    visibility = ["//litert/cc:__pkg__"],
+)
+
 # This is cc_library target based on `libLiteRtRuntimeCApi.so`.
 cc_library(
     name = "litert_runtime_c_api_shared_lib",
@@ -746,7 +752,8 @@ cc_library(
         "@platforms//os:windows": [],
         "//conditions:default": [":litert_runtime_c_api_so"],
     }),
-    hdrs = glob(["*.h"]) + [
+    hdrs = [
+        ":c_api_headers",
         "//litert/c/internal:internal_headers",
         "//litert/c/options:options_headers",
         "//tflite:builtin_ops.h",  # Needed for litert/c/litert_op_code.h
