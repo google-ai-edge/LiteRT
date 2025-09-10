@@ -22,7 +22,7 @@ cc_library(
     hdrs = ["utils.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_model",
         "@intel_openvino//:openvino",
     ],
 )

@@ -21,6 +21,10 @@ package(
         # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
+        # "//litert/c:__pkg__",
+        # "//litert/cc:__pkg__",
+        # "//litert/integration_test:__pkg__",
+        # "//litert/test:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
@@ -108,6 +112,22 @@ cc_library(
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_library(
+    name = "litert_model_predicates",
+    srcs = ["//litert/cc:litert_model_predicates.cc"],
+    hdrs = ["//litert/cc:litert_model_predicates.h"],
+    deps = [
+        ":litert_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_element_type",
+        "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -528,8 +548,8 @@ cc_library(
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/cc:litert_expected",
 #         "//litert/cc:litert_macros",
-#         "//litert/cc:litert_model",
 #         "//litert/cc:litert_platform_support",
+#         "//litert/cc/internal:litert_model",
 #         "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",

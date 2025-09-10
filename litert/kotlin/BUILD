@@ -54,7 +54,7 @@ cc_library(
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
-        "//litert/cc:litert_environment",
+        "//litert/cc/dynamic_runtime:litert_environment",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ] + select({
@@ -78,7 +78,7 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
-        "//litert/cc:litert_model",
+        "//litert/cc/dynamic_runtime:litert_model",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ] + select({
@@ -97,9 +97,9 @@ cc_library(
         ":litert_jni_common",
         ":litert_model_jni",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_handle",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
@@ -119,7 +119,7 @@ cc_library(
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_handle",
-        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [],
