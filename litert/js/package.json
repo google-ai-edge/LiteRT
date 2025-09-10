@@ -28,7 +28,7 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.4",
+    "@changesets/cli": "^2.29.6",
     "prettier": "^3.3.3",
     "turbo": "^2.0.10",
     "typedoc": "^0.28.7"
