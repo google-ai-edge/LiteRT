@@ -113,6 +113,7 @@ package_group(
         # TODO(b/424778444) Targets above C API boundary shouldn't call internal. Remove below.
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
+        # copybara:uncomment "//learning/brain/mobile/lite/tooling/ai_edge_hub/...",
         "//litert/cc/...",
         "//litert/cc/internal/...",
     ],
