@@ -59,6 +59,10 @@ return an error.
   `libLiteRtRuntimeCApi.so`.
 * C++ APIs that need LiteRT C API Runtime are moved to
   litert/cc/dynamic_runtime/
+  Note: This is for internal usage. If you want to use dynamic API, use
+  `litert/cc:litert_api_with_dynamic_runtime`.
+* All static C++ APIs are moved to litert/cc/
+* You shouldn't mix static API targets with dynamic API targets.
 
 ### Bug Fixes and Other Changes
 
