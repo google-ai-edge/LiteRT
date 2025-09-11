@@ -21,10 +21,13 @@
 
 #include <array>
 
+#include "IR/QnnIrGraph.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
 #include "litert/vendors/qualcomm/common.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "HTP/QnnHtpGraph.h"  // from @qairt
 #include "QnnCommon.h"  // from @qairt
@@ -119,6 +122,25 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs() {
   return absl::MakeSpan(result.data(), result.size());
 }
 
+absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
+  static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
+  // TODO(Alen): pass dlc path by options.
+  graph_custom_configs[0].option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION;
+  graph_custom_configs[0].serializationOption.serializationType =
+      QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER;
+  graph_custom_configs[0].serializationOption.outputPath = "";
+
+  static std::array<QnnGraph_Config_t, 1> graph_configs;
+  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
+  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+  graph_configs[0].customConfig = &graph_custom_configs[0];
+
+  static std::array<const QnnGraph_Config_t*, 2> result = {&graph_configs[0],
+                                                           nullptr};
+
+  return absl::MakeSpan(result.data(), result.size());
+}
+
 absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic() {
   if (qnn_.IsLegacySocModel()) {
     return GetLegacyGraphConfigs();
@@ -137,10 +159,27 @@ LiteRtStatus GraphMapper::IsLiteRtSubgraphSupported() {
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name) {
-  LITERT_RETURN_STATUS_IF_QNN_NOT_OK(
-      qnn_.Api()->graphCreate(context_handle_, qnn_graph_name.data(),
-                              PickGraphConfigHeuristic().data(), &QnnGraph()));
+LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
+                                       const ::qnn::Options& options) {
+  switch (options.GetBackendType()) {
+    case ::qnn::BackendType::kHtpBackend: {
+      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
+          context_handle_, qnn_graph_name.data(),
+          PickGraphConfigHeuristic().data(), &QnnGraph()));
+      break;
+    }
+    case ::qnn::BackendType::kIrBackend: {
+      LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
+          context_handle_, qnn_graph_name.data(),
+          GetDefaultIrGraphConfigs().data(), &QnnGraph()));
+      break;
+    }
+    default: {
+      LITERT_LOG(LITERT_ERROR, "Unsupported Backend to create graph");
+      return kLiteRtStatusErrorUnsupported;
+    }
+  }
+
   return kLiteRtStatusOk;
 }
 

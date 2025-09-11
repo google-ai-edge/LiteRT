@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <any>
 #include <cstdio>
 #include <memory>
 #include <optional>
@@ -22,7 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -81,7 +80,7 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
           ? std::make_optional(std::string(dispatch_lib_dir))
           : std::nullopt;
 
-  auto configs = QnnManager::DefaultBackendConfigs();
+  // TODO(Alen): initialize qnn_options from LiteRtOptions
   ::qnn::Options qnn_options;
   if (qnn_opts) {
     InitQnnOptions(qnn_options, qnn_opts.Value());
@@ -91,7 +90,6 @@ LiteRtStatus Initialize(LiteRtEnvironmentOptions environment_options,
                qnn_opts.Error().Message().c_str());
   }
   if (auto qnn_manager = QnnManager::Create(
-          /*configs=*/configs,
           /*options=*/qnn_options,
           /*shared_library_dir=*/shared_library_dir_opt,
           /*soc_model*/ std::nullopt);

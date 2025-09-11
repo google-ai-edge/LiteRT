@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "QnnLog.h"  // from @qairt
 
 // c++ enum and wrapper without dependency.
 namespace qnn {
@@ -30,6 +31,12 @@ enum class Profiling {
   kOptrace = 4
 };
 
+enum class BackendType {
+  kUndefinedBackend = 0,
+  kHtpBackend,
+  kIrBackend,
+};
+
 enum class HtpPerformanceMode {
   kDefault = 0,
   kSustainedHighPerformance = 1,
@@ -47,22 +54,25 @@ class Options {
  public:
   Options() = default;
 
-  void SetLogLevel(const LogLevel log_level);
+  void SetLogLevel(LogLevel log_level);
   LogLevel GetLogLevel() const;
 
-  void SetProfiling(const Profiling profiling);
+  void SetBackendType(BackendType backend_type);
+  BackendType GetBackendType() const;
+
+  void SetProfiling(Profiling profiling);
   Profiling GetProfiling() const;
 
-  void SetUseHtpPreference(const bool use_htp_preference);
+  void SetUseHtpPreference(bool use_htp_preference);
   bool GetUseHtpPreference() const;
 
-  void SetUseQint16AsQuint16(const bool use_qint16_as_quint16);
+  void SetUseQint16AsQuint16(bool use_qint16_as_quint16);
   bool GetUseQint16AsQuint16() const;
 
-  void SetEnableWeightSharing(const bool enable_weight_sharing);
+  void SetEnableWeightSharing(bool enable_weight_sharing);
   bool GetEnableWeightSharing() const;
 
-  void SetHtpPerformanceMode(const HtpPerformanceMode htp_performance_mode);
+  void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
   // for per-layer dump
@@ -76,6 +86,7 @@ class Options {
 
  private:
   LogLevel log_level_ = LogLevel::kInfo;
+  BackendType backend_type_ = BackendType::kHtpBackend;
   Profiling profiling_ = Profiling::kOff;
   bool use_htp_preference_ = false;
   bool use_qint16_as_quint16_ = false;
@@ -84,6 +95,10 @@ class Options {
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
 };
+
+// Gets a default logger implementation to stdout.
+// This is used when initializing qnn logging.
+QnnLog_Callback_t GetDefaultStdOutLogger();
 
 }  // namespace qnn
 

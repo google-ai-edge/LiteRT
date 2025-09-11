@@ -21,6 +21,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_model.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnGraph.h"  // from @qairt
@@ -52,7 +53,8 @@ class GraphMapper {
 
   // Initialize QNN Graph with given name. Call this after parsing
   // LiteRtSubgraph.
-  LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name);
+  LiteRtStatus InitQnnGraph(absl::string_view qnn_graph_name,
+                            const ::qnn::Options& options);
 
   // Finalize QNN Graph. Call this after all ops have been mapped.
   LiteRtStatus Finalize();
