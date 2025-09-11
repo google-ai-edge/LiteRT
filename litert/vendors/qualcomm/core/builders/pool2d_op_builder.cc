@@ -109,4 +109,17 @@ std::vector<OpWrapper> BuildAveragePoolOp(
       padding_type);
 }
 
+std::vector<OpWrapper> BuildL2PoolOp(
+    TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
+    const std::vector<TensorWrapperRef>& outputs,
+    const std::uint32_t stride_height, const std::uint32_t stride_width,
+    const std::uint32_t filter_height, const std::uint32_t filter_width,
+    const PaddingType padding_type) {
+  return BuildPool2dOp(
+      tensor_pool, QNN_OP_L2_POOL_2D, QNN_OP_L2_POOL_2D_PARAM_FILTER_SIZE,
+      QNN_OP_L2_POOL_2D_PARAM_STRIDE, QNN_OP_L2_POOL_2D_PARAM_PAD_AMOUNT,
+      inputs, outputs, stride_height, stride_width, filter_height, filter_width,
+      padding_type);
+}
+
 }  // namespace qnn
