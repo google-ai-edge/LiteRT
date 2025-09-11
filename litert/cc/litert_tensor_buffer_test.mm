@@ -48,8 +48,6 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
 
   // auto metal_device = std::make_unique<tflite::gpu::metal::MetalDevice>();
   auto metal_device = tflite::gpu::metal::MetalDevice();
-  litert::Environment::Option options = {.tag = litert::Environment::OptionTag::MetalDevice,
-                                         .value = (__bridge const void *)(metal_device.device())};
   // Create LiteRt environment from metal options.
   std::vector<litert::Environment::Option> options_vector = {
       {.tag = litert::Environment::OptionTag::MetalDevice,
