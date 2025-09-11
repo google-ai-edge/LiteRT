@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -52,8 +53,9 @@ class NpuAccelerator final
   static Expected<Ptr> Create() { return Allocate(); }
 
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options, void** delegate) {
-    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                                     LiteRtOptions options,
+                                     LiteRtDelegateWrapper* delegate_wrapper) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Delegate pointer is null.";
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
@@ -69,40 +71,44 @@ class NpuAccelerator final
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "Dispatch delegate failed to be created.";
 
-    *delegate = dispatch_delegate.release();
+    LiteRtWrapDelegate(dispatch_delegate.release(), delegate_wrapper);
     return kLiteRtStatusOk;
   }
 
   // Starts collection of HW-specific metrics at a specific level of detail.
-  static LiteRtStatus StartMetricsCollection(void* delegate, int detail_level) {
-    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+  static LiteRtStatus StartMetricsCollection(
+      LiteRtDelegateWrapper delegate_wrapper, int detail_level) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
-        << "Delegate pointer is null.";
+        << "Delegate wrapper pointer is null.";
     LITERT_RETURN_IF_ERROR(detail_level >= 0,
                            ErrorStatusBuilder::InvalidArgument())
         << "Detail level must be >= 0.";
+    TfLiteOpaqueDelegate* delegate;
+    LiteRtUnwrapDelegate(delegate_wrapper, &delegate);
     LITERT_LOG(LITERT_INFO, "Dispatch delegate started metrics collection.");
-    return LiteRtDispatchDelegateStartMetricsCollection(
-        reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), detail_level);
+    return LiteRtDispatchDelegateStartMetricsCollection(delegate, detail_level);
   }
 
   // Stops collection of HW-specific metrics and report the collected metrics.
-  static LiteRtStatus StopMetricsCollection(void* delegate,
-                                            LiteRtMetrics metrics) {
-    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+  static LiteRtStatus StopMetricsCollection(
+      LiteRtDelegateWrapper delegate_wrapper, LiteRtMetrics metrics) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Delegate pointer is null.";
     LITERT_RETURN_IF_ERROR(metrics != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Metrics pointer is null.";
+    TfLiteOpaqueDelegate* delegate;
+    LiteRtUnwrapDelegate(delegate_wrapper, &delegate);
     LITERT_LOG(LITERT_INFO, "Dispatch delegate stopped metrics collection.");
-    return LiteRtDispatchDelegateStopMetricsCollection(
-        reinterpret_cast<TfLiteOpaqueDelegate*>(delegate), metrics);
+    return LiteRtDispatchDelegateStopMetricsCollection(delegate, metrics);
   }
 
-  static void DestroyDelegate(void* delegate) {
-    LiteRtDestroyDispatchDelegate(
-        reinterpret_cast<TfLiteOpaqueDelegate*>(delegate));
+  static void DestroyDelegate(LiteRtDelegateWrapper delegate_wrapper) {
+    TfLiteOpaqueDelegate* delegate;
+    LiteRtUnwrapDelegate(delegate_wrapper, &delegate);
+    LiteRtDestroyDispatchDelegate(delegate);
   }
 };
 

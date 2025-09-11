@@ -28,6 +28,7 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/internal:litert_dispatch_delegate",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
