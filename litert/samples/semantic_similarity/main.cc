@@ -34,6 +34,7 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -54,6 +55,25 @@ ABSL_FLAG(std::string, sentence1, "",
           "The first sentence for similarity comparison.");
 ABSL_FLAG(std::string, sentence2, "",
           "The second sentence for similarity comparison.");
+ABSL_FLAG(std::string, accelerator, "cpu",
+          "Which backend to use. Comma delimited string of accelerators (e.g. "
+          "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
+          "specified in this flag.");
+
+LiteRtHwAcceleratorSet GetAccelerator() {
+  const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
+  LiteRtHwAcceleratorSet accelerators = 0;
+  for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
+    if (accelerator == "gpu") {
+      accelerators |= kLiteRtHwAcceleratorGpu;
+    } else if (accelerator == "npu") {
+      accelerators |= kLiteRtHwAcceleratorNpu;
+    } else if (accelerator == "cpu") {
+      accelerators |= kLiteRtHwAcceleratorCpu;
+    }
+  }
+  return accelerators;
+}
 
 namespace litert {
 namespace {
@@ -232,7 +252,7 @@ absl::Status RealMain() {
   LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
   LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
   options.AddOpaqueOptions(std::move(cpu_compilation_options));
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(GetAccelerator());
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_model,
       CompiledModel::Create(env, embedder_model_def, options));

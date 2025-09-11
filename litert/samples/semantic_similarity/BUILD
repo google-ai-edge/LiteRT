@@ -36,6 +36,7 @@ cc_binary(
 cc_binary(
     name = "semantic_similarity",
     srcs = ["main.cc"],
+    # copybara:uncomment data = ["//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so"],
     deps = [
         "//base",
         "//litert/cc:litert_api_with_dynamic_runtime",
