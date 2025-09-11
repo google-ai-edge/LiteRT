@@ -24,7 +24,7 @@ package(
 # :litert_cc_users_static_link. Access to LiteRT C++ API implies access to LiteRT C API.
 # Access to LiteRT C API is controlled by :litert_c_users.
 
-# Users with access to the LiteRT C++ API linked dynamically (litert/cc).
+# Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
 # Requires linking against libLiteRtRuntimeCApi.so.
 # For statically linked C++ API, use :litert_cc_users_static_link.
 package_group(
@@ -50,6 +50,7 @@ package_group(
         "//litert/kotlin/...",
         "//litert/python/...",
         "//litert/runtime/accelerators/gpu/...",
+        "//litert/runtime/dispatch/...",
         "//litert/runtime/ml_drift_delegate/...",
         "//litert/rust/...",
         "//litert/samples/...",
@@ -85,9 +86,11 @@ package_group(
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
         # TODO(b/424778444): Internal runtime should not call cc/internal. Remove below targets.
+        "//litert/cc/...",
         "//litert/runtime/...",
         "//litert/compiler/...",
         "//litert/core/model/...",
+        "//litert/test/...",
         "//litert/tools/...",
     ],
 )

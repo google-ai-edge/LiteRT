@@ -34,7 +34,7 @@ litert_cc_lib_with_mtk(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
-        "//litert/cc/options:litert_mediatek_options",
+        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:v8_latest_host_headers",

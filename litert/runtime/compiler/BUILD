@@ -29,9 +29,9 @@ litert_device_test(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc:litert_model",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_model",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -58,9 +58,9 @@ litert_device_test(
     ],
     deps = [
         "//litert/c:litert_common",
-        "//litert/cc:litert_model",
         "//litert/cc/internal:litert_compiled_model",
         "//litert/cc/internal:litert_environment",
+        "//litert/cc/internal:litert_model",
         "//litert/cc/internal:litert_tensor_buffer",
         "//litert/test:common",
         "//litert/test:matchers",

@@ -57,6 +57,8 @@ return an error.
   This is a convenience Bazel target contains LiteRt C++ and C APIs. Users
   of this library are responsible to bundle LiteRT C API Runtime
   `libLiteRtRuntimeCApi.so`.
+* C++ APIs that need LiteRT C API Runtime are moved to
+  litert/cc/dynamic_runtime/
 
 ### Bug Fixes and Other Changes
 

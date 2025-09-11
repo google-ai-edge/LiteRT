@@ -281,7 +281,7 @@ cc_test(
         ":litert_op_code",
         ":litert_op_options",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_model",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "//litert/test:common",

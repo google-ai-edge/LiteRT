@@ -32,7 +32,7 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
-        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
         "@qairt//:qnn_lib_headers",
     ],
