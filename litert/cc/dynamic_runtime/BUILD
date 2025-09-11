@@ -484,7 +484,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc/options:litert_runtime_options",
+        "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -500,6 +500,40 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "litert_compiled_model_gpu_test",
+#     srcs = ["//litert/cc:litert_compiled_model_gpu_test.cc"],
+#     data = [
+#         "//litert/test:mlir_test_data",
+#         "//litert/test:tflite_test_data",
+#     ],
+#     tags = ["requires-gpu-nvidia"],
+#     deps = [
+#         "@com_google_googletest//:gtest_main_no_heapcheck",  # To workaround the memory leak in Nvidia's driver
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model",
+#         "@opencl_headers",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/cl:cl_device",
+#             "//tflite/delegates/gpu/cl:gl_interop",
+#             "//tflite/delegates/gpu/cl:opencl_wrapper",
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+#
+# copybara:uncomment_end
 
 cc_library(
     name = "litert_options",

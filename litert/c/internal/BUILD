@@ -22,7 +22,7 @@ package(
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
-        # "//litert/cc:__subpackages__",  # only for litert_external_litert_buffer_context
+        # "//litert/cc:__subpackages__",
         # "//litert/test:__subpackages__",
         # "//litert/runtime:__pkg__",
         # "//litert/runtime/accelerators:__subpackages__",
@@ -127,6 +127,7 @@ cc_library(
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
+        # "//litert/cc:__subpackages__",
         # "//litert/cc/internal:__subpackages__",
         # "//litert/runtime:__subpackages__",
         # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
