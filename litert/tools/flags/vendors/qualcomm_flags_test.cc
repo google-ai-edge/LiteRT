@@ -290,6 +290,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_FALSE(options.Value().GetUseHtpPreference());
   EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
+  EXPECT_TRUE(options.Value().GetUseConvHMX());
+  EXPECT_TRUE(options.Value().GetUseFoldReLU());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
             kLiteRtQualcommHtpPerformanceModeDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());

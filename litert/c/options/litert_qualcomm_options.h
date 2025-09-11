@@ -109,6 +109,26 @@ LiteRtStatus LiteRtQualcommOptionsSetDumpTensorIds(
 LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
     LiteRtQualcommOptions options, int32_t** ids, uint32_t* number_of_ids);
 
+// When using short conv hmx, one might have better performance, but convolution
+// that have short depth and/or weights that are not symmetric could exhibit
+// inaccurate results.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool use_conv_hmx);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool* use_conv_hmx);
+
+// When using fold relu, one might have better performance. This optimization is
+// correct when quantization ranges for convolution are equal to or are subset
+// of the Relu operation.
+
+LiteRtStatus LiteRtQualcommOptionsSetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool use_fold_relu);
+
+LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool* use_fold_relu);
+
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
 // htp_performance_mode

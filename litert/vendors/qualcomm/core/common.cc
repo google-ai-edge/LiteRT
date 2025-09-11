@@ -84,6 +84,16 @@ void Options::SetEnableWeightSharing(bool enable_weight_sharing) {
 
 bool Options::GetEnableWeightSharing() const { return enable_weight_sharing_; }
 
+void Options::SetUseConvHMX(bool use_conv_hmx) { use_conv_hmx_ = use_conv_hmx; }
+
+bool Options::GetUseConvHMX() const { return use_conv_hmx_; }
+
+void Options::SetUseFoldReLU(bool use_fold_relu) {
+  use_fold_relu_ = use_fold_relu;
+}
+
+bool Options::GetUseFoldReLU() const { return use_fold_relu_; }
+
 void Options::SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode) {
   htp_performance_mode_ = htp_performance_mode;
 }
@@ -133,6 +143,8 @@ Profiling: %d\n\
 UseHtpPreference: %v\n\
 UseQint16AsQuint16: %v\n\
 EnableWeightSharing: %v\n\
+UseConvHMX: %v\n\
+UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
@@ -144,9 +156,9 @@ OptimizationLevel: %d\n";  // NOLINT
 
   return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
                          use_htp_preference_, use_qint16_as_quint16_,
-                         enable_weight_sharing_, htp_performance_mode_,
-                         dump_tensor_ids, ir_json_dir_, vtcm_size_,
-                         num_hvx_threads_, optimization_level_);
+                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
+                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
+                         vtcm_size_, num_hvx_threads_, optimization_level_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }

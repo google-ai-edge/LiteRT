@@ -62,6 +62,10 @@ bool AbslParseFlag(absl::string_view text,
 std::string AbslUnparseFlag(
     LiteRtQualcommOptionsOptimizationLevel optimization_level);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_use_conv_hmx);
+
+ABSL_DECLARE_FLAG(bool, qualcomm_use_fold_relu);
+
 #endif
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////

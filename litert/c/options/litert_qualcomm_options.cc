@@ -34,6 +34,8 @@ struct LiteRtQualcommOptionsT {
   bool use_htp_preference = false;
   bool use_qint16_as_quint16 = false;
   bool enable_weight_sharing = false;
+  bool use_conv_hmx = true;
+  bool use_fold_relu = true;
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode =
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
@@ -239,6 +241,50 @@ LiteRtStatus LiteRtQualcommOptionsGetDumpTensorIds(
   }
   *ids = options->dump_tensor_ids.data();
   *number_of_ids = options->dump_tensor_ids.size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool use_conv_hmx) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_conv_hmx = use_conv_hmx;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetUseConvHMX(LiteRtQualcommOptions options,
+                                                bool* use_conv_hmx) {
+  if (use_conv_hmx == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_conv_hmx = options->use_conv_hmx;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool use_fold_relu) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->use_fold_relu = use_fold_relu;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetUseFoldReLU(LiteRtQualcommOptions options,
+                                                 bool* use_fold_relu) {
+  if (use_fold_relu == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *use_fold_relu = options->use_fold_relu;
+
   return kLiteRtStatusOk;
 }
 
