@@ -16,6 +16,8 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <utility>
 
 #if __ANDROID__
 #include <android/hardware_buffer.h>
@@ -30,18 +32,11 @@
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
+#include "litert/vendors/google_tensor/dispatch/sb_dispatch_annotations.h"
 
 using litert::Error;
 using litert::Expected;
 using litert::Unexpected;
-
-namespace {
-constexpr char kInferencePowerStateAttribute[] = "inference_power_state";
-constexpr char kInferenceMemoryPowerStateAttribute[] =
-    "inference_memory_power_state";
-constexpr char kInferencePriorityAttribute[] = "inference_priority";
-constexpr char kAtomicInferenceAttribute[] = "atomic_inference";
-}  // namespace
 
 LiteRtDispatchDeviceContextT::~LiteRtDispatchDeviceContextT() {
   if (!thr_graphs_.empty()) {
@@ -78,74 +73,35 @@ LiteRtDispatchDeviceContextT::Create(
   }
 
   device_context->thr_context_ = thr_context_create();
-  // Apply Darwinn runtime options if provided
-  if (darwinn_options && device_context->thr_context_) {
-    auto thr_vendor_set_system_attribute_int64 =
-        southbound.api().thr_vendor_set_system_attribute_int64;
+  // Store Darwinn options to be applied to graphs later
+  if (darwinn_options) {
+    DarwinnOptionsData options_data;
 
-    if (thr_vendor_set_system_attribute_int64) {
-      // Apply power management settings
-      auto power_state = darwinn_options->GetInferencePowerState();
-      if (power_state) {
-        if (auto status = thr_vendor_set_system_attribute_int64(
-                device_context->thr_context_, kInferencePowerStateAttribute,
-                static_cast<int64_t>(*power_state));
-            status != kThrStatusSuccess) {
-          LITERT_LOG(LITERT_WARNING, "Failed to set inference_power_state: %d",
-                     status);
-        } else {
-          LITERT_LOG(LITERT_INFO, "Set inference_power_state to %u",
-                     *power_state);
-        }
-      }
-
-      auto memory_power_state = darwinn_options->GetInferenceMemoryPowerState();
-      if (memory_power_state) {
-        if (auto status = thr_vendor_set_system_attribute_int64(
-                device_context->thr_context_,
-                kInferenceMemoryPowerStateAttribute,
-                static_cast<int64_t>(*memory_power_state));
-            status != kThrStatusSuccess) {
-          LITERT_LOG(LITERT_WARNING,
-                     "Failed to set inference_memory_power_state: %d", status);
-        } else {
-          LITERT_LOG(LITERT_INFO, "Set inference_memory_power_state to %u",
-                     *memory_power_state);
-        }
-      }
-
-      // Apply scheduling settings
-      auto priority = darwinn_options->GetInferencePriority();
-      if (priority && *priority != -1) {
-        if (auto status = thr_vendor_set_system_attribute_int64(
-                device_context->thr_context_, kInferencePriorityAttribute,
-                static_cast<int64_t>(*priority));
-            status != kThrStatusSuccess) {
-          LITERT_LOG(LITERT_WARNING, "Failed to set inference_priority: %d",
-                     status);
-        } else {
-          LITERT_LOG(LITERT_INFO, "Set inference_priority to %d", *priority);
-        }
-      }
-
-      auto atomic_inference = darwinn_options->GetAtomicInference();
-      if (atomic_inference) {
-        if (auto status = thr_vendor_set_system_attribute_int64(
-                device_context->thr_context_, kAtomicInferenceAttribute,
-                static_cast<int64_t>(*atomic_inference));
-            status != kThrStatusSuccess) {
-          LITERT_LOG(LITERT_WARNING, "Failed to set atomic_inference: %d",
-                     status);
-        } else {
-          LITERT_LOG(LITERT_INFO, "Set atomic_inference to %s",
-                     *atomic_inference ? "true" : "false");
-        }
-      }
-    } else {
-      LITERT_LOG(LITERT_WARNING,
-                 "thr_vendor_set_system_attribute_int64 not found, "
-                 "cannot apply Darwinn runtime options");
+    // Extract inference power state if available
+    if (auto power_state = darwinn_options->GetInferencePowerState();
+        power_state) {
+      options_data.inference_power_state = *power_state;
     }
+
+    // Extract inference memory power state if available
+    if (auto mem_power_state = darwinn_options->GetInferenceMemoryPowerState();
+        mem_power_state) {
+      options_data.inference_memory_power_state = *mem_power_state;
+    }
+
+    // Extract inference priority if available
+    if (auto priority = darwinn_options->GetInferencePriority(); priority) {
+      options_data.inference_priority = *priority;
+    }
+
+    // Extract atomic inference if available
+    if (auto atomic = darwinn_options->GetAtomicInference(); atomic) {
+      options_data.atomic_inference = *atomic;
+    }
+
+    device_context->darwinn_options_ = std::move(options_data);
+    LITERT_LOG(LITERT_INFO,
+               "Darwinn runtime options will be applied to graphs");
   }
   return device_context;
 }
@@ -278,7 +234,68 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
     return Error(kLiteRtStatusErrorRuntimeFailure, "thr_graph_create failed");
   }
 
-  return new LiteRtDispatchGraphT(southbound_, thr_graph, this);
+  auto* graph = new LiteRtDispatchGraphT(southbound_, thr_graph, this);
+
+  // Apply Darwinn options as graph annotations
+  if (darwinn_options_.has_value()) {
+    const auto& options = darwinn_options_.value();
+
+    // Apply inference power state annotation
+    if (options.inference_power_state.has_value()) {
+      auto status = graph->AnnotateGraph(
+          litert::google_tensor::DispatchDirectiveAnnotations::
+              kEdgetpuDevicePowerState.data(),
+          std::to_string(options.inference_power_state.value()).c_str());
+      if (!status) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply inference_power_state annotation: %s",
+                   status.Error().Message().c_str());
+      }
+    }
+
+    // Apply inference memory power state annotation
+    if (options.inference_memory_power_state.has_value()) {
+      auto status = graph->AnnotateGraph(
+          litert::google_tensor::DispatchDirectiveAnnotations::
+              kEdgetpuMemoryPowerState.data(),
+          std::to_string(options.inference_memory_power_state.value()).c_str());
+      if (!status) {
+        LITERT_LOG(
+            LITERT_WARNING,
+            "Failed to apply inference_memory_power_state annotation: %s",
+            status.Error().Message().c_str());
+      }
+    }
+    // Apply inference priority annotation
+    if (options.inference_priority.has_value()) {
+      auto status = graph->AnnotateGraph(
+          litert::google_tensor::DispatchDirectiveAnnotations::kPriority.data(),
+          std::to_string(options.inference_priority.value()).c_str());
+      if (!status) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply inference_priority annotation: %s",
+                   status.Error().Message().c_str());
+      }
+    }
+
+    // Apply atomic inference annotation
+    if (options.atomic_inference) {
+      auto status = graph->AnnotateGraph(
+          litert::google_tensor::DispatchDirectiveAnnotations::
+              kEdgetpuAtomicInference.data(),
+          "true");
+      if (!status) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply atomic_inference annotation: %s",
+                   status.Error().Message().c_str());
+      }
+    }
+
+    LITERT_LOG(LITERT_INFO,
+               "Applied Darwinn runtime options as graph annotations");
+  }
+
+  return graph;
 }
 
 litert::Expected<void> LiteRtDispatchDeviceContextT::DestroyGraph(

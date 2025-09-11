@@ -46,6 +46,7 @@ litert_dynamic_lib(
         "litert_dispatch_invocation_context.h",
         "litert_dispatch_metrics.h",
         "sb_api.h",
+        "sb_dispatch_annotations.h",
         "southbound.h",
     ],
     copts = [
