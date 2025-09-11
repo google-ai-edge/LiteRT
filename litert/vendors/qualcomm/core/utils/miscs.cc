@@ -5,11 +5,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/utils/log.h"
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
+
 namespace qnn {
 void ConvertDataFromInt16toUInt16(absl::Span<const std::int16_t> src,
                                   std::vector<std::uint16_t>& dst) {
@@ -60,4 +64,14 @@ bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
   return true;
 }
 
+std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
+  std::optional<::qnn::SocInfo> soc_model;
+  for (auto i = 0; i < ::qnn::kNumSocInfos; ++i) {
+    if (soc_model_name == ::qnn::kSocInfos[i].soc_name) {
+      soc_model = ::qnn::kSocInfos[i];
+      break;
+    }
+  }
+  return soc_model;
+}
 }  // namespace qnn
