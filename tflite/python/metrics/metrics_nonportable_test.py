@@ -23,7 +23,7 @@ from absl.testing import parameterized
 import numpy as np
 import tensorflow as tf
 
-from tflite.converter.metrics import converter_error_data_pb2
+from tensorflow.compiler.mlir.lite.metrics import converter_error_data_pb2
 from tensorflow.core.framework import graph_pb2
 from tflite.python import lite
 from tflite.python.convert import ConverterError
