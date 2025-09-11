@@ -174,6 +174,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:gathernd_op_builder",
         "//litert/vendors/qualcomm/core/builders:gelu_op_builder",
         "//litert/vendors/qualcomm/core/builders:hard_swish_op_builder",
+        "//litert/vendors/qualcomm/core/builders:l2_norm_op_builder",
         "//litert/vendors/qualcomm/core/builders:leaky_relu_op_builder",
         "//litert/vendors/qualcomm/core/builders:logistic_op_builder",
         "//litert/vendors/qualcomm/core/builders:matmul_op_builder",

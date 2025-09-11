@@ -121,6 +121,8 @@ const auto kSupportedOps =
                     "simple_transpose_op.tflite",
                     "simple_unpack_op.tflite",
                     "simple_prelu_op.tflite",
+                    "simple_l2_norm.tflite",
+                    "l2_norm_composite.tflite",
                     kFeedForwardModel,
                     kKeyEinsumModel,
                     kQueryEinsumModel,
