@@ -680,6 +680,7 @@ genrule(
           "cat $(SRCS) >> $(RULEDIR)/def.tmp; " +
           "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
           "rm $(RULEDIR)/def.tmp",
+    tags = ["manual"],
     toolchains = ["//tools/cpp:toolchain_type"],
 )
 
@@ -711,6 +712,7 @@ cc_shared_library(
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
     features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
+    tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
     user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
         "@platforms//os:android": ["-landroid"],
         "//conditions:default": [],
