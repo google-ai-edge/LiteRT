@@ -11,11 +11,11 @@ The model can be obtained here:
 
 1. **Build the project:**
    ```bash
-   bazel build -c opt //third_party/odml/litert/litert/samples/semantic_similarity:semantic_similarity
+   bazel build -c opt //litert/litert/samples/semantic_similarity:semantic_similarity
    ```
 1. **Run the application:**
    ```bash
-   ./bazel-bin/third_party/odml/litert/litert/samples/semantic_similarity/semantic_similarity \
+   ./bazel-bin/litert/samples/semantic_similarity/semantic_similarity \
      --tokenizer=path/to/tokenizer.model \
      --embedder=path/to/embedder.tflite \
      --sentence1="The quick brown fox jumps over the lazy dog." \
@@ -37,7 +37,7 @@ This command relies on the script's default values for the tokenizer, embedder,
 and accelerator.
 
 ```bash
-./third_party/odml/litert/litert/samples/semantic_similarity/deploy_and_run_android.sh \
+./litert/samples/semantic_similarity/deploy_and_run_android.sh \
   --sentence1 "The quick brown fox jumps over the lazy dog." \
   --sentence2 "A fast, dark-colored fox leaps over a sleepy canine."
 ```
@@ -49,7 +49,7 @@ explicitly. This is useful if you want to use different models or specify the
 accelerator.
 
 ```bash
-./third_party/odml/litert/litert/samples/semantic_similarity/deploy_and_run_android.sh \
+./litert/samples/semantic_similarity/deploy_and_run_android.sh \
   --tokenizer "path/to/tokenizer.model" \
   --embedder "path/to/embedder.tflite" \
   --accelerator "cpu" \
@@ -63,10 +63,12 @@ When you run the script, it uses the following default values if they are not
 provided explicitly:
 
 - `--tokenizer`: Defaults to
-  `third_party/odml/litert/litert/samples/semantic_similarity/models/262144.model`.
+  `litert/samples/semantic_similarity/models/262144.model`.
 - `--embedder`: Defaults to
-  `third_party/odml/litert/litert/samples/semantic_similarity/models/embedding_gemma_256_input_seq.tflite`.
-- `--accelerator`: Defaults to `cpu`.
+  `litert/samples/semantic_similarity/models/embedding_gemma_256_input_seq.tflite`.
+- `--accelerator`: Defaults to `cpu`. To use `gpu` acceleration, please download
+   libLiteRtOpenClAccelerator.so from the [prebuilt](https://github.com/google-ai-edge/LiteRT-LM/tree/main/prebuilt),
+   and put it under `./libs`.
 
 #### Important Note on Command Format
 
@@ -75,4 +77,4 @@ The `deploy_and_run_android.sh` script's command-line parsing is basic and
 `--flag=value` format.
 
 - **Correct:** `--accelerator "cpu"`
-- **Incorrect:** `--accelerator="cpu"`
+- **Incorrect
