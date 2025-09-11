@@ -183,6 +183,28 @@ LiteRtQualcommOptionsOptimizationLevel QualcommOptions::GetOptimizationLevel() {
   return optimization_level;
 }
 
+void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseConvHMX, Data(), use_conv_hmx);
+}
+
+bool QualcommOptions::GetUseConvHMX() {
+  bool use_conv_hmx;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseConvHMX, Data(), &use_conv_hmx);
+  return use_conv_hmx;
+}
+
+void QualcommOptions::SetUseFoldReLU(bool use_fold_relu) {
+  internal::AssertOk(LiteRtQualcommOptionsSetUseFoldReLU, Data(),
+                     use_fold_relu);
+}
+
+bool QualcommOptions::GetUseFoldReLU() {
+  bool use_fold_relu;
+  internal::AssertOk(LiteRtQualcommOptionsGetUseFoldReLU, Data(),
+                     &use_fold_relu);
+  return use_fold_relu;
+}
+
 Expected<QualcommOptions> QualcommOptions::Create(OpaqueOptions& options) {
   const auto id = options.GetIdentifier();
   if (!id || *id != Discriminator()) {
