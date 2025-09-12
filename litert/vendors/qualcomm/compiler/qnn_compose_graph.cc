@@ -70,6 +70,7 @@
 #include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reduce_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/relu6_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/relu_n1to1_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/resize_op_builder.h"
@@ -82,6 +83,7 @@
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
@@ -493,6 +495,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
           ::qnn::BuildReluOp(tensor_pool, input_tensors, output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflReluN1To1: {
+      op_wrappers =
+          ::qnn::BuildReluN1To1Op(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
     case LiteRtOpCode::kLiteRtOpCodeTflRelu6: {
       op_wrappers =
           ::qnn::BuildRelu6Op(tensor_pool, input_tensors, output_tensors);
@@ -593,6 +600,11 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflTranspose: {
       op_wrappers =
           ::qnn::BuildTransposeOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflTile: {
+      op_wrappers =
+          ::qnn::BuildTileOp(tensor_pool, input_tensors, output_tensors);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflPack: {
