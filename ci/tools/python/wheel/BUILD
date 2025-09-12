@@ -90,7 +90,10 @@ py_wheel(
         "//tflite/profiling/proto:profiling_info_py",
         "//tflite/python:schema_py",
         "//tflite/python/metrics:metrics_interface",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:linux_x86_64": ["//litert/c:libLiteRtRuntimeCApi.so"],
+        "//conditions:default": [],
+    }),
     nightly_suffix = ":nightly_iso_date",
     package_data = PACKAGE_DATA,
     platform_name = get_wheel_platform_name(),
