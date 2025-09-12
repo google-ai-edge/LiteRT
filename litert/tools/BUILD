@@ -28,7 +28,7 @@ package(
 GPU_ACCELERATOR_DEPS = select({
     # copybara:uncomment_begin(google-only)
     # "@platforms//os:linux": [
-    # "//litert/runtime/accelerators/gpu:ml_drift_gpu_accelerator",
+    # "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",
     # ],
     # "@platforms//os:macos": [
     # "//litert/runtime/accelerators/gpu:ml_drift_metal_accelerator",
