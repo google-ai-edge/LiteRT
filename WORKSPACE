@@ -36,11 +36,15 @@ http_archive(
 # Load the custom repository rule to select either a local TensorFlow source or a remote http_archive.
 load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
+TENSORFLOW_REF = "2460afd67df534ae9cdf35c98d74ca53dfb0cb50"
+
+TENSORFLOW_SHA256 = "96ea6323bb9ce1a2d4be24a3f1ce5549fd9245d0363f07bca8ee330117b55fbd"
+
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "",
-    strip_prefix = "tensorflow-master",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/master.tar.gz"],
+    sha256 = TENSORFLOW_SHA256,
+    strip_prefix = "tensorflow-" + TENSORFLOW_REF,
+    urls = ["https://github.com/tensorflow/tensorflow/archive/" + TENSORFLOW_REF + ".tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
