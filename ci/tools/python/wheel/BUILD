@@ -84,6 +84,7 @@ py_wheel(
     srcs = [
         ":fixed_protos",
         ":fixed_pydeps",
+        "//litert/c:libLiteRtRuntimeCApi.so",
         "//litert/python:pywrap_litert_binaries",
         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
