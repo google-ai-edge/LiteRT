@@ -15,7 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_LOCKSTATE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_RUNTIME_TENSOR_BUFFER_LOCKSTATE_H_
 
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_common.h"
+
 namespace litert::internal {
 
 enum class LockState {

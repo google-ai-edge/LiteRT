@@ -202,6 +202,12 @@ cc_library(
     name = "litert_external_litert_buffer_context",
     srcs = ["litert_external_litert_buffer_context.cc"],
     hdrs = ["litert_external_litert_buffer_context.h"],
+    # copybara:uncomment_begin(oss litert_lm)
+    # visibility = [
+    # "//litert:__subpackages__",
+    # "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+    # ],
+    # copybara:uncomment_end
     deps = [
         ":litert_dispatch_headers",
         "//litert/c:litert_common",
@@ -209,6 +215,7 @@ cc_library(
         "//litert/runtime:external_litert_buffer_context",
         "//tflite/c:common",
     ],
+    alwayslink = 1,
 )
 
 exports_files(srcs = glob(["litert_*.h"]))

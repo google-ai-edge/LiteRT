@@ -21,7 +21,6 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
