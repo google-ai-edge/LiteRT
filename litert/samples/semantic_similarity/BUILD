@@ -40,6 +40,7 @@ cc_binary(
     deps = [
         "//base",
         "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc/options:litert_gpu_options",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log",

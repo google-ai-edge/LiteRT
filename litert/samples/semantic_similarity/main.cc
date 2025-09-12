@@ -45,6 +45,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 #include "sentencepiece/src/sentencepiece_processor.h"  // from @com_google_sentencepiece
 
 // Command-line flags for the model paths and input sentences
@@ -248,11 +249,24 @@ absl::Status RealMain() {
   LITERT_ASSIGN_OR_RETURN(auto embedder_model_def,
                           Model::CreateFromFile(embedder_path));
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  auto accelerator = GetAccelerator();
   // Set CPU compilation options.
-  LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
-  LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
-  options.AddOpaqueOptions(std::move(cpu_compilation_options));
-  options.SetHardwareAccelerators(GetAccelerator());
+  if (accelerator & kLiteRtHwAcceleratorCpu) {
+    LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
+    LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
+    options.AddOpaqueOptions(std::move(cpu_compilation_options));
+    options.SetHardwareAccelerators(accelerator);
+    // Set GPU compilation options.
+  } else if (accelerator & kLiteRtHwAcceleratorGpu) {
+    LITERT_ASSIGN_OR_RETURN(auto gpu_compilation_options, GpuOptions::Create());
+    gpu_compilation_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+    options.AddOpaqueOptions(std::move(gpu_compilation_options));
+
+    options.SetHardwareAccelerators(accelerator);
+  } else {
+    return absl::InvalidArgumentError("No supported accelerators specified.");
+  }
+
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_model,
       CompiledModel::Create(env, embedder_model_def, options));

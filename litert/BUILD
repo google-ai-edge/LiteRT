@@ -79,6 +79,7 @@ package_group(
         "//litert/integration_test/...",
         "//litert/python/...",
         "//third_party/odml/litert/tensor/examples/...",
+        "//litert/samples/semantic_similarity/...",
         # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
