@@ -27,26 +27,21 @@ package(
 # Users with access to the LiteRT C++ API linked dynamically (litert/cc/dynamic_runtime).
 # Requires linking against libLiteRtRuntimeCApi.so.
 # For statically linked C++ API, use :litert_cc_users_static_link.
+#
+# Note: External users should use litert/cc:litert_api_with_dynamic_runtime which is litert_public.
+# This should be only used for internal LiteRT targets.
 package_group(
     name = "litert_cc_users_dynamic_link",
     packages = [
-        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-        # copybara:uncomment "//third_party/darwinn/litert/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
-        # copybara:uncomment "//third_party/deepmind/lyria_live/internal/odml/...",
-        # copybara:uncomment "@mediapipe//mediapipe/examples/android/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
-        # copybara:uncomment "//third_party/odml/infra/genai/conversion/...",
-        "//third_party/odml/infra/genai/inference/executor/llm_context_handler/...",
+        # copybara:uncomment "//third_party/odml/genai_modules/...",
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         "//litert/cc/...",
         "//litert/compiler/plugin/...",
         "//litert/google/...",
-        # copybara:uncomment "//third_party/odml/genai_modules/rag_pipeline/core/models/...",
         "//litert/integration_test/...",
         "//litert/kotlin/...",
         "//litert/python/...",
@@ -66,43 +61,48 @@ package_group(
     ],
 )
 
-# Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/internal).
+# Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/).
 # For dynamically linked C++ API, use :litert_cc_users_dynamic_link.
 package_group(
     name = "litert_cc_users_static_link",
     packages = [
+        # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
+        # copybara:uncomment "//third_party/odml/genai_modules/...",
         # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
         # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        "//litert/vendors/cc/...",
-        "//litert/python/...",
         "//litert/cts/...",
         "//litert/google/...",
-        "//litert/vendors/qualcomm/...",
-        "//litert/vendors/google_tensor/...",
-        "//litert/vendors/mediatek/...",
+        "//litert/integration_test/...",
+        "//litert/python/...",
+        "//third_party/odml/litert/tensor/examples/...",
         # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",
         # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
-        # TODO(b/424778444): Internal runtime should not call cc/internal. Remove below targets.
-        "//litert/cc/...",
+        # TODO(b/424778444): Internal runtime would better not call cc runtime APIs. Remove below targets.
         "//litert/runtime/...",
-        "//litert/compiler/...",
+        "//litert/cc/...",
+        "//litert/c/...",
+        "//litert/c/options/...",
+        "//litert/compiler/plugin/...",
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
     ],
 )
 
-# All packages with visibility to the internal apis.
+# All packages with visibility to the internal APIs
+# such as litert/cc/internal and litert/c/internal.
 package_group(
     name = "litert_internal_users",
     packages = [
         "//third_party/odml/infra/genai/conversion/juno/npu/...",
         "//third_party/odml/infra/ml_drift_delegate/...",
         "//litert/c/...",
+        "//litert/cc/...",
+        "//litert/cc/internal/...",
         "//litert/compiler/...",
         "//litert/core/...",
         "//litert/cts/...",
@@ -118,8 +118,6 @@ package_group(
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "//learning/brain/mobile/lite/tooling/ai_edge_hub/...",
-        "//litert/cc/...",
-        "//litert/cc/internal/...",
     ],
 )
 

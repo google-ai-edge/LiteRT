@@ -13,7 +13,6 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-# copybara:uncomment load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -45,6 +44,59 @@ cc_library(
         "//tflite/delegates/utils:simple_opaque_delegate",
     ],
 )
+
+# Same as :litert_tensor_buffer, but without the registry dependency.
+# This is for accelerator shared libs not to depend on the registry, but depend on CAPI.so instead.
+cc_library(
+    name = "litert_tensor_buffer_without_registry",
+    srcs = ["//litert/cc:litert_tensor_buffer.cc"],
+    hdrs = [
+        "//litert/cc:litert_tensor_buffer.h",
+        "//litert/cc:litert_tensor_buffer_requirements.h",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_event",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_event",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "litert_external_litert_buffer_context",
+    hdrs = ["litert_external_litert_buffer_context.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_external_litert_buffer_context",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer",
+        "//tflite/c:common",
+    ],
+)
+
+exports_files(["litert_dispatch_delegate.h"])
+
+# -----------------------------------------------------------------------------
+# LiteRT C++ APIs which needs to use (static) C Runtime Framework.
+#
+# WARNING: This is temporary until all migration is done. Will be removed soon.
+# -----------------------------------------------------------------------------
 
 cc_library(
     name = "litert_environment",
@@ -150,36 +202,6 @@ cc_library(
     ],
 )
 
-# Same as :litert_tensor_buffer, but without the registry dependency.
-# This is for accelerator shared libs not to depend on the registry, but depend on CAPI.so instead.
-cc_library(
-    name = "litert_tensor_buffer_without_registry",
-    srcs = ["//litert/cc:litert_tensor_buffer.cc"],
-    hdrs = [
-        "//litert/cc:litert_tensor_buffer.h",
-        "//litert/cc:litert_tensor_buffer_requirements.h",
-    ],
-    deps = [
-        ":litert_event",
-        ":litert_model",
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_event",
-        "//litert/c:litert_gl_types",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "@com_google_absl//absl/cleanup",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/types:span",
-        "@opencl_headers",
-    ],
-)
-
 cc_library(
     name = "litert_tensor_buffer",
     hdrs = [
@@ -256,14 +278,6 @@ cc_library(
 cc_library(
     name = "litert_options",
     hdrs = ["//litert/cc:litert_options.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_static_link",
-        # "//litert:litert_internal_users",  # TODO(b/424778444): Remove this.
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
     deps = [
         ":litert_custom_op_kernel",
         "//litert/c:litert_common",
@@ -387,184 +401,3 @@ cc_library(
         "//litert/cc:litert_macros",
     ],
 )
-
-cc_library(
-    name = "litert_external_litert_buffer_context",
-    hdrs = ["litert_external_litert_buffer_context.h"],
-    deps = [
-        ":litert_environment",
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_external_litert_buffer_context",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "//tflite/c:common",
-    ],
-)
-
-# copybara:uncomment_begin(google-only)
-#
-# cc_test(
-#     name = "litert_compiled_model_gpu_test",
-#     srcs = ["//litert/cc:litert_compiled_model_gpu_test.cc"],
-#     data = [
-#         "//litert/test:mlir_test_data",
-#         "//litert/test:tflite_test_data",
-#     ],
-#     tags = [
-#         "no_oss",
-#         "requires-gpu-nvidia",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_event",
-#         ":litert_gpu_options",
-#         ":litert_model",
-#         ":litert_options",
-#         ":litert_profiler",
-#         ":litert_runtime_options",
-#         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/container:flat_hash_map",
-#         "@com_google_absl//absl/debugging:leak_check",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings:string_view",
-#         "@com_google_absl//absl/types:span",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_environment_options",
-#         "//litert/c:litert_event",
-#         "//litert/c:litert_event_type",
-#         "//litert/c:litert_profiler_event",
-#         "//litert/c:litert_tensor_buffer",
-#         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/cc:litert_element_type",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc:litert_layout",
-#         "//litert/cc:litert_macros",
-#         "//litert/cc:litert_platform_support",
-#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:simple_model",
-#         "@opencl_headers",
-#     ] + select({
-#         "@org_tensorflow//tensorflow:android": [
-#             "//tflite/delegates/gpu/cl:cl_device",
-#             "//tflite/delegates/gpu/cl:gl_interop",
-#             "//tflite/delegates/gpu/cl:opencl_wrapper",
-#             "//tflite/delegates/gpu/gl:egl_environment",
-#         ],
-#         "//conditions:default": [],
-#     }),
-# )
-#
-# litert_device_exec(
-#     name = "litert_compiled_model_gpu_device_test",
-#     backend_id = "gpu",
-#     data = [
-#         "//litert/test:testdata/constant_output_tensor.tflite",
-#         "//litert/test:testdata/simple_add3d_cst_int32.tflite",
-#         "//litert/test:testdata/simple_cast_and_add_op.tflite",
-#         "//litert/test:testdata/simple_model.tflite",
-#     ],
-#     target = ":litert_compiled_model_gpu_test",
-# )
-#
-# cc_test(
-#     name = "litert_compiled_model_webgpu_test",
-#     srcs = ["//litert/cc:litert_compiled_model_webgpu_test.cc"],
-#     data = ["//litert/test:testdata/simple_model.tflite"],
-#     tags = [
-#         "no_oss",
-#         "requires-gpu-nvidia",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_event",
-#         ":litert_gpu_options",
-#         ":litert_model",
-#         ":litert_options",
-#         ":litert_runtime_options",
-#         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/debugging:leak_check",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings:string_view",
-#         "@com_google_absl//absl/types:span",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_environment_options",
-#         "//litert/c:litert_event",
-#         "//litert/c:litert_event_type",
-#         "//litert/c:litert_profiler_event",
-#         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc:litert_macros",
-#         "//litert/cc:litert_platform_support",
-#         "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",  # buildcleaner: keep
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:simple_model",
-#         "//third_party/vulkan_loader",
-#     ],
-# )
-#
-# litert_device_exec(
-#     name = "litert_compiled_model_webgpu_device_test",
-#     backend_id = "gpu",
-#     data = ["//litert/test:testdata/simple_model.tflite"],
-#     target = ":litert_compiled_model_webgpu_test",
-# )
-#
-# cc_test(
-#     name = "litert_compiled_model_vulkan_test",
-#     srcs = ["//litert/cc:litert_compiled_model_vulkan_test.cc"],
-#     data = ["//litert/test:testdata/simple_model.tflite"],
-#     tags = [
-#         "no_oss",
-#         "notap",  # TODO(byungchul): Enable tap presubmit once the flakiness is fixed.
-#         "requires-gpu-nvidia",
-#     ],
-#     deps = [
-#         ":litert_compiled_model",
-#         ":litert_environment",
-#         ":litert_event",
-#         ":litert_gpu_options",
-#         ":litert_options",
-#         ":litert_runtime_options",
-#         ":litert_tensor_buffer",
-#         "@com_google_googletest//:gtest_main",
-#         "@com_google_absl//absl/debugging:leak_check",
-#         "@com_google_absl//absl/log:absl_log",
-#         "@com_google_absl//absl/strings:string_view",
-#         "@com_google_absl//absl/types:span",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_environment_options",
-#         "//litert/c:litert_event",
-#         "//litert/c:litert_event_type",
-#         "//litert/c:litert_profiler_event",
-#         "//litert/c:litert_tensor_buffer_types",
-#         "//litert/cc:litert_expected",
-#         "//litert/cc:litert_macros",
-#         "//litert/cc:litert_platform_support",
-#         "//litert/cc/internal:litert_model",
-#         "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/test:simple_model",
-#         "//third_party/vulkan_loader",
-#     ],
-# )
-#
-# litert_device_exec(
-#     name = "litert_compiled_model_vulkan_device_test",
-#     backend_id = "gpu",
-#     data = ["//litert/test:testdata/simple_model.tflite"],
-#     target = ":litert_compiled_model_vulkan_test",
-# )
-#
-# copybara:uncomment_end(google-only)
-
-exports_files(["litert_dispatch_delegate.h"])

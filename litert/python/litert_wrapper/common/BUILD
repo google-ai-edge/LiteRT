@@ -26,7 +26,7 @@ cc_library(
     hdrs = ["litert_wrapper_utils.h"],
     deps = [
         "//litert/c:litert_tensor_buffer",
-        "//litert/cc/internal:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer",
         "@com_google_absl//absl/strings:string_view",
         "@local_xla//third_party/python_runtime:headers",
     ],
