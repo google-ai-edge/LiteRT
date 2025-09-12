@@ -70,6 +70,8 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ],
+    # Keep the symbols in libLiteRtRuntimeCApi.dylib.
+    alwayslink = 1,
 )
 
 cc_test(
