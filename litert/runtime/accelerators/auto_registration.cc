@@ -74,7 +74,8 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
   };
   bool gpu_accelerator_registered = false;
   for (auto plugin_path : kGpuAcceleratorLibs) {
-    LITERT_LOG(LITERT_INFO, "Loading GPU accelerator(%s).", plugin_path.data());
+    LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
+               plugin_path.data());
     auto registration = RegisterSharedObjectAccelerator(
         environment, plugin_path, "LiteRtRegisterGpuAccelerator");
     if (registration.HasValue()) {
@@ -98,7 +99,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     }
   }
   if (!gpu_accelerator_registered) {
-    LITERT_LOG(LITERT_WARNING,
+    LITERT_LOG(LITERT_VERBOSE,
                "GPU accelerator could not be loaded and registered.");
   }
 
@@ -120,8 +121,8 @@ Expected<void> RegisterSharedObjectAccelerator(
     absl::string_view registration_function_name) {
   auto maybe_lib = SharedLibrary::Load(plugin_path, RtldFlags::Lazy().Local());
   if (!maybe_lib.HasValue()) {
-    LITERT_LOG(LITERT_WARNING,
-               "Failed to load shared library %s: %s, %s", plugin_path.data(),
+    LITERT_LOG(LITERT_DEBUG, "Failed to load shared library %s: %s, %s",
+               plugin_path.data(),
                LiteRtGetStatusString(maybe_lib.Error().Status()),
                maybe_lib.Error().Message().data());
     maybe_lib = SharedLibrary::Load(RtldFlags::kDefault);
