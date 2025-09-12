@@ -37,7 +37,7 @@ Example:
     >   - simple_authoring.py:xxx
 """
 import functools
-from tflite.converter.metrics import converter_error_data_pb2
+from tensorflow.compiler.mlir.lite.metrics import converter_error_data_pb2
 # pylint: disable=g-import-not-at-top
 from tflite.python import convert
 from tflite.python import lite

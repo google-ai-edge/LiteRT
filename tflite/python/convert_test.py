@@ -17,8 +17,8 @@ from unittest import mock
 
 import numpy as np
 
-from tflite.converter import converter_flags_pb2 as _conversion_flags_pb2
-from tflite.converter.metrics import converter_error_data_pb2
+from tensorflow.compiler.mlir.lite import converter_flags_pb2 as _conversion_flags_pb2
+from tensorflow.compiler.mlir.lite.metrics import converter_error_data_pb2
 from tflite.python import convert
 from tflite.python import op_hint
 from tflite.python.interpreter import Interpreter
