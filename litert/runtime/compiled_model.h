@@ -178,13 +178,16 @@ class LiteRtCompiledModelT {
       const TfLiteTensor* tensor, absl::Span<const int> new_shape);
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
-    tflite::TfLiteOpaqueDelegateUniquePtr delegate;
+    std::unique_ptr<LiteRtDelegateWrapperT,
+                    std::function<void(LiteRtDelegateWrapper)>>
+        delegate;
     // NOLINTBEGIN(*-readability-class-member-naming)
     // Starts collection of HW-specific metrics at a specific level of detail.
-    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level);
+    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
+                                           int detail_level);
 
     // Stops collection of HW-specific metrics and report the collected metrics.
-    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
                                           LiteRtMetricsT* metrics);
     // NOLINTEND(*-readability-class-member-naming)
   };
