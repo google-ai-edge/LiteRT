@@ -51,7 +51,7 @@ litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
                      BufferTypeToString(buffer_type)));
   }
   handlers_[buffer_type] = handlers;
-  LITERT_LOG(LITERT_INFO,
+  LITERT_LOG(LITERT_VERBOSE,
              "Custom tensor buffer handler is registered for buffer type %s",
              BufferTypeToString(buffer_type).c_str());
   return {};
