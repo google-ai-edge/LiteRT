@@ -33,6 +33,7 @@ package(
 package_group(
     name = "litert_cc_users_dynamic_link",
     packages = [
+        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
         # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
