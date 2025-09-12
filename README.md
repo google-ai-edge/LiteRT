@@ -77,7 +77,7 @@ You can build LiteRT from source:
 
 The script automatically creates a Linux Docker image, which allows you to build
 artifacts for Linux and Android (through cross compilation). See build
-instructions in [./BUILD_INSTRUCTIONS.md](./BUILD_INSTRUCTIONS.md) for more
+instructions in [BUILD_INSTRUCTIONS.md](./BUILD_INSTRUCTIONS.md) for more
 information on how to build runtime libraries with the docker container.
 
 For more information about using docker interactive shell or building different
