@@ -36,13 +36,15 @@ limitations under the License.
 #include "litert/cc/options/litert_runtime_options.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
+#include "tflite/interpreter.h"
+#include "litert/runtime/compiled_model.h"
 
 namespace litert::benchmark {
 namespace {
 using ::litert::CompiledModel;
 using ::litert::Options;
-using ::litert::TensorBuffer;
 using ::litert::RuntimeOptions;
+using ::litert::TensorBuffer;
 
 Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_gpu = params.Get<bool>("use_gpu");
@@ -95,8 +97,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
 
   if (use_profiler) {
-    LITERT_ASSIGN_OR_ABORT(auto runtime_options,
-                           RuntimeOptions::Create());
+    LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
     runtime_options.SetEnableProfiling(/*enabled=*/true);
     compilation_options.AddOpaqueOptions(std::move(runtime_options));
   }
@@ -157,6 +158,20 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
 
   compiled_model_ =
       std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
+
+  if (!params_.Get<std::string>("model_runtime_info_output_file").empty()) {
+    ::tflite::Interpreter* interpreter_ptr = nullptr;
+    LiteRtCompiledModelT* compiled_model_ptr = compiled_model_->Get();
+    if (compiled_model_ptr == nullptr) {
+      LITERT_LOG(LITERT_ERROR, "Compiled model is null");
+      return kTfLiteError;
+    }
+    LITERT_ASSIGN_OR_RETURN(interpreter_ptr, GetInterpreter(compiled_model_ptr),
+                            AsTfLiteStatus(_ << "Failed to get interpreter."));
+    model_runtime_info_listener_ =
+        std::make_unique<ModelRuntimeInfoListener>(interpreter_ptr);
+    AddListener(model_runtime_info_listener_.get());
+  }
 
   auto use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {

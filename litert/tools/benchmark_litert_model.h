@@ -37,6 +37,8 @@ limitations under the License.
 #include "litert/cc/litert_tensor_buffer.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
+#include "tflite/interpreter.h"
+#include "tflite/profiling/model_runtime_info.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
 #include "tflite/tools/benchmark/proto/benchmark_result.pb.h"
@@ -165,6 +167,32 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
   }
 };
 
+// Dumps the Model Runtime Info if enabled when export_model_runtime_info is
+// set to true.
+class ModelRuntimeInfoListener : public ::tflite::benchmark::BenchmarkListener {
+ public:
+  explicit ModelRuntimeInfoListener(::tflite::Interpreter* interpreter_ptr)
+      : interpreter_(interpreter_ptr) {}
+
+  // At this stage, the graph is fully modified with delegates.
+  // So the interpreter can be used to capture the ModelRuntimeDetails.
+  void OnBenchmarkStart(
+      const ::tflite::benchmark::BenchmarkParams& params) override {
+    const std::string output_file_path =
+        std::string(params.Get<std::string>("model_runtime_info_output_file"));
+    const auto status = tflite::profiling::GenerateModelRuntimeInfo(
+        *interpreter_, output_file_path);
+    if (status != kTfLiteOk) {
+      LITERT_LOG(LITERT_ERROR, "Failed to generate model runtime info: %s",
+                 status);
+    }
+    LITERT_LOG(LITERT_INFO, "Generated model runtime info: %s",
+               output_file_path.c_str());
+  }
+
+ private:
+  ::tflite::Interpreter* interpreter_ = nullptr;
+};
 using ::litert::CompiledModel;
 using ::litert::Environment;
 using ::litert::Model;
@@ -179,6 +207,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   explicit BenchmarkLiteRtModel(BenchmarkParams params = DefaultParams())
       : BenchmarkModel(std::move(params)), log_output_() {
     AddListener(&log_output_);
+    model_runtime_info_listener_ = nullptr;
   }
   ~BenchmarkLiteRtModel() override = default;
   static BenchmarkParams DefaultParams() {
@@ -203,6 +232,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("gpu_low_priority",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("result_file_path",
+                            BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("model_runtime_info_output_file",
                             BenchmarkParam::Create<std::string>(""));
     return default_params;
   }
@@ -329,6 +360,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "result_file_path", &params_,
         "Path to save the benchmark result in binary proto format."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "model_runtime_info_output_file", &params_,
+        "Path to save the model runtime info in binary proto format."));
     return flags;
   }
 
@@ -343,6 +377,7 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
   litert::Profiler profiler_;
   BenchmarkLoggingListener log_output_;
+  std::unique_ptr<ModelRuntimeInfoListener> model_runtime_info_listener_;
 };
 
 }  // namespace benchmark

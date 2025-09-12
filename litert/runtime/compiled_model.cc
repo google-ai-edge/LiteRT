@@ -1171,3 +1171,16 @@ Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() {
 
   return buffer_reporter->message();
 }
+
+litert::Expected<::tflite::Interpreter*> GetInterpreter(
+    LiteRtCompiledModelT* compiled_model) {
+  if (compiled_model == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Compiled model is null");
+  }
+  if (compiled_model->interp_ == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Interpreter is null");
+  }
+  return compiled_model->interp_.get();
+}
