@@ -28,20 +28,31 @@ package(
     ],
 )
 
+LITERT_C_API_DEPS = [
+    "//litert/c:litert_common",
+    "//litert/c:litert_opaque_options",
+    "//litert/c/options:litert_cpu_options",
+    "//litert/c/options:litert_darwinn_runtime_options",
+    "//litert/c/options:litert_google_tensor_options",
+    "//litert/c/options:litert_gpu_options",
+    "//litert/c/options:litert_mediatek_options",
+    "//litert/c/options:litert_qualcomm_options",
+    "//litert/c/options:litert_runtime_options",
+]
+
 cc_library(
     name = "litert_cpu_options",
     srcs = ["//litert/cc/options:litert_cpu_options.cc"],
     hdrs = ["//litert/cc/options:litert_cpu_options.h"],
     deps = [
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_cpu_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_cpu_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -53,15 +64,13 @@ cc_library(
     srcs = ["//litert/cc/options:litert_gpu_options.cc"],
     hdrs = ["//litert/cc/options:litert_gpu_options.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_gpu_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_gpu_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -103,7 +112,6 @@ cc_library(
     srcs = ["//litert/cc/options:litert_qualcomm_options.cc"],
     hdrs = ["//litert/cc/options:litert_qualcomm_options.h"],
     deps = [
-        "//litert/c:litert_common",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
@@ -112,8 +120,8 @@ cc_library(
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_qualcomm_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_qualcomm_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -125,8 +133,6 @@ cc_library(
     srcs = ["//litert/cc/options:litert_google_tensor_options.cc"],
     hdrs = ["//litert/cc/options:litert_google_tensor_options.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
@@ -134,8 +140,8 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_google_tensor_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_google_tensor_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -147,8 +153,6 @@ cc_library(
     srcs = ["//litert/cc/options:litert_mediatek_options.cc"],
     hdrs = ["//litert/cc/options:litert_mediatek_options.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
@@ -156,8 +160,8 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_mediatek_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_mediatek_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -169,16 +173,14 @@ cc_library(
     srcs = ["//litert/cc/options:litert_runtime_options.cc"],
     hdrs = ["//litert/cc/options:litert_runtime_options.h"],
     deps = [
-        "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": ["//litert/c/options:litert_runtime_options"],
-        "@org_tensorflow//tensorflow:windows": ["//litert/c/options:litert_runtime_options"],
-        "@org_tensorflow//tensorflow:emscripten": ["//litert/c/options:litert_runtime_options"],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
@@ -208,9 +210,6 @@ cc_library(
     srcs = ["//litert/cc/options:darwinn_options.cc"],
     hdrs = ["//litert/cc/options:darwinn_options.h"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
-        "//litert/c/options:litert_darwinn_runtime_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
@@ -218,12 +217,8 @@ cc_library(
         "//litert/runtime:litert_darwinn_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
-        "@org_tensorflow//tensorflow:ios": [
-            "//litert/c/options:litert_darwinn_runtime_options",
-        ],
-        "@org_tensorflow//tensorflow:emscripten": [
-            "//litert/c/options:litert_darwinn_runtime_options",
-        ],
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
