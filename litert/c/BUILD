@@ -682,7 +682,7 @@ genrule(
           "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
           "rm $(RULEDIR)/def.tmp",
     tags = ["manual"],
-    toolchains = ["//tools/cpp:toolchain_type"],
+    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 # Import library to resolve symbols in executables.
