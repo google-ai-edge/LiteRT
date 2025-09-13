@@ -463,7 +463,6 @@ cc_library(
     deps = [
         ":metrics",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
     ],
 )
 
@@ -474,7 +473,6 @@ cc_library(
     deps = [
         ":accelerator",
         "//litert/c:litert_common",
-        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_shared_library",
         "@com_google_absl//absl/log:absl_log",
