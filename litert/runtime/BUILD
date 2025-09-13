@@ -147,7 +147,7 @@ cc_library(
 cc_library(
     name = "tensor_buffer_lockstate",
     hdrs = ["tensor_buffer_lockstate.h"],
-    deps = ["//litert/c:litert_tensor_buffer"],
+    deps = ["//litert/c:litert_common"],
 )
 
 cc_library(
