@@ -16,7 +16,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_bin")
+load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/tools:tool_test.bzl", "runfile_path", "tool_test")
 
@@ -46,23 +46,17 @@ GPU_ACCELERATOR_DEPS = select({
     "//conditions:default": [],
 })
 
+# This user library should depend on libLiteRtRuntimeCapi.so to allow
+# CompilerPlugin to use the same libLiteRtRuntimeCapi.so
 cc_library(
-    name = "apply_plugin",
+    name = "apply_plugin_runtimecapi",
     srcs = ["apply_plugin.cc"],
     hdrs = ["apply_plugin.h"],
     deps = [
-        ":dump",
+        ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "//litert/c:litert_model",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
@@ -81,6 +75,10 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/vendors/examples:example_plugin_so",
     ],
+    # Workaround to disable mismatched-size-delete.
+    # This test uses`libLiteRtRuntimeCApi.so` with some system components.
+    # So mixing of the two will cause mismatched-size-delete error.
+    # copybara:uncomment malloc = "//base:system_malloc",
     tags = [
         "noasan",
         "nomsan",
@@ -88,12 +86,9 @@ cc_test(
         "notsan",
     ],
     deps = [
-        ":apply_plugin",
+        ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/c:litert_common",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/core/model",
@@ -101,8 +96,7 @@ cc_test(
         "//litert/test:matchers",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-        "@com_google_googletest//:gtest_main",
-    ],
+    ] + gtest_main_no_heapcheck_deps(),
 )
 
 litert_bin(
@@ -137,9 +131,9 @@ litert_bin(
     ungrte = True,
     visibility = ["//litert:litert_public"],
     deps = [
-        ":apply_plugin",
+        ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/core:build_stamp",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
@@ -223,9 +217,9 @@ cc_binary(
         "nosan",
     ],
     deps = [
-        ":apply_plugin",
+        ":apply_plugin_runtimecapi",
         ":outstream",
-        "//litert/cc:litert_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
@@ -271,6 +265,22 @@ cc_library(
     deps = [
         "//litert/c:litert_model",
         "//litert/c:litert_op_code",
+        "//litert/compiler/plugin:compiler_plugin",
+        "//litert/core/model",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "dump_runtimecapi",
+    srcs = ["dump.cc"],
+    hdrs = ["dump.h"],
+    # TODO: Either refactor this code to be in cc/ or setup to only build in debug mode.
+    # Then, we can remove this visibility.
+    visibility = ["//litert:litert_public"],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model",
         "@com_google_absl//absl/strings:str_format",
