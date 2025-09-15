@@ -111,16 +111,6 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_tensor_buffer_registry_header",
-    hdrs = ["litert_tensor_buffer_registry.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_custom_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-    ],
-)
-
-cc_library(
     name = "litert_tensor_buffer_registry",
     srcs = ["litert_tensor_buffer_registry.cc"],
     hdrs = ["litert_tensor_buffer_registry.h"],
@@ -140,6 +130,7 @@ cc_library(
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
+        "//litert/core:environment",
         "//litert/runtime:tensor_buffer_registry",
     ],
     # Keep the symbols in libLiteRtRuntimeCApi.dylib.

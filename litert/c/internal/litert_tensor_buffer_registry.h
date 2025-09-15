@@ -27,12 +27,14 @@ extern "C" {
 
 // Registers custom tensor buffer handlers for the given buffer type.
 LiteRtStatus LiteRtRegisterTensorBufferHandlers(
-    LiteRtTensorBufferType buffer_type, CreateCustomTensorBuffer create_func,
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
     UnlockCustomTensorBuffer unlock_func);
 
 // Retrieves a singleton instance of the tensor buffer registry.
-LiteRtStatus LiteRtGetTensorBufferRegistry(void** registry);
+LiteRtStatus LiteRtGetTensorBufferRegistry(LiteRtEnvironment env,
+                                           void** registry);
 
 #ifdef __cplusplus
 }

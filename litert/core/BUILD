@@ -139,6 +139,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
         "//litert/runtime:gpu_environment_header",
+        "//litert/runtime:tensor_buffer_registry_header",
         "//tflite/core/api:error_reporter",
         "@com_google_absl//absl/types:span",
     ],

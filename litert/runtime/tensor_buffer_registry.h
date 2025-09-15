@@ -33,11 +33,10 @@ struct CustomTensorBufferHandlers {
 
 class TensorBufferRegistry {
  public:
+  explicit TensorBufferRegistry() = default;
   TensorBufferRegistry(const TensorBufferRegistry&) = delete;
   TensorBufferRegistry& operator=(const TensorBufferRegistry&) = delete;
   ~TensorBufferRegistry() = default;
-
-  static TensorBufferRegistry& GetInstance();
 
   // Registers custom tensor buffer handlers for the given buffer type.
   litert::Expected<void> RegisterHandlers(
@@ -49,8 +48,6 @@ class TensorBufferRegistry {
       const LiteRtTensorBufferType buffer_type);
 
  private:
-  explicit TensorBufferRegistry() = default;
-
   std::unordered_map<LiteRtTensorBufferType, CustomTensorBufferHandlers>
       handlers_;
 };

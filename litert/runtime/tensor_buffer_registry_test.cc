@@ -20,14 +20,17 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_logging.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer.h"
+#include "litert/test/matchers.h"
 
 namespace {
 
@@ -82,26 +85,29 @@ LiteRtStatus LockMyCustomTensorBuffer(LiteRtEnvironment env,
 }
 
 TEST(TensorBufferRegistryTest, Basic) {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_ABORT(litert::Environment env,
+                         litert::Environment::Create({}));
+  litert::internal::TensorBufferRegistry* registry = nullptr;
+  LITERT_EXPECT_OK(LiteRtGetTensorBufferRegistry(
+      env.Get(), reinterpret_cast<void**>(&registry)));
   litert::internal::CustomTensorBufferHandlers handlers = {
       .create_func = CreateMyCustomTensorBuffer,
       .destroy_func = DestroyMyCustomTensorBuffer,
       .lock_func = LockMyCustomTensorBuffer,
       .unlock_func = UnlockMyCustomTensorBuffer,
   };
-  registry.RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, handlers);
+  registry->RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, handlers);
 
   auto registered_handlers =
-      registry.GetCustomHandlers(kLiteRtTensorBufferTypeWebGpuBuffer);
+      registry->GetCustomHandlers(kLiteRtTensorBufferTypeWebGpuBuffer);
   EXPECT_TRUE(registered_handlers);
 
-  LiteRtEnvironment env = nullptr;
   constexpr const LiteRtRankedTensorType kTensorType = {
       /*.element_type=*/kLiteRtElementTypeInt32, litert::BuildLayout({8})};
   LITERT_ASSIGN_OR_ABORT(
       auto tensor_buffer,
       LiteRtTensorBufferT::CreateManaged(
-          env, kLiteRtTensorBufferTypeWebGpuBuffer, kTensorType, 32));
+          env.Get(), kLiteRtTensorBufferTypeWebGpuBuffer, kTensorType, 32));
 
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer, tensor_buffer->GetCustomBuffer());
   EXPECT_EQ(custom_buffer->hw_buffer_handle(), &kDummyHandleStorage);
@@ -116,29 +122,32 @@ TEST(TensorBufferRegistryTest, Basic) {
 }
 
 TEST(TensorBufferRegistryTest, RegistryOwnership) {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  LITERT_ASSIGN_OR_ABORT(litert::Environment env,
+                         litert::Environment::Create({}));
+  litert::internal::TensorBufferRegistry* registry = nullptr;
+  LITERT_EXPECT_OK(LiteRtGetTensorBufferRegistry(
+      env.Get(), reinterpret_cast<void**>(&registry)));
   auto handlers =
       std::make_unique<litert::internal::CustomTensorBufferHandlers>();
   handlers->create_func = CreateMyCustomTensorBuffer;
   handlers->destroy_func = DestroyMyCustomTensorBuffer;
   handlers->lock_func = LockMyCustomTensorBuffer;
   handlers->unlock_func = UnlockMyCustomTensorBuffer;
-  registry.RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, *handlers);
+  registry->RegisterHandlers(kLiteRtTensorBufferTypeWebGpuBuffer, *handlers);
   // Reset the handlers in the caller side to check the if registry copied them
   // properly.
   handlers.reset();
 
   auto registered_handlers =
-      registry.GetCustomHandlers(kLiteRtTensorBufferTypeWebGpuBuffer);
+      registry->GetCustomHandlers(kLiteRtTensorBufferTypeWebGpuBuffer);
   EXPECT_TRUE(registered_handlers);
 
-  LiteRtEnvironment env = nullptr;
   constexpr const LiteRtRankedTensorType kTensorType = {
       /*.element_type=*/kLiteRtElementTypeInt32, litert::BuildLayout({8})};
   LITERT_ASSIGN_OR_ABORT(
       auto tensor_buffer,
       LiteRtTensorBufferT::CreateManaged(
-          env, kLiteRtTensorBufferTypeWebGpuBuffer, kTensorType, 32));
+          env.Get(), kLiteRtTensorBufferTypeWebGpuBuffer, kTensorType, 32));
 
   LITERT_ASSIGN_OR_ABORT(auto custom_buffer, tensor_buffer->GetCustomBuffer());
   EXPECT_EQ(custom_buffer->hw_buffer_handle(), &kDummyHandleStorage);
