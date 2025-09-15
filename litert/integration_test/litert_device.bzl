@@ -605,6 +605,7 @@ def litert_integration_test(
 #
 # def litert_qualcomm_mh_guitar_test(targets):
 #     return guitar.Tests(
+#         shard_count = 1,
 #         args = [
 #             "--allocation_exit_strategy=FAIL_FAST_NO_MATCH",
 #             "--dimension_pool=shared",
