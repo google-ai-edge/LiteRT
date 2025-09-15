@@ -917,6 +917,34 @@ class LiteRtModelT {
     return signatures_.EmplaceBack(std::forward<Args>(args)...);
   }
 
+  void PopulateSignaturesFromSubgraphs() {
+    for (size_t i = 0; i < NumSubgraphs(); ++i) {
+      auto& subgraph = Subgraph(i);
+      std::string signature_key = absl::StrCat("subgraph_", i, "_signature");
+
+      if (FindSignature(signature_key)) {
+        LITERT_LOG(LITERT_INFO, "Signature %s already exists",
+                   signature_key.c_str());
+        continue;
+      }
+
+      std::vector<std::string> input_names;
+      input_names.reserve(subgraph.NumInputs());
+      for (const auto* input_tensor : subgraph.Inputs()) {
+        input_names.push_back(std::string(input_tensor->Name()));
+      }
+      std::vector<std::string> output_names;
+      output_names.reserve(subgraph.NumOutputs());
+      for (const auto* output_tensor : subgraph.Outputs()) {
+        output_names.push_back(std::string(output_tensor->Name()));
+      }
+
+      EmplaceSignature(&subgraph, std::move(input_names),
+                       std::move(output_names), std::move(signature_key));
+      LITERT_LOG(LITERT_INFO, "Added signature for subgraph %d", i);
+    }
+  }
+
   // METADATA
 
   // Look up metadata by key, getting a view of its buffer as a string
