@@ -172,6 +172,7 @@ LiteRtModelT LiteRtModelT::Yank(std::vector<size_t> indices) {
 
   LiteRtModelT res;
   res.TransferSubgraphsFrom(std::move(yanked));
+  res.PopulateSignaturesFromSubgraphs();
 
   // Copy op codes.
   const auto& op_codes = litert::internal::GetTflOpCodes(*this);
