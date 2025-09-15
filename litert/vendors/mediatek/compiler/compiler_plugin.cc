@@ -321,7 +321,7 @@ namespace {
 LiteRtStatus SetNeuronEnvironment(const char* soc_model) {
 #if __ANDROID__
   char dla_directory_template[] =
-      "/data/local/tmp/runfiles/tempdir_dla.XXXXXXX";
+      "/data/local/tmp/tempdir_dla.XXXXXXX";
 #else
   char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
 #endif
