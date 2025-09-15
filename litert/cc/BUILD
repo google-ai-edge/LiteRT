@@ -1289,8 +1289,11 @@ cc_library(
         "litert_source_location.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
-        "//litert/cc/options:litert_gpu_options.h",
         "//litert/cc/options:litert_cpu_options.h",
+        "//litert/cc/options:litert_google_tensor_options.h",
+        "//litert/cc/options:litert_gpu_options.h",
+        "//litert/cc/options:litert_mediatek_options.h",
+        "//litert/cc/options:litert_qualcomm_options.h",
         "//litert/cc/options:litert_runtime_options.h",
     ] + [
         # Other headers needed by the C++ API headers.
@@ -1324,7 +1327,10 @@ cc_library(
     ] + [
         # C++ Options API targets.
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
+        "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
+        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
     ] + [
         # Other (static) C++ API targets.

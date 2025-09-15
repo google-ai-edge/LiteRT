@@ -41,6 +41,24 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "qualcomm_flags_with_dynamic_runtime",
+    srcs = ["qualcomm_flags.cc"],
+    hdrs = ["qualcomm_flags.h"],
+    copts = [
+        "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
+        "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
 cc_test(
     name = "qualcomm_flags_test",
     srcs = ["qualcomm_flags_test.cc"],
@@ -78,6 +96,24 @@ cc_library(
     alwayslink = 1,
 )
 
+cc_library(
+    name = "google_tensor_flags_with_dynamic_runtime",
+    srcs = ["google_tensor_flags.cc"],
+    hdrs = ["google_tensor_flags.h"],
+    copts = [
+        "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
+        "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
 cc_test(
     name = "google_tensor_flags_test",
     srcs = ["google_tensor_flags_test.cc"],
@@ -107,6 +143,24 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_mediatek_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "mediatek_flags_with_dynamic_runtime",
+    srcs = ["mediatek_flags.cc"],
+    hdrs = ["mediatek_flags.h"],
+    copts = [
+        "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
+        "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings:string_view",
     ],
