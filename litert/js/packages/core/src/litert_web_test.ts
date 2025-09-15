@@ -17,7 +17,7 @@
 import '@tensorflow/tfjs-backend-webgpu'; // DO NOT REMOVE: Requried for side effects.
 
 import {CompiledModel, ErrorReporter, getAdapterInfo, getGlobalLiteRt, getGlobalLiteRtPromise, getWebGpuDevice, isWebGPUSupported, LiteRt, loadAndCompile, loadLiteRt, setErrorReporter, setWebGpuDevice, Tensor, TensorTypeError, unloadLiteRt} from '@litertjs/core';
-import {litertToTfjs, runWithTfjsTensors, tfjsToLitert} from '@litertjs/tfjs-interop';
+import {litertToTfjs, runWithTfjsTensors, TensorConversionError, tfjsToLitert} from '@litertjs/tfjs-interop';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-core/dist/public/chained_ops/register_all_chained_ops';
@@ -264,9 +264,11 @@ describe('LiteRt', () => {
               '/testdata/multi_signature_model.tflite', {accelerator});
 
           identityTfjs = tf.diag(tf.ones([10], 'float32'));
+          await identityTfjs.data();
           identity = tfjsToLitert(identityTfjs, accelerator);
 
           rangeTfjs = tf.range(0, 100, 1, 'float32').reshape([10, 10]);
+          await rangeTfjs.data();
           range = tfjsToLitert(rangeTfjs, accelerator);
         });
 
@@ -611,67 +613,96 @@ describe('LiteRt', () => {
        model.delete();
      });
 
-  describe('runWithTfjsTensors', () => {
-    for (const accelerator of ['webgpu', 'wasm'] as const) {
-      describe(accelerator, () => {
-        let model: CompiledModel;
-        let inputs: Record<string, tf.Tensor>;
-        let expectedOutput: tf.Tensor;
 
-        beforeAll(async () => {
-          try {
-            model = await loadAndCompile(
-                '/testdata/multi_signature_model.tflite', {accelerator});
-            inputs = {
-              'add_a:0': tf.diag(tf.ones([10], 'float32')),
-              'add_b:0': tf.range(0, 100, 1, 'float32').reshape([10, 10]),
-            };
-            expectedOutput = inputs['add_a:0'].add(inputs['add_b:0']);
-          } catch (e) {
-            console.error(e);
-            throw e;
-          }
-        });
-
-        afterAll(() => {
-          model.delete();
-          for (const value of Object.values(inputs)) {
-            value.dispose();
-          }
-          expectedOutput.dispose();
-        });
-
-        it('runs a model with TFJS inputs and outputs', async () => {
-          const outputs = runWithTfjsTensors(model, inputs);
-
-          expect(await outputs['PartitionedCall:0'].data())
-              .toEqual(await expectedOutput.data());
-        });
-
-        it('runs a signature with TFJS inputs and outputs', async () => {
-          const outputs = runWithTfjsTensors(model, 'add', inputs);
-
-          expect(await outputs['PartitionedCall:0'].data())
-              .toEqual(await expectedOutput.data());
-        });
-
-        it('runs with `run([Tensor...]) calling style', async () => {
-          const outputs =
-              runWithTfjsTensors(model, [inputs['add_a:0'], inputs['add_b:0']]);
-
-          expect(await outputs[0].data()).toEqual(await expectedOutput.data());
-        });
-
-        it('runs a signature that\'s passed directly to `run`', async () => {
-          const outputs = runWithTfjsTensors(model.signatures['add'], [
-            inputs['add_a:0'],
-            inputs['add_b:0'],
-          ]);
-
-          expect(await outputs[0].data()).toEqual(await expectedOutput.data());
+  describe('TFJS Interop', () => {
+    describe('tfjsToLitert', () => {
+      it('throws when TFJS WebGPU tensor data is not on CPU', async () => {
+        tf.tidy(() => {
+          const tfjsGpuTensor = tf.range(0, 10, 1, 'float32').pow(2);
+          expect(() => tfjsToLitert(tfjsGpuTensor, 'wasm'))
+              .toThrowError(
+                  TensorConversionError,
+                  /TFJS tensor data is on WebGPU but not on CPU/);
         });
       });
-    }
+    });
+
+    describe('runWithTfjsTensors', () => {
+      it('throws when TFJS WebGPU input tensors are not on CPU', async () => {
+        const modelPath = '/testdata/add_10x10.tflite';
+        const model = await loadAndCompile(modelPath, {accelerator: 'wasm'});
+        const tfjsGpuTensor = tf.range(0, 10, 1, 'float32').pow(2);
+        expect(() => runWithTfjsTensors(model, [tfjsGpuTensor, tfjsGpuTensor]))
+            .toThrowError(
+                TensorConversionError,
+                /TFJS tensor data is on WebGPU but not on CPU/);
+      });
+
+      for (const accelerator of ['webgpu', 'wasm'] as const) {
+        describe(accelerator, () => {
+          let model: CompiledModel;
+          let inputs: Record<string, tf.Tensor>;
+          let expectedOutput: tf.Tensor;
+
+          beforeAll(async () => {
+            try {
+              model = await loadAndCompile(
+                  '/testdata/multi_signature_model.tflite', {accelerator});
+              inputs = {
+                'add_a:0': tf.diag(tf.ones([10], 'float32')),
+                'add_b:0': tf.range(0, 100, 1, 'float32').reshape([10, 10]),
+              };
+              expectedOutput = inputs['add_a:0'].add(inputs['add_b:0']);
+              await inputs['add_a:0'].data();
+              await inputs['add_b:0'].data();
+            } catch (e) {
+              console.error(e);
+              throw e;
+            }
+          });
+
+          afterAll(() => {
+            model.delete();
+            for (const value of Object.values(inputs)) {
+              value.dispose();
+            }
+            expectedOutput.dispose();
+          });
+
+          it('runs a model with TFJS inputs and outputs', async () => {
+            const outputs = runWithTfjsTensors(model, inputs);
+
+            expect(await outputs['PartitionedCall:0'].data())
+                .toEqual(await expectedOutput.data());
+          });
+
+          it('runs a signature with TFJS inputs and outputs', async () => {
+            const outputs = runWithTfjsTensors(model, 'add', inputs);
+
+            expect(await outputs['PartitionedCall:0'].data())
+                .toEqual(await expectedOutput.data());
+          });
+
+          it('runs with `run([Tensor...]) calling style', async () => {
+            const outputs = runWithTfjsTensors(
+                model, [inputs['add_a:0'], inputs['add_b:0']]);
+
+            expect(await outputs[0].data())
+                .toEqual(await expectedOutput.data());
+          });
+
+          it('runs a signature that\'s passed directly to `run`', async () => {
+            const outputs = runWithTfjsTensors(model.signatures['add'], [
+              inputs['add_a:0'],
+              inputs['add_b:0'],
+            ]);
+
+            expect(await outputs[0].data())
+                .toEqual(await expectedOutput.data());
+          });
+        });
+      }
+    });
   });
 
   describe('tensor conversion functions', () => {

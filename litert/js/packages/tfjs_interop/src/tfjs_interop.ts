@@ -18,6 +18,24 @@ import {Accelerator, CompiledModel, ConverterFactory, CpuTensorReference, DType,
 import type {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 
+/**
+ * Error thrown when a tensor can not be converted between TFJS and LiteRT.
+ */
+export class TensorConversionError extends Error {
+  tensor?: string|number;
+  private originalMessage: string;
+
+  constructor(message: string) {
+    super(message);
+    this.originalMessage = message;
+  }
+
+  setTensor(tensor: string|number) {
+    this.message = `For tensor ${tensor}: ${this.originalMessage}`;
+    this.tensor = tensor;
+  }
+}
+
 function getConverterFactory(): ConverterFactory {
   try {
     return getGlobalLiteRt().getConverterFactory();
@@ -84,8 +102,7 @@ function getBhwcShapeForTfjs(tfjsTensor: tf.Tensor):
  * Convert a TFJS tensor to a LiteRT tensor on the given accelerator.
  *
  * When converting from TFJS WebGPU to LiteRT Wasm CPU, first call
- * `await tensor.data()` to make sure the data is on CPU. Otherwise, the
- * conversion will be inefficient.
+ * `await tensor.data()` to make sure the data is on CPU.
  *
  * Converting from TFJS to LiteRT WebGPU is only supported when using the TFJS
  * WebGPU backend. If you need to create WebGPU tensors from another TFJS
@@ -118,6 +135,20 @@ function tfjsToLitertCpu(
 
   const dtype = tfjsDtypeToLiteRt(tfjsTensor.dtype);
   const arrayType = DTYPE_TO_ARRAY_TYPE[dtype];
+
+  if (tf.getBackend() === 'webgpu') {
+    const backend = tf.backend() as WebGPUBackend;
+    if (backend.tensorMap.has(tfjsTensor.dataId)) {
+      const tensorData = backend.tensorMap.get(tfjsTensor.dataId)!;
+      if (!tensorData.values) {
+        throw new TensorConversionError(
+            'TFJS tensor data is on WebGPU but not on CPU. You must first ' +
+            'call `await tensor.data();` to cache the tensor on CPU. Then, ' +
+            'you can use the tensor with the LiteRT.js Wasm backend.');
+      }
+    }
+  }
+
   const tfjsData = tfjsTensor.dataSync();
 
   const cpuTensor = new converterFactory.wasm.CpuTensor(
@@ -145,14 +176,14 @@ function tfjsToLitertCpu(
 function tfjsToLitertWebGpu(
     tfjsTensor: tf.Tensor, converterFactory: ConverterFactory): Tensor {
   if (tf.getBackend() !== 'webgpu') {
-    throw new Error(
+    throw new TensorConversionError(
         'Only the TFJS WebGPU backend is supported when converting to WebGPU LiteRT tensors.');
   }
 
   const backend = tf.backend() as WebGPUBackend;
   if (!converterFactory.isWebGpuDeviceCompatible(backend.device)) {
     throw new Error(
-        'In order to convert from TF.js to LiteRT, they both must ' +
+        'In order to convert from TFJS to LiteRT, both libraries must ' +
         'be initialized to use the same WebGPU device.');
   }
 
@@ -166,11 +197,12 @@ function tfjsToLitertWebGpu(
   const gpuData = tfjsTensor.dataToGPU();
   const buffer = gpuData.buffer;
   if (!buffer) {
-    throw new Error('TFJS tensor did not have a GPU buffer.');
+    throw new TensorConversionError('TFJS tensor did not have a GPU buffer.');
   }
 
   if (!SUPPORTED_DTYPES.has(tfjsTensor.dtype)) {
-    throw new Error('Unsupported type: ' + tfjsTensor.dtype + '.');
+    throw new TensorConversionError(
+        'Unsupported type: ' + tfjsTensor.dtype + '.');
   }
   const shape4d = getBhwcShapeForTfjs(tfjsTensor);
   const converter = converterFactory.makeConverterFromTfjs(
@@ -217,7 +249,7 @@ function litertToTfjsCpu(
     tensor: Tensor, converterFactory: ConverterFactory): tf.Tensor {
   const cpuTensor = tensor.reference as CpuTensorReference;
   if (!(cpuTensor instanceof converterFactory.wasm.CpuTensor)) {
-    throw new Error('Tensor reference is not a CpuTensor.');
+    throw new TensorConversionError('Tensor reference is not a CpuTensor.');
   }
 
   const cpuTensorUint8Array = cpuTensor.data();
@@ -244,7 +276,7 @@ function litertToTfjsWebGpu(
   const backend = tf.backend() as WebGPUBackend;
   if (!converterFactory.isWebGpuDeviceCompatible(backend.device)) {
     throw new Error(
-        'In order to convert from LiteRT to TF.js, they both must ' +
+        'In order to convert from LiteRT to TFJS, both libraries must ' +
         'be initialized to use the same WebGPU device.');
   }
 
@@ -288,14 +320,15 @@ type MapContainer<T extends Container<unknown>, NewVal> = T extends Array<infer 
  * @param isA The function to check if the value is of type A.
  */
 function mapOnContainer<A, T extends Container<A>, B>(
-    t: T, f: (a: A) => B, isA: (val: unknown) => val is A): MapContainer<T, B> {
+    t: T, f: (a: A, keyOrIndex?: string|number) => B,
+    isA: (val: unknown) => val is A): MapContainer<T, B> {
   if (isA(t)) {
     return f(t) as MapContainer<T, B>;
   } else if (Array.isArray(t)) {
     return t.map(f) as MapContainer<T, B>;
   } else {
     return Object.fromEntries(Object.entries(t as Record<string, A>)
-                                  .map(([key, a]) => [key, f(a)])) as
+                                  .map(([key, a]) => [key, f(a, key)])) as
         MapContainer<T, B>;
   }
 }
@@ -308,7 +341,8 @@ function mapOnContainer<A, T extends Container<A>, B>(
  * @param f The function to map each value in the Container.
  */
 function mapOnTfjs<T extends Container<tf.Tensor>, NewVal>(
-    t: T, f: (tfjsTensor: tf.Tensor) => NewVal): MapContainer<T, NewVal> {
+    t: T, f: (tfjsTensor: tf.Tensor, keyOrIndex?: string|number) => NewVal):
+    MapContainer<T, NewVal> {
   return mapOnContainer(t, f, (val) => val instanceof tf.Tensor);
 }
 
@@ -320,7 +354,8 @@ function mapOnTfjs<T extends Container<tf.Tensor>, NewVal>(
  * @param f The function to map each value in the Container.
  */
 function mapOnLiteRt<T extends Container<Tensor>, NewVal>(
-    t: T, f: (liteRtTensor: Tensor) => NewVal): MapContainer<T, NewVal> {
+    t: T, f: (liteRtTensor: Tensor, keyOrIndex?: string|number) => NewVal):
+    MapContainer<T, NewVal> {
   return mapOnContainer(t, f, (val) => val instanceof Tensor);
 }
 
@@ -377,9 +412,16 @@ export function runWithTfjsTensors(
   }
 
   // Convert TFJS inputs to LiteRT tensors.
-  const inputs = mapOnTfjs(
-      tfjsInputs,
-      tfjsTensor => tfjsToLitert(tfjsTensor, model.accelerator, liteRt));
+  const inputs = mapOnTfjs(tfjsInputs, (tfjsTensor, keyOrIndex) => {
+    try {
+      return tfjsToLitert(tfjsTensor, model.accelerator, liteRt);
+    } catch (e) {
+      if (e instanceof TensorConversionError && keyOrIndex !== undefined) {
+        e.setTensor(keyOrIndex);
+      }
+      throw e;
+    }
+  });
 
   // Run the model.
   let outputs: Record<string, Tensor>|Tensor[];
@@ -400,11 +442,20 @@ export function runWithTfjsTensors(
   });
 
   // Convert LiteRT outputs to TFJS tensors.
-  return mapOnLiteRt(outputs, (tensor) => {
-    const tfjsTensor = litertToTfjs(tensor, liteRt);
-    // Two outputs will never share the same buffer since we always make
-    // a copy.
-    tensor.delete();
+  return mapOnLiteRt(outputs, (tensor, keyOrIndex) => {
+    let tfjsTensor: tf.Tensor;
+    try {
+      tfjsTensor = litertToTfjs(tensor, liteRt);
+    } catch (e) {
+      if (e instanceof TensorConversionError && keyOrIndex !== undefined) {
+        e.setTensor(keyOrIndex);
+      }
+      throw e;
+    } finally {
+      // Two outputs will never share the same buffer since we always make
+      // a copy.
+      tensor.delete();
+    }
     return tfjsTensor;
   });
 }
