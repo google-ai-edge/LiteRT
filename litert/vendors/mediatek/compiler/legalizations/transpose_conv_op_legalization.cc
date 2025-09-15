@@ -52,7 +52,7 @@ Expected<void> LegalizeTransposeConvOp(
   CHECK_OP_IDX_AND_RETURN_ERROR(weight_tensor_id);
   input_indices.push_back(*weight_tensor_id);
 
-  // if there's on bias input, add a zero bias
+  // if there's no bias input, add a zero bias
   if (op.Inputs().size() < 4) {
     if (!op.Inputs()[0].HasWeights()) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
