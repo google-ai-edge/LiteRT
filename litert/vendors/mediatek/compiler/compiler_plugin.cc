@@ -111,6 +111,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSqrt,
     kLiteRtOpCodeTflDiv,
     kLiteRtOpCodeTflCast,
+    kLiteRtOpCodeTflPrelu,
     kLiteRtOpCodeTflMaximum,
     kLiteRtOpCodeTflRelu,
     kLiteRtOpCodeTflAbs,
