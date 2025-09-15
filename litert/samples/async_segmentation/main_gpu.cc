@@ -234,13 +234,7 @@ int main(int argc, char* argv[]) {
     }
     LITERT_ABORT_IF_ERROR(
         input_buffers[0].Write(absl::MakeConstSpan(preprocessed_buffer_data)));
-  } else {
-    LITERT_ASSIGN_OR_ABORT(
-        auto event,
-        litert::Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
-    input_buffers[0].SetEvent(std::move(event));
   }
-
   // ================= INFERENCE =================
   // Run inference
 

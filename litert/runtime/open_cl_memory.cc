@@ -210,6 +210,9 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     GlBuffer& gl_buffer) {
+  LITERT_RETURN_IF_ERROR(
+      IsSupported(),
+      Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
   tflite::gpu::cl::CLContext* context = gpu_env->GetContext();
   cl_int error;
   cl_mem buffer = tflite::gpu::cl::clCreateFromGLBuffer(
