@@ -499,7 +499,7 @@ cc_binary(
     deps = [
         ":dump",
         ":tool_display",
-        "//litert/c:litert_logging",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_logging",
         "//litert/cc:litert_model",
