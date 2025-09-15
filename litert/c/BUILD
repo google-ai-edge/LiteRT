@@ -12,6 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# copybara:uncomment_begin(google-only)
+# load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib", "macos_unit_test")
+# copybara:uncomment_end_and_comment_begin
+load("@build_bazel_rules_apple//apple:macos.bzl", "macos_dylib")
+# copybara:comment_end
+
 # copybara:uncomment load("//devtools/deps/check:deps_check.bzl", "check_dependencies")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
@@ -19,19 +25,18 @@ load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load(
     "//litert/build_common:litert_build_defs.bzl",
-    # copybara:uncomment "copy_file",
+    "copy_file",
     "export_lrt_runtime_only_linkopt",
     "export_lrt_runtime_only_script",
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
 )
 load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "litert_metal_linkopts", "litert_metal_opts")
-# copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
-# copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_dylib", "macos_unit_test")
+# copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
-# copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
+LITERT_MIN_IOS_VERSION = "14.0"
 
-# copybara:uncomment LITERT_MIN_MACOS_VERSION = "14.0"
+LITERT_MIN_MACOS_VERSION = "14.0"
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -622,21 +627,19 @@ cc_shared_library(
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
-# copybara:uncomment_begin(google-only)
-# macos_dylib(
-#     name = "build_litert_runtime_c_api_dylib",
-#     exported_symbols_lists = export_lrt_runtime_only_script(),
-#     linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
-#     minimum_os_version = LITERT_MIN_MACOS_VERSION,
-#     deps = LITERT_C_API_COMMON_DEPS,
-# )
-#
-# copy_file(
-#     name = "litert_runtime_c_api_dylib",
-#     src = ":build_litert_runtime_c_api_dylib",
-#     target = "libLiteRtRuntimeCApi.dylib",
-# )
-# copybara:uncomment_end
+macos_dylib(
+    name = "build_litert_runtime_c_api_dylib",
+    exported_symbols_lists = export_lrt_runtime_only_script(),
+    linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
+    minimum_os_version = LITERT_MIN_MACOS_VERSION,
+    deps = LITERT_C_API_COMMON_DEPS,
+)
+
+copy_file(
+    name = "litert_runtime_c_api_dylib",
+    src = ":build_litert_runtime_c_api_dylib",
+    target = "libLiteRtRuntimeCApi.dylib",
+)
 
 # Target for windows libLiteRtRuntimeCApi.dll.
 cc_binary(
@@ -724,10 +727,18 @@ cc_shared_library(
     ],
 )
 
+SELECT_LITERT_RUNTIME_C_API_SO = select({
+    ":resolve_symbols_in_exec": [],
+    "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
+    "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
+    "@platforms//os:windows": [],
+    "//conditions:default": [":litert_runtime_c_api_so"],
+})
+
 # Allows referring to the above as a target with the name :libLiteRtRuntimeCApi.so.
 filegroup(
     name = "libLiteRtRuntimeCApi.so",
-    srcs = [":litert_runtime_c_api_so"],
+    srcs = SELECT_LITERT_RUNTIME_C_API_SO,
 )
 
 # Config for LiteRT client executables to export LiteRt* symbols and let accelerator shared libs
@@ -746,15 +757,7 @@ filegroup(
 # This is cc_library target based on `libLiteRtRuntimeCApi.so`.
 cc_library(
     name = "litert_runtime_c_api_shared_lib",
-    srcs = select({
-        ":resolve_symbols_in_exec": [],
-        # copybara:uncomment_begin(google-only)
-        # "@platforms//os:ios": [":litert_runtime_c_api_dylib"],
-        # "@platforms//os:macos": [":litert_runtime_c_api_dylib"],
-        # copybara:uncomment_end
-        "@platforms//os:windows": [],
-        "//conditions:default": [":litert_runtime_c_api_so"],
-    }),
+    srcs = SELECT_LITERT_RUNTIME_C_API_SO,
     hdrs = [
         ":c_api_headers",
         "//litert/c/internal:internal_headers",

@@ -17,8 +17,8 @@ load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
-# copybara:uncomment load("//tools/build_defs/apple:ios.bzl", "ios_unit_test")
-# copybara:uncomment load("//tools/build_defs/apple:macos.bzl", "macos_unit_test")
+# copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
+# copybara:uncomment load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
 
 # copybara:uncomment LITERT_MIN_IOS_VERSION = "14.0"
 
