@@ -150,7 +150,10 @@ class BufferRef {
   }
 
   // Write the string data to a stream.
-  void WriteStr(std::ostream& out) const { out.write(StrData(), Size()); }
+  void WriteStr(std::ostream& out) const {
+    out.write(StrData(), Size());
+    out.flush();
+  }
 
   // Print info about this buffer.
   void Dump(std::ostream& out) const {

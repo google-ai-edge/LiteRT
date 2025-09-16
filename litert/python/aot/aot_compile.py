@@ -50,8 +50,8 @@ def aot_compile(
       registered targets.
     config: The compilation config(s). Cannot be specified with target.
     quantizer: The quantizer to use for quantization.
-    keep_going: Whether to keep going if some backends fail. If False, fail
-      fast on the first error and raise an exception.
+    keep_going: Whether to keep going if some backends fail. If False, fail fast
+      on the first error and raise an exception.
     subgraphs_to_compile: The subgraph index list to compile to NPU. If None,
       compile all subgraphs.
     **kwargs: Additional arguments to pass to the backend.
@@ -92,6 +92,7 @@ def aot_compile(
       output_dir.mkdir(parents=True, exist_ok=True)
       output_dir = str(output_dir)
   output_dir_path = pathlib.Path(output_dir)
+  output_dir_path.mkdir(parents=True, exist_ok=True)
 
   if isinstance(config, types.CompilationConfig) or not config:
     if config:

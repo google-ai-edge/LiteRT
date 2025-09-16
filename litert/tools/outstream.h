@@ -22,6 +22,7 @@
 #include <ostream>
 #include <utility>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
 
@@ -49,6 +50,7 @@ class UserStream {
       LITERT_LOG(LITERT_INFO, "Setup file stream\n", "");
       auto ofstream = std::make_unique<std::ofstream>();
       ofstream->open(flag.data());
+      ABSL_CHECK(!ofstream->fail()) << "Unable to open file: " << flag.data();
       return UserStream(std::move(ofstream));
     }
   }
