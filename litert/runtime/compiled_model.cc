@@ -855,6 +855,9 @@ Expected<void> LiteRtCompiledModelT::Run(
   buffer_context_->SetAsyncExecutionMode(async);
 
   if (auto res = runner->Invoke(); res != kTfLiteOk) {
+    if (res == kTfLiteCancelled) {
+      return Unexpected(kLiteRtStatusCancelled, "Execution was cancelled");
+    }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
   // Copy constant data to constant output tensors after invoke
@@ -1187,3 +1190,47 @@ litert::Expected<::tflite::Interpreter*> GetInterpreter(
   }
   return compiled_model->interp_.get();
 }
+
+Expected<void> LiteRtCompiledModelT::EnableCancellation() {
+  if (!interp_) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Interpreter not initialized");
+  }
+
+  cancellation_enabled_ = true;
+
+  // Enable cancellation on the underlying TFLite interpreter
+  if (interp_->EnableCancellation() != kTfLiteOk) {
+    cancellation_enabled_ = false;
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to enable cancellation on interpreter");
+  }
+
+  return {};
+}
+
+void LiteRtCompiledModelT::SetCancellationFunction(
+    void* data, bool (*check_cancelled_func)(void*)) {
+  check_cancelled_func_ = check_cancelled_func;
+
+  // Set the cancellation function on the underlying TFLite interpreter
+  if (interp_) {
+    interp_->SetCancellationFunction(data, check_cancelled_func);
+  }
+}
+
+Expected<void> LiteRtCompiledModelT::Cancel() {
+  if (!cancellation_enabled_) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Cancellation is not enabled");
+  }
+
+  // Cancel the underlying TFLite interpreter
+  if (interp_ && interp_->Cancel() != kTfLiteOk) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to cancel interpreter");
+  }
+
+  return {};
+}
+

@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -171,6 +172,20 @@ class LiteRtCompiledModelT {
   // Returns the TFLite interpreter associated with the compiled model.
   friend litert::Expected<::tflite::Interpreter*> GetInterpreter(
       LiteRtCompiledModelT* compiled_model);
+
+  // Cancellation APIs
+
+  // Enables cancellation for the compiled model. Once enabled, model execution
+  // can be cancelled from any thread using Cancel().
+  litert::Expected<void> EnableCancellation();
+
+  // Sets a callback function for checking cancellation during execution.
+  // The callback will be called periodically during model execution.
+  void SetCancellationFunction(void* data, bool (*check_cancelled_func)(void*));
+
+  // Cancels an ongoing model execution. Can be called from any thread.
+  // Returns an error if cancellation is not enabled.
+  litert::Expected<void> Cancel();
 
  private:
   // Helper function to automatically resize input tensor based on shape change
@@ -337,6 +352,10 @@ class LiteRtCompiledModelT {
 
   // The error reporter used by the compiled model
   std::unique_ptr<tflite::ErrorReporter> error_reporter_;
+
+  // Cancellation support
+  bool cancellation_enabled_ = false;
+  bool (*check_cancelled_func_)(void*) = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
