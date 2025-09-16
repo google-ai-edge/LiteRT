@@ -126,28 +126,6 @@ RUN echo '#!/bin/bash\n\
 git config --global --add safe.directory /litert_build\n\
 git config --global --add safe.directory /litert_build/third_party/tensorflow\n\
 \n\
-# Generate .tf_configure.bazelrc with necessary environment variables\n\
-cat > /litert_build/.tf_configure.bazelrc << EOL\n\
-build --action_env PYTHON_BIN_PATH="${PYTHON_BIN_PATH}"\n\
-build --action_env PYTHON_LIB_PATH="${PYTHON_LIB_PATH}"\n\
-build --action_env TF_NEED_CUDA="${TF_NEED_CUDA}"\n\
-build --action_env TF_NEED_ROCM="${TF_NEED_ROCM}"\n\
-build --action_env TF_DOWNLOAD_CLANG="${TF_DOWNLOAD_CLANG}"\n\
-build --action_env TF_SET_ANDROID_WORKSPACE="${TF_SET_ANDROID_WORKSPACE}"\n\
-build --action_env ANDROID_SDK_HOME="${ANDROID_SDK_HOME}"\n\
-build --action_env ANDROID_NDK_HOME="${ANDROID_NDK_HOME}"\n\
-build --action_env ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION}"\n\
-build --action_env ANDROID_SDK_API_LEVEL="${ANDROID_SDK_API_LEVEL}"\n\
-build --action_env ANDROID_NDK_API_LEVEL="${ANDROID_NDK_API_LEVEL}"\n\
-build --action_env ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION}"\n\
-build --action_env TF_CONFIGURE_IOS="${TF_CONFIGURE_IOS}"\n\
-build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
-build --action_env TF_NEED_CLANG="${TF_NEED_CLANG}"\n\
-build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
-build --repo_env=CC="${CLANG_COMPILER_PATH}"\n\
-build --repo_env=BAZEL_COMPILER="${CLANG_COMPILER_PATH}"\n\
-EOL\n\
-\n\
 /litert_build/configure --workspace=/litert_build\n\
 \n\
 echo "Configuration complete. .tf_configure.bazelrc has been generated at /litert_build/.tf_configure.bazelrc"\n\
