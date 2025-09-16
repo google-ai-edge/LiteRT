@@ -1,5 +1,6 @@
 # LiteRT Build Instructions
 
+The easiest way to build LiteRT from the source is using our docker image.
 This document provides detailed build instructions for LiteRT across supported
 platforms: Linux, macOS, Windows, Android.
 
@@ -21,29 +22,8 @@ Move-Item bazel.exe C:\Windows\System32\
 
 ## Setup local build environment
 
-Use `./docker_build/hermetic_build.Dockerfile` as the reference to create your
-own `.tf_configure.bazelrc` file
-
-```
-build --action_env PYTHON_BIN_PATH="${PYTHON_BIN_PATH}"\n\
-build --action_env PYTHON_LIB_PATH="${PYTHON_LIB_PATH}"\n\
-build --action_env TF_NEED_CUDA="${TF_NEED_CUDA}"\n\
-build --action_env TF_NEED_ROCM="${TF_NEED_ROCM}"\n\
-build --action_env TF_DOWNLOAD_CLANG="${TF_DOWNLOAD_CLANG}"\n\
-build --action_env TF_SET_ANDROID_WORKSPACE="${TF_SET_ANDROID_WORKSPACE}"\n\
-build --action_env ANDROID_SDK_HOME="${ANDROID_SDK_HOME}"\n\
-build --action_env ANDROID_NDK_HOME="${ANDROID_NDK_HOME}"\n\
-build --action_env ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION}"\n\
-build --action_env ANDROID_SDK_API_LEVEL="${ANDROID_SDK_API_LEVEL}"\n\
-build --action_env ANDROID_NDK_API_LEVEL="${ANDROID_NDK_API_LEVEL}"\n\
-build --action_env ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION}"\n\
-build --action_env TF_CONFIGURE_IOS="${TF_CONFIGURE_IOS}"\n\
-build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
-build --action_env TF_NEED_CLANG="${TF_NEED_CLANG}"\n\
-build --action_env CLANG_COMPILER_PATH="${CLANG_COMPILER_PATH}"\n\
-build --repo_env=CC="${CLANG_COMPILER_PATH}"\n\
-build --repo_env=BAZEL_COMPILER="${CLANG_COMPILER_PATH}"\n\
-```
+Use `./docker_build/hermetic_build.Dockerfile` as the reference to declare the
+system variable before running `./configure` script such as `PYTHON_BIN_PATH`.
 
 ## Platform-Specific Instructions
 
@@ -81,11 +61,6 @@ sudo apt-get install -y \
 git clone https://github.com/google-ai-edge/LiteRT.git
 cd LiteRT
 
-# Configure for Linux
-cat > .tf_configure.bazelrc << EOF
-build --config=linux
-EOF
-
 # Build
 bazel build //litert/cc:litert_api
 bazel build //litert/tools:all
@@ -122,11 +97,6 @@ brew install python@3.11
 ```bash
 git clone https://github.com/google-ai-edge/LiteRT.git
 cd LiteRT
-
-# Configure for macOS
-cat > .tf_configure.bazelrc << EOF
-build --config=macos
-EOF
 
 # Build for Apple Silicon
 bazel build --config=macos_arm64 //litert/cc:litert_api
