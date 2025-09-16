@@ -229,7 +229,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     auto jit_result = litert::internal::ApplyPlugins(
         &env, options, &model, hw_accelerators, &need_reserialization);
     if (!jit_result) {
-      LITERT_LOG(LITERT_WARNING, "Failed to apply compiler plugins: %s",
+      auto jit_failure_log_level = (hw_accelerators & kLiteRtHwAcceleratorNpu)
+                                       ? LITERT_WARNING
+                                       : LITERT_VERBOSE;
+      LITERT_LOG(jit_failure_log_level, "Failed to apply compiler plugins: %s",
                  jit_result.Error().Message().c_str());
     } else {
       LITERT_LOG(
