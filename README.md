@@ -1,4 +1,5 @@
 # LiteRT
+
 <p align="center">
   <img src="./docs/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
 </p>
@@ -11,6 +12,7 @@ platforms, via efficient conversion, runtime, and optimization
 [Documentation](#-getting-help)
 
 ## Description
+
 LiteRT continues the legacy of TensorFlow Lite as the trusted, high-performance
 runtime for on-device AI.
 
@@ -106,21 +108,24 @@ get started based on your goals:
 - **Goal**: Run a pre-trained model (like image segmentation) in a mobile app
   for the first time.
 - **Path1 (Beginner dev)**: Follow step-by-step instructions via Android Studio
-  to create a [Real-time segmentation App](https://github.com/google/litert) for
-  CPU/GPU/NPU inference.
+  to create a
+  [Real-time segmentation App](https://developers.google.com/codelabs/litert-image-segmentation-android#0)
+  for CPU/GPU/NPU inference. Source code
+  [link](https://github.com/google-ai-edge/litert-samples/tree/main/v2/image_segmentation).
 - **Path2 (Experienced dev)**: Start with the
-  [Get Started guide](https://ai.google.dev/edge/litert), find a pre-trained
-  .tflite model on [Kaggle Models](https://www.kaggle.com/models), and use the
-  standard LiteRT runtime to integrate it into your Android or iOS app.
+  [Get Started guide](https://ai.google.dev/edge/litert/next/get_started), find
+  a pre-trained .tflite model on [Kaggle Models](https://www.kaggle.com/models),
+  and use the standard LiteRT runtime to integrate it into your Android or iOS
+  app.
 
 ### 3. ⚡ I need to maximize performance...
 
 - **Goal**: Accelerate an existing model to run faster and more efficiently
   on-device.
 - **Path**:
-  - Explore the [LiteRT API](https://ai.google.dev/edge/litert) to easily
-    leverage hardware acceleration. Learn how to enable the GPU acceleration or
-    the NPU acceleration (NPU EAP:
+  - Explore the [LiteRT API](https://ai.google.dev/edge/litert/next/overview) to
+    easily leverage hardware acceleration. Learn how to enable the GPU
+    acceleration or the NPU acceleration (NPU EAP:
     [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP)).
   - **For working with Generative AI**: Dive into
     [LiteRT LM](https://github.com/google/litert), our specialized solution for
@@ -189,21 +194,24 @@ We encourage you to reach out if you need help.
 LiteRT is part of a larger ecosystem of tools for on-device machine learning.
 Check out these other projects from Google:
 
+- **[LiteRT Samples](https://github.com/google-ai-edge/litert-samples)**: A
+  collection of LiteRT sample apps.
 - **[AI Edge Torch Converter](https://github.com/google-ai-edge/ai-edge-torch)**:
   A tool in LiteRT to convert PyTorch models into the LiteRT(.tflite) format for
   on-device deployment.
 - **[Torch Generative API](https://github.com/google-ai-edge/ai-edge-torch)**: A
   library in LiteRT to reauthor LLMs for efficient conversion and on-device
   inference.
-- **[LiteRT-LM](https://github.com/google/litert)**: A library to efficiently
-  run Large Language Models (LLMs) across edge platforms, built on top of
-  LiteRT.
+- **[LiteRT-LM](https://github.com/google-ai-edge/litert-lm)**: A library to
+  efficiently run Large Language Models (LLMs) across edge platforms, built on
+  top of LiteRT.
 - **[XNNPACK](https://github.com/google/XNNPACK)**: A highly optimized library
   of neural network inference operators for ARM, x86, and WebAssembly
   architectures that provides high-performance CPU acceleration for LiteRT.
 - **V2 GPU Delegate** - Coming soon
-- **[MediaPipe](https://github.com/google/mediapipe)**: A framework for building
-  cross-platform, customizable ML solutions for live and streaming media.
+- **[MediaPipe](https://github.com/google-ai-edge/mediapipe)**: A framework for
+  building cross-platform, customizable ML solutions for live and streaming
+  media.
 
 ## ❤️ Code of Conduct
 
