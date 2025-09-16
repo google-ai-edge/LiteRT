@@ -35,7 +35,13 @@ EXPORTS
   LiteRtDestroyEnvironment
   LiteRtDestroyMetrics
   LiteRtDestroyOptions
+  LiteRtExternalLiteRtBufferContextCreateBufferForTensor
+  LiteRtExternalLiteRtBufferContextGetEnvironment
+  LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
+  LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
   LiteRtFindCpuOptions
+  LiteRtFindOpaqueOptionsData
+  LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelOutputBufferRequirements
@@ -44,9 +50,26 @@ EXPORTS
   LiteRtGetCpuOptionsXNNPackFlags
   LiteRtGetCpuOptionsXnnPackWeightCachePath
   LiteRtGetEnvironmentOptions
+  LiteRtGetExternalLiteRtBufferContextTensorBuffer
+  LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
+  LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
+  LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern
+  LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey
+  LiteRtGetGpuAcceleratorCompilationOptionsPrecision
+  LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights
+  LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir
+  LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors
+  LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache
+  LiteRtGetGpuOptionsBenchmarkMode
+  LiteRtGetGpuOptionsConstantTensorSharing
+  LiteRtGetGpuOptionsGpuPriority
+  LiteRtGetGpuOptionsInfiniteFloatCapping
+  LiteRtGetGpuOptionsNoExternalTensorsMode
   LiteRtGetGpuOptionsPayloadIdentifier
   LiteRtGetMetric
+  LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
+  LiteRtGetOpaqueOptions
   LiteRtGetTensorBufferRegistry
   LiteRtGpuEnvironmentCreate
   LiteRtRegisterAccelerator
