@@ -99,6 +99,12 @@ LiteRtDispatchDeviceContextT::Create(
       options_data.atomic_inference = *atomic;
     }
 
+    // Extract prefer coherent if available
+    if (auto prefer_coherent = darwinn_options->GetPreferCoherent();
+        prefer_coherent) {
+      options_data.prefer_coherent = *prefer_coherent;
+    }
+
     device_context->darwinn_options_ = std::move(options_data);
     LITERT_LOG(LITERT_INFO,
                "Darwinn runtime options will be applied to graphs");
@@ -283,10 +289,23 @@ LiteRtDispatchDeviceContextT::CreateGraph() {
       auto status = graph->AnnotateGraph(
           litert::google_tensor::DispatchDirectiveAnnotations::
               kEdgetpuAtomicInference.data(),
-          "true");
+          "1");
       if (!status) {
         LITERT_LOG(LITERT_WARNING,
                    "Failed to apply atomic_inference annotation: %s",
+                   status.Error().Message().c_str());
+      }
+    }
+
+    // Apply prefer coherent annotation
+    if (options.prefer_coherent) {
+      auto status = graph->AnnotateGraph(
+          litert::google_tensor::GraphDirectiveAnnotations::kPreferCoherent
+              .data(),
+          "1");
+      if (!status) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Failed to apply prefer_coherent annotation: %s",
                    status.Error().Message().c_str());
       }
     }

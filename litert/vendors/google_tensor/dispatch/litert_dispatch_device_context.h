@@ -70,6 +70,7 @@ class LiteRtDispatchDeviceContextT {
     std::optional<uint32_t> inference_memory_power_state;
     std::optional<int8_t> inference_priority;
     bool atomic_inference = false;
+    bool prefer_coherent = false;
   };
 
   const litert::google_tensor::Southbound& southbound_;
