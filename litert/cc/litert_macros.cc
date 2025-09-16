@@ -92,6 +92,8 @@ absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::NotFoundError(LogMessage());
     case kLiteRtStatusErrorTimeoutExpired:
       return absl::DeadlineExceededError(LogMessage());
+    case kLiteRtStatusCancelled:
+      return absl::CancelledError(LogMessage());
     case kLiteRtStatusErrorWrongVersion:
       return absl::FailedPreconditionError(LogMessage());
     case kLiteRtStatusErrorUnknown:

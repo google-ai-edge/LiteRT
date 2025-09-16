@@ -146,6 +146,44 @@ LiteRtStatus LiteRtRunCompiledModelAsync(LiteRtCompiledModel compiled_model,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtEnableCompiledModelCancellation(
+    LiteRtCompiledModel compiled_model) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto result = compiled_model->EnableCancellation();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "%s", result.Error().Message().c_str());
+    return result.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
+    LiteRtCompiledModel compiled_model, void* data,
+    bool (*check_cancelled_func)(void*)) {
+  if (!compiled_model || !check_cancelled_func) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  compiled_model->SetCancellationFunction(data, check_cancelled_func);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCancelCompiledModel(LiteRtCompiledModel compiled_model) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  auto result = compiled_model->Cancel();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "%s", result.Error().Message().c_str());
+    return result.Error().Status();
+  }
+  return kLiteRtStatusOk;
+}
+
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
   delete compiled_model;
 }
