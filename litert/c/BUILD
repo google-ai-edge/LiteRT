@@ -23,6 +23,8 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+
+# copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load(
     "//litert/build_common:litert_build_defs.bzl",
     "copy_file",
