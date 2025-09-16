@@ -61,6 +61,10 @@ LiteRtStatus LiteRtSupportsAhwbClInterop(LiteRtEnvironment environment,
 LiteRtStatus LiteRtSupportsAhwbGlInterop(LiteRtEnvironment environment,
                                          bool* is_supported);
 
+// Returns whether the environment has a GPU environment.
+void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
+                                        bool* has_gpu_environment);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

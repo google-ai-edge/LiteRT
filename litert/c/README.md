@@ -28,6 +28,11 @@ Container accessors follow this pattern:
 - LiteRtGet`<Object><Item>`
   - e.g., `LiteRtGetTensorProducer(tensor, producer_index, &producer)`
 
+Query function names follow this pattern:
+
+- LiteRt`<Object><Has|Supports><Feature>`
+  - e.g. `LiteRtEnvironmentHasGpuEnvironment(env, &has_gpu_env)`
+
 Objects are managed through opaque handles, which are defined with an
 `LITERT_DEFINE_HANDLE(ObjectHandle)` macro in [litert_common.h](litert_common.h).
 

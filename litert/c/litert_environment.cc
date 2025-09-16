@@ -118,6 +118,15 @@ LiteRtStatus LiteRtSupportsAhwbGlInterop(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
+void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
+                             bool* has_gpu_environment) {
+  if (environment == nullptr) {
+    *has_gpu_environment = false;
+    return;
+  }
+  *has_gpu_environment = environment->HasGpuEnvironment();
+}
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif
