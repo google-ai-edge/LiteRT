@@ -62,7 +62,7 @@ void AbslStringify(Sink& sink, OpCode code) {
   }
 }
 
-Expected<OpCode> ParseOpCode(absl::string_view str) {
+inline Expected<OpCode> ParseOpCode(absl::string_view str) {
   if (str == "mul") {
     return OpCode::kMul;
   } else if (str == "sub") {

@@ -33,10 +33,14 @@ litert_dynamic_lib(
     so_name = "libLiteRtCompilerPlugin_Example.so",
     visibility = ["//litert:__subpackages__"],
     deps = [
+        ":example_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_op_options",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
