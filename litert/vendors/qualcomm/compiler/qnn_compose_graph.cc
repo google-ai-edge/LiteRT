@@ -24,11 +24,13 @@
 #include <string>
 #include <vector>
 
+#include "QnnCommon.h"                     // from @qairt
+#include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/span.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"          // from @com_google_absl
+#include "absl/strings/string_view.h"      // from @com_google_absl
+#include "absl/types/span.h"               // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
@@ -59,6 +61,7 @@
 #include "litert/vendors/qualcomm/core/builders/hard_swish_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/mean_op_builder.h"
@@ -76,6 +79,7 @@
 #include "litert/vendors/qualcomm/core/builders/resize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reverse_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/rms_norm_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/scatter_nd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
@@ -95,8 +99,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {
@@ -1002,6 +1004,18 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflNeg: {
       op_wrappers = ::qnn::BuildElementwiseNegOp(tensor_pool, input_tensors,
                                                  output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax: {
+      std::uint32_t axis = input_tensors[0].get().GetRank() - 1;
+      float beta{1.0};
+      op_wrappers = ::qnn::BuildLogSoftmaxOp(tensor_pool, input_tensors,
+                                             output_tensors, axis, beta);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflScatterNd: {
+      op_wrappers =
+          ::qnn::BuildScatterNdOp(tensor_pool, input_tensors, output_tensors);
       break;
     }
     default: {
