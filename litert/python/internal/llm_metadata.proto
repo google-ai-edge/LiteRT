@@ -1,0 +1,98 @@
+// Copyright 2025 The ODML Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// TODO(b/445163709): Remove this module once litert_lm publishes a pypi
+// package.
+
+syntax = "proto3";
+
+package litert.lm.proto;
+
+import "litert/python/internal/sampler_params.proto";
+
+// Prompt template to be used for prefill and decode calls.
+// Here is an example of the template based on Gemma's specifications here:
+// https://ai.google.dev/gemma/docs/formatting
+//
+//  message prepended {
+//    .prefix = "<start_of_turn>user\n ";
+//    .suffix = "<end_of_turn>\n<start_of_turn>model\n";
+//  }
+//
+message PromptAffixes {
+  // Text prepended to the input prompt on the first chunck of the prefill call.
+  // This is useful for adding start of user's turn markers.
+  string prefix = 1;
+
+  // Text appended to the input prompt upon transition to decode. This is useful
+  // for adding start of model of model's turn markers.
+  string suffix = 2;
+}
+
+// A collection of prompt templates for different roles.
+// Here is an example of the template based on Gemma's specifications here:
+// https://ai.google.dev/gemma/docs/formatting
+//
+//  message prompt_templates {
+//    .user = {
+//      .prefix = "<start_of_turn>user\n";
+//      .suffix = "<end_of_turn>\n";
+//    }
+//    .model = {
+//      .prefix = "<start_of_turn>model\n ";
+//      .suffix = "<end_of_turn>\n";
+//    }
+//  }
+//
+message PromptTemplates {
+  // The template for user role.
+  optional PromptAffixes user = 1;
+
+  // The template for model role.
+  optional PromptAffixes model = 2;
+
+  // The template for system role.
+  optional PromptAffixes system = 3;
+}
+
+// Parameters for Large Language Models (LLM).
+message LlmMetadata {
+  // Start token prepended to the beginning of input sequence.
+  // If in the future we support multiple start tokens, we can add a new field
+  // that is a repeated TokenUnion.
+  TokenUnion start_token = 1;
+
+  // Stop tokens to determine the end of output stream.
+  repeated TokenUnion stop_tokens = 2;
+
+  // Prompt templates for different roles.
+  optional PromptTemplates prompt_templates = 3;
+
+  // Default sampler parameters for the LLM model.
+  optional SamplerParameters sampler_params = 4;
+
+  // Maximum number of tokens that can be processed by the LLM.
+  int32 max_num_tokens = 5;
+}
+
+message TokenUnion {
+  oneof token_union {
+    TokenIds token_ids = 1;
+    string token_str = 2;
+  }
+}
+
+message TokenIds {
+  repeated int32 ids = 1;
+}

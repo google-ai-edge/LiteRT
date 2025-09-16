@@ -65,6 +65,12 @@ ALL_PY_SRC_MODULES = select({
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
         "//litert/python/aot/vendors/qualcomm:target",
+        # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
+        "//litert/python/internal:litertlm_core",
+        "//litert/python/internal:litertlm_header_schema_py",
+        "//litert/python/internal:llm_metadata_py_pb2",
+        "//litert/python/internal:sampler_params_py_pb2",
+        "//litert/python/internal:litertlm_builder",
     ],
     "//conditions:default": [],
 })

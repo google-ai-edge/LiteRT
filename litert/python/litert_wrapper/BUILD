@@ -37,7 +37,7 @@ package(
 #     deps = [
 #         "//litert/python/litert_wrapper/compiled_model_wrapper:compiled_model",
 #         "//litert/python/litert_wrapper/tensor_buffer_wrapper:tensor_buffer",
-#         "//third_party/py/google/protobuf:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
+#         "@com_google_protobuf//:protobuf_python:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
 #         "@org_tensorflow//third_party/py/numpy:headers",
 #         "//third_party/py/tensorflow",
 #         "@org_tensorflow//tensorflow/python/platform:resource_loader",

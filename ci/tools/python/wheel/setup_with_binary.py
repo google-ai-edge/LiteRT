@@ -183,6 +183,8 @@ setuptools.setup(
         # and OpenCV-Python requirement.
         'tqdm',
         'typing-extensions',
+        # TODO(b/445163709): remove this once litert_lm has a pypi package.
+        'protobuf',
     ],
     extras_require={
         'npu-sdk': ['ai-edge-litert-sdk-qualcomm~=0.1.0',

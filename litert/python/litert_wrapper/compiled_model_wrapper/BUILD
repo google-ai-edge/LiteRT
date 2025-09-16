@@ -92,7 +92,7 @@ py_strict_library(
 #     deps = [
 #         ":_pywrap_litert_compiled_model_wrapper",
 #         ":compiled_model",
-#         "//third_party/py/google/protobuf:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
+#         "@com_google_protobuf//:protobuf_python:use_fast_cpp_protos",  # Automatically added go/proto_python_upb_flip
 #     ],
 # )
 # copybara:uncomment_end

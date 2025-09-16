@@ -1,0 +1,106 @@
+// Copyright 2025 The Google AI Edge Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// TODO(b/445163709): Remove this module once litert_lm publishes a pypi package.
+
+// The Header specification for LiteRTLM files.
+// This file defines the schema for the header of a LiteRTLM file.
+// The metadata includes information about the system that the LiteRTLM file
+// was generated for, as well as information about the sections of the file.
+
+namespace litert.lm.schema;
+
+// Structs for primitive types
+table UInt8 { value: ubyte; }
+table Int8 { value: byte; }
+table UInt16 { value: ushort; }
+table Int16 { value: short; }
+table UInt32 { value: uint; }
+table Int32 { value: int; }
+table Float32 { value: float; }
+table Bool { value: bool; }
+table UInt64 { value: ulong; }
+table Int64 { value: long; }
+table Double { value: double; }
+
+table StringValue { value: string; }
+
+// Union for the value in KeyValuePair
+union VData {
+  UInt8,
+  Int8,
+  UInt16,
+  Int16,
+  UInt32,
+  Int32,
+  Float32,
+  Bool,
+  StringValue,
+  UInt64,
+  Int64,
+  Double,
+}
+
+
+// For external facing metadata
+table KeyValuePair {
+  key:string (required);
+  value:VData (required);
+}
+
+table SystemMetadata {
+  entries:[KeyValuePair] (required);
+}
+
+// Internal bookkeeping Metadata
+
+// An enumeration of all known types, with an option for "other stuff".
+//
+// For any changes here, the schema version should be adjusted (pure section
+// additions constitute a minor version bump). Sections cannot be re-ordered and
+// or removed unless the major version is bumped.
+enum AnySectionDataType: ubyte {
+  NONE, // Default value if no type is set.
+  GenericBinaryData, // For any user-specified/previously unknown data.
+  Deprecated, // For edited files with outdated sections.
+  TFLiteModel, // Corresponds to a tflite.Model.
+  SP_Tokenizer, // A SentencePiece Tokenizer.
+  LlmMetadataProto, // A litert.lm.proto.LlmMetadata Protobuf.
+  HF_Tokenizer_Zlib, // A HuggingFace Tokenizer's JSON config (zlib compressed).
+}
+
+// Section offsets and datatype
+// Data for the section begins at `begin_offset` byte offset in a LiteRT-LM
+// file and covers the range [begin_offset, end_offset). Section i+1
+// begins no sooner than K * BLOCK_SIZE, where K is the smallest natural
+// number such that K * BLOCK_SIZE > Section[i].end_offset.
+// In the LitRT-LM file format, BLOCK_SIZE = 16 * 1024.
+table SectionObject {
+  items:[KeyValuePair]; // (optional)
+  begin_offset:ulong;
+  end_offset:ulong;
+  data_type:AnySectionDataType; // Enum to indicate the type of 'data'
+}
+
+
+table SectionMetadata {
+  objects:[SectionObject] (required);
+}
+
+table LiteRTLMMetaData {
+  system_metadata:SystemMetadata;
+  section_metadata:SectionMetadata;
+}
+
+root_type LiteRTLMMetaData;

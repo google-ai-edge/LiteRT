@@ -120,10 +120,16 @@ def prepare_build_tree(tree_path, args, project_name: str):
     shutil.copyfile(src, os.path.join(src_dir, os.path.basename(src)))
 
   for src in args.py_src or []:
-    dest = os.path.join(src_dir, src.removeprefix("litert/python/"))
+    if src.startswith("litert/python/"):
+      src_path = src.removeprefix("litert/python/")
+    elif src.startswith("bazel-out/"):
+      src_path = src.split("litert/python/")[-1]
+    else:
+      raise ValueError(f"Unsupported source file: {src}")
+    dest = os.path.join(src_dir, src_path)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     shutil.copyfile(
-        src, os.path.join(src_dir, src.removeprefix("litert/python/"))
+        src, os.path.join(src_dir, src_path)
     )
 
   meta_dict = construct_meta_dict(args)
