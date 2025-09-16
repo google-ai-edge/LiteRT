@@ -20,7 +20,7 @@ import {LiteRt} from './litert_web';
 import {supportsRelaxedSimd} from './wasm_feature_detect';
 
 const WASM_JS_FILE_NAME = 'litert_wasm_internal.js';
-const WASM_JS_COMPAT_FILE_NAME = 'litert_wasm_internal_compat.js';
+const WASM_JS_COMPAT_FILE_NAME = 'litert_wasm_compat_internal.js';
 
 /**
  * Load the LiteRt library with WASM from the given URL. Does not set the
