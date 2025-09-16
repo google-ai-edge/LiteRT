@@ -18,7 +18,7 @@ import '@tensorflow/tfjs-backend-webgpu'; // Side-effect import for webgpu backe
 import '@tensorflow/tfjs-backend-cpu'; // CPU backend is needed if WebGPU is not available.
 
 import {runWithTfjsTensors} from '@litertjs/tfjs-interop';
-import {CompiledModel, loadAndCompile, loadLiteRt, setWebGpuDevice, SignatureRunner} from '@litertjs/core';
+import {CompiledModel, loadAndCompile, loadLiteRt, SignatureRunner, getWebGpuDevice} from '@litertjs/core';
 import {WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
 // Placeholder for internal dependency on trusted resource url
@@ -36,29 +36,18 @@ export const liteRtPromise = (async () => {
   // TODO: b/434057579 - Remove this once all WebGPU implementations have
   //   an adapterInfo property on the device.
 
-  let device: GPUDevice|undefined;
-  let adapterInfo: GPUAdapterInfo|undefined;
+  await loadLiteRt('./wasm/');
   try {
-    const adapter = await navigator.gpu.requestAdapter();
-    if (!adapter) {
-      throw new Error('Failed to request GPU adapter');
-    }
-    device = await adapter.requestDevice();
-    adapterInfo = (adapter as unknown as {info: GPUAdapterInfo}).info;
+    const device = await getWebGpuDevice();
+    const adapterInfo = (device as unknown as {adapterInfo: GPUAdapterInfo}).adapterInfo;
     tf.removeBackend('webgpu');
-    tf.registerBackend('webgpu', () => new WebGPUBackend(device!, adapterInfo));
+    tf.registerBackend('webgpu', () => new WebGPUBackend(device, adapterInfo));
 
     await tf.setBackend('webgpu');
   } catch (e) {
     console.warn('WebGPU failed to load. Will only run on CPU.');
     await tf.setBackend('cpu');
     console.error(e);
-  }
-
-  await loadLiteRt('./wasm/');
-
-  if (device && adapterInfo) {
-    setWebGpuDevice(device, adapterInfo);
   }
 })();
 
