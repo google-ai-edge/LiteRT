@@ -90,3 +90,25 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "example_dispatch",
+    srcs = ["example_dispatch.cc"],
+    deps = [
+        ":example_common",
+        "//litert/c:litert_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/vendors/c:litert_dispatch_c_api",
+    ],
+)
+
+cc_test(
+    name = "example_dispatch_test",
+    srcs = ["example_dispatch_test.cc"],
+    deps = [
+        ":example_dispatch",  # buildcleaner: keep
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
