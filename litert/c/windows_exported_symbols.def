@@ -29,18 +29,30 @@ EXPORTS
   LiteRtCreateCpuOptions
   LiteRtCreateEnvironment
   LiteRtCreateGpuOptions
+  LiteRtCreateManagedTensorBuffer
   LiteRtCreateMetrics
+  LiteRtCreateModelFromBuffer
   LiteRtCreateOptions
+  LiteRtCreateRuntimeOptions
+  LiteRtCreateTensorBufferFromGlBuffer
+  LiteRtCreateTensorBufferFromGlTexture
+  LiteRtCreateTensorBufferFromHostMemory
+  LiteRtCreateTensorBufferFromOpenClMemory
   LiteRtDestroyCompiledModel
   LiteRtDestroyEnvironment
   LiteRtDestroyMetrics
+  LiteRtDestroyModel
   LiteRtDestroyOptions
+  LiteRtDestroyTensorBuffer
+  LiteRtDestroyTensorBufferRequirements
+  LiteRtDuplicateTensorBuffer
   LiteRtExternalLiteRtBufferContextCreateBufferForTensor
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
   LiteRtExternalLiteRtBufferContextRegisterTensorBuffer
   LiteRtFindCpuOptions
   LiteRtFindOpaqueOptionsData
+  LiteRtFindRuntimeOptions
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
@@ -67,11 +79,69 @@ EXPORTS
   LiteRtGetGpuOptionsNoExternalTensorsMode
   LiteRtGetGpuOptionsPayloadIdentifier
   LiteRtGetMetric
+  LiteRtGetModelSignature
+  LiteRtGetModelSubgraph
   LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
+  LiteRtGetNumModelSignatures
+  LiteRtGetNumOpInputs
+  LiteRtGetNumOpOutputs
+  LiteRtGetNumSignatureInputs
+  LiteRtGetNumSignatureOutputs
+  LiteRtGetNumSubgraphInputs
+  LiteRtGetNumSubgraphOps
+  LiteRtGetNumSubgraphOutputs
+  LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
+  LiteRtGetNumTensorUses
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
+  LiteRtGetRankedTensorType
+  LiteRtGetRuntimeOptionsEnableProfiling
+  LiteRtGetRuntimeOptionsErrorReporterMode
+  LiteRtGetRuntimeOptionsIdentifier
+  LiteRtGetRuntimeOptionsShloCompositeInlining
+  LiteRtGetSignatureInputName
+  LiteRtGetSignatureKey
+  LiteRtGetSignatureOutputName
+  LiteRtGetSignatureSubgraph
+  LiteRtGetSubgraphInput
+  LiteRtGetSubgraphOp
+  LiteRtGetSubgraphOutput
+  LiteRtGetTensorBufferPackedSize
   LiteRtGetTensorBufferRegistry
+  LiteRtGetTensorBufferRequirementsBufferSize
+  LiteRtGetTensorBufferRequirementsSupportedTensorBufferType
+  LiteRtGetTensorBufferSize
+  LiteRtGetTensorBufferTensorType
+  LiteRtGetTensorBufferType
+  LiteRtGetTensorDefiningOp
+  LiteRtGetTensorName
+  LiteRtGetTensorTypeId
+  LiteRtGetTensorUse
+  LiteRtGetTensorWeights
+  LiteRtGetWeightsBytes
   LiteRtGpuEnvironmentCreate
+  LiteRtLockTensorBuffer
+  LiteRtQualcommOptionsCreate
+  LiteRtQualcommOptionsGet
+  LiteRtQualcommOptionsGetDumpTensorIds
+  LiteRtQualcommOptionsGetEnableWeightSharing
+  LiteRtQualcommOptionsGetHtpPerformanceMode
+  LiteRtQualcommOptionsGetIdentifier
+  LiteRtQualcommOptionsGetIrJsonDir
+  LiteRtQualcommOptionsGetLogLevel
+  LiteRtQualcommOptionsGetProfiling
+  LiteRtQualcommOptionsGetUseHtpPreference
+  LiteRtQualcommOptionsGetUseQint16AsQuint16
+  LiteRtQualcommOptionsSetDumpTensorIds
+  LiteRtQualcommOptionsSetEnableWeightSharing
+  LiteRtQualcommOptionsSetHtpPerformanceMode
+  LiteRtQualcommOptionsSetIrJsonDir
+  LiteRtQualcommOptionsSetLogLevel
+  LiteRtQualcommOptionsSetProfiling
+  LiteRtQualcommOptionsSetUseHtpPreference
+  LiteRtQualcommOptionsSetUseQint16AsQuint16
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
   LiteRtRunCompiledModel
@@ -94,7 +164,12 @@ EXPORTS
   LiteRtSetGpuOptionsBenchmarkMode
   LiteRtSetGpuOptionsConstantTensorSharing
   LiteRtSetGpuOptionsGpuBackend
+  LiteRtSetGpuOptionsGpuPriority
   LiteRtSetGpuOptionsInfiniteFloatCapping
   LiteRtSetGpuOptionsNoExternalTensorsMode
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOptionsHardwareAccelerators
+  LiteRtSetRuntimeOptionsEnableProfiling
+  LiteRtSetRuntimeOptionsErrorReporterMode
+  LiteRtSetRuntimeOptionsShloCompositeInlining
+  LiteRtUnlockTensorBuffer
