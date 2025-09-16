@@ -60,6 +60,7 @@
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/mean_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
@@ -1002,6 +1003,13 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflNeg: {
       op_wrappers = ::qnn::BuildElementwiseNegOp(tensor_pool, input_tensors,
                                                  output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax: {
+
+      uint32_t axis = input_tensors[0].get().GetRank() - 1;
+      op_wrappers = ::qnn::BuildLogSoftmaxOp(tensor_pool, input_tensors,
+                                             output_tensors, axis);
       break;
     }
     default: {
