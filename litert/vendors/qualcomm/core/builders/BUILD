@@ -294,6 +294,34 @@ cc_library(
 )
 
 cc_library(
+    name = "scatter_nd_op_builder",
+    srcs = ["scatter_nd_op_builder.cc"],
+    hdrs = ["scatter_nd_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
+    name = "log_softmax_op_builder",
+    srcs = ["log_softmax_op_builder.cc"],
+    hdrs = ["log_softmax_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+
+cc_library(
     name = "split_op_builder",
     srcs = ["split_op_builder.cc"],
     hdrs = ["split_op_builder.h"],
