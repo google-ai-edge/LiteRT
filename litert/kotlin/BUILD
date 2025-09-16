@@ -35,15 +35,11 @@ cc_library(
     hdrs = ["src/main/jni/litert_jni_common.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//tflite/java/jni",
         "@com_google_absl//absl/cleanup",  # buildcleaner: keep
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -55,14 +51,10 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_any",
         "//litert/cc/dynamic_runtime:litert_environment",
+        "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -79,14 +71,10 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc/dynamic_runtime:litert_model",
+        "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -100,15 +88,11 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//tflite/java/jni",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 cc_library(
@@ -120,13 +104,9 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//tflite/java/jni",
         "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            # copybara:uncomment "//third_party/java/jdk:jni",
-        ],
-    }),
+    ],
 )
 
 # TODO(b/409850505): Unify the JNI build target with the OSS version.
