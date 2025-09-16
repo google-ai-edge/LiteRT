@@ -221,6 +221,47 @@ ABSL_FLAG(
     "Qnn IR JSON directory. If provided, you can obtain Qnn IR in Qnn JSON "
     "format.");
 
+ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
+          "The vtcm size of the target device. If this option is set to 0, the "
+          "max size of vtcm size will be used.");
+
+ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
+          "The number of hvx threads for the target device. If this option is "
+          "set to 0, the max number of hvx threads will be used.");
+
+ABSL_FLAG(LiteRtQualcommOptionsOptimizationLevel, qualcomm_optimization_level,
+          kHtpOptimizeForInferenceO3, "QNN optimization level");
+
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtQualcommOptionsOptimizationLevel* options,
+                   std::string* error) {
+  if (text == "O1") {
+    *options = kHtpOptimizeForInference;
+    return true;
+  }
+  if (text == "O2") {
+    *options = kHtpOptimizeForPrepare;
+    return true;
+  }
+  if (text == "O3") {
+    *options = kHtpOptimizeForInferenceO3;
+    return true;
+  }
+  *error = "Unknown optimization level";
+  return false;
+}
+
+std::string AbslUnparseFlag(LiteRtQualcommOptionsOptimizationLevel options) {
+  switch (options) {
+    case kHtpOptimizeForInference:
+      return "O1";
+    case kHtpOptimizeForPrepare:
+      return "O2";
+    case kHtpOptimizeForInferenceO3:
+      return "O3";
+  }
+}
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -259,6 +300,16 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);
+
+  const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
+  opts.SetVtcmSize(vtcm_size);
+
+  const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
+  opts.SetNumHvxThreads(num_hvx_threads);
+
+  const auto optimization_level =
+      absl::GetFlag(FLAGS_qualcomm_optimization_level);
+  opts.SetOptimizationLevel(optimization_level);
 
   return opts;
 }

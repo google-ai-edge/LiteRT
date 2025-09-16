@@ -170,6 +170,58 @@ TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, VtcmSize) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetVtcmSize(qualcomm_options, 4));
+
+  uint32_t vtcm_size;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetVtcmSize(qualcomm_options, &vtcm_size));
+  EXPECT_EQ(vtcm_size, 4);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, HvxThread) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetNumHvxThreads(qualcomm_options, 4));
+
+  uint32_t num_hvx_threads;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetNumHvxThreads(qualcomm_options,
+                                                         &num_hvx_threads));
+  EXPECT_EQ(num_hvx_threads, 4);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtQualcommOptionsTest, OptimizationLevel) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetOptimizationLevel(
+      qualcomm_options, kHtpOptimizeForPrepare));
+
+  LiteRtQualcommOptionsOptimizationLevel optimization_level;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetOptimizationLevel(
+      qualcomm_options, &optimization_level));
+  EXPECT_EQ(optimization_level, kHtpOptimizeForPrepare);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -234,6 +286,18 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetIrJsonDir(), "");
   options->SetIrJsonDir("tmp");
   EXPECT_EQ(options->GetIrJsonDir(), "tmp");
+
+  EXPECT_EQ(options->GetVtcmSize(), 0);
+  options->SetVtcmSize(4);
+  EXPECT_EQ(options->GetVtcmSize(), 4);
+
+  EXPECT_EQ(options->GetNumHvxThreads(), 0);
+  options->SetNumHvxThreads(4);
+  EXPECT_EQ(options->GetNumHvxThreads(), 4);
+
+  EXPECT_EQ(options->GetOptimizationLevel(), kHtpOptimizeForInferenceO3);
+  options->SetOptimizationLevel(kHtpOptimizeForPrepare);
+  EXPECT_EQ(options->GetOptimizationLevel(), kHtpOptimizeForPrepare);
 }
 
 TEST(QualcommOptionsTest, FindFromChain) {

@@ -36,8 +36,12 @@
 
 namespace litert::qnn {
 
-inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs() {
-  static std::array<QnnHtpGraph_CustomConfig_t, 4> graph_custom_configs;
+inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
+    const ::qnn::Options& options) {
+  static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 5> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 6> result;
+
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_PRECISION;
@@ -48,78 +52,84 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs() {
   graph_custom_configs[1].optimizationOption.type =
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
-  graph_custom_configs[1].optimizationOption.floatValue = 3;
+  graph_custom_configs[1].optimizationOption.floatValue =
+      static_cast<float>(options.GetOptimizationLevel());
   // VTCM
   graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[2].option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
-  graph_custom_configs[2].vtcmSizeInMB = QNN_HTP_GRAPH_CONFIG_OPTION_MAX;
+  // The default value is 0 which means the MAX value
+  graph_custom_configs[2].vtcmSizeInMB = options.GetVtcmSize();
   // FoldRelu Off
   graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[3].option =
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
   graph_custom_configs[3].foldReluActivationIntoConvOff = true;
 
-  static std::array<QnnGraph_Config_t, 4> graph_configs;
-  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[0].customConfig = &graph_custom_configs[0];
+  // Hvx Thread
+  bool has_hvx = options.GetNumHvxThreads() != 0;
+  if (has_hvx) {
+    graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[4].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    graph_custom_configs[4].numHvxThreads = options.GetNumHvxThreads();
+  }
 
-  graph_configs[1] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[1].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[1].customConfig = &graph_custom_configs[1];
+  size_t num_config = has_hvx ? 5 : 4;
+  for (size_t i = 0; i < num_config; ++i) {
+    graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
+    graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+    graph_configs[i].customConfig = &graph_custom_configs[i];
+    result[i] = &graph_configs[i];
+  }
 
-  graph_configs[2] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[2].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[2].customConfig = &graph_custom_configs[2];
-
-  graph_configs[3] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[3].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[3].customConfig = &graph_custom_configs[3];
-
-  static std::array<const QnnGraph_Config_t*, 5> result = {
-      &graph_configs[0], &graph_configs[1], &graph_configs[2],
-      &graph_configs[3], nullptr};
-
-  return absl::MakeSpan(result.data(), result.size());
+  result[num_config] = nullptr;
+  return absl::MakeSpan(result.data(), num_config + 1);
 }
 
-inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs() {
-  static std::array<QnnHtpGraph_CustomConfig_t, 3> graph_custom_configs;
+inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
+    const ::qnn::Options& options) {
+  static std::array<QnnHtpGraph_CustomConfig_t, 4> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 4> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 5> result;
   // Default use O3 for now.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
   graph_custom_configs[0].optimizationOption.type =
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
-  graph_custom_configs[0].optimizationOption.floatValue = 3;
+  graph_custom_configs[0].optimizationOption.floatValue =
+      static_cast<float>(options.GetOptimizationLevel());
 
   // VTCM
   graph_custom_configs[1] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[1].option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
-  graph_custom_configs[1].vtcmSizeInMB = QNN_HTP_GRAPH_CONFIG_OPTION_MAX;
+  // The default value is 0 which means the MAX value
+  graph_custom_configs[1].vtcmSizeInMB = options.GetVtcmSize();
   // FoldRelu Off
   graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[2].option =
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
   graph_custom_configs[2].foldReluActivationIntoConvOff = true;
 
-  static std::array<QnnGraph_Config_t, 3> graph_configs;
-  graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[0].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[0].customConfig = &graph_custom_configs[0];
+  // Hvx Thread
+  bool has_hvx = options.GetNumHvxThreads() != 0;
+  if (has_hvx) {
+    graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[3].option =
+        QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
+    graph_custom_configs[3].numHvxThreads = options.GetNumHvxThreads();
+  }
 
-  graph_configs[1] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[1].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[1].customConfig = &graph_custom_configs[1];
+  size_t num_config = has_hvx ? 4 : 3;
+  for (size_t i = 0; i < num_config; ++i) {
+    graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
+    graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
+    graph_configs[i].customConfig = &graph_custom_configs[i];
+    result[i] = &graph_configs[i];
+  }
 
-  graph_configs[2] = QNN_GRAPH_CONFIG_INIT;
-  graph_configs[2].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
-  graph_configs[2].customConfig = &graph_custom_configs[2];
-
-  static std::array<const QnnGraph_Config_t*, 4> result = {
-      &graph_configs[0], &graph_configs[1], &graph_configs[2], nullptr};
-
-  return absl::MakeSpan(result.data(), result.size());
+  result[num_config] = nullptr;
+  return absl::MakeSpan(result.data(), num_config + 1);
 }
 
 absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
@@ -141,11 +151,12 @@ absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
   return absl::MakeSpan(result.data(), result.size());
 }
 
-absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic() {
+absl::Span<const QnnGraph_Config_t*> GraphMapper::PickGraphConfigHeuristic(
+    const ::qnn::Options& options) {
   if (qnn_.IsLegacySocModel()) {
-    return GetLegacyGraphConfigs();
+    return GetLegacyGraphConfigs(options);
   } else {
-    return GetDefaultGraphConfigs();
+    return GetDefaultGraphConfigs(options);
   }
 }
 
@@ -165,7 +176,7 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
     case ::qnn::BackendType::kHtpBackend: {
       LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
           context_handle_, qnn_graph_name.data(),
-          PickGraphConfigHeuristic().data(), &QnnGraph()));
+          PickGraphConfigHeuristic(options).data(), &QnnGraph()));
       break;
     }
     case ::qnn::BackendType::kIrBackend: {
