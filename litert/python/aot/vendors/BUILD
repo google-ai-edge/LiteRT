@@ -46,6 +46,7 @@ pytype_strict_library(
     visibility = ["//visibility:public"],
     deps = [
         "//litert/python/aot/vendors/example:example_backend",  # buildcleaner: keep
+        "//litert/python/aot/vendors/google_tensor:google_tensor_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/mediatek:mediatek_backend",  # buildcleaner: keep
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",  # buildcleaner: keep
     ],

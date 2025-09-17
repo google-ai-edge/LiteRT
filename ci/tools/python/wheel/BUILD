@@ -61,6 +61,8 @@ ALL_PY_SRC_MODULES = select({
         "//litert/python/aot/vendors",
         "//litert/python/aot/vendors:fallback_backend",
         "//litert/python/aot/vendors/example:example_backend",
+        "//litert/python/aot/vendors/google_tensor:google_tensor_backend",
+        "//litert/python/aot/vendors/google_tensor:target",
         "//litert/python/aot/vendors/mediatek:mediatek_backend",
         "//litert/python/aot/vendors/mediatek:target",
         "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
@@ -79,6 +81,7 @@ ALL_PY_SRC_MODULES = select({
 PACKAGE_DATA = select({
     "@org_tensorflow//tensorflow:linux_x86_64": [
         "//litert/tools:apply_plugin_main",
+        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
     ],
