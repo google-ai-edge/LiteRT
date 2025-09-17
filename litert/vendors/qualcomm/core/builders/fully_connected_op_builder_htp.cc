@@ -72,28 +72,28 @@ std::vector<OpWrapper> BuildFullyConnectedOpHtp(
   TensorWrapper* weight;
   if (weight_tensor.GetDataType() == QNN_DATATYPE_SFIXED_POINT_8) {
     std::vector<std::int8_t> conv_weight;
-    auto fc_weight = weight_tensor.GetStaticTensorData<std::int8_t>();
+    auto fc_weight = weight_tensor.GetTensorData<std::int8_t>();
     TransposeFromOHWIToHWIO(fc_weight.value(), transpose_dim, conv_weight);
     weight = &(tensor_pool.CreateStaticTensor(
         weight_tensor.GetDataType(), quant_params, weight_dims, weight_bytes,
         conv_weight.data()));
   } else if (weight_tensor.GetDataType() == QNN_DATATYPE_SFIXED_POINT_16) {
     std::vector<std::int16_t> conv_weight;
-    auto fc_weight = weight_tensor.GetStaticTensorData<std::int16_t>();
+    auto fc_weight = weight_tensor.GetTensorData<std::int16_t>();
     TransposeFromOHWIToHWIO(fc_weight.value(), transpose_dim, conv_weight);
     weight = &(tensor_pool.CreateStaticTensor(
         weight_tensor.GetDataType(), quant_params, weight_dims, weight_bytes,
         conv_weight.data()));
   } else if (weight_tensor.GetDataType() == QNN_DATATYPE_UFIXED_POINT_16) {
     std::vector<std::uint16_t> conv_weight;
-    auto fc_weight = weight_tensor.GetStaticTensorData<std::uint16_t>();
+    auto fc_weight = weight_tensor.GetTensorData<std::uint16_t>();
     TransposeFromOHWIToHWIO(fc_weight.value(), transpose_dim, conv_weight);
     weight = &(tensor_pool.CreateStaticTensor(
         weight_tensor.GetDataType(), quant_params, weight_dims, weight_bytes,
         conv_weight.data()));
   } else if (weight_tensor.GetDataType() == QNN_DATATYPE_FLOAT_32) {
     std::vector<float> conv_weight;
-    auto fc_weight = weight_tensor.GetStaticTensorData<float>();
+    auto fc_weight = weight_tensor.GetTensorData<float>();
     TransposeFromOHWIToHWIO(fc_weight.value(), transpose_dim, conv_weight);
     weight = &(tensor_pool.CreateStaticTensor(
         weight_tensor.GetDataType(), quant_params, weight_dims, weight_bytes,

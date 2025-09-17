@@ -35,7 +35,7 @@ std::vector<OpWrapper> BuildTileOp(
     QNN_LOG_WARNING("Convert multiples param of Tile OP from INT64 to UINT32.");
     std::vector<std::uint32_t> uint32_data;
     size_t data_len = multiples_tensor.GetTensorNumElements();
-    auto int64_data = multiples_tensor.GetStaticTensorData<std::int64_t>();
+    auto int64_data = multiples_tensor.GetTensorData<std::int64_t>();
     if (!int64_data.has_value()) {
       QNN_LOG_ERROR("Tile OP get int64 multiples param failed.");
       return {};

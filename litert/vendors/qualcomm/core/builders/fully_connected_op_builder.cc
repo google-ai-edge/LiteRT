@@ -37,7 +37,7 @@ std::vector<OpWrapper> BuildFullyConnectedOp(
     TensorWrapper& bias_tensor = inputs[kBiasIdx];
     if (bias_tensor.IsTensorStatic() &&
         bias_tensor.GetDataType() == QNN_DATATYPE_INT_64) {
-      const auto original_data = bias_tensor.GetStaticTensorData<int64_t>();
+      const auto original_data = bias_tensor.GetTensorData<int64_t>();
       if (!original_data.has_value()) {
         QNN_LOG_ERROR(
             "Failed to get static tensor data when convert bias tensor from "
