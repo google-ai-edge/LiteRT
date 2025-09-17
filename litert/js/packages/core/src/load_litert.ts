@@ -18,9 +18,18 @@
 
 import {getGlobalLiteRt, getGlobalLiteRtPromise, hasGlobalLiteRt, hasGlobalLiteRtPromise, setGlobalLiteRt, setGlobalLiteRtPromise} from './global_litert';
 import {LiteRt} from './litert_web';
-import {load} from './load';
+import {load, LoadOptions} from './load';
 
 type UrlString = string;
+
+/**
+ * Options for loading LiteRT.
+ *
+ * @property threads Whether to load the threaded version of the Wasm module.
+ *     Defaults to false. Unused when specifying a .js file directly instead of
+ *     a directory containing the Wasm files.
+ **/
+export interface LoadLiteRtOptions extends LoadOptions {}
 
 /**
  * Load LiteRT.js Wasm files from the given URL. This needs to be called before
@@ -38,11 +47,12 @@ type UrlString = string;
  * @param path The path to the directory containing the LiteRT Wasm files, or
  *     the full URL of the LiteRT Wasm .js file.
  */
-export function loadLiteRt(path: UrlString): Promise<LiteRt> {
+export function loadLiteRt(
+    path: UrlString, options?: LoadLiteRtOptions): Promise<LiteRt> {
   if (hasGlobalLiteRtPromise()) {
     throw new Error('LiteRT is already loading / loaded.');
   }
-  setGlobalLiteRtPromise(load(path)
+  setGlobalLiteRtPromise(load(path, options)
                              .then(liteRt => {
                                setGlobalLiteRt(liteRt);
                                return liteRt;
