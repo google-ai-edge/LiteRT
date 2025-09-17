@@ -55,42 +55,44 @@ cc_library(
     ],
 )
 
-# copybara:uncomment_begin(no OSS for unique-test-directory)
-# cc_test(
-#     name = "compiler_plugin_test",
-#     srcs = ["compiler_plugin_test.cc"],
-#     data = [
-#         "//litert/test:mlir_test_data",
-#         "//litert/vendors/examples:example_plugin_so",
-#     ],
-#     # Workaround to disable mismatched-size-delete.
-#     # A compiler plugin uses `libLiteRtRuntimeCApi.so` but `compiler_plugin` is a static library for runtime.
-#     # So mixing of the two will cause mismatched-size-delete error.
-#     malloc = "//base:system_malloc",
-#     tags = [
-#         # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
-#         "noasan",
-#         "nomsan",
-#         "nosan",
-#         "notsan",
-#     ],
-#     deps = [
-#         ":compiler_plugin",
-#         "@com_google_googletest//:gtest_main_no_heapcheck",
-#         "@com_google_absl//absl/strings:string_view",
-#         "//litert/c:litert_common",
-#         "//litert/c:litert_op_code",
-#         "//litert/cc:litert_environment",
-#         "//litert/cc:litert_op_options",
-#         "//litert/core:build_stamp",
-#         "//litert/core:filesystem",
-#         "//litert/core/model",
-#         "//litert/test:common",
-#         "//litert/test:matchers",
-#         "//litert/tools:dump",
-#     ],
-# )
-# copybara:uncomment_end
+cc_test(
+    name = "compiler_plugin_test",
+    srcs = ["compiler_plugin_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    # Workaround to disable mismatched-size-delete.
+    # A compiler plugin uses `libLiteRtRuntimeCApi.so` but `compiler_plugin` is a static library for runtime.
+    # So mixing of the two will cause mismatched-size-delete error.
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    deps = [
+        ":compiler_plugin",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_op_options",
+        "//litert/core:build_stamp",
+        "//litert/core:filesystem",
+        "//litert/core/model",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/tools:dump",
+    ],
+)
 
 cc_library(
     name = "algo",
