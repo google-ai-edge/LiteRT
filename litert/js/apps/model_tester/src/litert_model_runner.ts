@@ -36,7 +36,14 @@ export const liteRtPromise = (async () => {
   // TODO: b/434057579 - Remove this once all WebGPU implementations have
   //   an adapterInfo property on the device.
 
-  await loadLiteRt('./wasm/');
+  // TODO: b/445746846 - Add an option for threads / no threads.
+  try {
+    await loadLiteRt('./wasm/', {threads: true});
+    console.log('LiteRt loaded with threads');
+  } catch (e) {
+    await loadLiteRt('./wasm/');
+    console.log('LiteRt loaded without threads');
+  }
   try {
     const device = await getWebGpuDevice();
     const adapterInfo = (device as unknown as {adapterInfo: GPUAdapterInfo}).adapterInfo;
@@ -166,6 +173,7 @@ export class LiteRtModelRunner implements ModelRunner {
         fakeInputs = makeFakeInputs(gpuSignature.value);
       }
     } catch (e) {
+      console.error(e);
       const error = e instanceof Error ? (e.stack ?? e.message) : String(e);
       return {
         results: {
@@ -188,6 +196,8 @@ export class LiteRtModelRunner implements ModelRunner {
     }
 
     if (cpuSignature.value) {
+      // Ensure the fake inputs are synced to CPU before running the model.
+      await Promise.all(Object.values(fakeInputs).map(tensor => tensor.data()));
       cpuResult = await toMaybe(
           () => this.runModel(
               cpuSignature.value!, fakeInputs, benchmarkRunCount));
