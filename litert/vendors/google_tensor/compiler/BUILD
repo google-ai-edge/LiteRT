@@ -47,7 +47,10 @@ litert_dynamic_lib(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     ungrte = True,
-    visibility = ["//litert:__subpackages__"],
+    visibility = [
+        "//ci/tools/python/wheel:__subpackages__",
+        "//litert:__subpackages__",
+    ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
