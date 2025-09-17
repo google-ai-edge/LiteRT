@@ -217,7 +217,7 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
   // Unloading the library on android can lead to crashes.
   auto flags = RtldFlags::Lazy().Local().NoDelete();
 #else
-  auto flags = RtldFlags::Now().Local().DeepBind();
+  auto flags = RtldFlags::Now().Local().DeepBind().NoDelete();
   ;
 #endif
 
