@@ -22,8 +22,10 @@ Move-Item bazel.exe C:\Windows\System32\
 
 ## Setup local build environment
 
-Use `./docker_build/hermetic_build.Dockerfile` as the reference to declare the
-system variable before running `./configure` script such as `PYTHON_BIN_PATH`.
+> [!TIP]
+> You can use `./docker_build/hermetic_build.Dockerfile` as a reference for
+> advanced environment setup including environment variable declaration and
+> Android SDK / NDK installation.
 
 ## Platform-Specific Instructions
 
@@ -60,6 +62,7 @@ sudo apt-get install -y \
 ```bash
 git clone https://github.com/google-ai-edge/LiteRT.git
 cd LiteRT
+./configure
 
 # Build
 bazel build //litert/cc:litert_api
