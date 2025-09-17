@@ -133,6 +133,48 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
 
+// Enables cancellation for the compiled model. This must be called before
+// execution to enable cancellation support. Once enabled, the model execution
+// can be cancelled from any thread using LiteRtCancelCompiledModel.
+//
+// Returns:
+// - kLiteRtStatusOk: Successfully enabled cancellation.
+// - kLiteRtStatusErrorInvalidArgument: Invalid compiled model.
+// - kLiteRtStatusErrorRuntimeFailure: Failed to enable cancellation.
+LiteRtStatus LiteRtEnableCompiledModelCancellation(
+    LiteRtCompiledModel compiled_model);
+
+// Sets a callback function that will be called periodically during model
+// execution to check if the execution should be cancelled.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - data: user-provided data that will be passed to the callback function.
+// - check_cancelled_func: callback function that returns true if execution
+//   should be cancelled, false otherwise.
+//
+// Note: Either use this callback-based mechanism or the non callback version
+// with LiteRtEnableCompiledModelCancellation/LiteRtCancelCompiledModel, but not
+// both.
+LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
+    LiteRtCompiledModel compiled_model, void* data,
+    bool (*check_cancelled_func)(void*));
+
+// Cancels an ongoing model execution. This function can be called from any
+// thread to interrupt a running model execution. Requires that cancellation
+// was previously enabled via LiteRtEnableCompiledModelCancellation.
+//
+// Returns:
+// - kLiteRtStatusOk: Cancellation signal sent successfully.
+// - kLiteRtStatusErrorInvalidArgument: Invalid compiled model.
+// - kLiteRtStatusErrorRuntimeFailure: Cancellation not enabled or other
+// failure.
+//
+// Note: The actual model execution will stop at the next cancellation check
+// point, typically between operations. The execution functions will return
+// kLiteRtStatusCancelled when cancelled.
+LiteRtStatus LiteRtCancelCompiledModel(LiteRtCompiledModel compiled_model);
+
 // Destroy a owned LiteRtCompiledModel object.
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
 

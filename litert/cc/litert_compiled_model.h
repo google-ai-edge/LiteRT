@@ -411,6 +411,32 @@ class CompiledModel
     return Profiler(profiler, OwnHandle::kNo);
   };
 
+  // Enables cancellation for the compiled model. Once enabled, model execution
+  // can be cancelled from any thread using Cancel().
+  Expected<void> EnableCancellation() {
+    LITERT_RETURN_IF_ERROR(LiteRtEnableCompiledModelCancellation(Get()));
+    return {};
+  }
+
+  // Sets a callback function that will be called periodically during model
+  // execution to check if the execution should be cancelled.
+  // The callback should return true if execution should be cancelled.
+  // Note: Use either this callback-based mechanism or the non-callback version
+  // (see below) with EnableCancellation/Cancel, but not both.
+  void SetCancellationFunction(void* data,
+                               bool (*check_cancelled_func)(void*)) {
+    LiteRtSetCompiledModelCancellationFunction(Get(), data,
+                                               check_cancelled_func);
+  }
+
+  // Cancels an ongoing model execution. Can be called from any thread.
+  // Requires that cancellation was previously enabled via EnableCancellation.
+  // The actual model execution will stop at the next cancellation check point.
+  Expected<void> Cancel() {
+    LITERT_RETURN_IF_ERROR(LiteRtCancelCompiledModel(Get()));
+    return {};
+  }
+
   // Resizes the specified input tensor to support dynamic shapes.
   //
   // This function allows resizing input tensors at runtime, similar to TFLite's
