@@ -539,7 +539,7 @@ bool DCE(LiteRtSubgraphT& subgraph) {
     return IsTensorDead(t) && !IsIO(subgraph, t);
   };
   const auto tensors_removed = subgraph.RemoveTensorIf(rm_tensor);
-  LITERT_LOG(LITERT_INFO, "Removed %d ops, %d tensors", ops_removed,
+  LITERT_LOG(LITERT_INFO, "DCE removed %d ops, %d tensors", ops_removed,
              tensors_removed);
 
   return (ops_removed + tensors_removed) > 0;
