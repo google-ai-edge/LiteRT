@@ -96,9 +96,12 @@ cc_library(
     srcs = ["example_dispatch.cc"],
     deps = [
         ":example_common",
-        "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -109,6 +112,7 @@ cc_test(
         ":example_dispatch",  # buildcleaner: keep
         "//litert/test:matchers",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
 )
