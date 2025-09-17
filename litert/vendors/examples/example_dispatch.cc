@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -19,9 +20,13 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -118,20 +123,37 @@ LiteRtStatus DeviceContextDestroy(LiteRtDispatchDeviceContext device_context) {
   return kLiteRtStatusOk;
 }
 
+Expected<TensorBufferRequirements> GetTensorBufferRequirements(
+    const LiteRtRankedTensorType& tensor_type) {
+  RankedTensorType t(tensor_type);
+  if (t.Layout().HasStrides()) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Tensor strides are not supported by QNN");
+  }
+  static constexpr std::array<const LiteRtTensorBufferType, 1> types = {
+      kLiteRtTensorBufferTypeHostMemory};
+  LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
+  return TensorBufferRequirements::Create(types, size, {}, OwnHandle::kNo);
+}
+
 LiteRtStatus GetInputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int input_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  LITERT_ASSIGN_OR_RETURN(auto requirements,
+                          GetTensorBufferRequirements(*tensor_type));
+  *tensor_buffer_requirements = requirements.Get();
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus GetOutputRequirements(
     LiteRtDispatchInvocationContext invocation_context, int output_index,
     const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  LITERT_ASSIGN_OR_RETURN(auto requirements,
+                          GetTensorBufferRequirements(*tensor_type));
+  *tensor_buffer_requirements = requirements.Get();
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus RegisterTensorBuffer(

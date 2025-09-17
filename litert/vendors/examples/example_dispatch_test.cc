@@ -14,14 +14,23 @@
 
 #include <memory>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
 namespace litert::example {
 namespace {
+
+using ::testing::ElementsAre;
 
 struct DeviceDeleter {
   explicit DeviceDeleter(LiteRtDispatchInterface& api) : api(api) {}
@@ -134,6 +143,28 @@ ops:mul(0,1)(2))";
       kNumInputs, kNumOutputs, &invocation_context));
   auto invocation_context_ptr =
       CreateInvocationContextPtr(Api(), invocation_context);
+}
+
+TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
+  const auto t = MakeRankedTensorType<float>({2, 2});
+  LiteRtTensorBufferRequirements requirements = nullptr;
+  const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
+  LITERT_ASSERT_OK(
+      Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
+  TensorBufferRequirements req(requirements, OwnHandle::kYes);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
+  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+}
+
+TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
+  const auto t = MakeRankedTensorType<float>({2, 2});
+  LiteRtTensorBufferRequirements requirements = nullptr;
+  const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
+  LITERT_ASSERT_OK(
+      Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
+  TensorBufferRequirements req(requirements, OwnHandle::kYes);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
+  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 }
 
 }  // namespace

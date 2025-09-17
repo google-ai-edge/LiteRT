@@ -99,7 +99,10 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -110,6 +113,10 @@ cc_test(
     srcs = ["example_dispatch_test.cc"],
     deps = [
         ":example_dispatch",  # buildcleaner: keep
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_handle",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/test:matchers",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:string_view",
