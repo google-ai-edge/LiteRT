@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <tuple>
 #include <utility>
 
@@ -23,6 +24,9 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "webgpu/webgpu.h"  // from @dawn
+#include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
+#include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -136,9 +140,6 @@ INSTANTIATE_TEST_SUITE_P(
                            kLiteRtDelegateBufferStorageTypeTexture2D,
                        })));
 
-typedef struct WGPUDeviceImpl* WGPUDevice;
-typedef struct WGPUQueueImpl* WGPUQueue;
-
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
@@ -192,6 +193,63 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
       env_options_2.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
   EXPECT_EQ(std::get<int64_t>(wegpu_command_queue_1),
             std::get<int64_t>(wegpu_command_queue_2));
+}
+
+TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
+  // To workaround the memory leak in Nvidia's driver
+  absl::LeakCheckDisabler disable_leak_check;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
+
+  auto env_1 = litert::Environment::Create({});
+  ASSERT_TRUE(env_1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto options_1,
+      CreateGpuOptions({false, kLiteRtDelegatePrecisionDefault,
+                        kLiteRtDelegateBufferStorageTypeDefault}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
+                              CompiledModel::Create(*env_1, model, options_1));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_device_id_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuDevice));
+  WGPUDevice wgpu_device =
+      reinterpret_cast<WGPUDevice>(std::get<int64_t>(wegpu_device_id_1));
+  ABSL_LOG(INFO) << "WebGPU device id: " << wgpu_device;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto wegpu_command_queue_1,
+      env_options_1.GetOption(kLiteRtEnvOptionTagWebGpuQueue));
+  WGPUQueue wgpu_queue =
+      reinterpret_cast<WGPUQueue>(std::get<int64_t>(wegpu_command_queue_1));
+  ABSL_LOG(INFO) << "WebGPU command queue: " << wgpu_queue;
+
+  auto webgpu_env = std::make_unique<ml_drift::webgpu::ExecutionEnvironment>(
+#if defined(__APPLE__)
+      wgpu::BackendType::Metal
+#elif defined(_WIN32)
+      wgpu::BackendType::D3D12
+#elif defined(__EMSCRIPTEN__)
+      wgpu::BackendType::WebGPU
+#else
+      wgpu::BackendType::Vulkan
+#endif
+  );
+
+  // Initialize MLD WebGPU environment from the resources in LiteRtEnvironment.
+  wgpu::Device device = wgpu_device;
+  wgpu::AdapterInfo adapter_info;
+  device.GetAdapterInfo(&adapter_info);
+  ASSERT_OK(webgpu_env->Initialize(device, adapter_info));
+
+  auto wgpu_device_id_2 = reinterpret_cast<int64_t>(webgpu_env->device().Get());
+  auto wegpu_command_queue_2 =
+      reinterpret_cast<int64_t>(webgpu_env->queue().Get());
+
+  EXPECT_EQ(std::get<int64_t>(wegpu_device_id_1), wgpu_device_id_2);
+  EXPECT_EQ(std::get<int64_t>(wegpu_command_queue_1), wegpu_command_queue_2);
 }
 
 }  // namespace
