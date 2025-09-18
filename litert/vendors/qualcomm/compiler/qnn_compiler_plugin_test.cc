@@ -86,6 +86,7 @@ const auto kSupportedOps =
                     "simple_log_op.tflite",
                     "simple_logical_and_op.tflite",
                     "simple_logistic.tflite",
+                    "simple_log_softmax_op.tflite",
                     "simple_max_pool_2d.tflite",
                     "simple_max_pool_2d_fused_relu.tflite",
                     "simple_mean_op.tflite",
