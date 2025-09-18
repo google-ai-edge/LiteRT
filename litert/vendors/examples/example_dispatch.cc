@@ -21,6 +21,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -29,6 +30,7 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
@@ -59,6 +61,11 @@ class LiteRtDispatchDeviceContextT {
       }
     }
     return {};
+  }
+
+  ::litert::TensorBuffer Lookup(BufferHandle handle) {
+    return ::litert::TensorBuffer(registered_buffers_[handle],
+                                  ::litert::OwnHandle::kNo);
   }
 
  private:
@@ -107,6 +114,36 @@ class LiteRtDispatchInvocationContextT {
     outputs_[graph_output_index] = handle;
   }
 
+  const Buffer& GetInput(int graph_input_index) const {
+    return *inputs_[graph_input_index];
+  }
+
+  Buffer& GetOutput(int graph_output_index) const {
+    return *outputs_[graph_output_index];
+  }
+
+  void Setup() {
+    for (auto* input : inputs_) {
+      ::litert::TensorBuffer buffer = device_context_->Lookup(input);
+      std::vector<float> input_data(4);
+      buffer.Read(absl::MakeSpan(input_data));
+      const auto packed_size = buffer.PackedSize();
+      input->resize(*packed_size / sizeof(float));
+      buffer.Read(absl::MakeSpan(input->data(), input->size()));
+    }
+  }
+
+  void Finish() {
+    for (auto* output : outputs_) {
+      ::litert::TensorBuffer buffer = device_context_->Lookup(output);
+      buffer.Write(absl::MakeConstSpan(output->data(), output->size()));
+    }
+  }
+
+  const ::litert::example::ExampleGraph& ExampleGraph() const {
+    return example_graph_;
+  }
+
   ~LiteRtDispatchInvocationContextT() = default;
 
  private:
@@ -123,7 +160,6 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchExecutableType exec_type_;
   absl::string_view function_name_;
-
   std::vector<BufferHandle> inputs_;
   std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
@@ -268,8 +304,21 @@ LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
 }
 
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->Setup();
+  const auto num_inputs = invocation_context->ExampleGraph().Inputs().size();
+  std::vector<Buffer> inputs(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    inputs[i] = invocation_context->GetInput(i);
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto results,
+      ::litert::example::Execute(invocation_context->ExampleGraph(), inputs));
+  for (int i = 0; i < results.size(); ++i) {
+    invocation_context->GetOutput(i) = std::move(results[i]);
+  }
+
+  invocation_context->Finish();
+  return kLiteRtStatusOk;
 }
 
 // /////////////////////////////////////////////////////////////////////////////

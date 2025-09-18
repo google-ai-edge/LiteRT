@@ -102,10 +102,12 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -119,8 +121,10 @@ cc_test(
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/test:matchers",
+        "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

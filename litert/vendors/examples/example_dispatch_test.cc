@@ -13,10 +13,12 @@
 // limitations under the License.
 
 #include <memory>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -24,12 +26,14 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/matchers.h"
+#include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
 namespace litert::example {
 namespace {
 
+using ::litert::testing::SimpleBuffer;
 using ::testing::ElementsAre;
 
 struct DeviceDeleter {
@@ -144,19 +148,35 @@ ops:mul(0,1)(2))";
   auto invocation_context_ptr =
       CreateInvocationContextPtr(Api(), invocation_context);
 
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input1,
+      SimpleBuffer::Create<float>({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb1, input1.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input2,
+      SimpleBuffer::Create<float>({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb2, input2.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output, SimpleBuffer::Create<float>({2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tb, output.SpawnTensorBuffer());
   LiteRtTensorBufferHandle handle1;
   LITERT_ASSERT_OK(
-      Api().register_tensor_buffer(device_context, nullptr, &handle1));
+      Api().register_tensor_buffer(device_context, input_tb1.Get(), &handle1));
   LiteRtTensorBufferHandle handle2;
   LITERT_ASSERT_OK(
-      Api().register_tensor_buffer(device_context, nullptr, &handle2));
+      Api().register_tensor_buffer(device_context, input_tb2.Get(), &handle2));
   LiteRtTensorBufferHandle handle3;
   LITERT_ASSERT_OK(
-      Api().register_tensor_buffer(device_context, nullptr, &handle3));
+      Api().register_tensor_buffer(device_context, output_tb.Get(), &handle3));
 
   LITERT_ASSERT_OK(Api().attach_input(invocation_context, 0, handle1));
   LITERT_ASSERT_OK(Api().attach_input(invocation_context, 1, handle2));
   LITERT_ASSERT_OK(Api().attach_output(invocation_context, 0, handle3));
+
+  LITERT_ASSERT_OK(Api().invoke(invocation_context));
+
+  std::vector<float> out(4);
+  LITERT_ASSERT_OK(output_tb.Read(absl::MakeSpan(out)));
+  EXPECT_THAT(out, ElementsAre(1.0f, 4.0f, 9.0f, 16.0f));
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
