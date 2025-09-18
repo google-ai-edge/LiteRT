@@ -23,12 +23,8 @@ add_library(litert_core_model STATIC
     model.cc
     model_buffer.cc
     model_file_test_util.cc
-    model_graph.cc
     model_load.cc
-    # TODO (b/435736757): model_serialize.cc requires mutable schema which is
-    # not generated in CMake build yet
-    # model_serialize.cc
-    model_serialize_stub.cc  # Temporary stub implementation
+    model_serialize.cc
 )
 
 target_include_directories(litert_core_model
@@ -44,12 +40,13 @@ target_include_directories(litert_core_model
 target_link_libraries(litert_core_model
     PUBLIC
         litert_core
-        litert_c_api
         absl::status
         absl::statusor
         absl::strings
         absl::span
         flatbuffers::flatbuffers
+    PRIVATE
+        litert_c_api
 )
 
 # We need the schema_generated.h from TFLite
@@ -57,3 +54,50 @@ target_include_directories(litert_core_model
     PRIVATE
         ${TFLITE_SOURCE_DIR}
 )
+
+set(_tflite_schema_dir "${TFLITE_SOURCE_DIR}/converter/schema")
+set(_mutable_schema_out_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/include/tflite/schema/mutable")
+set(_mutable_schema_hdr "${_mutable_schema_out_dir}/schema_generated.h")
+
+if(NOT EXISTS "${_tflite_schema_dir}/schema.fbs")
+  message(FATAL_ERROR "TFLite converter schema.fbs not found at ${_tflite_schema_dir}")
+endif()
+
+set(FLATC_EXECUTABLE "")
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+  if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
+    set(FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
+  elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+    set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+  endif()
+endif()
+if(NOT FLATC_EXECUTABLE)
+  find_program(FLATC_EXECUTABLE NAMES flatc)
+endif()
+if(NOT FLATC_EXECUTABLE)
+  include(FetchContent)
+  message(STATUS "flatc not found; fetching FlatBuffers to build flatc")
+  FetchContent_Declare(flatbuffers
+    GIT_REPOSITORY https://github.com/google/flatbuffers.git
+    GIT_TAG v25.2.10)
+  set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  FetchContent_MakeAvailable(flatbuffers)
+  if(NOT TARGET flatc)
+    message(FATAL_ERROR "FlatBuffers 'flatc' target not available after fetch")
+  endif()
+  set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
+endif()
+
+add_custom_command(
+  OUTPUT "${_mutable_schema_hdr}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${_mutable_schema_out_dir}"
+  COMMAND ${FLATC_EXECUTABLE} --cpp --gen-mutable --gen-object-api -I "${_tflite_schema_dir}" -o "${_mutable_schema_out_dir}" "${_tflite_schema_dir}/schema.fbs"
+  DEPENDS "${_tflite_schema_dir}/schema.fbs"
+  COMMENT "Generating TFLite mutable schema (schema_generated.h) with flatc"
+  VERBATIM)
+
+add_custom_target(tflite_mutable_schema_gen DEPENDS "${_mutable_schema_hdr}")
+add_dependencies(litert_core_model tflite_mutable_schema_gen)
+
+target_include_directories(litert_core_model
+  PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
