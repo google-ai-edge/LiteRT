@@ -57,6 +57,7 @@ target_link_libraries(litert_dump
     PUBLIC
         litert_core
         litert_core_model
+        tensorflow-lite
         absl::strings
         absl::status
         absl::statusor
@@ -133,11 +134,13 @@ target_link_libraries(run_model
         litert_core
         litert_core_model
         litert_runtime
+        tensorflow-lite
         litert_tool_flags_google_tensor
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
         absl::flags
         absl::flags_parse
+        absl::random_random
         absl::log
         absl::log_internal_check_op
         absl::string_view
@@ -163,6 +166,7 @@ target_link_libraries(analyze_model
         litert_tool_display
         litert_core
         litert_core_model
+        tensorflow-lite
         absl::flags
         absl::flags_parse
         absl::log
@@ -185,12 +189,17 @@ target_include_directories(apply_plugin_main
 target_link_libraries(apply_plugin_main
     PRIVATE
         litert_apply_plugin
+        litert_dump
         litert_tool_flags_apply_plugin
+        litert_tool_flags_common
         litert_tool_flags_google_tensor
+        litert_tool_flags_mediatek
+        litert_tool_flags_qualcomm
         litert_tool_display
         litert_core
         litert_core_model
         litert_runtime
+        tensorflow-lite
         absl::flags
         absl::flags_parse
         absl::log
@@ -204,6 +213,11 @@ if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
     target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
     target_link_libraries(apply_plugin_main PRIVATE ${LOG_LIB})
+    # Statically link TFLite GPU/GL core objects for tool executables on Android.
+    if(TARGET litert_tflite_gpu_gl_core)
+        target_link_libraries(run_model PRIVATE litert_tflite_gpu_gl_core)
+        target_link_libraries(apply_plugin_main PRIVATE litert_tflite_gpu_gl_core)
+    endif()
 endif()
 
 # Install targets
