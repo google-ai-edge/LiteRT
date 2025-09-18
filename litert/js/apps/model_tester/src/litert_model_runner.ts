@@ -188,6 +188,8 @@ export class LiteRtModelRunner implements ModelRunner {
     }
 
     if (cpuSignature.value) {
+      // Ensure the fake inputs are synced to CPU before running the model.
+      await Promise.all(Object.values(fakeInputs).map(tensor => tensor.data()));
       cpuResult = await toMaybe(
           () => this.runModel(
               cpuSignature.value!, fakeInputs, benchmarkRunCount));
