@@ -21,47 +21,56 @@ set(LITERT_RUNTIME_SOURCES
     accelerators/dispatch/dispatch_accelerator.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
     compiled_model.cc
+    custom_buffer.cc
     custom_op_dispatcher.cc
+    dmabuf_buffer.cc
     dispatch/dispatch_delegate.cc
     dispatch/dispatch_delegate_kernel.cc
     dispatch/dispatch_opaque_options.cc
     dispatch/litert_dispatch.cc
     event.cc
     external_litert_buffer_context.cc
+    fastrpc_buffer.cc
+    ion_buffer.cc
+    ahwb_buffer.cc
+    gpu_environment.cc
+    # Always compile GL buffer/texture sources; they contain internal stubs
+    # when LITERT_HAS_OPENGL_SUPPORT is 0 so they are safe to include on CPU-only builds.
     gl_buffer.cc
     gl_texture.cc
-    gpu_environment.cc
-    open_cl_memory.cc
-    open_cl_sync.cc
+
     profiler.cc
+    tensor_buffer_registry.cc
     tensor_buffer.cc
-    tensor_buffer_conversion.cc
     tensor_buffer_requirements.cc
     tfl_utils.cc
-    webgpu_buffer.cc
+    ${TFLITE_SOURCE_DIR}/profiling/profile_buffer.cc
+    ${TFLITE_SOURCE_DIR}/profiling/memory_info.cc
+    ${TFLITE_SOURCE_DIR}/profiling/time.cc
+    ${TFLITE_SOURCE_DIR}/delegates/utils/simple_opaque_delegate.cc
 )
-
-# Add platform-specific sources
-if(LITERT_PLATFORM_ANDROID)
-    list(APPEND LITERT_RUNTIME_SOURCES
-        ahwb_buffer.cc
-        ion_buffer.cc
-        fastrpc_buffer.cc
-    )
-elseif(LITERT_PLATFORM_LINUX)
-    list(APPEND LITERT_RUNTIME_SOURCES
-        dmabuf_buffer.cc
-    )
-endif()
 
 # Runtime library
 add_library(litert_runtime STATIC ${LITERT_RUNTIME_SOURCES})
+
+# Optional GPU-related sources
+if(APPLE)
+  target_sources(litert_runtime PRIVATE metal_info.cc)
+endif()
+target_sources(litert_runtime PRIVATE open_cl_memory.cc open_cl_sync.cc)
+
+# Link Apple frameworks for Metal and OpenGL interop
+if(APPLE)
+  set_source_files_properties(metal_info.cc PROPERTIES COMPILE_FLAGS "-x objective-c++")
+  target_link_libraries(litert_runtime PRIVATE "-framework Metal" "-framework Foundation" "-framework OpenGL")
+endif()
 
 target_include_directories(litert_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${TFLITE_BUILD_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
@@ -90,7 +99,9 @@ target_link_libraries(litert_runtime
 
 # Platform-specific configurations
 if(LITERT_PLATFORM_ANDROID)
-    target_link_libraries(litert_runtime PRIVATE ${LOG_LIB})
+    find_library(ANDROID_EGL_LIB EGL)
+    find_library(ANDROID_GLESV3_LIB GLESv3)
+    target_link_libraries(litert_runtime PUBLIC ${LOG_LIB} nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB})
 endif()
 
 # Add platform-specific compile definitions
@@ -101,11 +112,3 @@ target_compile_definitions(litert_runtime
         $<$<BOOL:${LITERT_PLATFORM_ANDROID}>:LITERT_PLATFORM_ANDROID>
         $<$<BOOL:${LITERT_PLATFORM_WINDOWS}>:LITERT_PLATFORM_WINDOWS>
 )
-
-# GPU/NPU support
-if(NOT LITERT_USE_GPU)
-    target_compile_definitions(litert_runtime PRIVATE LITERT_NO_GPU)
-endif()
-if(NOT LITERT_USE_NPU)
-    target_compile_definitions(litert_runtime PRIVATE LITERT_NO_NPU)
-endif()
