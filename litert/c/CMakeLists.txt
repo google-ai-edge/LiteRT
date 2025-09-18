@@ -182,3 +182,117 @@ set(_litert_runtime_c_api_private_archives
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a"
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a"
 )
+
+# Provide missing TensorFlow Lite GPU GL core objects for Android builds.
+if(LITERT_PLATFORM_ANDROID)
+  add_library(litert_tflite_gpu_gl_core STATIC
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_context.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_environment.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/egl_surface.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_buffer.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_errors.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_program.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_shader.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_texture.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_texture_helper.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/gl_sync.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/android_sync.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/async_buffers.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/object_manager.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/gl/request_gpu_info.cc)
+  target_sources(litert_tflite_gpu_gl_core PRIVATE
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/egl_sync.cc
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/gl_interop.cc)
+  set_source_files_properties(
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/cl/egl_sync.cc
+    PROPERTIES COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES")
+  target_sources(litert_tflite_gpu_gl_core PRIVATE
+    ${TFLITE_SOURCE_DIR}/delegates/utils/async_type_helpers.cc
+    ${TFLITE_SOURCE_DIR}/delegates/utils/utils.cc
+    ${TFLITE_SOURCE_DIR}/delegates/utils/sync_fence.cc)
+  target_sources(litert_tflite_gpu_gl_core PRIVATE
+    ${TFLITE_SOURCE_DIR}/delegates/gpu/android_hardware_buffer.cc
+    ${TFLITE_SOURCE_DIR}/async/backend_async_kernel_interface.cc)
+  set_target_properties(litert_tflite_gpu_gl_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  target_include_directories(litert_tflite_gpu_gl_core
+    PUBLIC
+      $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>)
+  target_link_libraries(litert_tflite_gpu_gl_core
+    PUBLIC
+      absl::status
+      absl::strings
+      absl::span
+      absl::flat_hash_map
+      flatbuffers::flatbuffers)
+  list(APPEND _litert_runtime_c_api_private_archives litert_tflite_gpu_gl_core)
+endif()
+
+# Interface target that exposes static linking of the runtime C API and its
+# transitive archives.
+add_library(litert_runtime_c_api_static INTERFACE)
+target_link_libraries(litert_runtime_c_api_static
+    INTERFACE
+        ${_litert_runtime_c_api_public_deps}
+        ${_litert_runtime_c_api_private_archives}
+)
+
+# TFLite archives so downstream shared libraries don't miss any symbols.
+if(UNIX AND NOT APPLE)
+  target_link_libraries(litert_runtime_c_api_static
+      INTERFACE
+        LINKER:--whole-archive
+        ${_litert_runtime_c_api_private_archives}
+        LINKER:--no-whole-archive)
+endif()
+
+# Propagate platform GL/Metal requirements to consumers when statically linking
+if(APPLE)
+  target_link_libraries(litert_runtime_c_api_static
+      INTERFACE "-framework Metal" "-framework Foundation" "-framework OpenGL")
+elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+  find_package(OpenGL)
+  if (OpenGL_FOUND)
+    target_link_libraries(litert_runtime_c_api_static INTERFACE OpenGL::GL)
+  endif()
+endif()
+
+if(LITERT_PLATFORM_ANDROID)
+  find_library(ANDROID_EGL_LIB EGL)
+  find_library(ANDROID_GLESV3_LIB GLESv3)
+  find_library(ANDROID_GLESV2_LIB GLESv2)
+  target_link_libraries(litert_runtime_c_api_static INTERFACE ${LOG_LIB} android log nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB} ${ANDROID_GLESV2_LIB})
+endif()
+
+target_link_libraries(litert_runtime_c_api_shared_lib
+    PUBLIC
+        ${_litert_runtime_c_api_public_deps}
+)
+
+if(APPLE)
+  target_link_libraries(litert_runtime_c_api_shared_lib
+      PRIVATE
+        ${_litert_runtime_c_api_private_archives})
+  target_link_options(litert_runtime_c_api_shared_lib PRIVATE -Wl,-all_load)
+else()
+  target_link_libraries(litert_runtime_c_api_shared_lib
+      PRIVATE
+        LINKER:--whole-archive
+        ${_litert_runtime_c_api_private_archives}
+        LINKER:--no-whole-archive)
+endif()
+# GPU/GL dependencies by platform
+if(APPLE)
+  target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE "-framework OpenGL")
+elseif(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+  find_package(OpenGL)
+  if (OpenGL_FOUND)
+    target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE OpenGL::GL)
+  endif()
+endif()
+if(LITERT_PLATFORM_ANDROID)
+    find_library(ANDROID_EGL_LIB EGL)
+    find_library(ANDROID_GLESV3_LIB GLESv3)
+    find_library(ANDROID_GLESV2_LIB GLESv2)
+    target_link_libraries(litert_runtime_c_api_shared_lib PRIVATE ${LOG_LIB} android log nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB} ${ANDROID_GLESV2_LIB})
+endif()
