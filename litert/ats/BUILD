@@ -149,13 +149,17 @@ litert_device_test(
 
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
-# An example CTS configuration for the CPU backend that filters out some tests.
 litert_define_ats(
     name = "sample_cpu_ats",
     backend = "cpu",
-    dont_register = [
-        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
-        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
+)
+
+litert_define_ats(
+    name = "example_npu_ats",
+    backend = "example",
+    do_register = [
+        "sub.*f32",
+        "mul.*f32",
     ],
 )
 

@@ -40,7 +40,7 @@ ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
           "used to generator the randomized parameters for all invocations of "
           "the respective test-generator.");
 
-ABSL_FLAG(bool, quiet, true, "Minimize logging.");
+ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
@@ -57,6 +57,11 @@ ABSL_FLAG(
     std::string, dont_register, "^$",
     "Regex for test selection. This is a negative search match, if the pattern "
     "can be found anywhere in the test name, it will be skipped.");
+
+ABSL_FLAG(std::string, do_register, ".*",
+          "Regex for test selection. This is a positive search match, if the "
+          "pattern can be found anywhere in the test name, it will be run. "
+          "This has lower priority over the dont_register filter.");
 
 ABSL_FLAG(
     bool, f16_range_for_f32, false,
@@ -112,6 +117,8 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
       absl::GetFlag(FLAGS_dispatch_dir), absl::GetFlag(FLAGS_plugin_dir),
       std::regex(absl::GetFlag(FLAGS_dont_register),
                  std::regex_constants::ECMAScript),
+      std::regex(absl::GetFlag(FLAGS_do_register),
+                 std::regex_constants::ECMAScript),
       absl::GetFlag(FLAGS_f16_range_for_f32), absl::GetFlag(FLAGS_data_seed));
   Setup(res);
   return res;
@@ -135,7 +142,7 @@ int AtsConf::GetSeedForParams(absl::string_view name) const {
 }
 
 bool AtsConf::ShouldRegister(const std::string& name) const {
-  return !std::regex_search(name, re_);
+  return std::regex_search(name, pos_re_) && !std::regex_search(name, neg_re_);
 };
 
 bool AtsConf::ShouldRegister(absl::string_view name) const {
