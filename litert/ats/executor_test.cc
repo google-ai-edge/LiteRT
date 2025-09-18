@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cts/compiled_model_executor.h"
+#include "litert/ats/executor.h"
 
 #include <cstdint>
 #include <utility>

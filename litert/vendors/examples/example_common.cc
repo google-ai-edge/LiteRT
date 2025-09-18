@@ -136,7 +136,8 @@ struct SchemaStrings {
 }  // namespace
 
 Expected<ExampleTensor> ExampleTensor::Parse(absl::string_view str) {
-  if (!(StartsWith(str, kOpen) && EndsWith(str, kClose))) {
+  if (!(::litert::example::StartsWith(str, kOpen) &&
+        ::litert::example::EndsWith(str, kClose))) {
     LITERT_LOG(
         LITERT_ERROR,
         "Invalid tensor format, must start and end with square brackets");
