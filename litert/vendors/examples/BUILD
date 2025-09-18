@@ -44,6 +44,34 @@ litert_dynamic_lib(
     ],
 )
 
+litert_dynamic_lib(
+    name = "example_dispatch_lib",
+    srcs = [
+        "example_dispatch.cc",
+    ],
+    hdrs = ["//litert/vendors/c:litert_dispatch.h"],
+    export_litert_only = True,
+    linkstatic = 1,
+    shared_lib_name = "example_dispatch_so",
+    so_name = "libLiteRtDispatch_Example.so",
+    visibility = ["//litert:__subpackages__"],
+    deps = [
+        ":example_common",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_test(
     name = "example_plugin_test",
     srcs = [
@@ -93,6 +121,7 @@ cc_test(
 
 cc_library(
     name = "example_dispatch",
+    testonly = True,
     srcs = ["example_dispatch.cc"],
     deps = [
         ":example_common",
@@ -123,6 +152,27 @@ cc_test(
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "end_to_end_test",
+    srcs = ["end_to_end_test.cc"],
+    data = [
+        ":example_dispatch_so",
+        ":libLiteRtCompilerPlugin_Example.so",
+        "//litert/test:mlir_test_data",
+    ],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc/dynamic_runtime:litert_compiled_model",
+        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
