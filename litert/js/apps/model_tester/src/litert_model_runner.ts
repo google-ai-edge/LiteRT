@@ -166,6 +166,7 @@ export class LiteRtModelRunner implements ModelRunner {
         fakeInputs = makeFakeInputs(gpuSignature.value);
       }
     } catch (e) {
+      console.error(e);
       const error = e instanceof Error ? (e.stack ?? e.message) : String(e);
       return {
         results: {

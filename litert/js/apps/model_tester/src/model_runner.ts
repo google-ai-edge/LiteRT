@@ -206,6 +206,7 @@ export function toMaybe<T>(f: () => T | Promise<T>): Maybe<T>|
             return {value};
           },
           e => {
+            console.error(e);
             const error = e instanceof Error ? e : new Error(String(e));
             return {error: error.stack ?? error.message};
           });
@@ -213,6 +214,7 @@ export function toMaybe<T>(f: () => T | Promise<T>): Maybe<T>|
       return {value};
     }
   } catch (e) {
+    console.error(e);
     const error = e instanceof Error ? e : new Error(String(e));
     return {error: error.stack ?? error.message};
   }
