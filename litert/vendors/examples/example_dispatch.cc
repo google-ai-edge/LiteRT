@@ -91,7 +91,9 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         auto example_graph,
         ::litert::example::ExampleGraph::Parse(::litert::BufferRef<uint8_t>(
-            exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size)));
+            exec_bytecode_buffer->base_addr,
+            exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
+            exec_bytecode_buffer->offset)));
 
     return Ptr(new LiteRtDispatchInvocationContextT(
         device_context, exec_type, absl::string_view(function_name),
