@@ -102,6 +102,10 @@ if(LITERT_PLATFORM_ANDROID)
     find_library(ANDROID_EGL_LIB EGL)
     find_library(ANDROID_GLESV3_LIB GLESv3)
     target_link_libraries(litert_runtime PUBLIC ${LOG_LIB} nativewindow ${ANDROID_EGL_LIB} ${ANDROID_GLESV3_LIB})
+    # Ensure EGL types and KHR extension prototypes are visible in event.cc
+    set_source_files_properties(event.cc PROPERTIES
+      COMPILE_DEFINITIONS "EGL_EGLEXT_PROTOTYPES"
+      COMPILE_OPTIONS "-includeEGL/egl.h;-includeEGL/eglext.h")
 endif()
 
 # Add platform-specific compile definitions
