@@ -8,14 +8,13 @@ browser
 
 1.  **Build the monorepo:**
 
-    See instructions in the [LiteRT.js
-    readme](https://github.com/google-ai-edge/LiteRT/blob/main/litert/js/README.md).
+    See instructions in the [LiteRT.js readme](https://github.com/google-ai-edge/LiteRT/blob/main/litert/js/README.md).
 
 2.  **Start the Development Server:**
 
     ```bash
-  npm run dev
-  ```
+    npm run dev
+    ```
 
     This will start a local development server and provide a URL to access the
     application.
@@ -23,8 +22,8 @@ browser
 3.  **Build for Deployment:**
 
     ```bash
-  npm run build
-  ```
+    npm run build
+    ```
 
     This will create a `dist` directory with the bundled application.
 
