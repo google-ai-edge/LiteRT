@@ -14,9 +14,11 @@
 
 #include <array>
 #include <cstdint>
+#include <list>
 #include <memory>
 #include <utility>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
@@ -33,10 +35,33 @@
 
 class LiteRtDispatchDeviceContextT {
  public:
+  using Buffer = ::litert::example::Data;
+  using BufferHandle = Buffer*;
   LiteRtDispatchDeviceContextT() = default;
   ~LiteRtDispatchDeviceContextT() = default;
 
+  ::litert::Expected<BufferHandle> RegisterBuffer(LiteRtTensorBuffer b) {
+    auto* handle = &buffers_.emplace_back();
+    registered_buffers_[handle] = b;
+    return handle;
+  }
+
+  ::litert::Expected<void> UnregisterBuffer(BufferHandle handle) {
+    registered_buffers_.erase(handle);
+    for (auto it = buffers_.begin(); it != buffers_.end(); ++it) {
+      if (&*it == handle) {
+        buffers_.erase(it);
+        break;
+      }
+    }
+    return {};
+  }
+
  private:
+  using RegistredBuffers =
+      absl::flat_hash_map<BufferHandle, LiteRtTensorBuffer>;
+  std::list<Buffer> buffers_;
+  RegistredBuffers registered_buffers_;
 };
 
 class LiteRtDispatchInvocationContextT {
@@ -159,14 +184,16 @@ LiteRtStatus GetOutputRequirements(
 LiteRtStatus RegisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context, LiteRtTensorBuffer buffer,
     LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  LITERT_ASSIGN_OR_RETURN(auto handle, device_context->RegisterBuffer(buffer));
+  *tensor_buffer_handle = reinterpret_cast<LiteRtTensorBufferHandle>(handle);
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
                                     LiteRtTensorBufferHandle handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  LITERT_RETURN_IF_ERROR(
+      (device_context->UnregisterBuffer(reinterpret_cast<Data*>(handle))));
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus InvocationContextCreate(

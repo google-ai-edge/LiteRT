@@ -167,5 +167,15 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 }
 
+TEST_F(ExampleDispatchTest, RegisterBuffer) {
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+  auto device_context_ptr = CreateDevicePtr(Api(), device_context);
+  LiteRtTensorBufferHandle handle;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, nullptr, &handle));
+  LITERT_ASSERT_OK(Api().unregister_tensor_buffer(device_context, handle));
+}
+
 }  // namespace
 }  // namespace litert::example
