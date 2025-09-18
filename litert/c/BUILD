@@ -314,6 +314,8 @@ cc_library(
         ":litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
+        "@opencl_headers",
     ],
 )
 

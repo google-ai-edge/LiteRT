@@ -41,8 +41,9 @@ LiteRtStatus LiteRtCreateEventFromSyncFenceFd(LiteRtEnvironment env,
 
 // Another LiteRtEvent creation API for OpenCL event.
 //
-// Caller owns the returned LiteRtEvent. The owner is responsible for
-// calling LiteRtDestroyEvent() to release the object.
+// Caller owns the returned LiteRtEvent (but not the cl_event). The owner is
+// responsible for calling LiteRtDestroyEvent() to release the object (but not
+// the underlying cl_event).
 LiteRtStatus LiteRtCreateEventFromOpenClEvent(LiteRtEnvironment env,
                                               cl_event cl_event,
                                               LiteRtEvent* event);

@@ -129,6 +129,10 @@ LiteRtEventT::~LiteRtEventT() {
                  "EGL sync destroy failed: eglDestroySyncKHR failed");
     }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
+  } else if (type == LiteRtEventTypeOpenCl) {
+#if LITERT_HAS_OPENCL_SUPPORT
+    tflite::gpu::cl::clReleaseEvent(opencl_event);
+#endif  // LITERT_HAS_OPENCL_SUPPORT
   }
 }
 
