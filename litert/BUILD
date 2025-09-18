@@ -71,6 +71,7 @@ package_group(
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
+        # copybara:uncomment "//third_party/deepmind/lyria_live/internal/odml/pipeline/cc/...",
         # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
         # copybara:uncomment "//third_party/odml/genai_modules/...",
         # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
