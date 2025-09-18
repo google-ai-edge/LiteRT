@@ -34,8 +34,10 @@
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -82,11 +84,7 @@ class SimpleBuffer {
       Layout::Dim num_elements = 1;
       for (Layout::Dim dim : dimensions)
         num_elements *= dim;
-
       return num_elements;
-
-      // return std::reduce(std::cbegin(dimensions), std::cend(dimensions), 1,
-      //                   std::multiplies<Layout::Dim>());
     }
   };
 
@@ -155,6 +153,20 @@ class SimpleBuffer {
     return helper;
   }
 
+  // Create a list of buffers that match the i/o of a graph.
+  template <typename It>
+  static Expected<std::vector<SimpleBuffer>> LikeSignature(It start, It end) {
+    std::vector<SimpleBuffer> buffers;
+    while (start != end) {
+      Tensor t(*start);
+      LITERT_ASSIGN_OR_RETURN(auto type, t.RankedTensorType());
+      LITERT_ASSIGN_OR_RETURN(auto b, Create(type));
+      buffers.push_back(std::move(b));
+      ++start;
+    }
+    return buffers;
+  }
+
   // Create a buffer with same size and type information as the provided
   // tensor buffer, and fill it with random data. Data generation is dictated
   // by the traits template.
@@ -172,6 +184,21 @@ class SimpleBuffer {
                              size_t start = 0,
                              std::optional<size_t> num_elements = {}) {
     return b.Call<T, RandomTensorFunctor>(rng, start, num_elements, *this);
+  }
+
+  template <typename Rng>
+  Expected<void> WriteRandom(const RandomTensorDataBuilder& b, Rng& rng,
+                             size_t start = 0,
+                             std::optional<size_t> num_elements = {}) {
+    if (Type().ElementType() == ElementType::Float32) {
+      return b.Call<float, RandomTensorFunctor>(rng, start, num_elements,
+                                                *this);
+    } else if (Type().ElementType() == ElementType::Int32) {
+      return b.Call<int32_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                  *this);
+    }
+    // TODO: Add support for other types.
+    return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");
   }
 
   // Returns a span of const values from the buffer.
@@ -247,6 +274,9 @@ class SimpleBuffer {
   // The tensor type associated with the underlying buffer.
   const RankedTensorType& Type() const { return tensor_type_; }
 
+  // The element type associated with the underlying buffer.
+  ElementType ElementType() const { return Type().ElementType(); }
+
   // Get the size of the underlying buffer up to the largest multiple of the
   // size of the given type.
   template <typename T>
@@ -260,6 +290,12 @@ class SimpleBuffer {
   size_t TypedNumElements() const {
     return TypedSize<T>() / sizeof(T);
   }
+
+  // SimpleBuffer is move-only.
+  SimpleBuffer(SimpleBuffer&& other) = default;
+  SimpleBuffer& operator=(SimpleBuffer&& other) = default;
+  SimpleBuffer(const SimpleBuffer&) = delete;
+  SimpleBuffer& operator=(const SimpleBuffer&) = delete;
 
  private:
   SimpleBuffer(LiteRtAlignedMem buffer, Environment env,

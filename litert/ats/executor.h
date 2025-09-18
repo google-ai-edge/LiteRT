@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_
 
-// Type and implementations for executing the compiled model for CTS.
-// Different CTS configurations may require different hardware accelerators
+// Type and implementations for executing the compiled model for ATS.
+// Different ATS configurations may require different hardware accelerators
 // and backend specific configurations, hence the need for polymorphism.
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -38,9 +39,11 @@
 
 namespace litert::testing {
 
-// Base class for executing the compiled model for CTS.
+// Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
  public:
+  using Ptr = std::unique_ptr<CompiledModelExecutor>;
+
   CompiledModelExecutor(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor& operator=(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor(const CompiledModelExecutor&) = delete;
@@ -172,6 +175,11 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModel::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
+    LITERT_ASSIGN_OR_RETURN(auto fully, api.IsFullyAccelerated());
+    if (!fully) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Model is not fully accelerated.");
+    }
     return NpuCompiledModelExecutor(std::move(api), std::move(options),
                                     std::move(env));
   }
@@ -185,4 +193,4 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_
