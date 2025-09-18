@@ -242,6 +242,24 @@ def _GoogleTensorSpec():
         ),
     }
 
+# EXAMPLE
+
+def _ExampleSpec():
+    return {
+        "example": BackendSpec(
+            id = "example",
+            libs = [
+                ("//litert/vendors/examples:libLiteRtDispatch_Example.so", "LD_LIBRARY_PATH"),
+                ("//litert/vendors/examples:libLiteRtCompilerPlugin_Example.so", "LD_LIBRARY_PATH"),
+            ],
+            mh_devices = [{
+                "pool": "shared",
+            }],
+            plugin = "libLiteRtCompilerPlugin_Example.so",
+            dispatch = "libLiteRtDispatch_Example.so",
+        ),
+    }
+
 # CPU
 
 def _CpuSpec():
@@ -263,11 +281,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec())[name]
+    return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return name in ["qualcomm", "mediatek", "google_tensor"]
+    return name in ["qualcomm", "mediatek", "google_tensor", "example"]
 
 # copybara:uncomment_begin(google-only)
 # # MOBILE HARNESS WRAPPER ###########################################################################

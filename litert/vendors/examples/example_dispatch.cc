@@ -17,9 +17,11 @@
 #include <list>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -28,15 +30,19 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
 
+namespace {
+using Buffer = ::litert::example::Data;
+using BufferHandle = Buffer*;
+}  // namespace
+
 class LiteRtDispatchDeviceContextT {
  public:
-  using Buffer = ::litert::example::Data;
-  using BufferHandle = Buffer*;
   LiteRtDispatchDeviceContextT() = default;
   ~LiteRtDispatchDeviceContextT() = default;
 
@@ -55,6 +61,11 @@ class LiteRtDispatchDeviceContextT {
       }
     }
     return {};
+  }
+
+  ::litert::TensorBuffer Lookup(BufferHandle handle) {
+    return ::litert::TensorBuffer(registered_buffers_[handle],
+                                  ::litert::OwnHandle::kNo);
   }
 
  private:
@@ -80,7 +91,9 @@ class LiteRtDispatchInvocationContextT {
     LITERT_ASSIGN_OR_RETURN(
         auto example_graph,
         ::litert::example::ExampleGraph::Parse(::litert::BufferRef<uint8_t>(
-            exec_bytecode_buffer->base_addr, exec_bytecode_buffer->size)));
+            exec_bytecode_buffer->base_addr,
+            exec_bytecode_buffer->offset + exec_bytecode_buffer->size,
+            exec_bytecode_buffer->offset)));
 
     return Ptr(new LiteRtDispatchInvocationContextT(
         device_context, exec_type, absl::string_view(function_name),
@@ -88,10 +101,50 @@ class LiteRtDispatchInvocationContextT {
   }
 
   absl::string_view FunctionName() const { return function_name_; }
+
   LiteRtDispatchDeviceContextT& DeviceContext() const {
     return *device_context_;
   }
+
   LiteRtDispatchExecutableType ExecType() const { return exec_type_; }
+
+  void AttachInput(int graph_input_index, BufferHandle handle) {
+    inputs_[graph_input_index] = handle;
+  }
+
+  void AttachOutput(int graph_output_index, BufferHandle handle) {
+    outputs_[graph_output_index] = handle;
+  }
+
+  const Buffer& GetInput(int graph_input_index) const {
+    return *inputs_[graph_input_index];
+  }
+
+  Buffer& GetOutput(int graph_output_index) const {
+    return *outputs_[graph_output_index];
+  }
+
+  void Setup() {
+    for (auto* input : inputs_) {
+      ::litert::TensorBuffer buffer = device_context_->Lookup(input);
+      std::vector<float> input_data(4);
+      buffer.Read(absl::MakeSpan(input_data));
+      const auto packed_size = buffer.PackedSize();
+      input->resize(*packed_size / sizeof(float));
+      buffer.Read(absl::MakeSpan(input->data(), input->size()));
+    }
+  }
+
+  void Finish() {
+    for (auto* output : outputs_) {
+      ::litert::TensorBuffer buffer = device_context_->Lookup(output);
+      buffer.Write(absl::MakeConstSpan(output->data(), output->size()));
+    }
+  }
+
+  const ::litert::example::ExampleGraph& ExampleGraph() const {
+    return example_graph_;
+  }
 
   ~LiteRtDispatchInvocationContextT() = default;
 
@@ -103,10 +156,14 @@ class LiteRtDispatchInvocationContextT {
       : device_context_(device_context),
         exec_type_(exec_type),
         function_name_(function_name),
+        inputs_(example_graph.Inputs().size()),
+        outputs_(example_graph.Outputs().size()),
         example_graph_(std::move(example_graph)) {}
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchExecutableType exec_type_;
   absl::string_view function_name_;
+  std::vector<BufferHandle> inputs_;
+  std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
 };
 
@@ -191,8 +248,8 @@ LiteRtStatus RegisterTensorBuffer(
 
 LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
                                     LiteRtTensorBufferHandle handle) {
-  LITERT_RETURN_IF_ERROR(
-      (device_context->UnregisterBuffer(reinterpret_cast<Data*>(handle))));
+  LITERT_RETURN_IF_ERROR((device_context->UnregisterBuffer(
+      reinterpret_cast<BufferHandle>(handle))));
   return kLiteRtStatusOk;
 }
 
@@ -219,34 +276,51 @@ LiteRtStatus InvocationContextDestroy(
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->AttachInput(
+      graph_input_index, reinterpret_cast<BufferHandle>(tensor_buffer_handle));
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->AttachOutput(
+      graph_output_index, reinterpret_cast<BufferHandle>(tensor_buffer_handle));
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  // Don't really care about the efficiency bonus of earlier de-allocation
+  // since this is an example, do nothing.
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  // Don't really care about the efficiency bonus of earlier de-allocation
+  // since this is an example, do nothing.
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->Setup();
+  const auto num_inputs = invocation_context->ExampleGraph().Inputs().size();
+  std::vector<Buffer> inputs(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    inputs[i] = invocation_context->GetInput(i);
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto results,
+      ::litert::example::Execute(invocation_context->ExampleGraph(), inputs));
+  for (int i = 0; i < results.size(); ++i) {
+    invocation_context->GetOutput(i) = std::move(results[i]);
+  }
+
+  invocation_context->Finish();
+  return kLiteRtStatusOk;
 }
 
 // /////////////////////////////////////////////////////////////////////////////
