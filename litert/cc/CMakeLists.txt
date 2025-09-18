@@ -39,12 +39,13 @@ target_include_directories(litert_cc_api
 
 target_link_libraries(litert_cc_api
     PUBLIC
-        litert_c_api
         absl::status
         absl::statusor
         absl::span
         absl::strings
         absl::log
+    PRIVATE
+        litert_c_api
 )
 
 # Export headers
