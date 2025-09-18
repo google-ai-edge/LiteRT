@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -33,10 +34,13 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
 
+namespace {
+using Buffer = ::litert::example::Data;
+using BufferHandle = Buffer*;
+}  // namespace
+
 class LiteRtDispatchDeviceContextT {
  public:
-  using Buffer = ::litert::example::Data;
-  using BufferHandle = Buffer*;
   LiteRtDispatchDeviceContextT() = default;
   ~LiteRtDispatchDeviceContextT() = default;
 
@@ -88,10 +92,20 @@ class LiteRtDispatchInvocationContextT {
   }
 
   absl::string_view FunctionName() const { return function_name_; }
+
   LiteRtDispatchDeviceContextT& DeviceContext() const {
     return *device_context_;
   }
+
   LiteRtDispatchExecutableType ExecType() const { return exec_type_; }
+
+  void AttachInput(int graph_input_index, BufferHandle handle) {
+    inputs_[graph_input_index] = handle;
+  }
+
+  void AttachOutput(int graph_output_index, BufferHandle handle) {
+    outputs_[graph_output_index] = handle;
+  }
 
   ~LiteRtDispatchInvocationContextT() = default;
 
@@ -103,10 +117,15 @@ class LiteRtDispatchInvocationContextT {
       : device_context_(device_context),
         exec_type_(exec_type),
         function_name_(function_name),
+        inputs_(example_graph.Inputs().size()),
+        outputs_(example_graph.Outputs().size()),
         example_graph_(std::move(example_graph)) {}
   LiteRtDispatchDeviceContext device_context_;
   LiteRtDispatchExecutableType exec_type_;
   absl::string_view function_name_;
+
+  std::vector<BufferHandle> inputs_;
+  std::vector<BufferHandle> outputs_;
   ::litert::example::ExampleGraph example_graph_;
 };
 
@@ -191,8 +210,8 @@ LiteRtStatus RegisterTensorBuffer(
 
 LiteRtStatus UnregisterTensorBuffer(LiteRtDispatchDeviceContext device_context,
                                     LiteRtTensorBufferHandle handle) {
-  LITERT_RETURN_IF_ERROR(
-      (device_context->UnregisterBuffer(reinterpret_cast<Data*>(handle))));
+  LITERT_RETURN_IF_ERROR((device_context->UnregisterBuffer(
+      reinterpret_cast<BufferHandle>(handle))));
   return kLiteRtStatusOk;
 }
 
@@ -219,29 +238,33 @@ LiteRtStatus InvocationContextDestroy(
 LiteRtStatus AttachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->AttachInput(
+      graph_input_index, reinterpret_cast<BufferHandle>(tensor_buffer_handle));
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus AttachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  invocation_context->AttachOutput(
+      graph_output_index, reinterpret_cast<BufferHandle>(tensor_buffer_handle));
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DetachInput(LiteRtDispatchInvocationContext invocation_context,
                          int graph_input_index,
                          LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  // Don't really care about the efficiency bonus of earlier de-allocation
+  // since this is an example, do nothing.
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DetachOutput(LiteRtDispatchInvocationContext invocation_context,
                           int graph_output_index,
                           LiteRtTensorBufferHandle tensor_buffer_handle) {
-  // TODO
-  return kLiteRtStatusErrorUnsupported;
+  // Don't really care about the efficiency bonus of earlier de-allocation
+  // since this is an example, do nothing.
+  return kLiteRtStatusOk;
 }
 
 LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {

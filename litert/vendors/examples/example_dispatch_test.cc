@@ -112,7 +112,7 @@ TEST_F(ExampleDispatchTest, DeviceContextCreate) {
   LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
 }
 
-TEST_F(ExampleDispatchTest, InvocationContextCreate) {
+TEST_F(ExampleDispatchTest, InvocationContext) {
   // clang-format off
   static constexpr absl::string_view kSchema = R"(inputs:0,1
 outputs:2
@@ -143,6 +143,20 @@ ops:mul(0,1)(2))";
       kNumInputs, kNumOutputs, &invocation_context));
   auto invocation_context_ptr =
       CreateInvocationContextPtr(Api(), invocation_context);
+
+  LiteRtTensorBufferHandle handle1;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, nullptr, &handle1));
+  LiteRtTensorBufferHandle handle2;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, nullptr, &handle2));
+  LiteRtTensorBufferHandle handle3;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, nullptr, &handle3));
+
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 0, handle1));
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 1, handle2));
+  LITERT_ASSERT_OK(Api().attach_output(invocation_context, 0, handle3));
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
