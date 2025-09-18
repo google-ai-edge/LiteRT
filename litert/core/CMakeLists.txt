@@ -18,6 +18,8 @@ cmake_minimum_required(VERSION 3.20)
 # Core library
 add_library(litert_core STATIC
     build_stamp.cc
+    buffer_error_reporter.cc
+    error_reporter.cc
     dispatch_op_schema.cc
     dynamic_loading.cc
     dynamic_loading_windows.cc
@@ -40,7 +42,6 @@ target_include_directories(litert_core
 
 target_link_libraries(litert_core
     PUBLIC
-        litert_c_api
         absl::status
         absl::statusor
         absl::strings
@@ -49,15 +50,10 @@ target_link_libraries(litert_core
         absl::flat_hash_set
         flatbuffers::flatbuffers
     PRIVATE
+        litert_c_api
         Threads::Threads
 )
 
-# Set compile definitions
-target_compile_definitions(litert_core
-    PRIVATE
-        $<$<NOT:$<BOOL:${LITERT_USE_GPU}>>:LITERT_NO_GPU>
-        $<$<NOT:$<BOOL:${LITERT_USE_NPU}>>:LITERT_NO_NPU>
-)
 
 # Platform-specific source exclusions
 if(NOT WIN32)

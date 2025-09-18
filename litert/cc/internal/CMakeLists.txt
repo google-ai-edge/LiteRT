@@ -44,8 +44,3 @@ target_link_libraries(litert_cc_internal
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(litert_cc_internal INTERFACE ${LOG_LIB})
 endif()
-
-# GPU support
-if(NOT LITERT_USE_GPU)
-    target_compile_definitions(litert_cc_internal INTERFACE LITERT_NO_GPU)
-endif()
