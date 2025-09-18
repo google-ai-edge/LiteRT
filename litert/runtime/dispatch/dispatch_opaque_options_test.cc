@@ -31,8 +31,7 @@ TEST(DispatchDelegateOptionsTest, CreateFromOpaqueOptions) {
   auto options = DispatchDelegateOptions::Create();
   ASSERT_TRUE(options);
 
-  auto other =
-      DispatchDelegateOptions::Create(dynamic_cast<OpaqueOptions&>(*options));
+  auto other = DispatchDelegateOptions::Create(options->Get());
   ASSERT_TRUE(other);
 
   auto alloc_base = options->GetAllocBase();

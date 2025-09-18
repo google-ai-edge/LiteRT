@@ -15,20 +15,21 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 #define ODML_LITERT_LITERT_RUNTIME_DISPATCH_DISPATCH_OPAQUE_OPTIONS_H_
 
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_handle.h"
 
 namespace litert::internal {
 
-class DispatchDelegateOptions : public OpaqueOptions {
+class DispatchDelegateOptions
+    : public Handle<LiteRtOpaqueOptions, LiteRtDestroyOpaqueOptions> {
  public:
-  using OpaqueOptions::OpaqueOptions;
-
   static const char* Discriminator() { return "dispatch_delegate"; }
 
   // Get a non-owning view of the given opaque options if they are of the
   // correct derived type.
-  static Expected<DispatchDelegateOptions> Create(OpaqueOptions& options);
+  static Expected<DispatchDelegateOptions> Create(LiteRtOpaqueOptions options);
 
   // Create a new owning view.
   static Expected<DispatchDelegateOptions> Create();
@@ -47,7 +48,7 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // alloc_base_fd -------------------------------------------------------------
 
-  // Alloc base fd is simiilar to alloc base but it is a file descriptor to
+  // Alloc base fd is similar to alloc base but it is a file descriptor to
   // assets stored externally.
 
   // Set alloc base fd.
@@ -55,6 +56,11 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+ private:
+  explicit DispatchDelegateOptions(LiteRtOpaqueOptions options,
+                                   OwnHandle own_handle = OwnHandle::kYes)
+      : Handle(options, own_handle) {}
 };
 
 }  // namespace litert::internal

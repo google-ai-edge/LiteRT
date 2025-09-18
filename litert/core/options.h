@@ -21,7 +21,6 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/cc/litert_opaque_options.h"
 
 // New structure to define a binding between a tensor name and an external
 // buffer.
@@ -55,7 +54,7 @@ struct LiteRtOptionsT {
   // Note: Changing a default value does not impact the version.
   LiteRtApiVersion version = {.major = 0, .minor = 0, .patch = 1};
   LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
-  litert::OpaqueOptions options;
+  LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
 };

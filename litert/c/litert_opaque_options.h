@@ -72,6 +72,12 @@ LiteRtStatus LiteRtAppendOpaqueOptions(LiteRtOpaqueOptions* options,
 // parameter `options`.
 LiteRtStatus LiteRtPopOpaqueOptions(LiteRtOpaqueOptions* options);
 
+// Finds the first option in the linked list pointed by `options` with a given
+// payload identifier.
+LiteRtStatus LiteRtFindOpaqueOptions(LiteRtOpaqueOptions options,
+                                     const char* payload_identifier,
+                                     LiteRtOpaqueOptions* found_options);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

@@ -75,15 +75,13 @@ LiteRtStatus LiteRtFindOpaqueOptionsData(LiteRtOpaqueOptions options,
   if (!options || !payload_identifier || !payload_data) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  while (options) {
-    if (options->payload_identifier == payload_identifier) {
-      *payload_data = options->payload_data.get();
-      return kLiteRtStatusOk;
-    } else {
-      options = options->next;
-    }
+  LiteRtOpaqueOptions found_options;
+  LiteRtStatus status =
+      LiteRtFindOpaqueOptions(options, payload_identifier, &found_options);
+  if (status == kLiteRtStatusOk) {
+    *payload_data = found_options->payload_data.get();
   }
-  return kLiteRtStatusErrorNotFound;
+  return status;
 }
 
 LiteRtStatus LiteRtGetNextOpaqueOptions(LiteRtOpaqueOptions* options) {
@@ -119,4 +117,21 @@ LiteRtStatus LiteRtPopOpaqueOptions(LiteRtOpaqueOptions* options) {
     *last = nullptr;
   }
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtFindOpaqueOptions(LiteRtOpaqueOptions options,
+                                     const char* payload_identifier,
+                                     LiteRtOpaqueOptions* found_options) {
+  if (!options || !payload_identifier || !found_options) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  while (options) {
+    if (options->payload_identifier == payload_identifier) {
+      *found_options = options;
+      return kLiteRtStatusOk;
+    } else {
+      options = options->next;
+    }
+  }
+  return kLiteRtStatusErrorNotFound;
 }
