@@ -75,13 +75,18 @@ LiteRtStatus DispatchGetCapabilities(int* capabilities) {
 // error.
 LiteRtStatus DispatchDeviceContextCreate(
     LiteRtDispatchDeviceContext* device_context) {
-  if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
-    *device_context = context->release();
-    return kLiteRtStatusOk;
-  } else {
-    LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
-               context.Error().Message().c_str());
-    return context.Error().Status();
+  try {
+    if (auto context = LiteRtDispatchDeviceContextT::Create(); context) {
+      *device_context = context->release();
+      return kLiteRtStatusOk;
+    } else {
+      LITERT_LOG(LITERT_ERROR, "Failed to create device context: %s",
+                context.Error().Message().c_str());
+      return context.Error().Status();
+    }
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch device_context_create: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 }
 
@@ -139,14 +144,19 @@ LiteRtStatus DispatchRegisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context,
     LiteRtTensorBuffer tensor_buffer,
     LiteRtTensorBufferHandle* tensor_buffer_handle) {
-  if (auto status = device_context->RegisterTensorBuffer(tensor_buffer);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to register buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  } else {
-    *tensor_buffer_handle = *status;
-    return kLiteRtStatusOk;
+  try {
+    if (auto status = device_context->RegisterTensorBuffer(tensor_buffer);
+        !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to register buffer: %s",
+                status.Error().Message().c_str());
+      return status.Error().Status();
+    } else {
+      *tensor_buffer_handle = *status;
+      return kLiteRtStatusOk;
+    }
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch register_tensor_buffer: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 }
 
@@ -158,14 +168,19 @@ LiteRtStatus DispatchRegisterTensorBuffer(
 LiteRtStatus DispatchUnregisterTensorBuffer(
     LiteRtDispatchDeviceContext device_context,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto status =
-          device_context->UnregisterTensorBuffer(tensor_buffer_handle);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
-  } else {
-    return kLiteRtStatusOk;
+  try {
+    if (auto status =
+            device_context->UnregisterTensorBuffer(tensor_buffer_handle);
+        !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to unregister buffer: %s",
+                status.Error().Message().c_str());
+      return status.Error().Status();
+    } else {
+      return kLiteRtStatusOk;
+    }
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch unregister_tensor_buffer: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
 }
 
@@ -178,16 +193,21 @@ LiteRtStatus DispatchInvocationContextCreate(
     const LiteRtMemBuffer* exec_bytecode_buffer, const char* function_name,
     int num_inputs, int num_outputs,
     LiteRtDispatchInvocationContext* invocation_context) {
-  auto context = LiteRtDispatchInvocationContextT::Create(
-      *device_context, exec_type, exec_bytecode_buffer, function_name,
-      num_inputs, num_outputs);
-  if (!context) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",
-               context.Error().Message().c_str());
-    return context.Error().Status();
+  try {
+    auto context = LiteRtDispatchInvocationContextT::Create(
+        *device_context, exec_type, exec_bytecode_buffer, function_name,
+        num_inputs, num_outputs);
+    if (!context) {
+      LITERT_LOG(LITERT_ERROR, "Failed to create context from context binary: %s",
+                context.Error().Message().c_str());
+      return context.Error().Status();
+    }
+    *invocation_context = context->release();
+    return kLiteRtStatusOk;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch invocation_context_create: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  *invocation_context = context->release();
-  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DispatchInvocationContextDestroy(
@@ -199,27 +219,37 @@ LiteRtStatus DispatchInvocationContextDestroy(
 LiteRtStatus DispatchAttachInput(
     LiteRtDispatchInvocationContext invocation_context, int graph_input_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto status = invocation_context->AttachInput(graph_input_index,
-                                                    tensor_buffer_handle);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach input: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
+  try {
+    if (auto status = invocation_context->AttachInput(graph_input_index,
+                                                      tensor_buffer_handle);
+        !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to attach input: %s",
+                status.Error().Message().c_str());
+      return status.Error().Status();
+    }
+    return kLiteRtStatusOk;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch attach_input: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DispatchAttachOutput(
     LiteRtDispatchInvocationContext invocation_context, int graph_output_index,
     LiteRtTensorBufferHandle tensor_buffer_handle) {
-  if (auto status = invocation_context->AttachOutput(graph_output_index,
-                                                     tensor_buffer_handle);
-      !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to attach output: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
+  try {
+    if (auto status = invocation_context->AttachOutput(graph_output_index,
+                                                      tensor_buffer_handle);
+        !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to attach output: %s",
+                status.Error().Message().c_str());
+      return status.Error().Status();
+    }
+    return kLiteRtStatusOk;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch attach_output: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return kLiteRtStatusOk;
 }
 
 LiteRtStatus DispatchDetachInput(
@@ -250,12 +280,17 @@ LiteRtStatus DispatchDetachOutput(
 
 LiteRtStatus DispatchInvoke(
     LiteRtDispatchInvocationContext invocation_context) {
-  if (auto status = invocation_context->Invoke(); !status) {
-    LITERT_LOG(LITERT_ERROR, "Failed to invoke context: %s",
-               status.Error().Message().c_str());
-    return status.Error().Status();
+  try {
+    if (auto status = invocation_context->Invoke(); !status) {
+      LITERT_LOG(LITERT_ERROR, "Failed to invoke context: %s",
+                status.Error().Message().c_str());
+      return status.Error().Status();
+    }
+    return kLiteRtStatusOk;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in Dispatch invoke: %s", e.what());
+    return kLiteRtStatusErrorRuntimeFailure;
   }
-  return kLiteRtStatusOk;
 }
 
 }  // namespace openvino
