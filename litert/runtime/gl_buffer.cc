@@ -134,15 +134,11 @@ GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,
 #if LITERT_HAS_OPENGL_SUPPORT
   size_bytes_ = size_bytes;
 
-  if (deallocator != nullptr) {
-    tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(
-        target, id, size_bytes, offset, /*has_ownership=*/false);
-    deallocator_ = std::move(deallocator);
-  } else {
-    tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(
-        target, id, size_bytes, offset, /*has_ownership=*/true);
-    deallocator_ = nullptr;
-  }
+  // has_ownership is set to false since buffer deletion is determined by the
+  // deallocator in this case.
+  tflite_gl_buffer_ = tflite::gpu::gl::GlBuffer(target, id, size_bytes, offset,
+                                                /*has_ownership=*/false);
+  deallocator_ = deallocator;
 #else
   LITERT_LOG(LITERT_ERROR, "GlBuffer::GlBuffer() is not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
