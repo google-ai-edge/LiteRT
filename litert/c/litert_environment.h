@@ -50,16 +50,16 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         const LiteRtEnvOption* options);
 
 // Returns whether the environment supports CL/GL interop.
-LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
-                                       bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsClGlInterop(LiteRtEnvironment environment,
+                                                  bool* is_supported);
 
 // Returns whether the environment supports AHWB/CL interop.
-LiteRtStatus LiteRtSupportsAhwbClInterop(LiteRtEnvironment environment,
-                                         bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsAhwbClInterop(
+    LiteRtEnvironment environment, bool* is_supported);
 
 // Returns whether the environment supports AHWB/GL interop.
-LiteRtStatus LiteRtSupportsAhwbGlInterop(LiteRtEnvironment environment,
-                                         bool* is_supported);
+LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
+    LiteRtEnvironment environment, bool* is_supported);
 
 // Returns whether the environment has a GPU environment.
 void LiteRtEnvironmentHasGpuEnvironment(LiteRtEnvironment environment,
