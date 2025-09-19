@@ -22,7 +22,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "litert/cc/litert_numerics.h"
+#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/test/fuzz.h"
 
@@ -37,14 +37,29 @@ namespace litert::testing {
 class RngTest : public ::testing::Test {
  public:
   void TearDown() override {
-    for (const auto& block : fuzz_blocks_) {
-      ASSERT_TRUE(block.ReachedMinIters())
-          << "The minimum number of iterations was not reached in the alloted "
-             "time.";
+    static constexpr auto kMsg =
+        "The minimum number of iterations was not reached in the alloted "
+        "time.";
+
+    if (TimedOut()) {
+      if (fail_on_timeout_) {
+        ADD_FAILURE() << kMsg;
+      } else {
+        LITERT_LOG(LITERT_WARNING, "%s", kMsg);
+      }
     }
   }
 
  protected:
+  bool TimedOut() const {
+    for (const auto& block : fuzz_blocks_) {
+      if (!block.ReachedIters()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   template <typename Device = DefaultDevice>
   auto TracedDevice(std::optional<int> seed = std::nullopt) {
     const auto seed_to_use = seed ? *seed : CurrentSeed();
@@ -55,6 +70,9 @@ class RngTest : public ::testing::Test {
   auto& FuzzBlock(Args&&... args) {
     return fuzz_blocks_.emplace_back(std::forward<Args>(args)...);
   }
+
+  explicit RngTest(bool fail_on_timeout = true)
+      : fail_on_timeout_(fail_on_timeout) {}
 
  private:
   using ScopedTrace = ::testing::ScopedTrace;
@@ -81,6 +99,7 @@ class RngTest : public ::testing::Test {
     return device;
   }
 
+  bool fail_on_timeout_ = true;
   std::vector<std::unique_ptr<ScopedTrace>> traces_;
   std::vector<RepeatedBlock> fuzz_blocks_;
 };
