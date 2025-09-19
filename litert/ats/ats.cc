@@ -22,6 +22,9 @@
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/configure.h"
+#include "litert/ats/executor.h"
+#include "litert/ats/register.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
@@ -31,9 +34,6 @@
 #include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
-#include "litert/cts/compiled_model_executor.h"
-#include "litert/cts/cts_configure.h"
-#include "litert/cts/register.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 
@@ -46,10 +46,10 @@ using ::litert::internal::TflOptions;
 using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
 
-// Class that drives all cts test cases. These are specialized with
+// Class that drives all ats test cases. These are specialized with
 // fully specified test logic and executor (backend).
 template <typename TestLogic, typename TestExecutor = CpuCompiledModelExecutor>
-class CtsTest : public RngTest {
+class AtsTest : public RngTest {
  private:
   using Logic = TestLogic;
   using Traits = typename Logic::Traits;
@@ -65,7 +65,7 @@ class CtsTest : public RngTest {
   using Executor = TestExecutor;
 
   static std::string FmtSuiteName(size_t id) {
-    return absl::StrFormat("%s_cts_%lu_%s", TestExecutor::Name(), id,
+    return absl::StrFormat("%s_ats_%lu_%s", TestExecutor::Name(), id,
                            Logic::Name().data());
   }
 
@@ -73,7 +73,7 @@ class CtsTest : public RngTest {
     return absl::StrFormat("%v", model.Subgraph(0).Ops());
   }
 
-  // The various objects needed to initialize a test case.
+  // The various objeats needed to initialize a test case.
   struct SetupParams {
     LiteRtModelT::Ptr model;
     Params params;
@@ -104,7 +104,7 @@ class CtsTest : public RngTest {
                   executor_args = std::move(executor_args),
                   data_builder = std::move(data_builder),
                   data_seed = std::move(data_seed)]() mutable {
-                   return new CtsTest(
+                   return new AtsTest(
                        std::move(setup_params.model),
                        std::move(setup_params.params),
                        std::move(setup_params.logic), std::move(executor_args),
@@ -132,7 +132,7 @@ class CtsTest : public RngTest {
   static absl::string_view LogicName() { return Logic::Name(); }
 
  private:
-  CtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
+  AtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
           Logic logic, typename Executor::Args&& executor_args,
           RandomTensorDataBuilder&& data_builder, std::optional<int> data_seed)
       : model_(std::move(model)),
@@ -196,12 +196,12 @@ class CtsTest : public RngTest {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
-  auto options = litert::testing::CtsConf::ParseFlagsAndDoSetup();
+  auto options = litert::testing::AtsConf::ParseFlagsAndDoSetup();
   if (!options) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create CTS configuration: %s",
+    LITERT_LOG(LITERT_ERROR, "Failed to create ATS configuration: %s",
                options.Error().Message().c_str());
     return 1;
   }
-  ::litert::testing::RegisterCtsTests<::litert::testing::CtsTest>(*options);
+  ::litert::testing::RegisterAtsTests<::litert::testing::AtsTest>(*options);
   return RUN_ALL_TESTS();
 }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CTS_CTS_CONFIGURE_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CTS_CTS_CONFIGURE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 
 #include <regex>  // NOLINT
 #include <string>
@@ -54,7 +54,7 @@ ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
 namespace litert::testing {
 
-class CtsConf {
+class AtsConf {
  public:
   using SeedMap = absl::flat_hash_map<std::string, int>;
 
@@ -62,7 +62,7 @@ class CtsConf {
 
   // Parse flags into this class and do any global setup needed which depends
   // on said flags.
-  static Expected<CtsConf> ParseFlagsAndDoSetup();
+  static Expected<AtsConf> ParseFlagsAndDoSetup();
 
   // Get the user-specified seed for param generation for the test logic with
   // the given name. Default is provided if not specified.
@@ -91,7 +91,7 @@ class CtsConf {
   std::optional<int> DataSeed() const { return data_seed_; }
 
  private:
-  explicit CtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
+  explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::regex&& re, bool f16_range_for_f32,
                    std::optional<int> data_seed)
@@ -116,4 +116,4 @@ class CtsConf {
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CTS_CTS_CONFIGURE_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_

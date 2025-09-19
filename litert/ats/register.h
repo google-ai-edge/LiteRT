@@ -12,19 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CTS_REGISTER_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CTS_REGISTER_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_REGISTER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_REGISTER_H_
 
 #include <cstddef>
 #include <cstdint>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "litert/ats/configure.h"
+#include "litert/ats/executor.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_rng.h"
-#include "litert/cts/compiled_model_executor.h"
-#include "litert/cts/cts_configure.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -39,12 +39,12 @@ class RegisterFunctor {
   void operator()() {
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
-      if (options_.Backend() == CtsConf::ExecutionBackend::kCpu) {
+      if (options_.Backend() == AtsConf::ExecutionBackend::kCpu) {
         BuildParamsAndRegister<Fixture<Logic, CpuCompiledModelExecutor>>(device,
                                                                          {});
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kGpu) {
+      } else if (options_.Backend() == AtsConf::ExecutionBackend::kGpu) {
         ABSL_CHECK(false) << "GPU backend not supported yet.";
-      } else if (options_.Backend() == CtsConf::ExecutionBackend::kNpu) {
+      } else if (options_.Backend() == AtsConf::ExecutionBackend::kNpu) {
         BuildParamsAndRegister<Fixture<Logic, NpuCompiledModelExecutor>>(
             device, typename NpuCompiledModelExecutor::Args{
                         options_.DispatchDir(),
@@ -54,7 +54,7 @@ class RegisterFunctor {
     }
   }
 
-  RegisterFunctor(size_t iters, size_t& test_id, const CtsConf& options)
+  RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options)
       : iters_(iters), test_id_(test_id), options_(options) {}
 
  private:
@@ -64,7 +64,7 @@ class RegisterFunctor {
     auto params = TestClass::BuildSetupParams(device);
     if (!params) {
       LITERT_LOG(LITERT_WARNING,
-                 "Failed to build params for CTS test %lu, %s: %s", test_id_,
+                 "Failed to build params for ATS test %lu, %s: %s", test_id_,
                  TestClass::LogicName().data(),
                  params.Error().Message().c_str());
       return;
@@ -82,7 +82,7 @@ class RegisterFunctor {
             suite_name, test_name, std::move(*params), std::move(args),
             options_.CreateDataBuilder(), options_.DataSeed());
         !status) {
-      LITERT_LOG(LITERT_WARNING, "Failed to register CTS test %lu, %s: %s",
+      LITERT_LOG(LITERT_WARNING, "Failed to register ATS test %lu, %s: %s",
                  test_id_, TestClass::LogicName().data(),
                  status.Error().Message().c_str());
     }
@@ -90,7 +90,7 @@ class RegisterFunctor {
 
   const size_t iters_;
   size_t& test_id_;
-  const CtsConf& options_;
+  const AtsConf& options_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -100,19 +100,19 @@ class RegisterFunctor {
 template <template <typename TestLogic, typename TestExecutor> typename Fixture,
           template <typename...> typename Logic, typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id,
-                          const CtsConf& options) {
+                          const AtsConf& options) {
   RegisterFunctor<Fixture> f(iters, test_id, options);
   ExpandProduct<Logic, Lists...>(f);
 }
 
 // Helper aliases to set some of the template params that don't need to vary
-// for cts.
+// for ats.
 template <typename Ranks, typename Types, typename OpCodes, typename Fas>
-using BinaryNoBroadcastCts =
+using BinaryNoBroadcastAts =
     BinaryNoBroadcast<Ranks, Types, OpCodes, Fas, SizeC<1024>>;
 
 template <template <typename TestLogic, typename TestExecutor> typename Fixture>
-void RegisterCtsTests(const CtsConf& cts_options) {
+void RegisterAtsTests(const AtsConf& ats_options) {
   size_t test_id = 0;
   {
     // NO OP //
@@ -122,7 +122,7 @@ void RegisterCtsTests(const CtsConf& cts_options) {
         ExampleTestLogic,  // Test logic template
         SizeListC<1, 2, 3, 4>,  // Ranks
         TypeList<float, int32_t>  // Data types
-    >(/*iters=*/10, test_id, cts_options);
+    >(/*iters=*/10, test_id, ats_options);
     // clang-format on
   }
 
@@ -131,16 +131,16 @@ void RegisterCtsTests(const CtsConf& cts_options) {
     // clang-format off
     RegisterCombinations<
         Fixture,
-        BinaryNoBroadcastCts,  // Test logic template
+        BinaryNoBroadcastAts,  // Test logic template
         SizeListC<1, 2, 3, 4, 5, 6>,  // Ranks
         TypeList<float, int32_t>,  // Data types
         OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,  // Op codes
         FaListC<::tflite::ActivationFunctionType_NONE>  // TODO: More support.
-    >(/*iters=*/10, test_id, cts_options);
+    >(/*iters=*/10, test_id, ats_options);
     // clang-format on
   }
 }
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CTS_REGISTER_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_REGISTER_H_

@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_
 
-// Type and implementations for executing the compiled model for CTS.
-// Different CTS configurations may require different hardware accelerators
+// Type and implementations for executing the compiled model for ATS.
+// Different ATS configurations may require different hardware accelerators
 // and backend specific configurations, hence the need for polymorphism.
 
 #include <cstdint>
@@ -38,7 +38,7 @@
 
 namespace litert::testing {
 
-// Base class for executing the compiled model for CTS.
+// Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
  public:
   CompiledModelExecutor(CompiledModelExecutor&& other) = default;
@@ -185,4 +185,4 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CTS_COMPILED_MODEL_EXECUTOR_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_EXECUTOR_H_

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cts/cts_configure.h"
+#include "litert/ats/configure.h"
 
 #include <optional>
 #include <regex>  // NOLINT
@@ -66,9 +66,9 @@ namespace litert::testing {
 
 namespace {
 
-Expected<CtsConf::SeedMap> ParseParamSeedMap() {
+Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   const auto seed_flags = absl::GetFlag(FLAGS_seeds);
-  CtsConf::SeedMap seeds;
+  AtsConf::SeedMap seeds;
   for (const auto& seed : seed_flags) {
     std::pair<std::string, std::string> seed_pair = absl::StrSplit(seed, ':');
     int seed_int;
@@ -82,21 +82,21 @@ Expected<CtsConf::SeedMap> ParseParamSeedMap() {
   return seeds;
 }
 
-Expected<CtsConf::ExecutionBackend> ParseBackend() {
+Expected<AtsConf::ExecutionBackend> ParseBackend() {
   const auto backend_flag = absl::GetFlag(FLAGS_backend);
   if (backend_flag == "cpu") {
-    return CtsConf::ExecutionBackend::kCpu;
+    return AtsConf::ExecutionBackend::kCpu;
   } else if (backend_flag == "gpu") {
-    return CtsConf::ExecutionBackend::kGpu;
+    return AtsConf::ExecutionBackend::kGpu;
   } else if (backend_flag == "npu") {
-    return CtsConf::ExecutionBackend::kNpu;
+    return AtsConf::ExecutionBackend::kNpu;
   } else {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  absl::StrFormat("Unknown backend: %s", backend_flag.c_str()));
   }
 }
 
-void Setup(const CtsConf& options) {
+void Setup(const AtsConf& options) {
   if (options.Quiet()) {
     LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
   }
@@ -104,10 +104,10 @@ void Setup(const CtsConf& options) {
 
 }  // namespace
 
-Expected<CtsConf> CtsConf::ParseFlagsAndDoSetup() {
+Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
-  CtsConf res(
+  AtsConf res(
       std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
       absl::GetFlag(FLAGS_dispatch_dir), absl::GetFlag(FLAGS_plugin_dir),
       std::regex(absl::GetFlag(FLAGS_dont_register),
@@ -117,7 +117,7 @@ Expected<CtsConf> CtsConf::ParseFlagsAndDoSetup() {
   return res;
 }
 
-RandomTensorDataBuilder CtsConf::CreateDataBuilder() const {
+RandomTensorDataBuilder AtsConf::CreateDataBuilder() const {
   RandomTensorDataBuilder builder;
   if (f16_range_for_f32_) {
     builder.SetF16InF32();
@@ -125,7 +125,7 @@ RandomTensorDataBuilder CtsConf::CreateDataBuilder() const {
   return builder;
 }
 
-int CtsConf::GetSeedForParams(absl::string_view name) const {
+int AtsConf::GetSeedForParams(absl::string_view name) const {
   static constexpr int kDefaultSeed = 42;
   auto it = seeds_for_params_.find(name);
   if (it == seeds_for_params_.end()) {
@@ -134,11 +134,11 @@ int CtsConf::GetSeedForParams(absl::string_view name) const {
   return it->second;
 }
 
-bool CtsConf::ShouldRegister(const std::string& name) const {
+bool AtsConf::ShouldRegister(const std::string& name) const {
   return !std::regex_search(name, re_);
 };
 
-bool CtsConf::ShouldRegister(absl::string_view name) const {
+bool AtsConf::ShouldRegister(absl::string_view name) const {
   return ShouldRegister(std::string(name));
 }
 
