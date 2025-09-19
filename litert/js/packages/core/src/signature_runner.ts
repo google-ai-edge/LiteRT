@@ -47,13 +47,14 @@ export abstract class SignatureRunner {
   }
 
   private checkTypes(inputs: Tensor[]): void {
-    let i = 0;
-    for (const tensorWrapper of this.inputTensors.values()) {
+    const inputTensorsList = [...this.inputTensors.values()];
+    for (let i = 0; i < inputTensorsList.length; ++i) {
+      const tensorWrapper = inputTensorsList[i];
       const tensor = inputs[i];
       const expectedDType = tensorWrapper.type();
       if (expectedDType !== tensor.type.dtype) {
         throw new TensorTypeError(
-            tensorWrapper.name(), i++, expectedDType, tensor.type.dtype);
+            tensorWrapper.name(), i, expectedDType, tensor.type.dtype);
       }
     }
   }

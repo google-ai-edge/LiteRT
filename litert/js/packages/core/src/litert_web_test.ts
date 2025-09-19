@@ -250,6 +250,7 @@ describe('LiteRt', () => {
       describe(accelerator, () => {
         let mobilenetModel: CompiledModel;
         let multiSignatureModel: CompiledModel;
+        let mixedInputModel: CompiledModel;
 
         let identityTfjs: tf.Tensor;
         let rangeTfjs: tf.Tensor;
@@ -262,6 +263,9 @@ describe('LiteRt', () => {
 
           multiSignatureModel = await loadAndCompile(
               '/testdata/multi_signature_model.tflite', {accelerator});
+
+          mixedInputModel = await loadAndCompile(
+              '/testdata/mixed_input_model.tflite', {accelerator});
 
           identityTfjs = tf.diag(tf.ones([10], 'float32'));
           await identityTfjs.data();
@@ -299,6 +303,26 @@ describe('LiteRt', () => {
           for (let i = 1; i < outputsData.length; ++i) {
             expect(outputsData[i]).toEqual(outputsData[0]);
           }
+        });
+
+        it('runs a model with mixed input types', async () => {
+          const int32Input = tf.range(0, 10, 1, 'int32').reshape([1, 10]);
+          const float32Input = tf.range(0, 10, 1, 'float32').reshape([1, 10]);
+
+          const outputs = runWithTfjsTensors(mixedInputModel, {
+            'int_input': int32Input,
+            'float_input': float32Input,
+          });
+
+          const outputData = await outputs['Identity'].data();
+          const expectedOutput = tf.tidy(() => {
+            return tf.add(int32Input, float32Input).mul(2);
+          });
+          expect(outputData).toEqual(await expectedOutput.data());
+          int32Input.dispose();
+          float32Input.dispose();
+          expectedOutput.dispose();
+          outputs['Identity'].dispose();
         });
 
         it('gives meaningful errors on shape mismatch', async () => {
