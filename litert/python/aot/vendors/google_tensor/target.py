@@ -40,9 +40,9 @@ class SocModel(StrEnum):
 
   ALL = "ALL"
 
-  G3 = "g3"
-  G4 = "g4"
-  G5 = "g5"
+  TENSOR_G3 = "Tensor_G3"
+  TENSOR_G4 = "Tensor_G4"
+  TENSOR_G5 = "Tensor_G5"
 
 
 class SocManufacturer(StrEnum):
