@@ -262,44 +262,49 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char *soc_model,
     LiteRtModel partitions, LiteRtCompiledResult *compiled_result) {
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
-  const auto num_partitions = model.NumSubgraphs();
+  try {
+    auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+    const auto num_partitions = model.NumSubgraphs();
 
-  auto result = std::make_unique<LiteRtCompiledResultT>();
-  result->byte_code.resize(num_partitions);
-  result->graph_names.resize(num_partitions);
-  auto tflite_fe = std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
-  // TODO: Update this hard coded path to an env option passed from LiteRT
-  // framework
-  ov::Core core;
-  for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
-    auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
-    litert::Expected<litert::Subgraph> expected_subgraph =
-        model.Subgraph(partition_idx);
-    if (expected_subgraph.HasValue()) {
-      std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
-          graph_delegate =
-              std::make_shared<litert::openvino::GraphIteratorDelegate>(
-                  &expected_subgraph.Value());
-      auto input_model = tflite_fe->load(graph_delegate);
-      LITERT_LOG(LITERT_INFO, "Model loaded");
-      auto model = tflite_fe->convert(input_model);
+    auto result = std::make_unique<LiteRtCompiledResultT>();
+    result->byte_code.resize(num_partitions);
+    result->graph_names.resize(num_partitions);
+    auto tflite_fe = std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
+    // TODO: Update this hard coded path to an env option passed from LiteRT
+    // framework
+    ov::Core core;
+    for (int partition_idx = 0; partition_idx < num_partitions; ++partition_idx) {
+      auto graph_name = absl::StrFormat("Partition_%d", partition_idx);
+      litert::Expected<litert::Subgraph> expected_subgraph =
+          model.Subgraph(partition_idx);
+      if (expected_subgraph.HasValue()) {
+        std::shared_ptr<ov::frontend::tensorflow_lite::GraphIterator>
+            graph_delegate =
+                std::make_shared<litert::openvino::GraphIteratorDelegate>(
+                    &expected_subgraph.Value());
+        auto input_model = tflite_fe->load(graph_delegate);
+        LITERT_LOG(LITERT_INFO, "Model loaded");
+        auto model = tflite_fe->convert(input_model);
 
-      // TODO: pass the device string from env options
-      std::string device = "NPU";
-      std::ostringstream oss;
-      auto compiled_model = core.compile_model(model, device);
-      compiled_model.export_model(oss);
-      LITERT_LOG(LITERT_INFO, "Model export done");
-      result->byte_code[partition_idx] = oss.str();
+        // TODO: pass the device string from env options
+        std::string device = "NPU";
+        std::ostringstream oss;
+        auto compiled_model = core.compile_model(model, device);
+        compiled_model.export_model(oss);
+        LITERT_LOG(LITERT_INFO, "Model export done");
+        result->byte_code[partition_idx] = oss.str();
 
-      result->graph_names.emplace_back(graph_name);
-    } else {
-      LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
-      return kLiteRtStatusErrorCompilation;
+        result->graph_names.emplace_back(graph_name);
+      } else {
+        LITERT_LOG(LITERT_INFO, "Failed to retrieve Subgraph");
+        return kLiteRtStatusErrorCompilation;
+      }
     }
+    *compiled_result = result.release();
+    // TODO: Add support for caching
+    return kLiteRtStatusOk;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Exception in compilation: %s", e.what());
+    return kLiteRtStatusErrorCompilation;
   }
-  *compiled_result = result.release();
-  // TODO: Add support for caching
-  return kLiteRtStatusOk;
 }

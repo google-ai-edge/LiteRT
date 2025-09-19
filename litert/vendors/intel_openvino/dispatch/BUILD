@@ -34,7 +34,6 @@ litert_dynamic_lib(
     ],
     copts = [
         "-Os",
-        "-fno-exceptions",
         "-fno-unwind-tables",
         "-fno-asynchronous-unwind-tables",
         "-ffunction-sections",
