@@ -51,7 +51,7 @@ TEST(AdapterTest, CreateFailure) {
 }
 
 TEST(AdapterTest, CompileSuccess) {
-  static constexpr absl::string_view kSocModel = "g5";
+  static constexpr absl::string_view kSocModel = "Tensor_G5";
 
   auto adapter_result = Adapter::Create(/*shared_library_dir=*/
                                         std::nullopt);

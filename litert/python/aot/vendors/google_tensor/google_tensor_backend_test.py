@@ -133,7 +133,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
 
   def test_specialize_final(self):
     config = self.basic_config
-    config["soc_model"] = target_lib.SocModel.G3.value
+    config["soc_model"] = target_lib.SocModel.TENSOR_G3.value
     backend = google_tensor_backend.GoogleTensorBackend.create(config)
     backends = list(backend.specialize())
     self.assertLen(backends, 1)

@@ -44,10 +44,10 @@
 
 namespace google_tensor {
 
-constexpr char kPluginManufacturer[] = "GoogleTensor";
+constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "g5",
+    "Tensor_G3", "Tensor_G4", "Tensor_G5",
 };  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kUnSupportedOps[] = {
