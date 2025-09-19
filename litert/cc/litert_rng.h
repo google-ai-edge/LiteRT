@@ -16,6 +16,8 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
 
 #include <bitset>
+#include <cstdlib>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <ostream>
@@ -611,6 +613,17 @@ class RandomTensorDataBuilder {
   IntConfig<int32_t> int_config_ = NullOpt();
   FloatConfig<float> float_config_ = NullOpt();
 };
+
+// Scale random data values down to prevent overflow.
+template <typename It>
+void ScaleDown(It start, It end, uint32_t scale) {
+  using T = typename std::iterator_traits<It>::value_type;
+  std::for_each(start, end, [scale](auto& x) { x /= static_cast<T>(scale); });
+}
+template <typename Itb>
+void ScaleDown(Itb& itb, uint32_t scale) {
+  ScaleDown(std::begin(itb), std::end(itb), scale);
+}
 
 }  // namespace litert
 

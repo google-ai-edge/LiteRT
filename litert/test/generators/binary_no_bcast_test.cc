@@ -98,6 +98,7 @@ TYPED_TEST(BinaryNoBroadcastTest, TestLogic) {
 
   std::vector<DataType> expected_input_data(lhs.NumElements());
   std::iota(expected_input_data.begin(), expected_input_data.end(), 0);
+  ScaleDown(expected_input_data, 3);
 
   EXPECT_THAT(lhs.data, ElementsAreArray(expected_input_data));
 

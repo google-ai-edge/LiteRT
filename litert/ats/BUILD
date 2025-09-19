@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
@@ -174,11 +173,4 @@ litert_define_ats(
         "--f16_range_for_f32=true",
         "--data_seed=42",
     ],
-)
-
-bzl_library(
-    name = "ats_bzl",
-    srcs = ["ats.bzl"],
-    parse_tests = False,
-    visibility = ["//visibility:private"],
 )
