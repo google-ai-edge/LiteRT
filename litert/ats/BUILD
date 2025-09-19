@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/cts:cts.bzl", "litert_define_cts")
+load("//litert/ats:ats.bzl", "litert_define_ats")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
@@ -27,8 +28,8 @@ package(
 # LiteRt's compliance test suite (CTS).
 
 cc_test(
-    name = "cts",
-    srcs = ["cts.cc"],
+    name = "ats",
+    srcs = ["ats.cc"],
     # TODO: Figure out data seeding and test re-running.
     args = [
         # copybara:uncomment "--gunit_random_seed=42",
@@ -38,38 +39,34 @@ cc_test(
     # TODO: Copybara rewrite the gunit flags and remove this tag.
     tags = ["no_oss"],
     deps = [
-        ":compiled_model_executor",
-        ":cts_configure",
+        ":configure",
+        ":fixture",
         ":register",
-        "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_rng",
-        "//litert/core/model",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//litert/test:matchers",
-        "//litert/test:rng_fixture",
+        "//litert/test/generators",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_googletest//:gtest",
     ],
 )
 
 cc_library(
-    name = "cts_configure",
+    name = "configure",
     testonly = True,
-    srcs = ["cts_configure.cc"],
-    hdrs = ["cts_configure.h"],
+    srcs = ["configure.cc"],
+    hdrs = ["configure.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_rng",
+        "//litert/core:filesystem_testonly",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -79,8 +76,8 @@ cc_library(
 )
 
 cc_library(
-    name = "compiled_model_executor",
-    hdrs = ["compiled_model_executor.h"],
+    name = "executor",
+    hdrs = ["executor.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_compiled_model",
@@ -100,23 +97,26 @@ cc_library(
     testonly = True,
     hdrs = ["register.h"],
     deps = [
-        ":compiled_model_executor",
-        ":cts_configure",
+        ":configure",
+        "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
         "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
         "//litert/cc:litert_rng",
+        "//litert/core/model:model_load",
+        "//litert/test:simple_buffer",
         "//litert/test/generators",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
 cc_test(
-    name = "compiled_model_executor_test",
-    srcs = ["compiled_model_executor_test.cc"],
+    name = "executor_test",
+    srcs = ["executor_test.cc"],
     deps = [
-        ":compiled_model_executor",
+        ":executor",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
@@ -128,14 +128,39 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "fixture",
+    testonly = True,
+    hdrs = ["fixture.h"],
+    deps = [
+        ":configure",
+        ":executor",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_c_types_printing",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "//litert/test/generators:common",
+        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 litert_device_test(
-    name = "compiled_model_executor_test_npu",
-    srcs = ["compiled_model_executor_test.cc"],
+    name = "executor_test_npu",
+    srcs = ["executor_test.cc"],
     backend_id = "qualcomm",
     data = ["//litert/test:testdata/simple_model.tflite"],
     defines = ["_TEST_NPU"],
     deps = [
-        ":compiled_model_executor",
+        ":executor",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/core/model",
@@ -144,33 +169,65 @@ litert_device_test(
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "check_ats",
+    srcs = ["check_ats.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    deps = [
+        ":configure",
+        ":fixture",
+        ":register",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/test:common",
+        "//litert/test/generators:common",
+        "//litert/test/generators:no_op",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
     ],
 )
 
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
-# An example CTS configuration for the CPU backend that filters out some tests.
-litert_define_cts(
-    name = "sample_cpu_cts",
+litert_define_ats(
+    name = "sample_cpu_ats",
     backend = "cpu",
-    dont_register = [
-        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
-        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
+)
+
+litert_define_ats(
+    name = "example_npu_ats",
+    backend = "example",
+    do_register = [
+        "sub.*f32",
+        "mul.*f32",
     ],
 )
 
-litert_define_cts(
-    name = "qualcomm_cts",
+litert_define_ats(
+    name = "qualcomm_ats",
     backend = "qualcomm",
     dont_register = [
         ".*5d.*",  # Filter out 5d tests.
         ".*6d.*",  # Filter out 6d tests.
         ".*f32.*",  # Filter out f32 tests. TODO: Debug float numerics issue.
         # NOTE: Comment above and uncomment to run one of the fp tests with numerics issues.
-        # "^(?:(?!npu_cts_87).)*$$",
+        # "^(?:(?!npu_ats_87).)*$$",
     ],
     extra_flags = [
         "--f16_range_for_f32=true",
         "--data_seed=42",
     ],
+)
+
+bzl_library(
+    name = "ats_bzl",
+    srcs = ["ats.bzl"],
+    parse_tests = False,
+    visibility = ["//visibility:private"],
 )
