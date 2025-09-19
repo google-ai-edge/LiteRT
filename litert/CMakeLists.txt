@@ -24,12 +24,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
 option(LITERT_BUILD_TESTS "Build LiteRT tests" OFF)
-option(LITERT_USE_GPU "Enable GPU support" ON)
-option(LITERT_USE_NPU "Enable NPU support" ON)
 option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
 
 # Find TFLite package - we depend on it being built first
-set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/../tflite_build" CACHE PATH "Path to TFLite build directory")
+set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path to TFLite build directory")
 set(TFLITE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tflite" CACHE PATH "Path to TFLite source directory")
 
 # Check if TFLite has been built
@@ -44,11 +42,59 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
 
         # Configure TFLite
         message(STATUS "Configuring TFLite...")
+        set(_tflite_extra_args)
+        if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+          # Propagate Android toolchain settings to the inner TFLite configure
+          if(CMAKE_TOOLCHAIN_FILE)
+            list(APPEND _tflite_extra_args -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
+          endif()
+          if(DEFINED ANDROID_ABI)
+            list(APPEND _tflite_extra_args -DANDROID_ABI=${ANDROID_ABI})
+          endif()
+          if(DEFINED ANDROID_PLATFORM)
+            list(APPEND _tflite_extra_args -DANDROID_PLATFORM=${ANDROID_PLATFORM})
+          endif()
+          list(APPEND _tflite_extra_args -DCMAKE_SYSTEM_NAME=Android)
+          list(APPEND _tflite_extra_args -DTFLITE_ENABLE_GPU=ON)
+
+          # Build or reuse host flatc for cross compilation.
+          if(NOT TFLITE_HOST_TOOLS_DIR)
+            set(_root_host_flatc_dir "${CMAKE_CURRENT_SOURCE_DIR}/../host_flatc_build")
+            if(EXISTS "${_root_host_flatc_dir}/_deps/flatbuffers-build/flatc")
+              set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build")
+              message(STATUS "Reusing host flatc from ${TFLITE_HOST_TOOLS_DIR}")
+            else()
+              file(MAKE_DIRECTORY "${_root_host_flatc_dir}")
+              file(WRITE "${_root_host_flatc_dir}/CMakeLists.txt" "cmake_minimum_required(VERSION 3.16)\nproject(HostFlatc LANGUAGES C CXX)\ninclude(FetchContent)\nFetchContent_Declare(flatbuffers GIT_REPOSITORY https://github.com/google/flatbuffers.git GIT_TAG v25.2.10)\nset(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL \"\" FORCE)\nFetchContent_MakeAvailable(flatbuffers)\n")
+              execute_process(
+                COMMAND ${CMAKE_COMMAND} -S . -B . -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=/usr/bin/clang -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+                WORKING_DIRECTORY "${_root_host_flatc_dir}"
+                RESULT_VARIABLE HOSTCFG_RC
+                ERROR_VARIABLE HOSTCFG_ERR)
+              if(NOT HOSTCFG_RC EQUAL 0)
+                message(FATAL_ERROR "Failed to configure host flatbuffers:\n${HOSTCFG_ERR}")
+              endif()
+              execute_process(
+                COMMAND ${CMAKE_COMMAND} --build . --target flatc -- -j
+                WORKING_DIRECTORY "${_root_host_flatc_dir}"
+                RESULT_VARIABLE HOSTBUILD_RC
+                ERROR_VARIABLE HOSTBUILD_ERR)
+              if(NOT HOSTBUILD_RC EQUAL 0)
+                message(FATAL_ERROR "Failed to build host flatc:\n${HOSTBUILD_ERR}")
+              endif()
+              set(TFLITE_HOST_TOOLS_DIR "${_root_host_flatc_dir}/_deps/flatbuffers-build")
+              message(STATUS "Host flatc prepared at ${TFLITE_HOST_TOOLS_DIR}")
+            endif()
+          endif()
+
+          list(APPEND _tflite_extra_args -DTFLITE_HOST_TOOLS_DIR=${TFLITE_HOST_TOOLS_DIR})
+        endif()
         execute_process(
             COMMAND ${CMAKE_COMMAND} "${TFLITE_SOURCE_DIR}"
                 -DTFLITE_ENABLE_XNNPACK=ON
                 -DTFLITE_ENABLE_GPU=ON
                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                ${_tflite_extra_args}
             WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
             RESULT_VARIABLE TFLITE_CONFIGURE_RESULT
             OUTPUT_VARIABLE TFLITE_CONFIGURE_OUTPUT
@@ -59,10 +105,38 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
             message(FATAL_ERROR "Failed to configure TFLite:\n${TFLITE_CONFIGURE_ERROR}")
         endif()
 
+        # In this build. TFLite requires FlatBuffers 25.2.10.
+        set(FLATBUFFERS_REQUIRED_MAJOR 25)
+        set(FLATBUFFERS_REQUIRED_MINOR 2)
+        set(FLATBUFFERS_REQUIRED_REVISION 10)
+        set(TF_SRC_DIR "${TFLITE_BUILD_DIR}/tensorflow-src")
+        if(EXISTS "${TF_SRC_DIR}")
+            file(GLOB_RECURSE TF_FB_GENERATED_HDRS
+                 "${TF_SRC_DIR}/tensorflow/*.h")
+            foreach(HDR IN LISTS TF_FB_GENERATED_HDRS)
+                file(READ "${HDR}" _cnt)
+                if(_cnt MATCHES "static_assert\\(FLATBUFFERS_VERSION_MAJOR")
+                    set(_new "${_cnt}")
+                    string(REGEX REPLACE "FLATBUFFERS_VERSION_MAJOR[ ]*==[ ]*[0-9]+"
+                           "FLATBUFFERS_VERSION_MAJOR == ${FLATBUFFERS_REQUIRED_MAJOR}"
+                           _new "${_new}")
+                    string(REGEX REPLACE "FLATBUFFERS_VERSION_MINOR[ ]*==[ ]*[0-9]+"
+                           "FLATBUFFERS_VERSION_MINOR == ${FLATBUFFERS_REQUIRED_MINOR}"
+                           _new "${_new}")
+                    string(REGEX REPLACE "FLATBUFFERS_VERSION_REVISION[ ]*==[ ]*[0-9]+"
+                           "FLATBUFFERS_VERSION_REVISION == ${FLATBUFFERS_REQUIRED_REVISION}"
+                           _new "${_new}")
+                    if(NOT _new STREQUAL _cnt)
+                        file(WRITE "${HDR}" "${_new}")
+                    endif()
+                endif()
+            endforeach()
+        endif()
+
         # Build TFLite
         message(STATUS "Building TFLite (this will take several minutes)...")
         execute_process(
-            COMMAND ${CMAKE_COMMAND} --build . -- -j
+            COMMAND ${CMAKE_COMMAND} --build . --target tensorflow-lite -- -j
             WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
             RESULT_VARIABLE TFLITE_BUILD_RESULT
             OUTPUT_QUIET
@@ -105,8 +179,9 @@ include_directories(
     ${TENSORFLOW_SOURCE_DIR}
 )
 
-# Add OpenCL headers include directory if GPU is enabled
-if(LITERT_USE_GPU AND EXISTS "${TFLITE_BUILD_DIR}/opencl_headers")
+list(APPEND CMAKE_MODULE_PATH "${TFLITE_SOURCE_DIR}/tools/cmake/modules")
+
+if(EXISTS "${TFLITE_BUILD_DIR}/opencl_headers")
     include_directories(${TFLITE_BUILD_DIR}/opencl_headers)
 endif()
 
@@ -116,16 +191,35 @@ if(EXISTS "${TFLITE_BUILD_DIR}/FP16-source/include")
 endif()
 
 # Find FlatBuffers
-find_package(flatbuffers REQUIRED
-    PATHS ${TFLITE_BUILD_DIR}/_deps/flatbuffers-build
+find_package(flatbuffers QUIET
+    PATHS
+      ${TFLITE_BUILD_DIR}/_deps/flatbuffers-build
+      ${TFLITE_BUILD_DIR}/flatbuffers/CMake
+      ${TFLITE_BUILD_DIR}/flatbuffers-flatc/lib/cmake/flatbuffers
     NO_DEFAULT_PATH
 )
 
+if(NOT TARGET flatbuffers::flatbuffers)
+  add_library(flatbuffers::flatbuffers STATIC IMPORTED)
+  set_target_properties(flatbuffers::flatbuffers PROPERTIES
+    IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_BUILD_DIR}/flatbuffers/include"
+  )
+endif()
+
 # Find Abseil
-find_package(absl REQUIRED
-    PATHS ${TFLITE_BUILD_DIR}/_deps/abseil-cpp-build
-    NO_DEFAULT_PATH
-)
+find_package(absl REQUIRED)
+
+if(NOT TARGET tensorflow-lite)
+  if(EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
+    add_library(tensorflow-lite STATIC IMPORTED)
+    set_target_properties(tensorflow-lite PROPERTIES
+      IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/libtensorflow-lite.a"
+      INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
+      INTERFACE_LINK_LIBRARIES "${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a;${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a;${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a;${TFLITE_BUILD_DIR}/libxnnpack-delegate.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a;${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_blocking_counter.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context_get_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_cpuinfo.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_denormal.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_frontend.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepare_packed_matrices.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepacked_cache.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_system_aligned_alloc.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_thread_pool.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/profiler/libruy_profiler_instrumentation.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_trmul.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a;${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
+    )
+  endif()
+endif()
 
 # Platform detection
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -146,4 +240,8 @@ add_subdirectory(c)
 add_subdirectory(cc)
 add_subdirectory(core)
 add_subdirectory(runtime)
-add_subdirectory(compiler_plugin)
+add_subdirectory(compiler)
+add_subdirectory(vendors)
+if(LITERT_BUILD_TOOLS)
+  add_subdirectory(tools)
+endif()
