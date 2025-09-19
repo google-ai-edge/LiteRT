@@ -13,27 +13,30 @@
 # limitations under the License.
 
 """
-Macros to define pre-configured CTS test suites and run through the litert_device* macros.
+Macros to define pre-configured ATS test suites and run through the litert_device* macros.
 """
 
 load("//litert/integration_test:litert_device.bzl", "dispatch_device_rlocation", "is_npu_backend", "litert_device_exec", "plugin_device_rlocation")
 
-def litert_define_cts(
+def litert_define_ats(
         name,
         backend,
         dont_register = [],
+        do_register = [],
         param_seeds = {},
         extra_flags = []):
-    """Defines a pre-configured CTS test suite.
+    """Defines a pre-configured ATS test suite.
 
     Args:
       name: The name of the test suite.
       backend: The backend to use for the test suite.
       dont_register: A list of regular expressions for tests that should not be registered.
+      do_register: A list of regular expressions for tests that should be registered.
       param_seeds: A dictionary of parameter seeds for the test suite.
+      extra_flags: A list of extra flags to pass to the test suite.
     """
     exec_args = [
-        "--quiet=true",
+        "--quiet=false",
     ] + extra_flags
 
     if is_npu_backend(backend):
@@ -53,8 +56,19 @@ def litert_define_cts(
         else:
             dont_register_str = "({})".format("|".join(dont_register))
         exec_args.append(
-            "--dont_register=\\\"{}\\\"".format(dont_register_str),
+            "--dont_register='{}'".format(dont_register_str),
         )
+
+    if do_register:
+        if len(do_register) == 1:
+            do_register_str = do_register[0]
+        else:
+            do_register_str = "({})".format("|".join(do_register))
+
+        exec_args.append(
+            "--do_register='{}'".format(do_register_str),
+        )
+
     if param_seeds:
         exec_args.append(
             "--seeds=\"{}\"".format(",".join(["{}:{}".format(k, v) for k, v in param_seeds.items()])),
@@ -62,7 +76,7 @@ def litert_define_cts(
 
     litert_device_exec(
         name = name,
-        target = "//litert/cts:cts",
+        target = "//litert/ats:ats",
         backend_id = backend,
         exec_args = exec_args,
     )
