@@ -900,6 +900,24 @@ DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
     for (auto i = 0; i < num_node_inputs; ++i) {
       int tensor_idx = input_indices[i];
 
+      auto* tfl_tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, tensor_idx);
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Tensor not found for input index");
+      }
+
+      auto tensor_info_iter = tensor_buffer_infos_.find(tfl_tensor);
+      if (tensor_info_iter == tensor_buffer_infos_.end()) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Tensor info not found for input tensor");
+      }
+
+      auto& tensor_buffer_info = tensor_info_iter->second;
+      if (tensor_buffer_info.attached) {
+        continue;
+      }
+
       // Look up buffer handle by tensor ID
       auto handle_iter = tensor_idx_to_handle_.find(tensor_idx);
       if (handle_iter == tensor_idx_to_handle_.end()) {
@@ -918,6 +936,24 @@ DispatchDelegateKernel::AttachBuffersToInvocationContextsIfNeeded(
     TfLiteOpaqueNodeOutputs(node, &output_indices, &num_node_outputs);
     for (auto i = 0; i < num_node_outputs; ++i) {
       int tensor_idx = output_indices[i];
+
+      auto* tfl_tensor =
+          TfLiteOpaqueContextGetOpaqueTensor(context, tensor_idx);
+      if (!tfl_tensor) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Tensor not found for output index");
+      }
+
+      auto tensor_info_iter = tensor_buffer_infos_.find(tfl_tensor);
+      if (tensor_info_iter == tensor_buffer_infos_.end()) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Tensor info not found for output tensor");
+      }
+
+      auto& tensor_buffer_info = tensor_info_iter->second;
+      if (tensor_buffer_info.attached) {
+        continue;
+      }
 
       // Look up buffer handle by tensor ID
       auto handle_iter = tensor_idx_to_handle_.find(tensor_idx);
