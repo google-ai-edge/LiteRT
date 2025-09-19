@@ -14,7 +14,6 @@
 
 #include "litert/runtime/tensor_buffer_registry.h"
 
-#include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -24,11 +23,6 @@
 
 namespace litert {
 namespace internal {
-
-TensorBufferRegistry& TensorBufferRegistry::GetInstance() {
-  static auto* instance = absl::IgnoreLeak(new TensorBufferRegistry());
-  return *instance;
-}
 
 litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
     LiteRtTensorBufferType buffer_type,

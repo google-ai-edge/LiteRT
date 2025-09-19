@@ -18,13 +18,15 @@
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/environment.h"
 #include "litert/runtime/tensor_buffer_registry.h"
 
 LiteRtStatus LiteRtRegisterTensorBufferHandlers(
-    LiteRtTensorBufferType buffer_type, CreateCustomTensorBuffer create_func,
+    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
     UnlockCustomTensorBuffer unlock_func) {
-  auto& registry = litert::internal::TensorBufferRegistry::GetInstance();
+  auto& registry = env->GetTensorBufferRegistry();
   litert::internal::CustomTensorBufferHandlers handlers = {
       .create_func = create_func,
       .destroy_func = destroy_func,
@@ -35,8 +37,8 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtGetTensorBufferRegistry(void** registry) {
-  *registry = reinterpret_cast<void*>(
-      &litert::internal::TensorBufferRegistry::GetInstance());
+LiteRtStatus LiteRtGetTensorBufferRegistry(LiteRtEnvironment env,
+                                           void** registry) {
+  *registry = reinterpret_cast<void*>(&env->GetTensorBufferRegistry());
   return kLiteRtStatusOk;
 }
