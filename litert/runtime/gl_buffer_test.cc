@@ -101,6 +101,52 @@ TEST(Buffer, GlBufferAllocFromAhwb) {
   LITERT_EXPECT_OK(gl_buffer.Unlock<float>());
 }
 
+TEST(Buffer, GlBufferNullDeallocator) {
+  if (!LiteRtHasOpenGlSupport()) {
+    GTEST_SKIP() << "OpenGL buffers are not supported on this platform";
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateGpuEnabledEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_env, env->GetGpuEnvironment());
+
+  LiteRtGLuint id = 0;
+  LiteRtGLenum target = 0;
+  size_t size_bytes = 4 * sizeof(float);
+  size_t offset = 0;
+#if LITERT_HAS_OPENGL_SUPPORT
+  target = GL_SHADER_STORAGE_BUFFER;
+  glGenBuffers(1, &id);
+  ASSERT_NE(id, 0);
+  glBindBuffer(target, id);
+  glBufferData(target, size_bytes, nullptr, GL_STATIC_DRAW);
+  glBindBuffer(target, 0);
+#endif
+
+  {
+    GlBuffer gl_buffer(gpu_env, target, id, size_bytes, offset,
+                       /*deallocator=*/nullptr);
+    LITERT_ASSERT_OK_AND_ASSIGN(float* data, gl_buffer.Lock<float>());
+    EXPECT_NE(data, nullptr);
+    for (int i = 0; i < 4; ++i) {
+      data[i] = i;
+    }
+    LITERT_ASSERT_OK(gl_buffer.Unlock<float>());
+  }
+  // buffer id should not be deallocated here and can be reused.
+  GlBuffer gl_buffer(gpu_env, target, id, size_bytes, offset,
+                     /*deallocator=*/nullptr);
+  LITERT_ASSERT_OK_AND_ASSIGN(float* data, gl_buffer.Lock<float>());
+  EXPECT_NE(data, nullptr);
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(data[i], i);
+  }
+  LITERT_ASSERT_OK(gl_buffer.Unlock<float>());
+
+#if LITERT_HAS_OPENGL_SUPPORT
+  glDeleteBuffers(1, &id);
+#endif
+}
+
 TEST(Buffer, NegativeFenceAhwbRead) {
   if (!LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "AHWB support is not enabled on this platform";
