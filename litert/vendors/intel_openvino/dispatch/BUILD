@@ -34,6 +34,7 @@ litert_dynamic_lib(
     ],
     copts = [
         "-Os",
+        "-fexceptions",
         "-fno-unwind-tables",
         "-fno-asynchronous-unwind-tables",
         "-ffunction-sections",
@@ -82,7 +83,7 @@ litert_bin(
         "dispatch_api.cc",
         "invocation_context.cc",
     ],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -91,6 +92,10 @@ litert_bin(
             "-DLITERT_COMPILE_LIBRARY",
             "-Wno-sign-compare",
         ],
+        "//conditions:default": [],
+    }),
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
     linkshared = 1,
@@ -116,6 +121,7 @@ litert_lib(
         "device_context.h",
         "invocation_context.h",
     ],
+    copts = ["-fexceptions",],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
@@ -151,6 +157,7 @@ cc_test(
         "no_oss",
         "notap",
     ],
+    copts = ["-fexceptions",],
     deps = [
         ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",

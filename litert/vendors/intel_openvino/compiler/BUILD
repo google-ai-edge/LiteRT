@@ -26,7 +26,7 @@ litert_dynamic_lib(
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -56,7 +56,7 @@ litert_dynamic_lib(
 litert_bin(
     name = "LiteRtCompilerPlugin",
     srcs = ["openvino_compiler_plugin.cc"],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -85,6 +85,7 @@ litert_lib(
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
+    copts = ["-fexceptions"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
     ],
@@ -98,6 +99,7 @@ litert_lib(
     ],
     copts = [
         "-Wno-unused-variable",
+        "-fexceptions",
     ],
     deps = [
         ":decoder",
@@ -113,6 +115,7 @@ litert_lib(
     name = "decoder",
     srcs = ["decoder.cc"],
     hdrs = ["decoder.h"],
+    copts = ["-fexceptions"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
@@ -136,6 +139,7 @@ litert_test(
     tags = [
         "notap",
     ],
+    copts = ["-fexceptions"],
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -155,6 +159,7 @@ litert_test(
     srcs = [
         "openvino_compiler_plugin_test.cc",
     ],
+    copts = ["-fexceptions"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
