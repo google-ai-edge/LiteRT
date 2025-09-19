@@ -560,12 +560,6 @@ cc_test(
 )
 
 filegroup(
-    name = "litert_model_srcs",
-    srcs = ["litert_model.cc"],
-    visibility = ["//litert/core/model:__pkg__"],
-)
-
-filegroup(
     name = "litert_model_hdrs",
     srcs = [
         "litert_model.h",
