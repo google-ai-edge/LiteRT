@@ -33,6 +33,7 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -823,11 +824,9 @@ Expected<LiteRtTensorBufferPtr> DispatchDelegateKernel::AllocateTensorBuffer(
   const auto& supported_types = requirements_ptr->SupportedBufferTypes();
 
   LiteRtTensorBufferType buffer_type = supported_types[0];
-  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type,
+  LITERT_ASSIGN_OR_RETURN(LiteRtRankedTensorType litert_tensor_type,
                           ConvertTensorType(tfl_tensor));
   size_t buffer_size = requirements_ptr->BufferSize();
-  LiteRtRankedTensorType litert_tensor_type =
-      static_cast<LiteRtRankedTensorType>(tensor_type);
 
   LiteRtTensorBufferT* tensor_buffer;
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(

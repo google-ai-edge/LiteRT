@@ -123,7 +123,7 @@ Expected<void> CustomOpDispatcher::PrepareHelper(void* user_data,
     auto* tfl_opaque_tensor = TfLiteOpaqueNodeGetInput(context, node, i);
     LITERT_ASSIGN_OR_RETURN(auto layout,
                             ConvertTensorLayout(tfl_opaque_tensor));
-    if (layout.HasStrides()) {
+    if (layout.has_strides) {
       return Unexpected(
           kLiteRtStatusErrorInvalidArgument,
           absl::StrFormat("Unexpected layout with strides for tensor %s",

@@ -19,10 +19,8 @@
 #include <functional>
 
 #include "litert/c/litert_layout.h"
-#include "litert/cc/litert_element_type.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/options.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_types.h"
@@ -38,12 +36,10 @@ TfLiteStatus SetCustomAllocationForInputTensor(
     tflite::Interpreter* interpreter,
     const LiteRtExternalTensorBinding& binding);
 
-Expected<ElementType> ConvertElementType(TfLiteType tfl_type);
-
-Expected<Layout> ConvertTensorLayout(
+Expected<LiteRtLayout> ConvertTensorLayout(
     const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
-Expected<RankedTensorType> ConvertTensorType(
+Expected<LiteRtRankedTensorType> ConvertTensorType(
     const TfLiteOpaqueTensor* tfl_opaque_tensor);
 
 // Resize a given `tfl_opaque_tensor` based on a given `layout`.
