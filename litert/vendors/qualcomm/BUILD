@@ -17,7 +17,7 @@
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//litert/build_common:litert_build_defs.bzl", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
@@ -86,6 +86,14 @@ litert_cc_lib_with_qnn(
 litert_test(
     name = "qnn_manager_test",
     srcs = ["qnn_manager_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     tags = [
         "no-remote-exec",

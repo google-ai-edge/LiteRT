@@ -126,13 +126,13 @@ bool HtpBackend::Init(const Options& options,
   QnnHtpDevice_DeviceInfoExtension_t* htp_device_info_extension =
       &AllocHtpDeviceInfoExtension();
   htp_device_info_extension->devType = QNN_HTP_DEVICE_TYPE_ON_CHIP;
-  htp_device_info_extension->onChipDevice.vtcmSize = soc_info->vtcm_size_in_mb;
+  htp_device_info_extension->onChipDevice.vtcmSize = soc_info_.vtcm_size_in_mb;
   // TODO(jiunkaiy): Given by user, default value is unsigned pd
   htp_device_info_extension->onChipDevice.signedPdSupport = false;
   htp_device_info_extension->onChipDevice.socModel =
-      static_cast<uint32_t>(soc_info->soc_model);
+      static_cast<uint32_t>(soc_info_.soc_model);
   htp_device_info_extension->onChipDevice.arch =
-      static_cast<QnnHtpDevice_Arch_t>(soc_info->dsp_arch);
+      static_cast<QnnHtpDevice_Arch_t>(soc_info_.dsp_arch);
   // TODO(jiunkaiy): For Htp, dlbcSupport is true
   htp_device_info_extension->onChipDevice.dlbcSupport = true;
   hardware_device_info->v1.deviceInfoExtension = htp_device_info_extension;
