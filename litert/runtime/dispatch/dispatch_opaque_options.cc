@@ -14,12 +14,13 @@
 
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
 
+#include <cstring>
+
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 
 namespace litert::internal {
 
@@ -33,12 +34,13 @@ struct Payload {
 }  // namespace
 
 Expected<DispatchDelegateOptions> DispatchDelegateOptions::Create(
-    OpaqueOptions& options) {
-  const auto id = options.GetIdentifier();
-  if (!id || *id != Discriminator()) {
+    LiteRtOpaqueOptions options) {
+  const char* id;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsIdentifier(options, &id));
+  if (!id || strcmp(id, Discriminator()) != 0) {
     return Error(kLiteRtStatusErrorInvalidArgument);
   }
-  return DispatchDelegateOptions(options.Get(), OwnHandle::kNo);
+  return DispatchDelegateOptions(options, OwnHandle::kNo);
 }
 
 Expected<DispatchDelegateOptions> DispatchDelegateOptions::Create() {
@@ -47,28 +49,36 @@ Expected<DispatchDelegateOptions> DispatchDelegateOptions::Create() {
       Discriminator(), new Payload(),
       [](void* payload) { delete reinterpret_cast<Payload*>(payload); },
       &opaque_options));
-  return DispatchDelegateOptions(opaque_options, OwnHandle::kYes);
+  return DispatchDelegateOptions(opaque_options);
 }
 
 // TODO LUKE document
 Expected<void> DispatchDelegateOptions::SetAllocBase(const void* alloc_base) {
-  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  void* void_payload;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &void_payload));
+  Payload* payload = reinterpret_cast<Payload*>(void_payload);
   payload->alloc_base = alloc_base;
   return {};
 }
 Expected<const void*> DispatchDelegateOptions::GetAllocBase() {
-  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  void* void_payload;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &void_payload));
+  Payload* payload = reinterpret_cast<Payload*>(void_payload);
   return payload->alloc_base;
 }
 
 // TODO LUKE document
 Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
-  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  void* void_payload;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &void_payload));
+  Payload* payload = reinterpret_cast<Payload*>(void_payload);
   payload->alloc_base_fd = alloc_base_fd;
   return {};
 }
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
-  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  void* void_payload;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptionsData(Get(), &void_payload));
+  Payload* payload = reinterpret_cast<Payload*>(void_payload);
   return payload->alloc_base_fd;
 }
 

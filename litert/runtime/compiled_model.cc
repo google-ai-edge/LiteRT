@@ -40,6 +40,7 @@
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -286,25 +287,24 @@ namespace {
 class ScopedCompilationOptionsModifier {
  public:
   explicit ScopedCompilationOptionsModifier(LiteRtOptions compilation_options)
-      : accelerator_options_(compilation_options->options) {}
+      : accelerator_options_(&compilation_options->options) {}
 
   ~ScopedCompilationOptionsModifier() {
     // Remove any option that was appended during the lifetime of this object.
     while (--num_appended_options_ >= 0) {
-      accelerator_options_.Pop();
+      LiteRtPopOpaqueOptions(accelerator_options_);
     }
   }
 
-  Expected<void> Append(litert::OpaqueOptions&& accelerator_options) {
-    auto status = accelerator_options_.Append(std::move(accelerator_options));
-    if (status) {
-      ++num_appended_options_;
-    }
-    return status;
+  Expected<void> Append(const LiteRtOpaqueOptions accelerator_options) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtAppendOpaqueOptions(accelerator_options_, accelerator_options));
+    ++num_appended_options_;
+    return {};
   }
 
  private:
-  litert::OpaqueOptions& accelerator_options_;
+  LiteRtOpaqueOptions* const accelerator_options_;
   int num_appended_options_ = 0;
 };
 
@@ -349,7 +349,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
-    LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
+    LITERT_RETURN_IF_ERROR(scoped_modifier.Append(dispatch_options.Release()));
   }
 
   // Apply accelerators matching the requested hardware support to the
