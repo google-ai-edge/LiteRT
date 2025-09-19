@@ -40,22 +40,17 @@ cc_test(
     tags = ["no_oss"],
     deps = [
         ":configure",
-        ":executor",
+        ":fixture",
         ":register",
-        "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_detail",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_rng",
-        "//litert/core/model",
-        "//litert/core/util:flatbuffer_tools_testonly",
-        "//litert/test:matchers",
-        "//litert/test:rng_fixture",
+        "//litert/test/generators",
+        "//litert/test/generators:common",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -71,6 +66,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_rng",
+        "//litert/core:filesystem_testonly",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -102,14 +98,17 @@ cc_library(
     hdrs = ["register.h"],
     deps = [
         ":configure",
-        ":executor",
+        "//litert/c:litert_common",
         "//litert/c:litert_logging",
-        "//litert/c:litert_op_code",
         "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
         "//litert/cc:litert_rng",
+        "//litert/core/model:model_load",
+        "//litert/test:simple_buffer",
         "//litert/test/generators",
-        "//tflite/schema:schema_fbs",
-        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -126,6 +125,31 @@ cc_test(
         "//litert/test/generators:graph_helpers",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "fixture",
+    testonly = True,
+    hdrs = ["fixture.h"],
+    deps = [
+        ":configure",
+        ":executor",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/cc:litert_c_types_printing",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/model",
+        "//litert/test:matchers",
+        "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
+        "//litert/test/generators:common",
+        "//testing/base/public:gunit_for_library_testonly",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -148,15 +172,40 @@ litert_device_test(
     ],
 )
 
+cc_test(
+    name = "check_ats",
+    srcs = ["check_ats.cc"],
+    data = ["//litert/test:testdata/simple_model.tflite"],
+    deps = [
+        ":configure",
+        ":fixture",
+        ":register",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/test:common",
+        "//litert/test/generators:common",
+        "//litert/test/generators:no_op",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
-# An example CTS configuration for the CPU backend that filters out some tests.
 litert_define_ats(
     name = "sample_cpu_ats",
     backend = "cpu",
-    dont_register = [
-        "tfl\\.add\\{([^\\}]+)\\}.*\\((?!.*i32).*?\\)",
-        "tfl\\.sub\\{([^\\}]+)\\}.*6d.*",
+)
+
+litert_define_ats(
+    name = "example_npu_ats",
+    backend = "example",
+    do_register = [
+        "sub.*f32",
+        "mul.*f32",
     ],
 )
 
