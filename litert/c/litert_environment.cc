@@ -94,24 +94,24 @@ LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSupportsClGlInterop(LiteRtEnvironment environment,
-                                       bool* is_supported) {
+LiteRtStatus LiteRtEnvironmentSupportsClGlInterop(LiteRtEnvironment environment,
+                                                  bool* is_supported) {
   LITERT_RETURN_IF_ERROR(environment != nullptr)
       << "Environment pointer is null.";
   *is_supported = environment->SupportsClGlInterop();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSupportsAhwbClInterop(LiteRtEnvironment environment,
-                                         bool* is_supported) {
+LiteRtStatus LiteRtEnvironmentSupportsAhwbClInterop(
+    LiteRtEnvironment environment, bool* is_supported) {
   LITERT_RETURN_IF_ERROR(environment != nullptr)
       << "Environment pointer is null.";
   *is_supported = environment->SupportsAhwbClInterop();
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtSupportsAhwbGlInterop(LiteRtEnvironment environment,
-                                         bool* is_supported) {
+LiteRtStatus LiteRtEnvironmentSupportsAhwbGlInterop(
+    LiteRtEnvironment environment, bool* is_supported) {
   LITERT_RETURN_IF_ERROR(environment != nullptr)
       << "Environment pointer is null.";
   *is_supported = environment->SupportsAhwbGlInterop();
