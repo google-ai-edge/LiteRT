@@ -309,10 +309,10 @@ Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromBuffer(
 }
 
 Expected<FlatbufferWrapper::Ptr> FlatbufferWrapper::CreateFromTflFile(
-    absl::string_view path) {
+    absl::string_view path, bool allow_modifications) {
   auto error_reporter = tflite::DefaultErrorReporter();
-  auto allocation =
-      tflite::GetAllocationFromFile(path.data(), error_reporter);
+  auto allocation = tflite::GetAllocationFromFile(path.data(), error_reporter,
+                                                  allow_modifications);
   return FlatbufferWrapper::CreateFromAllocation(std::move(allocation));
 }
 

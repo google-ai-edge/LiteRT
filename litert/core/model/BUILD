@@ -25,9 +25,7 @@ package(
 
 cc_library_with_testonly_vis(
     name = "model",
-    srcs = [
-        "model.cc",
-    ],
+    srcs = ["model.cc"],
     hdrs = [
         "model.h",
         "//litert/c:litert_model_hdrs",

@@ -20,34 +20,34 @@ set(LITERT_RUNTIME_SOURCES
     accelerators/auto_registration.cc
     accelerators/dispatch/dispatch_accelerator.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
+    ahwb_buffer.cc
     compiled_model.cc
     custom_buffer.cc
     custom_op_dispatcher.cc
-    dmabuf_buffer.cc
     dispatch/dispatch_delegate.cc
     dispatch/dispatch_delegate_kernel.cc
     dispatch/dispatch_opaque_options.cc
     dispatch/litert_dispatch.cc
+    dmabuf_buffer.cc
     event.cc
     external_litert_buffer_context.cc
     fastrpc_buffer.cc
-    ion_buffer.cc
-    ahwb_buffer.cc
     gpu_environment.cc
     # Always compile GL buffer/texture sources; they contain internal stubs
     # when LITERT_HAS_OPENGL_SUPPORT is 0 so they are safe to include on CPU-only builds.
     gl_buffer.cc
     gl_texture.cc
-
+    ion_buffer.cc
+    magic_number_utils.cc
     profiler.cc
-    tensor_buffer_registry.cc
     tensor_buffer.cc
+    tensor_buffer_registry.cc
     tensor_buffer_requirements.cc
     tfl_utils.cc
-    ${TFLITE_SOURCE_DIR}/profiling/profile_buffer.cc
-    ${TFLITE_SOURCE_DIR}/profiling/memory_info.cc
-    ${TFLITE_SOURCE_DIR}/profiling/time.cc
     ${TFLITE_SOURCE_DIR}/delegates/utils/simple_opaque_delegate.cc
+    ${TFLITE_SOURCE_DIR}/profiling/memory_info.cc
+    ${TFLITE_SOURCE_DIR}/profiling/profile_buffer.cc
+    ${TFLITE_SOURCE_DIR}/profiling/time.cc
 )
 
 # Runtime library

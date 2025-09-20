@@ -259,7 +259,8 @@ class FlatbufferWrapper {
 
   // TODO Don't return a unique_ptr, this can just be a move only type, all the
   // fields are unique_ptrs. Load flatbuffer from file.
-  static Expected<Ptr> CreateFromTflFile(absl::string_view path);
+  static Expected<Ptr> CreateFromTflFile(absl::string_view path,
+                                         bool allow_modifications = false);
 
   // The caller must ensure that the buffer remains valid for the lifetime of
   // the model.

@@ -320,6 +320,49 @@ cc_library(
 )
 
 cc_library(
+    name = "magic_number_utils",
+    srcs = ["magic_number_utils.cc"],
+    hdrs = ["magic_number_utils.h"],
+    deps = [
+        "//litert/c:litert_any",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core:environment",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//tflite:framework",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers//:runtime_cc",
+    ],
+)
+
+cc_test(
+    name = "magic_number_utils_test",
+    srcs = ["magic_number_utils_test.cc"],
+    data = ["//litert/test:testdata/model_magic_test.tflite"],
+    deps = [
+        ":magic_number_utils",
+        "//litert/c:litert_any",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/core:environment",
+        "//litert/core/model",
+        "//litert/core/model:model_load",
+        "//litert/runtime:gpu_environment",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "compiled_model",
     srcs = ["compiled_model.cc"],
     hdrs = [
@@ -337,6 +380,7 @@ cc_library(
         ":external_litert_buffer_context",
         ":litert_cpu_options",
         ":litert_runtime_options",
+        ":magic_number_utils",
         ":metrics",
         ":profiler",
         ":tensor_buffer",
@@ -394,9 +438,7 @@ cc_library(
 cc_test(
     name = "compiled_model_test",
     srcs = ["compiled_model_test.cc"],
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-    ],
+    data = ["//litert/test:testdata/simple_model.tflite"],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],

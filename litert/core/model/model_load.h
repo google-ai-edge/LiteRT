@@ -25,8 +25,11 @@
 
 namespace litert::internal {
 
+// Loads a model from a file. If allow_modifications is true, then the model
+// can be modified in place, for example, model would be mmap'ed with writable
+// flag and private mapping (not to update the model file on disk).
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromFile(
-    absl::string_view filename);
+    absl::string_view filename, bool allow_modifications = false);
 
 Expected<std::unique_ptr<LiteRtModelT>> LoadModelFromBuffer(
     BufferRef<uint8_t> buffer);

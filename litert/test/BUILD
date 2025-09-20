@@ -61,12 +61,8 @@ filegroup(
 cc_library(
     name = "common",
     testonly = 1,
-    srcs = [
-        "common.cc",
-    ],
-    hdrs = [
-        "common.h",
-    ],
+    srcs = ["common.cc"],
+    hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -91,12 +87,8 @@ cc_library(
 cc_library(
     name = "simple_model",
     testonly = 1,
-    hdrs = [
-        "testdata/simple_model_test_vectors.h",
-    ],
-    data = [
-        "testdata/simple_model.tflite",
-    ],
+    hdrs = ["testdata/simple_model_test_vectors.h"],
+    data = ["testdata/simple_model.tflite"],
     deps = [
         "//litert/c:litert_model",
         "//litert/cc:litert_layout",
@@ -107,12 +99,8 @@ cc_library(
     name = "simple_model_custom_op",
     testonly = 1,
     srcs = [],
-    hdrs = [
-        "testdata/simple_model_custom_op_test_vectors.h",
-    ],
-    data = [
-        "testdata/simple_model_custom_op.tflite",
-    ],
+    hdrs = ["testdata/simple_model_custom_op_test_vectors.h"],
+    data = ["testdata/simple_model_custom_op.tflite"],
     deps = [
         "//litert/c:litert_model",
         "//litert/cc:litert_layout",
@@ -123,9 +111,7 @@ cc_library(
     name = "simple_model_npu",
     testonly = 1,
     srcs = [],
-    hdrs = [
-        "testdata/simple_model_test_vectors.h",
-    ],
+    hdrs = ["testdata/simple_model_test_vectors.h"],
     data = [
         "testdata/simple_add_uint16_qualcomm.bin",
         "testdata/simple_model_google_tensor.bin",
@@ -143,9 +129,7 @@ cc_library(
     name = "simple_cascade_model_npu",
     testonly = 1,
     srcs = [],
-    hdrs = [
-        "testdata/simple_cascade_model_test_vectors.h",
-    ],
+    hdrs = ["testdata/simple_cascade_model_test_vectors.h"],
     data = [
         "testdata/simple_cascade_model_npu.tflite",
         "testdata/simple_model_google_tensor.bin",
@@ -161,9 +145,7 @@ cc_library(
     name = "simple_mixed_cascade_model_npu",
     testonly = 1,
     srcs = [],
-    hdrs = [
-        "testdata/simple_mixed_cascade_model_test_vectors.h",
-    ],
+    hdrs = ["testdata/simple_mixed_cascade_model_test_vectors.h"],
     data = [
         "testdata/simple_mixed_cascade_model_npu.tflite",
         "testdata/simple_model_google_tensor.bin",
@@ -297,18 +279,21 @@ cc_test(
     ],
 )
 
-exports_files(srcs = [
-    "testdata/mobilenet_v2_1.0_224.tflite",
-    "testdata/model_with_external_weights.tflite",
-    "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
-    "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
-    "testdata/simple_add_op_qc_v75_precompiled.tflite",
-    "testdata/simple_add_uint16_qualcomm.bin",
-    "testdata/simple_model_google_tensor.bin",
-    "testdata/simple_model_mtk.bin",
-    "testdata/simple_model_npu_google_tensor_precompiled.tflite",
-    "testdata/simple_model_npu_mediatek_mt6989_precompiled.tflite",
-    "testdata/simple_model_qualcomm.bin",
-    "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
-    "testdata/simple_quantized_ops.tflite",
-])
+exports_files(
+    srcs = [
+        "testdata/mobilenet_v2_1.0_224.tflite",
+        "testdata/model_magic_test.tflite",
+        "testdata/model_with_external_weights.tflite",
+        "testdata/shared_input_cpu_npu_google_tensor_precompiled.tflite",
+        "testdata/simple_add_op_google_tensor_p25_precompiled.tflite",
+        "testdata/simple_add_op_qc_v75_precompiled.tflite",
+        "testdata/simple_add_uint16_qualcomm.bin",
+        "testdata/simple_model_google_tensor.bin",
+        "testdata/simple_model_mtk.bin",
+        "testdata/simple_model_npu_google_tensor_precompiled.tflite",
+        "testdata/simple_model_npu_mediatek_mt6989_precompiled.tflite",
+        "testdata/simple_model_qualcomm.bin",
+        "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
+        "testdata/simple_quantized_ops.tflite",
+    ],
+)

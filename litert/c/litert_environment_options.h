@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_ENVIRONMENT_OPTIONS_H_
 #define ODML_LITERT_LITERT_C_LITERT_ENVIRONMENT_OPTIONS_H_
 
+#include <stdint.h>
+
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 
@@ -40,12 +42,59 @@ typedef enum {
   kLiteRtEnvOptionTagVulkanCommandPool = 13,
   kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy = 14,
   kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy = 15,
+  kLiteRtEnvOptionTagMagicNumberConfigs = 16,
+  kLiteRtEnvOptionTagMagicNumberVerifications = 17,
 } LiteRtEnvOptionTag;
 
 typedef struct {
   LiteRtEnvOptionTag tag;
   LiteRtAny value;
 } LiteRtEnvOption;
+
+// Arbitrary size of array following the pattern in TfLiteIntArray.
+#if defined(_MSC_VER)
+#define _LITERT_ARBITRARY_ARRAY_SIZE 1
+#elif (!defined(__clang__) && defined(__GNUC__) && __GNUC__ == 6 && \
+       __GNUC_MINOR__ >= 1) ||                                      \
+    defined(HEXAGON) ||                                             \
+    (defined(__clang__) && __clang_major__ == 7 && __clang_minor__ == 1)
+#define _LITERT_ARBITRARY_ARRAY_SIZE 0
+#else
+#define _LITERT_ARBITRARY_ARRAY_SIZE
+#endif
+
+typedef struct {
+  int64_t magic_number;
+  int64_t target_number;
+  // Prefix of signatures to update magic numbers. If null or empty, all
+  // signatures will be updated.
+  // This C string is owned by the user of LiteRT runtime and must outlive until
+  // model is initialized.
+  const char* signature_prefix;
+} LiteRtMagicNumberConfig;
+
+// Magic number replacement configs set as an option with a pointer to this
+// structure.
+typedef struct {
+  int64_t num_configs;
+  LiteRtMagicNumberConfig configs[_LITERT_ARBITRARY_ARRAY_SIZE];
+} LiteRtMagicNumberConfigs;
+
+typedef struct {
+  // Signature with magic numbers replaced.
+  // This C string is owned by the user of LiteRT runtime and must outlive until
+  // model is initialized.
+  const char* signature;
+  // Signature to test against for verification.
+  // This C string is owned by the user of LiteRT runtime and must outlive until
+  // model is initialized.
+  const char* test_signature;
+} LiteRtMagicNumberVerification;
+
+typedef struct {
+  int64_t num_verifications;
+  LiteRtMagicNumberVerification verifications[_LITERT_ARBITRARY_ARRAY_SIZE];
+} LiteRtMagicNumberVerifications;
 
 // Retrieves the value corresponding to the given tag.
 //

@@ -66,6 +66,7 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/litert_cpu_options.h"
 #include "litert/runtime/litert_runtime_options.h"
+#include "litert/runtime/magic_number_utils.h"
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -220,8 +221,10 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
 Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
     LiteRtOptions options, LiteRtEnvironmentT& env) {
-  bool need_reserialization = false;
+  LITERT_RETURN_IF_ERROR(
+      litert::internal::ReplaceMagicNumbersIfAny(env, model));
 
+  bool need_reserialization = false;
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
     LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
     // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the

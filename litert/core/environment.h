@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
