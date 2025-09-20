@@ -172,6 +172,11 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModel::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
+    LITERT_ASSIGN_OR_RETURN(auto fully, api.IsFullyAccelerated());
+    if (!fully) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Model is not fully accelerated.");
+    }
     return NpuCompiledModelExecutor(std::move(api), std::move(options),
                                     std::move(env));
   }
