@@ -58,7 +58,7 @@ TEST(TensorPoolConvertStaticTensorTest, SameTypeConversionFloat32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<float>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<float>();
+  auto converted_data = res->GetTensorData<float>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());
@@ -79,7 +79,7 @@ TEST(TensorPoolConvertStaticTensorTest, SameTypeConversionInt32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<std::int32_t>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<std::int32_t>();
+  auto converted_data = res->GetTensorData<std::int32_t>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());
@@ -100,7 +100,7 @@ TEST(TensorPoolConvertStaticTensorTest, ExpandTypeConversionFloat32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<double>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<double>();
+  auto converted_data = res->GetTensorData<double>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());
@@ -121,7 +121,7 @@ TEST(TensorPoolConvertStaticTensorTest, ExpandTypeConversionInt32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<std::int64_t>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<std::int64_t>();
+  auto converted_data = res->GetTensorData<std::int64_t>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());
@@ -142,7 +142,7 @@ TEST(TensorPoolConvertStaticTensorTest, NarrowTypeConversionFloat32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<float>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<float>();
+  auto converted_data = res->GetTensorData<float>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());
@@ -163,7 +163,7 @@ TEST(TensorPoolConvertStaticTensorTest, NarrowTypeConversionInt32) {
   auto* res = tensor_pool.ConvertStaticTensorFrom<std::int32_t>(tensor_wrapper);
   ASSERT_NE(res, nullptr);
 
-  auto converted_data = res->GetStaticTensorData<std::int32_t>();
+  auto converted_data = res->GetTensorData<std::int32_t>();
   ASSERT_TRUE(converted_data.has_value());
 
   ASSERT_EQ(tensor_data.size(), converted_data->size());

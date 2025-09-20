@@ -10,11 +10,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <limits>
+#include <optional>
+#include <string_view>
 #include <memory>
 #include <type_traits>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/schema/soc_table.h"
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 namespace qnn {
@@ -59,5 +62,6 @@ DLHandle CreateDLHandle(const char* path);
 const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(void* handle,
                                             Qnn_Version_t expected_qnn_version);
 
+std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name);
 }  // namespace qnn
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_

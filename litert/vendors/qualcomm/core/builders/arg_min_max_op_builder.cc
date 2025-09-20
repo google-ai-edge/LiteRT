@@ -23,7 +23,7 @@ constexpr size_t kOutputIndex = 0;
 bool GetAxis(std::uint32_t& axis, const TensorWrapper& axis_tensor,
              const std::uint32_t input_rank) {
   if (const auto opt_axis_data =
-          axis_tensor.GetStaticTensorData<std::int32_t>();
+          axis_tensor.GetTensorData<std::int32_t>();
       opt_axis_data.has_value()) {
     const auto axis_data = opt_axis_data.value();
     axis = axis_data[0] >= 0 ? axis_data[0] : axis_data[0] + input_rank;
@@ -31,7 +31,7 @@ bool GetAxis(std::uint32_t& axis, const TensorWrapper& axis_tensor,
   }
 
   if (const auto opt_axis_data =
-          axis_tensor.GetStaticTensorData<std::int64_t>();
+          axis_tensor.GetTensorData<std::int64_t>();
       opt_axis_data.has_value()) {
     const auto axis_data = opt_axis_data.value();
     const auto axis_value = static_cast<std::int32_t>(axis_data[0]);
