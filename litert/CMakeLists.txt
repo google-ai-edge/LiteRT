@@ -15,6 +15,48 @@
 cmake_minimum_required(VERSION 3.20)
 project(LiteRT VERSION 1.4.0 LANGUAGES CXX C)
 
+function(_litert_overlay_converter_sources TF_SRC_ROOT)
+  set(_overlay_root "${CMAKE_CURRENT_SOURCE_DIR}/../tflite/converter")
+  if(NOT EXISTS "${TF_SRC_ROOT}")
+    message(WARNING "LiteRT: TFLite source root '${TF_SRC_ROOT}' not found; converter overlay skipped")
+    return()
+  endif()
+
+  set(_overlay_srcs
+    "${_overlay_root}/allocation.h"
+    "${_overlay_root}/mmap_allocation.cc"
+    "${_overlay_root}/mmap_allocation_disabled.cc"
+    "${_overlay_root}/core/model_builder_base.cc"
+    "${_overlay_root}/core/model_builder_base.h"
+  )
+
+  set(_overlay_dests
+    "tensorflow/compiler/mlir/lite/allocation.h"
+    "tensorflow/compiler/mlir/lite/mmap_allocation.cc"
+    "tensorflow/compiler/mlir/lite/mmap_allocation_disabled.cc"
+    "tensorflow/compiler/mlir/lite/core/model_builder_base.cc"
+    "tensorflow/compiler/mlir/lite/core/model_builder_base.h"
+  )
+
+  list(LENGTH _overlay_srcs _count)
+  math(EXPR _last "${_count} - 1")
+  foreach(_idx RANGE ${_last})
+    list(GET _overlay_srcs ${_idx} _src)
+    list(GET _overlay_dests ${_idx} _rel_dst)
+    if(NOT EXISTS "${_src}")
+      message(WARNING "LiteRT: converter overlay source '${_src}' missing")
+      continue()
+    endif()
+    set(_dst "${TF_SRC_ROOT}/${_rel_dst}")
+    get_filename_component(_dst_dir "${_dst}" DIRECTORY)
+    file(MAKE_DIRECTORY "${_dst_dir}")
+    file(READ "${_src}" _content)
+    string(REPLACE "\"tflite/converter/" "\"tensorflow/compiler/mlir/lite/" _content "${_content}")
+    string(REPLACE "<tflite/converter/" "<tensorflow/compiler/mlir/lite/" _content "${_content}")
+    file(WRITE "${_dst}" "${_content}")
+  endforeach()
+endfunction()
+
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -111,6 +153,7 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
         set(FLATBUFFERS_REQUIRED_REVISION 10)
         set(TF_SRC_DIR "${TFLITE_BUILD_DIR}/tensorflow-src")
         if(EXISTS "${TF_SRC_DIR}")
+            _litert_overlay_converter_sources("${TF_SRC_DIR}")
             file(GLOB_RECURSE TF_FB_GENERATED_HDRS
                  "${TF_SRC_DIR}/tensorflow/*.h")
             foreach(HDR IN LISTS TF_FB_GENERATED_HDRS)
