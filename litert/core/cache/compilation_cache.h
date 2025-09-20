@@ -18,28 +18,41 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/options.h"
 
 namespace litert::internal {
 
 class CompilationCache {
  public:
+  // Subset of compiler plugin information relevant to generate the hash.
+  struct CompilerPluginInfo {
+    LiteRtApiVersion api_version;
+    LiteRtHwAccelerators hw_accelerators;
+    std::string_view manufacturer;
+  };
+
   // Creates a compilation cache instance that uses the provided
   // 'cache_root_path' as the filesystem location to store and load models.
   // Returns an error if the cache path does not exist in the filesystem.
   static Expected<CompilationCache> Create(absl::string_view cache_root_path);
 
-  // Returns the hash associated with the provided 'model'.  The hash is
-  // computed as the 'std::hash' of the serialized model buffer.
-  //
-  // TODO(b/414861277): Expand the parameters to include other properties that
-  // should be included in the hash, like the compilation options, library
-  // version, etc.
-  static Expected<uint64_t> GetModelHash(const LiteRtModelT& model);
+  // Returns the hash associated with the provided 'model'. The hash is
+  // computed as the combined 'std::hash' of the following properties:
+  // - the serialized model buffer
+  // - the options used to compile the model
+  // - the compiler plugin information
+  // - TODO(b/414861277): Take runtime shapes into account
+  // - TODO(b/414861277): Take opaque vendor options into account
+  static Expected<uint64_t> GetModelHash(
+      const LiteRtModelT& model, const LiteRtOptionsT& options,
+      const CompilerPluginInfo& compiler_plugin_info);
 
   // Saves the provided 'model' in the cache, associated with the 'model_hash'.
   // The overload taking a 'model_buffer' assumes the caller already

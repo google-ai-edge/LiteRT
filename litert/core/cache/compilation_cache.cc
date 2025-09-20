@@ -33,9 +33,21 @@
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#include "litert/core/options.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
+namespace litert::internal {
+
 namespace {
+
+inline void HashCombine(std::size_t& seed) {}  // NOLINT
+
+template <typename T, typename... Rest>
+inline void HashCombine(std::size_t& seed, const T& v, Rest... rest) {
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  HashCombine(seed, rest...);
+}
 
 std::string GetCachedModelFilePath(absl::string_view cache_root_path,
                                    uint64_t model_hash) {
@@ -43,19 +55,31 @@ std::string GetCachedModelFilePath(absl::string_view cache_root_path,
       {cache_root_path, absl::StrCat(model_hash, ".tflite")});
 }
 
-}  // namespace
-namespace litert::internal {
-
-Expected<CompilationCache> CompilationCache::Create(
-    absl::string_view cache_root_path) {
-  if (!Exists(cache_root_path)) {
-    return Unexpected(kLiteRtStatusErrorNotFound,
-                      "Cache root path does not exist");
-  }
-  return CompilationCache(cache_root_path);
+uint64_t GetHash(const LiteRtOptionsT& options) {
+  std::size_t ans = 0;
+  HashCombine(
+      ans, options.hardware_accelerators,
+      options.version.major  // Minor updates should not invalid the cache.
+  );
+  return ans;
 }
 
-Expected<uint64_t> CompilationCache::GetModelHash(const LiteRtModelT& model) {
+uint64_t GetHash(const LiteRtApiVersion& api_version) {
+  std::string_view api_version_str(reinterpret_cast<const char*>(&api_version),
+                                   sizeof(api_version));
+  std::hash<std::string_view> hasher;
+  return hasher(api_version_str);
+}
+
+uint64_t GetHash(
+    const CompilationCache::CompilerPluginInfo& compiler_plugin_info) {
+  std::size_t ans = GetHash(compiler_plugin_info.api_version);
+  HashCombine(ans, compiler_plugin_info.hw_accelerators);
+  HashCombine(ans, compiler_plugin_info.manufacturer);
+  return ans;
+}
+
+Expected<uint64_t> GetHash(const LiteRtModelT& model) {
   const ::litert::internal::FlatbufferWrapper& tfl_wrapper =
       litert::internal::GetTflFlatbuffer(model);
   const litert::BufferRef<uint8_t>& tfl_buf = tfl_wrapper.Buf();
@@ -68,6 +92,28 @@ Expected<uint64_t> CompilationCache::GetModelHash(const LiteRtModelT& model) {
   std::hash<std::string_view> hasher;
   const uint64_t model_hash = hasher(tfl_buf_str);
   return model_hash;
+}
+}  // namespace
+
+Expected<CompilationCache> CompilationCache::Create(
+    absl::string_view cache_root_path) {
+  if (!Exists(cache_root_path)) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Cache root path does not exist");
+  }
+  return CompilationCache(cache_root_path);
+}
+
+Expected<uint64_t> CompilationCache::GetModelHash(
+    const LiteRtModelT& model, const LiteRtOptionsT& options,
+    const CompilerPluginInfo& compiler_plugin_info) {
+  LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
+  uint64_t vendor_plugin_api_version_hash = GetHash(compiler_plugin_info);
+  uint64_t options_hash = GetHash(options);
+  uint64_t combined_hash = 0;
+  HashCombine(combined_hash, model_hash, options_hash,
+              vendor_plugin_api_version_hash);
+  return combined_hash;
 }
 
 Expected<void> CompilationCache::SaveModel(const LiteRtModelT& model,
