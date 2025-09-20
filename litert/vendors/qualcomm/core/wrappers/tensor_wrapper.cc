@@ -228,11 +228,11 @@ void TensorWrapper::ConvertQint16ToQuint16() {
 
   // adjust static data
   if (IsTensorStatic()) {
-    auto int16_data = GetStaticTensorData<std::int16_t>();
+    auto int16_data = GetTensorData<std::int16_t>();
     if (!int16_data.has_value()) {
       QNN_LOG_ERROR(
           "Cannot convert static QInt16 data to QUint16 data failed since "
-          "GetStaticTensorData failed.");
+          "GetTensorData failed.");
       return;
     }
     QNN_LOG_DEBUG("Converting static tensor data from QInt16 to QUint16...");
@@ -268,7 +268,7 @@ void TensorWrapper::ConvertQint16ToQuint16() {
 
   UpdateQnnQuantParams();
 
-  // change data type here since GetStaticTensorData checks data type
+  // change data type here since GetTensorData checks data type
   qnn_tensor_.v2.dataType = QNN_DATATYPE_UFIXED_POINT_16;
   QNN_LOG_DEBUG(
       "QNN does not fully support QInt16 now, converting to QUint16 for better "
