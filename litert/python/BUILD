@@ -12,21 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
-load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pywrap_binaries", "pywrap_library")
+load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library", "py_strict_test")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_python_users"],
 )
 
+cc_library(
+    name = "converter_api",
+    srcs = ["converter.cc"],
+    hdrs = ["converter.h"],
+    features = ["-parse_headers"],
+    deps = [
+        "//tflite/converter:converter_flags_proto_cc",
+        "//tflite/converter:model_flags_proto_cc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@local_xla//third_party/python_runtime:headers",
+    ],
+)
+
+pybind_extension(
+    name = "_pywrap_litert_converter",
+    srcs = [
+        "converter_wrapper.cc",
+    ],
+    hdrs = ["converter.h"],
+    common_lib_packages = ["litert/python/pywrap_litert_common"],
+    wrap_py_init = True,
+    deps = [
+        ":converter_api",
+        "//tflite/converter:converter_flags_proto_cc",
+        "//tflite/converter:model_flags_proto_cc",
+        "@com_google_absl//absl/status:statusor",
+        "@pybind11",
+        "@pybind11_abseil//pybind11_abseil:status_casters",
+        "@pybind11_abseil//pybind11_abseil:statusor_caster",
+        "@pybind11_protobuf//pybind11_protobuf:native_proto_caster",
+    ],
+)
+
 py_strict_library(
     name = "litert_pywrap_deps",
     visibility = ["//visibility:public"],
     deps = [
+        ":_pywrap_litert_converter",
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
         "//litert/python/mlir",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
     ],
 )
 
@@ -49,7 +87,7 @@ pywrap_library(
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 12,
+    pywrap_count = 13,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
@@ -61,4 +99,15 @@ pywrap_binaries(
     name = "pywrap_litert_binaries",
     dep = ":pywrap_litert",
     visibility = ["//visibility:public"],
+)
+
+py_strict_test(
+    name = "converter_wrapper_test",
+    srcs = ["converter_wrapper_test.py"],
+    deps = [
+        ":pywrap_litert",
+        "//tflite/converter:converter_flags_proto_py",
+        "//tflite/converter:model_flags_proto_py",
+        "@absl_py//absl/testing:absltest",
+    ],
 )
