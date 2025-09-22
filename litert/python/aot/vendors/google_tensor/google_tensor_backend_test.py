@@ -106,6 +106,23 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     self.assertEqual(kwargs["libs"], "/fake/path/to")  # libs
     self.assertEqual(kwargs["sdk_libs_path"], "/sdk_libs_path")  # sdk_libs_path
 
+  @mock.patch.object(MockApplyPlugin, "__call__", autospec=True)
+  def test_apply_plugin_with_compiler_flags(
+      self, mock_apply_plugin_call: mock.Mock
+  ):
+    config = self.basic_config
+    config["google_tensor_truncation_type"] = "bf16"
+    config["Unsupported_flag"] = "unsupported_value"
+    backend = google_tensor_backend.GoogleTensorBackend.create(config)
+    model = types.Model("add_simple.tflite")
+    output_model = self.output_model
+    component = MockApplyPlugin()
+    backend.call_component(model, output_model, component)
+    mock_apply_plugin_call.assert_called_once()
+    _, kwargs = mock_apply_plugin_call.call_args
+    self.assertEqual(kwargs["google_tensor_truncation_type"], "bf16")
+    self.assertNotIn("google_tensor_unsupported_flag", kwargs)
+
   @mock.patch.object(MockAieQuantizer, "__call__")
   def test_aie_quantizer(self, mck: mock.Mock):
     backend = google_tensor_backend.GoogleTensorBackend.create(
