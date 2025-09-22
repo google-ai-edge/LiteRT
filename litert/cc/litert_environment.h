@@ -81,7 +81,8 @@ class Environment
   // Returns whether the environment supports CL/GL interop.
   bool SupportsClGlInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsClGlInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsClGlInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -91,7 +92,8 @@ class Environment
   // Returns whether the environment supports AHWB/CL interop.
   bool SupportsAhwbClInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsAhwbClInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsAhwbClInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
@@ -101,7 +103,8 @@ class Environment
   // Returns whether the environment supports AHWB/GL interop.
   bool SupportsAhwbGlInterop() const {
     bool is_supported = false;
-    if (auto status = LiteRtSupportsAhwbGlInterop(Get(), &is_supported);
+    if (auto status =
+            LiteRtEnvironmentSupportsAhwbGlInterop(Get(), &is_supported);
         status != kLiteRtStatusOk) {
       return false;
     }
