@@ -652,7 +652,6 @@ litert_device_test(
 #     data = ["//litert/test:testdata/simple_model.tflite"],
 #     tags = [
 #         "no_oss",
-#         "notap",  # TODO(byungchul): Enable tap presubmit once the flakiness is fixed.
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
