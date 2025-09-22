@@ -351,7 +351,7 @@ CreateNeuronAdapterApi(const char* soc_model,
                        LiteRtCompilerPlugin compiler_plugin) {
   auto opt_soc_model = soc_model ? FindSocModel(soc_model) : std::nullopt;
   if (opt_soc_model) {
-    LITERT_LOG(LITERT_ERROR, "Compiling for MediaTek architecture: %s",
+    LITERT_LOG(LITERT_INFO, "Compiling for MediaTek architecture: %s",
                *opt_soc_model);
   } else if (soc_model) {
     LITERT_LOG(LITERT_ERROR, "Unexpected SoC model: %s", soc_model);
