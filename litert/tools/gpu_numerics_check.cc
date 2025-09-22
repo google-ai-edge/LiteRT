@@ -49,6 +49,9 @@ ABSL_FLAG(bool, check_element_type, false,
           "Whether to check the element type of the output buffers.");
 ABSL_FLAG(std::string, gpu_backend, "opencl",
           "GPU backend to use for testing. Can be opencl, webgpu.");
+ABSL_FLAG(bool, no_external_tensor_mode, true,
+          "Whether to enable no external tensor mode.");
+ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 
 namespace litert {
 namespace {
@@ -63,8 +66,8 @@ Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
-  // Enable no external tensors mode.
-  gpu_options.EnableNoExternalTensorsMode(/*enabled=*/true);
+  gpu_options.EnableNoExternalTensorsMode(
+      absl::GetFlag(FLAGS_no_external_tensor_mode));
   gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
@@ -227,7 +230,14 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   std::vector<float> gpu_data(total_elements);
   get_val(cpu_buffer, cpu_data);
   get_val(gpu_buffer, gpu_data);
+  bool print_outputs = absl::GetFlag(FLAGS_print_outputs);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
+    if (print_outputs) {
+      std::cout << "Element #" << element_index << ": CPU value = "
+                << cpu_data[element_index] << ", GPU value = "
+                << gpu_data[element_index] << std::endl;
+    }
+
     const float abs_diff =
         fabs(cpu_data[element_index] - gpu_data[element_index]);
     const double diff_square =

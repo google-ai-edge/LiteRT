@@ -156,9 +156,7 @@ litert_bin(
             manufacturer.lower(),
             soc_model,
         ),
-        data = [
-            "//litert/test:testdata/simple_quantized_ops.tflite",
-        ],
+        data = ["//litert/test:testdata/simple_quantized_ops.tflite"],
         tool = ":apply_plugin_main",
         tool_args = [
             "--soc_model={}".format(soc_model),
@@ -207,9 +205,7 @@ cc_binary(
     name = "apply_plugin_main_for_test",
     testonly = 1,
     srcs = ["apply_plugin_main.cc"],
-    data = [
-        "//litert/vendors/examples:example_plugin_so",
-    ],
+    data = ["//litert/vendors/examples:example_plugin_so"],
     linkstatic = 1,
     tags = [
         "noasan",
@@ -358,12 +354,8 @@ cc_library(
 cc_test(
     name = "benchmark_litert_model_test",
     srcs = ["benchmark_litert_model_test.cc"],
-    data = [
-        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
-    ],
-    tags = [
-        "requires-gpu-nvidia",
-    ],
+    data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
+    tags = ["requires-gpu-nvidia"],
     deps =
         [
             ":benchmark_litert_model",
@@ -428,29 +420,32 @@ cc_binary(
     ] + GPU_ACCELERATOR_DEPS,
 )
 
+NUMERICS_CHECK_DEPS = [
+    "@com_google_absl//absl/flags:flag",
+    "@com_google_absl//absl/flags:parse",
+    "@com_google_absl//absl/log:absl_log",
+    "@com_google_absl//absl/strings:str_format",
+    "@com_google_absl//absl/strings:string_view",
+    "@com_google_absl//absl/types:span",
+    "//litert/c:litert_common",
+    "//litert/cc:litert_compiled_model",
+    "//litert/cc:litert_element_type",
+    "//litert/cc:litert_environment",
+    "//litert/cc:litert_expected",
+    "//litert/cc:litert_macros",
+    "//litert/cc:litert_model",
+    "//litert/cc:litert_options",
+    "//litert/cc:litert_tensor_buffer",
+    "//tflite/profiling:time",
+]
+
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
-        "//litert/cc:litert_tensor_buffer",
+    deps = NUMERICS_CHECK_DEPS + [
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
-        "//tflite/profiling:time",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:android": [
             # copybara:uncomment_begin(google-only)
@@ -464,25 +459,22 @@ cc_binary(
 cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/cc:litert_compiled_model",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_environment",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_options",
-        "//litert/cc:litert_tensor_buffer",
+    deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
-        "//tflite/profiling:time",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
     ] + GPU_ACCELERATOR_DEPS,
+)
+
+cc_binary(
+    name = "gpu_numerics_check_vulkan",
+    srcs = ["gpu_numerics_check.cc"],
+    tags = ["requires-gpu-nvidia"],
+    deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc/options:litert_gpu_options",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
+        # "//third_party/vulkan_loader",
+        # copybara:uncomment_end
+    ],
 )
 
 cc_binary(
@@ -509,9 +501,7 @@ cc_binary(
 # delegate provider.
 cc_library(
     name = "benchmark_model_main",
-    srcs = [
-        "benchmark_litert_model_main.cc",
-    ],
+    srcs = ["benchmark_litert_model_main.cc"],
     deps = [
         ":benchmark_litert_model",
         "//tflite/c:c_api_types",
@@ -521,9 +511,19 @@ cc_library(
 
 cc_binary(
     name = "benchmark_model",
+    deps = [":benchmark_model_main"] + GPU_ACCELERATOR_DEPS,
+)
+
+cc_binary(
+    name = "benchmark_model_vulkan",
+    tags = ["requires-gpu-nvidia"],
     deps = [
         ":benchmark_model_main",
-    ] + GPU_ACCELERATOR_DEPS,
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
+        # "//third_party/vulkan_loader",
+        # copybara:uncomment_end
+    ],
 )
 
 cc_library(
