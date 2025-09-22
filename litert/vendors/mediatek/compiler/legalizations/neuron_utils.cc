@@ -164,8 +164,7 @@ int EncodeOperandValue(OemOperandValue* operand, uint8_t* output) {
   currPos += operand->typeLen;
 
   // Set the length of buffer
-  uint32_t* dataLen = reinterpret_cast<uint32_t*>(&output[currPos]);
-  *dataLen = operand->dataLen;
+  memcpy(output + currPos, &(operand->dataLen), sizeof(uint32_t));
   currPos += sizeof(uint32_t);
 
   // Copy operand value to output
