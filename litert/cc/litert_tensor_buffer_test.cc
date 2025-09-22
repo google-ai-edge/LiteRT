@@ -877,8 +877,8 @@ TEST(TensorBuffer, ClBufferFromGlBuffer) {
   ASSERT_TRUE(user_gpu_env != nullptr);
   ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
   bool is_cl_gl_sharing_supported = false;
-  ASSERT_EQ(LiteRtSupportsClGlInterop(user_gpu_env->GetEnvironment(),
-                                      &is_cl_gl_sharing_supported),
+  ASSERT_EQ(LiteRtEnvironmentSupportsClGlInterop(user_gpu_env->GetEnvironment(),
+                                                 &is_cl_gl_sharing_supported),
             kLiteRtStatusOk);
 
   if (!is_cl_gl_sharing_supported) {
@@ -998,8 +998,8 @@ TEST(TensorBuffer, GetGlBufferFromAhwb) {
   ASSERT_TRUE(user_gpu_env != nullptr);
   ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
   bool is_ahwb_gl_interop_supported = false;
-  ASSERT_EQ(LiteRtSupportsAhwbGlInterop(user_gpu_env->GetEnvironment(),
-                                        &is_ahwb_gl_interop_supported),
+  ASSERT_EQ(LiteRtEnvironmentSupportsAhwbGlInterop(
+                user_gpu_env->GetEnvironment(), &is_ahwb_gl_interop_supported),
             kLiteRtStatusOk);
   if (!is_ahwb_gl_interop_supported) {
     GTEST_SKIP() << "AHWB/GL interop is not supported on this platform; "
@@ -1103,8 +1103,8 @@ TEST(TensorBuffer, GetClBufferFromAhwb) {
   ASSERT_TRUE(user_gpu_env != nullptr);
   ASSERT_TRUE(user_gpu_env->GetEnvironment() != nullptr);
   bool is_ahwb_cl_interop_supported = false;
-  ASSERT_EQ(LiteRtSupportsAhwbClInterop(user_gpu_env->GetEnvironment(),
-                                        &is_ahwb_cl_interop_supported),
+  ASSERT_EQ(LiteRtEnvironmentSupportsAhwbClInterop(
+                user_gpu_env->GetEnvironment(), &is_ahwb_cl_interop_supported),
             kLiteRtStatusOk);
   if (!is_ahwb_cl_interop_supported) {
     GTEST_SKIP() << "AHWB/CL interop is not supported on this platform; "
