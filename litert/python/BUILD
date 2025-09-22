@@ -13,11 +13,26 @@
 # limitations under the License.
 
 load("@org_tensorflow//tensorflow:strict.default.bzl", "py_strict_library")
-load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pywrap_binaries", "pywrap_library")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension", "pywrap_binaries", "pywrap_library")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_python_users"],
+)
+
+pybind_extension(
+    name = "pywrap_litert_converter",
+    srcs = [
+        "converter.cc",
+        "converter_wrapper.cc",
+    ],
+    hdrs = ["converter.h"],
+    common_lib_packages = ["litert/python/pywrap_litert_common"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@pybind11",
+    ],
 )
 
 py_strict_library(
@@ -48,10 +63,11 @@ pywrap_library(
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 10,
+    pywrap_count = 11,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
+        ":pywrap_litert_converter",
         "//tflite/python:tflite_pywrap_deps",
     ],
 )
