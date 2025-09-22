@@ -31,6 +31,11 @@ COMPILER_PLUGIN_LIB_PATH = pathlib.Path(
 )
 
 
+# Returns true if the flag is a google_tensor flag.
+def _is_google_tensor_flag(flag: str) -> bool:
+  return flag.startswith("google_tensor_")
+
+
 @import_vendor.register_backend
 class GoogleTensorBackend(types.Backend):
   """Backend implementation for the Google Tensor compiler plugin."""
@@ -120,6 +125,16 @@ def _apply_plugin(
     extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_dir}
   except FileNotFoundError:
     extra_kwargs = {}
+
+  # Add google_tensor specific flags from the backend config.
+  for flag, value in backend.config.items():
+    if _is_google_tensor_flag(flag):
+      extra_kwargs[flag] = value
+
+  for flag, value in backend.config.get("compilation_config", {}).items():
+    if _is_google_tensor_flag(flag):
+      extra_kwargs[flag] = value
+
   return component(
       input_model,
       output_model,
