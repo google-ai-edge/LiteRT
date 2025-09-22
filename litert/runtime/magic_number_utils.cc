@@ -125,13 +125,13 @@ int64_t GetMagicNumberFactor(int64_t value, int64_t magic_number) {
 Expected<int> UpdateMagicNumberInDimensions(
     int64_t magic_number, int64_t target_number, LiteRtTensorT& tensor,
     const tflite::FlatBufferModel& fb_model,
-    const tflite::SubGraph& tflite_subgraph) {
+    const tflite::SubGraph& tfl_subgraph) {
   if (tensor.Type().first != kLiteRtRankedTensorType) {
     return 0;
   }
 
   int tidx = tensor.TensorIndex();
-  const auto* tflite_tensor = tflite_subgraph.tensors()->Get(tidx);
+  const auto* tflite_tensor = tfl_subgraph.tensors()->Get(tidx);
   LITERT_RETURN_IF_ERROR(tflite_tensor != nullptr);
 
   int num_updated = 0;
@@ -182,13 +182,15 @@ int UpdateMagicNumber(T magic_number, T target_number, LiteRtOpCode op_code,
 
 // Updates the shape parameter of a given tensor in the flatbuffer.
 // Returns the number of elements updated.
-Expected<int> UpdateMagicNumberInParam(
-    int64_t magic_number, int64_t target_number, LiteRtOpCode op_code,
-    const LiteRtTensorT& tensor, const tflite::FlatBufferModel& fb_model,
-    const tflite::SubGraph& tflite_subgraph) {
+Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
+                                       int64_t target_number,
+                                       LiteRtOpCode op_code,
+                                       const LiteRtTensorT& tensor,
+                                       const tflite::FlatBufferModel& fb_model,
+                                       const tflite::SubGraph& tfl_subgraph) {
   int shape_param_tensor_index = tensor.TensorIndex();
   const auto* shape_param_tensor =
-      tflite_subgraph.tensors()->Get(shape_param_tensor_index);
+      tfl_subgraph.tensors()->Get(shape_param_tensor_index);
   LITERT_RETURN_IF_ERROR(shape_param_tensor != nullptr);
 
   auto buffer_index = shape_param_tensor->buffer();
@@ -207,27 +209,35 @@ Expected<int> UpdateMagicNumberInParam(
   return 0;
 }
 
+Expected<int> GetDecompositionSubgraphIndex(const LiteRtModelT& model,
+                                            const LiteRtOpT& op) {
+  LITERT_RETURN_IF_ERROR(op.OpCode() == kLiteRtOpCodeShloComposite);
+  const auto* opts =
+      litert::internal::GetTflOptions2(op).AsStableHLOCompositeOptions();
+  LITERT_RETURN_IF_ERROR(opts != nullptr);
+  LITERT_RETURN_IF_ERROR(opts->decomposition_subgraph_index <
+                         model.NumSubgraphs());
+  return opts->decomposition_subgraph_index;
+}
+
 Expected<int> ReplaceMagicNumberInSubgraph(
     int64_t magic_number, int64_t target_number, LiteRtModelT& model,
     const tflite::FlatBufferModel& fb_model,
-    const tflite::SubGraph& tflite_subgraph, LiteRtSubgraphT& subgraph) {
+    const tflite::SubGraph& tfl_subgraph, LiteRtSubgraphT& subgraph) {
   int updated_tensors = 0;
   for (auto* tensor : subgraph.Tensors()) {
     LITERT_ASSIGN_OR_RETURN(
         int num_updated,
         UpdateMagicNumberInDimensions(magic_number, target_number, *tensor,
-                                      fb_model, tflite_subgraph));
+                                      fb_model, tfl_subgraph));
     updated_tensors += num_updated;
   }
 
   for (auto* op : subgraph.Ops()) {
     // Update subgraphs of this subgraph.
     if (op->OpCode() == kLiteRtOpCodeShloComposite) {
-      const auto* opts =
-          litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
-      LITERT_RETURN_IF_ERROR(opts != nullptr);
-      auto decomp_index = opts->decomposition_subgraph_index;
-      LITERT_RETURN_IF_ERROR(decomp_index < model.NumSubgraphs());
+      LITERT_ASSIGN_OR_RETURN(int decomp_index,
+                              GetDecompositionSubgraphIndex(model, *op));
       const auto* decomp_subgraph = fb_model->subgraphs()->Get(decomp_index);
       LITERT_RETURN_IF_ERROR(decomp_subgraph != nullptr);
       LITERT_ASSIGN_OR_RETURN(
@@ -255,7 +265,7 @@ Expected<int> ReplaceMagicNumberInSubgraph(
         int num_updated,
         UpdateMagicNumberInParam(magic_number, target_number, op->OpCode(),
                                  op->Input(shape_param_index), fb_model,
-                                 tflite_subgraph));
+                                 tfl_subgraph));
     updated_tensors += num_updated;
   }
 
@@ -270,8 +280,8 @@ Expected<int> UpdateMagicNumbersInModel(
   for (auto* signature : model.Signatures()) {
     auto& subgraph = signature->GetSubgraph();
     int subgraph_index = GetSubgraphIndex(model, subgraph);
-    const auto* tflite_subgraph = fb_model->subgraphs()->Get(subgraph_index);
-    LITERT_RETURN_IF_ERROR(tflite_subgraph != nullptr);
+    const auto* tfl_subgraph = fb_model->subgraphs()->Get(subgraph_index);
+    LITERT_RETURN_IF_ERROR(tfl_subgraph != nullptr);
 
     for (int i = 0; i < magic_number_configs.num_configs; ++i) {
       const auto& config = magic_number_configs.configs[i];
@@ -286,7 +296,7 @@ Expected<int> UpdateMagicNumbersInModel(
       LITERT_ASSIGN_OR_RETURN(int updated_tensors,
                               ReplaceMagicNumberInSubgraph(
                                   config.magic_number, config.target_number,
-                                  model, fb_model, *tflite_subgraph, subgraph));
+                                  model, fb_model, *tfl_subgraph, subgraph));
       if (updated_tensors == 0) {
         LITERT_LOG(LITERT_DEBUG, "No magic number %d found in signature=%s",
                    config.magic_number, signature->Key().data());
@@ -303,9 +313,9 @@ Expected<int> UpdateMagicNumbersInModel(
   return total_updated_tensors;
 }
 
-Expected<void> VerifySameShape(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
-                               const tflite::FlatBufferModel& fb_model,
-                               const tflite::SubGraph& tflite_subgraph) {
+Expected<void> VerifyShapeSame(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
+                               const tflite::SubGraph& tfl_subgraph1,
+                               const tflite::SubGraph& tfl_subgraph2) {
   LITERT_RETURN_IF_ERROR(t1.Type().first == t2.Type().first);
   if (t1.Type().first == kLiteRtUnrankedTensorType) {
     return {};
@@ -321,11 +331,11 @@ Expected<void> VerifySameShape(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
   }
 
   int tidx1 = t1.TensorIndex();
-  const auto* tflite_t1 = tflite_subgraph.tensors()->Get(tidx1);
+  const auto* tflite_t1 = tfl_subgraph1.tensors()->Get(tidx1);
   LITERT_RETURN_IF_ERROR(tflite_t1 != nullptr);
 
   int tidx2 = t2.TensorIndex();
-  const auto* tflite_t2 = tflite_subgraph.tensors()->Get(tidx2);
+  const auto* tflite_t2 = tfl_subgraph2.tensors()->Get(tidx2);
   LITERT_RETURN_IF_ERROR(tflite_t2 != nullptr);
 
   LITERT_RETURN_IF_ERROR(tflite_t1->type() == tflite_t2->type());
@@ -340,15 +350,16 @@ Expected<void> VerifySameShape(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
   return {};
 }
 
-Expected<void> VerifySameData(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
+Expected<void> VerifyDataSame(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
                               const tflite::FlatBufferModel& fb_model,
-                              const tflite::SubGraph& tflite_subgraph) {
+                              const tflite::SubGraph& tfl_subgraph1,
+                              const tflite::SubGraph& tfl_subgraph2) {
   int tidx1 = t1.TensorIndex();
-  const auto* tflite_t1 = tflite_subgraph.tensors()->Get(tidx1);
+  const auto* tflite_t1 = tfl_subgraph1.tensors()->Get(tidx1);
   LITERT_RETURN_IF_ERROR(tflite_t1 != nullptr);
 
   int tidx2 = t2.TensorIndex();
-  const auto* tflite_t2 = tflite_subgraph.tensors()->Get(tidx2);
+  const auto* tflite_t2 = tfl_subgraph2.tensors()->Get(tidx2);
   LITERT_RETURN_IF_ERROR(tflite_t2 != nullptr);
 
   LITERT_RETURN_IF_ERROR(tflite_t1->type() == tflite_t2->type());
@@ -368,6 +379,68 @@ Expected<void> VerifySameData(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
   return {};
 }
 
+Expected<void> VerifySubgraphSame(const LiteRtModelT& model,
+                                  const LiteRtSubgraphT& subgraph1,
+                                  const LiteRtSubgraphT& subgraph2,
+                                  const tflite::FlatBufferModel& fb_model,
+                                  const tflite::SubGraph& tfl_subgraph1,
+                                  const tflite::SubGraph& tfl_subgraph2) {
+  LITERT_RETURN_IF_ERROR(
+      subgraph1.Tensors().size() == subgraph2.Tensors().size())
+      << "Tensor size mismatch: " << subgraph1.Tensors().size() << " vs "
+      << subgraph2.Tensors().size();
+  LITERT_RETURN_IF_ERROR(subgraph1.NumInputs() == subgraph2.NumInputs());
+  LITERT_RETURN_IF_ERROR(subgraph1.NumOutputs() == subgraph2.NumOutputs());
+  LITERT_RETURN_IF_ERROR(subgraph1.Ops().size() == subgraph2.Ops().size());
+
+  for (int i = 0; i < subgraph1.Tensors().size(); ++i) {
+    LITERT_RETURN_IF_ERROR(VerifyShapeSame(subgraph1.Tensor(i),
+                                           subgraph2.Tensor(i), tfl_subgraph1,
+                                           tfl_subgraph2));
+  }
+
+  for (int i = 0; i < subgraph1.Ops().size(); ++i) {
+    const auto& op1 = subgraph1.Op(i);
+    const auto& op2 = subgraph2.Op(i);
+    LITERT_RETURN_IF_ERROR(op1.OpCode() == op2.OpCode());
+    LITERT_RETURN_IF_ERROR(op1.NumInputs() == op2.NumInputs());
+    LITERT_RETURN_IF_ERROR(op1.NumOutputs() == op2.NumOutputs());
+    for (int j = 0; j < op1.NumInputs(); ++j) {
+      LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Input(j), op2.Input(j),
+                                             tfl_subgraph1, tfl_subgraph2));
+    }
+    for (int j = 0; j < op1.NumOutputs(); ++j) {
+      LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Output(j), op2.Output(j),
+                                             tfl_subgraph1, tfl_subgraph2));
+    }
+
+    if (op1.OpCode() == kLiteRtOpCodeShloComposite) {
+      LITERT_ASSIGN_OR_RETURN(int decomp_index1,
+                              GetDecompositionSubgraphIndex(model, op1));
+      const auto* decomp_subgraph1 = fb_model->subgraphs()->Get(decomp_index1);
+      LITERT_RETURN_IF_ERROR(decomp_subgraph1 != nullptr);
+
+      LITERT_ASSIGN_OR_RETURN(int decomp_index2,
+                              GetDecompositionSubgraphIndex(model, op2));
+      const auto* decomp_subgraph2 = fb_model->subgraphs()->Get(decomp_index2);
+      LITERT_RETURN_IF_ERROR(decomp_subgraph2 != nullptr);
+      LITERT_RETURN_IF_ERROR(VerifySubgraphSame(
+          model, model.Subgraph(decomp_index1), model.Subgraph(decomp_index2),
+          fb_model, *decomp_subgraph1, *decomp_subgraph2));
+      continue;
+    }
+
+    int shape_param_index = GetShapeParamIndex(op1);
+    if (shape_param_index >= 0) {
+      LITERT_RETURN_IF_ERROR(shape_param_index < op1.NumInputs());
+      LITERT_RETURN_IF_ERROR(VerifyDataSame(
+          op1.Input(shape_param_index), op2.Input(shape_param_index), fb_model,
+          tfl_subgraph1, tfl_subgraph2));
+    }
+  }
+  return {};
+}
+
 Expected<void> VerifyWithTestSignatures(
     const LiteRtModelT& model,
     const LiteRtMagicNumberVerifications& verifications) {
@@ -382,49 +455,21 @@ Expected<void> VerifyWithTestSignatures(
     LITERT_RETURN_IF_ERROR(signature != nullptr);
     const auto& subgraph = signature->GetSubgraph();
     int subgraph_index = GetSubgraphIndex(model, subgraph);
-    const auto* tflite_subgraph = fb_model->subgraphs()->Get(subgraph_index);
-    LITERT_RETURN_IF_ERROR(tflite_subgraph != nullptr);
+    const auto* tfl_subgraph = fb_model->subgraphs()->Get(subgraph_index);
+    LITERT_RETURN_IF_ERROR(tfl_subgraph != nullptr);
 
     const auto* test_signature =
         GetSignature(model, verifications.verifications[i].test_signature);
     LITERT_RETURN_IF_ERROR(test_signature != nullptr);
     const auto& test_subgraph = test_signature->GetSubgraph();
-    LITERT_RETURN_IF_ERROR(
-        subgraph.Tensors().size() == test_subgraph.Tensors().size(),
-        _ << "Tensor size mismatch: " << subgraph.Tensors().size() << " vs "
-          << test_subgraph.Tensors().size());
-    LITERT_RETURN_IF_ERROR(subgraph.NumInputs() == test_subgraph.NumInputs());
-    LITERT_RETURN_IF_ERROR(subgraph.NumOutputs() == test_subgraph.NumOutputs());
-    LITERT_RETURN_IF_ERROR(subgraph.Ops().size() == test_subgraph.Ops().size());
+    int test_subgraph_index = GetSubgraphIndex(model, test_subgraph);
+    const auto* test_tfl_subgraph =
+        fb_model->subgraphs()->Get(test_subgraph_index);
+    LITERT_RETURN_IF_ERROR(test_tfl_subgraph != nullptr);
 
-    for (int i = 0; i < subgraph.Tensors().size(); ++i) {
-      LITERT_RETURN_IF_ERROR(VerifySameShape(subgraph.Tensor(i),
-                                             test_subgraph.Tensor(i), fb_model,
-                                             *tflite_subgraph));
-    }
-
-    for (int i = 0; i < subgraph.Ops().size(); ++i) {
-      const auto& op = subgraph.Op(i);
-      const auto& test_op = test_subgraph.Op(i);
-      LITERT_RETURN_IF_ERROR(op.OpCode() == test_op.OpCode());
-      LITERT_RETURN_IF_ERROR(op.NumInputs() == test_op.NumInputs());
-      LITERT_RETURN_IF_ERROR(op.NumOutputs() == test_op.NumOutputs());
-      for (int j = 0; j < op.NumInputs(); ++j) {
-        LITERT_RETURN_IF_ERROR(VerifySameShape(op.Input(j), test_op.Input(j),
-                                               fb_model, *tflite_subgraph));
-      }
-      for (int j = 0; j < op.NumOutputs(); ++j) {
-        LITERT_RETURN_IF_ERROR(VerifySameShape(op.Output(j), test_op.Output(j),
-                                               fb_model, *tflite_subgraph));
-      }
-      int shape_param_index = GetShapeParamIndex(op);
-      if (shape_param_index >= 0) {
-        LITERT_RETURN_IF_ERROR(shape_param_index < op.NumInputs());
-        LITERT_RETURN_IF_ERROR(VerifySameData(op.Input(shape_param_index),
-                                              test_op.Input(shape_param_index),
-                                              fb_model, *tflite_subgraph));
-      }
-    }
+    LITERT_RETURN_IF_ERROR(VerifySubgraphSame(model, subgraph, test_subgraph,
+                                              fb_model, *tfl_subgraph,
+                                              *test_tfl_subgraph));
     LITERT_LOG(LITERT_INFO, "Verified signature %s with test signature %s.",
                verifications.verifications[i].signature,
                verifications.verifications[i].test_signature);
