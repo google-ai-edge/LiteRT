@@ -30,7 +30,8 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
-    UnlockCustomTensorBuffer unlock_func);
+    UnlockCustomTensorBuffer unlock_func,
+    ImportCustomTensorBuffer import_func = nullptr);
 
 // Retrieves a singleton instance of the tensor buffer registry.
 LiteRtStatus LiteRtGetTensorBufferRegistry(LiteRtEnvironment env,

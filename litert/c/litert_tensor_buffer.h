@@ -231,6 +231,12 @@ LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
+
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
 // Create a tensor buffer from an existing Metal memory of a given size, with
 // optional metal memory buffer deallocator (it can be NULL).
 //

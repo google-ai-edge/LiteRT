@@ -29,6 +29,7 @@ litert::Expected<void> TensorBufferRegistry::RegisterHandlers(
     const CustomTensorBufferHandlers& handlers) {
   if (auto it = handlers_.find(buffer_type); it != handlers_.end()) {
     if (it->second.create_func == handlers.create_func &&
+        it->second.import_func == handlers.import_func &&
         it->second.destroy_func == handlers.destroy_func &&
         it->second.lock_func == handlers.lock_func &&
         it->second.unlock_func == handlers.unlock_func) {
