@@ -49,6 +49,9 @@ ABSL_DECLARE_FLAG(std::string, plugin_dir);
 // Regex to filter tests.
 ABSL_DECLARE_FLAG(std::string, dont_register);
 
+// Regex for explicit inclusions.
+ABSL_DECLARE_FLAG(std::string, do_register);
+
 // Will generate values for f32 tensors in the range of f16 values.
 ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
@@ -93,14 +96,15 @@ class AtsConf {
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
-                   std::regex&& re, bool f16_range_for_f32,
-                   std::optional<int> data_seed)
+                   std::regex&& neg_re, std::regex&& pos_re,
+                   bool f16_range_for_f32, std::optional<int> data_seed)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
         dispatch_dir_(std::move(dispatch_dir)),
         plugin_dir_(std::move(plugin_dir)),
-        re_(std::move(re)),
+        neg_re_(std::move(neg_re)),
+        pos_re_(std::move(pos_re)),
         f16_range_for_f32_(f16_range_for_f32),
         data_seed_(data_seed) {}
 
@@ -109,7 +113,8 @@ class AtsConf {
   bool quiet_;
   std::string dispatch_dir_;
   std::string plugin_dir_;
-  std::regex re_;
+  std::regex neg_re_;
+  std::regex pos_re_;
   bool f16_range_for_f32_;
   std::optional<int> data_seed_;
 };
