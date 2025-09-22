@@ -71,7 +71,8 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
       break;
     case ElementType::Int64:
       if (t.HasWeights()) {
-        if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+        if (t.QTypeId() == kLiteRtQuantizationPerTensor ||
+            t.QTypeId() == kLiteRtQuantizationNone) {
           mtk_type = NEURON_TENSOR_INT32;
         } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
           mtk_type = NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL;

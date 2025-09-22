@@ -279,10 +279,27 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_GREATER);
         break;
+      case kLiteRtOpCodeTflMinimum:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_MINIMUM);
+        break;
       case kLiteRtOpCodeShloComposite:
-        // TODO(MTK): Check if the op name is odml.rms_norm,
-        // LiteRtGetSHLOCompositeOpName currently returns an error.
-        status = LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+        const char* op_name;
+        if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) !=
+            kLiteRtStatusOk) {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "LiteRtGetSHLOCompositeOpName returns an error");
+        }
+        if (std::string(op_name) == "odml.rms_norm") {
+          status =
+              LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+        } else if (std::string(op_name) == "odml.l2_norm") {
+          status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                    NEURON_L2_NORMALIZATION);
+        } else {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "Unsupported ShloComposite op");
+        }
         break;
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
