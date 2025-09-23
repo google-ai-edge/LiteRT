@@ -488,14 +488,14 @@ Expected<PartitionResult> PartitionModel(
         selected_composite_subgraph_indexes.push_back(info->subgraph);
       }
     }
+    if (!ops_to_inline.empty()) {
+      LITERT_LOG(LITERT_INFO, "Inlined %lu composite ops into subgraph<%d>",
+                 ops_to_inline.size(), i);
+    }
 
     // Re-do partitioning
     selected_ops->clear();
     selected_ops = compiler_plugin.Partition(subgraph, soc_model);
-    LITERT_LOG(
-        LITERT_INFO,
-        "PartitionSubgraph After composite inlining: %d, selected num ops: %lu",
-        i, selected_ops->size());
 
     // Record all decomposition subgraph indexes, where its compositie op will
     // be compiled without relying on the decomposition body.
@@ -517,8 +517,8 @@ Expected<PartitionResult> PartitionModel(
                                              *subgraph, dispatch_ops, model));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
-               "PartitionSubgraph: %d, selected num ops: %lu, from totoal ops: "
-               "%lu, num partitions: %lu",
+               "Partitioned subgraph<%d>, selected %lu "
+               "ops, from a total of %lu ops. resulted in %lu partitions.",
                i, num_selected_ops, num_ops, num_partitions);
   }
   ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - input_num_sgs);
@@ -558,8 +558,6 @@ Expected<PartitionResult> PartitionModel(
 
   // Create a new model split from the input model.
   auto new_model = model.Yank(std::move(decomps_to_compile));
-  LITERT_LOG(LITERT_INFO, "Compiler input prepared for subgraphs %lu subgraphs",
-             new_model.Subgraphs().size());
 
   return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
