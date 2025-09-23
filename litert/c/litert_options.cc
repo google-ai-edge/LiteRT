@@ -17,9 +17,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_handle.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
 #include "litert/core/options.h"
 
 #define LRT_CHECK_NON_NULL(handle)                          \
@@ -36,7 +35,12 @@ LiteRtStatus LiteRtCreateOptions(LiteRtOptions* options) {
   return kLiteRtStatusOk;
 }
 
-void LiteRtDestroyOptions(LiteRtOptions options) { delete options; }
+void LiteRtDestroyOptions(LiteRtOptions options) {
+  if (options && options->options) {
+    LiteRtDestroyOpaqueOptions(options->options);
+  }
+  delete options;
+}
 
 LiteRtStatus LiteRtSetOptionsHardwareAccelerators(
     LiteRtOptions options, LiteRtHwAcceleratorSet hardware_accelerators) {
@@ -65,8 +69,8 @@ LiteRtStatus LiteRtAddOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions opaque_options) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
-  LITERT_RETURN_IF_ERROR(options->options.Append(
-      litert::OpaqueOptions(opaque_options, litert::OwnHandle::kNo)));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtAppendOpaqueOptions(&(options->options), opaque_options));
   return kLiteRtStatusOk;
 }
 
@@ -78,7 +82,7 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
                                     LiteRtOpaqueOptions* opaque_options) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(opaque_options);
-  *opaque_options = options->options.Get();
+  *opaque_options = options->options;
   return kLiteRtStatusOk;
 }
 

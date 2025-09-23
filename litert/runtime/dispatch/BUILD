@@ -89,7 +89,6 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -115,7 +114,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
     ],
 )
 
@@ -154,9 +152,6 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_tflite_error_status_builder",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
