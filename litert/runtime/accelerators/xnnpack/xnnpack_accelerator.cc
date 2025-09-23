@@ -19,13 +19,10 @@
 #include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
-#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/accelerators/accelerator_implementation_helper.h"
 #include "tflite/c/c_api_types.h"
@@ -67,11 +64,11 @@ class CpuAccelerator final
                            ErrorStatusBuilder::InvalidArgument())
         << "Accelerator is not registered to an environment.";
 
-    litert::Options cc_options(options, litert::OwnHandle::kNo);
-    Expected<OpaqueOptions> opaque_options = cc_options.GetOpaqueOptions();
+    LiteRtOpaqueOptions opaque_options;
+    LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options, &opaque_options));
     LiteRtCpuOptions cpu_options;
     const auto options_data_status = LiteRtFindOpaqueOptionsData(
-        opaque_options->Get(), CpuOptions::Identifier().data(),
+        opaque_options, LiteRtGetCpuOptionsIdentifier(),
         reinterpret_cast<void**>(&cpu_options));
 
     switch (options_data_status) {
