@@ -46,19 +46,23 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
 - (void)testTensorBufferMetalMemory {
   XCTAssertTrue(litert::HasMetalSupport());
 
-  // auto metal_device = std::make_unique<tflite::gpu::metal::MetalDevice>();
   auto metal_device = tflite::gpu::metal::MetalDevice();
   // Create LiteRt environment from metal options.
-  std::vector<litert::Environment::Option> options_vector = {
-      {.tag = litert::Environment::OptionTag::MetalDevice,
-       .value = (__bridge const void *)(metal_device.device())}};
-  auto env = litert::Environment::Create(options_vector);
+  std::vector<litert::Environment::Option> environment_options;
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
+                                 .value = (__bridge const void *)(metal_device.device())});
+
+  id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
+
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
+                                 .value = (__bridge const void *)(command_queue)});
+  auto env = litert::Environment::Create(environment_options);
 
   const litert::RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(
-      env->Get(), kTensorBufferType, kTensorType, sizeof(kTensorData));
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
+                                                           kTensorType, sizeof(kTensorData));
 
   auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);
