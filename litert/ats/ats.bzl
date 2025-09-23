@@ -36,7 +36,7 @@ def litert_define_ats(
       extra_flags: A list of extra flags to pass to the test suite.
     """
     exec_args = [
-        "--quiet=true",
+        "--quiet=false",
     ] + extra_flags
 
     if is_npu_backend(backend):
