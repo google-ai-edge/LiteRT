@@ -1248,7 +1248,6 @@ cc_library(
 #         "//third_party/apple_frameworks:XCTest",
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment",
-#         "//litert/c:litert_environment_options",
 #         "//litert/c:litert_model_types",
 #         "//litert/c:litert_tensor_buffer_types",
 #         "//litert/runtime:tensor_buffer",

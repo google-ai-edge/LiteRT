@@ -90,5 +90,32 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
   return CustomBuffer(env, tensor_type, buffer_type, hw_memory_info);
 }
 
+// Implementation for Wrap
+Expected<CustomBuffer> CustomBuffer::Wrap(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
+    size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env));
+  LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
+                          registry->GetCustomHandlers(buffer_type));
+
+  if (custom_buffer_handlers.import_func == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "This buffer type does not support wrapping/importing.");
+  }
+
+  HwMemoryInfoPtr hw_memory_info = nullptr;
+  // The import_func is responsible for creating HwMemoryInfo
+  // and setting its internal 'owns_handle' flag to false.
+  auto status = custom_buffer_handlers.import_func(
+      env, &tensor_type, buffer_type, hw_buffer_handle, buffer_size,
+      &hw_memory_info);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to import custom tensor buffer.");
+  }
+  // Use the private constructor to create the wrapper.
+  return CustomBuffer(env, tensor_type, buffer_type, hw_memory_info);
+}
+
 }  // namespace internal
 }  // namespace litert

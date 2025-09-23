@@ -49,7 +49,6 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
-
 using litert::BufferTypeToString;
 using litert::Expected;
 using litert::Unexpected;
@@ -498,6 +497,26 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
   return tensor_buffer;
 }
 
+#if LITERT_HAS_METAL_SUPPORT
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t buffer_size) {
+  // Use CustomBuffer::Wrap to create a non-owning wrapper
+  LITERT_ASSIGN_OR_RETURN(
+      litert::internal::CustomBuffer custom_buffer,
+      litert::internal::CustomBuffer::Wrap(env, tensor_type, buffer_type,
+                                           metal_buffer, buffer_size));
+
+  Ptr tensor_buffer(
+      new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
+
+  tensor_buffer->buffer_.emplace<litert::internal::CustomBuffer>(
+      std::move(custom_buffer));
+  return tensor_buffer;
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
+
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateManagedGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     size_t buffer_size) {
@@ -706,7 +725,6 @@ Expected<std::pair<void*, int>> LiteRtTensorBufferT::GetFastRpcBuffer() {
                       BufferTypeToString(kLiteRtTensorBufferTypeFastRpc),
                       BufferTypeToString(buffer_type_)));
 }
-
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<litert::internal::OpenClMemory*>

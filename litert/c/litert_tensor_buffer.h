@@ -235,9 +235,14 @@ LiteRtStatus LiteRtGetTensorBufferWebGpuBuffer(
 // optional metal memory buffer deallocator (it can be NULL).
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for
-// calling LiteRtDestroyTensorBuffer() to release the object.
-// NULL deallocator means that the Metal buffer is not managed by the tensor
-// buffer and therefore must be released separately by the caller.
+// releasing the object. NULL deallocator means that the Metal buffer is not
+// managed by the tensor buffer and therefore must be released separately by the
+// caller.
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer);
 
 // Return an error if the backing buffer is not a Metal memory.
 LiteRtStatus LiteRtGetTensorBufferMetalMemory(LiteRtTensorBuffer tensor_buffer,

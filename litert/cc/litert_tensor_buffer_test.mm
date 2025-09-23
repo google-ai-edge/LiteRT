@@ -99,4 +99,47 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   }
 }
 
+- (void)testTensorBufferCreateFromMetalMemory {
+  XCTAssertTrue(litert::HasMetalSupport());
+
+  auto metal_device = tflite::gpu::metal::MetalDevice();
+  // Create LiteRt environment from metal options.
+  std::vector<litert::Environment::Option> environment_options;
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
+                                 .value = (__bridge const void *)(metal_device.device())});
+
+  id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
+
+  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
+                                 .value = (__bridge const void *)(command_queue)});
+  auto env = litert::Environment::Create(environment_options);
+
+  const litert::RankedTensorType kTensorType(kTestTensorType);
+  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
+
+  // Create a managed buffer
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
+                                                           kTensorType, sizeof(kTensorData));
+  XCTAssertTrue(tensor_buffer);
+
+  // Get the native handle from the managed buffer.
+  auto metal_buffer = tensor_buffer->GetMetalBuffer();
+  XCTAssertTrue(metal_buffer);
+
+  // Create a tensor buffer from the existing metal buffer.
+  auto metal_buffer_created = litert::TensorBuffer::CreateFromMetalBuffer(
+      env->Get(), kTensorType, kTensorBufferType, *metal_buffer, sizeof(kTensorData));
+  XCTAssertTrue(metal_buffer_created);
+
+  // Check properties of the wrapped buffer
+  auto tensor_buffer_type = metal_buffer_created->BufferType();
+  XCTAssertTrue(tensor_buffer_type);
+  XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
+
+  // Check that the wrapped buffer has the same native handle as the original buffer.
+  auto metal_buffer_new_ptr = metal_buffer_created->GetMetalBuffer();
+  XCTAssertTrue(metal_buffer_new_ptr);
+  XCTAssertEqual(*metal_buffer_new_ptr, *metal_buffer);
+}
+
 @end
