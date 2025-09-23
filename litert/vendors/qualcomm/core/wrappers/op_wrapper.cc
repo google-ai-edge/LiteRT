@@ -123,6 +123,8 @@ void OpWrapper::SwapOutputs(OpWrapper& other) {
 
 void OpWrapper::ClearTensorParams() { tensor_params_.clear(); }
 
+void OpWrapper::ClearScalarParams() { scalar_params_.clear(); }
+
 void OpWrapper::UpdateTensors(
     const std::vector<std::optional<qnn::TensorWrapperRef>>& inputs,
     const std::vector<std::optional<qnn::TensorWrapperRef>>& outputs) {
