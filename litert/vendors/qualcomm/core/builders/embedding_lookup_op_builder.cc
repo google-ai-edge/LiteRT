@@ -38,7 +38,7 @@ std::vector<OpWrapper> BuildEmbeddingLookupOp(
         "is int16. Int8 table will be cast to int16.");
     std::vector<std::int16_t> int16_data;
     size_t data_len = table_tensor.GetTensorNumElements();
-    auto int8_data = table_tensor.GetStaticTensorData<std::int8_t>();
+    auto int8_data = table_tensor.GetTensorData<std::int8_t>();
     if (!int8_data.has_value()) {
       QNN_LOG_ERROR("Embedding lookup get int8 table failed.");
       return res;
