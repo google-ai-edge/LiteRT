@@ -18,6 +18,8 @@
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <limits>
+#include <numeric>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -193,6 +195,16 @@ std::optional<size_t> FindInd(It begin, It end, T val) {
   return (it == end) ? std::nullopt : std::make_optional(it - begin);
 }
 
+// Average the container.
+template <typename T, template <typename> typename C>
+T Avg(const C<T>& c) {
+  if (std::size(c) == 0) {
+    return std::numeric_limits<T>::max();
+  }
+  return std::accumulate(std::cbegin(c), std::cend(c), T{}) /
+         static_cast<T>(std::size(c));
+}
+
 // Compile time strings.
 
 template <size_t Len>
@@ -216,7 +228,7 @@ class CtStr {
     return absl::string_view(data_.data(), data_.size());
   }
 
- private:
+  //  private:
   template <size_t N, size_t... I>
   constexpr CtStr(StrLiteral<N> lit, std::index_sequence<I...>)
       : data_(Data({lit[I]...})) {}

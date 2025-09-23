@@ -515,6 +515,26 @@ bool IsIO(const LiteRtSubgraphT& subgraph, const LiteRtTensorT& tensor) {
   return FindInput(subgraph, tensor) || FindOutput(subgraph, tensor);
 }
 
+bool IsFullyCompiled(const LiteRtModelT& graph) {
+  for (const auto& subgraph : graph.Subgraphs()) {
+    if (!std::all_of(subgraph->Ops().begin(), subgraph->Ops().end(),
+                     [&](const LiteRtOpT* op) {
+                       // If there hasn't been a round of serialization,
+                       // since dispatches were added, they won't be in the code
+                       // table.
+                       // TODO: Fix this once the code table is updateded
+                       // dynamically.
+                       return litert::internal::GetTflOpCodeInd(*op) ==
+                                  litert::internal::kDispatchOpCodeTflInd ||
+                              GetCustomOpCode(graph, *op) ==
+                                  litert::internal::kLiteRtDispatchOpCustomName;
+                     })) {
+      return false;
+    }
+  }
+  return true;
+}
+
 LiteRtTensor DisconnectOutput(LiteRtOpT& op, LiteRtParamIndex output_ind) {
   ABSL_DCHECK(output_ind < op.Outputs().size()) << "Removing tensor index oob";
   auto& output = op.Output(output_ind);

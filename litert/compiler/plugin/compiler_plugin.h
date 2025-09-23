@@ -116,6 +116,13 @@ class CompilerPlugin {
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
 
+  // Same as above but returns the plugin with matching Soc manufacturer if it
+  // exists.
+  static Expected<CompilerPlugin> FindPlugin(
+      absl::string_view soc_manufacturer,
+      absl::Span<const absl::string_view> lib_search_paths,
+      LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
+
   CompilerPlugin(CompilerPlugin&& other);
   CompilerPlugin& operator=(CompilerPlugin&& other);
   CompilerPlugin(const CompilerPlugin& other) = delete;
