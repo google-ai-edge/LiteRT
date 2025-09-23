@@ -91,6 +91,13 @@ LiteRtStatus LiteRtSetOpaqueOptionsHash(
 // for the given `options` via `LiteRtSetOpaqueOptionsPayloadHashFunc`.
 LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
                                         uint64_t* hash);
+
+// Finds the first option in the linked list pointed by `options` with a given
+// payload identifier.
+LiteRtStatus LiteRtFindOpaqueOptions(LiteRtOpaqueOptions options,
+                                     const char* payload_identifier,
+                                     LiteRtOpaqueOptions* found_options);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

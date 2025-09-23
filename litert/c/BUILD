@@ -404,9 +404,9 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_logging",
+        ":litert_opaque_options",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
         "//litert/core:options",
     ],
 )

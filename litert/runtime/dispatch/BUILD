@@ -114,7 +114,6 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_opaque_options",
     ],
 )
 
@@ -153,9 +152,6 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
-        "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_tflite_error_status_builder",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",

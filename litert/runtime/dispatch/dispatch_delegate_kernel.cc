@@ -32,16 +32,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
@@ -127,20 +123,22 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
 }
 
 Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
-  LITERT_ASSIGN_OR_RETURN(
-      auto dispatch_options,
-      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  LiteRtOpaqueOptions opaque_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptions(
+      options_->options, DispatchDelegateOptions::Discriminator(),
+      &opaque_options));
+  LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
+                          DispatchDelegateOptions::Create(opaque_options));
   return dispatch_options.GetAllocBase();
 }
 
 Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
-  LITERT_ASSIGN_OR_RETURN(
-      auto dispatch_options,
-      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  LiteRtOpaqueOptions opaque_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindOpaqueOptions(
+      options_->options, DispatchDelegateOptions::Discriminator(),
+      &opaque_options));
+  LITERT_ASSIGN_OR_RETURN(auto dispatch_options,
+                          DispatchDelegateOptions::Create(opaque_options));
   return dispatch_options.GetAllocBaseFd();
 }
 

@@ -40,6 +40,7 @@
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -47,10 +48,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
@@ -124,21 +122,20 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interpreter_options.SetUseSignatureTensorNames(true);
   int num_threads = 1;
   if (jit_compilation_options) {
-    litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
-    LITERT_ASSIGN_OR_RETURN(litert::OpaqueOptions opaque_options,
-                            cc_options.GetOpaqueOptions());
-
-    if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
-            opaque_options, LiteRtRuntimeOptionsT::Identifier());
-        runtime_options) {
+    void* data;
+    auto status =
+        LiteRtFindOpaqueOptionsData(jit_compilation_options->options,
+                                    LiteRtRuntimeOptionsT::Identifier(), &data);
+    if (status == kLiteRtStatusOk) {
+      auto runtime_options = reinterpret_cast<LiteRtRuntimeOptionsT*>(data);
       interpreter_options.SetShloCompositeInlining(
-          (*runtime_options)->shlo_composite_inlining);
-      if ((*runtime_options)->enable_profiling) {
+          runtime_options->shlo_composite_inlining);
+      if (runtime_options->enable_profiling) {
         profiler_ = new LiteRtProfilerT(/*max_profiling_buffer_entries=*/2048);
       }
 
       // Create error reporter based on mode
-      switch ((*runtime_options)->error_reporter_mode) {
+      switch (runtime_options->error_reporter_mode) {
         case LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone:
           // No error reporter
           break;
@@ -151,10 +148,12 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       }
     }
 
-    if (auto cpu_options = litert::FindOpaqueData<LiteRtCpuOptionsT>(
-            opaque_options, LiteRtCpuOptionsT::Identifier());
-        cpu_options) {
-      num_threads = (*cpu_options)->xnn.num_threads;
+    status =
+        LiteRtFindOpaqueOptionsData(jit_compilation_options->options,
+                                    LiteRtCpuOptionsT::Identifier(), &data);
+    if (status == kLiteRtStatusOk) {
+      auto cpu_options = reinterpret_cast<LiteRtCpuOptionsT*>(data);
+      num_threads = cpu_options->xnn.num_threads;
     }
   }
 
@@ -289,25 +288,24 @@ namespace {
 class ScopedCompilationOptionsModifier {
  public:
   explicit ScopedCompilationOptionsModifier(LiteRtOptions compilation_options)
-      : accelerator_options_(compilation_options->options) {}
+      : accelerator_options_(&compilation_options->options) {}
 
   ~ScopedCompilationOptionsModifier() {
     // Remove any option that was appended during the lifetime of this object.
     while (--num_appended_options_ >= 0) {
-      accelerator_options_.Pop();
+      LiteRtPopOpaqueOptions(accelerator_options_);
     }
   }
 
-  Expected<void> Append(litert::OpaqueOptions&& accelerator_options) {
-    auto status = accelerator_options_.Append(std::move(accelerator_options));
-    if (status) {
-      ++num_appended_options_;
-    }
-    return status;
+  Expected<void> Append(const LiteRtOpaqueOptions accelerator_options) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtAppendOpaqueOptions(accelerator_options_, accelerator_options));
+    ++num_appended_options_;
+    return {};
   }
 
  private:
-  litert::OpaqueOptions& accelerator_options_;
+  LiteRtOpaqueOptions* const accelerator_options_;
   int num_appended_options_ = 0;
 };
 
@@ -352,7 +350,7 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
-    LITERT_RETURN_IF_ERROR(scoped_modifier.Append(std::move(dispatch_options)));
+    LITERT_RETURN_IF_ERROR(scoped_modifier.Append(dispatch_options.Release()));
   }
 
   // Apply accelerators matching the requested hardware support to the
