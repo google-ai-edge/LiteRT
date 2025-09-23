@@ -465,6 +465,17 @@ cc_binary(
 )
 
 cc_binary(
+    name = "gpu_numerics_check_opengl",
+    srcs = ["gpu_numerics_check.cc"],
+    deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc/options:litert_gpu_options",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu:ml_drift_opengl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
+    ],
+)
+
+cc_binary(
     name = "gpu_numerics_check_vulkan",
     srcs = ["gpu_numerics_check.cc"],
     tags = ["requires-gpu-nvidia"],
@@ -512,6 +523,16 @@ cc_library(
 cc_binary(
     name = "benchmark_model",
     deps = [":benchmark_model_main"] + GPU_ACCELERATOR_DEPS,
+)
+
+cc_binary(
+    name = "benchmark_model_opengl",
+    deps = [
+        ":benchmark_model_main",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu:ml_drift_opengl_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
+    ],
 )
 
 cc_binary(
