@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Docker image to provide a hermetic build environment for Litert.
-FROM ubuntu:24.04
+FROM ubuntu:22.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y \
     unzip \
     wget \
     zip \
-    llvm-18 \
-    clang-18 \
+    llvm-14 \
+    clang-14 \
     libc++-dev \
     libc++abi-dev \
     && apt-get clean && \
@@ -98,7 +98,7 @@ RUN chmod -R go=u ${ANDROID_DEV_HOME}
 COPY requirements.txt /tmp/requirements.txt
 
 # Install Python dependencies securely using requirements file with hash verification
-RUN pip3 install --break-system-packages --require-hashes -r /tmp/requirements.txt
+RUN pip3 install --require-hashes -r /tmp/requirements.txt
 
 # Set up environment variables for auto-configuration
 ENV PYTHON_BIN_PATH=/usr/bin/python3
