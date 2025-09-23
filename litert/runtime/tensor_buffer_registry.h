@@ -26,6 +26,7 @@ namespace internal {
 
 struct CustomTensorBufferHandlers {
   ::CreateCustomTensorBuffer create_func;
+  ::ImportCustomTensorBuffer import_func;
   ::DestroyCustomTensorBuffer destroy_func;
   ::LockCustomTensorBuffer lock_func;
   ::UnlockCustomTensorBuffer unlock_func;

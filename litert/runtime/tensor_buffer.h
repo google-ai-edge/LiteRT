@@ -120,7 +120,7 @@ class LiteRtTensorBufferT {
   static litert::Expected<Ptr> CreateFromMetalMemory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, void* metal_buffer,
-      size_t buffer_size, LiteRtOpenClDeallocator deallocator = nullptr);
+      size_t buffer_size);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }

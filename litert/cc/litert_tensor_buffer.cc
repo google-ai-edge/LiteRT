@@ -137,6 +137,18 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
+#if LITERT_HAS_METAL_SUPPORT
+Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
+    LiteRtEnvironment env, const RankedTensorType& tensor_type,
+    LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes) {
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromMetalMemory(
+      env, &litert_tensor_type, buffer_type, buffer, size_bytes,
+      /*deallocator=*/nullptr, &tensor_buffer));
+  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+}
+#endif  // LITERT_HAS_METAL_SUPPORT
 
 bool TensorBuffer::IsOpenClMemory() const {
   LiteRtTensorBufferType tensor_buffer_type;

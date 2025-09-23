@@ -178,6 +178,21 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_METAL_SUPPORT
+LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, void* metal_buffer,
+    size_t metal_buffer_size, LiteRtMetalDeallocator deallocator,
+    LiteRtTensorBuffer* tensor_buffer) {
+  if (!tensor_type || !tensor_buffer || !metal_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto created_tensor_buffer,
+      LiteRtTensorBufferT::CreateFromMetalMemory(
+          env, *tensor_type, buffer_type, metal_buffer, metal_buffer_size));
+  *tensor_buffer = created_tensor_buffer.release();
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetTensorBufferMetalMemory(
     LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle) {
