@@ -388,6 +388,7 @@ cc_library(
         ":tfl_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_profiler_event",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",

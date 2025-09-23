@@ -623,7 +623,9 @@ TEST(CompiledModelTest, WithProfiler) {
             kLiteRtStatusOk);
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
-  jit_compilation_options->options.Append(std::move(runtime_options));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
@@ -745,7 +747,9 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  jit_compilation_options->options.Append(std::move(runtime_options));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
@@ -800,7 +804,9 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  jit_compilation_options->options.Append(std::move(runtime_options));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
@@ -843,7 +849,9 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeNone);
-  jit_compilation_options->options.Append(std::move(runtime_options));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(jit_compilation_options,
+                                   runtime_options.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
@@ -889,7 +897,8 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options1, RuntimeOptions::Create());
   runtime_options1.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  options1->options.Append(std::move(runtime_options1));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options1, runtime_options1.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model1,
@@ -908,7 +917,8 @@ TEST(CompiledModelTest, ErrorReporterWithMultipleModels) {
   LITERT_ASSIGN_OR_ABORT(auto runtime_options2, RuntimeOptions::Create());
   runtime_options2.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeStderr);
-  options2->options.Append(std::move(runtime_options2));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options2, runtime_options2.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model2,
@@ -988,7 +998,8 @@ TEST(CompiledModelTest, ErrorReporterWithProfilingEnabled) {
   runtime_options.SetEnableProfiling(true);
   runtime_options.SetErrorReporterMode(
       LiteRtErrorReporterMode::kLiteRtErrorReporterModeBuffer);
-  options->options.Append(std::move(runtime_options));
+  ASSERT_EQ(LiteRtAddOpaqueOptions(options, runtime_options.Release()),
+            kLiteRtStatusOk);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       LiteRtCompiledModelT::Ptr compiled_model,
@@ -1136,7 +1147,7 @@ TEST(CompiledModelTest, GetInterpreter) {
   LiteRtDestroyEnvironment(env_ptr);
 
   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
-    GetInterpreter(compiled_model.get()));
+                              GetInterpreter(compiled_model.get()));
   EXPECT_NE(interpreter, nullptr);
 }
 
