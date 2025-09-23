@@ -40,7 +40,7 @@ ABSL_FLAG(std::vector<std::string>, seeds, std::vector<std::string>({}),
           "used to generator the randomized parameters for all invocations of "
           "the respective test-generator.");
 
-ABSL_FLAG(bool, quiet, true, "Minimize logging.");
+ABSL_FLAG(bool, quiet, false, "Minimize logging.");
 
 ABSL_FLAG(std::string, backend, "cpu",
           "Which backend to use as the \"actual\".");
