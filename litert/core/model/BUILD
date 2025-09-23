@@ -173,6 +173,7 @@ cc_library(
         ":model",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/core/util:flatbuffer_tools",
