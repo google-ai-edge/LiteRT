@@ -26,7 +26,7 @@ litert_dynamic_lib(
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -38,6 +38,7 @@ litert_dynamic_lib(
         "//conditions:default": [],
     }),
     export_litert_only = True,
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     shared_lib_name = "intel_openvino_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_IntelOpenvino.so",
     ungrte = True,
@@ -48,7 +49,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
-        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
 )
@@ -56,7 +57,7 @@ litert_dynamic_lib(
 litert_bin(
     name = "LiteRtCompilerPlugin",
     srcs = ["openvino_compiler_plugin.cc"],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -67,6 +68,7 @@ litert_bin(
         ],
         "//conditions:default": [],
     }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkshared = 1,
     visibility = ["//visibility:public"],
     deps = [
@@ -76,6 +78,7 @@ litert_bin(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
+        "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
 )
@@ -85,6 +88,8 @@ litert_lib(
     hdrs = [
         "//litert/vendors/c:litert_compiler_plugin.h",
     ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
     ],
@@ -98,7 +103,9 @@ litert_lib(
     ],
     copts = [
         "-Wno-unused-variable",
+        "-fexceptions",
     ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -113,6 +120,8 @@ litert_lib(
     name = "decoder",
     srcs = ["decoder.cc"],
     hdrs = ["decoder.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
@@ -129,10 +138,12 @@ litert_test(
     srcs = [
         "decoder_test.cc",
     ],
+    copts = ["-fexceptions"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     tags = [
         "notap",
     ],
@@ -155,10 +166,12 @@ litert_test(
     srcs = [
         "openvino_compiler_plugin_test.cc",
     ],
+    copts = ["-fexceptions"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     tags = [
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",

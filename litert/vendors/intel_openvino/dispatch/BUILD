@@ -34,7 +34,7 @@ litert_dynamic_lib(
     ],
     copts = [
         "-Os",
-        "-fno-exceptions",
+        "-fexceptions",
         "-fno-unwind-tables",
         "-fno-asynchronous-unwind-tables",
         "-ffunction-sections",
@@ -51,6 +51,7 @@ litert_dynamic_lib(
         "//conditions:default": [],
     }),
     export_litert_only = True,
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkopts = select({
         "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
@@ -83,7 +84,7 @@ litert_bin(
         "dispatch_api.cc",
         "invocation_context.cc",
     ],
-    copts = select({
+    copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
             "/DLITERT_COMPILE_LIBRARY",
             "/wd4018",  # -Wno-sign-compare
@@ -92,6 +93,11 @@ litert_bin(
             "-DLITERT_COMPILE_LIBRARY",
             "-Wno-sign-compare",
         ],
+        "//conditions:default": [],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
         "//conditions:default": [],
     }),
     linkshared = 1,
@@ -117,6 +123,8 @@ litert_lib(
         "device_context.h",
         "invocation_context.h",
     ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
@@ -138,6 +146,8 @@ cc_test(
     srcs = [
         "dispatch_api_openvino_test.cc",
     ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     #TODO:Uncomment this when NPU bin test data file is added in follow-up PR
     #data = [
     #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
