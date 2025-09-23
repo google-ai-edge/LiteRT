@@ -14,7 +14,9 @@
 
 #include "litert/cc/litert_opaque_options.h"
 
+#include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <string>
 #include <utility>
 
@@ -43,6 +45,14 @@ class SimpleOptions : public OpaqueOptions {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
         Discriminator(), new int(1),
+        [](void* d) { delete reinterpret_cast<int*>(d); }, &options));
+    return SimpleOptions(options, OwnHandle::kYes);
+  }
+
+  static Expected<SimpleOptions> Create(int value) {
+    LiteRtOpaqueOptions options;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+        Discriminator(), new int(value),
         [](void* d) { delete reinterpret_cast<int*>(d); }, &options));
     return SimpleOptions(options, OwnHandle::kYes);
   }
@@ -105,6 +115,29 @@ TEST(OpaqueOptionsTest, FindType) {
   LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions found,
                               FindOpaqueOptions<SimpleOptions>(options));
   EXPECT_EQ(found.Data(), 1);
+}
+
+TEST(OpaqueOptionsTest, GetPayloadHashFailsIfUnset) {
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts, SimpleOptions::Create());
+  auto hash_result = opts.Hash();
+  EXPECT_FALSE(hash_result);
+  EXPECT_EQ(hash_result.Error().Status(), kLiteRtStatusErrorUnsupported);
+}
+
+TEST(OpaqueOptionsTest, SetAndGetPayloadHash) {
+  const int kPayloadValue = 42;
+  LITERT_ASSERT_OK_AND_ASSIGN(SimpleOptions opts,
+                              SimpleOptions::Create(kPayloadValue));
+
+  auto std_hash = [](const void* payload_data) -> uint64_t {
+    const int* payload = reinterpret_cast<const int*>(payload_data);
+    return std::hash<int>{}(*payload);
+  };
+
+  LITERT_ASSERT_OK(opts.SetHash(std_hash));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(uint64_t hash, opts.Hash());
+  EXPECT_EQ(hash, std::hash<int>{}(kPayloadValue));
 }
 
 }  // namespace

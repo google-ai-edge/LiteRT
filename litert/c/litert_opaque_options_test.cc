@@ -14,6 +14,9 @@
 
 #include "litert/c/litert_opaque_options.h"
 
+#include <cstdint>
+#include <functional>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
@@ -27,10 +30,12 @@ namespace {
 using testing::StrEq;
 using testing::litert::IsError;
 
+static constexpr int kDummyOptionValue = 3;
+
 struct DummyOpaqueOptions {
   static constexpr const char* const kIdentifier = "dummy-accelerator";
 
-  int dummy_option = 3;
+  int dummy_option = kDummyOptionValue;
 
   // Allocates and sets the basic structure for the accelerator options.
   static litert::Expected<LiteRtOpaqueOptions> CreateOptions() {
@@ -77,6 +82,26 @@ TEST_F(LiteRtOpaqueOptionsTest, GetIdentifier) {
               IsError(kLiteRtStatusErrorInvalidArgument));
   EXPECT_EQ(LiteRtGetOpaqueOptionsIdentifier(options_, nullptr),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST_F(LiteRtOpaqueOptionsTest, GetPayloadHashFailsIfUnset) {
+  uint64_t hash = 0;
+  // Fails as 'unsupported' because no hash function is set.
+  EXPECT_THAT(LiteRtGetOpaqueOptionsHash(options_, &hash),
+              IsError(kLiteRtStatusErrorUnsupported));
+}
+
+TEST_F(LiteRtOpaqueOptionsTest, GetPayloadHashWorks) {
+  auto std_hash = [](const void* payload) -> uint64_t {
+    const DummyOpaqueOptions* dummy_options =
+        reinterpret_cast<const DummyOpaqueOptions*>(payload);
+    return std::hash<int>()(dummy_options->dummy_option);
+  };
+  LITERT_EXPECT_OK(LiteRtSetOpaqueOptionsHash(options_, std_hash));
+
+  uint64_t hash = 0;
+  LITERT_EXPECT_OK(LiteRtGetOpaqueOptionsHash(options_, &hash));
+  EXPECT_EQ(hash, std::hash<int>()(kDummyOptionValue));
 }
 
 TEST_F(LiteRtOpaqueOptionsTest, CreatingAndDestroyingAListWorks) {

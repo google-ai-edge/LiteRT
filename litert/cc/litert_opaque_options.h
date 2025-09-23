@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_OPAQUE_OPTIONS_H_
 
 #include <cassert>
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <type_traits>
@@ -97,6 +98,10 @@ class OpaqueOptions
     }
     return {};
   }
+
+  Expected<void> SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func);
+
+  Expected<uint64_t> Hash() const;
 };
 
 // Find the opaque option in the chain that matches the provided identifier.
