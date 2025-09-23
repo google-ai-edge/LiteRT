@@ -22,6 +22,7 @@ def litert_define_ats(
         name,
         backend,
         dont_register = [],
+        do_register = [],
         param_seeds = {},
         extra_flags = []):
     """Defines a pre-configured ATS test suite.
@@ -30,6 +31,7 @@ def litert_define_ats(
       name: The name of the test suite.
       backend: The backend to use for the test suite.
       dont_register: A list of regular expressions for tests that should not be registered.
+      do_register: A list of regular expressions for tests that should be registered.
       param_seeds: A dictionary of parameter seeds for the test suite.
       extra_flags: A list of extra flags to pass to the test suite.
     """
@@ -54,8 +56,19 @@ def litert_define_ats(
         else:
             dont_register_str = "({})".format("|".join(dont_register))
         exec_args.append(
-            "--dont_register=\\\"{}\\\"".format(dont_register_str),
+            "--dont_register='{}'".format(dont_register_str),
         )
+
+    if do_register:
+        if len(do_register) == 1:
+            do_register_str = do_register[0]
+        else:
+            do_register_str = "({})".format("|".join(do_register))
+
+        exec_args.append(
+            "--do_register='{}'".format(do_register_str),
+        )
+
     if param_seeds:
         exec_args.append(
             "--seeds=\"{}\"".format(",".join(["{}:{}".format(k, v) for k, v in param_seeds.items()])),
