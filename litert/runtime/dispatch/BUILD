@@ -89,7 +89,6 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
         "//litert/c:litert_model_types",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
