@@ -110,7 +110,7 @@ Expected<uint64_t> CompilationCache::GetModelHash(
   LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
   uint64_t vendor_plugin_api_version_hash = GetHash(compiler_plugin_info);
   uint64_t options_hash = GetHash(options);
-  uint64_t combined_hash = 0;
+  std::size_t combined_hash = 0;
   HashCombine(combined_hash, model_hash, options_hash,
               vendor_plugin_api_version_hash);
   return combined_hash;

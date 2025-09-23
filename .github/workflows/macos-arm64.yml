@@ -94,6 +94,7 @@ jobs:
 
       - name: Build LiteRT targets
         run: |
+        # TODO(b/446718368): Re-enable the tests once we update our workflow with a custom runner.
           bazel build --disk_cache=~/.cache/bazel-macos \
             -c opt \
             -s \
