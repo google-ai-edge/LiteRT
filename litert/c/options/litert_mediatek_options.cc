@@ -18,11 +18,8 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
-#include "litert/cc/litert_detail.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_opaque_options.h"
+
 struct LiteRtMediatekOptionsT {
   LiteRtMediatekOptionsNeronSDKVersionType neron_sdk_version =
       kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8;
