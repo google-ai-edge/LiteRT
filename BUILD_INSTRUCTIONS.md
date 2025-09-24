@@ -1,4 +1,4 @@
-# LiteRT Build Instructions
+# LiteRT Bazel Build Instructions
 
 The easiest way to build LiteRT from the source is using our docker image.
 This document provides detailed build instructions for LiteRT across supported
