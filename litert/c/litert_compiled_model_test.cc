@@ -15,6 +15,7 @@
 #include "litert/c/litert_compiled_model.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -26,6 +27,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
@@ -34,6 +36,7 @@
 #include "litert/test/common.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
+using testing::ElementsAre;
 using testing::FloatNear;
 using testing::Pointwise;
 
@@ -285,6 +288,88 @@ TEST(CompiledModelTest, ResizeInputTensorWithStaticModel) {
                                            /*signature_index=*/0,
                                            /*input_index=*/0, new_dims, 3),
       kLiteRtStatusOk);
+
+  // Cleanup
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(CompiledModelTest, GetOutputTensorLayoutsWithDynamicModel) {
+  // Use the dynamic model for testing resize functionality
+  auto path = testing::GetTestFilePath(kDynamicModelFileName);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // Check basic subgraph information
+  LiteRtSubgraph litert_subgraph;
+  ASSERT_EQ(LiteRtGetModelSubgraph(model, 0, &litert_subgraph),
+            kLiteRtStatusOk);
+  LiteRtParamIndex num_inputs;
+  ASSERT_EQ(LiteRtGetNumSubgraphInputs(litert_subgraph, &num_inputs),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_inputs, 2);
+  LiteRtParamIndex num_outputs;
+  ASSERT_EQ(LiteRtGetNumSubgraphOutputs(litert_subgraph, &num_outputs),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_outputs, 1);
+
+  std::vector<LiteRtTensor> input_tensor = litert_subgraph->Inputs();
+  for (int i = 0; i < (size_t)num_inputs; ++i) {
+    auto tensor_type = input_tensor[i]->Ranked();
+    ASSERT_TRUE(tensor_type);
+    // Check if the original input tensor is (?, 2, 3)
+    EXPECT_THAT(absl::MakeConstSpan(tensor_type->layout.dimensions,
+                                    tensor_type->layout.rank),
+                ElementsAre(-1, 2, 3));
+  }
+
+  // (?, 2, 3) => (1, 2, 3)
+  const int new_dims[] = {1, 2, 3};
+  for (int i = 0; i < (size_t)num_inputs; ++i) {
+    ASSERT_EQ(
+        LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                             /*signature_index=*/0,
+                                             /*input_index=*/i, new_dims, 3),
+        kLiteRtStatusOk);
+  }
+
+  // (?, 2, 3) => (1, 2, 3)
+  int expected_output_tensor_shapes[] = {1, 2, 3};
+  std::vector<LiteRtLayout> output_tensor_layouts(num_outputs);
+  ASSERT_EQ(
+      LiteRtGetCompiledModelOutputTensorLayouts(
+          compiled_model, /*signature_index=*/0, output_tensor_layouts.data(),
+          /*update_allocation=*/true),
+      kLiteRtStatusOk);
+
+  // Verify that the size has doubled (batch size doubled)
+  // Output tensor number is 1
+  LiteRtLayout layout = output_tensor_layouts[0];
+  ASSERT_EQ(layout.rank, sizeof(expected_output_tensor_shapes) / sizeof(int));
+  // litert check output_tensor_shapes equals expected_output_tensor_shapes
+  for (int i = 0; i < layout.rank; ++i) {
+    EXPECT_EQ(layout.dimensions[i], expected_output_tensor_shapes[i]);
+  }
 
   // Cleanup
   LiteRtDestroyCompiledModel(compiled_model);

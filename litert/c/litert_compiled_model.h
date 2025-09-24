@@ -18,6 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -84,6 +85,22 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
+
+// Returns the tensor layouts for all output tensors.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - layout: the returned `LiteRtLayout**` of tensor shapes.
+// - num_tensors: the number of output tensors.
+// - update_allocation: whether to update the tensor allocation. Set to true
+//   for dynamic models after resize input tensors.
+//
+// Note: This function usually should be called after resizing input tensors
+// to get the new output tensor layouts.
+LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtLayout* layout_vector, bool update_allocation);
 
 // Returns the associated environment of the given compiled model.
 LiteRtStatus LiteRtGetCompiledModelEnvironment(
@@ -183,7 +200,9 @@ LiteRtStatus LiteRtCompiledModelGetProfiler(LiteRtCompiledModel compiled_model,
 // - dims: A span containing the new dimensions for the input tensor.
 //
 // Note: After resizing, the previously obtained buffer requirements may be
-// invalidated. Callers should re-query buffer requirements if needed.
+// invalidated. Callers should re-query buffer requirements if needed. After
+// resizing, LiteRtGetCompiledModelAllOutputTensorLayouts can be used to get
+// the new output tensor layouts.
 //
 // Returns:
 // - kLiteRtStatusOk: Success.
