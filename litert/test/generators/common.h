@@ -17,20 +17,29 @@
 
 #include <array>
 #include <cstddef>
+#include <memory>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_detail.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_rng.h"
+#include "litert/core/model/model.h"
 #include "litert/test/simple_buffer.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
 
 // Helpers for defining generators and their consituent types.
+
+// Short hand for dynamic array of i/o buffers.
+using VarBuffers = std::vector<SimpleBuffer>;
 
 // Shorthand for specifying i/o tensor names as constexpr.
 template <size_t N>
@@ -76,24 +85,25 @@ struct TestLogicTraits {
   // Metaprogramming helper to grab the typed views from the tensor buffers
   // to pass to the reference implementation.
   template <typename ReferenceTensors, typename Buffers, size_t... Is>
-  static ReferenceTensors MakeReferenceTensors(Buffers& inputs,
-                                               std::index_sequence<Is...>) {
+  static Expected<ReferenceTensors> MakeReferenceTensors(
+      Buffers& inputs, std::index_sequence<Is...>) {
+    const bool types_ok =
+        (true && ... &&
+         (inputs[Is].ElementType() == GetElementType<InputDataType<Is>>()));
+    if (!types_ok) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Input types do not match reference implementation types");
+    }
     return ReferenceTensors{inputs[Is].template AsView<InputDataType<Is>>()...};
   }
   template <typename ReferenceTensors, typename Buffers>
-  static ReferenceTensors MakeReferenceTensors(Buffers& inputs) {
+  static Expected<ReferenceTensors> MakeReferenceTensors(Buffers& inputs) {
     return MakeReferenceTensors<ReferenceTensors>(
         inputs,
         std::make_index_sequence<std::tuple_size_v<ReferenceTensors>>());
   }
 
  public:
-  // Inputs for this test logic for the compiled model api.
-  using InputBuffers = std::array<SimpleBuffer, InputTypes::kSize>;
-
-  // Outputs for this test logic for the compiled model api.
-  using OutputBuffers = std::array<SimpleBuffer, OutputTypes::kSize>;
-
   // Inputs for the reference implementation.
   using ReferenceInputs = decltype(RefInputTypes(InputTypes()));
 
@@ -119,12 +129,23 @@ struct TestLogicTraits {
   static constexpr size_t kNumOutputs = OutputTypes::kSize;
 
   // Get the typed reference input views from the input buffers.
-  static ReferenceInputs MakeReferenceInputs(const InputBuffers& inputs) {
+  static Expected<ReferenceInputs> MakeReferenceInputs(
+      const VarBuffers& inputs) {
+    if (inputs.size() != kNumInputs) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   absl::StrFormat("Expected %d inputs, got %d", kNumInputs,
+                                   inputs.size()));
+    }
     return MakeReferenceTensors<ReferenceInputs>(inputs);
   }
 
   // Get the typed reference output views from the output buffers.
-  static ReferenceOutputs MakeReferenceOutputs(OutputBuffers& outputs) {
+  static Expected<ReferenceOutputs> MakeReferenceOutputs(VarBuffers& outputs) {
+    if (outputs.size() != kNumOutputs) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   absl::StrFormat("Expected %d inputs, got %d", kNumOutputs,
+                                   outputs.size()));
+    }
     return MakeReferenceTensors<ReferenceOutputs>(outputs);
   }
 };
@@ -148,6 +169,40 @@ template <LiteRtOpCode OpCode>
 using OpCodeC = std::integral_constant<LiteRtOpCode, OpCode>;
 template <LiteRtOpCode... OpCodes>
 using OpCodeListC = TypeList<OpCodeC<OpCodes>...>;
+
+// Base class for containers of test graphs and related logic.
+class TestGraph {
+ public:
+  using Ptr = std::unique_ptr<TestGraph>;
+  // Detect if this graph container implements its own custom reference
+  // impl.
+  virtual bool HasReference() const = 0;
+
+  // Returns the graph under test.
+  LiteRtModelT& Graph() const { return *model_; }
+
+  // Generate input buffers for the graph under test.
+  virtual Expected<VarBuffers> MakeInputs(
+      DefaultDevice& device,
+      const RandomTensorDataBuilder& data_builder) const = 0;
+
+  // Reference implementation of the graph under test.
+  virtual Expected<void> Reference(const VarBuffers& inputs,
+                                   VarBuffers& outputs) const = 0;
+
+  virtual ~TestGraph() = default;
+
+  TestGraph(const TestGraph&) = delete;
+  TestGraph& operator=(const TestGraph&) = delete;
+  TestGraph(TestGraph&&) = default;
+  TestGraph& operator=(TestGraph&&) = default;
+
+ protected:
+  explicit TestGraph(LiteRtModelT::Ptr model) : model_(std::move(model)) {}
+
+ private:
+  LiteRtModelT::Ptr model_;
+};
 
 }  // namespace litert::testing
 

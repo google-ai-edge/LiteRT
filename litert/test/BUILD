@@ -194,7 +194,7 @@ cc_library(
     hdrs = ["rng_fixture.h"],
     deps = [
         ":fuzz",
-        "//litert/cc:litert_numerics",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_rng",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",

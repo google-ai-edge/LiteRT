@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
+#include "litert/ats/compile_capture.h"
 
-#include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
-#include "litert/test/generators/common.h"  // IWYU pragma: export
-#include "litert/test/generators/no_op.h"  // IWYU pragma: export
+#include <sstream>
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+namespace litert::testing {
+namespace {
+
+using ::testing::HasSubstr;
+
+TEST(AtsCompileCaptureTest, Basic) {
+  CompileCapture cap;
+  cap.NewEntry();
+
+  std::ostringstream s;
+  cap.Print(s);
+
+  EXPECT_THAT(s.str(), HasSubstr("CompileCapture"));
+}
+
+}  // namespace
+}  // namespace litert::testing

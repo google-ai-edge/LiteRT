@@ -80,6 +80,8 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
+  using Ref = std::reference_wrapper<CompilerPlugin>;
+
   std::string DebugString() const;
 
   // Get the compiler plugin's API version.
@@ -113,6 +115,13 @@ class CompilerPlugin {
   // be successfully loaded. Additionally initializes the compiler plugin
   // instances and stores handle.
   static Expected<std::vector<CompilerPlugin>> LoadPlugins(
+      absl::Span<const absl::string_view> lib_search_paths,
+      LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
+
+  // Same as above but returns the plugin with matching Soc manufacturer if it
+  // exists.
+  static Expected<CompilerPlugin> FindPlugin(
+      absl::string_view soc_manufacturer,
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
 
