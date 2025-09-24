@@ -22,6 +22,7 @@
 #include <iterator>
 #include <list>
 #include <memory>
+#include <numeric>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -370,6 +371,27 @@ class LiteRtTensorT {
   // Get the tensor type of this tensor.
   const TensorType& Type() const { return tensor_type_; }
   TensorType& Type() { return tensor_type_; }
+
+  // Get ranked type directly.
+  ::litert::Expected<LiteRtRankedTensorType> Ranked() const {
+    if (Type().first == kLiteRtRankedTensorType) {
+      return Type().second.ranked_tensor_type;
+    }
+    return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                           "Tensor type is not ranked");
+  }
+
+  // Number of elements in the tensor.
+  size_t NumElements() const {
+    auto ranked = Ranked();
+    if (!ranked) {
+      return 0;
+    }
+    const auto& dims = ranked->layout.dimensions;
+    return static_cast<size_t>(
+        std::accumulate(std::cbegin(dims), std::cend(dims), 1,
+                        std::multiplies<decltype(dims[0])>()));
+  }
 
   // Set the tensor type.
   template <class Arg>
