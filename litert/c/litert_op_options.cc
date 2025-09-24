@@ -22,6 +22,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
@@ -377,6 +378,45 @@ LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   // ReduceMax OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceMin) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceMin OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceAny) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceAny OP options is stored as ReducerOptions.
+  *keepdims = opts.AsReducerOptions()->keep_dims;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims) {
+  if (op->OpCode() != kLiteRtOpCodeTflReduceAll) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto& opts = litert::internal::GetTflOptions(*op);
+  if (opts.value == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  // ReduceAll OP options is stored as ReducerOptions.
   *keepdims = opts.AsReducerOptions()->keep_dims;
   return kLiteRtStatusOk;
 }
