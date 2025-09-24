@@ -103,4 +103,28 @@ Expected<OwningBufferRef<uint8_t>> LoadBinaryFile(absl::string_view path) {
   return buf;
 }
 
+Expected<std::vector<std::string>> ListDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("Directory not found: %s", std_path.c_str()));
+  }
+  std::vector<std::string> res;
+  for (const auto& entry : std::filesystem::directory_iterator(std_path)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      res.push_back(entry.path().generic_string());
+    }
+  }
+  return res;
+}
+
+Expected<std::string> Filename(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  if (!StdExists(std_path)) {
+    return Error(kLiteRtStatusErrorNotFound,
+                 absl::StrFormat("File not found: %s", std_path.c_str()));
+  }
+  return std_path.filename().generic_string();
+}
+
 }  // namespace litert::internal
