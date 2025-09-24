@@ -32,7 +32,7 @@ cc_library(
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
         "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",
-        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/strings",
     ],
 )
 

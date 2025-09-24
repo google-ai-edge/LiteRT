@@ -16,6 +16,7 @@
 
 #include <utility>
 
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -33,6 +34,18 @@ extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
     LiteRtEnvironmentT& environment) = nullptr;
 
 namespace litert {
+namespace {
+
+Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
+                                          bool try_default_on_failure) {
+  auto result = SharedLibrary::Load(shlib_path, RtldFlags::Lazy().Local());
+  if (result || !try_default_on_failure) {
+    return result;
+  }
+  return SharedLibrary::Load(RtldFlags::kDefault);
+}
+
+}  // namespace
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
@@ -77,7 +90,8 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
                plugin_path.data());
     auto registration = RegisterSharedObjectAccelerator(
-        environment, plugin_path, "LiteRtRegisterGpuAccelerator");
+        environment, plugin_path, "LiteRtRegisterGpuAccelerator",
+        /*try_symbol_already_loaded=*/false);
     if (registration.HasValue()) {
       LITERT_LOG(LITERT_INFO,
                  "Dynamically loaded GPU accelerator(%s) registered.",
@@ -85,9 +99,12 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
       gpu_accelerator_registered = true;
       break;
     }
-    LITERT_LOG(LITERT_DEBUG, "Failed to load GPU accelerator(%s): %s, %s.",
-               plugin_path.data(),
-               LiteRtGetStatusString(registration.Error().Status()),
+    const auto& error = registration.Error();
+    auto log_level = absl::StrContains(error.Message(), "cannot locate symbol")
+                         ? LITERT_WARNING
+                         : LITERT_VERBOSE;
+    LITERT_LOG(log_level, "Failed to load GPU accelerator(%s): %s, %s.",
+               plugin_path.data(), LiteRtGetStatusString(error.Status()),
                registration.Error().Message().data());
   }
   if (!gpu_accelerator_registered) {
@@ -99,7 +116,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     }
   }
   if (!gpu_accelerator_registered) {
-    LITERT_LOG(LITERT_VERBOSE,
+    LITERT_LOG(LITERT_WARNING,
                "GPU accelerator could not be loaded and registered.");
   }
 
@@ -117,25 +134,18 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 };
 
 Expected<void> RegisterSharedObjectAccelerator(
-    LiteRtEnvironmentT& environment, absl::string_view plugin_path,
-    absl::string_view registration_function_name) {
-  auto maybe_lib = SharedLibrary::Load(plugin_path, RtldFlags::Lazy().Local());
-  if (!maybe_lib.HasValue()) {
-    LITERT_LOG(LITERT_DEBUG, "Failed to load shared library %s: %s, %s",
-               plugin_path.data(),
-               LiteRtGetStatusString(maybe_lib.Error().Status()),
-               maybe_lib.Error().Message().data());
-    maybe_lib = SharedLibrary::Load(RtldFlags::kDefault);
-  }
-  // Note: the Load(kDefault) overload always succeeds, so we are sure that
-  // maybe_lib contains a value.
-  SharedLibrary lib(std::move(maybe_lib.Value()));
-  LITERT_ASSIGN_OR_RETURN(auto registration_function,
-                          lib.LookupSymbol<LiteRtStatus (*)(LiteRtEnvironment)>(
-                              registration_function_name.data()));
+    LiteRtEnvironmentT& environment, absl::string_view shlib_path,
+    absl::string_view registration_function_name,
+    bool try_symbol_already_loaded) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto shlib, LoadSharedLibrary(shlib_path, try_symbol_already_loaded));
+  LITERT_ASSIGN_OR_RETURN(
+      auto registration_function,
+      shlib.LookupSymbol<LiteRtStatus (*)(LiteRtEnvironment)>(
+          registration_function_name.data()));
   LITERT_RETURN_IF_ERROR(registration_function(&environment));
   environment.GetAcceleratorRegistry().TakeOwnershipOfSharedLibrary(
-      std::move(lib));
+      std::move(shlib));
   return {};
 }
 

@@ -317,6 +317,7 @@ cc_library(
         "//tflite/delegates/gpu/cl:opencl_wrapper",
         "@opencl_headers",
     ],
+    alwayslink = 1,
 )
 
 cc_library(
