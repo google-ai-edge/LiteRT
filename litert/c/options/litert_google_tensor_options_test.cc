@@ -14,6 +14,8 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
+#include <cstdint>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -138,6 +140,35 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_FALSE(options->GetDumpOpTimings());
   options->SetDumpOpTimings(true);
   EXPECT_TRUE(options->GetDumpOpTimings());
+}
+
+TEST(LiteRtGoogleTensorOptionsTest, Hash) {
+  LiteRtOpaqueOptions options1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options1));
+  LiteRtOpaqueOptions options2;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options2));
+
+  uint64_t hash1, hash2;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options1, &options_data1));
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data1, true));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  EXPECT_NE(hash1, hash2);
+
+  LiteRtGoogleTensorOptions options_data2;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options2, &options_data2));
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data2, true));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtDestroyOpaqueOptions(options1);
+  LiteRtDestroyOpaqueOptions(options2);
 }
 
 }  // namespace

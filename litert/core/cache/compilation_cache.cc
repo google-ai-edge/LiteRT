@@ -27,9 +27,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/cache/hash_util.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
@@ -39,15 +41,6 @@
 namespace litert::internal {
 
 namespace {
-
-inline void HashCombine(std::size_t& seed) {}  // NOLINT
-
-template <typename T, typename... Rest>
-inline void HashCombine(std::size_t& seed, const T& v, Rest... rest) {
-  std::hash<T> hasher;
-  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-  HashCombine(seed, rest...);
-}
 
 std::string GetCachedModelFilePath(absl::string_view cache_root_path,
                                    uint64_t model_hash) {
@@ -61,6 +54,19 @@ uint64_t GetHash(const LiteRtOptionsT& options) {
       ans, options.hardware_accelerators,
       options.version.major  // Minor updates should not invalid the cache.
   );
+
+  LiteRtOpaqueOptions it = options.options;
+  if (it) {
+    do {
+      uint64_t opaque_options_hash = 0;
+      // It is fine for an opaque option to not have a hash function.
+      if (LiteRtGetOpaqueOptionsHash(it, &opaque_options_hash) ==
+          kLiteRtStatusOk) {
+        HashCombine(ans, opaque_options_hash);
+      }
+    } while (LiteRtGetNextOpaqueOptions(&it) == kLiteRtStatusOk);
+  }
+
   return ans;
 }
 

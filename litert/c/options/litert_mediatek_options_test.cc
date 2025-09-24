@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "litert/c/options/litert_mediatek_options.h"
 
+#include <cstdint>
+
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
@@ -348,6 +350,42 @@ TEST(MediatekOptionsTest, CppApi) {
       kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
   EXPECT_EQ(options->GetOptimizationHint(),
             kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
+}
+
+TEST(LiteRtMediatekOptionsTest, OptionsHash) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  // Check that we can compute the hash of the options.
+  uint64_t initial_hash;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options, &initial_hash));
+
+  // Modify an option and check if the hash changes.
+  LiteRtMediatekOptionsNeronSDKVersionType sdk_version_type;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetNeronSDKVersionType(
+      options_data, &sdk_version_type));
+  ASSERT_EQ(sdk_version_type,
+            kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8);
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetNeronSDKVersionType(
+      options_data, kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetNeronSDKVersionType(
+      options_data, &sdk_version_type));
+  ASSERT_EQ(sdk_version_type,
+            kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
+  uint64_t new_hash;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options, &new_hash));
+  EXPECT_NE(initial_hash, new_hash);
+
+  // Reset the option and check if the hash is the same as the original hash.
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsSetNeronSDKVersionType(
+      options_data, kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8));
+  uint64_t reset_hash;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options, &reset_hash));
+  EXPECT_EQ(initial_hash, reset_hash);
+
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace

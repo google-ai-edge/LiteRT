@@ -26,6 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/cache/hash_util.h"
 
 struct LiteRtQualcommOptionsT {
   LiteRtQualcommOptionsLogLevel log_level = kLiteRtQualcommLogLevelInfo;
@@ -56,6 +57,20 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
         delete reinterpret_cast<LiteRtQualcommOptions>(payload);
       },
       options));
+
+  auto qti_hash = [](const void* payload) -> uint64_t {
+    const LiteRtQualcommOptionsT* options =
+        reinterpret_cast<const LiteRtQualcommOptionsT*>(payload);
+    uint64_t ans = 0;
+    litert::HashCombine(
+        ans, options->log_level, options->profiling,
+        options->use_htp_preference, options->use_qint16_as_quint16,
+        options->enable_weight_sharing, options->htp_performance_mode,
+        options->ir_json_dir, options->vtcm_size, options->num_hvx_threads,
+        options->optimization_level);
+    return ans;
+  };
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
 
   options_data.release();
   return kLiteRtStatusOk;
