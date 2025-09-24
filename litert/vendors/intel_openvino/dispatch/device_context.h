@@ -42,9 +42,9 @@ class LiteRtDispatchDeviceContextT {
       LiteRtTensorBufferHandle tensor_buffer_handle);
 
 #if defined(LITERT_WINDOWS_OS)
-  litert::Expected<ov::intel_npu::level_zero::ZeroBufferTensor> getRemoteTensor(
+  litert::Expected<ov::intel_npu::level_zero::ZeroBufferTensor> getOvTensor(
 #else
-  litert::Expected<ov::RemoteTensor> getRemoteTensor(
+  litert::Expected<ov::Tensor> getOvTensor(
 #endif
       const LiteRtTensorBufferHandle& handle) const {
     auto it = tensor_handle_map_.find(handle);
@@ -68,7 +68,7 @@ class LiteRtDispatchDeviceContextT {
                      ov::intel_npu::level_zero::ZeroBufferTensor>
       tensor_handle_map_;
 #else
-  std::unordered_map<LiteRtTensorBufferHandle, ov::RemoteTensor>
+  std::unordered_map<LiteRtTensorBufferHandle, ov::Tensor>
       tensor_handle_map_;
 #endif
   uint64_t next_handle_;
