@@ -38,6 +38,9 @@ void Touch(absl::string_view path);
 // Does this file exist.
 bool Exists(absl::string_view path);
 
+// Is this a directory.
+bool IsDir(absl::string_view path);
+
 // Get size of file.
 Expected<size_t> Size(absl::string_view path);
 
@@ -49,6 +52,9 @@ Expected<std::vector<std::string>> ListDir(absl::string_view path);
 
 // Get filename from path string.
 Expected<std::string> Filename(absl::string_view path);
+
+// Make a new directory at the given path.
+Expected<void> MkDir(absl::string_view path);
 
 }  // namespace litert::internal
 
