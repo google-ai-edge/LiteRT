@@ -24,6 +24,7 @@
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_logging.h"
 #include "litert/cc/litert_model.h"
@@ -51,6 +52,7 @@ class ModelAnalyzer {
     size_t num_tensors = 0;
     size_t num_weights = 0;
     size_t weights_size = 0;
+    bool fully_compiled = true;
   };
 
   explicit ModelAnalyzer(Model&& model) : model_(std::move(model)) {}
@@ -60,6 +62,11 @@ class ModelAnalyzer {
     summary.num_subgraphs = Model().NumSubgraphs();
     for (const auto* sg : Model().Subgraphs()) {
       summary.num_ops += sg->Ops().size();
+      for (const auto* op : sg->Ops()) {
+        if (op->OpCode() != kLiteRtOpCodeTflCustom) {
+          summary.fully_compiled = false;
+        }
+      }
       summary.num_tensors += sg->Tensors().size();
       for (const auto* t : sg->Tensors()) {
         auto buf = t->Weights().Buffer();
@@ -96,6 +103,7 @@ void FormatSummary(std::ostream& out, const ModelAnalyzer::Summary& summary) {
       Num Activations: %lu
       Num Weights:     %lu
       Weights Size:    %s
+      Fully Compiled:  %v
 
 )txt";
 
@@ -104,7 +112,7 @@ void FormatSummary(std::ostream& out, const ModelAnalyzer::Summary& summary) {
   out << absl::StreamFormat(
       kSummaryFormat, summary.num_subgraphs, summary.num_ops,
       summary.num_tensors - summary.num_weights, summary.num_weights,
-      HumanReadableSize(summary.weights_size));
+      HumanReadableSize(summary.weights_size), summary.fully_compiled);
 }
 
 Expected<void> AnalyzeModel(const std::string& model_path, bool no_ops,
