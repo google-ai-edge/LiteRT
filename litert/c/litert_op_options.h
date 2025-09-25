@@ -176,6 +176,33 @@ LiteRtStatus LiteRtGetReduceMaxKeepDimsOption(LiteRtOp op, bool* keepdims);
 
 //==============================================================================
 //
+// Get option APIs for LiteRt ReduceMin op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceMinKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt ReduceAny op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceAnyKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
+// Get option APIs for LiteRt ReduceAll op.
+//  Options:
+// - KeepdimsOption : bool
+//
+//==============================================================================
+LiteRtStatus LiteRtGetReduceAllKeepDimsOption(LiteRtOp op, bool* keepdims);
+
+//==============================================================================
+//
 // Get option APIs for LiteRt Pack op.
 //  Options:
 // - axisOption : int32_t
