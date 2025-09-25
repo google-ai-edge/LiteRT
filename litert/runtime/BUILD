@@ -394,6 +394,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_accelerator",
+        "//litert/c/internal:litert_delegate_wrapper",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",

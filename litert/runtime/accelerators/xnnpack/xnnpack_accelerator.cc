@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
@@ -53,10 +54,11 @@ class CpuAccelerator final
 
   // Creates a Dispatch delegate instance.
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options, void** delegate) {
-    LITERT_RETURN_IF_ERROR(delegate != nullptr,
+                                     LiteRtOptions options,
+                                     LiteRtDelegateWrapper* delegate_wrapper) {
+    LITERT_RETURN_IF_ERROR(delegate_wrapper != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
-        << "Delegate pointer is null.";
+        << "Delegate wrapper pointer is null.";
     LITERT_RETURN_IF_ERROR(accelerator != nullptr,
                            ErrorStatusBuilder::InvalidArgument())
         << "Accelerator handle is invalid.";
@@ -90,17 +92,22 @@ class CpuAccelerator final
       LITERT_RETURN_IF_ERROR(LiteRtGetCpuOptionsXnnPackWeightCachePath(
           cpu_options, &xnn_options.weight_cache_file_path));
     }
-    *delegate = TfLiteXNNPackDelegateCreate(&xnn_options);
-
-    LITERT_RETURN_IF_ERROR(*delegate != nullptr,
+    TfLiteOpaqueDelegate* xnnpack_delegate =
+        TfLiteXNNPackDelegateCreate(&xnn_options);
+    LITERT_RETURN_IF_ERROR(xnnpack_delegate != nullptr,
                            ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure))
         << "XNNPack delegate failed to be created.";
+    LITERT_RETURN_IF_ERROR(
+        LiteRtWrapDelegate(xnnpack_delegate, delegate_wrapper));
+
     return kLiteRtStatusOk;
   }
 
   // Destroys an XNNPack delegate instance.
-  static void DestroyDelegate(void* delegate) {
-    TfLiteXNNPackDelegateDelete(reinterpret_cast<TfLiteDelegate*>(delegate));
+  static void DestroyDelegate(LiteRtDelegateWrapper delegate_wrapper) {
+    TfLiteOpaqueDelegate* xnnpack_delegate;
+    LiteRtUnwrapDelegate(delegate_wrapper, &xnnpack_delegate);
+    TfLiteXNNPackDelegateDelete(xnnpack_delegate);
   }
 };
 
