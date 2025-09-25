@@ -50,6 +50,12 @@ class Environment
     MetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
     // WARNING: Vulkan support is experimental.
     VulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    VulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
+    CallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+    CallbackUserDataOnGpuEnvDestry =
+        kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+    MagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
+    MagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
   };
 
   struct Option {
