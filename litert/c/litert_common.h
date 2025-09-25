@@ -84,6 +84,8 @@ LITERT_DEFINE_HANDLE(LiteRtSignature);
 LITERT_DEFINE_HANDLE(LiteRtModel);
 // Append only list of ops.  (litert_model.h)
 LITERT_DEFINE_HANDLE(LiteRtOpList);
+// LiteRT Rewriter object. (litert_rewriter.h)
+LITERT_DEFINE_HANDLE(LiteRtRewriter);
 // Representations of an custom op.  (litert_op_options.h)
 LITERT_DEFINE_HANDLE(LiteRtOp);
 // A linked list of type erased opaque options. These are added to the

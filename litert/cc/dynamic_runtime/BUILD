@@ -45,6 +45,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_logging",
     "//litert/c:litert_metrics",
     "//litert/c:litert_model",
+    "//litert/c:litert_rewriter",
     "//litert/c:litert_model_types",
     "//litert/c:litert_op_code",
     "//litert/c:litert_opaque_options",

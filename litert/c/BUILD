@@ -560,6 +560,37 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_rewriter",
+    srcs = ["litert_rewriter.cc"],
+    hdrs = ["litert_rewriter.h"],
+    deps = [
+        ":litert_common",
+        ":litert_model",
+        ":litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+    ],
+)
+
+cc_test(
+    name = "litert_rewriter_test",
+    srcs = ["litert_rewriter_test.cc"],
+    deps = [
+        ":litert_common",
+        ":litert_model",
+        ":litert_op_code",
+        ":litert_rewriter",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 filegroup(
     name = "litert_model_hdrs",
     srcs = [
@@ -586,6 +617,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_op_code",
     ":litert_op_options",
     ":litert_profiler",
+    ":litert_rewriter",
     ":litert_tensor_buffer",
     "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator",

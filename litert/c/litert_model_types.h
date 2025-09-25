@@ -123,7 +123,7 @@ typedef enum {
   // Basic quantization, one set of q-params per tensor.
   kLiteRtQuantizationPerTensor = 1,
 
-  // [NOT IMPLEMENTED YET] Q-params for each element accross a single dimension.
+  // Q-params for each element across a single dimension.
   kLiteRtQuantizationPerChannel = 2,
 
   // [NOT IMPLEMENTED YET] Q-params across blocks of fixed size (e.g. 2048).
