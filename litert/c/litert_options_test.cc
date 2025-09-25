@@ -19,6 +19,7 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "tflite/kernels/register.h"
 
 namespace {
 
@@ -127,6 +128,21 @@ TEST(LiteRtCompiledModelOptionsTest, AddAcceleratorCompilationOptionsWorks) {
   EXPECT_EQ(options_it, *accelerator_compilation_options2);
 
   LiteRtDestroyOptions(options);
+}
+
+TEST(LiteRtOptionsTest, SetOpResolver) {
+  LiteRtOptions options_c = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&options_c), kLiteRtStatusOk);
+
+  tflite::ops::builtin::BuiltinOpResolver resolver;
+  ASSERT_EQ(LiteRtSetOpResolver(options_c, &resolver), kLiteRtStatusOk);
+
+  const void* retrieved_op_resolver = nullptr;
+  ASSERT_EQ(LiteRtGetOptionsOpResolver(options_c, &retrieved_op_resolver),
+            kLiteRtStatusOk);
+  EXPECT_EQ(retrieved_op_resolver, &resolver);
+
+  LiteRtDestroyOptions(options_c);
 }
 
 }  // namespace

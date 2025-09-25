@@ -421,6 +421,8 @@ cc_test(
         ":litert_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/core:options",
+        "//tflite/kernels:builtin_ops",
         "@com_google_googletest//:gtest_main",
     ],
 )

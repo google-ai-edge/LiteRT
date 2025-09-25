@@ -119,4 +119,19 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetOpResolver(LiteRtOptions options,
+                                 const void* op_resolver) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(op_resolver);
+  options->op_resolver = op_resolver;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetOptionsOpResolver(LiteRtOptions options,
+                                    const void** op_resolver) {
+  LRT_CHECK_NON_NULL(options);
+  LRT_CHECK_NON_NULL(op_resolver);
+  *op_resolver = options->op_resolver;
+  return kLiteRtStatusOk;
+}
 }  // extern "C"

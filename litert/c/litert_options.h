@@ -69,6 +69,14 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
                                             const char* tensor_name, void* data,
                                             int size_bytes);
 
+
+// Sets the custom op resolver to use for the model.
+LiteRtStatus LiteRtSetOpResolver(LiteRtOptions options,
+                                 const void* op_resolver);
+
+// Gets the custom op resolver to use for the model.
+LiteRtStatus LiteRtGetOptionsOpResolver(LiteRtOptions options,
+                                    const void** op_resolver);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
