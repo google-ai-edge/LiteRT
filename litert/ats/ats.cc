@@ -13,195 +13,88 @@
 // limitations under the License.
 
 #include <cstddef>
-#include <optional>
-#include <string>
-#include <utility>
+#include <cstdint>
+#include <iostream>
 
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/ats/configure.h"
-#include "litert/ats/executor.h"
+#include "litert/ats/fixture.h"
 #include "litert/ats/register.h"
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
-#include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
-#include "litert/core/model/model.h"
-#include "litert/core/util/flatbuffer_tools.h"
-#include "litert/test/matchers.h"
-#include "litert/test/rng_fixture.h"
+#include "litert/test/generators/common.h"
+#include "litert/test/generators/generators.h"
+#include "tflite/schema/schema_generated.h"
 
-namespace litert {
-namespace testing {
+namespace litert::testing {
+namespace {
 
-using ::litert::internal::TflOpCode;
-using ::litert::internal::TflOpCodePtr;
-using ::litert::internal::TflOptions;
-using ::testing::RegisterTest;
-using ::testing::litert::MeanSquaredErrorLt;
+static constexpr const char* kArt = R"(
+   ###     ######   ######  ######## ##       ######## ########     ###    ########  #######  ########     ######## ########  ######  ########     ######  ##     ## #### ######## ######## 
+  ## ##   ##    ## ##    ## ##       ##       ##       ##     ##   ## ##      ##    ##     ## ##     ##       ##    ##       ##    ##    ##       ##    ## ##     ##  ##     ##    ##
+ ##   ##  ##       ##       ##       ##       ##       ##     ##  ##   ##     ##    ##     ## ##     ##       ##    ##       ##          ##       ##       ##     ##  ##     ##    ##
+##     ## ##       ##       ######   ##       ######   ########  ##     ##    ##    ##     ## ########        ##    ######    ######     ##        ######  ##     ##  ##     ##    ######
+######### ##       ##       ##       ##       ##       ##   ##   #########    ##    ##     ## ##   ##         ##    ##             ##    ##             ## ##     ##  ##     ##    ##
+##     ## ##    ## ##    ## ##       ##       ##       ##    ##  ##     ##    ##    ##     ## ##    ##        ##    ##       ##    ##    ##       ##    ## ##     ##  ##     ##    ##
+##     ##  ######   ######  ######## ######## ######## ##     ## ##     ##    ##     #######  ##     ##       ##    ########  ######     ##        ######   #######  ####    ##    ######## 
+)";
 
-// Class that drives all ats test cases. These are specialized with
-// fully specified test logic and executor (backend).
-template <typename TestLogic, typename TestExecutor = CpuCompiledModelExecutor>
-class AtsTest : public RngTest {
- private:
-  using Logic = TestLogic;
-  using Traits = typename Logic::Traits;
-  using Params = typename Traits::Params;
-  using InputBuffers = typename Traits::InputBuffers;
-  using OutputBuffers = typename Traits::OutputBuffers;
-  using ReferenceInputs = typename Traits::ReferenceInputs;
-  using ReferenceOutputs = typename Traits::ReferenceOutputs;
-  static constexpr size_t kNumInputs = Traits::kNumInputs;
-  static constexpr size_t kNumOutputs = Traits::kNumOutputs;
+void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters) {
+  // clang-format off
+  RegisterCombinations<
+      AtsTest,
+      NoOp,
+      SizeListC<1, 2, 3, 4>,
+      TypeList<float, int32_t>>
+    (iters, test_id, options);
+  // clang-format on
+}
 
- public:
-  using Executor = TestExecutor;
+void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
+                               size_t iters) {
+  // clang-format off
+  RegisterCombinations<
+      AtsTest,
+      BinaryNoBroadcast,
+      SizeListC<1, 2, 3, 4, 5, 6>,
+      TypeList<float, int32_t>,
+      OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,
+      FaListC<::tflite::ActivationFunctionType_NONE>>
+    (iters, test_id, options);
+  // clang-format on
+}
 
-  static std::string FmtSuiteName(size_t id) {
-    return absl::StrFormat("%s_ats_%lu_%s", TestExecutor::Name(), id,
-                           Logic::Name().data());
+int Ats() {
+  std::cerr << kArt << std::endl;
+
+  auto options = AtsConf::ParseFlagsAndDoSetup();
+  ABSL_CHECK(options);
+
+  size_t test_id = 0;
+
+  RegisterNoOp(*options, test_id, /*iters=*/10);
+  RegisterBinaryNoBroadcast(*options, test_id, /*iters=*/10);
+  RegisterExtraModels<AtsTest>(test_id, *options);
+
+  // Preliminary report.
+  {
+    const auto* unit_test = ::testing::UnitTest::GetInstance();
+    LITERT_LOG(LITERT_INFO, "Registered %lu tests",
+               unit_test->total_test_count());
   }
 
-  static std::string FmtTestName(const LiteRtModelT& model) {
-    return absl::StrFormat("%v", model.Subgraph(0).Ops());
-  }
+  return RUN_ALL_TESTS();
+}
 
-  // The various objeats needed to initialize a test case.
-  struct SetupParams {
-    LiteRtModelT::Ptr model;
-    Params params;
-    Logic logic;
-  };
-
-  // Generate the setup params for a test case given the random number
-  // generator. These can be passed to the Register method to register
-  // the test case.
-  template <typename Rng>
-  static Expected<SetupParams> BuildSetupParams(Rng& rng) {
-    Logic logic;
-    LITERT_ASSIGN_OR_RETURN(auto params, logic.GenerateParams(rng));
-    LITERT_ASSIGN_OR_RETURN(auto model, logic.BuildGraph(params));
-    return SetupParams{std::move(model), std::move(params), std::move(logic)};
-  }
-
-  // Register a fully specified case with gtest.
-  static Expected<void> Register(const std::string& suite_name,
-                                 const std::string& test_name,
-                                 SetupParams&& setup_params,
-                                 Executor::Args&& executor_args,
-                                 RandomTensorDataBuilder&& data_builder,
-                                 std::optional<int> data_seed) {
-    RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
-                 __FILE__, __LINE__,
-                 [setup_params = std::move(setup_params),
-                  executor_args = std::move(executor_args),
-                  data_builder = std::move(data_builder),
-                  data_seed = std::move(data_seed)]() mutable {
-                   return new AtsTest(
-                       std::move(setup_params.model),
-                       std::move(setup_params.params),
-                       std::move(setup_params.logic), std::move(executor_args),
-                       std::move(data_builder), std::move(data_seed));
-                 });
-    return {};
-  }
-
-  // Run compiled model with random inputs and compare against the
-  // reference implementation.
-  void TestBody() override {
-    auto device = this->TracedDevice(data_seed_);
-
-    // TODO: for i in inter-test iterations
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        auto inputs, logic_.MakeInputs(data_builder_, device, params_));
-
-    LITERT_ASSERT_OK_AND_ASSIGN(auto actual, GetActual(inputs));
-    LITERT_ASSERT_OK_AND_ASSIGN(auto ref, GetReference(inputs));
-
-    CheckOutputs(actual, ref, std::make_index_sequence<kNumOutputs>());
-  }
-
-  // Name of the dependent logic.
-  static absl::string_view LogicName() { return Logic::Name(); }
-
- private:
-  AtsTest(LiteRtModelT::Ptr model, typename Logic::Traits::Params params,
-          Logic logic, typename Executor::Args&& executor_args,
-          RandomTensorDataBuilder&& data_builder, std::optional<int> data_seed)
-      : model_(std::move(model)),
-        params_(std::move(params)),
-        logic_(std::move(logic)),
-        executor_args_(std::move(executor_args)),
-        data_builder_(std::move(data_builder)),
-        data_seed_(data_seed) {}
-
-  Expected<OutputBuffers> GetActual(const InputBuffers& inputs) {
-    LITERT_ASSIGN_OR_RETURN(auto exec,
-                            Executor::Create(*model_, executor_args_));
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec.Run(inputs));
-    if (actual.size() != kNumOutputs) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   absl::StrFormat("Expected %d outputs, got %d", kNumOutputs,
-                                   actual.size()));
-    }
-    return VecToArray<kNumOutputs>(std::move(actual));
-  }
-
-  Expected<OutputBuffers> GetReference(const InputBuffers& inputs) {
-    LITERT_ASSIGN_OR_RETURN(auto outputs, logic_.MakeOutputs(params_));
-    const auto ref_inputs = Traits::MakeReferenceInputs(inputs);
-    auto ref_outputs = Traits::MakeReferenceOutputs(outputs);
-    LITERT_RETURN_IF_ERROR(logic_.Reference(params_, ref_inputs, ref_outputs));
-    if (outputs.size() != kNumOutputs) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   absl::StrFormat("Expected %d outputs, got %d", kNumOutputs,
-                                   outputs.size()));
-    }
-    return outputs;
-  }
-
-  template <size_t I>
-  void CheckOutput(const OutputBuffers& actual, const OutputBuffers& ref) {
-    auto actual_span =
-        actual[I].template Span<typename Traits::template OutputDataType<I>>();
-    auto ref_span =
-        ref[I].template Span<typename Traits::template OutputDataType<I>>();
-    EXPECT_THAT(actual_span, MeanSquaredErrorLt(ref_span));
-  }
-
-  template <size_t... Is>
-  void CheckOutputs(const OutputBuffers& actual, const OutputBuffers& ref,
-                    std::index_sequence<Is...>) {
-    (CheckOutput<Is>(actual, ref), ...);
-  }
-
-  typename LiteRtModelT::Ptr model_;
-  typename Logic::Traits::Params params_;
-  Logic logic_;
-  typename Executor::Args executor_args_;
-  RandomTensorDataBuilder data_builder_;
-  std::optional<int> data_seed_;
-};
-
-}  // namespace testing
-}  // namespace litert
+}  // namespace
+}  // namespace litert::testing
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
-  auto options = litert::testing::AtsConf::ParseFlagsAndDoSetup();
-  if (!options) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create ATS configuration: %s",
-               options.Error().Message().c_str());
-    return 1;
-  }
-  ::litert::testing::RegisterAtsTests<::litert::testing::AtsTest>(*options);
-  return RUN_ALL_TESTS();
+  return litert::testing::Ats();
 }

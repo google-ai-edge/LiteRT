@@ -24,6 +24,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_rng.h"
+#include "litert/core/filesystem.h"
 
 // Seed for the data generation.
 ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
@@ -55,6 +56,9 @@ ABSL_DECLARE_FLAG(std::string, do_register);
 // Will generate values for f32 tensors in the range of f16 values.
 ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
+// Optional directory containing models which to add to the test.
+ABSL_DECLARE_FLAG(std::string, extra_models);
+
 namespace litert::testing {
 
 class AtsConf {
@@ -73,6 +77,9 @@ class AtsConf {
 
   // The backend to use as the "actual".
   ExecutionBackend Backend() const { return backend_; }
+  bool IsNpu() const { return backend_ == ExecutionBackend::kNpu; }
+  bool IsGpu() const { return backend_ == ExecutionBackend::kGpu; }
+  bool IsCpu() const { return backend_ == ExecutionBackend::kCpu; }
 
   // Whether to minimize logging.
   bool Quiet() const { return quiet_; }
@@ -88,16 +95,26 @@ class AtsConf {
 
   // Create the object that encapsulates the tensor data generation configured
   // by the user.
-  RandomTensorDataBuilder CreateDataBuilder() const;
+  const RandomTensorDataBuilder& DataBuilder() const { return data_builder_; }
 
   // Seed for the data generation.
   std::optional<int> DataSeed() const { return data_seed_; }
+
+  // List of models to add to the test.
+  std::vector<std::string> ExtraModels() const {
+    auto res = internal::ListDir(extra_models_);
+    if (!res) {
+      return {};
+    }
+    return *res;
+  }
 
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::regex&& neg_re, std::regex&& pos_re,
-                   bool f16_range_for_f32, std::optional<int> data_seed)
+                   std::string extra_models, bool f16_range_for_f32,
+                   std::optional<int> data_seed)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -105,8 +122,13 @@ class AtsConf {
         plugin_dir_(std::move(plugin_dir)),
         neg_re_(std::move(neg_re)),
         pos_re_(std::move(pos_re)),
+        extra_models_(std::move(extra_models)),
         f16_range_for_f32_(f16_range_for_f32),
-        data_seed_(data_seed) {}
+        data_seed_(data_seed) {
+    if (f16_range_for_f32_) {
+      data_builder_.SetF16InF32();
+    }
+  }
 
   SeedMap seeds_for_params_;
   ExecutionBackend backend_;
@@ -115,8 +137,10 @@ class AtsConf {
   std::string plugin_dir_;
   std::regex neg_re_;
   std::regex pos_re_;
+  std::string extra_models_;
   bool f16_range_for_f32_;
   std::optional<int> data_seed_;
+  RandomTensorDataBuilder data_builder_;
 };
 
 }  // namespace litert::testing

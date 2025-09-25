@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/test/generators/example.h"
+#include "litert/test/generators/no_op.h"
 
 #include <cstdint>
 #include <numeric>
@@ -24,6 +24,7 @@
 #include "litert/test/generators/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
+#include "litert/test/simple_buffer.h"
 
 namespace litert {
 namespace testing {
@@ -38,9 +39,9 @@ class ExampleTestLogicTest : public RngTest {};
 
 // clang-format off
 using ExampleTestLogicTestTypes = Types<
-    ExampleTestLogic<SizeC<1>, float>,
-    ExampleTestLogic<SizeC<2>, int32_t>,
-    ExampleTestLogic<SizeC<2>, float>
+    NoOp<SizeC<1>, float>,
+    NoOp<SizeC<2>, int32_t>,
+    NoOp<SizeC<2>, float>
 >;
 // clang-format on
 
@@ -54,10 +55,9 @@ TYPED_TEST(ExampleTestLogicTest, TestLogic) {
   const auto rank = params.shape.size();
   const auto expected_shape = absl::MakeConstSpan(params.shape.data(), rank);
 
-  TypeParam gen;
-  LITERT_ASSERT_OK_AND_ASSIGN(auto model, gen.BuildGraph(params));
-  EXPECT_EQ(model->NumSubgraphs(), 1);
-  const auto& sg = model->Subgraph(0);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gen, TypeParam::Create(params));
+  EXPECT_EQ(gen->Graph().NumSubgraphs(), 1);
+  const auto& sg = gen->Graph().Subgraph(0);
   EXPECT_EQ(sg.Ops().size(), 1);
   EXPECT_EQ(sg.Tensors().size(), 3);
   EXPECT_EQ(sg.Inputs().size(), 1);
@@ -77,7 +77,7 @@ TYPED_TEST(ExampleTestLogicTest, TestLogic) {
   data_builder.SetFloatDummy();
   data_builder.SetIntDummy();
   LITERT_ASSERT_OK_AND_ASSIGN(const auto inputs,
-                              gen.MakeInputs(data_builder, device, params));
+                              gen->MakeInputs(device, data_builder));
   EXPECT_EQ(inputs.size(), 1);
 
   auto lhs = inputs[0].template AsView<DataType>();
@@ -85,14 +85,15 @@ TYPED_TEST(ExampleTestLogicTest, TestLogic) {
   std::iota(expected_lhs.begin(), expected_lhs.end(), 0);
   EXPECT_THAT(lhs.data, ElementsAreArray(expected_lhs));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, gen.MakeOutputs(params));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto outputs,
+      SimpleBuffer::LikeSignature(sg.Outputs().begin(), sg.Outputs().end()));
   EXPECT_EQ(outputs.size(), 1);
 
-  auto ref_inputs = Traits::MakeReferenceInputs(inputs);
-  auto ref_outputs = Traits::MakeReferenceOutputs(outputs);
-  LITERT_ASSERT_OK(gen.Reference(params, ref_inputs, ref_outputs));
+  LITERT_ASSERT_OK(gen->Reference(inputs, outputs));
 
-  EXPECT_THAT(std::get<0>(ref_outputs).data, ElementsAreArray(expected_lhs));
+  EXPECT_THAT(outputs[0].template Span<DataType>(),
+              ElementsAreArray(expected_lhs));
 }
 
 }  // namespace

@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -28,6 +29,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
@@ -68,7 +70,7 @@ template <
     typename MaxTensorSize = SizeC<1024>
 >
 // clang-format on
-struct BinaryNoBroadcast {
+class BinaryNoBroadcast : public TestGraph {
  private:
   static_assert(std::is_same_v<typename OpCode::value_type, LiteRtOpCode>);
   static constexpr LiteRtOpCode kOpCode = OpCode::value;
@@ -107,10 +109,70 @@ struct BinaryNoBroadcast {
 
  public:
   using Traits = TestLogicTraits<TypeList<T, T>, TypeList<T>, Params>;
+  using Ptr = std::unique_ptr<BinaryNoBroadcast>;
 
   static constexpr absl::string_view Name() { return "BinaryNoBroadcast"; }
 
-  Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
+  template <typename Rng>
+  static Expected<BinaryNoBroadcast::Ptr> Create(Rng& rng) {
+    LITERT_ASSIGN_OR_RETURN(auto params, GenerateParams(rng));
+    LITERT_ASSIGN_OR_RETURN(auto model, BuildGraph(params));
+    return std::make_unique<BinaryNoBroadcast>(std::move(params),
+                                               std::move(model));
+  }
+
+  static Expected<BinaryNoBroadcast::Ptr> Create(Params params) {
+    LITERT_ASSIGN_OR_RETURN(auto model, BuildGraph(params));
+    return std::make_unique<BinaryNoBroadcast>(std::move(params),
+                                               std::move(model));
+  }
+
+  bool HasReference() const override { return true; }
+
+  Expected<VarBuffers> MakeInputs(
+      DefaultDevice& device,
+      const RandomTensorDataBuilder& data_builder) const override {
+    LITERT_ASSIGN_OR_RETURN(auto lhs, SimpleBuffer::Create<T>(params_.shape));
+    LITERT_ASSIGN_OR_RETURN(auto rhs, SimpleBuffer::Create<T>(params_.shape));
+    LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T>(data_builder, device)));
+    LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T>(data_builder, device)));
+    // Prevent overflow.
+    static const auto kScale = 3;
+    auto lhs_dat = lhs.template Span<T>();
+    auto rhs_dat = rhs.template Span<T>();
+    ScaleDown(lhs_dat, kScale);
+    ScaleDown(rhs_dat, kScale);
+    VarBuffers inputs;
+    inputs.push_back(std::move(lhs));
+    inputs.push_back(std::move(rhs));
+    return inputs;
+  }
+
+  Expected<void> Reference(const VarBuffers& inputs,
+                           VarBuffers& outputs) const override {
+    LITERT_ASSIGN_OR_RETURN(auto ref_inputs,
+                            Traits::MakeReferenceInputs(inputs));
+    LITERT_ASSIGN_OR_RETURN(auto ref_outputs,
+                            Traits::MakeReferenceOutputs(outputs));
+    return ReferenceImpl(ref_inputs, ref_outputs);
+  }
+
+  BinaryNoBroadcast(Params params, LiteRtModelT::Ptr model)
+      : TestGraph(std::move(model)), params_(std::move(params)) {}
+
+ private:
+  template <typename Rng>
+  static Expected<Params> GenerateParams(Rng& rng) {
+    RandomTensorType<kRank, kMaxTensorSize, LiteRtElementType(kElementType)>
+        type;
+    LITERT_ASSIGN_OR_RETURN(const auto tensor_type, type(rng));
+    Params p;
+    std::copy(std::cbegin(tensor_type.layout.dimensions),
+              std::cbegin(tensor_type.layout.dimensions) + kRank,
+              std::begin(p.shape));
+    return p;
+  }
+  static Expected<LiteRtModelT::Ptr> BuildGraph(const Params& params) {
     const std::vector<int32_t> dims(params.shape.begin(), params.shape.end());
 
     std::vector<TensorDetails> inputs(2);
@@ -127,44 +189,9 @@ struct BinaryNoBroadcast {
     return SingleOpModel<kOpCode>(inputs, outputs, kFa,
                                   /*pot_scale_int16=*/false);
   }
-
-  template <typename Rng>
-  Expected<Params> GenerateParams(Rng& rng) {
-    RandomTensorType<kRank, kMaxTensorSize, LiteRtElementType(kElementType)>
-        type;
-    LITERT_ASSIGN_OR_RETURN(const auto tensor_type, type(rng));
-    Params p;
-    std::copy(std::cbegin(tensor_type.layout.dimensions),
-              std::cbegin(tensor_type.layout.dimensions) + kRank,
-              std::begin(p.shape));
-    return p;
-  }
-
-  template <typename Rng>
-  Expected<typename Traits::InputBuffers> MakeInputs(
-      const RandomTensorDataBuilder& data_builder, Rng& rng,
-      const Params& params) {
-    LITERT_ASSIGN_OR_RETURN(auto lhs, SimpleBuffer::Create<T>(params.shape));
-    LITERT_ASSIGN_OR_RETURN(auto rhs, SimpleBuffer::Create<T>(params.shape));
-    LITERT_RETURN_IF_ERROR((lhs.template WriteRandom<T>(data_builder, rng)));
-    LITERT_RETURN_IF_ERROR((rhs.template WriteRandom<T>(data_builder, rng)));
-    // Prevent overflow.
-    static const auto kScale = 3;
-    auto lhs_dat = lhs.template Span<T>();
-    auto rhs_dat = rhs.template Span<T>();
-    ScaleDown(lhs_dat, kScale);
-    ScaleDown(rhs_dat, kScale);
-    return typename Traits::InputBuffers{std::move(lhs), std::move(rhs)};
-  }
-
-  Expected<typename Traits::OutputBuffers> MakeOutputs(const Params& params) {
-    LITERT_ASSIGN_OR_RETURN(auto output, SimpleBuffer::Create<T>(params.shape));
-    return typename Traits::OutputBuffers{std::move(output)};
-  }
-
-  Expected<void> Reference(const Params& params,
-                           const typename Traits::ReferenceInputs& inputs,
-                           const typename Traits::ReferenceOutputs& outputs) {
+  Expected<void> ReferenceImpl(
+      const typename Traits::ReferenceInputs& inputs,
+      const typename Traits::ReferenceOutputs& outputs) const {
     auto [lhs, rhs] = inputs;
     auto [output] = outputs;
     if (lhs.dimensions != rhs.dimensions ||
@@ -177,6 +204,8 @@ struct BinaryNoBroadcast {
     }
     return {};
   }
+
+  Params params_;
 };
 
 }  // namespace testing

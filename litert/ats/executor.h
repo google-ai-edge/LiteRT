@@ -20,6 +20,7 @@
 // and backend specific configurations, hence the need for polymorphism.
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -41,6 +42,8 @@ namespace litert::testing {
 // Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
  public:
+  using Ptr = std::unique_ptr<CompiledModelExecutor>;
+
   CompiledModelExecutor(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor& operator=(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor(const CompiledModelExecutor&) = delete;
