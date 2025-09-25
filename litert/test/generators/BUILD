@@ -28,19 +28,23 @@ cc_library(
     name = "common",
     hdrs = ["common.h"],
     deps = [
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_rng",
+        "//litert/core/model",
         "//litert/test:simple_buffer",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
 
 cc_library(
-    name = "example",
+    name = "no_op",
     testonly = True,
-    hdrs = ["example.h"],
+    hdrs = ["no_op.h"],
     deps = [
         ":common",
         ":graph_helpers",
@@ -54,7 +58,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_rng",
         "//litert/core/model",
-        "//litert/test:rng_fixture",
         "//litert/test:simple_buffer",
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings:string_view",
@@ -62,14 +65,15 @@ cc_library(
 )
 
 cc_test(
-    name = "example_test",
-    srcs = ["example_test.cc"],
+    name = "no_op_test",
+    srcs = ["no_op_test.cc"],
     deps = [
         ":common",
-        ":example",
+        ":no_op",
         "//litert/cc:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -110,6 +114,7 @@ cc_test(
         "//litert/cc:litert_rng",
         "//litert/test:matchers",
         "//litert/test:rng_fixture",
+        "//litert/test:simple_buffer",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
     ],
@@ -154,6 +159,6 @@ cc_library(
     deps = [
         ":binary_no_bcast",
         ":common",
-        ":example",
+        ":no_op",
     ],
 )
