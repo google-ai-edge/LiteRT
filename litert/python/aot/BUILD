@@ -20,19 +20,6 @@ package(
 )
 
 pytype_strict_library(
-    name = "prepare_for_npu",
-    srcs = ["prepare_for_npu.py"],
-    deps = [
-        "//litert/python/aot/core:common",
-        "//litert/python/aot/core:components",
-        "//litert/python/aot/core:types",
-        "//litert/python/aot/vendors",  # buildcleaner: keep
-        "//litert/python/aot/vendors:import_vendor",
-        "@tqdm",
-    ],
-)
-
-pytype_strict_library(
     name = "aot_compile",
     srcs = ["aot_compile.py"],
     visibility = ["//visibility:public"],
@@ -43,6 +30,37 @@ pytype_strict_library(
         "//litert/python/aot/core:mlir_transforms",
         "//litert/python/aot/core:types",
         "//litert/python/aot/vendors:import_vendor",
+    ],
+)
+
+pytype_strict_contrib_test(
+    name = "aot_compile_test",
+    srcs = ["aot_compile_test.py"],
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+        "//litert/test:testdata/torchaudio_conformer.tflite",
+    ],
+    deps = [
+        ":aot_compile",
+        "//litert/python/aot/core:common",
+        "//litert/python/aot/core:test_common",
+        "//litert/python/aot/core:types",
+        "//litert/python/aot/vendors/mediatek:target",
+        "//litert/python/aot/vendors/qualcomm:target",
+        "@absl_py//absl/testing:absltest",
+    ],
+)
+
+pytype_strict_library(
+    name = "prepare_for_npu",
+    srcs = ["prepare_for_npu.py"],
+    deps = [
+        "//litert/python/aot/core:common",
+        "//litert/python/aot/core:components",
+        "//litert/python/aot/core:types",
+        "//litert/python/aot/vendors",  # buildcleaner: keep
+        "//litert/python/aot/vendors:import_vendor",
+        "@tqdm",
     ],
 )
 

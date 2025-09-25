@@ -296,5 +296,6 @@ exports_files(
         "testdata/simple_model_qualcomm.bin",
         "testdata/simple_model_qualcomm_sm8650_precompiled.tflite",
         "testdata/simple_quantized_ops.tflite",
+        "testdata/torchaudio_conformer.tflite",
     ],
 )
