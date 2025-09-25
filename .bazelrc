@@ -46,7 +46,7 @@ build --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
 # TODO: Migrate for https://github.com/bazelbuild/bazel/issues/7260
 build:clang_local --noincompatible_enable_cc_toolchain_resolution
 build:clang_local --noincompatible_enable_android_toolchain_resolution
-build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=0
+build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
 
 build --repo_env=USE_PYWRAP_RULES=True
 build --copt=-DGRPC_BAZEL_BUILD
