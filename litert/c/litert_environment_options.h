@@ -89,6 +89,14 @@ typedef struct {
   // This C string is owned by the user of LiteRT runtime and must outlive until
   // model is initialized.
   const char* test_signature;
+  // Whether the ops of signature is a superset of the ops of test_signature.
+  // If true, it verifies only if all ops in test_signature exists in the
+  // signature in the same order and their operands are of the same shape
+  // assuming that the extra ops manipulate the input/output tensors of larger
+  // dimensions, but not to change the semantics of the graph.
+  // If false, the test signature must be exactly the same to the signature in
+  // all aspects including # of tensors, # of ops, and their shapes.
+  bool is_superset;
 } LiteRtMagicNumberVerification;
 
 typedef struct {

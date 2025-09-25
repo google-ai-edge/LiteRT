@@ -36,8 +36,7 @@ using ::testing::litert::IsOkAndHolds;
 namespace litert::internal {
 namespace {
 
-// Built by full_model_magic_test.textproto with 4 layers of gemma3n model and
-// random weights.
+// Built by full_model_magic_test.textproto with random weights.
 constexpr absl::string_view kTestModelPath = "model_magic_test.tflite";
 
 class MagicNumberUtilsTest : public ::testing::Test {
@@ -58,16 +57,57 @@ TEST_F(MagicNumberUtilsTest, ReplaceMagicNumbersIfAny_NoMagicNumberConfigs) {
 }
 
 TEST_F(MagicNumberUtilsTest,
-       ReplaceMagicNumbersIfAny_SuccessWithVerifications) {
+       ReplaceMagicNumbersIfAny_SuccessWithVerifications_LongContext) {
   LiteRtMagicNumberConfigs* magic_number_configs =
       reinterpret_cast<LiteRtMagicNumberConfigs*>(
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
+  magic_number_configs->configs[0].target_number = 8192;
+  magic_number_configs->configs[0].signature_prefix = nullptr;
+  magic_number_configs->configs[1].magic_number = 4099;
+  magic_number_configs->configs[1].target_number = 4096;
+  magic_number_configs->configs[1].signature_prefix = "prefill";
+  magic_number_configs->configs[2].magic_number = 11;
+  magic_number_configs->configs[2].target_number = 10;
+  magic_number_configs->configs[2].signature_prefix = "decode";
+
+  LiteRtMagicNumberVerifications* verifications =
+      reinterpret_cast<LiteRtMagicNumberVerifications*>(
+          alloca(sizeof(LiteRtMagicNumberVerifications) +
+                 sizeof(LiteRtMagicNumberVerification) * 2));
+  verifications->num_verifications = 2;
+  verifications->verifications[0].signature = "prefill";
+  verifications->verifications[0].test_signature = "test_prefill_8192";
+  verifications->verifications[0].is_superset = false;
+  verifications->verifications[1].signature = "decode";
+  verifications->verifications[1].test_signature = "test_decode_8192";
+  verifications->verifications[1].is_superset = false;
+
+  LiteRtEnvOption magic_number_options[] = {
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = magic_number_configs}},
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberVerifications,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = verifications}}};
+  LITERT_EXPECT_OK(env_.AddOptions(absl::MakeConstSpan(magic_number_options)));
+
+  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(3206));
+}
+
+TEST_F(MagicNumberUtilsTest,
+       ReplaceMagicNumbersIfAny_SuccessWithVerifications_MediumContext) {
+  LiteRtMagicNumberConfigs* magic_number_configs =
+      reinterpret_cast<LiteRtMagicNumberConfigs*>(
+          alloca(sizeof(LiteRtMagicNumberConfigs) +
+                 sizeof(LiteRtMagicNumberConfig) * 3));
+  magic_number_configs->num_configs = 3;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1280;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 1024;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
@@ -81,8 +121,10 @@ TEST_F(MagicNumberUtilsTest,
   verifications->num_verifications = 2;
   verifications->verifications[0].signature = "prefill";
   verifications->verifications[0].test_signature = "test_prefill_1280";
+  verifications->verifications[0].is_superset = false;
   verifications->verifications[1].signature = "decode";
   verifications->verifications[1].test_signature = "test_decode_1280";
+  verifications->verifications[1].is_superset = false;
 
   LiteRtEnvOption magic_number_options[] = {
       {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
@@ -93,7 +135,90 @@ TEST_F(MagicNumberUtilsTest,
                           .ptr_value = verifications}}};
   LITERT_EXPECT_OK(env_.AddOptions(absl::MakeConstSpan(magic_number_options)));
 
-  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(842));
+  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(3206));
+}
+
+TEST_F(MagicNumberUtilsTest,
+       ReplaceMagicNumbersIfAny_FailureWithVerifications_ShortContext) {
+  LiteRtMagicNumberConfigs* magic_number_configs =
+      reinterpret_cast<LiteRtMagicNumberConfigs*>(
+          alloca(sizeof(LiteRtMagicNumberConfigs) +
+                 sizeof(LiteRtMagicNumberConfig) * 3));
+  magic_number_configs->num_configs = 3;
+  magic_number_configs->configs[0].magic_number = 8209;
+  magic_number_configs->configs[0].target_number = 128;
+  magic_number_configs->configs[0].signature_prefix = nullptr;
+  magic_number_configs->configs[1].magic_number = 4099;
+  magic_number_configs->configs[1].target_number = 64;
+  magic_number_configs->configs[1].signature_prefix = "prefill";
+  magic_number_configs->configs[2].magic_number = 11;
+  magic_number_configs->configs[2].target_number = 3;
+  magic_number_configs->configs[2].signature_prefix = "decode";
+
+  LiteRtMagicNumberVerifications* verifications =
+      reinterpret_cast<LiteRtMagicNumberVerifications*>(
+          alloca(sizeof(LiteRtMagicNumberVerifications) +
+                 sizeof(LiteRtMagicNumberVerification) * 2));
+  verifications->num_verifications = 2;
+  verifications->verifications[0].signature = "prefill";
+  verifications->verifications[0].test_signature = "test_prefill_128";
+  verifications->verifications[0].is_superset = false;
+  verifications->verifications[1].signature = "decode";
+  verifications->verifications[1].test_signature = "test_decode_128";
+  verifications->verifications[1].is_superset = false;
+
+  LiteRtEnvOption magic_number_options[] = {
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = magic_number_configs}},
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberVerifications,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = verifications}}};
+  LITERT_EXPECT_OK(env_.AddOptions(absl::MakeConstSpan(magic_number_options)));
+
+  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_),
+              IsError(kLiteRtStatusErrorUnknown));
+}
+
+TEST_F(MagicNumberUtilsTest,
+       ReplaceMagicNumbersIfAny_SuccessWithSupersetVerifications_ShortContext) {
+  LiteRtMagicNumberConfigs* magic_number_configs =
+      reinterpret_cast<LiteRtMagicNumberConfigs*>(
+          alloca(sizeof(LiteRtMagicNumberConfigs) +
+                 sizeof(LiteRtMagicNumberConfig) * 3));
+  magic_number_configs->num_configs = 3;
+  magic_number_configs->configs[0].magic_number = 8209;
+  magic_number_configs->configs[0].target_number = 128;
+  magic_number_configs->configs[0].signature_prefix = nullptr;
+  magic_number_configs->configs[1].magic_number = 4099;
+  magic_number_configs->configs[1].target_number = 64;
+  magic_number_configs->configs[1].signature_prefix = "prefill";
+  magic_number_configs->configs[2].magic_number = 11;
+  magic_number_configs->configs[2].target_number = 3;
+  magic_number_configs->configs[2].signature_prefix = "decode";
+
+  LiteRtMagicNumberVerifications* verifications =
+      reinterpret_cast<LiteRtMagicNumberVerifications*>(
+          alloca(sizeof(LiteRtMagicNumberVerifications) +
+                 sizeof(LiteRtMagicNumberVerification) * 2));
+  verifications->num_verifications = 2;
+  verifications->verifications[0].signature = "prefill";
+  verifications->verifications[0].test_signature = "test_prefill_128";
+  verifications->verifications[0].is_superset = true;
+  verifications->verifications[1].signature = "decode";
+  verifications->verifications[1].test_signature = "test_decode_128";
+  verifications->verifications[1].is_superset = true;
+
+  LiteRtEnvOption magic_number_options[] = {
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = magic_number_configs}},
+      {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberVerifications,
+       .value = LiteRtAny{.type = kLiteRtAnyTypeVoidPtr,
+                          .ptr_value = verifications}}};
+  LITERT_EXPECT_OK(env_.AddOptions(absl::MakeConstSpan(magic_number_options)));
+
+  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(3206));
 }
 
 TEST_F(MagicNumberUtilsTest,
@@ -103,10 +228,10 @@ TEST_F(MagicNumberUtilsTest,
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1280;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 1024;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
@@ -119,7 +244,7 @@ TEST_F(MagicNumberUtilsTest,
                           .ptr_value = magic_number_configs}}};
   LITERT_EXPECT_OK(env_.AddOptions(absl::MakeConstSpan(magic_number_options)));
 
-  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(842));
+  EXPECT_THAT(ReplaceMagicNumbersIfAny(env_, *model_), IsOkAndHolds(3206));
 }
 
 TEST_F(MagicNumberUtilsTest,
@@ -129,10 +254,10 @@ TEST_F(MagicNumberUtilsTest,
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1280;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 1024;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
@@ -146,8 +271,10 @@ TEST_F(MagicNumberUtilsTest,
   verifications->num_verifications = 2;
   verifications->verifications[0].signature = "prefill";
   verifications->verifications[0].test_signature = "test_prefill_1280";
+  verifications->verifications[0].is_superset = false;
   verifications->verifications[1].signature = "decode";
   verifications->verifications[1].test_signature = "wrong_test_decode";
+  verifications->verifications[1].is_superset = false;
 
   LiteRtEnvOption magic_number_options[] = {
       {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
@@ -169,10 +296,10 @@ TEST_F(MagicNumberUtilsTest,
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1240;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 1024;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
@@ -186,8 +313,10 @@ TEST_F(MagicNumberUtilsTest,
   verifications->num_verifications = 2;
   verifications->verifications[0].signature = "prefill";
   verifications->verifications[0].test_signature = "test_prefill_1280";
+  verifications->verifications[0].is_superset = false;
   verifications->verifications[1].signature = "decode";
   verifications->verifications[1].test_signature = "test_decode_1280";
+  verifications->verifications[1].is_superset = false;
 
   LiteRtEnvOption magic_number_options[] = {
       {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
@@ -209,10 +338,10 @@ TEST_F(MagicNumberUtilsTest,
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1280;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 512;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
@@ -226,8 +355,10 @@ TEST_F(MagicNumberUtilsTest,
   verifications->num_verifications = 2;
   verifications->verifications[0].signature = "prefill";
   verifications->verifications[0].test_signature = "test_prefill_1280";
+  verifications->verifications[0].is_superset = false;
   verifications->verifications[1].signature = "decode";
   verifications->verifications[1].test_signature = "test_decode_1280";
+  verifications->verifications[1].is_superset = false;
 
   LiteRtEnvOption magic_number_options[] = {
       {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,
@@ -249,14 +380,14 @@ TEST_F(MagicNumberUtilsTest,
           alloca(sizeof(LiteRtMagicNumberConfigs) +
                  sizeof(LiteRtMagicNumberConfig) * 3));
   magic_number_configs->num_configs = 3;
-  magic_number_configs->configs[0].magic_number = 1283;
+  magic_number_configs->configs[0].magic_number = 8209;
   magic_number_configs->configs[0].target_number = 1280;
   magic_number_configs->configs[0].signature_prefix = nullptr;
-  magic_number_configs->configs[1].magic_number = 1031;
+  magic_number_configs->configs[1].magic_number = 4099;
   magic_number_configs->configs[1].target_number = 1024;
   magic_number_configs->configs[1].signature_prefix = "prefill";
   magic_number_configs->configs[2].magic_number = 11;
-  magic_number_configs->configs[2].target_number = 3;
+  magic_number_configs->configs[2].target_number = 7;
   magic_number_configs->configs[2].signature_prefix = "decode";
 
   LiteRtMagicNumberVerifications* verifications =
@@ -266,8 +397,10 @@ TEST_F(MagicNumberUtilsTest,
   verifications->num_verifications = 2;
   verifications->verifications[0].signature = "prefill";
   verifications->verifications[0].test_signature = "test_prefill_1280";
+  verifications->verifications[0].is_superset = false;
   verifications->verifications[1].signature = "decode";
   verifications->verifications[1].test_signature = "test_decode_1280";
+  verifications->verifications[1].is_superset = false;
 
   LiteRtEnvOption magic_number_options[] = {
       {.tag = LiteRtEnvOptionTag::kLiteRtEnvOptionTagMagicNumberConfigs,

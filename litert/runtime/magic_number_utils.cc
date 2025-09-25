@@ -21,6 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/vector.h"  // from @flatbuffers
 #include "litert/c/litert_any.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
@@ -379,16 +380,65 @@ Expected<void> VerifyDataSame(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
   return {};
 }
 
+// Forward declaration to be called in VerifyOpSame().
+Expected<void> VerifySubgraphSame(const LiteRtModelT& model,
+                                  const LiteRtSubgraphT& subgraph1,
+                                  const LiteRtSubgraphT& subgraph2,
+                                  const tflite::FlatBufferModel& fb_model,
+                                  const tflite::SubGraph& tfl_subgraph1,
+                                  const tflite::SubGraph& tfl_subgraph2);
+
+Expected<void> VerifyOpSame(const LiteRtModelT& model, const LiteRtOpT& op1,
+                            const LiteRtOpT& op2,
+                            const tflite::FlatBufferModel& fb_model,
+                            const tflite::SubGraph& tfl_subgraph1,
+                            const tflite::SubGraph& tfl_subgraph2) {
+  LITERT_RETURN_IF_ERROR(op1.OpCode() == op2.OpCode());
+  LITERT_RETURN_IF_ERROR(op1.NumInputs() == op2.NumInputs());
+  LITERT_RETURN_IF_ERROR(op1.NumOutputs() == op2.NumOutputs());
+  for (int j = 0; j < op1.NumInputs(); ++j) {
+    LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Input(j), op2.Input(j),
+                                           tfl_subgraph1, tfl_subgraph2));
+  }
+  for (int j = 0; j < op1.NumOutputs(); ++j) {
+    LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Output(j), op2.Output(j),
+                                           tfl_subgraph1, tfl_subgraph2));
+  }
+
+  if (op1.OpCode() == kLiteRtOpCodeShloComposite) {
+    LITERT_ASSIGN_OR_RETURN(int decomp_index1,
+                            GetDecompositionSubgraphIndex(model, op1));
+    const auto* decomp_subgraph1 = fb_model->subgraphs()->Get(decomp_index1);
+    LITERT_RETURN_IF_ERROR(decomp_subgraph1 != nullptr);
+
+    LITERT_ASSIGN_OR_RETURN(int decomp_index2,
+                            GetDecompositionSubgraphIndex(model, op2));
+    const auto* decomp_subgraph2 = fb_model->subgraphs()->Get(decomp_index2);
+    LITERT_RETURN_IF_ERROR(decomp_subgraph2 != nullptr);
+    return VerifySubgraphSame(model, model.Subgraph(decomp_index1),
+                              model.Subgraph(decomp_index2), fb_model,
+                              *decomp_subgraph1, *decomp_subgraph2);
+  }
+
+  int shape_param_index = GetShapeParamIndex(op1);
+  if (shape_param_index < 0) {
+    return {};
+  }
+
+  LITERT_RETURN_IF_ERROR(shape_param_index < op1.NumInputs());
+  return VerifyDataSame(op1.Input(shape_param_index),
+                        op2.Input(shape_param_index), fb_model, tfl_subgraph1,
+                        tfl_subgraph2);
+}
+
 Expected<void> VerifySubgraphSame(const LiteRtModelT& model,
                                   const LiteRtSubgraphT& subgraph1,
                                   const LiteRtSubgraphT& subgraph2,
                                   const tflite::FlatBufferModel& fb_model,
                                   const tflite::SubGraph& tfl_subgraph1,
                                   const tflite::SubGraph& tfl_subgraph2) {
-  LITERT_RETURN_IF_ERROR(
-      subgraph1.Tensors().size() == subgraph2.Tensors().size())
-      << "Tensor size mismatch: " << subgraph1.Tensors().size() << " vs "
-      << subgraph2.Tensors().size();
+  LITERT_RETURN_IF_ERROR(subgraph1.Tensors().size() ==
+                         subgraph2.Tensors().size());
   LITERT_RETURN_IF_ERROR(subgraph1.NumInputs() == subgraph2.NumInputs());
   LITERT_RETURN_IF_ERROR(subgraph1.NumOutputs() == subgraph2.NumOutputs());
   LITERT_RETURN_IF_ERROR(subgraph1.Ops().size() == subgraph2.Ops().size());
@@ -400,45 +450,50 @@ Expected<void> VerifySubgraphSame(const LiteRtModelT& model,
   }
 
   for (int i = 0; i < subgraph1.Ops().size(); ++i) {
-    const auto& op1 = subgraph1.Op(i);
-    const auto& op2 = subgraph2.Op(i);
-    LITERT_RETURN_IF_ERROR(op1.OpCode() == op2.OpCode());
-    LITERT_RETURN_IF_ERROR(op1.NumInputs() == op2.NumInputs());
-    LITERT_RETURN_IF_ERROR(op1.NumOutputs() == op2.NumOutputs());
-    for (int j = 0; j < op1.NumInputs(); ++j) {
-      LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Input(j), op2.Input(j),
-                                             tfl_subgraph1, tfl_subgraph2));
-    }
-    for (int j = 0; j < op1.NumOutputs(); ++j) {
-      LITERT_RETURN_IF_ERROR(VerifyShapeSame(op1.Output(j), op2.Output(j),
-                                             tfl_subgraph1, tfl_subgraph2));
-    }
-
-    if (op1.OpCode() == kLiteRtOpCodeShloComposite) {
-      LITERT_ASSIGN_OR_RETURN(int decomp_index1,
-                              GetDecompositionSubgraphIndex(model, op1));
-      const auto* decomp_subgraph1 = fb_model->subgraphs()->Get(decomp_index1);
-      LITERT_RETURN_IF_ERROR(decomp_subgraph1 != nullptr);
-
-      LITERT_ASSIGN_OR_RETURN(int decomp_index2,
-                              GetDecompositionSubgraphIndex(model, op2));
-      const auto* decomp_subgraph2 = fb_model->subgraphs()->Get(decomp_index2);
-      LITERT_RETURN_IF_ERROR(decomp_subgraph2 != nullptr);
-      LITERT_RETURN_IF_ERROR(VerifySubgraphSame(
-          model, model.Subgraph(decomp_index1), model.Subgraph(decomp_index2),
-          fb_model, *decomp_subgraph1, *decomp_subgraph2));
-      continue;
-    }
-
-    int shape_param_index = GetShapeParamIndex(op1);
-    if (shape_param_index >= 0) {
-      LITERT_RETURN_IF_ERROR(shape_param_index < op1.NumInputs());
-      LITERT_RETURN_IF_ERROR(VerifyDataSame(
-          op1.Input(shape_param_index), op2.Input(shape_param_index), fb_model,
-          tfl_subgraph1, tfl_subgraph2));
-    }
+    LITERT_RETURN_IF_ERROR(VerifyOpSame(model, subgraph1.Op(i), subgraph2.Op(i),
+                                        fb_model, tfl_subgraph1,
+                                        tfl_subgraph2));
   }
   return {};
+}
+
+// Verify that subgraph1 is a superset of subgraph2 assuming that the order of
+// ops in subgraph1 is the same as the order of ops in subgraph2.
+Expected<void> VerifySubgraphSuperset(const LiteRtModelT& model,
+                                      const LiteRtSubgraphT& subgraph1,
+                                      const LiteRtSubgraphT& subgraph2,
+                                      const tflite::FlatBufferModel& fb_model,
+                                      const tflite::SubGraph& tfl_subgraph1,
+                                      const tflite::SubGraph& tfl_subgraph2) {
+  LITERT_RETURN_IF_ERROR(subgraph1.Tensors().size() >=
+                         subgraph2.Tensors().size());
+  LITERT_RETURN_IF_ERROR(subgraph1.NumInputs() == subgraph2.NumInputs());
+  LITERT_RETURN_IF_ERROR(subgraph1.NumOutputs() == subgraph2.NumOutputs());
+  LITERT_RETURN_IF_ERROR(subgraph1.Ops().size() >= subgraph2.Ops().size());
+  LITERT_RETURN_IF_ERROR(!subgraph2.Ops().empty());
+
+  int max_mismatches_allowed = subgraph1.Ops().size() - subgraph2.Ops().size();
+  int i1 = 0, i2 = 0;
+  while (i1 < subgraph1.Ops().size() && i2 < subgraph2.Ops().size() &&
+         max_mismatches_allowed >= 0) {
+    const auto& op1 = subgraph1.Op(i1);
+    const auto& op2 = subgraph2.Op(i2);
+    if (VerifyOpSame(model, op1, op2, fb_model, tfl_subgraph1, tfl_subgraph2)) {
+      ++i2;  // Matched. advance i2.
+    } else {
+      --max_mismatches_allowed;  // Allow mismatch.
+      LITERT_LOG(LITERT_WARNING,
+                 "Op[%d]=%d doesn't match with Op[%d]=%d in test signature.",
+                 i1, op1.OpCode(), i2, op2.OpCode());
+    }
+    ++i1;  // Advance i1 regardless of match or mismatch.
+  }
+
+  if (i2 == subgraph2.Ops().size() && max_mismatches_allowed >= 0) {
+    return {};
+  }
+  return ::litert::Error(kLiteRtStatusErrorNotFound,
+                         "Not all ops in test signature are in the signature.");
 }
 
 Expected<void> VerifyWithTestSignatures(
@@ -467,12 +522,22 @@ Expected<void> VerifyWithTestSignatures(
         fb_model->subgraphs()->Get(test_subgraph_index);
     LITERT_RETURN_IF_ERROR(test_tfl_subgraph != nullptr);
 
-    LITERT_RETURN_IF_ERROR(VerifySubgraphSame(model, subgraph, test_subgraph,
-                                              fb_model, *tfl_subgraph,
-                                              *test_tfl_subgraph));
-    LITERT_LOG(LITERT_INFO, "Verified signature %s with test signature %s.",
-               verifications.verifications[i].signature,
-               verifications.verifications[i].test_signature);
+    if (verifications.verifications[i].is_superset) {
+      LITERT_RETURN_IF_ERROR(
+          VerifySubgraphSuperset(model, subgraph, test_subgraph, fb_model,
+                                 *tfl_subgraph, *test_tfl_subgraph));
+      LITERT_LOG(LITERT_INFO,
+                 "Verified signature %s is a superset of test signature %s.",
+                 verifications.verifications[i].signature,
+                 verifications.verifications[i].test_signature);
+    } else {
+      LITERT_RETURN_IF_ERROR(VerifySubgraphSame(model, subgraph, test_subgraph,
+                                                fb_model, *tfl_subgraph,
+                                                *test_tfl_subgraph));
+      LITERT_LOG(LITERT_INFO, "Verified signature %s with test signature %s.",
+                 verifications.verifications[i].signature,
+                 verifications.verifications[i].test_signature);
+    }
   }
   return {};
 }

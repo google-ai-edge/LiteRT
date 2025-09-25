@@ -325,6 +325,7 @@ cc_library(
     hdrs = ["magic_number_utils.h"],
     deps = [
         "//litert/c:litert_any",
+        "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_logging",
         "//litert/c:litert_model_types",
