@@ -58,7 +58,7 @@ Expected<void> LegalizeFullyConnectedOp(
     input_indices.push_back(*id);
   }
 
-  // if there's on bias input, add a zero bias
+  // if there's no bias input, add a zero bias
   if (input_indices.size() < 3) {
     auto num_element = GetDimensions(op.Inputs()[1])[0];
     auto zero_bias_idx = AddZeroBiasForConvBase(op.Inputs()[0], op.Inputs()[1],
