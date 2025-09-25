@@ -197,6 +197,9 @@ Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
   auto buffer_index = shape_param_tensor->buffer();
   const auto* buffer = fb_model->buffers()->Get(buffer_index);
   LITERT_RETURN_IF_ERROR(buffer != nullptr);
+  if (buffer->data() == nullptr) {
+    return 0;
+  }
 
   unsigned char* data = const_cast<unsigned char*>(buffer->data()->data());
   const unsigned char* data_end = data + buffer->data()->size();
@@ -372,9 +375,12 @@ Expected<void> VerifyDataSame(const LiteRtTensorT& t1, const LiteRtTensorT& t2,
   auto bidx2 = tflite_t2->buffer();
   const auto* b2 = fb_model->buffers()->Get(bidx2);
   LITERT_RETURN_IF_ERROR(b2 != nullptr);
+  if (b1->data() == nullptr) {
+    LITERT_RETURN_IF_ERROR(b2->data() == nullptr);
+    return {};
+  }
 
   LITERT_RETURN_IF_ERROR(b1->data()->size() == b2->data()->size());
-
   LITERT_RETURN_IF_ERROR(
       memcmp(b1->data()->data(), b2->data()->data(), b1->data()->size()) == 0);
   return {};
