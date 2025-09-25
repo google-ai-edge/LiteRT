@@ -14,6 +14,9 @@
 
 #include "litert/ats/configure.h"
 
+#include <chrono>  // NOLINT
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <regex>  // NOLINT
 #include <string>
@@ -25,11 +28,11 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/common.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -67,6 +70,25 @@ ABSL_FLAG(
     bool, f16_range_for_f32, false,
     "If true, will generate values f16 values stored as f32 for f32 tensors.");
 
+ABSL_FLAG(std::string, extra_models, "",
+          "Optional directory containing models which to add to the test.");
+
+ABSL_FLAG(size_t, iters_per_test, 1, "Number of iterations per test.");
+
+ABSL_FLAG(int64_t, max_ms_per_test, -1,
+          "Maximum time in milliseconds to run each test, -1 means no limit "
+          "and a default will be provided.");
+
+ABSL_FLAG(bool, fail_on_timeout, true,
+          "Whether to fail a test if it times out.");
+
+ABSL_FLAG(std::string, csv, "",
+          "If specified, a CSV file will be written to this path containing "
+          "the results of the test run.");
+
+ABSL_FLAG(bool, dump_report, true,
+          "Whether to dump the report to the user after completion.");
+
 namespace litert::testing {
 
 namespace {
@@ -87,14 +109,14 @@ Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   return seeds;
 }
 
-Expected<AtsConf::ExecutionBackend> ParseBackend() {
+Expected<ExecutionBackend> ParseBackend() {
   const auto backend_flag = absl::GetFlag(FLAGS_backend);
   if (backend_flag == "cpu") {
-    return AtsConf::ExecutionBackend::kCpu;
+    return ExecutionBackend::kCpu;
   } else if (backend_flag == "gpu") {
-    return AtsConf::ExecutionBackend::kGpu;
+    return ExecutionBackend::kGpu;
   } else if (backend_flag == "npu") {
-    return AtsConf::ExecutionBackend::kNpu;
+    return ExecutionBackend::kNpu;
   } else {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  absl::StrFormat("Unknown backend: %s", backend_flag.c_str()));
@@ -112,24 +134,32 @@ void Setup(const AtsConf& options) {
 Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
-  AtsConf res(
-      std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
-      absl::GetFlag(FLAGS_dispatch_dir), absl::GetFlag(FLAGS_plugin_dir),
-      std::regex(absl::GetFlag(FLAGS_dont_register),
-                 std::regex_constants::ECMAScript),
-      std::regex(absl::GetFlag(FLAGS_do_register),
-                 std::regex_constants::ECMAScript),
-      absl::GetFlag(FLAGS_f16_range_for_f32), absl::GetFlag(FLAGS_data_seed));
+  std::regex neg_re(absl::GetFlag(FLAGS_dont_register),
+                    std::regex_constants::ECMAScript);
+  std::regex pos_re(absl::GetFlag(FLAGS_do_register),
+                    std::regex_constants::ECMAScript);
+  auto extra_models = absl::GetFlag(FLAGS_extra_models);
+  auto f16_range_for_f32 = absl::GetFlag(FLAGS_f16_range_for_f32);
+  auto data_seed = absl::GetFlag(FLAGS_data_seed);
+  auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
+  auto plugin_dir = absl::GetFlag(FLAGS_plugin_dir);
+  auto quiet = absl::GetFlag(FLAGS_quiet);
+  auto iters_per_test = absl::GetFlag(FLAGS_iters_per_test);
+  auto max_ms_per_test = absl::GetFlag(FLAGS_max_ms_per_test);
+  std::chrono::milliseconds max_ms_per_test_opt(std::chrono::seconds(10));
+  if (max_ms_per_test > 0) {
+    max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
+  }
+  auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
+  auto csv = absl::GetFlag(FLAGS_csv);
+  auto dump_report = absl::GetFlag(FLAGS_dump_report);
+  AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
+              std::move(neg_re), std::move(pos_re), std::move(extra_models),
+              f16_range_for_f32, data_seed, iters_per_test,
+              std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
+              std::move(csv));
   Setup(res);
   return res;
-}
-
-RandomTensorDataBuilder AtsConf::CreateDataBuilder() const {
-  RandomTensorDataBuilder builder;
-  if (f16_range_for_f32_) {
-    builder.SetF16InF32();
-  }
-  return builder;
 }
 
 int AtsConf::GetSeedForParams(absl::string_view name) const {
