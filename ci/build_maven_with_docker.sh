@@ -58,10 +58,11 @@ else
     'Y'
     '/usr/lib/llvm-18/bin/clang'
     '-Wno-sign-compare -Wno-c++20-designator -Wno-gnu-inline-cpp-without-extern'
-    'y'
+    'Y'
     '/android/sdk'
   )
   printf '%s\n' "${configs[@]}" | ./configure
+  cat .litert_configure.bazelrc
 
   export TF_LOCAL_SOURCE_PATH="/root_dir/third_party/tensorflow"
   bash /script_dir/build_android_package.sh
