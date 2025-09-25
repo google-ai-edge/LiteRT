@@ -38,6 +38,9 @@ void Touch(absl::string_view path);
 // Does this file exist.
 bool Exists(absl::string_view path);
 
+// Is this a directory.
+bool IsDir(absl::string_view path);
+
 // Get size of file.
 Expected<size_t> Size(absl::string_view path);
 
