@@ -78,6 +78,9 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt6989", "mt6989"},
     {"mt6991", "mt6991"},
     {"mt6993", "mt6993"},
+    {"mt8171", "mt8171"},
+    {"mt8188", "mt8188"},
+    {"mt8189", "mt8189"},
 };
 
 constexpr LiteRtOpCode kSupportedOps[] = {

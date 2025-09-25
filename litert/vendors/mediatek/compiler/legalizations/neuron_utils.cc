@@ -44,6 +44,9 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
                      "Int16 is not supported.");
       }
       break;
+    case ElementType::UInt8:
+      mtk_type = NEURON_TENSOR_QUANT8_ASYMM;
+      break;
     case ElementType::Int8:
       if (use_int8_asymm_signed) {
         mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
