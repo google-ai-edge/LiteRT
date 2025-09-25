@@ -20,6 +20,7 @@
 // and backend specific configurations, hence the need for polymorphism.
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <utility>
@@ -27,6 +28,7 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/inference_capture.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
@@ -41,6 +43,8 @@ namespace litert::testing {
 // Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
  public:
+  using Ptr = std::unique_ptr<CompiledModelExecutor>;
+
   CompiledModelExecutor(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor& operator=(CompiledModelExecutor&& other) = default;
   CompiledModelExecutor(const CompiledModelExecutor&) = delete;
@@ -48,7 +52,8 @@ class CompiledModelExecutor {
 
   // Run the compiled model against the given model and with the given inputs.
   template <typename Iter>
-  Expected<std::vector<SimpleBuffer>> Run(Iter start, Iter end) {
+  Expected<std::vector<SimpleBuffer>> Run(
+      Iter start, Iter end, std::optional<Latency::Ref> stats = {}) {
     LITERT_ASSIGN_OR_RETURN(auto api_inputs, api_.CreateInputBuffers());
     if (api_inputs.size() != std::distance(start, end)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -59,7 +64,11 @@ class CompiledModelExecutor {
       api_inputs[std::distance(start, it)].Write(it->template Span<uint8_t>());
     }
     LITERT_ASSIGN_OR_RETURN(auto api_outputs, api_.CreateOutputBuffers());
+
+    auto time_start = Latency::Start(stats);
     LITERT_RETURN_IF_ERROR(api_.Run(api_inputs, api_outputs));
+    Latency::Stop(stats, time_start);
+
     std::vector<SimpleBuffer> output_buffers;
     for (const auto& output : api_outputs) {
       LITERT_ASSIGN_OR_RETURN(auto output_buffer,
@@ -70,8 +79,9 @@ class CompiledModelExecutor {
   }
 
   template <typename Inputs>
-  Expected<std::vector<SimpleBuffer>> Run(const Inputs& inputs) {
-    return Run(std::cbegin(inputs), std::cend(inputs));
+  Expected<std::vector<SimpleBuffer>> Run(
+      const Inputs& inputs, std::optional<Latency::Ref> stats = {}) {
+    return Run(std::cbegin(inputs), std::cend(inputs), stats);
   }
 
   virtual ~CompiledModelExecutor() = default;
@@ -83,8 +93,9 @@ class CompiledModelExecutor {
         options_(std::move(options)),
         env_(std::move(env)) {}
 
- private:
   CompiledModel api_;
+
+ private:
   Options options_;
   Environment env_;
 };
@@ -172,11 +183,6 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModel::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
-    LITERT_ASSIGN_OR_RETURN(auto fully, api.IsFullyAccelerated());
-    if (!fully) {
-      return Error(kLiteRtStatusErrorRuntimeFailure,
-                   "Model is not fully accelerated.");
-    }
     return NpuCompiledModelExecutor(std::move(api), std::move(options),
                                     std::move(env));
   }

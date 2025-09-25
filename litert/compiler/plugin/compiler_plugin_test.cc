@@ -31,6 +31,7 @@
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 
 namespace litert::internal {
@@ -53,6 +54,20 @@ TEST(CompilerPluginTest, LoadTestPlugin) {
   EXPECT_EQ(plugins->front().SocManufacturer(), kTestManufacturer);
   ASSERT_EQ(plugins->front().SocModels().size(), 1);
   EXPECT_EQ(plugins->front().SocModels().front(), kTestModels);
+}
+
+TEST(CompilerPluginTest, FindTestPluginOk) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)}));
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+}
+
+TEST(CompilerPluginTest, FindTestPluginNotFound) {
+  auto plugin =
+      CompilerPlugin::FindPlugin("not_a_soc", {kTestPluginSearchPath});
+  EXPECT_FALSE(plugin);
 }
 
 TEST(CompilerPluginTest, LoadTestPluginWithMalformed) {
