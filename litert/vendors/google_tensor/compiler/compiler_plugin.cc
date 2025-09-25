@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,6 +24,7 @@
 
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -44,10 +46,12 @@
 
 namespace google_tensor {
 
-constexpr char kPluginManufacturer[] = "GoogleTensor";
+constexpr char kPluginManufacturer[] = "Google";
 
 constexpr const char* kPluginSocModels[] = {
-    "g5",
+    "Tensor_G3",
+    "Tensor_G4",
+    "Tensor_G5",
 };  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kUnSupportedOps[] = {
@@ -367,8 +371,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     opaque_options = compiler_plugin->GetOpaqueOptions()->Get();
   }
 
+  std::string valid_soc_model(soc_model);
+  if (strcmp(soc_model, "g5") == 0 || strcmp(soc_model, "g4") == 0 ||
+      strcmp(soc_model, "g3") == 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "g3/g4/g5 is deprecated. Please use Tensor_G3/G4/G5 instead.");
+    valid_soc_model =
+        absl::StrCat("Tensor_", absl::AsciiStrToUpper(valid_soc_model));
+  }
   // TODO(b/398984678): add support for multiple bytecodes
-  absl::string_view soc_model_view(soc_model);
+  absl::string_view soc_model_view(valid_soc_model);
   absl::string_view model_buffer_view(buffer_str);
 
   char* compiled_code_data = nullptr;

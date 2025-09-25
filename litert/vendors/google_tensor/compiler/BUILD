@@ -54,7 +54,6 @@ litert_dynamic_lib(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",

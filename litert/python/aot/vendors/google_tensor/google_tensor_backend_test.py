@@ -75,7 +75,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     )
     with self.assertRaisesRegex(
         NotImplementedError,
-        "google_tensor backend does not support mock_component component.",
+        "GOOGLE backend does not support mock_component component.",
     ):
       model = types.Model("add_simple.tflite")
       component = MockComponent()
@@ -100,7 +100,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     self.assertEqual(args[1], model)  # input_model
     self.assertEqual(args[2], output_model)  # output_model
     self.assertEqual(
-        args[3], target_lib.SocManufacturer.GOOGLE_TENSOR
+        args[3], target_lib.SocManufacturer.GOOGLE
     )  # soc_manufacturer
     self.assertEqual(args[4], target_lib.SocModel.ALL)  # soc_model
     self.assertEqual(kwargs["libs"], "/fake/path/to")  # libs
@@ -150,7 +150,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
 
   def test_specialize_final(self):
     config = self.basic_config
-    config["soc_model"] = target_lib.SocModel.G3.value
+    config["soc_model"] = target_lib.SocModel.TENSOR_G3.value
     backend = google_tensor_backend.GoogleTensorBackend.create(config)
     backends = list(backend.specialize())
     self.assertLen(backends, 1)
@@ -166,7 +166,7 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     backend = google_tensor_backend.GoogleTensorBackend.create(
         self.basic_config
     )
-    self.assertEqual(backend.target_id_suffix, "_GoogleTensor_ALL")
+    self.assertEqual(backend.target_id_suffix, "_Google_ALL")
 
 
 if __name__ == "__main__":
