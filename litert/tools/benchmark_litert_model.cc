@@ -32,12 +32,13 @@ limitations under the License.
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/runtime/compiled_model.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
-#include "litert/runtime/compiled_model.h"
 
 namespace litert::benchmark {
 namespace {
@@ -55,6 +56,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto gpu_low_priority = params.Get<bool>("gpu_low_priority");
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
+  auto num_threads = params.Get<int>("num_threads");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
 
@@ -92,6 +94,12 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   if (use_cpu || !require_full_delegation) {
     hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu;
+
+    if (num_threads > 0) {
+      LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
+      cpu_options.SetNumThreads(num_threads);
+      compilation_options.AddOpaqueOptions(std::move(cpu_options));
+    }
   }
 
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
