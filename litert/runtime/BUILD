@@ -399,7 +399,6 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer_utils",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:buffer_error_reporter",

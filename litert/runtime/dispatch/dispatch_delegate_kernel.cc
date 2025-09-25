@@ -32,16 +32,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
@@ -127,8 +125,7 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
 }
 
 Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
+  auto opaque_options = OpaqueOptions(options_->options, OwnHandle::kNo);
   LITERT_ASSIGN_OR_RETURN(
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
@@ -136,8 +133,7 @@ Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
 }
 
 Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
-  Options cc_options(options_, OwnHandle::kNo);
-  LITERT_ASSIGN_OR_RETURN(auto opaque_options, cc_options.GetOpaqueOptions());
+  auto opaque_options = OpaqueOptions(options_->options, OwnHandle::kNo);
   LITERT_ASSIGN_OR_RETURN(
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
@@ -772,7 +768,7 @@ Expected<void> DispatchDelegateKernel::AllocateTensorBuffersIfNeeded(
     LITERT_RETURN_IF_ERROR(allocate_and_register(tfl_tensor));
   }
 
-  // Then allocate intermediate tensor buffers. They are allways allocated,
+  // Then allocate intermediate tensor buffers. They are always allocated,
   // without attempt to share them when possible.
   //
   // NOTE: Internal tensor buffers are be stored in and owned by

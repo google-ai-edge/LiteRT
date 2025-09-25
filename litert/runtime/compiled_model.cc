@@ -51,7 +51,6 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
@@ -125,9 +124,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interpreter_options.SetUseSignatureTensorNames(true);
   int num_threads = 1;
   if (jit_compilation_options) {
-    litert::Options cc_options(jit_compilation_options, litert::OwnHandle::kNo);
-    LITERT_ASSIGN_OR_RETURN(litert::OpaqueOptions opaque_options,
-                            cc_options.GetOpaqueOptions());
+    auto opaque_options = litert::OpaqueOptions(
+        jit_compilation_options->options, litert::OwnHandle::kNo);
 
     if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
             opaque_options, LiteRtRuntimeOptionsT::Identifier());
