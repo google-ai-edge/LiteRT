@@ -358,6 +358,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Resolve custom google tensor options.
   LiteRtOpaqueOptions opaque_options = {};
+  void (*deleter)(LiteRtOpaqueOptions) = nullptr;
+  absl::Cleanup opaque_options_cleanup = [&] {
+    if (deleter) {
+      deleter(opaque_options);
+    }
+  };
   if (!compiler_plugin->GetOpaqueOptions()) {
     LITERT_LOG(
         LITERT_INFO,
@@ -365,6 +371,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_ASSIGN_OR_RETURN(
         auto google_tensor_opts,
         ::litert::google_tensor::GoogleTensorOptions::Create());
+    deleter = google_tensor_opts.GetDeleter();
     opaque_options = google_tensor_opts.Release();
   } else {
     LITERT_LOG(LITERT_INFO, "Using custom google tensor options");

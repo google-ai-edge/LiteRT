@@ -32,7 +32,9 @@ class GoogleTensorOptions : public OpaqueOptions {
 
   GoogleTensorOptions() = delete;
 
-  static const char* Discriminator();
+  static const char* Discriminator() {
+    return LiteRtGoogleTensorOptionsGetIdentifier();
+  }
 
   static Expected<GoogleTensorOptions> Create(OpaqueOptions& options);
   static Expected<GoogleTensorOptions> Create();

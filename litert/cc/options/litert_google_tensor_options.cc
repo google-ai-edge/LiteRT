@@ -34,10 +34,6 @@
 
 namespace litert::google_tensor {
 
-const char* GoogleTensorOptions::Discriminator() {
-  return LiteRtGoogleTensorOptionsGetIdentifier();
-}
-
 Expected<GoogleTensorOptions> GoogleTensorOptions::Create(
     OpaqueOptions& options) {
   const auto id = options.GetIdentifier();

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -76,6 +76,14 @@ cc_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
@@ -95,11 +103,8 @@ cc_test(
     }),
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/options:litert_google_tensor_options",
-        "//litert/cc/dynamic_runtime:litert_environment",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/vendors/cc:litert_compiler_plugin",
