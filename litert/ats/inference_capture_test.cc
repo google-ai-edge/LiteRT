@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2025 Google LLC.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,11 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
+#include "litert/ats/inference_capture.h"
 
-#include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
-#include "litert/test/generators/common.h"  // IWYU pragma: export
-#include "litert/test/generators/no_op.h"  // IWYU pragma: export
+#include <gtest/gtest.h>
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_
+namespace litert::testing {
+namespace {
+
+TEST(AtsCaptureTest, LatencyRow) {
+  Latency l;
+  l.Stop(l.Start());
+  EXPECT_EQ(l.NumSamples(), 1);
+  EXPECT_EQ(l.Avg(), l.Min());
+  EXPECT_EQ(l.Avg(), l.Max());
+}
+
+TEST(AtsCaptureTest, Numerics) {
+  Numerics n;
+  n.NewMse(2.0);
+  n.NewMse(4.0);
+  EXPECT_EQ(n.AvgMse(), 3.0);
+}
+
+}  // namespace
+}  // namespace litert::testing
