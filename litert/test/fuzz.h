@@ -28,8 +28,6 @@ namespace litert::testing {
 class RepeatedBlock final {
  private:
   using Clock = std::chrono::steady_clock;
-  static constexpr size_t kDefaultMaxIters = 1000;
-  static constexpr size_t kDefaultMinIters = 100;
   static constexpr auto kDefaultMaxMs = std::chrono::milliseconds(50);
 
  public:
@@ -48,26 +46,21 @@ class RepeatedBlock final {
   };
 
   template <typename Duration>
-  explicit RepeatedBlock(Duration max_duration = kDefaultMaxMs,
-                         size_t min_iters = kDefaultMinIters,
-                         size_t max_iters = kDefaultMaxIters)
-      : expire_time_(Clock::now() + max_duration),
-        min_iters_(min_iters),
-        max_iters_(max_iters) {}
+  explicit RepeatedBlock(size_t iters, Duration max_duration = kDefaultMaxMs)
+      : expire_time_(Clock::now() + max_duration), iters_(iters) {}
 
   auto begin() { return Iterator(*this); }
   auto end() { return Iterator(*this); }
 
   bool Done() const {
-    return cur_iter_ >= max_iters_ || Clock::now() >= expire_time_;
+    return cur_iter_ >= iters_ || Clock::now() >= expire_time_;
   }
 
-  bool ReachedMinIters() const { return cur_iter_ >= min_iters_; }
+  bool ReachedIters() const { return cur_iter_ >= iters_; }
 
  private:
   Clock::time_point expire_time_;
-  size_t min_iters_;
-  size_t max_iters_;
+  size_t iters_;
   size_t cur_iter_ = 0;
 };
 

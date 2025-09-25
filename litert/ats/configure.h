@@ -15,6 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 
+#include <chrono>  // NOLINT
+#include <optional>
 #include <regex>  // NOLINT
 #include <string>
 #include <vector>
@@ -58,6 +60,15 @@ ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
 // Optional directory containing models which to add to the test.
 ABSL_DECLARE_FLAG(std::string, extra_models);
+
+// Number of iterations per test, each one will have different tensor data.
+ABSL_DECLARE_FLAG(size_t, iters_per_test);
+
+// Maximum time in milliseconds to run each test.
+ABSL_DECLARE_FLAG(int64_t, max_ms_per_test);
+
+// Whether to fail the test if the test times out.
+ABSL_DECLARE_FLAG(bool, fail_on_timeout);
 
 namespace litert::testing {
 
@@ -109,12 +120,23 @@ class AtsConf {
     return *res;
   }
 
+  // Number of iterations per test, each one will have different tensor data.
+  size_t ItersPerTest() const { return iters_per_test_; }
+
+  // Maximum time in milliseconds to run each test.
+  std::chrono::milliseconds MaxMsPerTest() const { return max_ms_per_test_; }
+
+  // Whether to fail the test if the test times out.
+  bool FailOnTimeout() const { return fail_on_timeout_; }
+
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::regex&& neg_re, std::regex&& pos_re,
                    std::string extra_models, bool f16_range_for_f32,
-                   std::optional<int> data_seed)
+                   std::optional<int> data_seed, size_t iters_per_test,
+                   std::chrono::milliseconds max_ms_per_test,
+                   bool fail_on_timeout)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -124,7 +146,10 @@ class AtsConf {
         pos_re_(std::move(pos_re)),
         extra_models_(std::move(extra_models)),
         f16_range_for_f32_(f16_range_for_f32),
-        data_seed_(data_seed) {
+        data_seed_(data_seed),
+        iters_per_test_(iters_per_test),
+        max_ms_per_test_(std::move(max_ms_per_test)),
+        fail_on_timeout_(fail_on_timeout) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -140,6 +165,9 @@ class AtsConf {
   std::string extra_models_;
   bool f16_range_for_f32_;
   std::optional<int> data_seed_;
+  size_t iters_per_test_;
+  std::chrono::milliseconds max_ms_per_test_;
+  bool fail_on_timeout_;
   RandomTensorDataBuilder data_builder_;
 };
 

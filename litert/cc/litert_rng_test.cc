@@ -156,8 +156,7 @@ TEST_F(LiteRtRngTest, ReinterpretFloat) {
 TEST_F(LiteRtRngTest, TestWithFuzz) {
   auto device = TracedDevice();
   auto gen = DefaultGenerator<int>();
-  for (auto _ :
-       FuzzBlock(std::chrono::milliseconds(50), kTestIters, kTestIters)) {
+  for (auto _ : FuzzBlock(kTestIters, std::chrono::milliseconds(50))) {
     const auto val = gen(device);
     ASSERT_LE(val, gen.Max());
     ASSERT_GE(val, gen.Min());

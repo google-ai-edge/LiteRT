@@ -14,6 +14,9 @@
 
 #include "litert/ats/configure.h"
 
+#include <chrono>  // NOLINT
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <regex>  // NOLINT
 #include <string>
@@ -70,6 +73,14 @@ ABSL_FLAG(
 ABSL_FLAG(std::string, extra_models, "",
           "Optional directory containing models which to add to the test.");
 
+ABSL_FLAG(size_t, iters_per_test, 1, "Number of iterations per test.");
+
+ABSL_FLAG(int64_t, max_ms_per_test, -1,
+          "Maximum time in milliseconds to run each test, -1 means no limit.");
+
+ABSL_FLAG(bool, fail_on_timeout, true,
+          "Whether to fail a test if it times out.");
+
 namespace litert::testing {
 
 namespace {
@@ -125,9 +136,18 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
   auto plugin_dir = absl::GetFlag(FLAGS_plugin_dir);
   auto quiet = absl::GetFlag(FLAGS_quiet);
+  auto iters_per_test = absl::GetFlag(FLAGS_iters_per_test);
+  auto max_ms_per_test = absl::GetFlag(FLAGS_max_ms_per_test);
+  std::chrono::milliseconds max_ms_per_test_opt(
+      std::chrono::milliseconds::max());
+  if (max_ms_per_test > 0) {
+    max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
+  }
+  auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
-              f16_range_for_f32, data_seed);
+              f16_range_for_f32, data_seed, iters_per_test,
+              std::move(max_ms_per_test_opt), fail_on_timeout);
   Setup(res);
   return res;
 }
