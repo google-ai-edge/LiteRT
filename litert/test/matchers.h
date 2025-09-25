@@ -602,8 +602,9 @@ auto HasTypeAspect(ElementTy ty, absl::Span<const int> dims) {
 //   EXPECT_THAT(absl::MakeConstSpan(v),
 //   MeanSquaredError(absl::MakeConstSpan(u)));
 template <typename Exp>
-auto MeanSquaredErrorLt(const Exp& expected, double tol = 1e-5) {
-  auto mse = [expected](const auto& actual) -> double {
+auto MeanSquaredErrorLt(const Exp& expected, double tol = 1e-5,
+                        double* dump_mse = nullptr) {
+  auto mse = [expected, dump_mse](const auto& actual) -> double {
     double err = 0.0;
     auto exp_begin = expected.cbegin();
     auto actual_begin = actual.cbegin();
@@ -612,7 +613,11 @@ auto MeanSquaredErrorLt(const Exp& expected, double tol = 1e-5) {
       double expected_val = static_cast<double>(*exp_begin++);
       err += std::pow(actual_val - expected_val, 2);
     }
-    return err / static_cast<double>(std::size(expected));
+    const auto res = err / static_cast<double>(std::size(expected));
+    if (dump_mse) {
+      *dump_mse = res;
+    }
+    return res;
   };
   return ::testing::AllOf(::testing::SizeIs(::testing::Gt(0)),
                           ::testing::SizeIs(std::size(expected)),
