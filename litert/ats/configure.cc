@@ -14,6 +14,9 @@
 
 #include "litert/ats/configure.h"
 
+#include <chrono>  // NOLINT
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <regex>  // NOLINT
 #include <string>
@@ -67,6 +70,26 @@ ABSL_FLAG(
     bool, f16_range_for_f32, false,
     "If true, will generate values f16 values stored as f32 for f32 tensors.");
 
+ABSL_FLAG(std::string, extra_models, "",
+          "Optional directory containing models which to add to the test.");
+
+ABSL_FLAG(size_t, iters_per_test, 1, "Number of iterations per test.");
+
+ABSL_FLAG(int64_t, max_ms_per_test, -1,
+          "Maximum time in milliseconds to run each test, -1 means no limit "
+          "and a default will be provided.");
+
+ABSL_FLAG(bool, fail_on_timeout, true,
+          "Whether to fail a test if it times out.");
+
+ABSL_FLAG(std::string, save_report, "",
+          "If specified, a CSV file will be written to this path containing "
+          "the results of the test run.");
+
+ABSL_FLAG(std::string, print_report, "latency",
+          "How to dump a summary of the run results after completion. Options "
+          "are \"latency\", \"all\" or empty string for no printing.");
+
 namespace litert::testing {
 
 namespace {
@@ -101,6 +124,21 @@ Expected<AtsConf::ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<AtsConf::PrintReportT> ParsePrintReport() {
+  const auto print_report_flag = absl::GetFlag(FLAGS_print_report);
+  if (print_report_flag == "latency") {
+    return AtsConf::PrintReportT::kLatency;
+  } else if (print_report_flag == "all") {
+    return AtsConf::PrintReportT::kAll;
+  } else if (print_report_flag.empty()) {
+    return AtsConf::PrintReportT::kNone;
+  } else {
+    return Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Unknown print report: %s", print_report_flag.c_str()));
+  }
+}
+
 void Setup(const AtsConf& options) {
   if (options.Quiet()) {
     LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
@@ -112,24 +150,32 @@ void Setup(const AtsConf& options) {
 Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
-  AtsConf res(
-      std::move(seeds), backend, absl::GetFlag(FLAGS_quiet),
-      absl::GetFlag(FLAGS_dispatch_dir), absl::GetFlag(FLAGS_plugin_dir),
-      std::regex(absl::GetFlag(FLAGS_dont_register),
-                 std::regex_constants::ECMAScript),
-      std::regex(absl::GetFlag(FLAGS_do_register),
-                 std::regex_constants::ECMAScript),
-      absl::GetFlag(FLAGS_f16_range_for_f32), absl::GetFlag(FLAGS_data_seed));
+  std::regex neg_re(absl::GetFlag(FLAGS_dont_register),
+                    std::regex_constants::ECMAScript);
+  std::regex pos_re(absl::GetFlag(FLAGS_do_register),
+                    std::regex_constants::ECMAScript);
+  auto extra_models = absl::GetFlag(FLAGS_extra_models);
+  auto f16_range_for_f32 = absl::GetFlag(FLAGS_f16_range_for_f32);
+  auto data_seed = absl::GetFlag(FLAGS_data_seed);
+  auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
+  auto plugin_dir = absl::GetFlag(FLAGS_plugin_dir);
+  auto quiet = absl::GetFlag(FLAGS_quiet);
+  auto iters_per_test = absl::GetFlag(FLAGS_iters_per_test);
+  auto max_ms_per_test = absl::GetFlag(FLAGS_max_ms_per_test);
+  std::chrono::milliseconds max_ms_per_test_opt(std::chrono::seconds(10));
+  if (max_ms_per_test > 0) {
+    max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
+  }
+  auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
+  LITERT_ASSIGN_OR_RETURN(auto print_report, ParsePrintReport());
+  auto save_report = absl::GetFlag(FLAGS_save_report);
+  AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
+              std::move(neg_re), std::move(pos_re), std::move(extra_models),
+              f16_range_for_f32, data_seed, iters_per_test,
+              std::move(max_ms_per_test_opt), fail_on_timeout, print_report,
+              std::move(save_report));
   Setup(res);
   return res;
-}
-
-RandomTensorDataBuilder AtsConf::CreateDataBuilder() const {
-  RandomTensorDataBuilder builder;
-  if (f16_range_for_f32_) {
-    builder.SetF16InF32();
-  }
-  return builder;
 }
 
 int AtsConf::GetSeedForParams(absl::string_view name) const {
