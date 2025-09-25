@@ -46,7 +46,7 @@ class GoogleTensorBackend(types.Backend):
 
   @property
   def soc_manufacturer(self) -> target_lib.SocManufacturer:
-    return target_lib.SocManufacturer.GOOGLE_TENSOR
+    return target_lib.SocManufacturer.GOOGLE
 
   @property
   def soc_model(self) -> target_lib.SocModel:
