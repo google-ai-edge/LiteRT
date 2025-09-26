@@ -116,6 +116,9 @@ ABSL_FLAG(bool, google_tensor_dump_op_timings, false,
 ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
           "Whether to enable large model support.");
 
+ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
+          "Whether to enable 4bit compilation.");
+
 ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
           kLiteRtGoogleTensorShardingIntensityMinimal,
@@ -138,6 +141,8 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
   options.SetDumpOpTimings(absl::GetFlag(FLAGS_google_tensor_dump_op_timings));
   options.SetEnableLargeModelSupport(
       absl::GetFlag(FLAGS_google_tensor_enable_large_model_support));
+  options.SetEnable4BitCompilation(
+      absl::GetFlag(FLAGS_google_tensor_enable_4bit_compilation));
   options.SetShardingIntensity(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
