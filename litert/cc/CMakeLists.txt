@@ -22,6 +22,7 @@ add_library(litert_cc_api STATIC
     litert_model.cc
     litert_op_options.cc
     litert_opaque_options.cc
+    litert_rewriter.cc
     litert_shared_library.cc
     litert_tensor_buffer.cc
     litert_tensor_buffer_utils.cc
@@ -77,6 +78,7 @@ set(LITERT_CC_HEADERS
     litert_opaque_options.h
     litert_platform_support.h
     litert_profiler.h
+    litert_rewriter.h
     litert_rng.h
     litert_shared_library.h
     litert_source_location.h

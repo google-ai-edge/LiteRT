@@ -1169,6 +1169,44 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_rewriter",
+    srcs = ["litert_rewriter.cc"],
+    hdrs = ["litert_rewriter.h"],
+    deps = [
+        ":litert_detail",
+        ":litert_expected",
+        ":litert_handle",
+        ":litert_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
+    ],
+)
+
+cc_test(
+    name = "litert_rewriter_test",
+    srcs = ["litert_rewriter_test.cc"],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_element_type",
+        ":litert_layout",
+        ":litert_model",
+        ":litert_rewriter",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:buffer_manager",
+        "//litert/test:common",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_profiler",
     hdrs = [":litert_profiler.h"],
     visibility = [
