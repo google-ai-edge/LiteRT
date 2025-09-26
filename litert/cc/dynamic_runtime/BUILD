@@ -195,7 +195,10 @@ cc_library(
 cc_test(
     name = "litert_model_test",
     srcs = ["//litert/cc:litert_model_test.cc"],
-    data = ["//litert/test:mlir_test_data"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
     deps = [
         ":litert_model",
         "//litert/c:litert_common",
@@ -206,6 +209,7 @@ cc_test(
         "//litert/cc:litert_layout",
         "//litert/core/model",
         "//litert/test:common",
+        "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

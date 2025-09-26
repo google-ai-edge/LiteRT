@@ -142,6 +142,17 @@ TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
   LiteRtDestroyCompiledResult(compiled);
 }
 
+TEST(MtkPluginOpCompatibilityTest, MtkExtConv2DNotYetSuppoted) {
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("MTKEXT_CONV_2D.tflite");
+  LiteRtCompiledResult compiled;
+  // TODO(MTK): Move this case into the other test once the legalization is
+  // implemented.
+  ASSERT_EQ(LiteRtCompilerPluginCompile(plugin.get(), /*soc_model=*/"mt6991",
+                                        model.Get(), &compiled),
+            kLiteRtStatusErrorUnsupported);
+}
+
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, MtkPluginOpCompatibilityTest,
                          kSupportedOps);
 

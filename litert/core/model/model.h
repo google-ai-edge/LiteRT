@@ -514,6 +514,20 @@ class LiteRtOpT {
     litert_op_code_ = litert_op_code;
   }
 
+  // Get the custom code if the op is a custom op.
+  ::litert::Expected<absl::string_view> CustomCode() const {
+    if (OpCode() != kLiteRtOpCodeTflCustom) {
+      return ::litert::Error(kLiteRtStatusErrorInvalidArgument,
+                             "Op code is not custom");
+    }
+    return absl::string_view(custom_code_);
+  }
+
+  // Set the custom code.
+  void SetCustomCode(std::string custom_code) {
+    custom_code_ = std::move(custom_code);
+  }
+
   // IR is generally, default constructible and movable but not copyable.
   LiteRtOpT() = default;
   LiteRtOpT(const LiteRtOpT&) = delete;
@@ -554,6 +568,8 @@ class LiteRtOpT {
 
   std::vector<LiteRtTensor> inputs_;
   std::vector<LiteRtTensor> outputs_;
+
+  std::string custom_code_;
 
   // TFLITE
   int32_t tfl_op_code_ind_ = litert::internal::kDispatchOpCodeTflInd;

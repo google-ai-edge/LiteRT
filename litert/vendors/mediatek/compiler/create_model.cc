@@ -279,6 +279,17 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_GREATER);
         break;
+      case kLiteRtOpCodeTflCustom:
+        if (auto custom_code = op.CustomCode();
+            custom_code.HasValue() && *custom_code == "MTKEXT_CONV_2D") {
+          // TODO(MTK): Legalize mtk extension op here.
+          status = Error(kLiteRtStatusErrorUnsupported,
+                         "MTKEXT_CONV_2D legalization not yet implemented.");
+        } else {
+          status =
+              Error(kLiteRtStatusErrorInvalidArgument, "Unsupported custom op");
+        }
+        break;
       case kLiteRtOpCodeShloComposite:
         // TODO(MTK): Check if the op name is odml.rms_norm,
         // LiteRtGetSHLOCompositeOpName currently returns an error.
