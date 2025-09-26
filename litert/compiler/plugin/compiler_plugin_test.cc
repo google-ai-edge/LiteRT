@@ -401,6 +401,34 @@ TEST(ApplyTest, ApplyPlugins) {
   EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
 }
 
+TEST(ApplyTest, ApplyLoadedPlugins) {
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+
+  LiteRtHwAccelerators compilation_options = static_cast<LiteRtHwAccelerators>(
+      kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
+      kLiteRtHwAcceleratorNpu);
+  auto result = litert::internal::ApplyPlugins(&model, compilation_options,
+                                               *plugins, /*mutated=*/nullptr);
+  ASSERT_TRUE(result);
+
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  auto& subgraph = *model.MainSubgraph();
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+
+  auto* op = subgraph.Ops().front();
+
+  EXPECT_EQ(op->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_TRUE(model.FindOpAsset(op));
+
+  EXPECT_TRUE(model.FindMetadata(kLiteRtBuildStampKey));
+}
+
 TEST(PartitionTest, MappedCompositeOp) {
   auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
   ASSERT_TRUE(model_wrap);

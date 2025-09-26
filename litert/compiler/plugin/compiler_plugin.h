@@ -191,6 +191,11 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtEnvironment environment, LiteRtOptions options, LiteRtModel model,
     LiteRtHwAcceleratorSet selected_hw_accelerators, bool* mutated = nullptr);
 
+// Applies only the provided `compiler_plugins` to the given model.
+Expected<ApplyPluginsResult> ApplyPlugins(
+    LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators,
+    std::vector<CompilerPlugin>& compiler_plugins, bool* mutated = nullptr);
+//
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_PLUGIN_H_

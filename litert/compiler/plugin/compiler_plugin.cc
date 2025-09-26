@@ -685,7 +685,14 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   if (!compiler_plugins) {
     return compiler_plugins.Error();
   }
-  if (compiler_plugins->empty()) {
+  return ApplyPlugins(model, selected_hw_accelerators, compiler_plugins.Value(),
+                      mutated);
+}
+
+Expected<ApplyPluginsResult> ApplyPlugins(
+    LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators,
+    std::vector<CompilerPlugin>& compiler_plugins, bool* mutated) {
+  if (compiler_plugins.empty()) {
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "No compiler plugin found");
   }
@@ -695,7 +702,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
 
   ApplyPluginsResult result;
   result.num_applied_plugins = 0;
-  for (auto& compiler_plugin : *compiler_plugins) {
+  for (auto& compiler_plugin : compiler_plugins) {
     auto plugin_name = compiler_plugin.DebugString();
 
     auto plugin_supported_hardware = compiler_plugin.SupportedHardware();

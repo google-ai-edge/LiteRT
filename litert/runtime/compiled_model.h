@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,7 +32,9 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/cache/compilation_cache.h"
 #include "litert/core/environment.h"
+#include "litert/core/model/model.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -304,8 +307,15 @@ class LiteRtCompiledModelT {
   std::vector<const std::string*> signature_keys_;
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
-  // a newly serialized flatbuffer owned by the compiled model.
+  // a newly serialized flatbuffer owned by the compiled model. If the model is
+  // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
+
+  // The compilation cache used to store the compiled model. If the model is
+  // found in the cache, the compiled model will be loaded from the cache.
+  // Otherwise, the compiled model will be compiled and saved to the cache.
+  std::optional<litert::internal::CompilationCache> compilation_cache_;
+  std::optional<LiteRtModelT::Ptr> cached_model_;
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the
