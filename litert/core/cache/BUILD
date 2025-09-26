@@ -18,8 +18,13 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//litert:litert_internal_users",
+        "//litert:__subpackages__",
     ],
+)
+
+cc_library(
+    name = "hash_util",
+    hdrs = ["hash_util.h"],
 )
 
 cc_library(
@@ -27,6 +32,7 @@ cc_library(
     srcs = ["compilation_cache.cc"],
     hdrs = ["compilation_cache.h"],
     deps = [
+        ":hash_util",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_buffer_ref",
