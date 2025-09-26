@@ -233,6 +233,9 @@ typedef enum : int {
   kLiteRtHwAcceleratorCpu = 1 << 0,
   kLiteRtHwAcceleratorGpu = 1 << 1,
   kLiteRtHwAcceleratorNpu = 1 << 2,
+#if defined(__EMSCRIPTEN__)
+  kLiteRtHwAcceleratorWebNn = 1 << 3,
+#endif  // __EMSCRIPTEN__
 } LiteRtHwAccelerators;
 
 typedef enum {

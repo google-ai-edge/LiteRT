@@ -33,6 +33,10 @@
 extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
     LiteRtEnvironmentT& environment) = nullptr;
 
+// Define a function pointer for the WebNN accelerator.
+extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
+    LiteRtEnvironmentT& environment) = nullptr;
+
 namespace litert {
 namespace {
 
@@ -57,6 +61,13 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_WARNING,
                "NPU accelerator could not be loaded and registered: %s.",
                LiteRtGetStatusString(npu_registration));
+  }
+
+  // Register the WebNN accelerator if statically linked.
+  if (LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
+      LiteRtRegisterStaticLinkedAcceleratorWebNn(environment) ==
+          kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_INFO, "Statically linked WebNN accelerator registered.");
   }
 
   // Register the GPU accelerator.
