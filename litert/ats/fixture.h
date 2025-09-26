@@ -17,6 +17,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <iostream>
 #include <memory>
 #include <optional>
 #include <string>
@@ -73,10 +75,20 @@ class AtsTest : public RngTest {
 
   void TestBody() override {
     auto device = this->TracedDevice(conf_.DataSeed());
-    LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
-    LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
-    LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs));
-    CheckOutputs(actual, ref);
+    LITERT_ASSERT_OK_AND_ASSIGN(auto exec, MakeExecutor());
+    for (auto _ : this->FuzzBlock(conf_.ItersPerTest(), conf_.MaxMsPerTest())) {
+      LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, MakeInputs(device));
+      LITERT_ASSERT_OK_AND_ASSIGN(auto ref, Reference(inputs));
+      LITERT_ASSERT_OK_AND_ASSIGN(auto actual, Actual(inputs, exec.get()));
+      CheckOutputs(actual, ref);
+    }
+  }
+
+  void TearDown() override {
+    if (conf_.ShouldPrintLatency()) {
+      std::cerr << absl::StreamFormat("\nLatency =====\n%v\n=============\n",
+                                      stats_);
+    }
   }
 
  private:
@@ -101,9 +113,9 @@ class AtsTest : public RngTest {
     return graph_->MakeInputs(device, conf_.DataBuilder());
   }
 
-  Expected<VarBuffers> Actual(const VarBuffers& inputs) const {
-    LITERT_ASSIGN_OR_RETURN(auto exec, MakeExecutor());
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs));
+  Expected<VarBuffers> Actual(const VarBuffers& inputs,
+                              CompiledModelExecutor* exec) {
+    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, std::ref(stats_)));
     return actual;
   }
 
@@ -155,6 +167,7 @@ class AtsTest : public RngTest {
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
+  LatencyStats stats_;
 };
 
 }  // namespace litert::testing

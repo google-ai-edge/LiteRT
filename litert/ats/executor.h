@@ -19,9 +19,14 @@
 // Different ATS configurations may require different hardware accelerators
 // and backend specific configurations, hence the need for polymorphism.
 
+#include <algorithm>
+#include <chrono>  // NOLINT
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <ratio>  // NOLINT
 #include <string>
 #include <utility>
 #include <vector>
@@ -39,6 +44,58 @@
 
 namespace litert::testing {
 
+// Utility class for tracking latency statistics.
+class LatencyStats {
+ public:
+  using Clock = std::chrono::steady_clock;
+  using TimePoint = Clock::time_point;
+  using Nanoseconds = uint64_t;
+  using Ref = std::reference_wrapper<LatencyStats>;
+
+  TimePoint Start() const { return Clock::now(); }
+
+  void Stop(const TimePoint& start) {
+    std::chrono::duration<double, std::nano> nano = Clock::now() - start;
+    latencies_.push_back(nano.count());
+  }
+
+  Nanoseconds Avg() const {
+    if (latencies_.empty()) {
+      return 0;
+    }
+    Nanoseconds res = 0;
+    for (const auto& l : latencies_) {
+      res += l;
+    }
+    return res / latencies_.size();
+  }
+
+  Nanoseconds Max() const {
+    if (latencies_.empty()) {
+      return 0;
+    }
+    return *std::max_element(latencies_.begin(), latencies_.end());
+  }
+
+  Nanoseconds Min() const {
+    if (latencies_.empty()) {
+      return 0;
+    }
+    return *std::min_element(latencies_.begin(), latencies_.end());
+  }
+
+  size_t NumSamples() const { return latencies_.size(); }
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const LatencyStats& stats) {
+    absl::Format(&sink, "Avg: %ens, Max: %ens, Min: %ens, NumSamples: %luns",
+                 stats.Avg(), stats.Max(), stats.Min(), stats.NumSamples());
+  }
+
+ private:
+  std::vector<Nanoseconds> latencies_;
+};
+
 // Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
  public:
@@ -51,7 +108,8 @@ class CompiledModelExecutor {
 
   // Run the compiled model against the given model and with the given inputs.
   template <typename Iter>
-  Expected<std::vector<SimpleBuffer>> Run(Iter start, Iter end) {
+  Expected<std::vector<SimpleBuffer>> Run(
+      Iter start, Iter end, std::optional<LatencyStats::Ref> stats = {}) {
     LITERT_ASSIGN_OR_RETURN(auto api_inputs, api_.CreateInputBuffers());
     if (api_inputs.size() != std::distance(start, end)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -62,7 +120,16 @@ class CompiledModelExecutor {
       api_inputs[std::distance(start, it)].Write(it->template Span<uint8_t>());
     }
     LITERT_ASSIGN_OR_RETURN(auto api_outputs, api_.CreateOutputBuffers());
+
+    std::optional<LatencyStats::TimePoint> time_start =
+        stats ? std::make_optional(stats->get().Start()) : std::nullopt;
+
     LITERT_RETURN_IF_ERROR(api_.Run(api_inputs, api_outputs));
+
+    if (time_start) {
+      stats->get().Stop(*time_start);
+    }
+
     std::vector<SimpleBuffer> output_buffers;
     for (const auto& output : api_outputs) {
       LITERT_ASSIGN_OR_RETURN(auto output_buffer,
@@ -73,8 +140,9 @@ class CompiledModelExecutor {
   }
 
   template <typename Inputs>
-  Expected<std::vector<SimpleBuffer>> Run(const Inputs& inputs) {
-    return Run(std::cbegin(inputs), std::cend(inputs));
+  Expected<std::vector<SimpleBuffer>> Run(
+      const Inputs& inputs, std::optional<LatencyStats::Ref> stats = {}) {
+    return Run(std::cbegin(inputs), std::cend(inputs), stats);
   }
 
   virtual ~CompiledModelExecutor() = default;

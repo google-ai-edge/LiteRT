@@ -70,11 +70,18 @@ ABSL_DECLARE_FLAG(int64_t, max_ms_per_test);
 // Whether to fail the test if the test times out.
 ABSL_DECLARE_FLAG(bool, fail_on_timeout);
 
+// If and how to capture latency data, "none", "print", or a path where
+// serialized data will be written..
+ABSL_DECLARE_FLAG(std::string, capture_latency);
+
 namespace litert::testing {
 
 class AtsConf {
  public:
   using SeedMap = absl::flat_hash_map<std::string, int>;
+  struct PrintLatency {};
+  using CaptureLatency =
+      std::variant<std::monostate, PrintLatency, std::string>;
 
   enum class ExecutionBackend { kCpu, kGpu, kNpu };
 
@@ -129,6 +136,15 @@ class AtsConf {
   // Whether to fail the test if the test times out.
   bool FailOnTimeout() const { return fail_on_timeout_; }
 
+  // If and how to capture latency data.
+  const CaptureLatency& Latency() const { return capture_latency_; }
+  bool ShouldPrintLatency() const {
+    return std::holds_alternative<PrintLatency>(capture_latency_);
+  }
+  bool ShouldCaptureLatency() const {
+    return std::holds_alternative<std::string>(capture_latency_);
+  }
+
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
@@ -136,7 +152,7 @@ class AtsConf {
                    std::string extra_models, bool f16_range_for_f32,
                    std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
-                   bool fail_on_timeout)
+                   bool fail_on_timeout, CaptureLatency capture_latency)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -149,7 +165,8 @@ class AtsConf {
         data_seed_(data_seed),
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
-        fail_on_timeout_(fail_on_timeout) {
+        fail_on_timeout_(fail_on_timeout),
+        capture_latency_(std::move(capture_latency)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -168,6 +185,7 @@ class AtsConf {
   size_t iters_per_test_;
   std::chrono::milliseconds max_ms_per_test_;
   bool fail_on_timeout_;
+  CaptureLatency capture_latency_;
   RandomTensorDataBuilder data_builder_;
 };
 

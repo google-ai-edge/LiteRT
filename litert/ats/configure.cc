@@ -81,6 +81,11 @@ ABSL_FLAG(int64_t, max_ms_per_test, -1,
 ABSL_FLAG(bool, fail_on_timeout, true,
           "Whether to fail a test if it times out.");
 
+// TODO: Add support for writing to a structured file.
+ABSL_FLAG(std::string, capture_latency, "none",
+          "If and how to capture latency data, \"none\", \"print\", or a path "
+          "where serialized data will be written.");
+
 namespace litert::testing {
 
 namespace {
@@ -144,10 +149,20 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
     max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
   }
   auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
+  auto capture_latency_opt = absl::GetFlag(FLAGS_capture_latency);
+  CaptureLatency capture_latency;
+  if (capture_latency_opt == "print") {
+    capture_latency = PrintLatency();
+  } else if (capture_latency_opt == "none" || capture_latency_opt.empty()) {
+    capture_latency = std::monostate();
+  } else {
+    capture_latency = capture_latency_opt;
+  }
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               f16_range_for_f32, data_seed, iters_per_test,
-              std::move(max_ms_per_test_opt), fail_on_timeout);
+              std::move(max_ms_per_test_opt), fail_on_timeout,
+              std::move(capture_latency));
   Setup(res);
   return res;
 }
