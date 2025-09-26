@@ -132,9 +132,33 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
   }
   if (g2g_option == G2GConfig::kMHAOptPrefill ||
       g2g_option == G2GConfig::kMHAOpt) {
-    const std::vector<QnnOpCode> gemma3_mha_prefill = {
+    // const std::vector<QnnOpCode> gemma3_mha_prefill = {
+    //     QnnOpCode::kElementWiseMultiply,
+    //     QnnOpCode::kTranspose,
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kMatMul,
+    //     QnnOpCode::kMatMul,
+    //     QnnOpCode::kConcat,
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kElementWiseAdd,
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kSoftmax,
+    //     QnnOpCode::kStridedSlice,
+    //     QnnOpCode::kStridedSlice,
+    //     QnnOpCode::kMatMul,
+    //     QnnOpCode::kMatMul,
+    //     QnnOpCode::kElementWiseAdd,
+    //     QnnOpCode::kReshape,
+    //     QnnOpCode::kTranspose,
+    //     QnnOpCode::kReshape,
+    // };
+    // Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
+    //           OptimizeMHAPrefill);
+    QNN_LOG_WARNING("[G2G] kMHAOptPrefill");
+    const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
+        // QnnOpCode::kElementWiseAdd,
+        // QnnOpCode::kTranspose,
         QnnOpCode::kElementWiseMultiply,
-        QnnOpCode::kTranspose,
         QnnOpCode::kReshape,
         QnnOpCode::kMatMul,
         QnnOpCode::kMatMul,
@@ -150,10 +174,9 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
         QnnOpCode::kElementWiseAdd,
         QnnOpCode::kReshape,
         QnnOpCode::kTranspose,
-        QnnOpCode::kReshape,
-    };
-    Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
-              OptimizeMHAPrefill);
+        QnnOpCode::kReshape};
+    Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
+              OptimizeMHAFastVlmPrefill);
   }
   const std::vector<QnnOpCode> gemma3_mask = {
       QnnOpCode::kElementWiseNot,
