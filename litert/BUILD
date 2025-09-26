@@ -122,6 +122,7 @@ package_group(
         # copybara:uncomment "//third_party/darwinn/litert/...",
         # copybara:uncomment "//third_party/darwinn/tflite/...",
         # copybara:uncomment "//learning/brain/mobile/lite/tooling/ai_edge_hub/...",
+        # copybara:uncomment "@mediapipe//mediapipe/calculators/...",
     ],
 )
 
