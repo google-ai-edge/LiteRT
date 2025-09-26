@@ -616,6 +616,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_model_types",
     ":litert_op_code",
     ":litert_op_options",
+    ":litert_opaque_options",
     ":litert_profiler",
     ":litert_rewriter",
     ":litert_tensor_buffer",
