@@ -21,6 +21,8 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
@@ -147,6 +149,134 @@ TEST(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
       std::optional<LiteRtModelT::Ptr> cache_hit,
       compilation_cache.TryLoadModel(model_hash_with_updated_api_version));
   EXPECT_FALSE(cache_hit.has_value());
+}
+
+TEST(CompilationCacheTest, TestSameAndDifferentOpaqueOptions) {
+  // GIVEN: a model.
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+
+  LiteRtOptionsT options1 = GetTestOptions();
+  LiteRtOpaqueOptions opaque_options1;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options1), kLiteRtStatusOk);
+  options1.options = opaque_options1;
+
+  LiteRtOptionsT options2 = GetTestOptions();
+  LiteRtOpaqueOptions opaque_options2;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options2), kLiteRtStatusOk);
+  options2.options = opaque_options2;
+
+  // WHEN: the opaque options are identical.
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash1,
+                         CompilationCache::GetModelHash(
+                             *model, options1, GetTestCompilerPluginInfo()));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash2,
+                         CompilationCache::GetModelHash(
+                             *model, options2, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are identical.
+  EXPECT_EQ(model_hash1, model_hash2);
+
+  // WHEN: The opaque options are different.
+  LiteRtGoogleTensorOptions options_data2;
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsGet(opaque_options2, &options_data2));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data2, true));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash3,
+                         CompilationCache::GetModelHash(
+                             *model, options2, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are different.
+  EXPECT_NE(model_hash1, model_hash3);
+
+  // WHEN: The opaque options are made identical again.
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsGet(opaque_options1, &options_data1));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data1, true));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash4,
+                         CompilationCache::GetModelHash(
+                             *model, options1, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are identical.
+  EXPECT_EQ(model_hash3, model_hash4);
+
+  LiteRtDestroyOpaqueOptions(opaque_options1);
+  LiteRtDestroyOpaqueOptions(opaque_options2);
+}
+
+TEST(CompilationCacheTest, TestSameAndDifferentLinkedListOfOpaqueOptions) {
+  // GIVEN: a model.
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+
+  LiteRtOptionsT options1 = GetTestOptions();
+  LiteRtOpaqueOptions opaque_options1_head;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options1_head),
+            kLiteRtStatusOk);
+  options1.options = opaque_options1_head;
+  LiteRtOpaqueOptions opaque_options1_tail;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options1_tail),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAppendOpaqueOptions(&options1.options, opaque_options1_tail),
+            kLiteRtStatusOk);
+
+  LiteRtOptionsT options2 = GetTestOptions();
+  LiteRtOpaqueOptions opaque_options2_head;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options2_head),
+            kLiteRtStatusOk);
+  options2.options = opaque_options2_head;
+  LiteRtOpaqueOptions opaque_options2_tail;
+  ASSERT_EQ(LiteRtGoogleTensorOptionsCreate(&opaque_options2_tail),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtAppendOpaqueOptions(&options2.options, opaque_options2_tail),
+            kLiteRtStatusOk);
+
+  // WHEN: the opaque options are identical.
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash1,
+                         CompilationCache::GetModelHash(
+                             *model, options1, GetTestCompilerPluginInfo()));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash2,
+                         CompilationCache::GetModelHash(
+                             *model, options2, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are identical.
+  EXPECT_EQ(model_hash1, model_hash2);
+
+  // WHEN: The second opaque option in the list is different.
+  LiteRtOpaqueOptions it = options2.options;
+  LITERT_ABORT_IF_ERROR(LiteRtGetNextOpaqueOptions(&it));
+  LiteRtGoogleTensorOptions options_data2;
+  LITERT_ABORT_IF_ERROR(LiteRtGoogleTensorOptionsGet(it, &options_data2));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data2, true));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash3,
+                         CompilationCache::GetModelHash(
+                             *model, options2, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are different.
+  EXPECT_NE(model_hash1, model_hash3);
+
+  // WHEN: The opaque options are made identical again.
+  it = options1.options;
+  LITERT_ABORT_IF_ERROR(LiteRtGetNextOpaqueOptions(&it));
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ABORT_IF_ERROR(LiteRtGoogleTensorOptionsGet(it, &options_data1));
+  LITERT_ABORT_IF_ERROR(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data1, true));
+  LITERT_ASSIGN_OR_ABORT(const std::size_t model_hash4,
+                         CompilationCache::GetModelHash(
+                             *model, options1, GetTestCompilerPluginInfo()));
+
+  // THEN: the hashes are identical.
+  EXPECT_EQ(model_hash3, model_hash4);
+
+  LiteRtDestroyOpaqueOptions(options1.options);
+  LiteRtDestroyOpaqueOptions(options2.options);
 }
 
 }  // namespace litert::internal

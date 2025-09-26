@@ -35,6 +35,7 @@ cc_library(
         ":hash_util",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -58,7 +59,9 @@ cc_test(
     deps = [
         ":compilation_cache",
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+        "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
         "//litert/core:options",
