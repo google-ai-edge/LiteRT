@@ -313,5 +313,34 @@ TEST(QualcommOptionsTest, FindFromChain) {
   EXPECT_TRUE(qnn_opts_d);
 }
 
+TEST(LiteRtQualcommOptionsTest, Hash) {
+  LiteRtOpaqueOptions options1;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options1));
+  LiteRtOpaqueOptions options2;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options2));
+
+  uint64_t hash1, hash2;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtQualcommOptions qualcomm_options1;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options1, &qualcomm_options1));
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetLogLevel(
+      qualcomm_options1, kLiteRtQualcommLogLevelWarn));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  EXPECT_NE(hash1, hash2);
+
+  LiteRtQualcommOptions qualcomm_options2;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options2, &qualcomm_options2));
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetLogLevel(
+      qualcomm_options2, kLiteRtQualcommLogLevelWarn));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtDestroyOpaqueOptions(options1);
+  LiteRtDestroyOpaqueOptions(options2);
+}
+
 }  // namespace
 }  // namespace litert::qualcomm

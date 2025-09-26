@@ -64,6 +64,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_macros",
+        "//litert/core/cache:hash_util",
         "@com_google_absl//absl/strings:string_view",
     ],
     # Keep the symbols in libLiteRtRuntimeCApi.dylib.
