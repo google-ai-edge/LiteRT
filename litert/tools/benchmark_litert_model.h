@@ -261,6 +261,16 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     return in_file.tellg();
   }
 
+  bool isFullyAccelerated() {
+    auto is_fully_accelerated = compiled_model_->IsFullyAccelerated();
+    if (!is_fully_accelerated.HasValue()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to get is_fully_accelerated. Returning false.");
+      return false;
+    }
+    return *is_fully_accelerated;
+  }
+
   TfLiteStatus RunImpl() override {
     if (!compiled_model_) {
       LITERT_LOG(LITERT_ERROR, "Compiled model not initialized");
