@@ -45,10 +45,15 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":graph_iterator",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -74,10 +79,13 @@ litert_bin(
     deps = [
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -91,7 +99,10 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_model",
+        "//litert/c:litert_options",
     ],
 )
 
@@ -108,9 +119,11 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
         "//litert/cc:litert_element_type",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "@intel_openvino//:openvino",
     ],
@@ -123,10 +136,12 @@ litert_lib(
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
         "//tflite/schema:schema_fbs",
         "@intel_openvino//:openvino",
@@ -149,8 +164,7 @@ litert_test(
     ],
     deps = [
         ":decoder",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
@@ -188,11 +202,10 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":openvino_compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_model_predicates",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_model_predicates",
         "//litert/test:common",
         "//litert/test:matchers_oss",
         "//litert/test:test_models",
