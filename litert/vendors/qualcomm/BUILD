@@ -17,7 +17,7 @@
 
 load("@bazel_skylib//rules:build_test.bzl", "build_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
-load("//litert/build_common:litert_build_defs.bzl", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 load("//litert/vendors/qualcomm:qualcomm_build_defs.bzl", "litert_cc_lib_with_qnn")
 
@@ -30,9 +30,10 @@ cc_library(
     name = "common",
     hdrs = ["common.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_element_type",
-        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
         "@qairt//:qnn_lib_headers",
     ],
@@ -43,7 +44,8 @@ cc_library(
     hdrs = ["qnn_manager.h"],
     deps = [
         ":common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
@@ -66,7 +68,8 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
@@ -86,14 +89,6 @@ litert_cc_lib_with_qnn(
 litert_test(
     name = "qnn_manager_test",
     srcs = ["qnn_manager_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     tags = [
         "no-remote-exec",
@@ -129,10 +124,10 @@ cc_library(
     hdrs = ["context_binary_info.h"],
     deps = [
         ":qnn_manager",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
 )

@@ -34,12 +34,14 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
     ],
 )
 
