@@ -102,6 +102,7 @@ package_group(
 package_group(
     name = "litert_internal_users",
     packages = [
+        # copybara:uncomment "@mediapipe//mediapipe/...",
         "//third_party/odml/infra/genai/conversion/juno/npu/...",
         "//third_party/odml/infra/ml_drift_delegate/...",
         "//litert/c/...",
