@@ -19,6 +19,7 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
@@ -53,6 +54,10 @@ bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
       return true;
     }
     return false;
+  }
+
+  if (auto custom_code = op.CustomCode(); custom_code.HasValue()) {
+    return *custom_code == "MTKEXT_CONV_2d";
   }
 
   return true;

@@ -31,6 +31,7 @@
 #include "litert/cc/litert_layout.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
+#include "litert/test/matchers.h"
 
 // Tests for CC Wrapper classes around public C api.
 
@@ -178,6 +179,17 @@ TEST(CcOpTest, SimpleSupportedOp) {
   EXPECT_EQ(op.Code(), kLiteRtOpCodeTflMul);
   EXPECT_EQ(op.Inputs().size(), 2);
   EXPECT_EQ(op.Outputs().size(), 1);
+  EXPECT_FALSE(op.CustomCode().HasValue());
+}
+
+TEST(CcOpTest, CustomCode) {
+  auto litert_model = testing::LoadTestFileModel("MTKEXT_CONV_2D.tflite");
+  auto subgraph = litert_model.MainSubgraph();
+  const auto ops = subgraph->Ops();
+  const auto& op = ops.front();
+  EXPECT_EQ(op.Code(), kLiteRtOpCodeTflCustom);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto custom_code, op.CustomCode());
+  EXPECT_EQ(custom_code, "MTKEXT_CONV_2D");
 }
 
 //===----------------------------------------------------------------------===//

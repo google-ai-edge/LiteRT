@@ -287,6 +287,16 @@ class Op : public internal::NonOwnedHandle<LiteRtOp> {
     return opcode;
   }
 
+  // Get the custom code. Returns value if and only if the op is a custom op.
+  Expected<absl::string_view> CustomCode() const {
+    const char* custom_code;
+    auto stat = LiteRtGetCustomCode(Get(), &custom_code);
+    if (stat != kLiteRtStatusOk) {
+      return Error(stat, "Failed to get custom code");
+    }
+    return absl::string_view(custom_code);
+  }
+
   OpInputs Inputs() const;
   OpOutputs Outputs() const;
 };
