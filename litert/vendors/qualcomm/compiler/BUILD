@@ -15,7 +15,7 @@
 # Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -55,21 +55,26 @@ litert_dynamic_lib(
     ],
     deps = [
         ":qnn_compose_graph",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_options",
+        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/dump:dump_graph",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
@@ -77,7 +82,6 @@ litert_dynamic_lib(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-        "@qairt//:qnn_lib_headers",
     ],
 )
 
@@ -89,14 +93,6 @@ litert_test(
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
@@ -114,14 +110,16 @@ litert_test(
     use_sys_malloc = True,
     deps = [
         ":qnn_compiler_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_op_code",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_model_predicates",
-        "//litert/cc/dynamic_runtime:litert_options",
-        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_model_predicates",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers_oss",
@@ -148,12 +146,16 @@ litert_lib(
     hdrs = ["qnn_compose_graph.h"],
     deps = [
         ":graph_mapper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_op_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_op_options",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
@@ -225,10 +227,11 @@ litert_lib(
     hdrs = ["graph_mapper.h"],
     visibility = ["//litert:__subpackages__"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc:litert_model",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
