@@ -355,6 +355,15 @@ LiteRtStatus LiteRtGetOpOutput(LiteRtOp op, LiteRtParamIndex output_index,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code) {
+  if (!op || !code) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto custom_code, op->CustomCode());
+  *code = custom_code.data();
+  return kLiteRtStatusOk;
+}
+
 //
 // Weights
 //

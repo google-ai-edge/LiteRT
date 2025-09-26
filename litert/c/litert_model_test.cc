@@ -311,6 +311,23 @@ TEST(LiteRtOpTest, GetOutputs) {
   EXPECT_EQ(actual_output, &output2);
 }
 
+TEST(LiteRtOpTest, GetCustomCode) {
+  LiteRtOpT op;
+  op.SetCustomCode("custom_code");
+  op.SetOpCode(kLiteRtOpCodeTflCustom);
+  const char* code;
+  LITERT_ASSERT_OK(LiteRtGetCustomCode(&op, &code));
+  EXPECT_STREQ(code, "custom_code");
+}
+
+TEST(LiteRtOpTest, GetCustomCodeNotCustom) {
+  LiteRtOpT op;
+  op.SetCustomCode("custom_code");
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  const char* code;
+  EXPECT_NE(LiteRtGetCustomCode(&op, &code), kLiteRtStatusOk);
+}
+
 TEST(LiteRtSubgraphTest, GetInputs) {
   LiteRtTensorT input1;
   LiteRtTensorT input2;

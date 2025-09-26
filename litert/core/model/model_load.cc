@@ -56,6 +56,9 @@ class FlatbufferContext {
     const int32_t dep_code = code->deprecated_builtin_code();
     litert_op.SetOpCode(
         static_cast<LiteRtOpCode>(std::max(dep_code, builtin_code)));
+    if (code->custom_code()) {
+      litert_op.SetCustomCode(code->custom_code()->str());
+    }
     litert::internal::SetTflOpCodeInd(litert_op, ind);
     return {};
   }

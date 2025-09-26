@@ -26,6 +26,7 @@
 
 #include <cstdint>
 #include <ostream>
+#include <string>
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -312,6 +313,9 @@ void Dump(const LiteRtTensorT& tensor, std::ostream& out) {
 void Dump(const LiteRtOpT& op, std::ostream& out) {
   out << "LiteRtOp : [ ";
   DumpNode(op, out);
+  if (auto custom_code = op.CustomCode(); custom_code.HasValue()) {
+    out << " : " << std::string(*custom_code);
+  }
   out << " ] ";
   DumpSignature(op.Inputs(), op.Outputs(), out);
   out << "\n";

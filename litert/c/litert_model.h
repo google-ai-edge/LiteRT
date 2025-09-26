@@ -108,6 +108,9 @@ LiteRtStatus LiteRtGetWeightsBufferId(LiteRtWeights weights,
 // Get code corresponding to operation type for given op.
 LiteRtStatus LiteRtGetOpCode(LiteRtOp op, LiteRtOpCode* code);
 
+// Get custom code for given op, returns error if op is not a custom op.
+LiteRtStatus LiteRtGetCustomCode(LiteRtOp op, const char** code);
+
 // Get input tensors of given op.
 LiteRtStatus LiteRtGetNumOpInputs(LiteRtOp op, LiteRtParamIndex* num_inputs);
 LiteRtStatus LiteRtGetOpInput(LiteRtOp op, LiteRtParamIndex input_index,
