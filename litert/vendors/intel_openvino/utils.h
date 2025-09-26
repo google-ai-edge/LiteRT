@@ -3,8 +3,14 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
-#include "openvino/frontend/tensorflow_lite/decoder.hpp"
-#include "litert/c/litert_model.h"
+
+#include <cstdint>
+#include <vector>
+
+#include "openvino/core/type/element_type.hpp"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
 namespace litert {

@@ -24,7 +24,8 @@ cc_library(
     name = "litert_compiler_plugin",
     hdrs = ["litert_compiler_plugin.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/cc:litert_macros",
         "//litert/vendors/c:litert_compiler_plugin",
     ],
@@ -34,12 +35,14 @@ cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
     ],
 )
 
@@ -48,12 +51,13 @@ cc_test(
     srcs = ["options_helper_test.cc"],
     deps = [
         ":options_helper",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc:litert_options",
         "@com_google_googletest//:gtest_main",
     ],
 )
