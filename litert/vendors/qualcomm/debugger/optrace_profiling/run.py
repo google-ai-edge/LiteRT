@@ -96,7 +96,7 @@ def _get_ctx_bin_info(ctx_bin_path: str, qairt_sdk: Path) -> dict[str, Any]:
   return json_data["info"]
 
 
-def _generate_zero_inputs(ctx_bin_info: dict[str, Any]) -> None:
+def _generate_zero_inputs(ctx_bin_info: dict[str, Any], graph_idx: int) -> None:
   """Generates zero-filled input files based on the context binary info.
 
   This function creates raw binary files for each input tensor defined in the
@@ -107,19 +107,17 @@ def _generate_zero_inputs(ctx_bin_info: dict[str, Any]) -> None:
   Args:
       ctx_bin_info (dict[str, Any]): A dictionary containing the context binary
         information, typically obtained from `_get_ctx_bin_info`.
-
+      graph_idx (int): The index of the graph within the context binary.
   Raises:
       ValueError: If the context binary contains more or less than one graph.
       TypeError: If an unknown QNN datatype is encountered.
   """
-  logging.info("Generating input data...")
+  logging.info("Generating input data for graph %d.")
 
-  if len(ctx_bin_info["graphs"]) != 1:
-    raise ValueError(
-        "The input generator currently supports only one graph in context"
-        " binary."
-    )
-  graph = ctx_bin_info["graphs"][0]
+  if len(ctx_bin_info["graphs"]) <= graph_idx:
+    raise ValueError("Graph %d is not available in the context binary.")
+
+  graph = ctx_bin_info["graphs"][graph_idx]
   dtype_map = {
       "QNN_DATATYPE_INT_8": np.int8,
       "QNN_DATATYPE_INT_16": np.int16,
@@ -234,7 +232,12 @@ def _push_target(adb_cmd: str, ctx_bin_path: str) -> None:
 
 
 def _run_ctx_bin(
-    adb_cmd: str, ctx_bin_path: str, htp_arch: str, qairt_sdk: Path
+    adb_cmd: str,
+    ctx_bin_path: str,
+    htp_arch: str,
+    qairt_sdk: Path,
+    graph_idx: int,
+    num_graphs: int
 ) -> None:
   """Run qnn-net-run with the given context binary.
 
@@ -243,7 +246,14 @@ def _run_ctx_bin(
       ctx_bin_path (str): The path of the context binary.
       htp_arch (str): The htp architecture of the target device (e.g., "V75").
       qairt_sdk (Path): The path to the Qairt SDK.
+      graph_idx (int): The index of the graph to run.
+      num_graphs (int): The total number of graphs.
   """
+  input_list_str = ",".join(
+      f"inputs/qnn_partition_{idx}/input_list.txt" if idx == graph_idx else "__"
+      for idx in range(num_graphs)
+  )
+
   _push_so(adb_cmd, htp_arch, qairt_sdk)
   _push_target(adb_cmd, ctx_bin_path)
   logging.info("Exectuing qnn-net-run with the given context binary...")
@@ -256,7 +266,7 @@ def _run_ctx_bin(
       "./qnn-net-run "
       "--backend libQnnHtp.so "
       f"--retrieve_context {Path(ctx_bin_path).name} "
-      "--input_list inputs/qnn_partition_0/input_list.txt "
+      f"--input_list {input_list_str} "
       "--output_dir output_htp "
       "--use_native_input_files "
       "--use_native_output_files "
@@ -363,9 +373,8 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
       "--qualcomm_profiling=optrace",
   ]
   logging.debug(" ".join(str(item) for item in apply_pluin_main_cmd))
-  # TODO(jiunkaiy): Set check=True after seg fault fix.
   subprocess.run(
-      apply_pluin_main_cmd, check=False, cwd=Path(__file__).resolve().parent
+      apply_pluin_main_cmd, check=True, cwd=Path(__file__).resolve().parent
   )
 
   extract_bytecode_lst = [
@@ -443,14 +452,25 @@ if __name__ == "__main__":
   args = parser.parse_args()
   _setup_logging(args.log_level)
   ctx_bin = _generate_ctx_bin(args.model, args.soc_model)
-  _generate_zero_inputs(_get_ctx_bin_info(ctx_bin, args.qairt_sdk))
+  ctx_bin_info = _get_ctx_bin_info(ctx_bin, args.qairt_sdk)
   ADB_CMD = _get_adb_cmd(args.hostname, args.serial)
-  _run_ctx_bin(ADB_CMD, ctx_bin, args.htp_arch, args.qairt_sdk)
-  _generate_profiler_output(
-      ADB_CMD,
-      str(ctx_bin.name).replace("_0.bin", ""),
-      args.output_dir,
-      args.qairt_sdk,
-  )
+  for index, _ in enumerate(ctx_bin_info["graphs"]):
+    _generate_zero_inputs(ctx_bin_info, index)
+    _run_ctx_bin(
+        ADB_CMD,
+        ctx_bin,
+        args.htp_arch,
+        args.qairt_sdk,
+        index,
+        len(ctx_bin_info["graphs"])
+    )
+    profiling_output_dir = Path(args.output_dir) / f"qnn_partition_{index}"
+    _generate_profiler_output(
+        ADB_CMD,
+        f"qnn_partition_{index}",
+        profiling_output_dir,
+        args.qairt_sdk,
+    )
+    logging.info("Profiling data for qnn_partition_%d is generated.", index)
   os.remove(ctx_bin)
   logging.info("Success! Profiling data is in %s", args.output_dir)
