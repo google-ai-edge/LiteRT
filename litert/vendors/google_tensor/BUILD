@@ -42,9 +42,9 @@ litert_lib(
     ],
     ungrte = False,
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/core:dynamic_loading",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
@@ -79,7 +79,6 @@ cc_test(
     }),
     deps = [
         ":adapter",
-        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
