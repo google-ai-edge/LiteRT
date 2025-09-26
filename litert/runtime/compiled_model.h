@@ -193,7 +193,8 @@ class LiteRtCompiledModelT {
   // This is called in the public Create*() methods.
   // The flatbuffer_model_ must be set before calling this method.
   litert::Expected<void> InitializeRuntime(
-      LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options);
+      LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
+      LiteRtOptions jit_compilation_options);
 
   // Handles any JIT compilation and initializes the flatbuffer_model_ and
   // related field within the compiled model.

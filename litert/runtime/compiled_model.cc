@@ -97,8 +97,39 @@ using ::litert::internal::GetTensorIdentifier;
 using ::litert::internal::SerializeModel;
 using ::litert::internal::TfLiteTensorIdentifier;
 
+namespace {
+
+static void* StubOpInit(TfLiteContext* context, const char* buffer,
+                        size_t length) {
+  return nullptr;
+}
+
+static void StubOpFree(TfLiteContext* context, void* buffer) {}
+
+static TfLiteStatus StubOpPrepare(TfLiteContext* context, TfLiteNode* node) {
+  // Do nothing.
+  return kTfLiteOk;
+}
+
+static TfLiteStatus StubOpEval(TfLiteContext* context, TfLiteNode* node) {
+  // This should never be called as accelerators will handle the operations
+  context->ReportError(
+      context, "Stub operation invoked. This function should not be called.");
+  return kTfLiteError;
+}
+
+static TfLiteRegistration sStubRegistration = {
+    .init = StubOpInit,
+    .free = StubOpFree,
+    .prepare = StubOpPrepare,
+    .invoke = StubOpEval,
+};
+
+}  // namespace
+
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
-    LiteRtEnvironmentT* env, LiteRtOptions jit_compilation_options) {
+    LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
+    LiteRtOptions jit_compilation_options) {
 #ifdef LITERT_NO_BUILTIN_OPS
   // Use StubOpResolver which provides minimal stub implementations for all
   // builtin ops. These stubs allow the model to pass validation, but the
@@ -117,6 +148,23 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       auto* tflite_registration =
           custom_op_dispatchers_.back()->GetTfLiteRegistration();
       resolver.AddCustom(option.op_name.c_str(), tflite_registration);
+    }
+  }
+
+  // Add custom ops that are supported by the CPU / GPU accelerators.
+  if (hardware_accelerators & kLiteRtHwAcceleratorGpu) {
+    const char* accelerator_supported_custom_ops[] = {
+        "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
+        "MaxUnpooling2D", "Resampler"};
+    for (const auto& op_name : accelerator_supported_custom_ops) {
+      resolver.AddCustom(op_name, &sStubRegistration);
+    }
+  } else if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+    const char* accelerator_supported_custom_ops[] = {
+        "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
+        "MaxUnpooling2D"};
+    for (const auto& op_name : accelerator_supported_custom_ops) {
+      resolver.AddCustom(op_name, &sStubRegistration);
     }
   }
 
@@ -333,8 +381,8 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
       *model, hardware_accelerators, jit_compilation_options, *env));
 
-  LITERT_RETURN_IF_ERROR(
-      compiled_model->InitializeRuntime(env, jit_compilation_options));
+  LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
+      env, hardware_accelerators, jit_compilation_options));
   if (compiled_model->GetModelBase() == nullptr) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to initialize model memory.");
