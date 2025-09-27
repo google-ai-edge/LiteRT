@@ -159,6 +159,19 @@ cc_library(
 )
 
 cc_library(
+    name = "relu_0to1_op_builder",
+    srcs = ["relu_0to1_op_builder.cc"],
+    hdrs = ["relu_0to1_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "relu6_op_builder",
     srcs = ["relu6_op_builder.cc"],
     hdrs = ["relu6_op_builder.h"],
@@ -469,19 +482,6 @@ cc_library(
         "//litert/vendors/qualcomm/core/utils:log",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
-        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@qairt//:qnn_lib_headers",
-    ],
-)
-
-cc_library(
-    name = "hard_swish_op_builder",
-    srcs = ["hard_swish_op_builder.cc"],
-    hdrs = ["hard_swish_op_builder.h"],
-    deps = [
-        ":op_builder",
-        "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
     ],
