@@ -22,11 +22,13 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -48,12 +50,22 @@ std::string GetCachedModelFilePath(absl::string_view cache_root_path,
 }
 
 uint64_t GetHash(const LiteRtOptionsT& options) {
-  std::size_t ans = 0;
+  uint64_t seed = 0;
   HashCombine(
-      ans, options.hardware_accelerators,
+      seed, options.hardware_accelerators,
       options.version.major  // Minor updates should not invalid the cache.
   );
-  return ans;
+
+  for (LiteRtOpaqueOptions it = options.options; it;) {
+    uint64_t opaque_hash = 0;
+    // It's fine if an opaque option doesn't implement hashing; we skip it.
+    if (LiteRtGetOpaqueOptionsHash(it, &opaque_hash) == kLiteRtStatusOk) {
+      HashCombine(seed, opaque_hash);
+    }
+    if (LiteRtGetNextOpaqueOptions(&it) != kLiteRtStatusOk) break;
+  }
+
+  return seed;
 }
 
 uint64_t GetHash(const LiteRtApiVersion& api_version) {
@@ -65,7 +77,7 @@ uint64_t GetHash(const LiteRtApiVersion& api_version) {
 
 uint64_t GetHash(
     const CompilationCache::CompilerPluginInfo& compiler_plugin_info) {
-  std::size_t ans = GetHash(compiler_plugin_info.api_version);
+  uint64_t ans = GetHash(compiler_plugin_info.api_version);
   HashCombine(ans, compiler_plugin_info.hw_accelerators);
   HashCombine(ans, compiler_plugin_info.manufacturer);
   return ans;
@@ -99,12 +111,22 @@ Expected<CompilationCache> CompilationCache::Create(
 Expected<uint64_t> CompilationCache::GetModelHash(
     const LiteRtModelT& model, const LiteRtOptionsT& options,
     const CompilerPluginInfo& compiler_plugin_info) {
+  std::vector<CompilerPluginInfo> compiler_plugin_infos{compiler_plugin_info};
+  return GetModelHash(model, options, compiler_plugin_infos);
+}
+
+Expected<uint64_t> CompilationCache::GetModelHash(
+    const LiteRtModelT& model, const LiteRtOptionsT& options,
+    const std::vector<CompilerPluginInfo>& compiler_plugin_infos) {
   LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
-  uint64_t vendor_plugin_api_version_hash = GetHash(compiler_plugin_info);
   uint64_t options_hash = GetHash(options);
-  std::size_t combined_hash = 0;
-  HashCombine(combined_hash, model_hash, options_hash,
-              vendor_plugin_api_version_hash);
+  uint64_t combined_hash = 0;
+  HashCombine(combined_hash, model_hash, options_hash);
+  for (const CompilationCache::CompilerPluginInfo& compiler_plugin_info :
+       compiler_plugin_infos) {
+    uint64_t vendor_plugin_api_version_hash = GetHash(compiler_plugin_info);
+    HashCombine(combined_hash, vendor_plugin_api_version_hash);
+  }
   return combined_hash;
 }
 

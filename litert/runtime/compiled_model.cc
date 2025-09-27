@@ -15,6 +15,7 @@
 #include "litert/runtime/compiled_model.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdarg>
 #include <cstddef>
 #include <cstdint>
@@ -22,9 +23,13 @@
 #include <iterator>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "litert/c/litert_any.h"
+#include "litert/c/litert_environment_options.h"
 
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
@@ -55,6 +60,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
+#include "litert/core/cache/compilation_cache.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
@@ -263,6 +269,42 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
   return -1;
 }
 
+Expected<std::vector<litert::internal::CompilationCache::CompilerPluginInfo>>
+GetPluginInfo(
+    const std::vector<litert::internal::CompilerPlugin>& compiler_plugins) {
+  std::vector<litert::internal::CompilationCache::CompilerPluginInfo>
+      cache_info(compiler_plugins.size());
+  int i = 0;
+  for (const auto& plugin : compiler_plugins) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtApiVersion api_version, plugin.ApiVersion());
+    LITERT_ASSIGN_OR_RETURN(LiteRtHwAcceleratorSet hw_accelerators,
+                            plugin.SupportedHardware());
+    absl::string_view manufacturer = plugin.SocManufacturer();
+    cache_info[i++] = {
+        .api_version = api_version,
+        .hw_accelerators = (LiteRtHwAccelerators)hw_accelerators,
+        .manufacturer = manufacturer,
+    };
+  }
+  return cache_info;
+}
+
+Expected<std::vector<litert::internal::CompilerPlugin>> GetCompilerPlugins(
+    LiteRtOptions options, LiteRtEnvironmentT& env) {
+  auto option = env.GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir);
+  if (!option.has_value() || option->type != kLiteRtAnyTypeString) {
+    return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                         "Compiler plugin is not configured");
+  }
+  std::string compiler_plugin_lib_path = option->str_value;
+  const std::array<const absl::string_view, 1>
+      compiler_plugin_lib_search_paths = {compiler_plugin_lib_path};
+
+  Expected<std::vector<litert::internal::CompilerPlugin>>
+      compiler_plugins_expected = litert::internal::CompilerPlugin::LoadPlugins(
+          compiler_plugin_lib_search_paths, &env.GetOptions(), options);
+  return compiler_plugins_expected;
+}
 }  // namespace
 
 Expected<void> LiteRtCompiledModelT::InitializeModel(
@@ -271,25 +313,79 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
 
+  // Is compilation caching enabled?
+  std::optional<LiteRtAny> compiler_cache_dir_option =
+      env.GetOption(kLiteRtEnvOptionTagCompilerCacheDir);
+  std::optional<uint64_t> model_hash = std::nullopt;
+  if (compiler_cache_dir_option.has_value() &&
+      compiler_cache_dir_option->type == kLiteRtAnyTypeString) {
+    LITERT_LOG(LITERT_INFO,
+               "NPU JIT compilation caching enabled with cache dir: %s",
+               compiler_cache_dir_option->str_value);
+    LITERT_ASSIGN_OR_RETURN(compilation_cache_,
+                            litert::internal::CompilationCache::Create(
+                                compiler_cache_dir_option->str_value));
+  }
   bool need_reserialization = false;
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
-    LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
-    // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the
-    // vendor code (nullptr are safe for now).
-    auto jit_result = litert::internal::ApplyPlugins(
-        &env, options, &model, hw_accelerators, &need_reserialization);
-    if (!jit_result) {
-      auto jit_failure_log_level = (hw_accelerators & kLiteRtHwAcceleratorNpu)
-                                       ? LITERT_WARNING
-                                       : LITERT_VERBOSE;
-      LITERT_LOG(jit_failure_log_level, "Failed to apply compiler plugins: %s",
-                 jit_result.Error().Message().c_str());
-    } else {
-      LITERT_LOG(
-          LITERT_INFO, "%d compiler plugins were applied successfully: %s",
-          jit_result->num_applied_plugins, jit_result->success_message.c_str());
-      LITERT_LOG(LITERT_WARNING, "Plugin errs: %s",
-                 jit_result->error_message.c_str());
+    // Load the plugins before JIT compilation attempt, so that we can check the
+    // cache. If the model is found in the cache, we can return early and avoid
+    // doing the JIT compilation.
+    Expected<std::vector<litert::internal::CompilerPlugin>>
+        compiled_plugins_expected = GetCompilerPlugins(options, env);
+
+    if (compilation_cache_.has_value() &&
+        compiled_plugins_expected.HasValue()) {
+      // Compute the hash, so we can check the cache.
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<litert::internal::CompilationCache::CompilerPluginInfo>
+              compiler_plugin_infos,
+          GetPluginInfo(compiled_plugins_expected.Value()));
+      LITERT_ASSIGN_OR_RETURN(model_hash,
+                              litert::internal::CompilationCache::GetModelHash(
+                                  model, *options, compiler_plugin_infos));
+
+      // Check if we compiled this model before.
+      LITERT_ASSIGN_OR_RETURN(
+          std::optional<LiteRtModelT::Ptr> cached_model,
+          compilation_cache_.value().TryLoadModel(model_hash.value()));
+      if (cached_model.has_value()) {
+        const auto& tfl_wrapper_from_cached_model =
+            litert::internal::GetTflFlatbuffer(*cached_model.value());
+        LITERT_LOG(LITERT_INFO,
+                   "Flatbuffer model initialized from cached model.");
+        auto tfl_buf_from_cached_model = tfl_wrapper_from_cached_model.Buf();
+        fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
+            tfl_buf_from_cached_model.StrData(),
+            tfl_buf_from_cached_model.Size(), error_reporter_.get());
+        fb_model_fd_ = GetAllocationFd(
+            tfl_wrapper_from_cached_model.FlatbufferModel().allocation());
+        cached_model_ = std::move(cached_model.value());
+        return {};
+      }
+    }
+
+    if (compiled_plugins_expected.HasValue()) {
+      LITERT_LOG(LITERT_INFO, "Applying compiler plugins...");
+      // TODO: b/409819691 - Pass user provided `LiteRtOptions` down to the
+      // vendor code (nullptr are safe for now).
+      auto jit_result = litert::internal::ApplyPlugins(
+          &env, options, &model, hw_accelerators, &need_reserialization);
+      if (!jit_result) {
+        auto jit_failure_log_level = (hw_accelerators & kLiteRtHwAcceleratorNpu)
+                                         ? LITERT_WARNING
+                                         : LITERT_VERBOSE;
+        LITERT_LOG(jit_failure_log_level,
+                   "Failed to apply compiler plugins: %s",
+                   jit_result.Error().Message().c_str());
+      } else {
+        LITERT_LOG(LITERT_INFO,
+                   "%d compiler plugins were applied successfully: %s",
+                   jit_result->num_applied_plugins,
+                   jit_result->success_message.c_str());
+        LITERT_LOG(LITERT_WARNING, "Plugin errs: %s",
+                   jit_result->error_message.c_str());
+      }
     }
   }
 
@@ -314,6 +410,11 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   auto serialized = SerializeModel(std::move(model));
   if (!serialized) {
     return serialized.Error();
+  }
+  if (model_hash.has_value()) {
+    LITERT_LOG(LITERT_INFO, "Saving compiled model to cache.");
+    LITERT_RETURN_IF_ERROR(
+        compilation_cache_.value().SaveModel(*serialized, model_hash.value()));
   }
 
   model_buf_ = std::move(*serialized);
