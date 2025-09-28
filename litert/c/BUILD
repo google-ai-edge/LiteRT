@@ -55,6 +55,7 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    deps = ["//litert/build_common:build_config"],
 )
 
 cc_test(
@@ -136,10 +137,14 @@ cc_library(
         ":litert_environment_options",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//litert/runtime:gpu_environment",
         "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:gpu_environment",
+        ],
+        "//conditions:default": [],
+    }),
     # Keep symbols in libLiteRtRuntimeCApi.dylib.
     alwayslink = 1,
 )
@@ -812,6 +817,7 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
+        "//litert/build_common:build_config",
     ] + gles_headers() + select({
         ":resolve_symbols_in_exec": [],
         "@platforms//os:windows": [":litert_runtime_c_api_import"],
