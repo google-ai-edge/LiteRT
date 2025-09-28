@@ -36,8 +36,13 @@
 #include "litert/cc/litert_model.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
+#include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
+#else
+#include "tflite/mutable_op_resolver.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 
 namespace litert::testing {
 
@@ -119,7 +124,11 @@ Model LoadTestFileModel(absl::string_view filename) {
 Expected<TflRuntime::Ptr> TflRuntime::CreateFromFlatBuffer(
     internal::FlatbufferWrapper::Ptr flatbuffer) {
   ::tflite::Interpreter::Ptr interp;
+#if !defined(LITERT_NO_BUILTIN_OPS)
   tflite::ops::builtin::BuiltinOpResolver resolver;
+#else
+  tflite::MutableOpResolver resolver;
+#endif
   tflite::InterpreterBuilder(flatbuffer->FlatbufferModel(), resolver)(&interp);
   if (interp == nullptr) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure);

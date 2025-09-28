@@ -24,7 +24,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
 #include "litert/runtime/accelerators/auto_registration.h"
+#if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 #ifdef __cplusplus
 extern "C" {

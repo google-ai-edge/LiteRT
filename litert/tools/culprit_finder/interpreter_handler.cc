@@ -28,7 +28,11 @@
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_builder.h"
 #include "tflite/interpreter_options.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
+#else
+#include "tflite/mutable_op_resolver.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 #include "tflite/tools/delegates/delegate_provider.h"
 #include "tflite/tools/model_loader.h"
 
@@ -57,7 +61,11 @@ litert::Expected<std::unique_ptr<tflite::Interpreter>>
 InterpreterHandler::PrepareInterpreter(
     tflite::tools::TfLiteDelegatePtr delegate,
     absl::Span<const int> intermediate_outputs, bool preserve_all_tensors) {
+#if !defined(LITERT_NO_BUILTIN_OPS)
   tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+#else
+  tflite::MutableOpResolver resolver;
+#endif
 
   tflite::InterpreterOptions options;
   if (preserve_all_tensors) {
