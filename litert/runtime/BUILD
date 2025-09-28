@@ -412,7 +412,6 @@ cc_library(
         "//litert/core:options",
         "//litert/core/cache:compilation_cache",
         "//litert/core/model",
-        "//litert/core/model:model_serialize",
         "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_opaque_options",
         "//tflite:builtin_ops",
@@ -437,6 +436,11 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/core/model:model_serialize",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//litert:without_builtin_ops": [],
         "//conditions:default": ["//tflite/kernels:builtin_ops"],
     }),

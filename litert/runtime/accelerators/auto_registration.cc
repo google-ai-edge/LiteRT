@@ -54,6 +54,7 @@ Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
   // Register the NPU accelerator.
+#if !defined(LITERT_DISABLE_NPU)
   if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
       npu_registration == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
@@ -62,6 +63,9 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
                "NPU accelerator could not be loaded and registered: %s.",
                LiteRtGetStatusString(npu_registration));
   }
+#else
+  LITERT_LOG(LITERT_VERBOSE, "NPU accelerator accelerator is disabled.");
+#endif
 
   // Register the WebNN accelerator if statically linked.
   if (LiteRtRegisterStaticLinkedAcceleratorWebNn != nullptr &&
@@ -81,6 +85,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #else
 #define SO_EXT ".so"
 #endif
+#if !defined(LITERT_DISABLE_GPU)
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
     "libLiteRtGpuAccelerator" SO_EXT,
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -130,6 +135,9 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_WARNING,
                "GPU accelerator could not be loaded and registered.");
   }
+#else
+  LITERT_LOG(LITERT_VERBOSE, "GPU accelerator registration disabled.");
+#endif
 
   // Register the CPU accelerator.
   if (auto cpu_registration = LiteRtRegisterCpuAccelerator(&environment);
