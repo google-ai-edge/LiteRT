@@ -60,6 +60,7 @@ limitations under the License.
 #include "tflite/converter/transforms/passes.h"
 #include "tflite/converter/utils/utils.h"
 #include "tflite/converter/utils/validators.h"
+#include "tensorflow/core/framework/types.pb.h"
 
 namespace mlir {
 namespace TFL {
