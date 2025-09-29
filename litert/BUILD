@@ -79,6 +79,7 @@ package_group(
         "//litert/ats/...",
         "//litert/google/...",
         "//litert/integration_test/...",
+        "//research/xeno/audio/voicelm/calculators/...",
         "//litert/python/...",
         "//third_party/odml/litert/tensor/examples/...",
         "//litert/samples/semantic_similarity/...",
