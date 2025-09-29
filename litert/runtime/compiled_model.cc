@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -38,6 +39,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
+#include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
@@ -432,14 +434,16 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
       continue;
     }
 
-    TfLiteOpaqueDelegate* delegate_ptr = nullptr;
-    LITERT_RETURN_IF_ERROR(
-        accelerator->CreateDelegate(accelerator.get(), jit_compilation_options,
-                                    reinterpret_cast<void**>(&delegate_ptr)));
+    LiteRtDelegateWrapper delegate_wrapper = nullptr;
+    LITERT_RETURN_IF_ERROR(accelerator->CreateDelegate(
+        accelerator.get(), jit_compilation_options, &delegate_wrapper));
 
-    auto delegate = tflite::TfLiteOpaqueDelegateUniquePtr(
-        delegate_ptr, reinterpret_cast<void (*)(TfLiteOpaqueDelegate*)>(
-                          accelerator->DestroyDelegate));
+    TfLiteOpaqueDelegate* delegate_ptr = nullptr;
+    LiteRtUnwrapDelegate(delegate_wrapper, &delegate_ptr);
+
+    auto delegate = std::unique_ptr<LiteRtDelegateWrapperT,
+                                    std::function<void(LiteRtDelegateWrapper)>>{
+        delegate_wrapper, accelerator->DestroyDelegate};
 
     if (compiled_model->interp_->ModifyGraphWithDelegate(delegate_ptr) !=
         kTfLiteOk) {

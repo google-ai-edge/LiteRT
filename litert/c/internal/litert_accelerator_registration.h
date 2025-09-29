@@ -69,13 +69,13 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 
 // Sets the function used to return a Delegate to apply the accelerator by the
 // compiled model and its destructor. The returned Delegate object is owned by
-// the compiled model. Used void** for the Delegate instead of
-// TfLiteOpaqueDelegate** to avoid TFLite dependency.
+// the compiled model.
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
-                                   LiteRtOptions options, void** delegate),
-    void (*DestroyDelegate)(void* delegate));
+                                   LiteRtOptions options,
+                                   LiteRtDelegateWrapper* delegate),
+    void (*DestroyDelegate)(LiteRtDelegateWrapper delegate));
 
 // Sets the function used to surface whether the delegate created by the
 // accelerator does JIT compilation or not.
@@ -93,13 +93,14 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
 // specific level of detail (>= 0).
 LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level));
+    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
+                                           int detail_level));
 
 // Sets the function used to stop collection of HW-specific metrics and report
 // the collected metrics.
 LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics));
 
 #ifdef __cplusplus

@@ -55,11 +55,12 @@ class DummyAccelerator {
   }
 
   static LiteRtStatus CreateDelegate(LiteRtAccelerator accelerator,
-                                     LiteRtOptions options, void** delegate) {
+                                     LiteRtOptions options,
+                                     LiteRtDelegateWrapper* delegate) {
     return kLiteRtStatusOk;
   }
 
-  static void DestroyDelegate(void* delegate) {}
+  static void DestroyDelegate(LiteRtDelegateWrapper delegate) {}
 
   LiteRtHwAccelerators hardware_support_;
 };

@@ -209,6 +209,26 @@ cc_library(
     alwayslink = 1,
 )
 
+# This target has deliberately limited visibility:
+# it is exposed only to the LiteRT runtime implementation, and in
+# particular to LiteRT runtime's built-in accelerator implementations that are
+# implemented using TF Lite delegates.
+# It should not be made visible elsewhere, to avoid exposing the dependency on
+# the TF Lite API.
+cc_library(
+    name = "litert_delegate_wrapper",
+    srcs = ["litert_delegate_wrapper.cc"],
+    hdrs = ["litert_delegate_wrapper.h"],
+    visibility = [
+        "//litert/runtime:__pkg__",
+        "//litert/runtime/accelerators:__subpackages__",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//tflite/c:common",
+    ],
+)
+
 exports_files(srcs = glob(["litert_*.h"]))
 
 filegroup(

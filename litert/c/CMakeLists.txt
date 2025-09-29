@@ -18,6 +18,7 @@ cmake_minimum_required(VERSION 3.20)
 set(LITERT_C_API_SOURCES
     internal/litert_accelerator.cc
     internal/litert_accelerator_registration.cc
+    internal/litert_delegate_wrapper.cc
     internal/litert_tensor_buffer_registry.cc
     litert_common.cc
     litert_compiled_model.cc

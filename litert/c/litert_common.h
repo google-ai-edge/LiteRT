@@ -57,6 +57,9 @@ extern "C" {
 
 // LiteRT Accelerator object. (litert_accelerator.h)
 LITERT_DEFINE_HANDLE(LiteRtAccelerator);
+// LiteRT DelegateWrapper object. (litert_delegate_wrapper.h).
+// This wraps a TF Lite delegate (TfLiteOpaqueDelegate*).
+LITERT_DEFINE_HANDLE(LiteRtDelegateWrapper);
 // LiteRT CompiledModel object. (litert_compiled_model.h)
 LITERT_DEFINE_HANDLE(LiteRtCompiledModel);
 // LiteRT Environment object. (litert_environment.h)

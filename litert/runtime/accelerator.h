@@ -50,25 +50,22 @@ struct LiteRtAcceleratorT {
       LiteRtHwAcceleratorSet* supported_hardware);
 
   // Creates a delegate for the accelerator.
-  // Used void** instead of TfLiteOpaqueDelegate** to avoid TFLite dependency.
   LiteRtStatus (*CreateDelegate)(LiteRtAcceleratorT* accelerator,
                                  LiteRtOptions compilation_options,
-                                 void** delegate);
+                                 LiteRtDelegateWrapper* delegate);
 
   // Destroys created delegate for the accelerator.
-  // The function signature is matched with existing TfLiteOpaqueDelegate
-  // interface to use.
-  // Used void* instead of TfLiteOpaqueDelegate* to avoid TFLite dependency.
-  void (*DestroyDelegate)(void* delegate);
+  void (*DestroyDelegate)(LiteRtDelegateWrapper delegate);
 
   LiteRtStatus (*IsTfLiteDelegateResponsibleForJitCompilation)(
       LiteRtAcceleratorT* accelerator, bool* does_jit_compilation);
 
   // Starts collection of HW-specific metrics at a specific level of detail.
-  LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level);
+  LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
+                                         int detail_level);
 
   // Stops collection of HW-specific metrics and report the collected metrics.
-  LiteRtStatus (*StopMetricsCollection)(void* delegate,
+  LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
                                         LiteRtMetricsT* metrics);
 
   // NOLINTEND(*-readability-class-member-naming)

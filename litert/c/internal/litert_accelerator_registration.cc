@@ -96,8 +96,9 @@ LiteRtStatus LiteRtSetAcceleratorGetHardwareSupport(
 LiteRtStatus LiteRtSetDelegateFunction(
     LiteRtAccelerator accelerator,
     LiteRtStatus (*CreateDelegate)(LiteRtAccelerator accelerator,
-                                   LiteRtOptions options, void** delegate),
-    void (*DestroyDelegate)(void* delegate)) {
+                                   LiteRtOptions options,
+                                   LiteRtDelegateWrapper* delegate),
+    void (*DestroyDelegate)(LiteRtDelegateWrapper delegate)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -120,7 +121,8 @@ LiteRtStatus LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
 
 LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StartMetricsCollection)(void* delegate, int detail_level)) {
+    LiteRtStatus (*StartMetricsCollection)(LiteRtDelegateWrapper delegate,
+                                           int detail_level)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -130,7 +132,7 @@ LiteRtStatus LiteRtSetAcceleratorStartMetricsCollection(
 
 LiteRtStatus LiteRtSetAcceleratorStopMetricsCollection(
     LiteRtAccelerator accelerator,
-    LiteRtStatus (*StopMetricsCollection)(void* delegate,
+    LiteRtStatus (*StopMetricsCollection)(LiteRtDelegateWrapper delegate,
                                           LiteRtMetrics metrics)) {
   if (!accelerator) {
     return kLiteRtStatusErrorInvalidArgument;
