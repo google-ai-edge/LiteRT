@@ -57,7 +57,7 @@ typedef LiteRtStatus (*CreateCustomTensorBuffer)(
 typedef LiteRtStatus (*ImportCustomTensorBuffer)(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
-    size_t bytes, HwMemoryInfoPtr* hw_memory_info);
+    size_t bytes, size_t packed_bytes, HwMemoryInfoPtr* hw_memory_info);
 
 // Custom TensorBuffer handler function to destroy a custom TensorBuffer.
 typedef LiteRtStatus (*DestroyCustomTensorBuffer)(
