@@ -32,9 +32,12 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
@@ -78,6 +81,9 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt6989", "mt6989"},
     {"mt6991", "mt6991"},
     {"mt6993", "mt6993"},
+    {"mt8171", "mt8171"},
+    {"mt8188", "mt8188"},
+    {"mt8189", "mt8189"},
 };
 
 constexpr LiteRtOpCode kSupportedOps[] = {
@@ -119,6 +125,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflRelu,
     kLiteRtOpCodeTflAbs,
     kLiteRtOpCodeTflGreater,
+    kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeShloComposite,
 };
 // clang-format on

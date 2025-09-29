@@ -15,13 +15,16 @@
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
+#include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
@@ -49,7 +52,8 @@ bool VerifyCommonOp(const litert::Op& op, LiteRtOpCode op_code) {
     if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) != kLiteRtStatusOk) {
       return false;
     }
-    if (std::string(op_name) == "odml.rms_norm") {
+    if (std::string(op_name) == "odml.rms_norm" ||
+        std::string(op_name) == "odml.l2_norm") {
       return true;
     }
     return false;

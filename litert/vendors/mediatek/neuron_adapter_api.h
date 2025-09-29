@@ -44,6 +44,7 @@ namespace litert::mediatek {
 
 static constexpr const char* kExtensionGeneralOpration =
     "com.mediatek.general_operation";
+static constexpr int32_t kMinMagicNumberForNeuronService = 300;
 // Extension operand
 enum {
   ADAPTER_EXTENSION_GENERAL_OPERAND_ARGSTRING = 0x0100,
@@ -102,6 +103,8 @@ class NeuronAdapterApi {
   litert::Expected<void> GetNeuronVersion();
 
   bool IsFeatureEnabled(NeuronFeatureType feature) const;
+
+  litert::Expected<int32_t> GetNeuroPilotMagicNumber();
 
  private:
   NeuronAdapterApi();
