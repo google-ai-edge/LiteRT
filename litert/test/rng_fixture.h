@@ -40,18 +40,26 @@ class RngTest : public ::testing::Test {
     static constexpr auto kMsg =
         "The minimum number of iterations was not reached in the alloted "
         "time.";
-    for (const auto& block : fuzz_blocks_) {
-      if (!block.ReachedIters()) {
-        if (fail_on_timeout_) {
-          ADD_FAILURE() << kMsg;
-        } else {
-          LITERT_LOG(LITERT_WARNING, "%s", kMsg);
-        }
+
+    if (TimedOut()) {
+      if (fail_on_timeout_) {
+        ADD_FAILURE() << kMsg;
+      } else {
+        LITERT_LOG(LITERT_WARNING, "%s", kMsg);
       }
     }
   }
 
  protected:
+  bool TimedOut() const {
+    for (const auto& block : fuzz_blocks_) {
+      if (!block.ReachedIters()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   template <typename Device = DefaultDevice>
   auto TracedDevice(std::optional<int> seed = std::nullopt) {
     const auto seed_to_use = seed ? *seed : CurrentSeed();
