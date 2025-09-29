@@ -82,6 +82,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     if (gpu_backend == "webgpu") {
       gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
+    } else if (gpu_backend == "opengl") {
+      gpu_options.SetGpuBackend(kLiteRtGpuBackendOpenGl);
     }
     if (allow_fp16 == false) {
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);

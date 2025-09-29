@@ -466,12 +466,12 @@ cc_binary(
 )
 
 cc_binary(
-    name = "gpu_numerics_check_opengl",
+    name = "gpu_numerics_check_cl_gl",
     srcs = ["gpu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
         # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_opengl_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )
@@ -527,11 +527,11 @@ cc_binary(
 )
 
 cc_binary(
-    name = "benchmark_model_opengl",
+    name = "benchmark_model_cl_gl",
     deps = [
         ":benchmark_model_main",
         # copybara:uncomment_begin(google-only)
-        # "//litert/runtime/accelerators/gpu:ml_drift_opengl_accelerator",  # buildcleaner: keep
+        # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )

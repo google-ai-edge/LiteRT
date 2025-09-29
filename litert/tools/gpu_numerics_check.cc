@@ -71,6 +71,8 @@ Expected<Options> GetGpuOptions() {
   gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
+  } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {
+    gpu_options.SetGpuBackend(kLiteRtGpuBackendOpenGl);
   }
   options.AddOpaqueOptions(std::move(gpu_options));
   return options;

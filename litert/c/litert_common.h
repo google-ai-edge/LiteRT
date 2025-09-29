@@ -276,6 +276,7 @@ typedef enum {
   kLiteRtGpuBackendAutomatic = 0,
   kLiteRtGpuBackendOpenCl = 1,
   kLiteRtGpuBackendWebGpu = 2,
+  kLiteRtGpuBackendOpenGl = 3,  // Experimental, do not use.
 } LiteRtGpuBackend;
 
 // Error reporter mode enum
