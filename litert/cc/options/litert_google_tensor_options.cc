@@ -31,6 +31,7 @@
 #include "litert/cc/litert_opaque_options.h"
 
 // C++ WRAPPERS ////////////////////////////////////////////////////////////////
+// TODO(b/448037748): Add unit tests for this file.
 
 namespace litert::google_tensor {
 
@@ -115,6 +116,20 @@ bool GoogleTensorOptions::GetEnableLargeModelSupport() const {
   LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
       options_data, &enable_large_model_support);
   return enable_large_model_support;
+}
+
+void GoogleTensorOptions::SetEnable4BitCompilation(
+    bool enable_4bit_compilation) {
+  internal::AssertOk(LiteRtGoogleTensorOptionsSetEnable4BitCompilation, Data(),
+                     enable_4bit_compilation);
+}
+
+bool GoogleTensorOptions::GetEnable4BitCompilation() const {
+  LiteRtGoogleTensorOptions options_data = Data();
+  bool enable_4bit_compilation;
+  LiteRtGoogleTensorOptionsGetEnable4BitCompilation(options_data,
+                                                    &enable_4bit_compilation);
+  return enable_4bit_compilation;
 }
 
 void GoogleTensorOptions::SetShardingIntensity(

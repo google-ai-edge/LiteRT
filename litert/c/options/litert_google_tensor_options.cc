@@ -183,6 +183,25 @@ LiteRtStatus LiteRtGoogleTensorOptionsGetEnableLargeModelSupport(
   return kLiteRtStatusOk;
 }
 
+// enable_4bit_compilation -----------------------------------------------------
+LiteRtStatus LiteRtGoogleTensorOptionsSetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool enable_4bit_compilation) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->enable_4bit_compilation = enable_4bit_compilation;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+    LiteRtGoogleTensorOptions options, bool* enable_4bit_compilation) {
+  if (options == nullptr || enable_4bit_compilation == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enable_4bit_compilation = options->enable_4bit_compilation;
+  return kLiteRtStatusOk;
+}
+
 // sharding intensity ----------------------------------------------------------
 LiteRtStatus LiteRtGoogleTensorOptionsSetShardingIntensity(
     LiteRtGoogleTensorOptions options,
