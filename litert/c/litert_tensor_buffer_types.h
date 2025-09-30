@@ -154,4 +154,79 @@ inline bool IsGpuFloat16Memory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeVulkanImageBufferFp16;
 }
 
+inline const char* LiteRtTensorBufferTypeToString(
+    LiteRtTensorBufferType buffer_type) {
+  switch (buffer_type) {
+    case kLiteRtTensorBufferTypeUnknown:
+      return "kLiteRtTensorBufferTypeUnknown";
+    case kLiteRtTensorBufferTypeHostMemory:
+      return "kLiteRtTensorBufferTypeHostMemory";
+    case kLiteRtTensorBufferTypeAhwb:
+      return "kLiteRtTensorBufferTypeAhwb";
+    case kLiteRtTensorBufferTypeIon:
+      return "kLiteRtTensorBufferTypeIon";
+    case kLiteRtTensorBufferTypeDmaBuf:
+      return "kLiteRtTensorBufferTypeDmaBuf";
+    case kLiteRtTensorBufferTypeFastRpc:
+      return "kLiteRtTensorBufferTypeFastRpc";
+    case kLiteRtTensorBufferTypeGlBuffer:
+      return "kLiteRtTensorBufferTypeGlBuffer";
+    case kLiteRtTensorBufferTypeGlTexture:
+      return "kLiteRtTensorBufferTypeGlTexture";
+    case kLiteRtTensorBufferTypeOpenClBuffer:
+      return "kLiteRtTensorBufferTypeOpenClBuffer";
+    case kLiteRtTensorBufferTypeOpenClBufferFp16:
+      return "kLiteRtTensorBufferTypeOpenClBufferFp16";
+    case kLiteRtTensorBufferTypeOpenClTexture:
+      return "kLiteRtTensorBufferTypeOpenClTexture";
+    case kLiteRtTensorBufferTypeOpenClTextureFp16:
+      return "kLiteRtTensorBufferTypeOpenClTextureFp16";
+    case kLiteRtTensorBufferTypeOpenClBufferPacked:
+      return "kLiteRtTensorBufferTypeOpenClBufferPacked";
+    case kLiteRtTensorBufferTypeOpenClImageBuffer:
+      return "kLiteRtTensorBufferTypeOpenClImageBuffer";
+    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+      return "kLiteRtTensorBufferTypeOpenClImageBufferFp16";
+    case kLiteRtTensorBufferTypeWebGpuBuffer:
+      return "kLiteRtTensorBufferTypeWebGpuBuffer";
+    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+      return "kLiteRtTensorBufferTypeWebGpuBufferFp16";
+    case kLiteRtTensorBufferTypeWebGpuTexture:
+      return "kLiteRtTensorBufferTypeWebGpuTexture";
+    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+      return "kLiteRtTensorBufferTypeWebGpuTextureFp16";
+    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+      return "kLiteRtTensorBufferTypeWebGpuImageBuffer";
+    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+      return "kLiteRtTensorBufferTypeWebGpuImageBufferFp16";
+    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+      return "kLiteRtTensorBufferTypeWebGpuBufferPacked";
+    case kLiteRtTensorBufferTypeMetalBuffer:
+      return "kLiteRtTensorBufferTypeMetalBuffer";
+    case kLiteRtTensorBufferTypeMetalBufferFp16:
+      return "kLiteRtTensorBufferTypeMetalBufferFp16";
+    case kLiteRtTensorBufferTypeMetalTexture:
+      return "kLiteRtTensorBufferTypeMetalTexture";
+    case kLiteRtTensorBufferTypeMetalTextureFp16:
+      return "kLiteRtTensorBufferTypeMetalTextureFp16";
+    case kLiteRtTensorBufferTypeMetalBufferPacked:
+      return "kLiteRtTensorBufferTypeMetalBufferPacked";
+    case kLiteRtTensorBufferTypeVulkanBuffer:
+      return "kLiteRtTensorBufferTypeVulkanBuffer";
+    case kLiteRtTensorBufferTypeVulkanBufferFp16:
+      return "kLiteRtTensorBufferTypeVulkanBufferFp16";
+    case kLiteRtTensorBufferTypeVulkanTexture:
+      return "kLiteRtTensorBufferTypeVulkanTexture";
+    case kLiteRtTensorBufferTypeVulkanTextureFp16:
+      return "kLiteRtTensorBufferTypeVulkanTextureFp16";
+    case kLiteRtTensorBufferTypeVulkanImageBuffer:
+      return "kLiteRtTensorBufferTypeVulkanImageBuffer";
+    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+      return "kLiteRtTensorBufferTypeVulkanImageBufferFp16";
+    case kLiteRtTensorBufferTypeVulkanBufferPacked:
+      return "kLiteRtTensorBufferTypeVulkanBufferPacked";
+  }
+  return "kLiteRtTensorBufferTypeUnknown";
+}
+
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

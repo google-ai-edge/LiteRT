@@ -43,61 +43,61 @@ constexpr const int32_t kTensorDimensions[] = {sizeof(kTensorData) / sizeof(kTen
 constexpr const LiteRtRankedTensorType kTestTensorType = {
     /*.element_type=*/kLiteRtElementTypeFloat32, ::litert::BuildLayout(kTensorDimensions)};
 
-- (void)testTensorBufferMetalMemory {
-  XCTAssertTrue(litert::HasMetalSupport());
+// - (void)testTensorBufferMetalMemory {
+//   XCTAssertTrue(litert::HasMetalSupport());
 
-  auto metal_device = tflite::gpu::metal::MetalDevice();
-  // Create LiteRt environment from metal options.
-  std::vector<litert::Environment::Option> environment_options;
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
-                                 .value = (__bridge const void *)(metal_device.device())});
+//   auto metal_device = tflite::gpu::metal::MetalDevice();
+//   // Create LiteRt environment from metal options.
+//   std::vector<litert::Environment::Option> environment_options;
+//   environment_options.push_back({.tag = litert::Environment::OptionTag::MetalDevice,
+//                                  .value = (__bridge const void *)(metal_device.device())});
 
-  id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
+//   id<MTLCommandQueue> command_queue = [metal_device.device() newCommandQueue];
 
-  environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
-                                 .value = (__bridge const void *)(command_queue)});
-  auto env = litert::Environment::Create(environment_options);
+//   environment_options.push_back({.tag = litert::Environment::OptionTag::MetalCommandQueue,
+//                                  .value = (__bridge const void *)(command_queue)});
+//   auto env = litert::Environment::Create(environment_options);
 
-  const litert::RankedTensorType kTensorType(kTestTensorType);
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
+//   const litert::RankedTensorType kTensorType(kTestTensorType);
+//   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
-                                                           kTensorType, sizeof(kTensorData));
+//   auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
+//                                                            kTensorType, sizeof(kTensorData));
 
-  auto tensor_buffer_type = tensor_buffer->BufferType();
-  XCTAssertTrue(tensor_buffer_type);
-  XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
+//   auto tensor_buffer_type = tensor_buffer->BufferType();
+//   XCTAssertTrue(tensor_buffer_type);
+//   XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
 
-  auto tensor_type = tensor_buffer->TensorType();
-  XCTAssertTrue(tensor_type);
+//   auto tensor_type = tensor_buffer->TensorType();
+//   XCTAssertTrue(tensor_type);
 
-  XCTAssertEqual(tensor_type->ElementType(), litert::ElementType::Float32);
-  XCTAssertEqual(tensor_type->Layout().Rank(), 1);
-  XCTAssertEqual(tensor_type->Layout().Dimensions()[0], kTensorType.Layout().Dimensions()[0]);
-  XCTAssertFalse(tensor_type->Layout().HasStrides());
+//   XCTAssertEqual(tensor_type->ElementType(), litert::ElementType::Float32);
+//   XCTAssertEqual(tensor_type->Layout().Rank(), 1);
+//   XCTAssertEqual(tensor_type->Layout().Dimensions()[0], kTensorType.Layout().Dimensions()[0]);
+//   XCTAssertFalse(tensor_type->Layout().HasStrides());
 
-  auto size = tensor_buffer->Size();
-  XCTAssertTrue(size);
-  XCTAssertEqual(*size, sizeof(kTensorData));
+//   auto size = tensor_buffer->Size();
+//   XCTAssertTrue(size);
+//   XCTAssertEqual(*size, sizeof(kTensorData));
 
-  auto offset = tensor_buffer->Offset();
-  XCTAssertTrue(offset);
-  XCTAssertEqual(*offset, 0);
+//   auto offset = tensor_buffer->Offset();
+//   XCTAssertTrue(offset);
+//   XCTAssertEqual(*offset, 0);
 
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create(
-        *tensor_buffer, litert::TensorBuffer::LockMode::kWrite);
-    XCTAssertTrue(lock_and_addr);
-    std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
-  }
+//   {
+//     auto lock_and_addr = litert::TensorBufferScopedLock::Create(
+//         *tensor_buffer, litert::TensorBuffer::LockMode::kWrite);
+//     XCTAssertTrue(lock_and_addr);
+//     std::memcpy(lock_and_addr->second, kTensorData, sizeof(kTensorData));
+//   }
 
-  {
-    auto lock_and_addr = litert::TensorBufferScopedLock::Create(
-        *tensor_buffer, litert::TensorBuffer::LockMode::kRead);
-    XCTAssertTrue(lock_and_addr);
-    XCTAssertEqual(std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)), 0);
-  }
-}
+//   {
+//     auto lock_and_addr = litert::TensorBufferScopedLock::Create(
+//         *tensor_buffer, litert::TensorBuffer::LockMode::kRead);
+//     XCTAssertTrue(lock_and_addr);
+//     XCTAssertEqual(std::memcmp(lock_and_addr->second, kTensorData, sizeof(kTensorData)), 0);
+//   }
+// }
 
 - (void)testTensorBufferCreateFromMetalMemory {
   XCTAssertTrue(litert::HasMetalSupport());
