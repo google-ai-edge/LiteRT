@@ -78,6 +78,14 @@ cc_test(
         "example_plugin_test.cc",
     ],
     data = ["//litert/test:mlir_test_data"],
+    # TODO: b/448411540 - Re-enable sans for this test once test helpers support tests w/o dlopen
+    # that depend on dynamic runtime libraries.
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
     deps = [
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -165,6 +173,13 @@ cc_test(
         ":example_dispatch_so",
         ":libLiteRtCompilerPlugin_Example.so",
         "//litert/test:mlir_test_data",
+    ],
+    # This test dlopens, so sanitzers are prone to false positive.
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
