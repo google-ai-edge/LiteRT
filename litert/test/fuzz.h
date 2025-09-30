@@ -19,6 +19,7 @@
 
 #include <chrono>  // NOLINT
 #include <cstddef>
+#include <limits>
 #include <variant>
 
 namespace litert::testing {
@@ -47,7 +48,7 @@ class RepeatedBlock final {
 
   template <typename Duration>
   explicit RepeatedBlock(size_t iters, Duration max_duration = kDefaultMaxMs)
-      : expire_time_(Clock::now() + max_duration), iters_(iters) {}
+      : expire_time_(AddDuration(Clock::now(), max_duration)), iters_(iters) {}
 
   auto begin() { return Iterator(*this); }
   auto end() { return Iterator(*this); }
@@ -59,6 +60,17 @@ class RepeatedBlock final {
   bool ReachedIters() const { return cur_iter_ >= iters_; }
 
  private:
+  // Check overflow.
+  static Clock::time_point AddDuration(typename Clock::time_point tp,
+                                       std::chrono::milliseconds m) {
+    using Dur = Clock::time_point::duration::rep;
+    if (tp.time_since_epoch().count() >
+        std::numeric_limits<Dur>::max() - m.count()) {
+      return tp;
+    }
+    return tp + m;
+  }
+
   Clock::time_point expire_time_;
   size_t iters_;
   size_t cur_iter_ = 0;
