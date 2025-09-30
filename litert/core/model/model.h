@@ -44,6 +44,7 @@
 #include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_logging.h"
+#include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/ir_allocator.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -1213,6 +1214,13 @@ class LiteRtOpListT {
 //
 // Traversal Utils
 //
+
+namespace litert::internal {
+
+// Does graph consist of only disptach ops.
+bool IsFullyCompiled(const LiteRtModelT& graph);
+
+}  // namespace litert::internal
 
 // Apply func to all the IR in the given model. Iteration behavior is determined
 // by the callback signature.
