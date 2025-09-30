@@ -19,7 +19,10 @@
 # copybara:uncomment_end
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 ####################################################################################################
 # Util
@@ -296,7 +299,7 @@ def litert_test(
     )
 
     _litert_base(
-        native.cc_test,
+        cc_test,
         ungrte,
         **cc_test_kwargs
     )
@@ -312,7 +315,7 @@ def litert_lib(
       **cc_lib_kwargs: Keyword arguments to pass to the underlying rule.
     """
     _litert_base(
-        native.cc_library,
+        cc_library,
         ungrte,
         **cc_lib_kwargs
     )
@@ -337,7 +340,7 @@ def litert_bin(
         )
 
     _litert_base(
-        native.cc_binary,
+        cc_binary,
         ungrte,
         **cc_bin_kwargs
     )
@@ -442,7 +445,7 @@ def cc_library_with_testonly_vis(
         name,
         vis = "//litert:litert_internal_users",
         testonly_vis = "//litert:litert_public",
-        rule = native.cc_library,
+        rule = cc_library,
         **rule_kwargs):
     """
     Defines a cc_library with different visibilities for normal and testonly targets.
