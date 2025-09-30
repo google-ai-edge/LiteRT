@@ -23,7 +23,8 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 # load("@rules_cc//cc:cc_test.bzl", "cc_test")
 #
 # copybara:uncomment_end
-load("//litert/build_common:litert_build_defs.bzl", "absolute_label", "if_oss")
+load("//litert/build_common:expand_template.bzl", "expand_template")
+load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
 # MISCELLANEOUS ####################################################################################
 
@@ -44,23 +45,6 @@ def hidden_test_tags():
     ]
 
 # DEVICE PATHS #####################################################################################
-
-def _strip_double_prefix():
-    return "perl -ne \"s/(^|\\s)litert\\/litert/\\1litert/g; print;\""
-
-def _add_external_prefix():
-    return "perl -ne \"s/(^|\\s)(?!litert)([^\\s]+)/\\1external\\/\\2/g; print;\""
-
-def _change_delim(before, after):
-    return "sed \"s/{before}/{after}/g\"".format(before = before, after = after)
-
-def _transform_str(s, *cmds):
-    if not cmds:
-        return s
-    cmds_ = ["echo {}".format(s)]
-    cmds_.extend(*cmds)
-    cmds_str = " | ".join(cmds_)
-    return "$$({})".format(cmds_str)
 
 DEVICE_RLOCATION_ROOT = "/data/local/tmp/runfiles"
 
@@ -370,29 +354,18 @@ def plugin_device_rlocation(backend_id):
     spec = _Specs(backend_id)
     return device_rlocation(spec.plugin, True)
 
-def get_driver():
-    return if_oss(
-        "//litert/integration_test:run_on_device_driver",
-        "//litert/integration_test:run_on_device_driver",
-    )
-
 def litert_device_exec(
         name,
         target,
         backend_id = "cpu",
-        driver = get_driver(),
         data = [],
         exec_args = [],
         exec_env_vars = [],
         remote_suffix = "",
-        local_suffix = "_adb"):
+        local_suffix = "_adb",
+        testonly = True):
     """
-    Macro to execute a binary target on a device.
-
-    #copybara:comment_begin(google-only)
-    Note: Allows running the target on a locally connected device through ADB or via Mobile Harness
-    (see litert_mh_exec target).
-    #copybara:comment_end(google-only)
+    Macro to execute a binary target on a device through adb.
 
     The output of this macro is an executable shell script that pushes all the necessary files to
     the device and executes the target with the given arguments and environment variables.
@@ -401,73 +374,55 @@ def litert_device_exec(
         name: Name of the target.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
         target: The binary target to execute on device.
-        driver: The driver script to use for execution.
         data: List of data files to push to the device.
         exec_args: List of arguments to pass to the executable.
         exec_env_vars: List of environment variables to set before executing the target.
         remote_suffix: Suffix for the target runnin on device cloud if enabled.
         local_suffix: Suffix for the target that runs locally on physical device through adb.
+        testonly: Whether the target is testonly.
     """
+    host_runfiles_name = name + "_host_runfiles"
+    expanded_template_name = name + "_expanded_template"
+
     data = data + []
     exec_env_vars = exec_env_vars + []
 
     backend = _Specs(backend_id)
-
     data.extend(backend.libs)
     exec_env_vars.extend(backend.env_paths)
 
-    path_transforms = if_oss([_strip_double_prefix(), _add_external_prefix()])
-
-    bin_path_str = _transform_str("$(rlocationpath {})".format(target), path_transforms)
-
-    call_mobile_install = """
-    echo '$(location {driver}) \
-        --bin={bin_path_str} \
-        --data={data} \
-        --do_exec=true \
-        --exec_args=\"{exec_args}\" \
-        --exec_env_vars={exec_env_vars} \
-        -- "$$@" \
-        '\
-        > $@
-    """
-
-    data_str = ",".join([_transform_str("$(rlocationpaths {})".format(d), path_transforms + [_change_delim(" ", ",")]) for d in data])
-
-    # NOTE: Tilde delimiter here (also see driver script) to allow passing list args to underlying
-    # binary.
-    exec_args_str = "~".join(["{}".format(a) for a in exec_args])
-    exec_env_vars_str = ",".join(["{}".format(a) for a in exec_env_vars])
-
-    driver_targ = driver.removesuffix(".sh")
-    driver_sh = driver_targ + ".sh"
-
-    cmd = call_mobile_install.format(
-        driver = driver_sh,
-        bin_path_str = bin_path_str,
-        data = data_str,
-        exec_args = exec_args_str,
-        exec_env_vars = exec_env_vars_str,
+    native.filegroup(
+        name = host_runfiles_name,
+        data = data,
     )
 
-    exec_script = name + "_exec.sh"
-
-    native.genrule(
-        name = name + "_gen_script",
-        srcs = [driver_sh] + [target] + data,
-        outs = [exec_script],
+    expand_template(
+        name = expanded_template_name,
+        template = "//litert/integration_test:mobile_install_template.sh",
+        data_subs = {
+            "@@host_runfiles@@": ":" + host_runfiles_name,
+        },
+        bin_subs = {
+            "@@host_bin@@": target,
+        },
+        subs = {
+            "@@device_runfiles_root@@": "/data/local/tmp/runfiles",
+            "@@exec_args@@": "\"{}\"".format(" ".join(exec_args)),
+            "@@exec_env_vars@@": "\"{}\"".format(" ".join(exec_env_vars)),
+        },
         tags = ["manual", "notap"],
-        cmd = cmd,
-        testonly = True,
+        out = expanded_template_name + ".sh",
+        testonly = testonly,
+        multi_output_delim = "array",
+        executable = True,
     )
 
     native.sh_binary(
-        testonly = True,
-        tags = ["manual", "notap"],
         name = name + local_suffix,
-        deps = [driver_targ],
-        srcs = [exec_script],
+        srcs = [":" + expanded_template_name],
         data = [target] + data,
+        tags = ["manual", "notap"],
+        testonly = testonly,
     )
 
     # copybara:uncomment_begin(google-only)
@@ -489,7 +444,6 @@ def litert_device_test(
         features = [],
         rule = cc_test,
         backend_id = "",
-        driver = get_driver(),
         data = [],
         exec_args = [],
         exec_env_vars = [],
@@ -508,7 +462,6 @@ def litert_device_test(
         deps: The dependencies for the target to be generated.
         rule: The rule to use for the target to be generated.
         backend_id: The backend id to use for the test (e.g. QUALCOMM_ID, GOOGLE_TENSOR_ID).
-        driver: The driver script to use for execution.
         data: List of data files to push to the device and for the target to be generated.
         exec_args: List of arguments to pass to the executable.
         exec_env_vars: List of environment variables to set before executing the target.
@@ -538,7 +491,6 @@ def litert_device_test(
         name = name,
         target = absolute_label(":{}".format(target)),
         backend_id = backend_id,
-        driver = driver,
         data = data,
         exec_args = exec_args,
         exec_env_vars = exec_env_vars,
@@ -589,13 +541,11 @@ def litert_integration_test(
         cli_args.append("--compiler_library_dir={}".format(device_rlocation(backend.plugin, True)))
 
     data = [models]
-    driver = get_driver()
     target = "//litert/integration_test:gen_device_test"
 
     litert_device_exec(
         name = name,
         target = target,
-        driver = driver,
         backend_id = backend_id,
         data = data,
         exec_args = cli_args,

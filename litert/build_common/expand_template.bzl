@@ -17,6 +17,21 @@
 def _quote(s):
     return '"%s"' % s
 
+def _extract_binary(target):
+    # cc_test case
+    if RunEnvironmentInfo in target:
+        environment = target[RunEnvironmentInfo].environment
+        cc_test_binary = environment.get("CC_TEST_BINARY", None)
+        if cc_test_binary:
+            return cc_test_binary
+
+    # cc_binary case
+    file_to_run = target.files_to_run.executable
+    if file_to_run:
+        return file_to_run.short_path
+
+    fail("Could not locate an executable file provided by the target, excpected cc_test or cc_binary.")
+
 def _fmt_location(mode, files):
     if mode != "array" and len(mode) != 1:
         fail("Unknown multi_output_behavior: %s" % mode)
@@ -33,16 +48,26 @@ def _fmt_location(mode, files):
     return _quote(mode.join([f.short_path for f in files]))
 
 def _expand_template_impl(ctx):
+    forwarded_runfiles = []
     subs = ctx.actions.template_dict()
 
+    # Basic string substitutions.
     for k, v in ctx.attr.subs.items():
         subs.add(k, v)
 
-    forwarded_runfiles = []
-    for k, v in ctx.attr.run_subs.items():
-        files = v.default_runfiles.files.to_list()
+    # Data files location substitutions.
+    for k, v in ctx.attr.data_subs.items():
+        files = v.data_runfiles.files.to_list()
+        if not files:
+            files = [f for f in v.files if f.is_source]
         forwarded_runfiles.extend(files)
         subs.add(k, _fmt_location(ctx.attr.multi_output_delim, files))
+
+    # Binary files location substitutions.
+    for k, v in ctx.attr.bin_subs.items():
+        forwarded_runfiles.extend(v.default_runfiles.files.to_list())
+        binary = _extract_binary(v)
+        subs.add(k, _quote(binary))
 
     runfiles = ctx.runfiles(files = forwarded_runfiles)
 
@@ -58,8 +83,8 @@ def _expand_template_impl(ctx):
 expand_template = rule(
     implementation = _expand_template_impl,
     doc = """
-    Template expansion with location and executable support. Will also forward any runfiles
-    substituted into the template.
+    Template expansion with location and executable support. Will also forward any runfiles 
+    (included transitively) substituted into the template.
     """,
     attrs = {
         "template": attr.label(
@@ -71,9 +96,23 @@ expand_template = rule(
             mandatory = True,
             doc = "A dictionary mapping strings to their substitutions.",
         ),
-        "run_subs": attr.string_keyed_label_dict(
+        "data_subs": attr.string_keyed_label_dict(
             default = {},
-            doc = "A dictionary mapping strings to substituted labels. These will be resolved to their runfiles (rlocationpath) locations.",
+            doc = """
+            A dictionary mapping strings to substituted labels. Labels we be interpreted as data
+            dependencies, so its resolved value will reflect the location of all
+            (including transitive) data runfiles from said label.
+            """,
+            allow_files = True,
+        ),
+        "bin_subs": attr.string_keyed_label_dict(
+            default = {},
+            doc = """
+            A dictionary mapping strings to substituted labels. Labels will be interpreted as
+            binary dependencies, so its resolved value will reflect the location of the sole binary
+            executable.
+            """,
+            providers = [RunEnvironmentInfo],
         ),
         "out": attr.output(
             mandatory = True,
@@ -85,7 +124,10 @@ expand_template = rule(
         ),
         "multi_output_delim": attr.string(
             default = "array",
-            doc = "How to format the string when resolving the location of a target with multiple outputs. \"array\" will be a shell array, anything will serve as a delimiter.",
+            doc = """
+            How to format the string when resolving the location of a target with multiple outputs. 
+            \"array\" will be a shell array, anything will serve as a delimiter.
+            """,
         ),
     },
 )

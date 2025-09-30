@@ -26,11 +26,6 @@ package(
     default_visibility = ["//litert:litert_public"],
 )
 
-sh_binary(
-    name = "run_on_device_driver",
-    srcs = ["run_on_device_driver.sh"],
-)
-
 # Internal test to validate the macros and underlying shell scripts.
 litert_device_test(
     name = "tools_test",
@@ -394,6 +389,6 @@ litert_device_test(
 #     ],
 # )
 #
-# exports_files(srcs = ["run_on_device_driver.sh"])
-#
 # copybara:uncomment_end
+
+exports_files(srcs = ["mobile_install_template.sh"])
