@@ -20,9 +20,9 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 # load("//devtools/build_cleaner/skylark:build_defs.bzl", "register_extension_info")
 # load("//devtools/deviceinfra/api/builddefs/test:mobile_test.bzl", "mobile_test")
 # load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar")
-# load("@rules_cc//cc:cc_test.bzl", "cc_test")
 #
 # copybara:uncomment_end
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:expand_template.bzl", "expand_template")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
 
