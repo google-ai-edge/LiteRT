@@ -116,6 +116,27 @@ class LiteRtCompiledModelT {
     return const_cast<LiteRtTensorBufferRequirements>(requirements);
   }
 
+  // Returns the dimensions of the output tensor at output_index using signature
+  // key. The returned tensor dimension is used to allocate memory.
+  litert::Expected<std::vector<int>> GetOutputTensorShapes(
+      absl::string_view signature_key, size_t output_index);
+
+  // Returns the dimensions of the output tensor at output_index using signature
+  // index. The returned tensor dimension is used to allocate memory.
+  litert::Expected<std::vector<int>> GetOutputTensorShapes(
+      size_t signature_index, size_t output_index) {
+    if (signature_index >= signature_keys_.size()) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
+          "Signature index is out of range of signature keys");
+    }
+    return GetOutputTensorShapes(*signature_keys_[signature_index],
+                                 output_index);
+  }
+
+  // Updates the tensor allocation for the given signature.
+  litert::Expected<void> UpdateTensorAllocation(size_t signature_index);
+
   // Runs the model of the given signature with the provided input/output
   // litert::TensorBuffers. If parameter `async` is true, then the model is run
   // asynchronously, if possible. Upon returning, the function sets parameter
@@ -301,6 +322,9 @@ class LiteRtCompiledModelT {
 
   // The environment associated with the compiled model.
   LiteRtEnvironmentT* env_;
+
+  // The model associated with the compiled model.
+  LiteRtModelT* litert_model_;
 
   // NOTE: Any fields that must be destroyed after the TFL interpreter
   // is destroyed must be listed before field interp_.

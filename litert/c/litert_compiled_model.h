@@ -85,6 +85,22 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
+// Returns the tensor shapes for the given n-th output tensor.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - output_index: the index of the output tensor in the signature (subgraph).
+// - output_tensor_shapes: the returned `int**` of tensor shapes.
+// - rank: dimension of the output tensor.
+LiteRtStatus LiteRtGetCompiledModelOutputTensorShapes(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, int** output_tensor_shapes, int* rank);
+
+// Updates the tensor allocation for the given signature.
+LiteRtStatus LiteRtCompiledModelAllocateTensors(
+    LiteRtCompiledModel compiled_model, size_t signature_index);
+
 // Returns the associated environment of the given compiled model.
 LiteRtStatus LiteRtGetCompiledModelEnvironment(
     LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment);

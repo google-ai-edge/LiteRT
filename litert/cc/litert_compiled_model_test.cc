@@ -585,9 +585,15 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& out_type,
                                 out_tensor.RankedTensorType());
 
+    // Get the output tensor shape from the compiled model.
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        std::vector<int> output_tensor_dim,
+        compiled_model.GetOutputTensorShapes(/*signature_index=*/size_t(0),
+                                             /*output_index=*/size_t(0)));
+
     auto new_out_type = RankedTensorType(
         out_type.ElementType(),
-        Layout(Dimensions(exec_dims.begin(), exec_dims.end())));
+        Layout(Dimensions(output_tensor_dim.begin(), output_tensor_dim.end())));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,

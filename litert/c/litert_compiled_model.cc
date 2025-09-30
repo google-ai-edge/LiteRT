@@ -23,6 +23,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -93,6 +94,33 @@ LiteRtStatus LiteRtGetCompiledModelEnvironment(
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelOutputTensorShapes(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex output_index, int** output_tensor_shapes, int* rank) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto tensor_shapes,
+      compiled_model->GetOutputTensorShapes(signature_index, output_index));
+  *rank = tensor_shapes.size();
+  *output_tensor_shapes =
+      static_cast<int*>(malloc(tensor_shapes.size() * sizeof(int)));
+  memcpy(*output_tensor_shapes, tensor_shapes.data(),
+         tensor_shapes.size() * sizeof(int));
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompiledModelAllocateTensors(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index) {
+  if (!compiled_model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(
+      compiled_model->UpdateTensorAllocation(signature_index));
   return kLiteRtStatusOk;
 }
 

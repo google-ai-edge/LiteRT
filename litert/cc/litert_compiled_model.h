@@ -168,6 +168,29 @@ class CompiledModel
     return GetOutputBufferRequirements(signature_index, output_name);
   }
 
+  // Get output tensor shapes for the given signature and output index.
+  Expected<std::vector<int>> GetOutputTensorShapes(size_t signature_index,
+                                                   size_t output_index) const {
+    int* dim_vector = nullptr;
+    int rank = 0;
+    LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorShapes(
+        Get(), signature_index, output_index, &dim_vector, &rank));
+    if (!dim_vector) {
+      return std::vector<int>();
+    }
+    // Use unique_ptr with custom deleter to ensure automatic cleanup
+    std::unique_ptr<int, decltype(&std::free)> dim_vector_ptr(dim_vector,
+                                                              &std::free);
+    return std::vector<int>(dim_vector, dim_vector + rank);
+  }
+
+  // Updates the tensor allocation for the given signature.
+  litert::Expected<void> UpdateTensorAllocation(size_t signature_index) {
+    LITERT_RETURN_IF_ERROR(
+        LiteRtCompiledModelAllocateTensors(Get(), signature_index));
+    return {};
+  }
+
   // Returns the buffer requirements for the given output tensor. The returned
   // TensorBufferRequirements is used to create the output tensor
   // buffer.

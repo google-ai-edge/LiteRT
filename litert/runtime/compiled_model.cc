@@ -727,6 +727,29 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
   return GetTensorBufferRequirements(output_tensor);
 }
 
+Expected<std::vector<int>> LiteRtCompiledModelT::GetOutputTensorShapes(
+    absl::string_view signature_key, size_t output_index) {
+  auto runner = GetSignatureRunner(signature_key);
+  if (runner == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to get signature runner");
+  }
+  auto output_names = runner->subgraph_output_names();
+  if (output_index >= output_names.size()) {
+    return Unexpected(kLiteRtStatusErrorIndexOOB, "Output index out of range");
+  }
+  auto output_name = output_names[output_index];
+  auto* output_tensor = runner->output_tensor(output_name);
+  if (output_tensor == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to get output tensor");
+  }
+
+  return std::vector<int>(
+      output_tensor->dims->data,
+      output_tensor->dims->data + output_tensor->dims->size);
+}
+
 tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
     absl::string_view signature_key) {
   if (signature_runners_.contains(signature_key)) {
@@ -928,6 +951,26 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   // TODO: b/382330322 - Add buffer conversion logic instead of returning error.
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "The given buffer type is not supported.");
+}
+
+Expected<void> LiteRtCompiledModelT::UpdateTensorAllocation(
+    size_t signature_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto signature_key = *signature_keys_[signature_index];
+  auto runner = GetSignatureRunner(signature_key);
+
+  if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
+    if (error_reporter_) {
+      error_reporter_->Report("Failed to allocate tensors for execution");
+    }
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to allocate tensors");
+  }
+  return {};
 }
 
 Expected<void> LiteRtCompiledModelT::Run(
