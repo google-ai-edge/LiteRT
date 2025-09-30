@@ -16,8 +16,11 @@
 
 #include <cstdint>
 #include <cstring>
+#include <string>
+#include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "flatbuffers/vector.h"  // from @flatbuffers
 #include "litert/c/litert_any.h"
@@ -59,14 +62,16 @@ int GetSubgraphIndex(const LiteRtModelT& model,
   return -1;
 }
 
-// Returns the index of the shape parameter in a given op, or -1 if op doesn't
-// have a shape parameter.
-int GetShapeParamIndex(const LiteRtOpT& op) {
+// Returns the index of the input parameter in a given op which may contain
+// magic numbers, e.g. shape in Reshape op, or limit in Range op, or -1 if op
+// doesn't have a such input parameter.
+int GetInputIndexOfMagicNumber(const LiteRtOpT& op) {
   switch (op.OpCode()) {
-    case kLiteRtOpCodeTflReshape:
-    case kLiteRtOpCodeTflBroadcastTo:
+    case kLiteRtOpCodeTflReshape:      // 2nd input is the shape parameter.
+    case kLiteRtOpCodeTflBroadcastTo:  // 2nd input is the shape parameter.
+    case kLiteRtOpCodeTflRange:        // 2nd input is the limit parameter.
       return 1;
-    case kLiteRtOpCodeTflSlice:
+    case kLiteRtOpCodeTflSlice:  // 3rd input is the size parameter.
       return 2;
     default:
       return -1;
@@ -145,7 +150,7 @@ Expected<int> UpdateMagicNumberInDimensions(
 
     LITERT_LOG(LITERT_DEBUG,
                "Update shape[%d] of tensor=%d from %d to %d, factor=%d", i,
-               tensor.TensorIndex(), magic_number, target_number, factor);
+               tidx, magic_number, target_number, factor);
     layout.dimensions[i] = target_number * factor;
     ++num_updated;
 
@@ -173,15 +178,15 @@ int UpdateMagicNumber(T magic_number, T target_number, LiteRtOpCode op_code,
 
     value = target_number * factor;
     LITERT_LOG(LITERT_DEBUG,
-               "Update shape param data[%d] of op=%d from %d to %d, factor=%d",
-               i, op_code, magic_number, target_number, factor);
+               "Update param data[%d] of op=%d from %d to %d, factor=%d", i,
+               op_code, magic_number, target_number, factor);
     memcpy(data, &value, sizeof(T));
     ++num_updated;
   }
   return num_updated;
 }
 
-// Updates the shape parameter of a given tensor in the flatbuffer.
+// Updates the parameter of a given tensor in the flatbuffer.
 // Returns the number of elements updated.
 Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
                                        int64_t target_number,
@@ -189,12 +194,11 @@ Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
                                        const LiteRtTensorT& tensor,
                                        const tflite::FlatBufferModel& fb_model,
                                        const tflite::SubGraph& tfl_subgraph) {
-  int shape_param_tensor_index = tensor.TensorIndex();
-  const auto* shape_param_tensor =
-      tfl_subgraph.tensors()->Get(shape_param_tensor_index);
-  LITERT_RETURN_IF_ERROR(shape_param_tensor != nullptr);
+  int param_tensor_index = tensor.TensorIndex();
+  const auto* param_tensor = tfl_subgraph.tensors()->Get(param_tensor_index);
+  LITERT_RETURN_IF_ERROR(param_tensor != nullptr);
 
-  auto buffer_index = shape_param_tensor->buffer();
+  auto buffer_index = param_tensor->buffer();
   const auto* buffer = fb_model->buffers()->Get(buffer_index);
   LITERT_RETURN_IF_ERROR(buffer != nullptr);
   if (buffer->data() == nullptr) {
@@ -203,10 +207,10 @@ Expected<int> UpdateMagicNumberInParam(int64_t magic_number,
 
   unsigned char* data = const_cast<unsigned char*>(buffer->data()->data());
   const unsigned char* data_end = data + buffer->data()->size();
-  if (shape_param_tensor->type() == tflite::TensorType_INT32) {
+  if (param_tensor->type() == tflite::TensorType_INT32) {
     return UpdateMagicNumber<int32_t>(magic_number, target_number, op_code,
                                       data, data_end);
-  } else if (shape_param_tensor->type() == tflite::TensorType_INT64) {
+  } else if (param_tensor->type() == tflite::TensorType_INT64) {
     return UpdateMagicNumber<int64_t>(magic_number, target_number, op_code,
                                       data, data_end);
   }
@@ -224,6 +228,15 @@ Expected<int> GetDecompositionSubgraphIndex(const LiteRtModelT& model,
   return opts->decomposition_subgraph_index;
 }
 
+std::string GetParamIndices(const std::vector<LiteRtTensor>& params) {
+  std::vector<int> param_indices;
+  param_indices.reserve(params.size());
+  for (const auto& p : params) {
+    param_indices.push_back(p->TensorIndex());
+  }
+  return absl::StrJoin(param_indices, ",");
+}
+
 Expected<int> ReplaceMagicNumberInSubgraph(
     int64_t magic_number, int64_t target_number, LiteRtModelT& model,
     const tflite::FlatBufferModel& fb_model,
@@ -237,7 +250,12 @@ Expected<int> ReplaceMagicNumberInSubgraph(
     updated_tensors += num_updated;
   }
 
-  for (auto* op : subgraph.Ops()) {
+  for (int i = 0; i < subgraph.Ops().size(); ++i) {
+    auto* op = subgraph.Ops()[i];
+    LITERT_LOG(LITERT_DEBUG, "op[%d]=%d, inputs=[%s], outputs=[%s]", i,
+               op->OpCode(), GetParamIndices(op->Inputs()).c_str(),
+               GetParamIndices(op->Outputs()).c_str());
+
     // Update subgraphs of this subgraph.
     if (op->OpCode() == kLiteRtOpCodeShloComposite) {
       LITERT_ASSIGN_OR_RETURN(int decomp_index,
@@ -260,15 +278,15 @@ Expected<int> ReplaceMagicNumberInSubgraph(
     }
 
     // Update shape parameters if any.
-    int shape_param_index = GetShapeParamIndex(*op);
-    if (shape_param_index == -1) {
+    int magic_param_index = GetInputIndexOfMagicNumber(*op);
+    if (magic_param_index == -1) {
       continue;
     }
-    LITERT_RETURN_IF_ERROR(shape_param_index < op->NumInputs());
+    LITERT_RETURN_IF_ERROR(magic_param_index < op->NumInputs());
     LITERT_ASSIGN_OR_RETURN(
         int num_updated,
         UpdateMagicNumberInParam(magic_number, target_number, op->OpCode(),
-                                 op->Input(shape_param_index), fb_model,
+                                 op->Input(magic_param_index), fb_model,
                                  tfl_subgraph));
     updated_tensors += num_updated;
   }
@@ -426,14 +444,14 @@ Expected<void> VerifyOpSame(const LiteRtModelT& model, const LiteRtOpT& op1,
                               *decomp_subgraph1, *decomp_subgraph2);
   }
 
-  int shape_param_index = GetShapeParamIndex(op1);
-  if (shape_param_index < 0) {
+  int magic_param_index = GetInputIndexOfMagicNumber(op1);
+  if (magic_param_index < 0) {
     return {};
   }
 
-  LITERT_RETURN_IF_ERROR(shape_param_index < op1.NumInputs());
-  return VerifyDataSame(op1.Input(shape_param_index),
-                        op2.Input(shape_param_index), fb_model, tfl_subgraph1,
+  LITERT_RETURN_IF_ERROR(magic_param_index < op1.NumInputs());
+  return VerifyDataSame(op1.Input(magic_param_index),
+                        op2.Input(magic_param_index), fb_model, tfl_subgraph1,
                         tfl_subgraph2);
 }
 
