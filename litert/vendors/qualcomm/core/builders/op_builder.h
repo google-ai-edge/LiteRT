@@ -13,6 +13,10 @@
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 
 namespace qnn {
+enum class MirrorPadMode {
+  REFLECT = 0,
+  SYMMETRIC,
+};
 
 enum class PaddingType {
   Unknown = 0,
