@@ -49,6 +49,16 @@ typedef LiteRtStatus (*CreateCustomTensorBuffer)(
     LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
     HwMemoryInfoPtr* hw_memory_info);
 
+// Custom TensorBuffer handler function to import an existing custom
+// TensorBuffer.
+// This function creates the HwMemoryInfo wrapper but does NOT take ownership
+// or destroy the handle. The implementation should store an "owns_tensor =
+// false" flag inside its HwMemoryInfo-derived struct.
+typedef LiteRtStatus (*ImportCustomTensorBuffer)(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
+    size_t bytes, HwMemoryInfoPtr* hw_memory_info);
+
 // Custom TensorBuffer handler function to destroy a custom TensorBuffer.
 typedef LiteRtStatus (*DestroyCustomTensorBuffer)(
     LiteRtEnvironment env, HwMemoryInfoPtr hw_memory_info);

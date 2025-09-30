@@ -25,13 +25,15 @@ LiteRtStatus LiteRtRegisterTensorBufferHandlers(
     LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
     CreateCustomTensorBuffer create_func,
     DestroyCustomTensorBuffer destroy_func, LockCustomTensorBuffer lock_func,
-    UnlockCustomTensorBuffer unlock_func) {
+    UnlockCustomTensorBuffer unlock_func,
+    ImportCustomTensorBuffer import_func) {
   auto& registry = env->GetTensorBufferRegistry();
   litert::internal::CustomTensorBufferHandlers handlers = {
       .create_func = create_func,
       .destroy_func = destroy_func,
       .lock_func = lock_func,
       .unlock_func = unlock_func,
+      .import_func = import_func,
   };
   LITERT_RETURN_IF_ERROR(registry.RegisterHandlers(buffer_type, handlers));
   return kLiteRtStatusOk;

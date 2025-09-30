@@ -20,6 +20,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 
@@ -59,6 +60,14 @@ class CustomBuffer {
                                       LiteRtTensorBufferType buffer_type,
                                       size_t buffer_size,
                                       size_t packed_buffer_size);
+
+  // Wraps an existing custom buffer. The function will not take ownership of
+  // the custom buffer.
+  static Expected<CustomBuffer> Wrap(LiteRtEnvironment env,
+                                     const LiteRtRankedTensorType& tensor_type,
+                                     LiteRtTensorBufferType buffer_type,
+                                     HwMemoryHandle hw_buffer_handle,
+                                     size_t buffer_size);
 
  private:
   // Private constructor to create a custom buffer.
