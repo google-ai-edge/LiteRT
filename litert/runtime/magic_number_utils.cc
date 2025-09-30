@@ -573,6 +573,8 @@ Expected<int> ReplaceMagicNumbersIfAny(const LiteRtEnvironmentT& env,
   auto option_configs = env.GetOption(kLiteRtEnvOptionTagMagicNumberConfigs);
   if (!option_configs) {
     LITERT_LOG(LITERT_DEBUG, "No magic number configs found.");
+    LiteRtMagicNumberConfigs configs{.num_configs = 0};
+    LogDebugInfo(model, configs, nullptr);
     return 0;
   }
 
