@@ -27,6 +27,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -48,12 +49,22 @@ std::string GetCachedModelFilePath(absl::string_view cache_root_path,
 }
 
 uint64_t GetHash(const LiteRtOptionsT& options) {
-  uint64_t ans = 0;
+  uint64_t seed = 0;
   HashCombine(
-      ans, options.hardware_accelerators,
+      seed, options.hardware_accelerators,
       options.version.major  // Minor updates should not invalid the cache.
   );
-  return ans;
+
+  for (LiteRtOpaqueOptions it = options.options; it;) {
+    uint64_t opaque_hash = 0;
+    // It's fine if an opaque option doesn't implement hashing; we skip it.
+    if (LiteRtGetOpaqueOptionsHash(it, &opaque_hash) == kLiteRtStatusOk) {
+      HashCombine(seed, opaque_hash);
+    }
+    if (LiteRtGetNextOpaqueOptions(&it) != kLiteRtStatusOk) break;
+  }
+
+  return seed;
 }
 
 uint64_t GetHash(const LiteRtApiVersion& api_version) {
