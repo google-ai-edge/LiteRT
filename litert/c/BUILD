@@ -55,6 +55,7 @@ cc_library(
     name = "litert_common",
     srcs = ["litert_common.cc"],
     hdrs = ["litert_common.h"],
+    deps = ["//litert/build_common:build_config"],
 )
 
 cc_test(
@@ -812,6 +813,7 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
+        "//litert/build_common:build_config",
     ] + gles_headers() + select({
         ":resolve_symbols_in_exec": [],
         "@platforms//os:windows": [":litert_runtime_c_api_import"],
