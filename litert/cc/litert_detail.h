@@ -33,6 +33,10 @@
 
 namespace litert {
 
+template <typename T>
+using RemoveCvRefT =
+    typename std::remove_cv_t<std::remove_reference_t<T>>::type;
+
 template <typename Cond, typename T, typename... Rest>
 struct SelectHelper {
   using type =
@@ -196,13 +200,14 @@ std::optional<size_t> FindInd(It begin, It end, T val) {
 }
 
 // Average the container.
-template <typename T, template <typename> typename C>
-T Avg(const C<T>& c) {
-  if (std::size(c) == 0) {
+template <typename It>
+auto Avg(It begin, It end) -> RemoveCvRefT<decltype(*std::declval<It>())> {
+  using T = decltype(Avg(begin, end));
+  const auto size = std::distance(begin, end);
+  if (size == 0) {
     return std::numeric_limits<T>::max();
   }
-  return std::accumulate(std::cbegin(c), std::cend(c), T{}) /
-         static_cast<T>(std::size(c));
+  return std::accumulate(begin, end, T{}) / static_cast<T>(size);
 }
 
 // Compile time strings.
