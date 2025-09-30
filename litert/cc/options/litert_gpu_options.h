@@ -46,6 +46,8 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
   LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
   LiteRtStatus SetGpuPriority(LiteRtGpuPriority priority);
+  LiteRtStatus SetMadviseOriginalSharedTensors(
+      bool madvise_original_shared_tensors);
 };
 
 }  // namespace litert

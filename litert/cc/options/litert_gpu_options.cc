@@ -104,4 +104,10 @@ LiteRtStatus GpuOptions::SetGpuPriority(LiteRtGpuPriority priority) {
   return LiteRtSetGpuOptionsGpuPriority(Get(), priority);
 }
 
+LiteRtStatus GpuOptions::SetMadviseOriginalSharedTensors(
+    bool madvise_original_shared_tensors) {
+  return LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+      Get(), madvise_original_shared_tensors);
+}
+
 }  // namespace litert

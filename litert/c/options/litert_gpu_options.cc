@@ -64,6 +64,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Added in version 2.0.2a1.
   // GPU priority to use.
   LiteRtGpuPriority gpu_priority = kLiteRtGpuPriorityNormal;
+  // Added in version 2.0.2a1.
+  // Set to true to madvise the original shared tensors after use.
+  bool madvise_original_shared_tensors = false;
 };
 
 namespace litert {
@@ -223,6 +226,16 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->serialize_external_tensors = serialize_external_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool madvise_original_shared_tensors) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->madvise_original_shared_tensors = madvise_original_shared_tensors;
   return kLiteRtStatusOk;
 }
 
@@ -397,5 +410,18 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
       << "`payload` cannot be null.";
   *external_tensor_pattern =
       payload->external_tensor_patterns[pattern_index].c_str();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    bool* madvise_original_shared_tensors,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(madvise_original_shared_tensors,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`madvise_original_shared_tensors` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *madvise_original_shared_tensors = payload->madvise_original_shared_tensors;
   return kLiteRtStatusOk;
 }

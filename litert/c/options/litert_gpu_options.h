@@ -130,6 +130,13 @@ LiteRtStatus LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool serialize_external_tensors);
 
+// Sets whether to madvise the original shared tensors after use. Note that
+// this boolean flag is to disable madvise which is enabled by default.
+LiteRtStatus
+LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    bool madvise_original_shared_tensors);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -191,6 +198,10 @@ LiteRtStatus LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern(
 
 LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
                                             LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
+    bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"
