@@ -55,6 +55,11 @@ ApplyPluginRun::Ptr ParseFlags() {
   res->soc_models.push_back(soc_model_absl);
 
   const auto libs = absl::GetFlag(FLAGS_libs);
+  std::cout << "============================================0000" << std::endl;
+  for (const auto& lib : libs) {
+    std::cout << "lib: " << lib << std::endl;
+  }
+  std::cout << "============================================0000" << std::endl;
   res->lib_search_paths.assign(libs.begin(), libs.end());
 
   const auto cmd = absl::GetFlag(FLAGS_cmd);
