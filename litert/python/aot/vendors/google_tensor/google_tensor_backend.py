@@ -120,7 +120,7 @@ def _apply_plugin(
     # Otherwise we use the default library path.
     plugin_path = common.get_resource(COMPILER_PLUGIN_LIB_PATH)
     lib_dir = os.path.dirname(plugin_path)
-    sdk_libs_dir = os.environ.get("LITERT_GOOGLE_TENSOR_SDK", None)
+    sdk_libs_dir = os.environ.get("GOOGLE_TENSOR_COMPILER_LIB", None)
 
     extra_kwargs = {"libs": lib_dir, "sdk_libs_path": sdk_libs_dir}
   except FileNotFoundError:

@@ -20,5 +20,5 @@ def google_tensor():
     configurable_repo(
         name = "google_tensor",
         build_file = "@//third_party/google_tensor:google_tensor.BUILD",
-        local_path_env = "LITERT_GOOGLE_TENSOR_SDK",
+        local_path_env = "GOOGLE_TENSOR_COMPILER_LIB",
     )

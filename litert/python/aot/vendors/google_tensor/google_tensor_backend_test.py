@@ -83,7 +83,10 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
 
   @mock.patch.object(common, "get_resource", autospec=True)
   @mock.patch.object(MockApplyPlugin, "__call__", autospec=True)
-  @mock.patch.dict(os.environ, {"LITERT_GOOGLE_TENSOR_SDK": "/sdk_libs_path"})
+  @mock.patch.dict(
+      os.environ,
+      {"GOOGLE_TENSOR_COMPILER_LIB": "/google_tensor_compiler_libs_path"},
+  )
   def test_apply_plugin(
       self, mock_apply_plugin_call: mock.Mock, mock_get_resource: mock.Mock
   ):
@@ -104,7 +107,9 @@ class GoogleTensorBackendTest(test_common.TestWithTfliteModels):
     )  # soc_manufacturer
     self.assertEqual(args[4], target_lib.SocModel.ALL)  # soc_model
     self.assertEqual(kwargs["libs"], "/fake/path/to")  # libs
-    self.assertEqual(kwargs["sdk_libs_path"], "/sdk_libs_path")  # sdk_libs_path
+    self.assertEqual(
+        kwargs["sdk_libs_path"], "/google_tensor_compiler_libs_path"
+    )  # sdk_libs_path
 
   @mock.patch.object(MockApplyPlugin, "__call__", autospec=True)
   def test_apply_plugin_with_compiler_flags(
