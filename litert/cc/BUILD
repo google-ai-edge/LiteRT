@@ -1176,6 +1176,13 @@ cc_library(
     name = "litert_rewriter",
     srcs = ["litert_rewriter.cc"],
     hdrs = ["litert_rewriter.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_public",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
     deps = [
         ":litert_detail",
         ":litert_expected",

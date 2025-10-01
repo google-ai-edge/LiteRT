@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -191,5 +191,47 @@ cc_test(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+litert_lib(
+    name = "example_transformations",
+    srcs = ["example_transformations.cc"],
+    hdrs = ["example_transformations.h"],
+    linkstatic = True,
+    ungrte = True,
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_rewriter",
+    ],
+)
+
+litert_test(
+    name = "example_transformations_test",
+    srcs = ["example_transformations_test.cc"],
+    linkopts = select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [
+            make_rpaths([
+                "//litert/c:litert_runtime_c_api_so",
+            ]),
+        ],
+    }),
+    linkstatic = True,
+    tags = [
+        # Tests with ungrte deps do not currently work on forge.
+        "no-remote-exec",
+        "notap",
+        "nosan",
+    ],
+    ungrte = True,
+    use_sys_malloc = True,
+    deps = [
+        ":example_transformations",
+        "//litert/c:litert_op_code",
+        "//litert/core/model:model_testonly",
+        "//litert/test:common",
+        "//litert/test:matchers_oss",
     ],
 )

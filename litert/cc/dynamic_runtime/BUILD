@@ -192,6 +192,30 @@ cc_library(
     }),
 )
 
+cc_library(
+    name = "litert_rewriter",
+    srcs = ["//litert/cc:litert_rewriter.cc"],
+    hdrs = ["//litert/cc:litert_rewriter.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_model",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
 cc_test(
     name = "litert_model_test",
     srcs = ["//litert/cc:litert_model_test.cc"],
