@@ -57,6 +57,12 @@ class QualcommOptions : public OpaqueOptions {
   void SetEnableWeightSharing(bool weight_sharing_enabled);
   bool GetEnableWeightSharing();
 
+  void SetUseConvHMX(bool use_conv_hmx);
+  bool GetUseConvHMX();
+
+  void SetUseFoldReLU(bool use_fold_relu);
+  bool GetUseFoldReLU();
+
   void SetProfiling(LiteRtQualcommOptionsProfiling profiling);
   LiteRtQualcommOptionsProfiling GetProfiling();
 

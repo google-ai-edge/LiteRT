@@ -109,6 +109,8 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
   qnn_options.SetUseQint16AsQuint16(qualcomm_options.GetUseQint16AsQuint16());
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
+  qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());
+  qnn_options.SetUseFoldReLU(qualcomm_options.GetUseFoldReLU());
   qnn_options.SetHtpPerformanceMode(static_cast<::qnn::HtpPerformanceMode>(
       qualcomm_options.GetHtpPerformanceMode()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());

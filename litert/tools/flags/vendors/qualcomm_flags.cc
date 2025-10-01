@@ -265,6 +265,16 @@ std::string AbslUnparseFlag(
   }
 }
 
+ABSL_FLAG(bool, qualcomm_use_conv_hmx, true,
+          "When using short conv hmx, one might have better performance, but "
+          "convolution that have short depth and/or weights that are not "
+          "symmetric could exhibit inaccurate results.");
+
+ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
+          "When using fold relu, one might have better performance. This "
+          "optimization is correct when quantization ranges for convolution "
+          "are equal to or are subset of the Relu operation.");
+
 // NOLINTEND(*alien-types*)
 
 namespace litert::qualcomm {
@@ -313,6 +323,12 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
   const auto optimization_level =
       absl::GetFlag(FLAGS_qualcomm_optimization_level);
   opts.SetOptimizationLevel(optimization_level);
+
+  const auto use_conv_hmx = absl::GetFlag(FLAGS_qualcomm_use_conv_hmx);
+  opts.SetUseConvHMX(use_conv_hmx);
+
+  const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
+  opts.SetUseFoldReLU(use_fold_relu);
 
   return opts;
 }

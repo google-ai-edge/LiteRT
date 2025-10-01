@@ -38,9 +38,9 @@ namespace litert::qnn {
 
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 5> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 6> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 6> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 6> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 7> result;
 
   // QNN suggest always enable relax precision.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
@@ -63,18 +63,24 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
   graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[3].option =
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
-  graph_custom_configs[3].foldReluActivationIntoConvOff = true;
+  graph_custom_configs[3].foldReluActivationIntoConvOff =
+      !options.GetUseFoldReLU();
+  // ConvHMX Off
+  graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[4].option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
+  graph_custom_configs[4].shortDepthConvOnHmxOff = !options.GetUseConvHMX();
 
   // Hvx Thread
   bool has_hvx = options.GetNumHvxThreads() != 0;
   if (has_hvx) {
-    graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[4].option =
+    graph_custom_configs[5] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[5].option =
         QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[4].numHvxThreads = options.GetNumHvxThreads();
+    graph_custom_configs[5].numHvxThreads = options.GetNumHvxThreads();
   }
 
-  size_t num_config = has_hvx ? 5 : 4;
+  size_t num_config = has_hvx ? 6 : 5;
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
@@ -88,9 +94,9 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
 
 inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
     const ::qnn::Options& options) {
-  static std::array<QnnHtpGraph_CustomConfig_t, 4> graph_custom_configs;
-  static std::array<QnnGraph_Config_t, 4> graph_configs;
-  static std::array<const QnnGraph_Config_t*, 5> result;
+  static std::array<QnnHtpGraph_CustomConfig_t, 5> graph_custom_configs;
+  static std::array<QnnGraph_Config_t, 5> graph_configs;
+  static std::array<const QnnGraph_Config_t*, 6> result;
   // Default use O3 for now.
   graph_custom_configs[0] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[0].option = QNN_HTP_GRAPH_CONFIG_OPTION_OPTIMIZATION;
@@ -109,18 +115,24 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
   graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[2].option =
       QNN_HTP_GRAPH_CONFIG_OPTION_FOLD_RELU_ACTIVATION_INTO_CONV_OFF;
-  graph_custom_configs[2].foldReluActivationIntoConvOff = true;
+  graph_custom_configs[2].foldReluActivationIntoConvOff =
+      !options.GetUseFoldReLU();
+  // ConvHMX Off
+  graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+  graph_custom_configs[3].option =
+      QNN_HTP_GRAPH_CONFIG_OPTION_SHORT_DEPTH_CONV_ON_HMX_OFF;
+  graph_custom_configs[3].shortDepthConvOnHmxOff = !options.GetUseConvHMX();
 
   // Hvx Thread
   bool has_hvx = options.GetNumHvxThreads() != 0;
   if (has_hvx) {
-    graph_custom_configs[3] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
-    graph_custom_configs[3].option =
+    graph_custom_configs[4] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
+    graph_custom_configs[4].option =
         QNN_HTP_GRAPH_CONFIG_OPTION_NUM_HVX_THREADS;
-    graph_custom_configs[3].numHvxThreads = options.GetNumHvxThreads();
+    graph_custom_configs[4].numHvxThreads = options.GetNumHvxThreads();
   }
 
-  size_t num_config = has_hvx ? 4 : 3;
+  size_t num_config = has_hvx ? 5 : 4;
   for (size_t i = 0; i < num_config; ++i) {
     graph_configs[i] = QNN_GRAPH_CONFIG_INIT;
     graph_configs[i].option = QNN_GRAPH_CONFIG_OPTION_CUSTOM;
