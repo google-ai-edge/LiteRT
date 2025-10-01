@@ -8,6 +8,9 @@ This means that when the LiteRT runtime is distributed as
 `libLiteRtRuntimeCApi.so`, it helps ensure that user applications remain
 compatible and run smoothly even when using different versions of the runtime.
 
+NOTE: C API is not the recommended option for general application developments.
+User should use C++ API which is easier to use.
+
 ## C API naming guide
 
 Function names follow this pattern:

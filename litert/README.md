@@ -16,12 +16,12 @@ optimization tools.
 
 - c/
 
-  .h and associated .cc files for public/stable C API for app developers
-  (ABI stable)
+  .h and associated .cc files for stable C APIs (ABI stable) to implement C++
+  APIs
 
 - cc/
 
-  .h and associated .cc files for public/stable C++ API for app developers
+  .h and associated .cc files for public/stable C++ APIs for app developers
   (not ABI stable)
 
 - compiler/
