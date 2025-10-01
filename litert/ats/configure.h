@@ -145,6 +145,21 @@ class AtsConf {
     return std::holds_alternative<std::string>(capture_latency_);
   }
 
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const ExecutionBackend& backend) {
+    switch (backend) {
+      case ExecutionBackend::kCpu:
+        sink.Append("cpu");
+        break;
+      case ExecutionBackend::kGpu:
+        sink.Append("gpu");
+        break;
+      case ExecutionBackend::kNpu:
+        sink.Append("npu");
+        break;
+    }
+  }
+
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,

@@ -34,8 +34,7 @@
 namespace litert {
 
 template <typename T>
-using RemoveCvRefT =
-    typename std::remove_cv_t<std::remove_reference_t<T>>::type;
+using RemoveCvRefT = typename std::remove_cv_t<std::remove_reference_t<T>>;
 
 template <typename Cond, typename T, typename... Rest>
 struct SelectHelper {

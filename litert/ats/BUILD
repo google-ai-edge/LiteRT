@@ -192,6 +192,29 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "capture",
+    testonly = True,
+    hdrs = ["capture.h"],
+    deps = [
+        ":configure",
+        "//litert/cc:litert_detail",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "capture_test",
+    srcs = ["capture_test.cc"],
+    deps = [
+        ":capture",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
 litert_define_ats(
