@@ -56,6 +56,7 @@ class Environment
         kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
     MagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
     MagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
+    CompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
   };
 
   struct Option {

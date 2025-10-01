@@ -78,6 +78,7 @@ target_include_directories(litert_runtime
 target_link_libraries(litert_runtime
     PUBLIC
         litert_core
+        litert_core_cache
         litert_core_model
         litert_c_api
         litert_c_options

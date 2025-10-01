@@ -63,3 +63,4 @@ endif()
 
 # Add model subdirectory
 add_subdirectory(model)
+add_subdirectory(cache)

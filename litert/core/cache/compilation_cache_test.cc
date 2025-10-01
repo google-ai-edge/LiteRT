@@ -121,6 +121,46 @@ TEST(CompilationCacheTest, CompilerPluginVersionChange_CacheMiss) {
   EXPECT_FALSE(cache_hit.has_value());
 }
 
+TEST(CompilationCacheTest, MultipleCompilerPlugins) {
+  const std::string cache_root_path = ::testing::TempDir();
+  LITERT_ASSIGN_OR_ABORT(CompilationCache compilation_cache,
+                         CompilationCache::Create(cache_root_path));
+  LITERT_ASSIGN_OR_ABORT(
+      std::unique_ptr<LiteRtModelT> model,
+      LoadModelFromFile(litert::testing::GetTestFilePath(kModelFileName)));
+  CompilationCache::CompilerPluginInfo compiler_plugin_info_first =
+      GetTestCompilerPluginInfo();
+  CompilationCache::CompilerPluginInfo compiler_plugin_info_second = {
+      .api_version = {.major = 2, .minor = 1, .patch = 0},
+      .hw_accelerators = kLiteRtHwAcceleratorNpu,
+      .manufacturer = "test_manufacturer_second",
+  };
+
+  LITERT_ASSIGN_OR_ABORT(
+      const std::size_t model_hash_first,
+      CompilationCache::GetModelHash(
+          *model, GetTestOptions(),
+          {compiler_plugin_info_first, compiler_plugin_info_second}));
+
+  compiler_plugin_info_second.api_version.minor++;
+  LITERT_ASSIGN_OR_ABORT(
+      const std::size_t model_hash_second,
+      CompilationCache::GetModelHash(
+          *model, GetTestOptions(),
+          {compiler_plugin_info_first, compiler_plugin_info_second}));
+
+  EXPECT_NE(model_hash_first, model_hash_second);
+
+  compiler_plugin_info_second.api_version.minor--;
+  LITERT_ASSIGN_OR_ABORT(
+      const std::size_t model_hash_third,
+      CompilationCache::GetModelHash(
+          *model, GetTestOptions(),
+          {compiler_plugin_info_first, compiler_plugin_info_second}));
+
+  EXPECT_EQ(model_hash_first, model_hash_third);
+}
+
 TEST(CompilationCacheTest, DifferentLiteRtOptions_CacheMiss) {
   // GIVEN: a compilation cache and a model, saved to the cache
   const std::string cache_root_path = ::testing::TempDir();

@@ -22,6 +22,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -31,6 +32,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/hash_util.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
@@ -46,6 +48,26 @@ std::string GetCachedModelFilePath(absl::string_view cache_root_path,
                                    uint64_t model_hash) {
   return litert::internal::Join(
       {cache_root_path, absl::StrCat(model_hash, ".tflite")});
+}
+
+Expected<std::vector<litert::internal::CompilationCache::CompilerPluginInfo>>
+GetPluginInfo(
+    const std::vector<litert::internal::CompilerPlugin>& compiler_plugins) {
+  std::vector<litert::internal::CompilationCache::CompilerPluginInfo>
+      cache_info(compiler_plugins.size());
+  for (int i = 0; i < compiler_plugins.size(); ++i) {
+    const auto& plugin = compiler_plugins[i];
+    LITERT_ASSIGN_OR_RETURN(LiteRtApiVersion api_version, plugin.ApiVersion());
+    LITERT_ASSIGN_OR_RETURN(LiteRtHwAcceleratorSet hw_accelerators,
+                            plugin.SupportedHardware());
+    absl::string_view manufacturer = plugin.SocManufacturer();
+    cache_info[i] = {
+        .api_version = api_version,
+        .hw_accelerators = (LiteRtHwAccelerators)hw_accelerators,
+        .manufacturer = manufacturer,
+    };
+  }
+  return cache_info;
 }
 
 uint64_t GetHash(const LiteRtOptionsT& options) {
@@ -110,13 +132,38 @@ Expected<CompilationCache> CompilationCache::Create(
 Expected<uint64_t> CompilationCache::GetModelHash(
     const LiteRtModelT& model, const LiteRtOptionsT& options,
     const CompilerPluginInfo& compiler_plugin_info) {
-  LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
-  uint64_t vendor_plugin_api_version_hash = GetHash(compiler_plugin_info);
-  uint64_t options_hash = GetHash(options);
+  std::vector<CompilerPluginInfo> compiler_plugin_infos{compiler_plugin_info};
+  return GetModelHash(model, options, compiler_plugin_infos);
+}
+
+Expected<uint64_t> CompilationCache::GetModelHash(
+    const LiteRtModelT& model, const LiteRtOptionsT& options,
+    const std::vector<CompilerPluginInfo>& compiler_plugin_infos) {
   uint64_t combined_hash = 0;
-  HashCombine(combined_hash, model_hash, options_hash,
-              vendor_plugin_api_version_hash);
+  for (const auto& compiler_plugin_info : compiler_plugin_infos) {
+    uint64_t compiler_plugin_hash = GetHash(compiler_plugin_info);
+    HashCombine(combined_hash, compiler_plugin_hash);
+  }
+  LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
+  uint64_t options_hash = GetHash(options);
+
+  HashCombine(combined_hash, model_hash, options_hash);
   return combined_hash;
+}
+
+litert::Expected<uint64_t> CompilationCache::TryGetModelHash(
+    LiteRtModelT& model, LiteRtOptions options,
+    Expected<std::vector<litert::internal::CompilerPlugin>>& compiler_plugins) {
+  if (!compiler_plugins) {
+    return compiler_plugins.Error();
+  }
+  // Compute the hash, so we can check the cache.
+  LITERT_ASSIGN_OR_RETURN(
+      std::vector<litert::internal::CompilationCache::CompilerPluginInfo>
+          compiler_plugin_infos,
+      GetPluginInfo(compiler_plugins.Value()));
+  return litert::internal::CompilationCache::GetModelHash(
+      model, *options, compiler_plugin_infos);
 }
 
 Expected<void> CompilationCache::SaveModel(const LiteRtModelT& model,

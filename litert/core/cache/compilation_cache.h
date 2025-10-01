@@ -19,11 +19,13 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
 
@@ -53,6 +55,15 @@ class CompilationCache {
   static Expected<uint64_t> GetModelHash(
       const LiteRtModelT& model, const LiteRtOptionsT& options,
       const CompilerPluginInfo& compiler_plugin_info);
+  static Expected<uint64_t> GetModelHash(
+      const LiteRtModelT& model, const LiteRtOptionsT& options,
+      const std::vector<CompilerPluginInfo>& compiler_plugin_infos);
+  // Returns the hash of the model, with respect to the given options and
+  // compiler plugins.
+  static litert::Expected<uint64_t> TryGetModelHash(
+      LiteRtModelT& model, LiteRtOptions options,
+      litert::Expected<std::vector<litert::internal::CompilerPlugin>>&
+          compiler_plugins);
 
   // Saves the provided 'model' in the cache, associated with the 'model_hash'.
   // The overload taking a 'model_buffer' assumes the caller already

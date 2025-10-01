@@ -44,6 +44,7 @@ typedef enum {
   kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy = 15,
   kLiteRtEnvOptionTagMagicNumberConfigs = 16,
   kLiteRtEnvOptionTagMagicNumberVerifications = 17,
+  kLiteRtEnvOptionTagCompilerCacheDir = 18,
 } LiteRtEnvOptionTag;
 
 typedef struct {

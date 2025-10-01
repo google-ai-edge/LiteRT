@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,7 +32,9 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/core/cache/compilation_cache.h"
 #include "litert/core/environment.h"
+#include "litert/core/model/model.h"
 #include "litert/runtime/accelerator.h"
 #include "litert/runtime/custom_op_dispatcher.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -207,9 +210,16 @@ class LiteRtCompiledModelT {
   // models alloc_ and model_buf_ will be nullptr as these are only relevant
   // when compiled model owns a flatbuffer.
   //
-  // If JIT compilation does occur, a new flatbuffer owned by the compiled model
-  // will be serialized from the result of compilation. The alloc_ and
-  // model_buf_ will be set for storage of the new flatbuffer.
+  // If JIT compilation is requested and compilation caching is enabled, the
+  // compiled model will first check the cache for the compiled model. If the
+  // model is found in the cache, the compiled model will load the model from
+  // the cache and the JIT compilation will not occur. The alloc_ and
+  // model_buf_ will be initialized based on the cached model.
+  //
+  // If JIT compilation does occur (either because compilation caching is
+  // disabled or the model is not found in the cache), a new flatbuffer owned by
+  // the compiled model will be serialized from the result of compilation. The
+  // alloc_ and model_buf_ will be set for storage of the new flatbuffer.
   //
   // NOTE: JIT compilation invalidates the input litert model.
   // TODO: Design a better abstraction for optional ownership for flatbuffer,
@@ -285,6 +295,10 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+  // Tries to load the model from the cache. Returns true if the model is loaded
+  // from the cache, false otherwise.
+  bool TryLoadingFromCache(uint64_t model_hash);
+
   // The environment associated with the compiled model.
   LiteRtEnvironmentT* env_;
 
@@ -307,8 +321,15 @@ class LiteRtCompiledModelT {
   std::vector<const std::string*> signature_keys_;
   // If JIT compilation hasn't happened, the flatbuffer fd belongs to the
   // incoming literal model. If JIT compilation has happened, the fd belongs to
-  // a newly serialized flatbuffer owned by the compiled model.
+  // a newly serialized flatbuffer owned by the compiled model. If the model is
+  // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
+
+  // The compilation cache used to store the compiled model. If the model is
+  // found in the cache, the compiled model will be loaded from the cache.
+  // Otherwise, the compiled model will be compiled and saved to the cache.
+  std::optional<litert::internal::CompilationCache> compilation_cache_;
+  std::optional<LiteRtModelT::Ptr> cached_model_;
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the

@@ -39,6 +39,7 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:filesystem",
         "//litert/core:options",
         "//litert/core/model",
