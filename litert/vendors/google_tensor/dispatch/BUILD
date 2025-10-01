@@ -82,7 +82,7 @@ litert_dynamic_lib(
         # TODO: Remove this dependency.
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
-        "//litert/cc:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:darwinn_options",
         "//litert/vendors/cc:options_helper",
@@ -148,11 +148,10 @@ cc_test(
     name = "darwinn_options_test",
     srcs = ["darwinn_options_test.cc"],
     deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_options",
+        "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
-        "//litert/cc:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:darwinn_options",
         "@com_google_googletest//:gtest_main",
