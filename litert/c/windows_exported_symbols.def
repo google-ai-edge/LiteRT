@@ -66,6 +66,7 @@ EXPORTS
   LiteRtGetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
   LiteRtGetGpuAcceleratorCompilationOptionsBufferStorageType
   LiteRtGetGpuAcceleratorCompilationOptionsExternalTensorPattern
+  LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtGetGpuAcceleratorCompilationOptionsModelCacheKey
   LiteRtGetGpuAcceleratorCompilationOptionsPrecision
   LiteRtGetGpuAcceleratorCompilationOptionsPreferTextureWeights
@@ -173,3 +174,5 @@ EXPORTS
   LiteRtSetRuntimeOptionsErrorReporterMode
   LiteRtSetRuntimeOptionsShloCompositeInlining
   LiteRtUnlockTensorBuffer
+  LiteRtUnwrapDelegate
+  LiteRtWrapDelegate
