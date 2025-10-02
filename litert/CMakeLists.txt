@@ -147,10 +147,10 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
             message(FATAL_ERROR "Failed to configure TFLite:\n${TFLITE_CONFIGURE_ERROR}")
         endif()
 
-        # In this build. TFLite requires FlatBuffers 25.2.10.
+        # In this build. TFLite requires FlatBuffers 25.9.23.
         set(FLATBUFFERS_REQUIRED_MAJOR 25)
-        set(FLATBUFFERS_REQUIRED_MINOR 2)
-        set(FLATBUFFERS_REQUIRED_REVISION 10)
+        set(FLATBUFFERS_REQUIRED_MINOR 9)
+        set(FLATBUFFERS_REQUIRED_REVISION 23)
         set(TF_SRC_DIR "${TFLITE_BUILD_DIR}/tensorflow-src")
         if(EXISTS "${TF_SRC_DIR}")
             _litert_overlay_converter_sources("${TF_SRC_DIR}")
