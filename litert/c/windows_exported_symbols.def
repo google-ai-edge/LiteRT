@@ -42,6 +42,7 @@ EXPORTS
   LiteRtDestroyEnvironment
   LiteRtDestroyMetrics
   LiteRtDestroyModel
+  LiteRtDestroyOpaqueOptions
   LiteRtDestroyOptions
   LiteRtDestroyTensorBuffer
   LiteRtDestroyTensorBufferRequirements
@@ -97,6 +98,7 @@ EXPORTS
   LiteRtGetOpInput
   LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
@@ -132,17 +134,27 @@ EXPORTS
   LiteRtQualcommOptionsGetIdentifier
   LiteRtQualcommOptionsGetIrJsonDir
   LiteRtQualcommOptionsGetLogLevel
+  LiteRtQualcommOptionsGetNumHvxThreads
+  LiteRtQualcommOptionsGetOptimizationLevel
   LiteRtQualcommOptionsGetProfiling
+  LiteRtQualcommOptionsGetUseConvHMX
+  LiteRtQualcommOptionsGetUseFoldReLU
   LiteRtQualcommOptionsGetUseHtpPreference
   LiteRtQualcommOptionsGetUseQint16AsQuint16
+  LiteRtQualcommOptionsGetVtcmSize
   LiteRtQualcommOptionsSetDumpTensorIds
   LiteRtQualcommOptionsSetEnableWeightSharing
   LiteRtQualcommOptionsSetHtpPerformanceMode
   LiteRtQualcommOptionsSetIrJsonDir
   LiteRtQualcommOptionsSetLogLevel
+  LiteRtQualcommOptionsSetNumHvxThreads
+  LiteRtQualcommOptionsSetOptimizationLevel
   LiteRtQualcommOptionsSetProfiling
+  LiteRtQualcommOptionsSetUseConvHMX
+  LiteRtQualcommOptionsSetUseFoldReLU
   LiteRtQualcommOptionsSetUseHtpPreference
   LiteRtQualcommOptionsSetUseQint16AsQuint16
+  LiteRtQualcommOptionsSetVtcmSize
   LiteRtRegisterAccelerator
   LiteRtRegisterTensorBufferHandlers
   LiteRtRunCompiledModel
@@ -155,6 +167,7 @@ EXPORTS
   LiteRtSetCpuOptionsXnnPackWeightCachePath
   LiteRtSetDelegateFunction
   LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps
+  LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors
   LiteRtSetGpuAcceleratorCompilationOptionsModelCacheKey
   LiteRtSetGpuAcceleratorCompilationOptionsPrecision
   LiteRtSetGpuAcceleratorCompilationOptionsPreferTextureWeights
