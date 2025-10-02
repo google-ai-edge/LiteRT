@@ -1151,5 +1151,37 @@ TEST(CompiledModelTest, GetInterpreter) {
   EXPECT_NE(interpreter, nullptr);
 }
 
+TEST(CompiledModelTest, GetOutputTensorShapes) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<int> output_tensor_shapes,
+                              compiled_model->GetOutputTensorShapes(
+                                  LiteRtSignatureT::kDefaultSignatureKey, 0));
+  EXPECT_EQ(output_tensor_shapes.size(), 1);
+  EXPECT_EQ(output_tensor_shapes[0], 2);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
 }  // namespace
 }  // namespace litert

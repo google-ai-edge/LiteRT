@@ -15,6 +15,7 @@
 #include "litert/c/litert_compiled_model.h"
 
 #include <cstddef>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -287,6 +288,66 @@ TEST(CompiledModelTest, ResizeInputTensorWithStaticModel) {
       kLiteRtStatusOk);
 
   // Cleanup
+  LiteRtDestroyCompiledModel(compiled_model);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(environment);
+}
+
+TEST(CompiledModelTest, GetOutputTensorShapesWithDynamicModel) {
+  // Use the dynamic model for testing resize functionality
+  auto path = testing::GetTestFilePath(kDynamicModelFileName);
+
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  LiteRtEnvironment environment;
+  LiteRtEnvOption options = {};
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/0, &options, &environment),
+            kLiteRtStatusOk);
+
+  LiteRtCompiledModel compiled_model;
+  ASSERT_EQ(LiteRtCreateCompiledModel(environment, model,
+                                      jit_compilation_options, &compiled_model),
+            kLiteRtStatusOk);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  // (?, 2, 3) => (1, 2, 3)
+  const int new_dims[] = {1, 2, 3};
+  ASSERT_EQ(
+      LiteRtCompiledModelResizeInputTensor(compiled_model,
+                                           /*signature_index=*/0,
+                                           /*input_index=*/0, new_dims, 3),
+      kLiteRtStatusOk);
+
+  ASSERT_EQ(
+      LiteRtCompiledModelAllocateTensors(compiled_model, /*signature_index=*/0),
+      kLiteRtStatusOk);
+
+  // (?, 2, 3) => (1, 2, 3)
+  int expected_output_tensor_shapes[] = {1, 2, 3};
+  int* output_tensor_shapes = nullptr;
+  int rank = 0;
+  ASSERT_EQ(LiteRtGetCompiledModelOutputTensorShapes(
+                compiled_model, /*signature_index=*/0, /*output_index=*/0,
+                &output_tensor_shapes, &rank),
+            kLiteRtStatusOk);
+
+  // Verify that the size has doubled (batch size doubled)
+  EXPECT_EQ(rank, sizeof(expected_output_tensor_shapes) / sizeof(int));
+  // litert check output_tensor_shapes equals expected_output_tensor_shapes
+  for (int i = 0; i < rank; ++i) {
+    EXPECT_EQ(output_tensor_shapes[i], expected_output_tensor_shapes[i]);
+  }
+
+  // Cleanup
+  free(output_tensor_shapes);
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(environment);
