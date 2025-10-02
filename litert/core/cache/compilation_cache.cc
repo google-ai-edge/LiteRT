@@ -24,6 +24,10 @@
 #include <utility>
 #include <vector>
 
+#ifdef __ANDROID__
+#include <sys/system_properties.h>
+#endif  // __ANDROID__
+
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -144,6 +148,18 @@ Expected<uint64_t> CompilationCache::GetModelHash(
     uint64_t compiler_plugin_hash = GetHash(compiler_plugin_info);
     HashCombine(combined_hash, compiler_plugin_hash);
   }
+
+#ifdef __ANDROID__
+  // The compiler plugin of some vendors has dependencies on files (e.g. shared
+  // libraries that are opened by their compiler plugin implementation) that
+  // are part of the Android image.  Therefore if the Android build fingerprint
+  // changes, the cached model might become invalid.
+  char build_fingerprint[PROP_VALUE_MAX];
+  if (__system_property_get("ro.build.fingerprint", build_fingerprint)) {
+    HashCombine(combined_hash, std::string(build_fingerprint));
+  }
+#endif  // __ANDROID__
+
   LITERT_ASSIGN_OR_RETURN(uint64_t model_hash, GetHash(model));
   uint64_t options_hash = GetHash(options);
 
