@@ -15,10 +15,7 @@ cc_library(
     srcs = [],
     hdrs = ["padding.h"],
     compatible_with = get_compatible_with_portable(),
-    visibility = [
-        "//tflite/converter/kernels:__pkg__",
-        "@org_tensorflow//tensorflow/compiler/mlir/quantization/tensorflow/utils:__pkg__",
-    ],
+    visibility = ["//tflite/converter/kernels:__pkg__"],
     deps = [
         "//tflite/converter/core/c:tflite_common",
     ],
