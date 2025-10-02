@@ -148,6 +148,44 @@ litert_bin(
     ],
 )
 
+litert_bin(
+    name = "apply_plugin_main_for_google_tensor",
+    srcs = ["apply_plugin_main.cc"],
+    data = [
+        # copybara:uncomment_begin(google-only)
+        # "//platforms/darwinn/compiler:compiler_api_wrapper",
+        # copybara:uncomment_end
+        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+    ],
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//litert:litert_public"],
+    deps = [
+        ":apply_plugin_runtimecapi",
+        ":outstream",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/core:build_stamp",
+        "//litert/tools/flags:apply_plugin_flags",
+        "//litert/tools/flags:common_flags",
+        "//litert/tools/flags:flag_types",
+        "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # Apply plugin test tests the core logic of the tool (with a dummy plugin impl), while the
 # following tests the actual plugins will function correctly.
 [
