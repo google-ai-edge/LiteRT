@@ -37,14 +37,6 @@ class ExternalLiteRtBufferContext
       LiteRtExternalLiteRtBufferContext context, OwnHandle own_handle)
       : Handle(context, own_handle) {}
 
-  static Expected<ExternalLiteRtBufferContext> Create(
-      litert::Environment& env) {
-    LiteRtExternalLiteRtBufferContext context = nullptr;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtCreateExternalLiteRtBufferContext(env.Get(), &context));
-    return ExternalLiteRtBufferContext(context, OwnHandle::kYes);
-  }
-
   // Returns a TensorBuffer object for the given tensor. The returned
   // TensorBuffer object is a duplicate (reference-counted) of the buffer
   // context's registered TensorBuffer.

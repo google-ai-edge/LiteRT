@@ -256,8 +256,25 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         new std::string(LiteRtSignatureT::kDefaultSignatureKey);
     signature_keys_.push_back(default_signature_key);
   }
+
+  auto get_tensor_id =
+      [tflite_interpreter = std::ref(*interp_)](
+          const TfLiteOpaqueTensor* target_tensor) -> TfLiteTensorIdentifier {
+    auto tensor_id = GetTensorIdentifier(
+        tflite_interpreter,
+        reinterpret_cast<const TfLiteTensor*>(target_tensor));
+    if (!tensor_id) {
+      LITERT_LOG(LITERT_ERROR, "Failed to get tensor identifier: %s",
+                 tensor_id.Error().Message().c_str());
+      constexpr TfLiteTensorIdentifier kInvalidTensorId{-1, -1};
+      return kInvalidTensorId;
+    }
+    return *tensor_id;
+  };
+
   // Register the ExternalLiteRtBufferContext for TensorBuffer handshaking.
-  buffer_context_ = std::make_unique<LiteRtExternalLiteRtBufferContextT>(env);
+  buffer_context_ =
+      std::make_unique<LiteRtExternalLiteRtBufferContextT>(env, get_tensor_id);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
 

@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_RUNTIME_EXTERNAL_LITERT_BUFFER_CONTEXT_H_
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -25,6 +26,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/tensor_identifier.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -52,11 +54,15 @@ struct LiteRtTensorBufferDeleter {
 using LiteRtTensorBufferPtr =
     std::unique_ptr<LiteRtTensorBufferT, LiteRtTensorBufferDeleter>;
 
+using GetTensorIdentifierFn =
+    std::function<litert::internal::TfLiteTensorIdentifier(
+        const TfLiteOpaqueTensor* tensor)>;
+
 class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
  public:
-  LiteRtExternalLiteRtBufferContextT() : env_(nullptr) {}
-  explicit LiteRtExternalLiteRtBufferContextT(LiteRtEnvironment env)
-      : env_(env) {}
+  explicit LiteRtExternalLiteRtBufferContextT(
+      LiteRtEnvironment env, GetTensorIdentifierFn get_tensor_identifier_fn)
+      : env_(env), get_tensor_identifier_fn_(get_tensor_identifier_fn) {}
   ~LiteRtExternalLiteRtBufferContextT() = default;
 
   static litert::Expected<LiteRtExternalLiteRtBufferContextT*> GetInstance(
@@ -209,10 +215,16 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
 
  private:
   LiteRtEnvironment env_;
-  std::unordered_map<const TfLiteOpaqueTensor*,
-                     LiteRtTensorBufferRequirementsPtr>
+  GetTensorIdentifierFn get_tensor_identifier_fn_;
+  std::unordered_map<litert::internal::TfLiteTensorIdentifier,
+                     LiteRtTensorBufferRequirementsPtr,
+                     litert::internal::TensorIdentifierHash,
+                     litert::internal::TensorIdentifierEqual>
       buffer_requirements_;
-  std::unordered_map<const TfLiteOpaqueTensor*, LiteRtTensorBufferPtr>
+  std::unordered_map<litert::internal::TfLiteTensorIdentifier,
+                     LiteRtTensorBufferPtr,
+                     litert::internal::TensorIdentifierHash,
+                     litert::internal::TensorIdentifierEqual>
       tensor_buffers_;
 
   LiteRtExternalLiteRtBufferContextT(

@@ -47,20 +47,6 @@ Expected<void> ResizeTensor(const LiteRtLayout& layout,
                             TfLiteOpaqueContext* tfl_context,
                             TfLiteOpaqueTensor* tfl_opaque_tensor);
 
-struct TensorIdentifierHash {
-  std::size_t operator()(const TfLiteTensorIdentifier& id) const {
-    return std::hash<int>()(id.subgraph_idx) ^
-           (std::hash<int>()(id.tensor_idx) << 1);
-  }
-};
-
-struct TensorIdentifierEqual {
-  bool operator()(const TfLiteTensorIdentifier& lhs,
-                  const TfLiteTensorIdentifier& rhs) const {
-    return lhs.subgraph_idx == rhs.subgraph_idx &&
-           lhs.tensor_idx == rhs.tensor_idx;
-  }
-};
 
 // Returns the TfLiteTensorIdentifier for the given tensor, or nullopt if the
 // tensor is not found in the interpreter.

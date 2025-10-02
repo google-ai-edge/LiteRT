@@ -15,6 +15,8 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_CORE_TENSOR_IDENTIFIER_H_
 #define TENSORFLOW_LITE_CORE_TENSOR_IDENTIFIER_H_
 
+#include <cstddef>
+#include <functional>
 namespace litert::internal {
 
 // Uniquely identifies a tensor in the model by storing the subgraph index and
@@ -24,6 +26,21 @@ namespace litert::internal {
 struct TfLiteTensorIdentifier {
   int subgraph_idx;
   int tensor_idx;
+};
+
+struct TensorIdentifierHash {
+  std::size_t operator()(const TfLiteTensorIdentifier& id) const {
+    return std::hash<int>()(id.subgraph_idx) ^
+           (std::hash<int>()(id.tensor_idx) << 1);
+  }
+};
+
+struct TensorIdentifierEqual {
+  bool operator()(const TfLiteTensorIdentifier& lhs,
+                  const TfLiteTensorIdentifier& rhs) const {
+    return lhs.subgraph_idx == rhs.subgraph_idx &&
+           lhs.tensor_idx == rhs.tensor_idx;
+  }
 };
 
 }  // namespace litert::internal

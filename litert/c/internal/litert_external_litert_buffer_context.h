@@ -21,10 +21,6 @@
 extern "C" {
 #endif  // __cplusplus
 
-// Creates a new external buffer context.
-LiteRtStatus LiteRtCreateExternalLiteRtBufferContext(
-    LiteRtEnvironment environment, LiteRtExternalLiteRtBufferContext* context);
-
 // Returns a TensorBuffer object for the given tensor. The returned
 // TensorBuffer object is a duplicate (reference-counted) of the buffer
 // context's registered TensorBuffer. The returned object is owned by the caller

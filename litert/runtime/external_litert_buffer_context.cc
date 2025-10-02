@@ -21,6 +21,7 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -28,15 +29,19 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
+#include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
 #include "tflite/c/c_api_opaque.h"
 #include "tflite/c/common.h"
 
+using litert::internal::TfLiteTensorIdentifier;
+
 LiteRtStatus LiteRtExternalLiteRtBufferContextT::RegisterBufferRequirements(
     const TfLiteOpaqueTensor* tensor,
     LiteRtTensorBufferRequirementsPtr buffer_requirements) {
-  auto [iter, inserted] =
-      buffer_requirements_.try_emplace(tensor, std::move(buffer_requirements));
+  TfLiteTensorIdentifier tensor_id = get_tensor_identifier_fn_(tensor);
+  auto [iter, inserted] = buffer_requirements_.try_emplace(
+      tensor_id, std::move(buffer_requirements));
   if (!inserted) {
     LiteRtTensorBufferRequirementsT* joined_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtJoinTensorBufferRequirements(
@@ -51,7 +56,8 @@ LiteRtStatus LiteRtExternalLiteRtBufferContextT::RegisterBufferRequirements(
 litert::Expected<LiteRtTensorBufferRequirementsConst>
 LiteRtExternalLiteRtBufferContextT::GetBufferRequirements(
     const TfLiteOpaqueTensor* tensor) {
-  auto it = buffer_requirements_.find(tensor);
+  TfLiteTensorIdentifier tensor_id = get_tensor_identifier_fn_(tensor);
+  auto it = buffer_requirements_.find(tensor_id);
   if (it == buffer_requirements_.end()) {
     return litert::Unexpected(
         kLiteRtStatusErrorNotFound,
@@ -62,14 +68,16 @@ LiteRtExternalLiteRtBufferContextT::GetBufferRequirements(
 
 LiteRtStatus LiteRtExternalLiteRtBufferContextT::RegisterTensorBuffer(
     const TfLiteOpaqueTensor* tensor, LiteRtTensorBufferPtr tensor_buffer) {
-  tensor_buffers_[tensor] = std::move(tensor_buffer);
+  TfLiteTensorIdentifier tensor_id = get_tensor_identifier_fn_(tensor);
+  tensor_buffers_[tensor_id] = std::move(tensor_buffer);
   return kLiteRtStatusOk;
 }
 
 litert::Expected<LiteRtTensorBufferPtr>
 LiteRtExternalLiteRtBufferContextT::GetTensorBuffer(
     const TfLiteOpaqueTensor* tensor) {
-  auto it = tensor_buffers_.find(tensor);
+  TfLiteTensorIdentifier tensor_id = get_tensor_identifier_fn_(tensor);
+  auto it = tensor_buffers_.find(tensor_id);
   if (it == tensor_buffers_.end()) {
     return litert::Unexpected(kLiteRtStatusErrorNotFound,
                               "Tensor buffer not found");
