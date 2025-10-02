@@ -60,6 +60,33 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_webnn_options",
+    srcs = ["litert_webnn_options.cc"],
+    hdrs = ["litert_webnn_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_webnn_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+    ],
+)
+
+cc_test(
+    name = "litert_webnn_options_test",
+    srcs = ["litert_webnn_options_test.cc"],
+    deps = [
+        ":litert_webnn_options",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_webnn_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
     hdrs = ["litert_gpu_options.h"],
