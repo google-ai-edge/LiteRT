@@ -1122,6 +1122,7 @@ cc_library(
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+        "//tflite/core/api:op_resolver",
     ],
 )
 

@@ -26,6 +26,7 @@
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "tflite/core/api/op_resolver.h"
 
 namespace litert {
 
@@ -99,6 +100,11 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
         Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
     return {};
   }
+
+Expected<void> SetOpResolver(const tflite::OpResolver& op_resolver) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetOpResolver(Get(), &op_resolver));
+  return {};
+}
 };
 
 }  // namespace litert

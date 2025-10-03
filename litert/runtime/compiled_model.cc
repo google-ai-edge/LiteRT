@@ -28,6 +28,8 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "tflite/core/api/op_resolver.h"
+#include "tflite/mutable_op_resolver.h"
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 
@@ -145,42 +147,64 @@ LiteRtLogSeverity GetLogSeverityForJitCompilationFailure(
 Expected<void> LiteRtCompiledModelT::InitializeRuntime(
     LiteRtEnvironmentT* env, LiteRtHwAcceleratorSet hardware_accelerators,
     LiteRtOptions jit_compilation_options) {
+  tflite::OpResolver* resolver = nullptr;
+  std::unique_ptr<tflite::MutableOpResolver> mutable_resolver;
+  bool custom_op_resolver = false;
+  if (jit_compilation_options && jit_compilation_options->op_resolver) {
+    // An external, immutable resolver is provided.
+    custom_op_resolver = true;
+    resolver = const_cast<tflite::OpResolver*>(
+        reinterpret_cast<const tflite::OpResolver*>(
+            jit_compilation_options->op_resolver));
+    if (!jit_compilation_options->custom_op_options.empty()) {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "An OpResolver was provided, so custom_op_options will be ignored.");
+    }
+  } else {
+    // No external resolver, so we create our own mutable one.
 #ifdef LITERT_NO_BUILTIN_OPS
-  // Use StubOpResolver which provides minimal stub implementations for all
-  // builtin ops. These stubs allow the model to pass validation, but the
-  // actual operations will be handled by LiteRT's accelerator system
-  // (NPU > GPU > CPU) through their respective delegates.
-  litert::internal::StubOpResolver resolver;
+    // Use StubOpResolver which provides minimal stub implementations for all
+    // builtin ops. These stubs allow the model to pass validation, but the
+    // actual operations will be handled by LiteRT's accelerator system
+    // (NPU > GPU > CPU) through their respective delegates.
+    mutable_resolver = std::make_unique<litert::internal::StubOpResolver>();
 #else
-  tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates resolver;
+    mutable_resolver = std::make_unique<
+        tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
 #endif  // LITERT_NO_BUILTIN_OPS
-
+  }
   // Apply custom ops.
-  if (jit_compilation_options) {
+  if (jit_compilation_options && !custom_op_resolver) {
     for (auto& option : jit_compilation_options->custom_op_options) {
       custom_op_dispatchers_.push_back(
           std::make_unique<litert::internal::CustomOpDispatcher>(option));
       auto* tflite_registration =
           custom_op_dispatchers_.back()->GetTfLiteRegistration();
-      resolver.AddCustom(option.op_name.c_str(), tflite_registration);
+      mutable_resolver->AddCustom(option.op_name.c_str(), tflite_registration);
     }
   }
 
   // Add custom ops that are supported by the CPU / GPU accelerators.
-  if (hardware_accelerators & kLiteRtHwAcceleratorGpu) {
+  if (hardware_accelerators & kLiteRtHwAcceleratorGpu && !custom_op_resolver) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
         "MaxUnpooling2D", "Resampler"};
     for (const auto& op_name : accelerator_supported_custom_ops) {
-      resolver.AddCustom(op_name, &sStubRegistration);
+      mutable_resolver->AddCustom(op_name, &sStubRegistration);
     }
-  } else if (hardware_accelerators & kLiteRtHwAcceleratorCpu) {
+  } else if (hardware_accelerators & kLiteRtHwAcceleratorCpu &&
+             !custom_op_resolver) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias", "MaxPoolingWithArgmax2D",
         "MaxUnpooling2D"};
     for (const auto& op_name : accelerator_supported_custom_ops) {
-      resolver.AddCustom(op_name, &sStubRegistration);
+      mutable_resolver->AddCustom(op_name, &sStubRegistration);
     }
+  }
+
+  if (!custom_op_resolver){
+    resolver = mutable_resolver.get();
   }
 
   tflite::InterpreterOptions interpreter_options;
@@ -221,7 +245,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   }
 
   tflite::InterpreterBuilder builder(
-      fb_model_->GetModel(), resolver, error_reporter_.get(),
+      fb_model_->GetModel(), *resolver, error_reporter_.get(),
       &interpreter_options, fb_model_->allocation());
   builder(&interp_);
   if (interp_ == nullptr) {

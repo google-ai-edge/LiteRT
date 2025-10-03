@@ -57,6 +57,7 @@ struct LiteRtOptionsT {
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
+  const void* op_resolver = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
