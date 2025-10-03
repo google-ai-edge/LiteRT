@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,6 +30,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/capture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
 #include "litert/c/litert_common.h"
@@ -50,27 +51,69 @@ using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
 
 class AtsTest : public RngTest {
+  using Stats = AtsCaptureEntry::Latency;
+
  public:
   template <typename T>
   using BufferView = typename SimpleBuffer::CView<T>;
 
-  static void Register(size_t test_id, TestGraph::Ptr graph,
-                       absl::string_view family_name, const AtsConf& conf,
-                       bool always_reg = false) {
-    const auto suite_name = absl::StrFormat("ats_%lu_%s", test_id, family_name);
-    const auto test_name =
-        absl::StrFormat("%v", graph->Graph().Subgraph(0).Ops());
+  struct Names {
+    std::string suite;
+    std::string test;
+    std::string desc;
+    std::string report_id;
 
+    static Names Create(size_t test_id, absl::string_view family,
+                        const LiteRtModelT& graph) {
+      auto suite = MakeSuite(test_id, family);
+      auto test = absl::StrFormat("%v", graph.Subgraph(0).Ops());
+      auto desc = test;
+      auto report_id = suite;
+      return {suite, test, desc, report_id};
+    }
+
+    static Names Create(size_t test_id, absl::string_view family,
+                        absl::string_view test, absl::string_view desc = "") {
+      auto suite = MakeSuite(test_id, family);
+      return {suite, std::string(test), std::string(desc), std::string(test)};
+    }
+
+   private:
+    static std::string MakeSuite(size_t test_id, absl::string_view family) {
+      return absl::StrFormat("ats_%lu_%s", test_id, family);
+    }
+  };
+
+  static void Register(TestGraph::Ptr graph, const AtsConf& conf,
+                       const Names& names, bool always_reg = false,
+                       std::optional<AtsCaptureEntry::Ref> cap = {}) {
     if (!always_reg &&
-        !conf.ShouldRegister(absl::StrCat(suite_name, test_name))) {
+        !conf.ShouldRegister(absl::StrCat(names.suite, names.test))) {
       return;
     }
 
-    RegisterTest(suite_name.c_str(), test_name.c_str(), nullptr, nullptr,
+    RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [graph = std::move(graph), conf]() mutable {
-                   return new AtsTest(std::move(graph), conf);
+                 [graph = std::move(graph), conf, cap, names]() mutable {
+                   return new AtsTest(std::move(graph), conf, names, cap);
                  });
+  }
+
+  void SetUp() override {
+    ASSERT_EQ(Graph().NumSubgraphs(), 1);
+    ASSERT_EQ(Graph().MainSubgraph()->NumOutputs(), 1);
+    LITERT_LOG(LITERT_INFO, "Setting up test for %s",
+               absl::StrFormat("%v", conf_.Backend()).c_str());
+    Cap().model.name = names_.report_id;
+    Cap().model.desc = names_.desc;
+    const auto is_precompiled = GetBuildStamp(Graph()).has_value();
+    Cap().model.precompiled = is_precompiled;
+    Cap().accelerator.a_type = conf_.Backend();
+    Cap().run.num_iterations = conf_.ItersPerTest();
+    Cap().numerics.reference_type =
+        graph_->HasReference()
+            ? AtsCaptureEntry::Numerics::ReferenceType::kCustom
+            : AtsCaptureEntry::Numerics::ReferenceType::kCpu;
   }
 
   void TestBody() override {
@@ -85,19 +128,34 @@ class AtsTest : public RngTest {
   }
 
   void TearDown() override {
-    if (conf_.ShouldPrintLatency()) {
-      std::cerr << absl::StreamFormat("\nLatency =====\n%v\n=============\n",
-                                      stats_);
+    if (conf_.IsNpu()) {
+      auto stamp = GetBuildStamp(Graph());
+      if (stamp) {
+        Cap().accelerator.soc_man = std::string(stamp->soc_manufacturer);
+        Cap().accelerator.soc_model = std::string(stamp->soc_model);
+      }
+    }
+
+    if (HasFailure()) {
+      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kError;
+    } else if (TimedOut()) {
+      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kTimeout;
+    } else {
+      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kOk;
     }
   }
 
  private:
-  Expected<CompiledModelExecutor::Ptr> MakeExecutor() const {
+  Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
+    CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
       LITERT_ASSIGN_OR_RETURN(
           auto exec, NpuCompiledModelExecutor::Create(
                          Graph(), conf_.DispatchDir(), conf_.PluginDir()));
-      return std::make_unique<CompiledModelExecutor>(std::move(exec));
+      auto res = std::make_unique<CompiledModelExecutor>(std::move(exec));
+      Cap().accelerator.is_fully_accelerated =
+          ::litert::internal::IsFullyCompiled(Graph());
+      return res;
 
     } else if (conf_.IsCpu()) {
       LITERT_ASSIGN_OR_RETURN(auto exec,
@@ -115,7 +173,7 @@ class AtsTest : public RngTest {
 
   Expected<VarBuffers> Actual(const VarBuffers& inputs,
                               CompiledModelExecutor* exec) {
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, std::ref(stats_)));
+    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, Cap().latency));
     return actual;
   }
 
@@ -157,17 +215,25 @@ class AtsTest : public RngTest {
 
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data));
+    double mse = std::numeric_limits<double>::max();
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-5, &mse));
+    Cap().numerics.NewMse(mse);
   }
 
   LiteRtModelT& Graph() const { return graph_->Graph(); }
 
-  AtsTest(TestGraph::Ptr graph, const AtsConf& conf)
-      : graph_(std::move(graph)), conf_(conf) {}
+  AtsCaptureEntry& Cap() { return cap_.has_value() ? cap_->get() : dummy_cap_; }
+
+  AtsTest(TestGraph::Ptr graph, const AtsConf& conf, const Names& names,
+          std::optional<AtsCaptureEntry::Ref> cap)
+      : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
-  LatencyStats stats_;
+  Names names_;
+  std::optional<AtsCaptureEntry::Ref> cap_;
+
+  AtsCaptureEntry dummy_cap_;
 };
 
 }  // namespace litert::testing

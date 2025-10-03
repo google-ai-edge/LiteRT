@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "litert/ats/capture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/fixture.h"
 #include "litert/ats/register.h"
@@ -43,19 +44,20 @@ static constexpr const char* kArt = R"(
 ##     ##  ######   ######  ######## ######## ######## ##     ## ##     ##    ##     #######  ##     ##       ##    ########  ######     ##        ######   #######  ####    ##    ######## 
 )";
 
-void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters) {
+void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters,
+                  AtsCapture::Ref cap) {
   // clang-format off
   RegisterCombinations<
       AtsTest,
       NoOp,
       SizeListC<1, 2, 3, 4>,
       TypeList<float, int32_t>>
-    (iters, test_id, options);
+    (iters, test_id, options, cap);
   // clang-format on
 }
 
 void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
-                               size_t iters) {
+                               size_t iters, AtsCapture::Ref cap) {
   // clang-format off
   RegisterCombinations<
       AtsTest,
@@ -64,7 +66,7 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
       TypeList<float, int32_t>,
       OpCodeListC<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflSub>,
       FaListC<::tflite::ActivationFunctionType_NONE>>
-    (iters, test_id, options);
+    (iters, test_id, options, cap);
   // clang-format on
 }
 
@@ -75,10 +77,11 @@ int Ats() {
   ABSL_CHECK(options);
 
   size_t test_id = 0;
+  AtsCapture cap;
 
-  RegisterNoOp(*options, test_id, /*iters=*/10);
-  RegisterBinaryNoBroadcast(*options, test_id, /*iters=*/10);
-  RegisterExtraModels<AtsTest>(test_id, *options);
+  RegisterNoOp(*options, test_id, /*iters=*/10, cap);
+  RegisterBinaryNoBroadcast(*options, test_id, /*iters=*/10, cap);
+  RegisterExtraModels<AtsTest>(test_id, *options, cap);
 
   // Preliminary report.
   {
@@ -87,7 +90,12 @@ int Ats() {
                unit_test->total_test_count());
   }
 
-  return RUN_ALL_TESTS();
+  const auto res = RUN_ALL_TESTS();
+
+  options->SaveReport(cap);
+  options->PrintReport(cap);
+
+  return res;
 }
 
 }  // namespace

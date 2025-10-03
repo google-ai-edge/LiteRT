@@ -76,15 +76,19 @@ ABSL_FLAG(std::string, extra_models, "",
 ABSL_FLAG(size_t, iters_per_test, 1, "Number of iterations per test.");
 
 ABSL_FLAG(int64_t, max_ms_per_test, -1,
-          "Maximum time in milliseconds to run each test, -1 means no limit.");
+          "Maximum time in milliseconds to run each test, -1 means no limit "
+          "and a default will be provided.");
 
 ABSL_FLAG(bool, fail_on_timeout, true,
           "Whether to fail a test if it times out.");
 
-// TODO: Add support for writing to a structured file.
-ABSL_FLAG(std::string, capture_latency, "none",
-          "If and how to capture latency data, \"none\", \"print\", or a path "
-          "where serialized data will be written.");
+ABSL_FLAG(std::string, save_report, "",
+          "If specified, a CSV file will be written to this path containing "
+          "the results of the test run.");
+
+ABSL_FLAG(std::string, print_report, "latency",
+          "How to dump a summary of the run results after completion. Options "
+          "are \"latency\", \"all\" or empty string for no printing.");
 
 namespace litert::testing {
 
@@ -120,6 +124,21 @@ Expected<AtsConf::ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<AtsConf::PrintReportT> ParsePrintReport() {
+  const auto print_report_flag = absl::GetFlag(FLAGS_print_report);
+  if (print_report_flag == "latency") {
+    return AtsConf::PrintReportT::kLatency;
+  } else if (print_report_flag == "all") {
+    return AtsConf::PrintReportT::kAll;
+  } else if (print_report_flag.empty()) {
+    return AtsConf::PrintReportT::kNone;
+  } else {
+    return Error(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrFormat("Unknown print report: %s", print_report_flag.c_str()));
+  }
+}
+
 void Setup(const AtsConf& options) {
   if (options.Quiet()) {
     LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
@@ -143,26 +162,18 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto quiet = absl::GetFlag(FLAGS_quiet);
   auto iters_per_test = absl::GetFlag(FLAGS_iters_per_test);
   auto max_ms_per_test = absl::GetFlag(FLAGS_max_ms_per_test);
-  std::chrono::milliseconds max_ms_per_test_opt(
-      std::chrono::milliseconds::max());
+  std::chrono::milliseconds max_ms_per_test_opt(std::chrono::seconds(10));
   if (max_ms_per_test > 0) {
     max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
   }
   auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
-  auto capture_latency_opt = absl::GetFlag(FLAGS_capture_latency);
-  CaptureLatency capture_latency;
-  if (capture_latency_opt == "print") {
-    capture_latency = PrintLatency();
-  } else if (capture_latency_opt == "none" || capture_latency_opt.empty()) {
-    capture_latency = std::monostate();
-  } else {
-    capture_latency = capture_latency_opt;
-  }
+  LITERT_ASSIGN_OR_RETURN(auto print_report, ParsePrintReport());
+  auto save_report = absl::GetFlag(FLAGS_save_report);
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               f16_range_for_f32, data_seed, iters_per_test,
-              std::move(max_ms_per_test_opt), fail_on_timeout,
-              std::move(capture_latency));
+              std::move(max_ms_per_test_opt), fail_on_timeout, print_report,
+              std::move(save_report));
   Setup(res);
   return res;
 }

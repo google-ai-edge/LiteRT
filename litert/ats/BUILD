@@ -38,6 +38,7 @@ cc_test(
     # TODO: Copybara rewrite the gunit flags and remove this tag.
     tags = ["no_oss"],
     deps = [
+        ":capture",
         ":configure",
         ":fixture",
         ":register",
@@ -76,8 +77,10 @@ cc_library(
 
 cc_library(
     name = "executor",
+    testonly = True,
     hdrs = ["executor.h"],
     deps = [
+        ":capture",
         "//litert/c:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -96,6 +99,7 @@ cc_library(
     testonly = True,
     hdrs = ["register.h"],
     deps = [
+        ":capture",
         ":configure",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -132,6 +136,7 @@ cc_library(
     testonly = True,
     hdrs = ["fixture.h"],
     deps = [
+        ":capture",
         ":configure",
         ":executor",
         "//litert/c:litert_common",
@@ -174,19 +179,26 @@ litert_device_test(
 cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
-    data = ["//litert/test:testdata/simple_model.tflite"],
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+        "//litert/vendors/examples:example_dispatch_so",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
     deps = [
+        ":capture",
         ":configure",
         ":fixture",
         ":register",
+        "//litert/c:litert_op_code",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/test:common",
+        "//litert/test/generators",
         "//litert/test/generators:common",
-        "//litert/test/generators:no_op",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],

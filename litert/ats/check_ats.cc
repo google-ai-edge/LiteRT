@@ -14,21 +14,26 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <sstream>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/capture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/fixture.h"
 #include "litert/ats/register.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/test/common.h"
 #include "litert/test/generators/common.h"
-#include "litert/test/generators/no_op.h"
+#include "litert/test/generators/generators.h"
 
 // Simple validatino logic for the registration of ATS tests. We cannot use
 // gtest constructs for this.
@@ -37,20 +42,71 @@ namespace litert::testing {
 namespace {
 
 int CheckAts() {
-  const std::string do_register = "(ats_1_|ats_2_)";
-  absl::SetFlag(&FLAGS_do_register, do_register);
   const std::string extra_models_path = GetLiteRtPath("test/testdata/");
   absl::SetFlag(&FLAGS_extra_models, extra_models_path);
   size_t test_id = 0;
-  auto options = litert::testing::AtsConf::ParseFlagsAndDoSetup();
-  ABSL_CHECK(options);
-  RegisterExtraModels<AtsTest>(test_id, *options);
-  static constexpr auto kIters = 1;
-  RegisterCombinations<AtsTest, NoOp, SizeListC<1>, TypeList<float, int32_t>>(
-      kIters, test_id, *options);
-  const auto* unit_test = ::testing::UnitTest::GetInstance();
-  ABSL_CHECK_EQ(unit_test->total_test_count(), 3);
-  return 0;
+  AtsCapture cap;
+
+  // Cpu.
+  {
+    auto options = litert::testing::AtsConf::ParseFlagsAndDoSetup();
+    ABSL_CHECK(options);
+    // TODO(lukeboyer): Re-enable once the cpu reference is supported.
+    // RegisterExtraModels<AtsTest>(test_id, *options, cap);
+    static constexpr auto kIters = 1;
+    RegisterCombinations<AtsTest, NoOp, SizeListC<1>, TypeList<float, int32_t>>(
+        kIters, test_id, *options, cap);
+    const auto* unit_test = ::testing::UnitTest::GetInstance();
+    ABSL_CHECK_EQ(unit_test->total_test_count(), 2);
+  }
+
+  // Npu.
+  {
+    absl::SetFlag(&FLAGS_backend, "npu");
+    absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
+    absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
+    auto options = litert::testing::AtsConf::ParseFlagsAndDoSetup();
+    ABSL_CHECK(options);
+    // TODO(lukeboyer): Re-enable once the cpu reference is supported..
+    // RegisterExtraModels<AtsTest>(test_id, *options, cap);
+    static constexpr auto kIters = 1;
+    RegisterCombinations<AtsTest, BinaryNoBroadcast, SizeListC<1>,
+                         TypeList<float>,
+                         OpCodeListC<kLiteRtOpCodeTflSub, kLiteRtOpCodeTflAdd>>(
+        kIters, test_id, *options, cap);
+    const auto* unit_test = ::testing::UnitTest::GetInstance();
+    ABSL_CHECK_EQ(unit_test->total_test_count(), 4);
+  }
+
+  const auto res = RUN_ALL_TESTS();
+
+  ABSL_CHECK_EQ(cap.Entries().size(), test_id);
+  auto it = cap.Entries().begin();
+  const auto& entry1 = *it++;
+  ABSL_CHECK_EQ(entry1.accelerator.a_type, AtsConf::ExecutionBackend::kCpu);
+  ABSL_CHECK_EQ(entry1.run.status, AtsCaptureEntry::RunDetail::Status::kOk);
+
+  const auto& entry2 = *it++;
+  ABSL_CHECK_EQ(entry2.accelerator.a_type, AtsConf::ExecutionBackend::kCpu);
+  ABSL_CHECK_EQ(entry2.run.status, AtsCaptureEntry::RunDetail::Status::kOk);
+
+  const auto& entry3 = *it++;
+  ABSL_CHECK_EQ(entry3.accelerator.a_type, AtsConf::ExecutionBackend::kNpu);
+  ABSL_CHECK_EQ(entry3.accelerator.is_fully_accelerated, true);
+  ABSL_CHECK_EQ(entry3.run.status, AtsCaptureEntry::RunDetail::Status::kOk);
+
+  const auto& entry4 = *it++;
+  ABSL_CHECK_EQ(entry4.accelerator.a_type, AtsConf::ExecutionBackend::kNpu);
+  ABSL_CHECK_EQ(entry4.accelerator.is_fully_accelerated, false);
+  ABSL_CHECK_EQ(entry4.run.status, AtsCaptureEntry::RunDetail::Status::kOk);
+
+  std::ostringstream s;
+  cap.Csv(s);
+  const std::vector<std::string> split = absl::StrSplit(s.str(), '\n');
+  ABSL_CHECK_EQ(split.size(), test_id + 2);
+  ABSL_CHECK(split.back().empty());
+
+  return res;
 }
 
 }  // namespace

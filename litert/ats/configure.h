@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CONFIGURE_H_
 
 #include <chrono>  // NOLINT
+#include <fstream>
 #include <optional>
 #include <regex>  // NOLINT
 #include <string>
@@ -70,19 +71,18 @@ ABSL_DECLARE_FLAG(int64_t, max_ms_per_test);
 // Whether to fail the test if the test times out.
 ABSL_DECLARE_FLAG(bool, fail_on_timeout);
 
-// If and how to capture latency data, "none", "print", or a path where
-// serialized data will be written..
-ABSL_DECLARE_FLAG(std::string, capture_latency);
+// Where to save report CSV.
+ABSL_DECLARE_FLAG(std::string, save_report);
+
+// How to dump summary after completion.
+ABSL_DECLARE_FLAG(std::string, print_report);
 
 namespace litert::testing {
 
 class AtsConf {
  public:
   using SeedMap = absl::flat_hash_map<std::string, int>;
-  struct PrintLatency {};
-  using CaptureLatency =
-      std::variant<std::monostate, PrintLatency, std::string>;
-
+  enum class PrintReportT { kLatency, kAll, kNone };
   enum class ExecutionBackend { kCpu, kGpu, kNpu };
 
   // Parse flags into this class and do any global setup needed which depends
@@ -136,13 +136,26 @@ class AtsConf {
   // Whether to fail the test if the test times out.
   bool FailOnTimeout() const { return fail_on_timeout_; }
 
-  // If and how to capture latency data.
-  const CaptureLatency& Latency() const { return capture_latency_; }
-  bool ShouldPrintLatency() const {
-    return std::holds_alternative<PrintLatency>(capture_latency_);
+  // Save the results of the test run to a CSV file if the user has requested.
+  template <typename T>
+  void SaveReport(const T& capture) const {
+    if (save_report_.empty()) {
+      return;
+    }
+    std::ofstream out(save_report_);
+    capture.Csv(out);
   }
-  bool ShouldCaptureLatency() const {
-    return std::holds_alternative<std::string>(capture_latency_);
+
+  // Dump the results of the test to user.
+  template <typename T>
+  void PrintReport(const T& capture) const {
+    if (print_report_ == PrintReportT::kNone) {
+      return;
+    } else if (print_report_ == PrintReportT::kLatency) {
+      capture.PrintLatency(std::cerr);
+    } else {
+      capture.Print(std::cerr);
+    }
   }
 
   template <typename Sink>
@@ -167,7 +180,8 @@ class AtsConf {
                    std::string extra_models, bool f16_range_for_f32,
                    std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
-                   bool fail_on_timeout, CaptureLatency capture_latency)
+                   bool fail_on_timeout, PrintReportT print_report,
+                   std::string save_report)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -181,13 +195,15 @@ class AtsConf {
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
         fail_on_timeout_(fail_on_timeout),
-        capture_latency_(std::move(capture_latency)) {
+        print_report_(print_report),
+        save_report_(std::move(save_report)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
   }
 
   SeedMap seeds_for_params_;
+
   ExecutionBackend backend_;
   bool quiet_;
   std::string dispatch_dir_;
@@ -200,7 +216,9 @@ class AtsConf {
   size_t iters_per_test_;
   std::chrono::milliseconds max_ms_per_test_;
   bool fail_on_timeout_;
-  CaptureLatency capture_latency_;
+  PrintReportT print_report_;
+  std::string save_report_;
+
   RandomTensorDataBuilder data_builder_;
 };
 
