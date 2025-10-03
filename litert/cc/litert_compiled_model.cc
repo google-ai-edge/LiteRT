@@ -21,8 +21,10 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -44,7 +46,7 @@ Expected<size_t> CompiledModel::FindInputIndex(
   LITERT_ASSIGN_OR_RETURN(const Signature& signature,
                           model_.GetSignature(signature_index));
   const std::vector<absl::string_view>& input_names = signature.InputNames();
-  auto it = std::find(input_names.begin(), input_names.end(), input_name);
+  auto it = absl::c_find(input_names, input_name);
   if (it != input_names.end()) {
     return std::distance(input_names.begin(), it);
   }
@@ -56,7 +58,7 @@ Expected<size_t> CompiledModel::FindOutputIndex(
   LITERT_ASSIGN_OR_RETURN(const Signature& signature,
                           model_.GetSignature(signature_index));
   const std::vector<absl::string_view>& output_names = signature.OutputNames();
-  auto it = std::find(output_names.begin(), output_names.end(), output_name);
+  auto it = absl::c_find(output_names, output_name);
   if (it != output_names.end()) {
     return std::distance(output_names.begin(), it);
   }
@@ -249,6 +251,21 @@ Expected<bool> CompiledModel::IsFullyAccelerated() {
   LITERT_RETURN_IF_ERROR(
       LiteRtCompiledModelIsFullyAccelerated(Get(), &fully_accelerated));
   return fully_accelerated;
+}
+
+bool CompiledModel::CheckCancelledWrapper(void* data) {
+  CompiledModel* model = static_cast<CompiledModel*>(data);
+  if (model && model->check_cancelled_func_) {
+    return model->check_cancelled_func_();
+  }
+  return false;
+}
+
+void CompiledModel::SetCancellationFunction(
+    absl::AnyInvocable<bool()> check_cancelled_func) {
+  check_cancelled_func_ = std::move(check_cancelled_func);
+  LiteRtSetCompiledModelCancellationFunction(Get(), this,
+                                             &CheckCancelledWrapper);
 }
 
 }  // namespace litert

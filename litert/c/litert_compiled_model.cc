@@ -146,6 +146,17 @@ LiteRtStatus LiteRtRunCompiledModelAsync(LiteRtCompiledModel compiled_model,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
+    LiteRtCompiledModel compiled_model, void* data,
+    bool (*check_cancelled_func)(void*)) {
+  if (!compiled_model || !check_cancelled_func) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  compiled_model->SetCancellationFunction(data, check_cancelled_func);
+  return kLiteRtStatusOk;
+}
+
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model) {
   delete compiled_model;
 }

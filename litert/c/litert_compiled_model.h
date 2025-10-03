@@ -133,6 +133,22 @@ LiteRtStatus LiteRtRunCompiledModelAsync(
     size_t num_input_buffers, LiteRtTensorBuffer* input_buffers,
     size_t num_output_buffers, LiteRtTensorBuffer* output_buffers, bool* async);
 
+// Sets a callback function that will be called periodically during model
+// execution to check if the execution should be cancelled.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - data: user-provided data that will be passed to the callback function.
+// - check_cancelled_func: callback function that returns true if execution
+//   should be cancelled, false otherwise.
+//
+// Note: Either use this callback-based mechanism or the non callback version
+// with LiteRtEnableCompiledModelCancellation/LiteRtCancelCompiledModel, but not
+// both.
+LiteRtStatus LiteRtSetCompiledModelCancellationFunction(
+    LiteRtCompiledModel compiled_model, void* data,
+    bool (*check_cancelled_func)(void*));
+
 // Destroy a owned LiteRtCompiledModel object.
 void LiteRtDestroyCompiledModel(LiteRtCompiledModel compiled_model);
 

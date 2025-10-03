@@ -206,6 +206,9 @@ typedef enum {
   kLiteRtStatusErrorUnknown = 9,
   kLiteRtStatusErrorAlreadyExists = 10,
 
+  // Inference progression errors.
+  kLiteRtStatusCancelled = 100,
+
   // File and loading related errors.
   kLiteRtStatusErrorFileIO = 500,
   kLiteRtStatusErrorInvalidFlatbuffer = 501,

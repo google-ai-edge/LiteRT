@@ -29,6 +29,8 @@
 #include <utility>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
+
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
 #endif
@@ -1052,6 +1054,9 @@ Expected<void> LiteRtCompiledModelT::Run(
   buffer_context_->SetAsyncExecutionMode(async);
 
   if (auto res = runner->Invoke(); res != kTfLiteOk) {
+    if (res == kTfLiteCancelled) {
+      return Unexpected(kLiteRtStatusCancelled, "Execution was cancelled");
+    }
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to invoke");
   }
   // Copy constant data to constant output tensors after invoke
@@ -1383,4 +1388,28 @@ litert::Expected<::tflite::Interpreter*> GetInterpreter(
                               "Interpreter is null");
   }
   return compiled_model->interp_.get();
+}
+
+bool LiteRtCompiledModelT::CheckCancelledWrapper(void* data) {
+  auto* model = static_cast<LiteRtCompiledModelT*>(data);
+  if (model && model->check_cancelled_func_cpp_) {
+    return model->check_cancelled_func_cpp_();
+  }
+  return false;
+}
+
+void LiteRtCompiledModelT::SetCancellationFunction(
+    absl::AnyInvocable<bool()> check_cancelled_func) {
+  check_cancelled_func_cpp_ = std::move(check_cancelled_func);
+  check_cancelled_func_ = nullptr;
+  interp_->SetCancellationFunction(this, &CheckCancelledWrapper);
+}
+
+void LiteRtCompiledModelT::SetCancellationFunction(
+    void* data, bool (*check_cancelled_func)(void*)) {
+  check_cancelled_func_ = check_cancelled_func;
+  check_cancelled_func_cpp_ = nullptr;
+
+  // Set the cancellation function on the underlying TFLite interpreter
+  interp_->SetCancellationFunction(data, check_cancelled_func);
 }

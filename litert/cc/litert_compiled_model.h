@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
@@ -411,6 +412,24 @@ class CompiledModel
     return Profiler(profiler, OwnHandle::kNo);
   };
 
+  // Sets a callback function that will be called after every node/op
+  // during model execution to check if the execution should be cancelled.
+  // This behavior is defined here:
+  // tflite/core/subgraph.cc;l=1746-1750?q=tflite%20subgraph
+  // The callback should return true if execution should be cancelled.
+  // Note: Use either this callback-based mechanism or the non-callback version
+  // (see below) with EnableCancellation/Cancel, but not both.
+  void SetCancellationFunction(void* data,
+                               bool (*check_cancelled_func)(void*)) {
+    LiteRtSetCompiledModelCancellationFunction(Get(), data,
+                                               check_cancelled_func);
+  }
+
+  // Sets a callback function for checking cancellation during execution.
+  // The callback will be called periodically during model execution. This is a
+  // C++-friendly version of SetCancellationFunction.
+  void SetCancellationFunction(absl::AnyInvocable<bool()> check_cancelled_func);
+
   // Resizes the specified input tensor to support dynamic shapes.
   //
   // This function allows resizing input tensors at runtime, similar to TFLite's
@@ -600,6 +619,8 @@ class CompiledModel
   }
 
  private:
+  static bool CheckCancelledWrapper(void* data);
+
   // Returns the signature input index for the given input tensor name.
   Expected<size_t> FindInputIndex(size_t signature_index,
                                   absl::string_view input_name) const;
@@ -658,6 +679,7 @@ class CompiledModel
 
   LiteRtEnvironment env_;
   Model model_;
+  absl::AnyInvocable<bool()> check_cancelled_func_;
 };
 
 }  // namespace litert

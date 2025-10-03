@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 #define ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -26,6 +27,7 @@
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -175,7 +177,27 @@ class LiteRtCompiledModelT {
   friend litert::Expected<::tflite::Interpreter*> GetInterpreter(
       LiteRtCompiledModelT* compiled_model);
 
+  // Cancellation APIs
+
+  // Enables cancellation for the compiled model. Once enabled, model execution
+  // can be cancelled from any thread using Cancel().
+  litert::Expected<void> EnableCancellation();
+
+  // Sets a callback function for checking cancellation during execution.
+  // The callback will be called periodically during model execution.
+  void SetCancellationFunction(void* data, bool (*check_cancelled_func)(void*));
+
+  // Sets a callback function for checking cancellation during execution.
+  // The callback will be called periodically during model execution. This is a
+  // C++-friendly version of SetCancellationFunction.
+  void SetCancellationFunction(absl::AnyInvocable<bool()> check_cancelled_func);
+
+  // Cancels an ongoing model execution. Can be called from any thread.
+  // Returns an error if cancellation is not enabled.
+  litert::Expected<void> Cancel();
+
  private:
+  static bool CheckCancelledWrapper(void* data);
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(
       const TfLiteTensor* tensor, absl::Span<const int> new_shape);
@@ -362,6 +384,10 @@ class LiteRtCompiledModelT {
 
   // The error reporter used by the compiled model
   std::unique_ptr<tflite::ErrorReporter> error_reporter_;
+
+  // Cancellation support
+  bool (*check_cancelled_func_)(void*) = nullptr;
+  absl::AnyInvocable<bool()> check_cancelled_func_cpp_;
 };
 
 #endif  // ODML_LITERT_LITERT_RUNTIME_COMPILED_MODEL_H_

@@ -470,7 +470,6 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
-        ":litert_custom_op_kernel",
         ":litert_environment",
         ":litert_expected",
         ":litert_handle",
@@ -484,11 +483,12 @@ cc_library(
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_environment",
         "//litert/c:litert_metrics",
-        "//litert/c:litert_model",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
@@ -1340,7 +1340,6 @@ cc_library(
         "//litert/cc/options:litert_mediatek_options.h",
         "//litert/cc/options:litert_qualcomm_options.h",
         "//litert/cc/options:litert_runtime_options.h",
-    ] + [
         # Other headers needed by the C++ API headers.
         "//litert/c:c_api_headers",
         "//litert/c/internal:internal_headers",
@@ -1358,6 +1357,8 @@ cc_library(
     ],
     deps = [
         # C++ API targets.
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/functional:any_invocable",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",
         "//litert/cc/dynamic_runtime:litert_environment",
@@ -1370,7 +1371,6 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_profiler",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
-    ] + [
         # C++ Options API targets.
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
         "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
@@ -1378,7 +1378,6 @@ cc_library(
         "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
-    ] + [
         # Other (static) C++ API targets.
         ":litert_any",
         ":litert_expected",
@@ -1389,10 +1388,6 @@ cc_library(
         ":litert_element_type",
         ":litert_layout",
         ":litert_environment_options",
-    ] + [
-        "//tflite/core/api",
-        "//tflite/profiling:memory_info",
-        "//tflite/profiling:profile_buffer",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:inlined_vector",
@@ -1404,6 +1399,9 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
+        "//tflite/core/api",
+        "//tflite/profiling:memory_info",
+        "//tflite/profiling:profile_buffer",
     ] + gles_headers(),
 )
 
