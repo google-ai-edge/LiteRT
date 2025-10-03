@@ -57,9 +57,12 @@ cc_library(
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@com_google_absl//absl/strings:str_format",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 
@@ -259,11 +262,13 @@ cc_library(
         "notap",
     ],
     deps = [
+        ":neuron_utils",
         ":operand_map",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 

@@ -38,6 +38,9 @@ class SocModel(StrEnum):
   MT6985 = "MT6985"
   MT6989 = "MT6989"
   MT6991 = "MT6991"
+  MT8171 = "MT8171"
+  MT8188 = "MT8188"
+  MT8189 = "MT8189"
 
 
 class SocManufacturer(StrEnum):

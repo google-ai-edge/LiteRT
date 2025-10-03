@@ -40,10 +40,12 @@ litert_dynamic_lib(
         ":compile_model",
         ":create_model",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_model_predicates",
         "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/mediatek:neuron_adapter_api",
@@ -53,6 +55,7 @@ litert_dynamic_lib(
         "//litert/vendors/mediatek/schema:neuron_litert_schema",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
 

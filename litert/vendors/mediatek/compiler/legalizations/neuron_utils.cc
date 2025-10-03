@@ -14,6 +14,22 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/neuron_utils.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <vector>
+
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_logging.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_model.h"
+#include "litert/vendors/mediatek/neuron_adapter_api.h"
+
 namespace litert::mediatek {
 
 Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
@@ -44,6 +60,9 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
                      "Int16 is not supported.");
       }
       break;
+    case ElementType::UInt8:
+      mtk_type = NEURON_TENSOR_QUANT8_ASYMM;
+      break;
     case ElementType::Int8:
       if (use_int8_asymm_signed) {
         mtk_type = NEURON_TENSOR_QUANT8_ASYMM_SIGNED;
@@ -71,7 +90,8 @@ Expected<NeuronTensorType> GetNeuronTensorType(const Tensor& t,
       break;
     case ElementType::Int64:
       if (t.HasWeights()) {
-        if (t.QTypeId() == kLiteRtQuantizationPerTensor) {
+        if (t.QTypeId() == kLiteRtQuantizationPerTensor ||
+            t.QTypeId() == kLiteRtQuantizationNone) {
           mtk_type = NEURON_TENSOR_INT32;
         } else if (t.QTypeId() == kLiteRtQuantizationPerChannel) {
           mtk_type = NEURON_EXT_TENSOR_INT32_SYMM_PER_CHANNEL;
