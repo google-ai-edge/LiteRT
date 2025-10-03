@@ -52,26 +52,56 @@ The `CustomOpDispatcher` provides:
 
 ### Core Implementation
 
-- **`[runtime/custom_op_dispatcher.h](../litert/runtime/custom_op_dispatcher.h)`**: Main dispatcher class header
-- **`[runtime/custom_op_dispatcher.cc](../litert/runtime/custom_op_dispatcher.cc)`**: Implementation bridging LiteRT to
-  TFLite
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[runtime/custom_op_dispatcher.h](../litert/runtime/custom_op_dispatcher.h)**:
+  Main dispatcher class header
+
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[runtime/custom_op_dispatcher.cc](../litert/runtime/custom_op_dispatcher.cc)**:
+  Implementation bridging LiteRT to TFLite
 
 ### API Headers
 
-- **`[c/litert_custom_op_kernel.h](../litert/c/litert_custom_op_kernel.h)`**: C API for custom op kernel interface
-- **`[cc/litert_custom_op_kernel.h](../litert/cc/litert_custom_op_kernel.h)`**: C++ wrapper providing object-oriented
-  interface
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[c/litert_custom_op_kernel.h](../litert/c/litert_custom_op_kernel.h)**: C
+  API for custom op kernel interface
+
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[cc/litert_custom_op_kernel.h](../litert/cc/litert_custom_op_kernel.h)**:
+  C++ wrapper providing object-oriented interface
 
 ### Options System
 
-- **`[core/options.h](../litert/core/options.h)`**: Core options structure with `CustomOpOption`
-- **`[c/litert_options.h](../litert/c/options.h)`**: C API for managing compilation options
-- **`[cc/litert_options.h](../litert/cc/options.h)`**: C++ wrapper for options management
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[core/options.h](../litert/core/options.h)**: Core options structure with
+  `CustomOpOption`
+
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[c/litert_options.h](../litert/c/options.h)**: C API for managing
+  compilation options
+
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[cc/litert_options.h](../litert/cc/options.h)**: C++ wrapper for options
+  management
 
 ### Test Examples
 
-- **`[cc/litert_custom_op_test.cc](../litert/cc/litert_custom_op_test.cc)`**: C++ API usage example
-- **`[c/litert_custom_op_test.cc](../litert/c/litert_custom_op_test.cc)`**: C API usage example
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[cc/litert_custom_op_test.cc](../litert/cc/litert_custom_op_test.cc)**: C++
+  API usage example
+
+<!-- disableFinding(LINK_RELATIVE_G3DOC) -->
+
+- **[c/litert_custom_op_test.cc](../litert/c/litert_custom_op_test.cc)**: C API
+  usage example
 
 ## API Reference
 
