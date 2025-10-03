@@ -167,6 +167,34 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["litert_intel_openvino_options.cc"],
+    hdrs = ["litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
+)
+
+cc_test(
+    name = "litert_intel_openvino_options_test",
+    srcs = ["litert_intel_openvino_options_test.cc"],
+    deps = [
+        ":litert_intel_openvino_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_runtime_options",
     srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],

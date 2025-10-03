@@ -130,6 +130,21 @@ cc_library(
     ],
 )
 
+# INTEL OPENVINO ##############################################################################
+
+cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["litert_intel_openvino_options.cc"],
+    hdrs = ["litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/core/cache:hash_util",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 cc_library(
     name = "litert_gpu_options",
     srcs = ["litert_gpu_options.cc"],
