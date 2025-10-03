@@ -185,3 +185,62 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+# INTEL OPENVINO ##############################################################################
+
+cc_library(
+    name = "intel_openvino_flags",
+    srcs = ["intel_openvino_flags.cc"],
+    hdrs = ["intel_openvino_flags.h"],
+    copts = [
+        "-DINCLUDE_INTEL_OPENVINO_COMPILE_FLAGS",
+        "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "intel_openvino_flags_with_dynamic_runtime",
+    srcs = ["intel_openvino_flags.cc"],
+    hdrs = ["intel_openvino_flags.h"],
+    copts = [
+        "-DINCLUDE_INTEL_OPENVINO_COMPILE_FLAGS",
+        "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
+    ],
+    deps = [
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "intel_openvino_flags_test",
+    srcs = ["intel_openvino_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_INTEL_OPENVINO_COMPILE_FLAGS",
+        "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
+    ],
+    deps = [
+        ":intel_openvino_flags",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:marshalling",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
