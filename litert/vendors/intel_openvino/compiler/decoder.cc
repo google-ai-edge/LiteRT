@@ -194,6 +194,7 @@ constexpr const char* GetOvOpType(const LiteRtOpCode op_code) {
   for (const auto& entry : kLitertOvMap) {
     if (entry.first == op_code) return entry.second;
   }
+  LITERT_LOG(LITERT_WARNING, "op_code(%d) not supported", op_code);
   return "";
 }
 
