@@ -40,8 +40,7 @@ Expected<size_t> GetNumElements(absl::Span<T> dimensions) {
   for (auto i = 0; i < dimensions.size(); ++i) {
     auto dim = dimensions[i];
     if (dim < 0) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Unexpected negative dimension");
+      dim = 1;
     } else if (dim == 0) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument,
                         "Unexpected 0 dimension");
