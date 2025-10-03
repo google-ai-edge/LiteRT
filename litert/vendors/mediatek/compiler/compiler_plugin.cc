@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/str_format.h"   // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -78,6 +78,9 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt6989", "mt6989"},
     {"mt6991", "mt6991"},
     {"mt6993", "mt6993"},
+    {"mt8171", "mt8171"},
+    {"mt8188", "mt8188"},
+    {"mt8189", "mt8189"},
 };
 
 constexpr LiteRtOpCode kSupportedOps[] = {
@@ -119,6 +122,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflRelu,
     kLiteRtOpCodeTflAbs,
     kLiteRtOpCodeTflGreater,
+    kLiteRtOpCodeTflMinimum,
     kLiteRtOpCodeShloComposite,
 };
 // clang-format on
