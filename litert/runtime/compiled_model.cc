@@ -31,6 +31,8 @@
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 
+#include "litert/c/litert_layout.h"
+
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
 #endif
@@ -744,6 +746,39 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
   }
 
   return GetTensorBufferRequirements(output_tensor);
+}
+
+Expected<std::vector<LiteRtLayout>> LiteRtCompiledModelT::GetOutputTensorShapes(
+    absl::string_view signature_key, bool update_allocation) {
+  auto runner = GetSignatureRunner(signature_key);
+  if (runner == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to get signature runner");
+  }
+  if (update_allocation) {
+    if (auto res = runner->AllocateTensors(); res != kTfLiteOk) {
+      if (error_reporter_) {
+        error_reporter_->Report("Failed to allocate tensors for execution");
+      }
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to allocate tensors");
+    }
+  }
+  auto output_names = runner->subgraph_output_names();
+  std::vector<LiteRtLayout> output_layouts;
+  for (int i = 0; i < output_names.size(); ++i) {
+    const TfLiteTensor* output_tensor = runner->output_tensor(output_names[i]);
+    if (output_tensor == nullptr) {
+      return Unexpected(kLiteRtStatusErrorNotFound,
+                        "Failed to get output tensor");
+    }
+    LiteRtLayout layout;
+    layout.rank = output_tensor->dims->size;
+    memcpy(layout.dimensions, output_tensor->dims->data,
+           layout.rank * sizeof(int));
+    output_layouts.push_back(layout);
+  }
+  return output_layouts;
 }
 
 tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(

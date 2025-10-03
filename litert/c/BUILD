@@ -432,6 +432,7 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_environment",
+        ":litert_layout",
         ":litert_logging",
         ":litert_metrics",
         ":litert_model",
@@ -458,6 +459,7 @@ cc_test(
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_environment_options",
+        ":litert_layout",
         ":litert_logging",
         ":litert_model",
         ":litert_options",

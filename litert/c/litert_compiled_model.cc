@@ -23,10 +23,12 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
@@ -93,6 +95,26 @@ LiteRtStatus LiteRtGetCompiledModelEnvironment(
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtLayout* layout_vector, bool update_allocation) {
+  if (!compiled_model || !layout_vector) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(std::vector<LiteRtLayout> output_layouts,
+                          compiled_model->GetOutputTensorShapes(
+                              signature_index, update_allocation));
+  size_t tensors_size = output_layouts.size();
+  if (tensors_size == 0) {
+    layout_vector = nullptr;
+    return kLiteRtStatusOk;
+  }
+  // copy data from output_layouts to layout_vector
+  memcpy(layout_vector, output_layouts.data(),
+         tensors_size * sizeof(LiteRtLayout));
   return kLiteRtStatusOk;
 }
 

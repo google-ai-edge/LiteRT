@@ -31,6 +31,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -116,6 +117,22 @@ class LiteRtCompiledModelT {
         GetOutputBufferRequirements(*signature_keys_[signature_index],
                                     output_index));
     return const_cast<LiteRtTensorBufferRequirements>(requirements);
+  }
+
+  // Returns the shapes of all output tensors for the given signature key.
+  litert::Expected<std::vector<LiteRtLayout>> GetOutputTensorShapes(
+      absl::string_view signature_key, bool update_allocation = false);
+
+  // Returns the shapes of all output tensors for the given signature index.
+  litert::Expected<std::vector<LiteRtLayout>> GetOutputTensorShapes(
+      size_t signature_index, bool update_allocation = false) {
+    if (signature_index >= signature_keys_.size()) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorIndexOOB,
+          "Signature index is out of range of signature keys");
+    }
+    return GetOutputTensorShapes(*signature_keys_[signature_index],
+                                 update_allocation);
   }
 
   // Runs the model of the given signature with the provided input/output
