@@ -19,8 +19,11 @@ def _symlink_files_impl(ctx):
     flatten = ctx.attr.flatten
     strip_prefix = ctx.attr.strip_prefix
     mapping = ctx.attr.mapping
+    excluded_basenames = [f.basename for f in ctx.files.exclude_files]
     outputs = []
     for src in ctx.files.srcs:
+        if src.basename in excluded_basenames:
+            continue
         src_path = src.short_path
         if src_path in mapping:
             file_dst = mapping[src_path]
@@ -55,6 +58,10 @@ symlink_files = rule(
         "srcs": attr.label_list(
             allow_files = True,
             doc = "Files to symlink into `dst`.",
+        ),
+        "exclude_files": attr.label_list(
+            allow_files = True,
+            doc = "Files to exclude from symlinking based on their basename.",
         ),
         "flatten": attr.bool(
             default = False,

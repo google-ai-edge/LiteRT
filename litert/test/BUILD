@@ -45,6 +45,20 @@ symlink_files(
 )
 # copybara:comment_end
 
+# copybara:uncomment_begin(internal)
+# filegroup(name = "ats_test_data")
+# copybara:uncomment_end
+
+# copybara:comment_begin(external)
+symlink_files(
+    name = "ats_test_data",
+    srcs = ["@ats_models"],
+    dst = "testdata",
+    exclude_files = glob(["testdata/*.tflite"]),
+    flatten = True,
+)
+# copybara:comment_end
+
 filegroup(
     name = "tflite_test_data",
     srcs = glob(["testdata/*.tflite"]),

@@ -23,3 +23,10 @@ def models():
         local_path_env = "LITERT_MODELS",
         url = "https://storage.googleapis.com/litert/models.tar.gz",
     )
+
+    configurable_repo(
+        name = "ats_models",
+        build_file = "@//third_party/models:ats_models.BUILD",
+        local_path_env = "LITERT_ATS_MODELS",
+        url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
+    )
