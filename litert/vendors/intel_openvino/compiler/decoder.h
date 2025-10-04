@@ -20,7 +20,7 @@
 #include <string>
 #include <vector>
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 
@@ -36,26 +36,26 @@ class DecoderOperation
           input_tensor_info,
       std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo>
           output_tensor_info,
-      const litert::Op &litert_op, size_t node_index);
+      const litert::Op& litert_op, size_t node_index);
   virtual ~DecoderOperation() = default;
 
   // DecoderBase Interface implementations :
   /// \brief Get attribute value by name
-  ov::Any get_attribute(const std::string &name) const override;
+  ov::Any get_attribute(const std::string& name) const override;
   /// \brief Get a number of inputs
   size_t get_input_size() const override { return input_tensor_info_.size(); }
   /// \brief Get a producer name and its output port index
-  void get_input_node(size_t input_port_idx, std::string &producer_name,
-                      std::string &producer_output_port_name,
-                      size_t &producer_output_port_index) const override {
+  void get_input_node(size_t input_port_idx, std::string& producer_name,
+                      std::string& producer_output_port_name,
+                      size_t& producer_output_port_index) const override {
     // TODO: Needs implementation ? Benchmark/demo app worked fine even without
     // it.
     return;
   }
   /// \brief Get operation type
-  const std::string &get_op_type() const override { return op_type_; }
+  const std::string& get_op_type() const override { return op_type_; }
   /// \brief Get node name
-  const std::string &get_op_name() const override { return op_name_; }
+  const std::string& get_op_name() const override { return op_name_; }
 
   // DecoderBaseOperation Interface implementations :
   /// \brief Get input tensor name by index
@@ -90,7 +90,7 @@ class DecoderOperation
   /// \brief Get a number of outputs
   size_t get_output_size() const override { return output_tensor_info_.size(); }
 
-  litert::Expected<ov::Any> fetch_attribute(const std::string &name) const;
+  litert::Expected<ov::Any> fetch_attribute(const std::string& name) const;
 
  private:
   std::string op_type_;
@@ -124,7 +124,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
   int64_t get_output_idx() const override { return output_index_; }
 
   /// \brief No attributes for tensor
-  ov::Any get_attribute(const std::string &name) const override {
+  ov::Any get_attribute(const std::string& name) const override {
     LITERT_LOG(LITERT_ERROR, "get_attribute not implemented");
     return ov::Any{};
   }
@@ -136,9 +136,9 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
   }
 
   /// \brief No input nodes for tensor
-  void get_input_node(size_t input_port_idx, std::string &producer_name,
-                      std::string &producer_output_port_name,
-                      size_t &producer_output_port_index) const override {
+  void get_input_node(size_t input_port_idx, std::string& producer_name,
+                      std::string& producer_output_port_name,
+                      size_t& producer_output_port_index) const override {
     LITERT_LOG(LITERT_ERROR, "get_input_node not implemented");
   }
 
@@ -146,7 +146,7 @@ class DecoderTensor : public ov::frontend::tensorflow_lite::DecoderBaseTensor {
   const std::string& get_op_type() const override { return op_type_; };
 
   /// \brief No operation name for tensor
-  const std::string &get_op_name() const override {
+  const std::string& get_op_name() const override {
     LITERT_LOG(LITERT_ERROR, "get_op_name not implemented");
     return op_name_;
   };

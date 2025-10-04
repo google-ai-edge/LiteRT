@@ -71,7 +71,6 @@ set(LITERT_CC_HEADERS
     litert_environment.h
     litert_environment_options.h
     litert_event.h
-    litert_logging.h
     litert_model_predicates.h
     litert_numerics.h
     litert_op_options.h

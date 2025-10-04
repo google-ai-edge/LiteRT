@@ -18,9 +18,9 @@
 
 #include <cstdint>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/event.h"
 

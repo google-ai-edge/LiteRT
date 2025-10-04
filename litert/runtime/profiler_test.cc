@@ -23,7 +23,7 @@
 #include <gtest/gtest.h>
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_profiler_event.h"
 #include "tflite/core/api/profiler.h"  // For tflite::Profiler::EventType
 
@@ -240,8 +240,7 @@ TEST(LiteRTProfiler, MaxEventsHandling) {
   // Depending on ProfileBuffer's implementation, it might store only
   // max_events. This test primarily ensures it doesn't fail with more events
   // than max_events. For a circular buffer of size 2, we'd expect E2 and E1|E3.
-  ASSERT_TRUE(events.size() <= max_events ||
-              !events.empty());
+  ASSERT_TRUE(events.size() <= max_events || !events.empty());
   if (events.size() == max_events) {
     bool found_e1 = false;
     bool found_e2 = false;

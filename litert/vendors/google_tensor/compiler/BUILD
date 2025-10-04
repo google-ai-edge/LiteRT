@@ -53,6 +53,7 @@ litert_dynamic_lib(
     ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",

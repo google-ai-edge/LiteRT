@@ -18,9 +18,9 @@
 #include <cstring>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/options.h"

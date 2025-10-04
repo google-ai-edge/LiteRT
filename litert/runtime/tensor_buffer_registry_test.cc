@@ -20,10 +20,10 @@
 #include <memory>
 
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_environment.h"

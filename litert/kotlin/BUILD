@@ -49,6 +49,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc/dynamic_runtime:litert_environment",
         "//tflite/java/jni",
@@ -67,6 +68,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
@@ -85,6 +87,7 @@ cc_library(
         ":litert_jni_common",
         ":litert_model_jni",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
@@ -102,6 +105,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//tflite/java/jni",
