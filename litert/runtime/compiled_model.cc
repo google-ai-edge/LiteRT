@@ -66,7 +66,9 @@
 #include "litert/core/cache/compilation_cache.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
+#if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/model/model_serialize.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/options.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/accelerator.h"
@@ -89,12 +91,12 @@
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
-#ifndef LITERT_NO_BUILTIN_OPS
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 #include "tflite/model_builder.h"
 
-#ifdef LITERT_NO_BUILTIN_OPS
+#if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
@@ -103,7 +105,9 @@ using ::litert::Expected;
 using ::litert::Unexpected;
 using ::litert::internal::DispatchDelegateOptions;
 using ::litert::internal::GetTensorIdentifier;
+#if !defined(LITERT_DISABLE_NPU)
 using ::litert::internal::SerializeModel;
+#endif  // !defined(LITERT_DISABLE_NPU)
 using ::litert::internal::TfLiteTensorIdentifier;
 
 namespace {
@@ -418,6 +422,10 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
 
   LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
 
+#if !LITERT_INCLUDE_NPU
+  return Unexpected(kLiteRtStatusErrorUnsupported,
+                    "Model reserialization requires NPU support");
+#else
   auto serialized = SerializeModel(std::move(model));
   if (!serialized) {
     return serialized.Error();
@@ -439,6 +447,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
 
   return {};
+#endif  // LITERT_INCLUDE_NPU
 }
 
 namespace {

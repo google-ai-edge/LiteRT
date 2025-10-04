@@ -29,7 +29,11 @@
 #include "tflite/converter/allocation.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_builder.h"
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
+#else
+#include "tflite/mutable_op_resolver.h"
+#endif  // LITERT_NO_BUILTIN_OPS
 #include "tflite/model_builder.h"
 #include "tflite/stderr_reporter.h"
 
@@ -55,7 +59,11 @@ TEST(GetModelBufWithByteCode, CreateInterpreter) {
       reinterpret_cast<const char*>(alloc->base()), alloc->bytes());
   ASSERT_NE(fb_model, nullptr);
 
+#if !defined(LITERT_NO_BUILTIN_OPS)
   tflite::ops::builtin::BuiltinOpResolver resolver;
+#else
+  tflite::MutableOpResolver resolver;
+#endif
   std::unique_ptr<tflite::Interpreter> interpreter;
   tflite::InterpreterBuilder(*fb_model, resolver)(&interpreter);
   EXPECT_NE(interpreter, nullptr);
@@ -97,7 +105,11 @@ TEST(GetModelBufWithByteCode, CreateInterpreterWithMultpleNpuNodes) {
       reinterpret_cast<const char*>(alloc->base()), alloc->bytes());
   ASSERT_NE(fb_model, nullptr);
 
+#ifndef LITERT_NO_BUILTIN_OPS
   tflite::ops::builtin::BuiltinOpResolver resolver;
+#else
+  tflite::MutableOpResolver resolver;
+#endif
   std::unique_ptr<tflite::Interpreter> interpreter;
   tflite::InterpreterBuilder(*fb_model, resolver)(&interpreter);
   EXPECT_NE(interpreter, nullptr);

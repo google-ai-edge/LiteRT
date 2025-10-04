@@ -77,6 +77,11 @@ cc_library(
     testonly = 1,
     srcs = ["common.cc"],
     hdrs = ["common.h"],
+    copts = select({
+        # TODO (b/449178556): Add different build configuration in TAP for continuous integration test.
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
@@ -90,10 +95,13 @@ cc_library(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/synchronization",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
         "@local_tsl//tsl/platform",
     ],
 )
