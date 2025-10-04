@@ -14,6 +14,18 @@
 
 #include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 
+#include "litert/c/litert_common.h"
+
+#if defined(LITERT_DISABLE_NPU)
+
+extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
+    LiteRtEnvironment environment) {
+  (void)environment;
+  return kLiteRtStatusErrorUnsupported;
+}
+
+#else  // defined(LITERT_DISABLE_NPU)
+
 #include <memory>
 
 #include "litert/c/internal/litert_accelerator_registration.h"
@@ -147,3 +159,5 @@ LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
 }
 
 }  // extern "C"
+
+#endif  // !LITERT_DISABLE_NPU
