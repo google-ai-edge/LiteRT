@@ -182,6 +182,7 @@ cc_library(
         "//litert/vendors/c:__pkg__",
     ],
     deps = [
+        "//litert/build_common:build_config",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "@com_google_absl//absl/types:span",

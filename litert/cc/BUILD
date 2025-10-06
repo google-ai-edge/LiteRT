@@ -1397,6 +1397,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/build_common:build_config",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
         "//tflite/core/api",

@@ -17,6 +17,10 @@
 
 #include <stddef.h>
 
+#include "litert/build_common/build_config.h"  // IWYU pragma: keep
+
+
+
 // Define LITERT_WINDOWS_OS if the current OS is Windows.
 #if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || \
     defined(__NT__) || defined(_WIN64)
@@ -148,6 +152,21 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #endif
 
 #define LITERT_HAS_WEBGPU_SUPPORT_DEFAULT 1
+
+#if defined(LITERT_DISABLE_NPU)
+#define LITERT_DISABLE_AHWB_SUPPORT
+#define LITERT_DISABLE_ION_SUPPORT
+#define LITERT_DISABLE_DMABUF_SUPPORT
+#define LITERT_DISABLE_FASTRPC_SUPPORT
+#endif
+
+#if defined(LITERT_DISABLE_GPU)
+#define LITERT_DISABLE_METAL_SUPPORT
+#define LITERT_DISABLE_OPENCL_SUPPORT
+#define LITERT_DISABLE_WEBGPU_SUPPORT
+#define LITERT_DISABLE_VULKAN_SUPPORT
+#define LITERT_DISABLE_OPENGL_SUPPORT
+#endif
 
 #if defined(LITERT_DISABLE_METAL_SUPPORT)
 #define LITERT_HAS_METAL_SUPPORT 0

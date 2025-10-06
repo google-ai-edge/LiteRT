@@ -67,6 +67,29 @@ option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
 option(LITERT_BUILD_TESTS "Build LiteRT tests" OFF)
 option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
+option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
+option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
+
+set(LITERT_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
+set(LITERT_BUILD_COMMON_GENERATED_DIR "${LITERT_GENERATED_INCLUDE_DIR}/litert/build_common")
+file(MAKE_DIRECTORY "${LITERT_BUILD_COMMON_GENERATED_DIR}")
+
+set(LITERT_BUILD_CONFIG_DISABLE_GPU 0)
+if(NOT LITERT_ENABLE_GPU)
+  set(LITERT_BUILD_CONFIG_DISABLE_GPU 1)
+endif()
+
+set(LITERT_BUILD_CONFIG_DISABLE_NPU 0)
+if(NOT LITERT_ENABLE_NPU)
+  set(LITERT_BUILD_CONFIG_DISABLE_NPU 1)
+endif()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/build_common/build_config.h.in
+    ${LITERT_BUILD_COMMON_GENERATED_DIR}/build_config.h
+)
+
+include_directories(${LITERT_GENERATED_INCLUDE_DIR})
 
 # Find TFLite package - we depend on it being built first
 set(TFLITE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/tflite_build" CACHE PATH "Path to TFLite build directory")

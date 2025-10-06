@@ -1,0 +1,18 @@
+// Template for the generated build_config.h produced during CMake configure.
+// Defines LiteRT feature toggles based on the selected build options.
+
+#ifndef LITERT_BUILD_COMMON_BUILD_CONFIG_H_
+#define LITERT_BUILD_COMMON_BUILD_CONFIG_H_
+
+#cmakedefine01 LITERT_BUILD_CONFIG_DISABLE_GPU
+#cmakedefine01 LITERT_BUILD_CONFIG_DISABLE_NPU
+
+#if LITERT_BUILD_CONFIG_DISABLE_GPU
+#define LITERT_DISABLE_GPU
+#endif  // LITERT_BUILD_CONFIG_DISABLE_GPU
+
+#if LITERT_BUILD_CONFIG_DISABLE_NPU
+#define LITERT_DISABLE_NPU
+#endif  // LITERT_BUILD_CONFIG_DISABLE_NPU
+
+#endif  // LITERT_BUILD_COMMON_BUILD_CONFIG_H_
