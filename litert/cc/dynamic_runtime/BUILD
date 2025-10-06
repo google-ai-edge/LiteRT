@@ -512,6 +512,7 @@ cc_library(
         ":litert_tensor_buffer",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
+        "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",

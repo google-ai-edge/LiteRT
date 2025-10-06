@@ -29,6 +29,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
@@ -1149,6 +1150,42 @@ TEST(CompiledModelTest, GetInterpreter) {
   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
                               GetInterpreter(compiled_model.get()));
   EXPECT_NE(interpreter, nullptr);
+}
+
+TEST(CompiledModelTest, GetOutputTensorShapes) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  // Create LiteRtModel and check signatures.
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(path.c_str(), &model), kLiteRtStatusOk);
+
+  // Create CompiledModel with options.
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  std::vector<LiteRtLayout> output_layouts(1);
+  auto output_tensor_shapes = absl::MakeSpan(output_layouts);
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      LiteRtSignatureT::kDefaultSignatureKey,
+      output_tensor_shapes));
+  ASSERT_EQ(output_tensor_shapes.size(), 1);
+  // The output tensor shape is [[2]]
+  EXPECT_EQ(output_tensor_shapes[0].rank, 1);
+  EXPECT_EQ(output_tensor_shapes[0].dimensions[0], 2);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
 }
 
 }  // namespace

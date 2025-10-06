@@ -27,6 +27,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
@@ -93,6 +94,23 @@ LiteRtStatus LiteRtGetCompiledModelEnvironment(
     return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_ASSIGN_OR_RETURN(*environment, compiled_model->GetEnvironment());
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelOutputTensorLayouts(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    size_t num_layouts, LiteRtLayout* layouts, bool update_allocation) {
+  if (!compiled_model || !layouts) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  absl::Span<LiteRtLayout> output_layouts(layouts, num_layouts);
+  LITERT_RETURN_IF_ERROR(compiled_model->GetOutputTensorShapes(
+      signature_index, output_layouts, update_allocation));
+  size_t tensors_size = output_layouts.size();
+  if (tensors_size == 0) {
+    LITERT_LOG(LITERT_WARNING, "No output tensors found for signature index.");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   return kLiteRtStatusOk;
 }
 

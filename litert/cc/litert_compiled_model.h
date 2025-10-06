@@ -30,11 +30,13 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
+#include "litert/c/litert_layout.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -167,6 +169,30 @@ class CompiledModel
     LITERT_ASSIGN_OR_RETURN(size_t signature_index,
                             model_.GetSignatureIndex(signature_name));
     return GetOutputBufferRequirements(signature_index, output_name);
+  }
+
+  // Returns the layouts of all output tensors for the given signature index.
+  // If update_allocation is true, the allocation of the tensors will be
+  // updated to the current state of the compiled model.
+  Expected<std::vector<Layout>> GetOutputTensorLayouts(
+      size_t signature_index, bool update_allocation = false) const {
+    // get num tensors here
+    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
+                            model_.GetSignature(signature_index));
+    int num_tensors = signature.OutputNames().size();
+    std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
+    LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorLayouts(
+        Get(), signature_index, num_tensors, litert_layout_vector.data(),
+        update_allocation));
+
+    // apply Layout() to each element within the litert_layout_vector
+    std::vector<Layout> layout_vector;
+    layout_vector.reserve(num_tensors);
+    for (int i = 0; i < num_tensors; ++i) {
+      layout_vector.push_back(Layout(litert_layout_vector[i]));
+    }
+
+    return layout_vector;
   }
 
   // Returns the buffer requirements for the given output tensor. The returned
