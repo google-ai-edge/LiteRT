@@ -27,7 +27,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
-        "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_accelerator_api",
         "//litert/c/internal:litert_delegate_wrapper",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",

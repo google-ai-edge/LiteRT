@@ -26,6 +26,9 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
+        "//litert/c/internal:litert_accelerator_api",
+        "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_tensor_buffer_registry",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",
@@ -41,7 +44,7 @@ cc_library(
     hdrs = ["accelerator_implementation_helper.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_accelerator_registration",
+        "//litert/c/internal:litert_accelerator_api",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",

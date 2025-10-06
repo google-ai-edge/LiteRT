@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_DISPATCH_DISPATCH_ACCELERATOR_H_
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_DISPATCH_DISPATCH_ACCELERATOR_H_
 
+#include "litert/c/internal/litert_accelerator_api.h"
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -31,7 +32,8 @@ extern "C" {
 // passed upon creation).
 //
 // Once this function has returned, options may be freed or reused.
-LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment);
+LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment,
+                                          LiteRtAcceleratorApi* api);
 
 #ifdef __cplusplus
 }  // extern "C"

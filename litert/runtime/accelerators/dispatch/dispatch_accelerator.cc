@@ -19,7 +19,7 @@
 #if defined(LITERT_DISABLE_NPU)
 
 extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
-    LiteRtEnvironment environment) {
+    LiteRtEnvironment environment, LiteRtAcceleratorApi* api) {
   (void)environment;
   return kLiteRtStatusErrorUnsupported;
 }
@@ -28,7 +28,7 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 
 #include <memory>
 
-#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_api.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/litert_environment_options.h"
@@ -127,30 +127,36 @@ class NpuAccelerator final
 
 extern "C" {
 
-LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment) {
+LiteRtStatus LiteRtRegisterNpuAccelerator(LiteRtEnvironment environment,
+                                          LiteRtAcceleratorApi* api) {
   LITERT_RETURN_IF_ERROR(environment != nullptr,
                          litert::ErrorStatusBuilder::InvalidArgument())
       << "environment handle is null";
+  LITERT_RETURN_IF_ERROR(api != nullptr,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "LiteRtAcceleratorApi is null";
   LITERT_RETURN_IF_ERROR(
       environment->GetOption(kLiteRtEnvOptionTagDispatchLibraryDir).has_value(),
       litert::ErrorStatusBuilder::InvalidArgument())
       << "Dispatch library directory is not set.";
 
   LiteRtAccelerator accelerator_handle;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateAccelerator(&accelerator_handle));
-  litert::internal::AcceleratorGuard accelerator(accelerator_handle);
+  LITERT_RETURN_IF_ERROR(api->LiteRtCreateAccelerator(&accelerator_handle));
+  litert::internal::AcceleratorDestructor destructor(api);
+  litert::internal::AcceleratorGuard accelerator(accelerator_handle,
+                                                 destructor);
 
   LITERT_RETURN_IF_ERROR(litert::internal::SetAcceleratorBoilerplateFunctions<
-                         litert::NpuAccelerator>(accelerator));
-  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStartMetricsCollection(
+                         litert::NpuAccelerator>(accelerator, api));
+  LITERT_RETURN_IF_ERROR(api->LiteRtSetAcceleratorStartMetricsCollection(
       accelerator.get(), litert::NpuAccelerator::StartMetricsCollection));
-  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorStopMetricsCollection(
+  LITERT_RETURN_IF_ERROR(api->LiteRtSetAcceleratorStopMetricsCollection(
       accelerator.get(), litert::NpuAccelerator::StopMetricsCollection));
 
   LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
                           litert::NpuAccelerator::Create());
 
-  LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
+  LITERT_RETURN_IF_ERROR(api->LiteRtRegisterAccelerator(
       environment, accelerator.release(), accelerator_impl.release(),
       litert::NpuAccelerator::Destroy));
 

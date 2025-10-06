@@ -18,6 +18,9 @@
 
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_accelerator_api.h"
+#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
@@ -31,7 +34,7 @@
 // overridden by the LiteRT environment. This is to use the GPU accelerator
 // statically linked.
 extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorGpu)(
-    LiteRtEnvironmentT& environment) = nullptr;
+    LiteRtEnvironmentT& environment, LiteRtAcceleratorApi* api) = nullptr;
 
 // Define a function pointer for the WebNN accelerator.
 extern "C" LiteRtStatus (*LiteRtRegisterStaticLinkedAcceleratorWebNn)(
@@ -53,9 +56,27 @@ Expected<SharedLibrary> LoadSharedLibrary(absl::string_view shlib_path,
 
 Expected<void> TriggerAcceleratorAutomaticRegistration(
     LiteRtEnvironmentT& environment) {
+  LiteRtAcceleratorApi api{
+      .LiteRtCreateAccelerator = &LiteRtCreateAccelerator,
+      .LiteRtDestroyAccelerator = &LiteRtDestroyAccelerator,
+      .LiteRtRegisterAccelerator = &LiteRtRegisterAccelerator,
+      .LiteRtSetAcceleratorGetName = &LiteRtSetAcceleratorGetName,
+      .LiteRtSetAcceleratorGetVersion = &LiteRtSetAcceleratorGetVersion,
+      .LiteRtSetAcceleratorGetHardwareSupport =
+          &LiteRtSetAcceleratorGetHardwareSupport,
+      .LiteRtSetDelegateFunction = &LiteRtSetDelegateFunction,
+      .LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation =
+          &LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation,
+      .LiteRtSetAcceleratorStartMetricsCollection =
+          &LiteRtSetAcceleratorStartMetricsCollection,
+      .LiteRtSetAcceleratorStopMetricsCollection =
+          &LiteRtSetAcceleratorStopMetricsCollection,
+      .LiteRtRegisterTensorBufferHandlers = &LiteRtRegisterTensorBufferHandlers,
+  };
+
   // Register the NPU accelerator.
 #if !defined(LITERT_DISABLE_NPU)
-  if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment);
+  if (auto npu_registration = LiteRtRegisterNpuAccelerator(&environment, &api);
       npu_registration == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "NPU accelerator registered.");
   } else {
@@ -106,7 +127,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
     LITERT_LOG(LITERT_VERBOSE, "Loading GPU accelerator(%s).",
                plugin_path.data());
     auto registration = RegisterSharedObjectAccelerator(
-        environment, plugin_path, "LiteRtRegisterGpuAccelerator",
+        environment, &api, plugin_path, "LiteRtRegisterGpuAccelerator",
         /*try_symbol_already_loaded=*/false);
     if (registration.HasValue()) {
       LITERT_LOG(LITERT_INFO,
@@ -123,10 +144,10 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
                plugin_path.data(), LiteRtGetStatusString(error.Status()),
                registration.Error().Message().data());
   }
-  if (!gpu_accelerator_registered) {
-    if (LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr &&
-        LiteRtRegisterStaticLinkedAcceleratorGpu(environment) ==
-            kLiteRtStatusOk) {
+  if (!gpu_accelerator_registered &&
+      LiteRtRegisterStaticLinkedAcceleratorGpu != nullptr) {
+    if (LiteRtRegisterStaticLinkedAcceleratorGpu(environment, &api) ==
+        kLiteRtStatusOk) {
       LITERT_LOG(LITERT_INFO, "Statically linked GPU accelerator registered.");
       gpu_accelerator_registered = true;
     }
@@ -140,7 +161,7 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif
 
   // Register the CPU accelerator.
-  if (auto cpu_registration = LiteRtRegisterCpuAccelerator(&environment);
+  if (auto cpu_registration = LiteRtRegisterCpuAccelerator(&environment, &api);
       cpu_registration == kLiteRtStatusOk) {
     LITERT_LOG(LITERT_INFO, "CPU accelerator registered.");
   } else {
@@ -153,16 +174,16 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 };
 
 Expected<void> RegisterSharedObjectAccelerator(
-    LiteRtEnvironmentT& environment, absl::string_view shlib_path,
-    absl::string_view registration_function_name,
+    LiteRtEnvironmentT& environment, LiteRtAcceleratorApi* api,
+    absl::string_view shlib_path, absl::string_view registration_function_name,
     bool try_symbol_already_loaded) {
   LITERT_ASSIGN_OR_RETURN(
       auto shlib, LoadSharedLibrary(shlib_path, try_symbol_already_loaded));
-  LITERT_ASSIGN_OR_RETURN(
-      auto registration_function,
-      shlib.LookupSymbol<LiteRtStatus (*)(LiteRtEnvironment)>(
-          registration_function_name.data()));
-  LITERT_RETURN_IF_ERROR(registration_function(&environment));
+  LITERT_ASSIGN_OR_RETURN(auto registration_function,
+                          shlib.LookupSymbol<LiteRtStatus (*)(
+                              LiteRtEnvironment, LiteRtAcceleratorApi*)>(
+                              registration_function_name.data()));
+  LITERT_RETURN_IF_ERROR(registration_function(&environment, api));
   environment.GetAcceleratorRegistry().TakeOwnershipOfSharedLibrary(
       std::move(shlib));
   return {};

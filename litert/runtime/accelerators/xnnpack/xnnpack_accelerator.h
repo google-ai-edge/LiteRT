@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_XNNPACK_XNNPACK_ACCELERATOR_H_
 #define ODML_LITERT_LITERT_RUNTIME_ACCELERATORS_XNNPACK_XNNPACK_ACCELERATOR_H_
 
+#include "litert/c/internal/litert_accelerator_api.h"
 #include "litert/c/litert_common.h"
 
 #ifdef __cplusplus
@@ -22,7 +23,8 @@ extern "C" {
 #endif
 
 // Registers the CPU accelerator to the given environment.
-LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment);
+LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment,
+                                          LiteRtAcceleratorApi* api);
 
 #ifdef __cplusplus
 }  // extern "C"
