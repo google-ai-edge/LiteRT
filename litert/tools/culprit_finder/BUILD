@@ -27,13 +27,20 @@ package(
 cc_library(
     name = "culprit_finder_utils",
     hdrs = ["culprit_finder_utils.h"],
+    copts = select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//litert/c:litert_logging",
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
-        "//tflite/kernels:builtin_ops",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
         "//tflite/tools:command_line_flags",
         "//tflite/tools:tool_params",
     ],
@@ -102,7 +109,10 @@ cc_library(
     name = "interpreter_handler",
     srcs = ["interpreter_handler.cc"],
     hdrs = ["interpreter_handler.h"],
-    copts = ["-fexceptions"],
+    copts = ["-fexceptions"] + select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     features = [
         "-use_header_modules",
         "-parse_headers",
@@ -116,11 +126,14 @@ cc_library(
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/core:model_builder",
-        "//tflite/kernels:builtin_ops",
-        "//tflite/tools:model_loader",
-        "//tflite/tools/delegates:delegate_provider_hdr",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
+        "//tflite/tools:model_loader",
+        "//tflite/tools/delegates:delegate_provider_hdr",
     ],
 )
 
@@ -158,7 +171,10 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/core:cc_api_stable",
-        "//tflite/kernels:builtin_ops",
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }) + [
         "//tflite/profiling:memory_usage_monitor",
         "//tflite/profiling:model_runtime_info",
         "//tflite/tools:command_line_flags",

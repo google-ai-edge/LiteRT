@@ -310,6 +310,10 @@ cc_test(
 cc_test(
     name = "model_buffer_test",
     srcs = ["model_buffer_test.cc"],
+    copts = select({
+        "//litert:without_builtin_ops": ["-DLITERT_NO_BUILTIN_OPS"],
+        "//conditions:default": [],
+    }),
     deps = [
         ":model",
         ":model_buffer",
@@ -325,11 +329,13 @@ cc_test(
         "//tflite/c:common",
         "//tflite/converter:allocation",
         "//tflite/core:private_cc_api_stable",
-        "//tflite/kernels:builtin_ops",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
-    ],
+    ] + select({
+        "//litert:without_builtin_ops": [],
+        "//conditions:default": ["//tflite/kernels:builtin_ops"],
+    }),
 )
 
 cc_test(

@@ -91,12 +91,12 @@
 #include "tflite/delegates/utils/simple_opaque_delegate.h"
 #include "tflite/interpreter.h"
 #include "tflite/interpreter_options.h"
-#ifndef LITERT_NO_BUILTIN_OPS
+#if !defined(LITERT_NO_BUILTIN_OPS)
 #include "tflite/kernels/register.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 #include "tflite/model_builder.h"
 
-#ifdef LITERT_NO_BUILTIN_OPS
+#if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
