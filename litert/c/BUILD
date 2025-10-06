@@ -233,14 +233,19 @@ cc_library(
         ":litert_layout",
         ":litert_model_types",
         ":litert_op_code",
+        "//litert/build_common:build_config",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//litert/core/model:model_load",
-        "//litert/core/model:model_serialize",
         "//tflite/core/c:private_c_api_types",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/core/model:model_serialize",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 cc_test(

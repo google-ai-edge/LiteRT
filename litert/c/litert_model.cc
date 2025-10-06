@@ -27,7 +27,9 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
+#if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/model/model_serialize.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
 
 #ifdef __cplusplus
 extern "C" {
@@ -139,6 +141,15 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   size_t* size, size_t* offset,
                                   bool destroy_model,
                                   LiteRtModelSerializationOptions options) {
+#if defined(LITERT_DISABLE_NPU)
+  if (!model || !buf || !size || !offset) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (destroy_model) {
+    delete model;
+  }
+  return kLiteRtStatusErrorUnsupported;
+#else
   auto serialized = litert::internal::SerializeModel(
       std::move(*model), options.bytecode_alignment);
   // Even if we fail to serialize, we still need to destroy the model if
@@ -154,6 +165,7 @@ LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
   }
   std::tie(*buf, *size, *offset) = serialized->Release();
   return kLiteRtStatusOk;
+#endif  // !defined(LITERT_DISABLE_NPU)
 }
 
 LiteRtStatus LiteRtPushOp(LiteRtOpList op_list, LiteRtOp op,
