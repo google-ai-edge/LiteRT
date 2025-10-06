@@ -45,7 +45,7 @@
 namespace litert {
 namespace internal {
 
-#if LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 
 PFNGLBUFFERSTORAGEEXTERNALEXTPROC glBufferStorageExternalEXT;
 PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC eglGetNativeClientBufferANDROID;
@@ -63,11 +63,11 @@ bool IsAhwbToGlBufferInteropSupported() {
   return extensions_allowed;
 }
 
-#endif  // LITERT_HAS_AHWB_SUPPORT
+#endif  // LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 
 Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
                                                  AhwbBuffer& ahwb_buffer) {
-#if LITERT_HAS_AHWB_SUPPORT
+#if LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
   LITERT_RETURN_IF_ERROR(gpu_env->GetEglDisplay() != EGL_NO_DISPLAY,
                          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                             "Failed to get EGL display"));
@@ -123,8 +123,8 @@ Expected<GlBuffer> GlBuffer::AllocFromAhwbBuffer(GpuEnvironment* gpu_env,
   return GlBuffer(std::move(tflite_gl_buffer), ahwb_buffer.ahwb);
 #else
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                    "AHWB support is not enabled.");
-#endif  // LITERT_HAS_AHWB_SUPPORT
+                    "AHardwareBuffer to GL interop is not supported.");
+#endif  // LITERT_HAS_AHWB_SUPPORT && LITERT_HAS_OPENGL_SUPPORT
 }
 
 GlBuffer::GlBuffer(GpuEnvironment* gpu_env, LiteRtGLenum target,

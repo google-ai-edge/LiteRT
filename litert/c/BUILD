@@ -137,10 +137,14 @@ cc_library(
         ":litert_environment_options",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//litert/runtime:gpu_environment",
         "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:gpu_environment",
+        ],
+        "//conditions:default": [],
+    }),
     # Keep symbols in libLiteRtRuntimeCApi.dylib.
     alwayslink = 1,
 )
