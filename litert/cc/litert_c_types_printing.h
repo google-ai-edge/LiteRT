@@ -23,7 +23,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_logging.h"
+#include "litert/cc/internal/litert_logging.h"
 
 // AbslStringify specializations for types in the litert c api.
 // TODO: lukeboyer - Migrate code in tools/dump.h to leverage the abseil

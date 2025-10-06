@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_logging.h"
+#include "litert/cc/internal/litert_logging.h"
 
 #include <sstream>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 
 using ::testing::ContainsRegex;
 using ::testing::Eq;

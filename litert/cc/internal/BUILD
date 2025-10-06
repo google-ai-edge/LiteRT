@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -87,6 +88,27 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
         "//tflite/c:common",
+    ],
+)
+
+cc_library(
+    name = "litert_logging",
+    hdrs = ["litert_logging.h"],
+    visibility = ["//litert:__subpackages__"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+    ],
+)
+
+cc_test(
+    name = "litert_logging_test",
+    srcs = ["litert_logging_test.cc"],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

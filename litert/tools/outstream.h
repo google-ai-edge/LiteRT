@@ -24,7 +24,7 @@
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 
 namespace litert::tools {
 

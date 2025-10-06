@@ -17,9 +17,9 @@
 #include <cstddef>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_layout.h"

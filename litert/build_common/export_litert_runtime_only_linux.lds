@@ -14,7 +14,24 @@ VERS_1.0 {
 
   local:
 
-    /* Hide everything else */
+    /* c/internal/litert_logging.h */
+    LiteRtClearSinkLogger;
+    LiteRtCreateLogger;
+    LiteRtCreateSinkLogger;
+    /* LiteRtDefaultLoggerLog; */
+    LiteRtDestroyLogger;
+    LiteRtGetDefaultLogger;
+    LiteRtGetLoggerIdentifier;
+    LiteRtGetLogSeverityName;
+    LiteRtGetMinLoggerSeverity;
+    LiteRtGetSinkLoggerMessage;
+    LiteRtGetSinkLoggerSize;
+    LiteRtLoggerLog;
+    LiteRtSetDefaultLogger;
+    LiteRtSetMinLoggerSeverity;
+    LiteRtUseSinkLogger;
+    LiteRtUseStandardLogger;
 
+    /* Hide everything else */
     *;
 };

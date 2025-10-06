@@ -159,7 +159,6 @@ cc_library(
         "//litert/c:litert_event_type.h",
         "//litert/c:litert_gl_types.h",
         "//litert/c:litert_layout.h",
-        "//litert/c:litert_logging.h",
         "//litert/c:litert_metrics.h",
         "//litert/c:litert_model_types.h",
         "//litert/c:litert_op_code.h",
@@ -230,11 +229,45 @@ cc_library(
     ],
 )
 
-exports_files(srcs = glob(["litert_*.h"]))
+cc_library(
+    name = "litert_logging",
+    srcs = ["litert_logging.cc"],
+    hdrs = ["litert_logging.h"],
+    visibility = [
+        "//litert:__subpackages__",
+        "//third_party/odml/litert_lm/c:__pkg__",
+        "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//tflite:minimal_logging",
+        "//tflite/core/c:private_common",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_logging_test",
+    srcs = ["litert_logging_test.cc"],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+exports_files(srcs = glob(
+    ["litert_*.h"],
+    exclude = ["litert_logging.h"],
+))
 
 filegroup(
     name = "internal_headers",
-    srcs = glob(["litert_*.h"]),
+    srcs = glob(
+        ["litert_*.h"],
+        exclude = ["litert_logging.h"],
+    ),
     visibility = [
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",

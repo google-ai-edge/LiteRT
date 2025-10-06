@@ -47,10 +47,10 @@ cc_library(
     name = "litert_c_types_printing",
     hdrs = ["litert_c_types_printing.h"],
     deps = [
-        ":litert_logging",
         "//litert/c:litert_layout",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_logging",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -171,7 +171,7 @@ cc_library(
         ":litert_expected",
         ":litert_source_location",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
     ],
@@ -182,9 +182,9 @@ cc_test(
     srcs = ["litert_macros_test.cc"],
     deps = [
         ":litert_expected",
-        ":litert_logging",
         ":litert_macros",
         "//litert/c:litert_common",
+        "//litert/cc/internal:litert_logging",
         "//litert/test:matchers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -231,7 +231,7 @@ cc_library(
     hdrs = ["litert_detail.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -283,8 +283,8 @@ cc_library(
     hdrs = ["litert_tensor_buffer_utils.h"],
     visibility = ["//litert:litert_public"],
     deps = [
-        "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
     ],
 )
 
@@ -296,7 +296,7 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -360,26 +360,6 @@ cc_library(
     name = "litert_platform_support",
     hdrs = ["litert_platform_support.h"],
     deps = ["//litert/c:litert_platform_support"],
-)
-
-cc_library(
-    name = "litert_logging",
-    hdrs = ["litert_logging.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-    ],
-)
-
-cc_test(
-    name = "litert_logging_test",
-    srcs = ["litert_logging_test.cc"],
-    deps = [
-        ":litert_logging",
-        "//litert/c:litert_common",
-        "//litert/c:litert_logging",
-        "@com_google_googletest//:gtest_main",
-    ],
 )
 
 cc_library(
@@ -739,8 +719,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_layout",
-        "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "@com_google_absl//absl/types:span",
     ],
@@ -901,6 +881,7 @@ cc_test(
 litert_device_exec(
     name = "litert_event_device_test",
     backend_id = "cpu",
+    data = [],
     target = ":litert_event_test",
 )
 
@@ -1325,7 +1306,6 @@ cc_library(
         "litert_expected.h",
         "litert_handle.h",
         "litert_layout.h",
-        "litert_logging.h",
         "litert_macros.h",
         "litert_model.h",
         "litert_model_predicates.h",
@@ -1401,6 +1381,8 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/build_common:build_config",
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_logging",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",

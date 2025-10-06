@@ -25,8 +25,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_logging.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_logging.h"
 #include "litert/cc/litert_model.h"
 #include "litert/core/model/model.h"
 #include "litert/tools/dump.h"
