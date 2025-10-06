@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Docker image to provide a hermetic build environment for Litert.
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y \
     unzip \
     wget \
     zip \
-    llvm-14 \
-    clang-14 \
+    llvm-18 \
+    clang-18 \
     libc++-dev \
     libc++abi-dev \
     && apt-get clean && \
