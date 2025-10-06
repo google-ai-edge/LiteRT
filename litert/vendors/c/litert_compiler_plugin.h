@@ -18,9 +18,7 @@
 #include <stddef.h>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
-#include "litert/c/litert_options.h"
+#include "litert/c/litert_rewriter.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -110,6 +108,16 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetCompiledResultCallInfo(
 // is equal to the number of custom ops in the final model.
 LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetNumCompiledResultCalls(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls);
+
+// Allow the compiler plugin to registers all the graph transformations
+// required. This function populates the provided arrays with pattern functions
+// and their corresponding names. Registered patterns will be applied to the
+// graph before partition and compilation.
+//
+// Experimental: Unstable ABI, function signature is subject to change.
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns);
 
 #ifdef __cplusplus
 }

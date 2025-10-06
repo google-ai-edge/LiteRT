@@ -28,6 +28,7 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
     ],
 )
 
@@ -37,10 +38,10 @@ cc_library(
     deps = [
         ":litert_compiler_plugin",
         "//litert/c:litert_common",
-        "//litert/c:litert_environment",
         "//litert/c:litert_environment_options",
         "//litert/c:litert_model",
         "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
