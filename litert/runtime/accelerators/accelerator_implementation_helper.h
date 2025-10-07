@@ -19,7 +19,7 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_accelerator_api.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -27,8 +27,10 @@
 namespace litert::internal {
 
 struct AcceleratorDestructor {
+  LiteRtAcceleratorApi* api;
+  explicit AcceleratorDestructor(LiteRtAcceleratorApi* api) : api(api) {}
   void operator()(LiteRtAccelerator accelerator) {
-    LiteRtDestroyAccelerator(accelerator);
+    api->LiteRtDestroyAccelerator(accelerator);
   }
 };
 
@@ -40,15 +42,15 @@ using AcceleratorGuard =
 // Helps setting up an accelerator handle for accelerators that use the
 // `AcceleratorImplementationHelper` template as a base class.
 template <class T>
-Expected<void> SetAcceleratorBoilerplateFunctions(
-    AcceleratorGuard& accelerator) {
+Expected<void> SetAcceleratorBoilerplateFunctions(AcceleratorGuard& accelerator,
+                                                  LiteRtAcceleratorApi* api) {
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetAcceleratorGetName(accelerator.get(), T::GetName));
+      api->LiteRtSetAcceleratorGetName(accelerator.get(), T::GetName));
   LITERT_RETURN_IF_ERROR(
-      LiteRtSetAcceleratorGetVersion(accelerator.get(), T::GetVersion));
-  LITERT_RETURN_IF_ERROR(LiteRtSetAcceleratorGetHardwareSupport(
+      api->LiteRtSetAcceleratorGetVersion(accelerator.get(), T::GetVersion));
+  LITERT_RETURN_IF_ERROR(api->LiteRtSetAcceleratorGetHardwareSupport(
       accelerator.get(), T::GetHardwareSupport));
-  LITERT_RETURN_IF_ERROR(LiteRtSetDelegateFunction(
+  LITERT_RETURN_IF_ERROR(api->LiteRtSetDelegateFunction(
       accelerator.get(), T::CreateDelegate, T::DestroyDelegate));
   return {};
 }

@@ -22,15 +22,21 @@ package(
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
-        # "//litert/cc:__subpackages__",
-        # "//litert/test:__subpackages__",
         # "//litert/runtime:__pkg__",
         # "//litert/runtime/accelerators:__subpackages__",
-        # "//litert/runtime/dispatch:__subpackages__",
-        # "//litert/vendors/c:__subpackages__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
+    ],
+)
+
+cc_library(
+    name = "litert_accelerator_api",
+    hdrs = ["litert_accelerator_api.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
     ],
 )
 
@@ -220,10 +226,6 @@ cc_library(
     name = "litert_delegate_wrapper",
     srcs = ["litert_delegate_wrapper.cc"],
     hdrs = ["litert_delegate_wrapper.h"],
-    visibility = [
-        "//litert/runtime:__pkg__",
-        "//litert/runtime/accelerators:__subpackages__",
-    ],
     deps = [
         "//litert/c:litert_common",
         "//tflite/c:common",
