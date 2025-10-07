@@ -47,7 +47,11 @@ LiteRtStatus LiteRtSetOptionsHardwareAccelerators(
   LRT_CHECK_NON_NULL(options);
   if ((hardware_accelerators &
        (kLiteRtHwAcceleratorCpu | kLiteRtHwAcceleratorGpu |
-        kLiteRtHwAcceleratorNpu)) != hardware_accelerators) {
+        kLiteRtHwAcceleratorNpu
+#ifdef __EMSCRIPTEN__
+        | kLiteRtHwAcceleratorWebNn
+#endif  // __EMSCRIPTEN__
+        )) != hardware_accelerators) {
     LITERT_LOG(LITERT_ERROR,
                "Invalid bitfield value for hardware accelerator set: %d.",
                hardware_accelerators);
