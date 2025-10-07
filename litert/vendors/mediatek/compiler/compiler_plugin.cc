@@ -97,6 +97,8 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflConcatenation,
     kLiteRtOpCodeTflQuantize,
     kLiteRtOpCodeTflSlice,
+    kLiteRtOpCodeTflStridedSlice,
+    kLiteRtOpCodeTflSplit,
     kLiteRtOpCodeTflSub,
     kLiteRtOpCodeTflTanh,
     kLiteRtOpCodeTflSoftmax,

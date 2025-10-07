@@ -433,3 +433,39 @@ cc_library(
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
+
+cc_library(
+    name = "strided_slice_op_legalization",
+    srcs = ["strided_slice_op_legalization.cc"],
+    hdrs = ["strided_slice_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":operand_map",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
+
+cc_library(
+    name = "split_op_legalization",
+    srcs = ["split_op_legalization.cc"],
+    hdrs = ["split_op_legalization.h"],
+    tags = [
+        # Don't build/test in OS until MediaTek SDK is available.
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":operand_map",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/vendors/mediatek:neuron_adapter_api",
+    ],
+)
