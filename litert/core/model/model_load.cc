@@ -250,8 +250,8 @@ LiteRtStatus UnpackTensor(FlatbufferContext& context,
 
   if (tfl_tensor.sparsity() != nullptr) {
     // TODO: b/365299994 - Support sparsity tensors.
-    LITERT_LOG(LITERT_ERROR, "Sparsity tensors not yet supported.");
-    return kLiteRtStatusErrorUnsupported;
+    LITERT_LOG(LITERT_WARNING,
+               "Sparsity tensors may not yet be fully supported.");
   }
 
   return kLiteRtStatusOk;
