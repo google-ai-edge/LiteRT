@@ -35,7 +35,9 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/environment.h"
 #include "litert/core/model/model.h"
 #include "litert/runtime/accelerator.h"
@@ -336,9 +338,18 @@ class LiteRtCompiledModelT {
   // Checks the CPU Tensors and stores them in the `cpu_tensors_` set.
   void CheckCpuTensors();
 
+#if !defined(LITERT_DISABLE_NPU)
+  // Applies the plugins to the model and caches the compiled model if
+  // compilation caching is enabled. Returns true if the compiled model is
+  // initialized from the plugins, false otherwise.
+  litert::Expected<bool> ApplyPluginsWithCaching(
+      LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
+      LiteRtOptions options, LiteRtEnvironmentT& env);
+
   // Tries to load the model from the cache. Returns true if the model is loaded
   // from the cache, false otherwise.
   bool TryLoadingFromCache(uint64_t model_hash);
+#endif  // !defined(LITERT_DISABLE_NPU)
 
   // The environment associated with the compiled model.
   LiteRtEnvironmentT* env_;
@@ -366,11 +377,13 @@ class LiteRtCompiledModelT {
   // loaded from the cache, the fd belongs to the cached flatbuffer.
   int fb_model_fd_ = -1;
 
+#if !defined(LITERT_DISABLE_NPU)
   // The compilation cache used to store the compiled model. If the model is
   // found in the cache, the compiled model will be loaded from the cache.
   // Otherwise, the compiled model will be compiled and saved to the cache.
   std::optional<litert::internal::CompilationCache> compilation_cache_;
   std::optional<LiteRtModelT::Ptr> cached_model_;
+#endif  // !defined(LITERT_DISABLE_NPU)
 
   // The buffer requirement maps for CPU buffers. For delegates with CPU
   // buffers, they don't register TensorBufferRequirements. Instead, the

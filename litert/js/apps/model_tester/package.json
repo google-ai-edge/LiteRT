@@ -12,7 +12,7 @@
   "scripts": {
     "copy-wasm": "mkdirp dist && cp -r `node -e \"console.log(path.join(require.resolve('@litertjs/core/package.json'), '../wasm'))\"` dist/",
     "copy-static-files": "cp -r static dist && npm run copy-wasm",
-    "dev": "rimraf dist && npm run copy-static-files && esbuild --bundle --target=es2020 --watch --outfile=dist/bundle.js --serve --servedir=dist --sourcemap src/index.ts",
+    "dev": "rimraf dist && npm run copy-static-files && node scripts/devserver.js",
     "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/bundle.js --sourcemap src/index.ts"
   },
   "author": "",

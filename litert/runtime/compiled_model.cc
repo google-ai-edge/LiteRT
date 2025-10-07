@@ -64,10 +64,10 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
-#include "litert/core/cache/compilation_cache.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #if !defined(LITERT_DISABLE_NPU)
+#include "litert/core/cache/compilation_cache.h"
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/options.h"
@@ -300,6 +300,8 @@ int GetAllocationFd(const tflite::Allocation* allocation) {
   return -1;
 }
 
+#if !defined(LITERT_DISABLE_NPU)
+
 Expected<std::vector<litert::internal::CompilerPlugin>> TryGetCompilerPlugins(
     LiteRtOptions options, LiteRtEnvironmentT& env,
     LiteRtHwAcceleratorSet hw_accelerators) {
@@ -365,6 +367,8 @@ void TryApplyPluginsImpl(
   }
 }
 
+#endif  // !defined(LITERT_DISABLE_NPU)
+
 }  // namespace
 
 Expected<void> LiteRtCompiledModelT::InitializeModel(
@@ -373,36 +377,22 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
 
-  compilation_cache_ = MaybeCreateCompilationCache(env);
-  std::optional<uint64_t> model_hash = std::nullopt;
-  bool need_reserialization = false;
+  // If hardware acceleration is requested then apply the plugins to the model
+  // and initialize the compiled model from the translated LiteRt model.
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
-    // Load the plugins before JIT compilation attempt, so that we can check the
-    // cache first.
-    auto maybe_compiled_plugins =
-        TryGetCompilerPlugins(options, env, hw_accelerators);
-    // If we have a cache (user provided
-    // 'kLiteRtEnvOptionTagCompilerPluginLibraryDir'), and we loaded the plugins
-    // successfully, we can try to load the model from the cache.
-    if (compilation_cache_.has_value()) {
-      Expected<uint64_t> maybe_model_hash =
-          litert::internal::CompilationCache::TryGetModelHash(
-              model, options, maybe_compiled_plugins);
-      if (maybe_model_hash.HasValue()) {
-        model_hash = maybe_model_hash.Value();
-        if (TryLoadingFromCache(model_hash.value())) {
-          LITERT_LOG(LITERT_INFO,
-                     "Flatbuffer model initialized from cached model.");
-          return {};
-        }
-      }
+#if !defined(LITERT_DISABLE_NPU)
+    litert::Expected<bool> maybe_initialzed_model =
+        ApplyPluginsWithCaching(model, hw_accelerators, options, env);
+    if (maybe_initialzed_model.HasValue() &&
+        maybe_initialzed_model.Value() == true) {
+      // The compiled model's flatbuffer has initialized by applying the
+      // plugins.
+      return {};
     }
-    // Cache miss, we need to continue with JIT compilation.
-    if (maybe_compiled_plugins.HasValue()) {
-      TryApplyPluginsImpl(&model, hw_accelerators,
-                          maybe_compiled_plugins.Value(),
-                          &need_reserialization);
-    }
+    // Deliberate fall through, failing to apply plugins is a recoverable
+    // error, we will try to initialize the compiled model from the incoming
+    // litert model.
+#endif
   }
 
   const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
@@ -410,8 +400,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   // flatbuffer, the litert model will own said flatbuffer and stored it in the
   // OwningBufferRef.
 
-  if (auto tfl_buf = tfl_wrapper.Buf();
-      !need_reserialization && tfl_buf.Data() != nullptr) {
+  if (auto tfl_buf = tfl_wrapper.Buf(); tfl_buf.Data() != nullptr) {
     LITERT_LOG(
         LITERT_INFO,
         "Flatbuffer model initialized directly from incoming litert model.");
@@ -421,34 +410,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     return {};
   }
 
-  LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
+  // If we reach here, it means we weren't able to initialize the compiled
+  // model, neither from the incoming litert model nor from a transformed model
+  // after applying the plugins.
 
-#if defined(LITERT_DISABLE_NPU)
-  return Unexpected(kLiteRtStatusErrorUnsupported,
-                    "Model reserialization requires NPU support");
-#else
-  auto serialized = SerializeModel(std::move(model));
-  if (!serialized) {
-    return serialized.Error();
-  }
-  if (model_hash.has_value()) {
-    LITERT_LOG(LITERT_DEBUG, "Saving compiled model to cache.");
-    LITERT_RETURN_IF_ERROR(
-        compilation_cache_.value().SaveModel(*serialized, model_hash.value()));
-  }
-
-  model_buf_ = std::move(*serialized);
-  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
-      error_reporter_.get());
-  if (fb_model_ == nullptr) {
-    return Unexpected(kLiteRtStatusErrorFileIO,
-                      "Failed to build flatbuffer from buffer");
-  }
-  fb_model_fd_ = GetAllocationFd(tfl_wrapper.FlatbufferModel().allocation());
-
-  return {};
-#endif  // LITERT_DISABLE_NPU
+  return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                    "Failed to build flatbuffer from incoming litert model");
 }
 
 namespace {
@@ -647,6 +614,68 @@ void LiteRtCompiledModelT::CheckCpuTensors() {
   }
 }
 
+#if !defined(LITERT_DISABLE_NPU)
+litert::Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
+    LiteRtModelT& model, LiteRtHwAcceleratorSet hw_accelerators,
+    LiteRtOptions options, LiteRtEnvironmentT& env) {
+  bool need_reserialization = false;
+  compilation_cache_ = MaybeCreateCompilationCache(env);
+  std::optional<uint64_t> model_hash = std::nullopt;
+  // Load the plugins before JIT compilation attempt, so that we can check the
+  // cache first.
+  auto maybe_compiled_plugins =
+      TryGetCompilerPlugins(options, env, hw_accelerators);
+  // If we have a cache (user provided
+  // 'kLiteRtEnvOptionTagCompilerPluginLibraryDir'), and we loaded the plugins
+  // successfully, we can try to load the model from the cache.
+  if (compilation_cache_.has_value()) {
+    Expected<uint64_t> maybe_model_hash =
+        litert::internal::CompilationCache::TryGetModelHash(
+            model, options, maybe_compiled_plugins);
+    if (maybe_model_hash.HasValue()) {
+      model_hash = maybe_model_hash.Value();
+      if (TryLoadingFromCache(model_hash.value())) {
+        LITERT_LOG(LITERT_INFO,
+                   "Flatbuffer model initialized from cached model.");
+        return true;
+      }
+    }
+  }
+  // Cache miss, we need to continue with JIT compilation.
+  if (maybe_compiled_plugins.HasValue()) {
+    TryApplyPluginsImpl(&model, hw_accelerators, maybe_compiled_plugins.Value(),
+                        &need_reserialization);
+  }
+  if (!need_reserialization) {
+    return false;
+  }
+  LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
+
+  auto serialized = SerializeModel(std::move(model));
+  if (!serialized) {
+    return serialized.Error();
+  }
+  if (model_hash.has_value()) {
+    LITERT_LOG(LITERT_DEBUG, "Saving JIT compiled model to cache.");
+    LITERT_RETURN_IF_ERROR(
+        compilation_cache_.value().SaveModel(*serialized, model_hash.value()));
+  }
+
+  model_buf_ = std::move(*serialized);
+  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
+      error_reporter_.get());
+  if (fb_model_ == nullptr) {
+    return Unexpected(kLiteRtStatusErrorFileIO,
+                      "Failed to build flatbuffer from buffer");
+  }
+  LITERT_LOG(LITERT_INFO,
+             "Plugins applied, flatbuffer model initialized from  JIT compiled "
+             "model.");
+  fb_model_fd_ = GetAllocationFd(fb_model_->allocation());
+  return true;
+}
+
 bool LiteRtCompiledModelT::TryLoadingFromCache(uint64_t model_hash) {
   if (!compilation_cache_.has_value()) {
     return false;
@@ -682,6 +711,7 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(uint64_t model_hash) {
   cached_model_ = std::move(cached_model.value());
   return true;
 }
+#endif  // !defined(LITERT_DISABLE_NPU)
 
 Expected<const LiteRtTensorBufferRequirementsT*>
 LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
