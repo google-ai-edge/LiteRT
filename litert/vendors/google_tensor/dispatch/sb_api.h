@@ -77,6 +77,7 @@ enum ThrNodeType : int {
   kThrNodeNoType = 0,
   kThrNodeTypeDsp = 1,  // Node for DSP. a function SQ is supported.
   kThrNodeTypeNpu = 2,  // Node for NPU. a ML model SQ is supported.
+  kThrNodeTypeCpu = 3,  // Node for CPU. a TFLite model SQ is supported.
 };
 
 // Describes how arguments passed to this node should be internally mapped to
@@ -98,7 +99,7 @@ enum ThrSqContainerType : int {
   kThrSqContainerNoType = 0,
   kThrSqContainerTypeFunctionLibrary = 1,  // Shared Library
   kThrSqContainerTypeMlModel = 2,          // Vendor specific ML model
-  kThrSqContainerTypeTflite = 1000,        // TFLite model. Experimental
+  kThrSqContainerTypeTflite = 1000,        // TFLite model.
 };
 
 // Loading types of a SQ container.
