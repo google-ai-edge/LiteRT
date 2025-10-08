@@ -125,6 +125,12 @@ class TensorBuffer
       TensorBufferType buffer_type, void* buffer, size_t size_bytes);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+#if LITERT_HAS_WEBGPU_SUPPORT
+  static Expected<TensorBuffer> CreateFromWebGpuTexture(
+      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      void* texture, size_t size_bytes);
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
   /// @brief Creates a duplicate of the current `TensorBuffer` object.
   ///
   /// The returned object is reference-counted, so the underlying
