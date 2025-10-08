@@ -24,8 +24,11 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_shared_library.h"
 #include "litert/core/environment.h"
-#include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
 #include "litert/runtime/accelerators/xnnpack/xnnpack_accelerator.h"
+
+#if !defined(LITERT_DISABLE_NPU)
+#include "litert/runtime/accelerators/dispatch/dispatch_accelerator.h"
+#endif  // !defined(LITERT_DISABLE_NPU)
 
 // Define a function pointer to allow the accelerator registration to be
 // overridden by the LiteRT environment. This is to use the GPU accelerator
