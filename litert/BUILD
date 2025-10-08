@@ -203,5 +203,8 @@ config_setting(
 config_setting(
     name = "litert_android_no_jni",
     constraint_values = ["@platforms//os:android"],
-    values = {"define": "litert_android_no_jni=true"},
+    values = {
+        "define": "litert_android_no_jni=true",
+        "crosstool_top": "//external:android/crosstool",  # copybara:comment
+    },
 )
