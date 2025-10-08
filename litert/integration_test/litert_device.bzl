@@ -25,6 +25,7 @@ This module defines the `run_on_device` macro, which helps to execute a binary t
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:expand_template.bzl", "expand_template")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 # MISCELLANEOUS ####################################################################################
 
@@ -478,10 +479,7 @@ def litert_device_test(
         deps = deps,
         features = features,
         data = data,
-        linkopts = select({
-            "@org_tensorflow//tensorflow:android": ["-landroid"],
-            "//conditions:default": [],
-        }) + linkopts,
+        linkopts = litert_android_linkopts() + linkopts,
         copts = copts,
         tags = hidden_test_tags() + tags,
         **kwargs

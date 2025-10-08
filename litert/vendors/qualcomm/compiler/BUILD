@@ -16,6 +16,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -38,10 +39,7 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
+    linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so",
         # Wheel package places the shared library in the root directory.
         "-Wl,-rpath,$$ORIGIN/../../..",

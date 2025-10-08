@@ -15,6 +15,7 @@
 load("@build_bazel_rules_android//android:rules.bzl", "android_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_kotlin//kotlin:android.bzl", "kt_android_library")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load(
     "//tflite:build_def.bzl",
     "tflite_jni_binary",
@@ -115,10 +116,7 @@ cc_library(
 #     name = "litert_jni_lib",
 #     binary_name = "liblitert_jni.so",
 #     force_android = True,
-#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
-#         "@org_tensorflow//tensorflow:android": ["-landroid"],
-#         "//conditions:default": [],
-#     }),
+#     linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
 #     deps = [
 #         ":litert_compiled_model_jni",
 #         ":litert_environment_jni",
@@ -131,10 +129,7 @@ cc_library(
 # copybara:comment_begin(oss-only)
 tflite_jni_binary(
     name = "litert_jni",
-    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = tflite_jni_linkopts() + tflite_linkopts_no_undefined() + litert_android_linkopts(),
     linkscript = ":litert_version_script.lds",
     # Set stamp = 0 to avoid including internal info to the binary for the public release.
     stamp = 0,

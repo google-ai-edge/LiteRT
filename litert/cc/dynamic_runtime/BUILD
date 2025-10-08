@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:special_rule.bzl", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
@@ -144,10 +144,7 @@ cc_library(
 cc_test(
     name = "litert_event_test",
     srcs = ["//litert/cc:litert_event_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + gles_linkopts(),
+    linkopts = litert_android_linkopts() + gles_linkopts(),
     deps = [
         ":litert_environment",
         ":litert_event",
@@ -379,10 +376,7 @@ cc_library(
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["//litert/cc:litert_tensor_buffer_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     deps = [
         ":litert_environment",
         ":litert_event",

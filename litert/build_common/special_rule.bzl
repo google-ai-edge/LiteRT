@@ -43,6 +43,13 @@ def gles_linkopts():
         "//conditions:default": [],
     })
 
+def litert_android_linkopts():
+    return select({
+        "//litert:litert_android_no_jni": ["-lnativewindow"],
+        "@org_tensorflow//tensorflow:android": ["-landroid"],
+        "//conditions:default": [],
+    })
+
 def litert_metal_opts():
     return select({
         "@platforms//os:ios": ["-ObjC++"],

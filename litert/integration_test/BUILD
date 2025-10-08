@@ -15,6 +15,7 @@
 # copybara:uncomment load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar", "guitar_workflow_test")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 # copybara:uncomment load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_cpu_mh_guitar_test", "litert_device_test", "litert_integration_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 # copybara:comment_begin(oss-only)
@@ -48,10 +49,7 @@ cc_test(
     srcs = ["gen_device_test.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
     data = ["//litert/integration_test/models:single_op"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     tags = ["manual"],
     deps = [
         ":gen_device_test_lib",

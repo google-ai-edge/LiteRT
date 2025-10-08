@@ -17,7 +17,7 @@ load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts")
+load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:macos.bzl", "macos_unit_test")
@@ -884,10 +884,7 @@ cc_library(
 cc_test(
     name = "litert_event_test",
     srcs = ["litert_event_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + gles_linkopts(),
+    linkopts = litert_android_linkopts() + gles_linkopts(),
     deps = [
         ":litert_event",
         ":litert_platform_support",
@@ -1055,10 +1052,7 @@ cc_library(
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["litert_tensor_buffer_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     deps = [
         ":litert_element_type",
         ":litert_environment",

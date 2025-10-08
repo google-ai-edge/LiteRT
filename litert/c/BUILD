@@ -33,7 +33,15 @@ load(
     "export_lrt_tflite_runtime_linkopt",
     "export_lrt_tflite_runtime_script",
 )
-load("//litert/build_common:special_rule.bzl", "gles_deps", "gles_headers", "gles_linkopts", "litert_metal_linkopts", "litert_metal_opts")
+load(
+    "//litert/build_common:special_rule.bzl",
+    "gles_deps",
+    "gles_headers",
+    "gles_linkopts",
+    "litert_android_linkopts",
+    "litert_metal_linkopts",
+    "litert_metal_opts",
+)
 # copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
 
 LITERT_MIN_IOS_VERSION = "14.0"
@@ -351,11 +359,7 @@ cc_library(
         "litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
-    linkopts = select({
-        "//litert:litert_android_no_jni": ["-lnativewindow"],
-        "@platforms//os:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + gles_linkopts() + litert_metal_linkopts(),
+    linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
         ":litert_common",
         ":litert_custom_tensor_buffer",
@@ -397,10 +401,7 @@ cc_test(
 cc_test(
     name = "litert_tensor_buffer_requirements_test",
     srcs = ["litert_tensor_buffer_requirements_test.cc"],
-    linkopts = select({
-        "@platforms//os:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     deps = [
         ":litert_common",
         ":litert_tensor_buffer",
@@ -666,10 +667,7 @@ cc_shared_library(
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + [
         "-Wl,-soname=libLiteRtRuntimeCApi.so",
-    ] + select({
-        "@platforms//os:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    ] + litert_android_linkopts(),
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
@@ -763,10 +761,7 @@ cc_shared_library(
     features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
-    user_link_flags = export_lrt_tflite_runtime_linkopt() + select({
-        "@platforms//os:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
     deps = LITERT_C_API_COMMON_DEPS + [
         "//tflite/c:c_api",
         "//tflite/c:c_api_experimental",

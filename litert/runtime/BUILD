@@ -19,6 +19,7 @@ load(
     "//litert/build_common:special_rule.bzl",
     "gles_deps",
     "gles_linkopts",
+    "litert_android_linkopts",
     "litert_metal_deps",
     "litert_metal_deps_without_gpu_environment",
     "litert_metal_linkopts",
@@ -252,10 +253,7 @@ cc_library(
 # cc_test(
 #     name = "gpu_environment_test",
 #     srcs = ["gpu_environment_test.cc"],
-#     linkopts = select({
-#         "@org_tensorflow//tensorflow:android": ["-landroid"],
-#         "//conditions:default": [],
-#     }),
+#     linkopts = litert_android_linkopts(),
 #     tags = ["requires-gpu-nvidia"],
 #     deps = [
 #         ":gpu_environment",
@@ -451,10 +449,7 @@ cc_test(
     name = "compiled_model_test",
     srcs = ["compiled_model_test.cc"],
     data = ["//litert/test:testdata/simple_model.tflite"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     # require GPU to run OpenCL tests.
     tags = ["requires-gpu-nvidia"],
     deps = [
@@ -496,12 +491,7 @@ cc_test(
 cc_test(
     name = "gl_buffer_test",
     srcs = ["gl_buffer_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-        ],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     tags = ["notap"],
     deps = [
         ":gpu_environment_header",

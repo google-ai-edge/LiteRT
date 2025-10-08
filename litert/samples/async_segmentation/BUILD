@@ -19,6 +19,7 @@ load(
     "gl_native_deps",
     "gles_deps",
     "gles_linkopts",
+    "litert_android_linkopts",
 )
 
 package(
@@ -66,12 +67,7 @@ cc_binary(
         ":test_images",
         "//litert/c:litert_runtime_c_api_shared_lib",  # buildcleaner: keep
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [
-            "-landroid",
-        ],
-        "//conditions:default": [],
-    }) + gles_linkopts(),
+    linkopts = litert_android_linkopts() + gles_linkopts(),
     deps = [
         ":image_processor",
         ":image_utils",
@@ -98,10 +94,7 @@ cc_binary(
         "@litert_gpu//:jni/arm64-v8a/libLiteRtGpuAccelerator.so",  # copybara:comment
         # copybara:uncomment "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so",
     ],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + gles_linkopts(),
+    linkopts = litert_android_linkopts() + gles_linkopts(),
     deps = [
         ":image_processor",
         ":image_utils",

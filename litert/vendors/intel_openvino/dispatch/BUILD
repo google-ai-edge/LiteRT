@@ -15,6 +15,7 @@
 
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dynamic_lib", "litert_lib")
+load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -52,10 +53,7 @@ litert_dynamic_lib(
     }),
     export_litert_only = True,
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }) + [
+    linkopts = litert_android_linkopts() + [
         "-Wl,-soname=libLiteRtDispatch_IntelOpenvino.so",
         "-Wl,-lc++abi",
     ],
@@ -96,10 +94,7 @@ litert_bin(
         "//conditions:default": [],
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     linkshared = 1,
     visibility = ["//litert:__subpackages__"],
     deps = [
@@ -152,10 +147,7 @@ cc_test(
     #data = [
     #    "//litert/test:testdata/ov_model_add1d_FP32.blob",
     #],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": ["-landroid"],
-        "//conditions:default": [],
-    }),
+    linkopts = litert_android_linkopts(),
     linkstatic = 1,
     tags = [
         "no-remote-exec",
