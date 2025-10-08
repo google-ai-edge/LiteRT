@@ -353,6 +353,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

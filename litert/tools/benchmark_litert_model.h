@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -305,12 +306,13 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     float high_range = 0;
     LITERT_ASSIGN_OR_ABORT(const auto t_tensor_type, t.TensorType());
     LITERT_ASSIGN_OR_ABORT(const size_t t_size, t.Size());
+    size_t num_elements = t_size / *GetByteWidth(t_tensor_type.ElementType());
     tflite::utils::GetDataRangesForType(
         static_cast<TfLiteType>(t_tensor_type.ElementType()), &low_range,
         &high_range);
     return tflite::utils::CreateRandomTensorData(
-        name, static_cast<TfLiteType>(t_tensor_type.ElementType()), t_size,
-        low_range, high_range);
+        name, static_cast<TfLiteType>(t_tensor_type.ElementType()),
+        num_elements, low_range, high_range);
   }
 
   TfLiteStatus PrepareInputData() override {
@@ -318,8 +320,14 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     for (auto& buffer : *input_buffers_) {
       auto t_data =
           CreateRandomTensorData(buffer, "input_" + std::to_string(index));
-      buffer.Write<char>(absl::MakeSpan(
+      auto res = buffer.Write<char>(absl::MakeSpan(
           reinterpret_cast<char*>(t_data.data.get()), t_data.bytes));
+      if (!res.HasValue()) {
+        LITERT_LOG(LITERT_ERROR, "PrepareInputData: %s",
+                   res.Error().Message().c_str());
+        return kTfLiteError;
+      }
+
       ++index;
     }
     return kTfLiteOk;
