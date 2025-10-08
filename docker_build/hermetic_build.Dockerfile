@@ -98,7 +98,7 @@ RUN chmod -R go=u ${ANDROID_DEV_HOME}
 COPY requirements.txt /tmp/requirements.txt
 
 # Install Python dependencies securely using requirements file with hash verification
-RUN pip3 install --require-hashes -r /tmp/requirements.txt
+RUN pip3 install --break-system-packages --require-hashes -r /tmp/requirements.txt
 
 # Set up environment variables for auto-configuration
 ENV PYTHON_BIN_PATH=/usr/bin/python3
