@@ -232,7 +232,7 @@ class CtStr {
     return absl::string_view(data_.data(), data_.size());
   }
 
- private:
+  //  private:
   template <size_t N, size_t... I>
   constexpr CtStr(StrLiteral<N> lit, std::index_sequence<I...>)
       : data_(Data({lit[I]...})) {}

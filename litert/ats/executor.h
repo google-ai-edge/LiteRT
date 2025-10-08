@@ -42,8 +42,6 @@ namespace litert::testing {
 
 // Base class for executing the compiled model for ATS.
 class CompiledModelExecutor {
-  using Stats = AtsCaptureEntry::Latency;
-
  public:
   using Ptr = std::unique_ptr<CompiledModelExecutor>;
 
@@ -55,7 +53,7 @@ class CompiledModelExecutor {
   // Run the compiled model against the given model and with the given inputs.
   template <typename Iter>
   Expected<std::vector<SimpleBuffer>> Run(
-      Iter start, Iter end, std::optional<Stats::Ref> stats = {}) {
+      Iter start, Iter end, std::optional<Latency::Ref> stats = {}) {
     LITERT_ASSIGN_OR_RETURN(auto api_inputs, api_.CreateInputBuffers());
     if (api_inputs.size() != std::distance(start, end)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -67,9 +65,9 @@ class CompiledModelExecutor {
     }
     LITERT_ASSIGN_OR_RETURN(auto api_outputs, api_.CreateOutputBuffers());
 
-    auto time_start = Stats::Start(stats);
+    auto time_start = Latency::Start(stats);
     LITERT_RETURN_IF_ERROR(api_.Run(api_inputs, api_outputs));
-    Stats::Stop(stats, time_start);
+    Latency::Stop(stats, time_start);
 
     std::vector<SimpleBuffer> output_buffers;
     for (const auto& output : api_outputs) {
@@ -82,7 +80,7 @@ class CompiledModelExecutor {
 
   template <typename Inputs>
   Expected<std::vector<SimpleBuffer>> Run(
-      const Inputs& inputs, std::optional<Stats::Ref> stats = {}) {
+      const Inputs& inputs, std::optional<Latency::Ref> stats = {}) {
     return Run(std::cbegin(inputs), std::cend(inputs), stats);
   }
 

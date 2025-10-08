@@ -28,11 +28,11 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/common.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -82,13 +82,12 @@ ABSL_FLAG(int64_t, max_ms_per_test, -1,
 ABSL_FLAG(bool, fail_on_timeout, true,
           "Whether to fail a test if it times out.");
 
-ABSL_FLAG(std::string, save_report, "",
+ABSL_FLAG(std::string, csv, "",
           "If specified, a CSV file will be written to this path containing "
           "the results of the test run.");
 
-ABSL_FLAG(std::string, print_report, "latency",
-          "How to dump a summary of the run results after completion. Options "
-          "are \"latency\", \"all\" or empty string for no printing.");
+ABSL_FLAG(bool, dump_report, true,
+          "Whether to dump the report to the user after completion.");
 
 namespace litert::testing {
 
@@ -110,32 +109,17 @@ Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   return seeds;
 }
 
-Expected<AtsConf::ExecutionBackend> ParseBackend() {
+Expected<ExecutionBackend> ParseBackend() {
   const auto backend_flag = absl::GetFlag(FLAGS_backend);
   if (backend_flag == "cpu") {
-    return AtsConf::ExecutionBackend::kCpu;
+    return ExecutionBackend::kCpu;
   } else if (backend_flag == "gpu") {
-    return AtsConf::ExecutionBackend::kGpu;
+    return ExecutionBackend::kGpu;
   } else if (backend_flag == "npu") {
-    return AtsConf::ExecutionBackend::kNpu;
+    return ExecutionBackend::kNpu;
   } else {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  absl::StrFormat("Unknown backend: %s", backend_flag.c_str()));
-  }
-}
-
-Expected<AtsConf::PrintReportT> ParsePrintReport() {
-  const auto print_report_flag = absl::GetFlag(FLAGS_print_report);
-  if (print_report_flag == "latency") {
-    return AtsConf::PrintReportT::kLatency;
-  } else if (print_report_flag == "all") {
-    return AtsConf::PrintReportT::kAll;
-  } else if (print_report_flag.empty()) {
-    return AtsConf::PrintReportT::kNone;
-  } else {
-    return Error(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrFormat("Unknown print report: %s", print_report_flag.c_str()));
   }
 }
 
@@ -167,13 +151,13 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
     max_ms_per_test_opt = std::chrono::milliseconds(max_ms_per_test);
   }
   auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
-  LITERT_ASSIGN_OR_RETURN(auto print_report, ParsePrintReport());
-  auto save_report = absl::GetFlag(FLAGS_save_report);
+  auto csv = absl::GetFlag(FLAGS_csv);
+  auto dump_report = absl::GetFlag(FLAGS_dump_report);
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               f16_range_for_f32, data_seed, iters_per_test,
-              std::move(max_ms_per_test_opt), fail_on_timeout, print_report,
-              std::move(save_report));
+              std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
+              std::move(csv));
   Setup(res);
   return res;
 }

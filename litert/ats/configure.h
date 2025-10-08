@@ -25,6 +25,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_rng.h"
 #include "litert/core/filesystem.h"
@@ -72,18 +73,19 @@ ABSL_DECLARE_FLAG(int64_t, max_ms_per_test);
 ABSL_DECLARE_FLAG(bool, fail_on_timeout);
 
 // Where to save report CSV.
-ABSL_DECLARE_FLAG(std::string, save_report);
+ABSL_DECLARE_FLAG(std::string, csv);
 
-// How to dump summary after completion.
-ABSL_DECLARE_FLAG(std::string, print_report);
+// Whether to dump the report to the user.
+ABSL_DECLARE_FLAG(bool, dump_report);
 
 namespace litert::testing {
 
 class AtsConf {
  public:
+  // How to dump a summary of the run results after completion.
+  enum class PrintOpt { kLatency, kAll, kNone };
   using SeedMap = absl::flat_hash_map<std::string, int>;
-  enum class PrintReportT { kLatency, kAll, kNone };
-  enum class ExecutionBackend { kCpu, kGpu, kNpu };
+
 
   // Parse flags into this class and do any global setup needed which depends
   // on said flags.
@@ -138,39 +140,21 @@ class AtsConf {
 
   // Save the results of the test run to a CSV file if the user has requested.
   template <typename T>
-  void SaveReport(const T& capture) const {
-    if (save_report_.empty()) {
+  void Csv(const T& capture) const {
+    if (csv_.empty()) {
       return;
     }
-    std::ofstream out(save_report_);
+    std::ofstream out(csv_);
     capture.Csv(out);
   }
 
   // Dump the results of the test to user.
   template <typename T>
-  void PrintReport(const T& capture) const {
-    if (print_report_ == PrintReportT::kNone) {
+  void Print(const T& capture) const {
+    if (!dump_report_) {
       return;
-    } else if (print_report_ == PrintReportT::kLatency) {
-      capture.PrintLatency(std::cerr);
-    } else {
-      capture.Print(std::cerr);
     }
-  }
-
-  template <typename Sink>
-  friend void AbslStringify(Sink& sink, const ExecutionBackend& backend) {
-    switch (backend) {
-      case ExecutionBackend::kCpu:
-        sink.Append("cpu");
-        break;
-      case ExecutionBackend::kGpu:
-        sink.Append("gpu");
-        break;
-      case ExecutionBackend::kNpu:
-        sink.Append("npu");
-        break;
-    }
+    capture.Print(std::cerr);
   }
 
  private:
@@ -180,8 +164,7 @@ class AtsConf {
                    std::string extra_models, bool f16_range_for_f32,
                    std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
-                   bool fail_on_timeout, PrintReportT print_report,
-                   std::string save_report)
+                   bool fail_on_timeout, bool dump_report, std::string csv)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -195,8 +178,8 @@ class AtsConf {
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
         fail_on_timeout_(fail_on_timeout),
-        print_report_(print_report),
-        save_report_(std::move(save_report)) {
+        dump_report_(dump_report),
+        csv_(std::move(csv)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -216,8 +199,8 @@ class AtsConf {
   size_t iters_per_test_;
   std::chrono::milliseconds max_ms_per_test_;
   bool fail_on_timeout_;
-  PrintReportT print_report_;
-  std::string save_report_;
+  bool dump_report_;
+  std::string csv_;
 
   RandomTensorDataBuilder data_builder_;
 };

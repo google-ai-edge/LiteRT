@@ -31,6 +31,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture.h"
+#include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
 #include "litert/c/litert_common.h"
@@ -51,8 +52,6 @@ using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
 
 class AtsTest : public RngTest {
-  using Stats = AtsCaptureEntry::Latency;
-
  public:
   template <typename T>
   using BufferView = typename SimpleBuffer::CView<T>;
@@ -111,9 +110,7 @@ class AtsTest : public RngTest {
     Cap().accelerator.a_type = conf_.Backend();
     Cap().run.num_iterations = conf_.ItersPerTest();
     Cap().numerics.reference_type =
-        graph_->HasReference()
-            ? AtsCaptureEntry::Numerics::ReferenceType::kCustom
-            : AtsCaptureEntry::Numerics::ReferenceType::kCpu;
+        graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;
   }
 
   void TestBody() override {
@@ -137,11 +134,11 @@ class AtsTest : public RngTest {
     }
 
     if (HasFailure()) {
-      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kError;
+      Cap().run.status = RunStatus::kError;
     } else if (TimedOut()) {
-      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kTimeout;
+      Cap().run.status = RunStatus::kTimeout;
     } else {
-      Cap().run.status = AtsCaptureEntry::RunDetail::Status::kOk;
+      Cap().run.status = RunStatus::kOk;
     }
   }
 

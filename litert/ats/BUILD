@@ -61,6 +61,7 @@ cc_library(
     srcs = ["configure.cc"],
     hdrs = ["configure.h"],
     deps = [
+        ":common",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
@@ -137,6 +138,7 @@ cc_library(
     hdrs = ["fixture.h"],
     deps = [
         ":capture",
+        ":common",
         ":configure",
         ":executor",
         "//litert/c:litert_common",
@@ -186,6 +188,7 @@ cc_test(
     ],
     deps = [
         ":capture",
+        ":common",
         ":configure",
         ":fixture",
         ":register",
@@ -209,10 +212,9 @@ cc_library(
     testonly = True,
     hdrs = ["capture.h"],
     deps = [
-        ":configure",
+        ":common",
+        ":print",
         "//litert/cc:litert_detail",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -222,6 +224,33 @@ cc_test(
     srcs = ["capture_test.cc"],
     deps = [
         ":capture",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "common",
+    testonly = True,
+    hdrs = ["common.h"],
+    deps = ["@com_google_absl//absl/strings:str_format"],
+)
+
+cc_library(
+    name = "print",
+    testonly = True,
+    hdrs = ["print.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "print_test",
+    srcs = ["print_test.cc"],
+    deps = [
+        ":print",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],

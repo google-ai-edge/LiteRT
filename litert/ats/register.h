@@ -57,7 +57,7 @@ class RegisterFunctor {
       const auto names = Fixture::Names::Create(test_id_++, Logic::Name(),
                                                 test_graph.Value()->Graph());
       Fixture::Register(std::move(*test_graph), options_, names,
-                        /*always_reg=*/false, AtsCapture::NewEntry(cap_));
+                        /*always_reg=*/false, AtsCapture::MaybeNewEntry(cap_));
     }
   }
 
@@ -140,7 +140,7 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
     const auto names = Fixture::Names::Create(test_id++, ExtraModel::Name(),
                                               file, "user provided tflite");
     Fixture::Register(std::move(*model), options, names,
-                      /*always_reg=*/true, AtsCapture::NewEntry(cap));
+                      /*always_reg=*/true, AtsCapture::MaybeNewEntry(cap));
   }
 }
 

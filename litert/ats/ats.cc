@@ -92,8 +92,8 @@ int Ats() {
 
   const auto res = RUN_ALL_TESTS();
 
-  options->SaveReport(cap);
-  options->PrintReport(cap);
+  options->Csv(cap);
+  options->Print(cap);
 
   return res;
 }
