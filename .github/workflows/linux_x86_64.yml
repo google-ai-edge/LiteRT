@@ -22,7 +22,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Linux"
-    runs-on: ubuntu-22.04-96core
+    runs-on: [self-hosted, linux, x64]
     permissions:
       actions: write
       contents: write
