@@ -46,20 +46,20 @@ LiteRtStatus LiteRtSetGpuOptionsBenchmarkMode(LiteRtOpaqueOptions gpu_options,
 LiteRtStatus LiteRtSetGpuOptionsGpuBackend(LiteRtOpaqueOptions gpu_options,
                                            LiteRtGpuBackend backend);
 
-// Set to true to run in no external tensors mode. This prevents GPU
-// Accelerator from using external tensors.
-// This mode mostly gives a better performance but it requires additional
-// GPU-GPU copies for input and output tensors.
+// Set to true to run in external tensors mode. This allows GPU
+// Accelerator to always use external tensors (PHWC4 format) as inputs and
+// outputs. This mode mostly gives a slightly lower performance but it reduces
+// additional GPU-GPU copies for input and output tensors.
 //
 // WARNING: This is an experimental feature and subject to change.
-LiteRtStatus LiteRtSetGpuOptionsNoExternalTensorsMode(
+LiteRtStatus LiteRtSetGpuOptionsExternalTensorsMode(
     LiteRtOpaqueOptions gpu_options, bool enable);
 
-// Add a prefix pattern to match external tensors. External tensors won't be
-// affected by the NoExternalTensorsMode. This is useful for state
-// tensors to reduce GPU-GPU copies even with the NoExternalTensorsMode.
-// For example, if the prefix pattern is "kv_cache_", then all tensors whose
-// names begin with "kv_cache_" will be exempted from NoExternalTensorsMode.
+// Add a prefix pattern to match external tensors. When ExternalTensorsMode is
+// not used (default behavior), all input and output tensors requires PHWC4
+// layout conversion. This pattern is useful for state tensors to reduce the
+// layout conversion. For example, if the prefix pattern is "kv_cache_", then
+// all tensors whose names begin with "kv_cache_" will be exempted.
 LiteRtStatus LiteRtAddGpuOptionsExternalTensorPattern(
     LiteRtOpaqueOptions gpu_options, const char* pattern);
 
@@ -155,7 +155,7 @@ LiteRtStatus LiteRtGetGpuOptionsBenchmarkMode(bool* enabled,
 LiteRtStatus LiteRtGetGpuOptionsGpuBackend(LiteRtGpuBackend* backend,
                                            LiteRtGpuOptionsPayload payload);
 
-LiteRtStatus LiteRtGetGpuOptionsNoExternalTensorsMode(
+LiteRtStatus LiteRtGetGpuOptionsExternalTensorsMode(
     bool* enabled, LiteRtGpuOptionsPayload payload);
 
 LiteRtStatus

@@ -54,7 +54,7 @@ using TestParams =
 Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
   LITERT_RETURN_IF_ERROR(
-      gpu_options.EnableNoExternalTensorsMode(std::get<0>(params)));
+      gpu_options.EnableExternalTensorsMode(std::get<0>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetDelegatePrecision(std::get<1>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
 

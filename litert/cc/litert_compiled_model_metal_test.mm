@@ -29,11 +29,10 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
 namespace {
-litert::Expected<litert::Options> CreateGpuOptions(bool no_immutable_external_tensors_mode) {
+litert::Expected<litert::Options> CreateGpuOptions(bool external_tensors_mode) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, litert::GpuOptions::Create());
 
-  LITERT_RETURN_IF_ERROR(
-      gpu_options.EnableNoExternalTensorsMode(no_immutable_external_tensors_mode));
+  LITERT_RETURN_IF_ERROR(gpu_options.EnableExternalTensorsMode(external_tensors_mode));
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
   gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
@@ -67,7 +66,7 @@ const float kTolerance = 1e-5;
   XCTAssertTrue(model);
   XCTAssertTrue(env);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(false));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/true));
   XCTAssertTrue(options);
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               litert::CompiledModel::Create(env, *model, options));

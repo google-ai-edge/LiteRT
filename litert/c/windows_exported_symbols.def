@@ -78,7 +78,7 @@ EXPORTS
   LiteRtGetGpuOptionsConstantTensorSharing
   LiteRtGetGpuOptionsGpuPriority
   LiteRtGetGpuOptionsInfiniteFloatCapping
-  LiteRtGetGpuOptionsNoExternalTensorsMode
+  LiteRtGetGpuOptionsExternalTensorsMode
   LiteRtGetGpuOptionsPayloadIdentifier
   LiteRtGetMetric
   LiteRtGetModelSignature
@@ -180,7 +180,7 @@ EXPORTS
   LiteRtSetGpuOptionsGpuBackend
   LiteRtSetGpuOptionsGpuPriority
   LiteRtSetGpuOptionsInfiniteFloatCapping
-  LiteRtSetGpuOptionsNoExternalTensorsMode
+  LiteRtSetGpuOptionsExternalTensorsMode
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetRuntimeOptionsEnableProfiling

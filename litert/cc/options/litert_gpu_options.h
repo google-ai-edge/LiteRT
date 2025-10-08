@@ -42,7 +42,7 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetModelCacheKey(const char* model_cache_key);
   LiteRtStatus SetSerializeProgramCache(bool serialize_program_cache);
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
-  LiteRtStatus EnableNoExternalTensorsMode(bool enabled);
+  LiteRtStatus EnableExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
   LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
   LiteRtStatus SetGpuPriority(LiteRtGpuPriority priority);

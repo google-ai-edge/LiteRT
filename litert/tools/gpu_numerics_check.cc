@@ -49,8 +49,8 @@ ABSL_FLAG(bool, check_element_type, false,
           "Whether to check the element type of the output buffers.");
 ABSL_FLAG(std::string, gpu_backend, "opencl",
           "GPU backend to use for testing. Can be opencl, webgpu.");
-ABSL_FLAG(bool, no_external_tensor_mode, true,
-          "Whether to enable no external tensor mode.");
+ABSL_FLAG(bool, external_tensor_mode, false,
+          "Whether to enable external tensor mode.");
 ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 
 namespace litert {
@@ -66,8 +66,8 @@ Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
-  gpu_options.EnableNoExternalTensorsMode(
-      absl::GetFlag(FLAGS_no_external_tensor_mode));
+  gpu_options.EnableExternalTensorsMode(
+      absl::GetFlag(FLAGS_external_tensor_mode));
   gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);

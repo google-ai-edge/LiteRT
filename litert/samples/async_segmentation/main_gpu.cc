@@ -49,11 +49,9 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
         gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
     LITERT_ABORT_IF_ERROR(gpu_options.SetBufferStorageType(
         kLiteRtDelegateBufferStorageTypeBuffer));
-    LITERT_ABORT_IF_ERROR(
-        gpu_options.EnableNoExternalTensorsMode(false));
+    LITERT_ABORT_IF_ERROR(gpu_options.EnableExternalTensorsMode(true));
   } else {
-    LITERT_ABORT_IF_ERROR(
-        gpu_options.EnableNoExternalTensorsMode(true));
+    LITERT_ABORT_IF_ERROR(gpu_options.EnableExternalTensorsMode(false));
   }
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);

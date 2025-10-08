@@ -83,7 +83,9 @@ cc_test(
     deps = [
         ":litert_gpu_options",
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_gpu_options",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
