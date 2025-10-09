@@ -1,21 +1,24 @@
 // Copyright (c) Qualcomm Innovation Center, Inc. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/relu_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/utils/qnn_model.h"
+#include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnTypes.h"  // from @qairt
 
 using testing::FloatNear;
 using testing::Pointwise;
@@ -94,6 +97,92 @@ TEST_F(QnnModelTest, SingleRelu) {
   ASSERT_TRUE(output_data);
   ASSERT_EQ(output_data->size(), 4);
   ASSERT_THAT(output_data.value(), Pointwise(FloatNear(1e-3), {0, 0, 1, 2}));
+}
+
+TEST_F(QnnModelTest, SingleElementWiseDivide) {
+  SetUpQnnModel(::qnn::Options(), "SM8650");
+
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+  ::qnn::QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.1f, 0);
+
+  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto ops = ::qnn::BuildElementwiseDivOp(tensor_pool_, {input_0, input_1},
+                                          {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+
+  // ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+  // #if !defined(__ANDROID__)
+  //   GTEST_SKIP() << "The rest of this test is specific to Android devices
+  //   with a "
+  //                   "Qualcomm HTP";
+  // #endif
+
+  auto input_idx = qnn_model_.AddInputTensor(input_0);  // NOLINT
+  auto input_idx1 = qnn_model_.AddInputTensor(input_1);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  qnn_model_.SetInputData<int16_t>(input_idx, {40, 40, 40, 40});
+  qnn_model_.SetInputData<int16_t>(input_idx1, {4, 4, 4, 2});
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<int16_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 4);
+  ASSERT_THAT(output_data.value(),
+              Pointwise(FloatNear(1e-3), {100, 100, 100, 200}));
+}
+
+TEST_F(QnnModelTest, SingleElementWiseMax) {
+  SetUpQnnModel(::qnn::Options(), "SM8650");
+
+  ::qnn::QuantizeParamsWrapperVariant quant_param;
+  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.1f, 0);
+  const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
+  auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+  auto ops = ::qnn::BuildElementwiseMaximumOp(tensor_pool_, {input_0, input_1},
+                                              {output_0});
+  ASSERT_FALSE(ops.empty());
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+
+  // ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  ASSERT_TRUE(qnn_model_.Finalize());
+
+  // #if !defined(__ANDROID__)
+  //   GTEST_SKIP() << "The rest of this test is specific to Android devices
+  //   with a "
+  //                   "Qualcomm HTP";
+  // #endif
+
+  auto input_idx = qnn_model_.AddInputTensor(input_0);  // NOLINT
+  auto input_idx2 = qnn_model_.AddInputTensor(input_1);
+  auto output_idx = qnn_model_.AddOutputTensor(output_0);
+
+  qnn_model_.SetInputData<int16_t>(input_idx, {-1, 2, 3, 4});
+  qnn_model_.SetInputData<int16_t>(input_idx2, {2, 0, 5, 6});
+
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  auto output_data = qnn_model_.GetOutputData<int16_t>(output_idx);
+  ASSERT_TRUE(output_data);
+  ASSERT_EQ(output_data->size(), 4);
+  ASSERT_THAT(output_data.value(), Pointwise(FloatNear(1e-3), {2, 2, 5, 6}));
 }
 
 }  // namespace
