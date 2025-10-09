@@ -197,10 +197,10 @@ cc_library(
         "//litert:litert_public",
     ],
     deps = [
+        ":litert_model",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
-        "//litert/cc:litert_model",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

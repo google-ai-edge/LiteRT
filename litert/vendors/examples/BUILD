@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -34,6 +34,7 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":example_common",
+        ":example_transformations",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
@@ -194,12 +195,10 @@ cc_test(
     ],
 )
 
-litert_lib(
+cc_library(
     name = "example_transformations",
     srcs = ["example_transformations.cc"],
     hdrs = ["example_transformations.h"],
-    linkstatic = True,
-    ungrte = True,
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/dynamic_runtime:litert_model",

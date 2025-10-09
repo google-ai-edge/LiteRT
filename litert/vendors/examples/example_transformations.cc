@@ -17,20 +17,59 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_rewriter.h"
 
+using litert::Op;
+using litert::OpInputs;
+using litert::OpOutputs;
+using litert::Rewriter;
+
 extern "C" {
 
 LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
                                               LiteRtRewriter rewriter_ptr) {
   // Convert to C++ objects.
-  litert::Rewriter rewriter = litert::Rewriter(rewriter_ptr);
-  litert::Op root_op = litert::Op(op);
+  Rewriter rewriter = Rewriter(rewriter_ptr);
+  Op root_op = Op(op);
   if (root_op.Code() != kLiteRtOpCodeTflAdd) {
     return kLiteRtStatusPatternNoMatch;
   }
-  litert::OpInputs inputs = root_op.Inputs();
-  litert::OpOutputs outputs = root_op.Outputs();
+  OpInputs inputs = root_op.Inputs();
+  OpOutputs outputs = root_op.Outputs();
   rewriter.BuildOp(kLiteRtOpCodeTflMul, inputs, outputs);
   rewriter.EraseOp(root_op);
+  return kLiteRtStatusOk;
+}
+LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
+                                          LiteRtRewriter rewriter_ptr) {
+  Rewriter rewriter = Rewriter(rewriter_ptr);
+  Op root_op = Op(op);
+
+  // Pattern Match
+  if (root_op.Code() != kLiteRtOpCodeTflSqrt) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  Op mean_op = Op(root_op.Inputs().front().DefiningOp().value().op);
+  if (mean_op.Code() != kLiteRtOpCodeTflMean) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  Op square_op = Op(mean_op.Inputs().front().DefiningOp().value().op);
+  if (square_op.Code() != kLiteRtOpCodeTflMul) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  if (square_op.Inputs().size() != 2) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  if (square_op.Inputs().at(0).Get() != square_op.Inputs().at(1).Get()) {
+    return kLiteRtStatusPatternNoMatch;
+  }
+  // Reuse the inputs of the mul(square op).
+  OpInputs inputs = square_op.Inputs();
+  // Reuse the outputs of the mean op.
+  OpOutputs outputs = mean_op.Outputs();
+  // Build the abs op.
+  rewriter.BuildOp(kLiteRtOpCodeTflAbs, inputs, outputs);
+  // Erase the original ops.
+  rewriter.EraseOp(square_op);
+  rewriter.EraseOp(mean_op);
   return kLiteRtStatusOk;
 }
 

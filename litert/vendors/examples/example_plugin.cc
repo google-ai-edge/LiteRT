@@ -14,7 +14,6 @@
 
 #include <cstdlib>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -24,12 +23,14 @@
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_op_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/examples/example_transformations.h"
 #include "litert/vendors/examples/example_common.h"
 
 // A simple compiler plugin example that implements everything directly.
@@ -37,7 +38,10 @@
 // a string representative of the ops consumed.
 
 // Plugins can hold state.
-struct LiteRtCompilerPluginT {};
+struct LiteRtCompilerPluginT {
+  std::vector<LiteRtPatternFn> pattern_fns;
+  std::vector<const char*> transformation_names;
+};
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
   if (!api_version) {
@@ -280,5 +284,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   *compiled_result = result.release();
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
+  compiler_plugin->pattern_fns.push_back(SqrtMeanSquareTransformation);
+  compiler_plugin->transformation_names.push_back("MyTransformation");
+  *num_patterns = compiler_plugin->pattern_fns.size();
+  *pattern_fns = compiler_plugin->pattern_fns.data();
+  *transformation_names = compiler_plugin->transformation_names.data();
   return kLiteRtStatusOk;
 }
