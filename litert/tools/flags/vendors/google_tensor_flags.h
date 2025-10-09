@@ -37,8 +37,6 @@ std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_int64_to_int32);
 
-ABSL_DECLARE_FLAG(std::string, google_tensor_output_dir);
-
 ABSL_DECLARE_FLAG(bool, google_tensor_dump_op_timings);
 
 ABSL_DECLARE_FLAG(bool, google_tensor_enable_large_model_support);

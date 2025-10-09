@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/matchers.h"
 
@@ -108,7 +109,7 @@ TEST(LiteRtGoogleTensorOptionsTest, DumpOpTimings) {
   LiteRtGoogleTensorOptionsTruncationType truncation_type;
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetFloatTruncationType(
       options_data, &truncation_type));
-  ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeUnspecified);
+  ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeAuto);
 
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsSetFloatTruncationType(
       options_data, kLiteRtGoogleTensorFloatTruncationTypeBfloat16));
@@ -128,7 +129,7 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetInt64ToInt32Truncation());
 
   EXPECT_EQ(options->GetFloatTruncationType(),
-            kLiteRtGoogleTensorFloatTruncationTypeUnspecified);
+            kLiteRtGoogleTensorFloatTruncationTypeAuto);
   options->SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
   EXPECT_EQ(options->GetFloatTruncationType(),
