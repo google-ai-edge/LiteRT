@@ -17,6 +17,7 @@
 #include <string>
 #include <vector>
 
+#define ABSL_FLAGS_STRIP_NAMES 0
 #include "absl/flags/flag.h"  // from @com_google_absl
 
 ABSL_FLAG(std::string, model, "", "Path to flatbuffer file.");

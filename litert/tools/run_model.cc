@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#define ABSL_FLAGS_STRIP_NAMES 0
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl

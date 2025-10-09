@@ -16,6 +16,7 @@
 
 #include <string>
 
+#define ABSL_FLAGS_STRIP_NAMES 0
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "litert/tools/flags/flag_types.h"
 
