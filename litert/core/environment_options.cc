@@ -32,7 +32,11 @@ litert::Expected<LiteRtAny> LiteRtEnvironmentOptionsT::GetOption(
 }
 
 litert::Expected<void> LiteRtEnvironmentOptionsT::SetOption(
-    LiteRtEnvOption option) {
+    LiteRtEnvOption option, bool overwrite) {
+  if (!overwrite && options_.contains(option.tag)) {
+    return litert::Error(kLiteRtStatusErrorAlreadyExists,
+                         "Option was already set for this environment.");
+  }
   if (option.value.type == kLiteRtAnyTypeString) {
     const int size = strlen(option.value.str_value) + 1;
     auto [string_it, _] = string_option_values_.insert_or_assign(

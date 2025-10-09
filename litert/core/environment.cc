@@ -36,10 +36,10 @@ litert::Expected<LiteRtEnvironmentT::Ptr> LiteRtEnvironmentT::CreateWithOptions(
 }
 
 litert::Expected<void> LiteRtEnvironmentT::AddOptions(
-    absl::Span<const LiteRtEnvOption> options) {
+    absl::Span<const LiteRtEnvOption> options, bool overwrite) {
   LITERT_LOG(LITERT_INFO, "Adding options to the existing LiteRT environment");
   for (const auto& opt : options) {
-    options_.SetOption(opt);
+    LITERT_RETURN_IF_ERROR(options_.SetOption(opt, overwrite));
   }
   return {};
 }
