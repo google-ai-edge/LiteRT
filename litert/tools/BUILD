@@ -370,6 +370,8 @@ cc_library(
         "//tflite/c:c_api_types",
         "//tflite/c:common",
         "//tflite/profiling:model_runtime_info",
+        "//tflite/profiling:profile_buffer",
+        "//tflite/profiling:profile_summarizer",
         "//tflite/tools:command_line_flags",
         "//tflite/tools:utils",
         "//tflite/tools/benchmark:benchmark_model_lib",

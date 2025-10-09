@@ -67,7 +67,8 @@ class CustomBuffer {
                                      const LiteRtRankedTensorType& tensor_type,
                                      LiteRtTensorBufferType buffer_type,
                                      HwMemoryHandle hw_buffer_handle,
-                                     size_t buffer_size);
+                                     size_t buffer_size,
+                                     size_t packed_buffer_size);
 
  private:
   // Private constructor to create a custom buffer.

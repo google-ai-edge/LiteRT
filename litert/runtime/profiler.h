@@ -53,8 +53,12 @@ class LiteRtProfilerT : public tflite::Profiler {
 
   // tag is copied and owned by the profiler, caller does not need to keep
   // the string alive.
-  void AddEvent(const char* tag, EventType event_type, uint64_t
-    elapsed_time, int64_t event_metadata1, int64_t event_metadata2) override;
+  // `metric` field has different intreptation based on `event_type`.
+  // e.g. it means elapsed time for [DELEGATE_]OPERATOR_INVOKE_EVENT types,
+  // and interprets as source and status code for TELEMETRY_[DELEGATE_]EVENT
+  // event types.
+  void AddEvent(const char* tag, EventType event_type, uint64_t metric,
+                int64_t event_metadata1, int64_t event_metadata2) override;
 
   // Enables profiling. Events will start being recorded.
   void StartProfiling();
