@@ -122,6 +122,9 @@ class ApplyPlugin(components.ApplyPluginT):
       log_file = tempfile.NamedTemporaryFile(
           suffix=".error", mode="w", delete=False
       )
+      print("=================================================================")
+      print(result.stdout)
+      print("=================================================================")
       log_file.write(result.stdout)
       log_file.close()
       raise ValueError(

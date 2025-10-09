@@ -39,16 +39,18 @@ class AotCompileTest(test_common.TestWithTfliteModels):
       )
 
     failed_backends = []
-    model_bytes = []
+    models = []
     for result in results:
       if result.failed_backends:
         failed_backends.extend(result.failed_backends)
       for model in result.models:
-        model_bytes.append(model.path.read_bytes())
+        model.load()
+        models.append(model)
 
     self.assertEmpty(failed_backends)
-    for model_bytes in model_bytes:
-      self.assertIn("DISPATCH_OP", str(model_bytes))
+    self.assertNotEmpty(models)
+    for model in models:
+      self.assertIn("DISPATCH_OP", str(model.model_bytes))
 
 
 if __name__ == "__main__":
