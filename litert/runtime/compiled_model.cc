@@ -883,6 +883,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       if (type == kLiteRtTensorBufferTypeHostMemory) {
         backend_requires_cpu_buffer = true;
       }
+#if defined(__ANDROID__)
+      else if (type == kLiteRtTensorBufferTypeFastRpc) {
+        backend_requires_cpu_buffer = true;
+      }
+#endif
     }
   } else {
     // If the BufferRequirement is not registered, assumes the backend requires
