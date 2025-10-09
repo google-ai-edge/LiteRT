@@ -42,11 +42,11 @@ litert_dynamic_lib(
     ],
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
-        "-Wl,-soname=libLiteRtDispatch_Mediatek.so",
+        "-Wl,-soname=libLiteRtDispatch_MediaTek.so",
         "-Wl,-lc++abi",
     ],
     shared_lib_name = "dispatch_api_so",
-    so_name = "libLiteRtDispatch_Mediatek.so",
+    so_name = "libLiteRtDispatch_MediaTek.so",
     tags = [
         # Remove when sdk is available to bazel.
         "nobuilder",
