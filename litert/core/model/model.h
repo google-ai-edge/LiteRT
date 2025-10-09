@@ -25,6 +25,7 @@
 #include <numeric>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -389,9 +390,9 @@ class LiteRtTensorT {
       return 0;
     }
     const auto& dims = ranked->layout.dimensions;
-    return static_cast<size_t>(
-        std::accumulate(std::cbegin(dims), std::cend(dims), 1,
-                        std::multiplies<decltype(dims[0])>()));
+    return static_cast<size_t>(std::accumulate(
+        std::cbegin(dims), std::cend(dims), 1,
+        std::multiplies<std::remove_reference_t<decltype(dims[0])>>()));
   }
 
   // Set the tensor type.
