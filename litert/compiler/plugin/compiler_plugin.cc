@@ -266,7 +266,6 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
   loaded_plugins.reserve(lib_search_paths.size());
 
   for (const auto& lib_path : plugin_lib_paths) {
-    LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.c_str());
     auto plugin = LoadPlugin(lib_path, env, options);
     if (!plugin.HasValue()) {
       continue;
