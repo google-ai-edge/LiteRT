@@ -201,11 +201,10 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
       auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
-      ov::RemoteTensor remote_tensor = context.create_tensor(
-          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()},
-          fd);
+      void* buffer = mmap(nullptr, tensor_buffer_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, tensor_buffer_offset);
+      ov::Tensor ov_tensor(ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()}, buffer);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
-                                 remote_tensor);
+                                 ov_tensor);
       return next_handle_++;
 
 #else
