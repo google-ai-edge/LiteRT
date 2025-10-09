@@ -124,6 +124,7 @@ cc_library(
         "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:tensor",
         "//tflite/delegates/gpu/common/task:tensor_desc",
+        "@XNNPACK",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",

@@ -1105,9 +1105,9 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
   // Determine which output is which based on size
   for (int i = 0; i < 2; i++) {
     LITERT_ASSERT_OK_AND_ASSIGN(auto size, output_buffers[i].Size());
-    if (size == 4 * sizeof(float)) {
+    if (size == (4 * sizeof(float)) + 16) {
       constant_output_idx = i;
-    } else if (size == 2 * sizeof(float)) {
+    } else if (size == (2 * sizeof(float)) + 16) {
       normal_output_idx = i;
     }
   }
