@@ -142,22 +142,8 @@ get started based on your goals:
 
 ## 🗺 Roadmap
 
-Where Next:
-
-**Beta by Dec 2025:**
-
-- Achieve feature parity with TensorFlow Lite
-- Upgrade GPU Acceleration to ML SDK, Metal and more advanced version
-- Simplify Android development with Maven, Android Studio, and Google Tensor
-- Proactively increase ML and GenAI model coverage
-- Enable Certain support
-- Broader LiteRT Runtime/Converter upgrades from TensorFlow Lite
-
-**General Availability by Google IO, May 2026**
-
 Our commitment is to make LiteRT the best runtime for any on-device ML
-deployment. The above roadmap is defined based on the following product
-strategy:
+deployment. Our product strategies are:
 
 - **Expanding Hardware Acceleration**: Broadening our support for NPUs and
   improving performance across all major hardware accelerators.
@@ -168,11 +154,16 @@ strategy:
 - **Platform Support**: Enhancing support for core platforms and exploring new
   ones.
 
-Going forward, LiteRT will establish a release cadence for minor release every
-4-6 weeks.
+## 🗺 What's Next:
 
-This roadmap is subject to change. We encourage community feedback—please open
-an issue to discuss proposals or ideas!
+**Beta by Oct 2025:**
+
+- Achieve feature parity with TensorFlow Lite
+- Expand GPU backend support
+- Proactively increase ML and GenAI model coverage
+- Broader LiteRT Runtime/Converter upgrades from TensorFlow Lite
+
+**General Availability by Google IO, May 2026**
 
 ## 🙌 Contributing
 
