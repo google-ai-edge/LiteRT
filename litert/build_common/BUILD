@@ -30,6 +30,7 @@ bool_flag(
 string_flag(
     name = "build_include",
     build_setting_default = "gpu,npu",
+    # copybara:uncomment scope = "project",
     values = [
         "gpu",
         "npu",

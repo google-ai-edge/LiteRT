@@ -19,6 +19,16 @@ import * as express from 'express';
 // See https://github.com/jasmine/jasmine-browser-runner/blob/main/lib/types.js
 // for options
 
+/**
+ * A handler for express.static that sets CORS headers. This is required so that
+ * tests that use wasm threads can run.
+ * @param {import('http').ServerResponse} res
+ */
+function setCorsHeaders(res) {
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+}
+
 export default {
   srcDir: "src",
   // srcFiles should usually be left empty when using ES modules, because you'll
@@ -51,6 +61,11 @@ export default {
     forbidDuplicateNames: true
   },
   middleware: {
+    // Serve all files with CORS headers to enable wasm threads.
+    '/': (req, res, next) => {
+      setCorsHeaders(res);
+      next();
+    },
     '/wasm': express.static('./wasm/'),
     '/testdata': express.static('./testdata/'),
   },

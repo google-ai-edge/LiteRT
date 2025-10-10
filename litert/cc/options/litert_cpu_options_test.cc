@@ -97,6 +97,20 @@ TEST(CpuOptions, SetAndGetXNNPackWeighCachePathWorks) {
               IsOkAndHolds(StrEq("a/path")));
 }
 
+TEST(CpuOptions, CheckXNNPackWeightCacheFileDescriptorDefaultValue) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(),
+              IsOkAndHolds(-1));
+}
+
+TEST(CpuOptions, SetAndGetXNNPackWeighCacheFileDescriptorWorks) {
+  LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
+
+  LITERT_EXPECT_OK(options.SetXNNPackWeightCacheFileDescriptor(1234));
+  EXPECT_THAT(options.GetXNNPackWeightCacheFileDescriptor(),
+              IsOkAndHolds(1234));
+}
+
 TEST(CpuOptions, CheckXNNPackFlagsDefaultValue) {
   LITERT_ASSERT_OK_AND_ASSIGN(CpuOptions options, CpuOptions::Create());
   // Note: we can't check the default value for this as XNNPack compile options

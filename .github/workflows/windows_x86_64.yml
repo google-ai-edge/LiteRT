@@ -24,7 +24,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Win"
-    runs-on: windows-latest
+    runs-on: Windows_x64
     permissions:
       actions: write  # For gh cache delete.
       contents: read
