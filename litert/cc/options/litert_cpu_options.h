@@ -40,6 +40,9 @@ class CpuOptions : public OpaqueOptions {
 
   Expected<void> SetXNNPackWeightCachePath(const char* path);
   Expected<absl::string_view> GetXNNPackWeightCachePath() const;
+
+  Expected<void> SetXNNPackWeightCacheFileDescriptor(int fd);
+  Expected<int> GetXNNPackWeightCacheFileDescriptor() const;
 };
 
 }  // namespace litert
