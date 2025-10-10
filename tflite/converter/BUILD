@@ -1151,6 +1151,7 @@ cc_library(
         "@com_google_absl//absl/numeric:bits",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:AffineAnalysis",
         "@llvm-project//mlir:Analysis",
@@ -1463,7 +1464,9 @@ cc_library(
     deps = [
         ":tensorflow_lite",
         ":tensorflow_lite_passes_inc_gen",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_protobuf//:protobuf_lite",
         "@flatbuffers",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IR",
