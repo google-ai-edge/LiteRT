@@ -18,8 +18,10 @@ package(
     default_visibility = [
         ":friends",
         "//configs/devtools/hawkeye/tflite:__subpackages__",
+        "//litert:__subpackages__",
         "//tflite/experimental/tf_runtime:__subpackages__",
         "//tflite/testing:__subpackages__",
+        "//third_party/odml/litert:__subpackages__",
     ],
     licenses = ["notice"],
 )
@@ -27,6 +29,7 @@ package(
 package_group(
     name = "friends",
     packages = [
+        "//litert/...",
         "//research/language_modeling/sentence_explorer/ondevice/...",
         "//tflite/...",
         "//waymo/accelerator/alpine/tools/...",
