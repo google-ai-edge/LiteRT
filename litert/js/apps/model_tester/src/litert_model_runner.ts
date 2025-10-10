@@ -36,7 +36,14 @@ export const liteRtPromise = (async () => {
   // TODO: b/434057579 - Remove this once all WebGPU implementations have
   //   an adapterInfo property on the device.
 
-  await loadLiteRt('./wasm/');
+  // TODO: b/445746846 - Add an option for threads / no threads.
+  try {
+    await loadLiteRt('./wasm/', {threads: true});
+    console.log('LiteRt loaded with threads');
+  } catch (e) {
+    await loadLiteRt('./wasm/');
+    console.log('LiteRt loaded without threads');
+  }
   try {
     const device = await getWebGpuDevice();
     const adapterInfo = (device as unknown as {adapterInfo: GPUAdapterInfo}).adapterInfo;
