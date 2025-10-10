@@ -39,8 +39,18 @@ def _py_wheel_impl(ctx):
     executable = ctx.executable.wheel_binary
     filelist_lists = [src.files.to_list() for src in ctx.attr.srcs]
     filelist = [f for filelist in filelist_lists for f in filelist]
-    py_filelist_lists = [src.files.to_list() for src in ctx.attr.py_srcs]
-    py_filelist = [f for py_filelist in py_filelist_lists for f in py_filelist]
+    py_filelist = []
+    for src in ctx.attr.py_srcs:
+        if PyInfo in src:
+            # This target is a Python rule (py_library, py_binary, py_extension, etc.)
+            # It has the rich PyInfo provider.
+            for f in src[PyInfo].transitive_sources.to_list():
+                if "litert/python/" in f.dirname:
+                    py_filelist.append(f)
+        for f in src.files.to_list():
+            py_filelist.append(f)
+    py_filelist = depset(py_filelist).to_list()
+
     package_data_filelist_lists = [src.files.to_list() for src in ctx.attr.package_data]
     package_data_filelist = [f for package_data_filelist in package_data_filelist_lists for f in package_data_filelist]
     version = ctx.attr.version
@@ -65,9 +75,11 @@ def _py_wheel_impl(ctx):
 
     for f in filelist:
         args.add("--src", f.path)
+        print("SRCC::", f.path)
 
     for f in py_filelist:
         args.add("--py_src", f.path)
+        print("PY_SRCC::", f.path)
 
     for f in package_data_filelist:
         args.add("--package_data", f.path)
