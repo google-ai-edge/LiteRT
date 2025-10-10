@@ -16,7 +16,7 @@
 
 import '@tensorflow/tfjs-backend-webgpu'; // DO NOT REMOVE: Requried for side effects.
 
-import {CompiledModel, ErrorReporter, getAdapterInfo, getGlobalLiteRt, getGlobalLiteRtPromise, getWebGpuDevice, isWebGPUSupported, LiteRt, loadAndCompile, loadLiteRt, setErrorReporter, setWebGpuDevice, Tensor, TensorTypeError, unloadLiteRt} from '@litertjs/core';
+import {CompiledModel, ErrorReporter, getAdapterInfo, getGlobalLiteRt, getGlobalLiteRtPromise, getWebGpuDevice, isWebGPUSupported, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, setErrorReporter, setWebGpuDevice, Tensor, TensorTypeError, unloadLiteRt} from '@litertjs/core';
 import {litertToTfjs, runWithTfjsTensors, TensorConversionError, tfjsToLitert} from '@litertjs/tfjs-interop';
 import {type WebGPUBackend} from '@tensorflow/tfjs-backend-webgpu';
 import * as tf from '@tensorflow/tfjs-core';
@@ -27,10 +27,11 @@ describe('LiteRt', () => {
   let liteRt: LiteRt;
   let device: GPUDevice;
 
-  async function resetLiteRt(loadFromDirectory = false) {
+  async function resetLiteRt(
+      loadFromDirectory = false, {threads = false}: LoadLiteRtOptions = {}) {
     unloadLiteRt();
     if (loadFromDirectory) {
-      liteRt = await loadLiteRt('/wasm');
+      liteRt = await loadLiteRt('/wasm', {threads});
     } else {
       liteRt =
           await loadLiteRt('/wasm/litert_wasm_internal.js');
@@ -57,6 +58,7 @@ describe('LiteRt', () => {
   }
 
   beforeAll(async () => {
+    jasmine.DEFAULT_TIMEOUT_INTERVAL = 10000;
     try {
       // Log GPU info for debugging missing GPU issues in CI.
       console.log('GPU:', navigator.gpu);
@@ -87,6 +89,15 @@ describe('LiteRt', () => {
   it('reloads the WASM module', async () => {
     await resetLiteRt();
     expect(liteRt).toBeDefined();
+  });
+
+  it('loads the threaded WASM module', async () => {
+    try {
+      await resetLiteRt(/* loadFromDirectory= */ true, {threads: true});
+      expect(liteRt).toBeDefined();
+    } finally {
+      await resetLiteRt();
+    }
   });
 
   it('can create its own WebGPU device', async () => {
