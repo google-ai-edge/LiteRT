@@ -94,7 +94,7 @@ Expected<CustomBuffer> CustomBuffer::Alloc(
 Expected<CustomBuffer> CustomBuffer::Wrap(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, HwMemoryHandle hw_buffer_handle,
-    size_t buffer_size) {
+    size_t buffer_size, size_t packed_buffer_size) {
   LITERT_ASSIGN_OR_RETURN(auto registry, GetTensorBufferRegistry(env));
   LITERT_ASSIGN_OR_RETURN(auto custom_buffer_handlers,
                           registry->GetCustomHandlers(buffer_type));
@@ -109,7 +109,7 @@ Expected<CustomBuffer> CustomBuffer::Wrap(
   // and setting its internal 'owns_handle' flag to false.
   auto status = custom_buffer_handlers.import_func(
       env, &tensor_type, buffer_type, hw_buffer_handle, buffer_size,
-      &hw_memory_info);
+      packed_buffer_size, &hw_memory_info);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to import custom tensor buffer.");
   }

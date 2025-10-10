@@ -32,25 +32,101 @@ const WASM_RELAXED_SIMD_CHECK = new Uint8Array([
   0, 10, 15,  1,   13, 0, 65, 1, 253, 15, 65, 2,  253, 15, 253, 128, 2, 11
 ]);
 
-const WASM_FEATURE_VALUES: {relaxedSimd: Promise<boolean>|undefined} = {
+/**
+ * Checks for WebAssembly Pthreads emulation.
+ *
+ * (module
+ *  (memory 1 1 shared)
+ *  (func
+ *    i32.const 0
+ *    i32.atomic.load
+ *    drop
+ *  )
+ * )
+ */
+const WASM_THREADS_CHECK = new Uint8Array([
+  0, 97, 115, 109, 1, 0,  0,  0, 1, 4, 1,  96, 0,   0,  3, 2, 1,  0, 5,
+  4, 1,  3,   1,   1, 10, 11, 1, 9, 0, 65, 0,  254, 16, 2, 0, 26, 11
+]);
+
+interface SupportStatus {
+  supported: boolean;
+  error?: Error;
+}
+
+const WASM_FEATURE_VALUES: {
+  relaxedSimd: Promise<SupportStatus>|undefined;
+  threads: Promise<SupportStatus>| undefined;
+} = {
   relaxedSimd: undefined,
+  threads: undefined,
 };
 
-async function tryWasm(wasm: Uint8Array): Promise<boolean> {
+async function tryWasm(wasm: Uint8Array): Promise<SupportStatus> {
   try {
     await WebAssembly.instantiate(wasm);
-    return true;
+    return {supported: true};
   } catch (e) {
-    return false;
+    return {supported: false, error: e as Error};
   }
 }
 
+const WASM_FEATURE_CHECKS:
+    Record<keyof typeof WASM_FEATURE_VALUES, () => Promise<SupportStatus>> = {
+      relaxedSimd: () => {
+        if (WASM_FEATURE_VALUES.relaxedSimd === undefined) {
+          WASM_FEATURE_VALUES.relaxedSimd = tryWasm(WASM_RELAXED_SIMD_CHECK);
+        }
+        return WASM_FEATURE_VALUES.relaxedSimd!;
+      },
+      threads: () => {
+        if (WASM_FEATURE_VALUES.threads === undefined) {
+          try {
+            if (typeof MessageChannel !== 'undefined') {
+              new MessageChannel().port1.postMessage(new SharedArrayBuffer(1));
+            }
+            WASM_FEATURE_VALUES.threads = tryWasm(WASM_THREADS_CHECK);
+          } catch (e) {
+            WASM_FEATURE_VALUES.threads =
+                Promise.resolve({supported: false, error: e as Error});
+          }
+        }
+        return WASM_FEATURE_VALUES.threads!;
+      },
+    };
+
 /**
- * Returns true if the browser supports relaxed SIMD.
+ * Check if a given WASM feature is supported.
+ *
+ * @param feature The feature to check.
+ * @return A promise that resolves to true if the feature is supported,
+ *     false otherwise.
  */
-export async function supportsRelaxedSimd(): Promise<boolean> {
-  if (WASM_FEATURE_VALUES.relaxedSimd === undefined) {
-    WASM_FEATURE_VALUES.relaxedSimd = tryWasm(WASM_RELAXED_SIMD_CHECK);
+export async function supportsFeature(
+    feature: keyof typeof WASM_FEATURE_CHECKS): Promise<boolean> {
+  const check = WASM_FEATURE_CHECKS[feature]?.();
+  if (!check) {
+    // Then we don't know how to check for this feature.
+    throw new Error(`Unknown feature: ${feature}`);
   }
-  return WASM_FEATURE_VALUES.relaxedSimd!;
+  return (await check).supported;
+}
+
+/**
+ * Throw an error if a given WASM feature is not supported.
+ *
+ * @param feature The feature to check.
+ * @throws An error if the feature is not supported.
+ */
+export async function throwIfFeatureNotSupported(
+    feature: keyof typeof WASM_FEATURE_CHECKS): Promise<void> {
+  const check = WASM_FEATURE_CHECKS[feature]?.();
+  if (!check) {
+    // Then we don't know how to check for this feature.
+    throw new Error(`Unknown feature: ${feature}`);
+  }
+  const result = await check;
+  if (!result.supported) {
+    throw result.error!;
+  }
 }
