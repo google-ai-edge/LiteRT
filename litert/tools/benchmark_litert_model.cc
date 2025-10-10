@@ -39,6 +39,7 @@ limitations under the License.
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
+#include "tflite/profiling/profile_summarizer.h"
 
 namespace litert::benchmark {
 namespace {
@@ -89,6 +90,12 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (gpu_low_priority) {
       gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
     }
+
+    auto use_profiler = params.Get<bool>("use_profiler");
+    if (use_profiler) {
+      gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
+    }
+
     compilation_options.AddOpaqueOptions(std::move(gpu_options));
   }
 
@@ -167,25 +174,29 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   compiled_model_ =
       std::make_unique<litert::CompiledModel>(std::move(compiled_model_result));
 
+  LiteRtCompiledModelT* compiled_model_ptr = compiled_model_->Get();
+  if (compiled_model_ptr == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "Compiled model is null");
+    return kTfLiteError;
+  }
+  LITERT_ASSIGN_OR_RETURN(interpreter_, GetInterpreter(compiled_model_ptr),
+                          AsTfLiteStatus(_ << "Failed to get interpreter."));
+
   if (!params_.Get<std::string>("model_runtime_info_output_file").empty()) {
-    ::tflite::Interpreter* interpreter_ptr = nullptr;
-    LiteRtCompiledModelT* compiled_model_ptr = compiled_model_->Get();
-    if (compiled_model_ptr == nullptr) {
-      LITERT_LOG(LITERT_ERROR, "Compiled model is null");
-      return kTfLiteError;
-    }
-    LITERT_ASSIGN_OR_RETURN(interpreter_ptr, GetInterpreter(compiled_model_ptr),
-                            AsTfLiteStatus(_ << "Failed to get interpreter."));
     model_runtime_info_listener_ =
-        std::make_unique<ModelRuntimeInfoListener>(interpreter_ptr);
+        std::make_unique<ModelRuntimeInfoListener>(interpreter_);
     AddListener(model_runtime_info_listener_.get());
   }
 
   auto use_profiler = params_.Get<bool>("use_profiler");
   if (use_profiler) {
+    run_summarizer_ = std::make_unique<tflite::profiling::ProfileSummarizer>();
     LITERT_ASSIGN_OR_ABORT(profiler_, compiled_model_->GetProfiler());
     profiler_.StartProfiling();
   }
+  log_output_ =
+      std::make_unique<BenchmarkLoggingListener>(run_summarizer_.get());
+  AddListener(log_output_.get());
 
   auto signature = params_.Get<std::string>("signature_to_run_for");
   if (signature.empty()) {

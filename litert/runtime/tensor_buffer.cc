@@ -502,11 +502,13 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, void* metal_buffer,
     size_t buffer_size) {
+  LITERT_ASSIGN_OR_RETURN(size_t packed_size,
+                          litert::internal::GetNumPackedBytes(tensor_type));
   // Use CustomBuffer::Wrap to create a non-owning wrapper
-  LITERT_ASSIGN_OR_RETURN(
-      litert::internal::CustomBuffer custom_buffer,
-      litert::internal::CustomBuffer::Wrap(env, tensor_type, buffer_type,
-                                           metal_buffer, buffer_size));
+  LITERT_ASSIGN_OR_RETURN(litert::internal::CustomBuffer custom_buffer,
+                          litert::internal::CustomBuffer::Wrap(
+                              env, tensor_type, buffer_type, metal_buffer,
+                              buffer_size, packed_size));
 
   Ptr tensor_buffer(
       new LiteRtTensorBufferT(env, tensor_type, buffer_type, buffer_size));
