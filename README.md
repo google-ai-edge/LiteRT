@@ -129,14 +129,14 @@ get started based on your goals:
     acceleration or the NPU acceleration (NPU EAP:
     [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP)).
   - **For working with Generative AI**: Dive into
-    [LiteRT LM](https://github.com/google/litert), our specialized solution for
+    [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM), our specialized solution for
     running GenAI models.
 
 ### 4. 🧠 I'm working with Generative AI...
 
 - **Goal**: Deploy a large language model (LLM) or diffusion model on a mobile
   device.
-- **Path**: Dive into [LiteRT LM](https://github.com/google/litert), our
+- **Path**: Dive into [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM), our
   specialized solution for running GenAI models. You'll focus on model
   quantization and optimizations specific to large model architectures.
 
