@@ -242,6 +242,7 @@ LiteRtStatus LiteRtGetTensorBufferFastRpcBuffer(
 }
 #endif  // LITERT_HAS_FASTRPC_SUPPORT
 
+#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
@@ -273,7 +274,23 @@ LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
   *offset = gl_buffer->offset();
   return kLiteRtStatusOk;
 }
+#else
+LiteRtStatus LiteRtCreateTensorBufferFromGlBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset,
+    LiteRtGlBufferDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  return kLiteRtStatusErrorUnsupported;
+}
 
+LiteRtStatus LiteRtGetTensorBufferGlBuffer(LiteRtTensorBuffer tensor_buffer,
+                                           LiteRtGLenum* target,
+                                           LiteRtGLuint* id, size_t* size_bytes,
+                                           size_t* offset) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
     LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
@@ -304,6 +321,21 @@ LiteRtStatus LiteRtGetTensorBufferGlTexture(
   *layer = gl_texture->layer();
   return kLiteRtStatusOk;
 }
+#else
+LiteRtStatus LiteRtCreateTensorBufferFromGlTexture(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
+    size_t size_bytes, LiteRtGLint layer,
+    LiteRtGlTextureDeallocator deallocator, LiteRtTensorBuffer* tensor_buffer) {
+  return kLiteRtStatusErrorUnsupported;
+}
+
+LiteRtStatus LiteRtGetTensorBufferGlTexture(
+    LiteRtTensorBuffer tensor_buffer, LiteRtGLenum* target, LiteRtGLuint* id,
+    LiteRtGLenum* format, size_t* size_bytes, LiteRtGLint* layer) {
+  return kLiteRtStatusErrorUnsupported;
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 #if LITERT_HAS_WEBGPU_SUPPORT
 // Return an error if the backing buffer is not a WebGpu buffer.

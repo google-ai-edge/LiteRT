@@ -62,18 +62,26 @@ cc_library(
 cc_library(
     name = "tensor_buffer",
     srcs = [
-        "ahwb_buffer.cc",
         "custom_buffer.cc",
-        "dmabuf_buffer.cc",
-        "fastrpc_buffer.cc",
-        "gl_buffer.cc",
-        "gl_texture.cc",
-        "ion_buffer.cc",
-        "open_cl_memory.cc",
-        "open_cl_sync.cc",
         "tensor_buffer.cc",
         "tensor_buffer_requirements.cc",
-    ],
+    ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "ahwb_buffer.cc",
+            "dmabuf_buffer.cc",
+            "fastrpc_buffer.cc",
+            "ion_buffer.cc",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "gl_buffer.cc",
+            "gl_texture.cc",
+            "open_cl_memory.cc",
+            "open_cl_sync.cc",
+        ],
+        "//conditions:default": [],
+    }),
     hdrs = [
         "ahwb_buffer.h",
         "custom_buffer.h",
@@ -137,7 +145,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps() + select({
-        "@org_tensorflow//tensorflow:android": [
+        "//litert/build_common:android_gpu_enabled": [
             "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",

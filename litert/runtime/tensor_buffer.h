@@ -153,8 +153,10 @@ class LiteRtTensorBufferT {
   litert::Expected<std::pair<void*, int>> GetIonBuffer();
   litert::Expected<std::pair<void*, int>> GetDmaBufBuffer();
   litert::Expected<std::pair<void*, int>> GetFastRpcBuffer();
+#if LITERT_HAS_OPENGL_SUPPORT
   litert::Expected<litert::internal::GlBuffer*> GetGlBuffer();
   litert::Expected<litert::internal::GlTexture*> GetGlTexture();
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
@@ -218,8 +220,12 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::CustomBuffer, litert::internal::GlBuffer,
-                   litert::internal::GlTexture>;
+                   litert::internal::CustomBuffer
+#if LITERT_HAS_OPENGL_SUPPORT
+                   ,
+                   litert::internal::GlBuffer, litert::internal::GlTexture
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+                   >;
 
   LiteRtTensorBufferT(LiteRtEnvironment env,
                       const LiteRtRankedTensorType& tensor_type,

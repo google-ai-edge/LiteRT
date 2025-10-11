@@ -106,6 +106,14 @@ selects.config_setting_group(
     ],
 )
 
+selects.config_setting_group(
+    name = "android_gpu_enabled",
+    match_all = [
+        "@platforms//os:android",
+        ":build_include_gpu_enabled",
+    ],
+)
+
 exports_files(srcs = [
     "export_litert_only_darwin.lds",
     "export_litert_only_linux.lds",
