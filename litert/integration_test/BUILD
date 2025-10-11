@@ -279,9 +279,11 @@ litert_device_test(
 # )
 #
 # QUALCOMMM_GUITAR_TARGS_INTEGRATION = [
-#     ":single_op_device_tests_qualcomm_JIT",
+#     # TODO: b/450621174 - Reenable flaky device tests
+#     # ":single_op_device_tests_qualcomm_JIT",
 #     ":classic_ml_device_tests_qualcomm_JIT",
-#     ":pre_compiled_device_tests_qualcomm",
+#     # TODO: b/450621174 - Reenable flaky device tests
+#     # ":pre_compiled_device_tests_qualcomm",
 # ]
 #
 # guitar_workflow_test(
@@ -359,7 +361,8 @@ litert_device_test(
 #     auto_deps = [
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_mh_test",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm",
-#         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
+#         # TODO: b/450621174 - Reenable flaky device tests
+#         # "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor",
 #         "//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek",
 #     ],
 #     integration_test = guitar.IntegrationTest(
@@ -370,10 +373,11 @@ litert_device_test(
 #             litert_qualcomm_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_qualcomm"],
 #             ),
-#             litert_pixel_9_mh_guitar_test(
-#                 dimension_model = "pixel 9",
-#                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
-#             ),
+#             # TODO: b/450621174 - Reenable flaky device tests
+#             # litert_pixel_9_mh_guitar_test(
+#             #     dimension_model = "pixel 9",
+#             #     targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_google_tensor"],
+#             # ),
 #             litert_mediatek_mh_guitar_test(
 #                 targets = ["//litert/kotlin/src/tests/google:litert_kotlin_api_npu_mh_test_mediatek"],
 #             ),

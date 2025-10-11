@@ -24,7 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_options.h"
+#include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -50,7 +50,6 @@
 #include "litert/vendors/mediatek/compiler/legalizations/transpose_conv_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/transpose_op_legalization.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
-#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace litert::mediatek {
 
@@ -279,10 +278,27 @@ Expected<void> CreateModel(const NeuronAdapterApi& neuron_adapter_api,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_GREATER);
         break;
+      case kLiteRtOpCodeTflMinimum:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_MINIMUM);
+        break;
       case kLiteRtOpCodeShloComposite:
-        // TODO(MTK): Check if the op name is odml.rms_norm,
-        // LiteRtGetSHLOCompositeOpName currently returns an error.
-        status = LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+        const char* op_name;
+        if (LiteRtGetSHLOCompositeOpName(op.Get(), &op_name) !=
+            kLiteRtStatusOk) {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "LiteRtGetSHLOCompositeOpName returns an error");
+        }
+        if (std::string(op_name) == "odml.rms_norm") {
+          status =
+              LegalizeRmsNormOp(neuron_adapter_api, model, *operand_map, op);
+        } else if (std::string(op_name) == "odml.l2_norm") {
+          status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                    NEURON_L2_NORMALIZATION);
+        } else {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "Unsupported ShloComposite op");
+        }
         break;
       default:
         LITERT_LOG(LITERT_ERROR, "Unsupported op: %d", op.Code());
