@@ -22,7 +22,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Linux"
-    runs-on: LiteRT_Linux_x64  # Latest high spec runner.
+    runs-on: LiteRT_Linux_x64  # Latest high spec runner (96 cores and 384GB RAM).
     permissions:
       actions: write
       contents: write

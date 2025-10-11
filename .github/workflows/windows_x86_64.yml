@@ -24,7 +24,7 @@ concurrency:
 jobs:
   presubmit:
     name: "Presubmit-Win"
-    runs-on: Windows_x64  # Latest high spec runner.
+    runs-on: Windows_x64  # Latest high spec runner ((96 cores and 384GB RAM)).
     permissions:
       actions: write  # For gh cache delete.
       contents: read
