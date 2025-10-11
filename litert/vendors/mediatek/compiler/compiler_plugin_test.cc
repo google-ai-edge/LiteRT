@@ -69,7 +69,7 @@ TEST(TestMediatekPlugin, GetConfigInfo) {
   ASSERT_EQ(LiteRtGetNumCompilerPluginSupportedSocModels(
                 plugin.get(), &num_supported_soc_models),
             kLiteRtStatusOk);
-  ASSERT_EQ(num_supported_soc_models, 13);
+  ASSERT_EQ(num_supported_soc_models, 16);
 
   const char* config_id;
   ASSERT_EQ(
