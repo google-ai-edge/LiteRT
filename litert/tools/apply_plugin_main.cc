@@ -14,6 +14,7 @@
 
 #define INCLUDE_QUALCOMM_COMPILE_FLAGS
 #define INCLUDE_MEDIATEK_COMPILE_FLAGS
+#define INCLUDE_INTEL_OPENVINO_COMPILE_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS
 
 #include <memory>
@@ -30,6 +31,7 @@
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/outstream.h"
@@ -132,6 +134,21 @@ int main(int argc, char* argv[]) {
     if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
       run->dump_out.Get().get()
           << "Failed to add google tensor options to list\n";
+      return 1;
+    }
+  }
+
+  {
+    auto intel_openvino_opts =
+        litert::intel_openvino::IntelOpenVinoOptionsFromFlags();
+    if (!intel_openvino_opts) {
+      run->dump_out.Get().get() << "Failed to create Intel OpenVINO options\n";
+      return 1;
+    }
+
+    if (!opts->AddOpaqueOptions(std::move(*intel_openvino_opts))) {
+      run->dump_out.Get().get()
+          << "Failed to add Intel OpenVINO options to list\n";
       return 1;
     }
   }

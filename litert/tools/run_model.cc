@@ -14,6 +14,7 @@
 
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
+#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
 
 #include <algorithm>
@@ -26,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#define ABSL_FLAGS_STRIP_NAMES 0
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -43,6 +45,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
@@ -74,6 +77,7 @@ namespace litert {
 namespace {
 
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
+using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
 
@@ -121,6 +125,9 @@ Expected<Options> GetOptions() {
   }
   if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*google_tensor_opts));
+  }
+  if (auto intel_openvino_opts = IntelOpenVinoOptionsFromFlags()) {
+    options.AddOpaqueOptions(std::move(*intel_openvino_opts));
   }
   if (auto mediatek_opts = MediatekOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*mediatek_opts));
