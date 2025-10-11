@@ -16,6 +16,7 @@
 
 #include <dlfcn.h>
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +27,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_shared_library.h"
@@ -71,6 +73,11 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
 
   // Add preinstalled libraries for system partition applications.
   so_paths.push_back("libneuronusdk_adapter.mtk.so");
+  // Check if the device need to use higher version of usdk.
+  auto magic_number = GetNeuroPilotMagicNumber();
+  if (magic_number && magic_number.Value() >= kMinMagicNumberForNeuronService) {
+    so_paths.push_back("libneuronusdk_adapter.9.mtk.so");
+  }
   so_paths.push_back("libneuron_adapter_mgvi.so");
 
   // Add the library from the provided shared lib directory if available.
@@ -254,6 +261,49 @@ bool NeuronAdapterApi::IsFeatureEnabled(NeuronFeatureType feature) const {
   };
 
   return is_version_greater(kNeuronFeatureMinVersion[feature]);
+}
+
+litert::Expected<int32_t> NeuronAdapterApi::GetNeuroPilotMagicNumber() {
+  std::string lib_path = "libneuron_sys_util.mtk.so";
+  // Load library
+  auto maybe_dlib = SharedLibrary::Load(lib_path, RtldFlags::Default());
+  if (!maybe_dlib.HasValue()) {
+    LITERT_LOG(LITERT_INFO, "libneuron_sys_util.mtk.so not found");
+    return litert::Error(kLiteRtStatusErrorInvalidArgument,
+                         "libneuron_sys_util.mtk.so not found");
+  }
+  SharedLibrary& lib = maybe_dlib.Value();
+
+  if (!lib.Loaded()) {
+    return litert::Error(kLiteRtStatusErrorDynamicLoading,
+                         "Failed to load neuron_sys_util shared library");
+  }
+
+  // Load symbol
+  using GetMagicNumberFunc = int (*)(int32_t*);
+  auto maybe_func =
+      lib.LookupSymbol<void*>("NeuronService_getNeuroPilotMagicNumber");
+  if (!maybe_func.HasValue()) {
+    lib.Close();
+    return litert::Error(kLiteRtStatusErrorDynamicLoading,
+                         "NeuronService_getNeuroPilotMagicNumber not found in "
+                         "neuron_sys_util.mtk.so");
+  }
+  auto get_magic_number =
+      reinterpret_cast<GetMagicNumberFunc>(maybe_func.Value());
+
+  // Get magic number
+  int32_t magic_number = 0;
+  int ret = get_magic_number(&magic_number);
+  lib.Close();
+  if (ret != 0) {
+    return litert::Error(
+        kLiteRtStatusErrorDynamicLoading,
+        "NeuronService_getNeuroPilotMagicNumber returns an error");
+  }
+  LITERT_LOG(LITERT_INFO, "Magic number: %d", magic_number);
+
+  return magic_number;
 }
 
 }  // namespace mediatek

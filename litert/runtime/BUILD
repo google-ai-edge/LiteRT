@@ -409,7 +409,6 @@ cc_library(
         "//litert/core:environment",
         "//litert/core:error_reporter",
         "//litert/core:options",
-        "//litert/core/cache:compilation_cache",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_opaque_options",
@@ -436,6 +435,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
+            "//litert/core/cache:compilation_cache",
             "//litert/core/model:model_serialize",
         ],
         "//conditions:default": [],
