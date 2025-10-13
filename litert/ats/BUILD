@@ -186,6 +186,13 @@ cc_test(
         "//litert/vendors/examples:example_dispatch_so",
         "//litert/vendors/examples:example_plugin_so",
     ],
+    # Re-enable sans once test libs can be linked in a sans friendly way.
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
     deps = [
         ":capture",
         ":common",
