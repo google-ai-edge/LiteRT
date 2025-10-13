@@ -176,6 +176,7 @@ kt_android_library(
     visibility = ["//visibility:public"],
     deps = [
         ":litert_kotlin_api_native_deps",  # buildcleaner: keep
+        "//tflite/java:aar_with_jni_deps",
         "@litert_maven//:androidx_lifecycle_lifecycle_common",
         "@litert_maven//:com_google_android_play_ai_delivery",
         "@litert_maven//:com_google_guava_guava",
