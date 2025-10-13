@@ -91,12 +91,7 @@ jobs:
 
       - name: Run bazel build on Linux
         run: |
-          # bash ci/run_bazel_test_with_docker.sh
-          # TODO(b/446718368): Re-enable the tests once we update our workflow with a custom runner.
-          bazel test --disk_cache=~/.cache/bazel-linux \
-            --config=linux \
-            //litert/core:environment_test \
-            //litert/core/model:model_test
+          bash ci/run_bazel_test_with_docker.sh
         env:
           LITERT_TARGETS_ONLY: true
 
