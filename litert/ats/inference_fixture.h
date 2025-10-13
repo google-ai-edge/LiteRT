@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_FIXTURE_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_FIXTURE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
 #include <cstddef>
 #include <cstdint>
@@ -51,7 +51,8 @@ namespace litert::testing {
 using ::testing::RegisterTest;
 using ::testing::litert::MeanSquaredErrorLt;
 
-class AtsTest : public RngTest {
+// Fixture for tests that test execution on a given graph.
+class AtsInferenceTest : public RngTest {
  public:
   template <typename T>
   using BufferView = typename SimpleBuffer::CView<T>;
@@ -91,11 +92,11 @@ class AtsTest : public RngTest {
       return;
     }
 
-    RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
-                 __FILE__, __LINE__,
-                 [graph = std::move(graph), conf, cap, names]() mutable {
-                   return new AtsTest(std::move(graph), conf, names, cap);
-                 });
+    RegisterTest(
+        names.suite.c_str(), names.test.c_str(), nullptr, nullptr, __FILE__,
+        __LINE__, [graph = std::move(graph), conf, cap, names]() mutable {
+          return new AtsInferenceTest(std::move(graph), conf, names, cap);
+        });
   }
 
   void SetUp() override {
@@ -221,8 +222,8 @@ class AtsTest : public RngTest {
 
   AtsCaptureEntry& Cap() { return cap_.has_value() ? cap_->get() : dummy_cap_; }
 
-  AtsTest(TestGraph::Ptr graph, const AtsConf& conf, const Names& names,
-          std::optional<AtsCaptureEntry::Ref> cap)
+  AtsInferenceTest(TestGraph::Ptr graph, const AtsConf& conf,
+                   const Names& names, std::optional<AtsCaptureEntry::Ref> cap)
       : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
@@ -235,4 +236,4 @@ class AtsTest : public RngTest {
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_FIXTURE_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_

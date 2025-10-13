@@ -76,8 +76,8 @@ void LiteRtProfilerT::EndEvent(uint32_t event_handle) {
 }
 
 void LiteRtProfilerT::AddEvent(const char* tag, EventType event_type,
-                              uint64_t elapsed_time, int64_t event_metadata1,
-                              int64_t event_metadata2) {
+                               uint64_t metric, int64_t event_metadata1,
+                               int64_t event_metadata2) {
   if (!profiling_enabled_ || !profile_buffer_) {
     return;
   }
@@ -86,8 +86,8 @@ void LiteRtProfilerT::AddEvent(const char* tag, EventType event_type,
   std::string s_tag(tag);
   auto [it, inserted] = owned_tags_set_.insert(std::move(s_tag));
   const char* owned_tag_ptr = it->c_str();
-  profile_buffer_->AddEvent(owned_tag_ptr, event_type, elapsed_time,
-                            event_metadata1, event_metadata2);
+  profile_buffer_->AddEvent(owned_tag_ptr, event_type, metric, event_metadata1,
+                            event_metadata2);
 }
 
 void LiteRtProfilerT::StartProfiling() {

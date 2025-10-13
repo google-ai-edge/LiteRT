@@ -28,7 +28,7 @@
 #include "litert/ats/capture.h"
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
-#include "litert/ats/fixture.h"
+#include "litert/ats/inference_fixture.h"
 #include "litert/ats/register.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_detail.h"
@@ -56,8 +56,9 @@ int CheckAts() {
     // TODO(lukeboyer): Re-enable once the cpu reference is supported.
     // RegisterExtraModels<AtsTest>(test_id, *options, cap);
     static constexpr auto kIters = 1;
-    RegisterCombinations<AtsTest, NoOp, SizeListC<1>, TypeList<float, int32_t>>(
-        kIters, test_id, *options, cap);
+    RegisterCombinations<AtsInferenceTest, NoOp, SizeListC<1>,
+                         TypeList<float, int32_t>>(kIters, test_id, *options,
+                                                   cap);
     const auto* unit_test = ::testing::UnitTest::GetInstance();
     ABSL_CHECK_EQ(unit_test->total_test_count(), 2);
   }
@@ -70,9 +71,9 @@ int CheckAts() {
     auto options = AtsConf::ParseFlagsAndDoSetup();
     ABSL_CHECK(options);
     // TODO(lukeboyer): Re-enable once the cpu reference is supported..
-    // RegisterExtraModels<AtsTest>(test_id, *options, cap);
+    // RegisterExtraModels<AtsInferenceTest>(test_id, *options, cap);
     static constexpr auto kIters = 1;
-    RegisterCombinations<AtsTest, BinaryNoBroadcast, SizeListC<1>,
+    RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
                          TypeList<float>,
                          OpCodeListC<kLiteRtOpCodeTflSub, kLiteRtOpCodeTflAdd>>(
         kIters, test_id, *options, cap);
