@@ -21,7 +21,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "litert/ats/capture.h"
 #include "litert/ats/configure.h"
-#include "litert/ats/fixture.h"
+#include "litert/ats/inference_fixture.h"
 #include "litert/ats/register.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
@@ -48,7 +48,7 @@ void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters,
                   AtsCapture::Ref cap) {
   // clang-format off
   RegisterCombinations<
-      AtsTest,
+      AtsInferenceTest,
       NoOp,
       SizeListC<1, 2, 3, 4>,
       TypeList<float, int32_t>>
@@ -60,7 +60,7 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
                                size_t iters, AtsCapture::Ref cap) {
   // clang-format off
   RegisterCombinations<
-      AtsTest,
+      AtsInferenceTest,
       BinaryNoBroadcast,
       SizeListC<1, 2, 3, 4, 5, 6>,
       TypeList<float, int32_t>,
@@ -81,7 +81,7 @@ int Ats() {
 
   RegisterNoOp(*options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast(*options, test_id, /*iters=*/10, cap);
-  RegisterExtraModels<AtsTest>(test_id, *options, cap);
+  RegisterExtraModels<AtsInferenceTest>(test_id, *options, cap);
 
   // Preliminary report.
   {

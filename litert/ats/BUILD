@@ -40,7 +40,7 @@ cc_test(
     deps = [
         ":capture",
         ":configure",
-        ":fixture",
+        ":inference_fixture",
         ":register",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
@@ -133,9 +133,9 @@ cc_test(
 )
 
 cc_library(
-    name = "fixture",
+    name = "inference_fixture",
     testonly = True,
-    hdrs = ["fixture.h"],
+    hdrs = ["inference_fixture.h"],
     deps = [
         ":capture",
         ":common",
@@ -190,7 +190,7 @@ cc_test(
         ":capture",
         ":common",
         ":configure",
-        ":fixture",
+        ":inference_fixture",
         ":register",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_detail",
