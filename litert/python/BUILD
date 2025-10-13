@@ -29,6 +29,11 @@ py_strict_library(
     ],
 )
 
+filegroup(
+    name = "windows_empty_version_script",
+    srcs = [],
+)
+
 pywrap_library(
     name = "pywrap_litert",
     common_lib_def_files_or_filters = {
@@ -43,7 +48,7 @@ pywrap_library(
     },
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": None,
+            "@bazel_tools//src/conditions:windows": ":windows_empty_version_script",
             "@bazel_tools//src/conditions:darwin": "//tflite/python:pywrap_tflite_common_darwin.lds",
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
