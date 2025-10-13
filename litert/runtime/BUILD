@@ -369,7 +369,7 @@ cc_library(
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
         "//tflite:framework",
-        "//tflite/schema:schema_fbs",
+        "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@flatbuffers//:runtime_cc",
     ],
