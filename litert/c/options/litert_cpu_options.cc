@@ -91,6 +91,9 @@ LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCachePath(LiteRtCpuOptions options,
                                                        const char* path) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
       << "options is null.";
+  LITERT_RETURN_IF_ERROR(options->xnn.weight_cache_file_descriptor <= 0,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "weight cache file descriptor and path cannot both be set.";
   options->xnn.weight_cache_file_path = path;
   return kLiteRtStatusOk;
 }
@@ -102,5 +105,26 @@ LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCachePath(
   LITERT_RETURN_IF_ERROR(path, litert::ErrorStatusBuilder::InvalidArgument())
       << "path is null.";
   *path = options->xnn.weight_cache_file_path;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LiteRtCpuOptions options, int fd) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(options->xnn.weight_cache_file_path == nullptr,
+                         litert::ErrorStatusBuilder::InvalidArgument())
+      << "weight cache file descriptor and path cannot both be set.";
+  options->xnn.weight_cache_file_descriptor = fd;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(
+    LiteRtCpuOptionsConst options, int* const fd) {
+  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
+      << "options is null.";
+  LITERT_RETURN_IF_ERROR(fd, litert::ErrorStatusBuilder::InvalidArgument())
+      << "fd is null.";
+  *fd = options->xnn.weight_cache_file_descriptor;
   return kLiteRtStatusOk;
 }
