@@ -424,11 +424,13 @@ cc_library(
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
         "//tflite/profiling:time",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 

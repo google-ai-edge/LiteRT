@@ -67,8 +67,12 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
-ABSL_FLAG(bool, language_model, false, "Whether the model is a language model,"
+ABSL_FLAG(bool, language_model, false,
+          "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
+ABSL_FLAG(bool, compare_signatures, false,
+          "When true, prints signature names from the LiteRT view and the raw "
+          "TFLite flatbuffer for comparison.");
 
 namespace litert {
 namespace {
@@ -292,6 +296,17 @@ Expected<void> RunModel() {
                           CompiledModel::Create(env, model, options));
 
   LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
+
+  if (absl::GetFlag(FLAGS_compare_signatures)) {
+    tensor_utils::LogLiteRtSignatures(signatures);
+    auto comparison_status =
+        tensor_utils::LogTfliteSignatures(absl::GetFlag(FLAGS_graph));
+    if (!comparison_status) {
+      ABSL_LOG(WARNING) << "Failed to obtain TFLite signature view: "
+                        << comparison_status.Error().Message();
+    }
+  }
+
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 
