@@ -96,4 +96,21 @@ Expected<absl::string_view> CpuOptions::GetXNNPackWeightCachePath() const {
   return absl::NullSafeStringView(path);
 }
 
+Expected<void> CpuOptions::SetXNNPackWeightCacheFileDescriptor(int fd) {
+  LiteRtCpuOptions cpu_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options, fd));
+  return {};
+}
+
+Expected<int> CpuOptions::GetXNNPackWeightCacheFileDescriptor() const {
+  LiteRtCpuOptions cpu_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCpuOptions(Get(), &cpu_options));
+  int fd;
+  LITERT_RETURN_IF_ERROR(
+      LiteRtGetCpuOptionsXnnPackWeightCacheFileDescriptor(cpu_options, &fd));
+  return fd;
+}
+
 }  // namespace litert
