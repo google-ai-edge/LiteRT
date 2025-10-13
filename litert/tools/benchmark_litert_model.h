@@ -40,6 +40,8 @@ limitations under the License.
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 #include "tflite/profiling/model_runtime_info.h"
+#include "tflite/profiling/profile_buffer.h"
+#include "tflite/profiling/profile_summarizer.h"
 #include "tflite/tools/benchmark/benchmark_model.h"
 #include "tflite/tools/benchmark/benchmark_params.h"
 #include "tflite/tools/benchmark/proto/benchmark_result.pb.h"
@@ -54,8 +56,13 @@ using ::tflite::tools::benchmark::BenchmarkResult;
 class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
  private:
   std::string result_file_path_ = "";
+  tflite::profiling::ProfileSummarizer* run_summarizer_;
 
  public:
+  explicit BenchmarkLoggingListener(
+      tflite::profiling::ProfileSummarizer* run_summarizer)
+      : run_summarizer_(run_summarizer) {}
+
   void OnBenchmarkStart(
       const ::tflite::benchmark::BenchmarkParams& params) override {
     if (!params.Get<std::string>("result_file_path").empty()) {
@@ -165,6 +172,11 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
                    result_file_path_.c_str());
       }
     }
+
+    if (run_summarizer_) {
+      LITERT_LOG(LITERT_INFO, "\n%s",
+                 run_summarizer_->GetOutputString().c_str());
+    }
   }
 };
 
@@ -206,8 +218,7 @@ using ::tflite::utils::InputTensorData;
 class BenchmarkLiteRtModel : public BenchmarkModel {
  public:
   explicit BenchmarkLiteRtModel(BenchmarkParams params = DefaultParams())
-      : BenchmarkModel(std::move(params)), log_output_() {
-    AddListener(&log_output_);
+      : BenchmarkModel(std::move(params)) {
     model_runtime_info_listener_ = nullptr;
   }
   ~BenchmarkLiteRtModel() override = default;
@@ -336,10 +347,28 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   TfLiteStatus ResetInputsAndOutputs() override {
     if (profiler_) {
       profiler_.StopProfiling();
+
       auto events = profiler_.GetEvents();
+      std::vector<std::unique_ptr<tflite::profiling::ProfileEvent>>
+          tflite_events;
+      std::vector<const tflite::profiling::ProfileEvent*> tflite_ptr_events;
+      tflite_events.reserve(events->size());
+      tflite_ptr_events.reserve(events->size());
       for (const auto& event : *events) {
-        LITERT_LOG(LITERT_INFO, "Event: %s", event.tag);
+        auto tflite_event = std::make_unique<tflite::profiling::ProfileEvent>();
+        // Refer litert/litert/runtime/profiler.cc
+        tflite_event->tag = event.tag;
+        tflite_event->begin_timestamp_us = event.start_timestamp_us;
+        tflite_event->elapsed_time = event.elapsed_time_us;
+        tflite_event->event_type = event.event_type;
+        tflite_event->event_metadata = event.event_metadata1;
+        tflite_event->extra_event_metadata = event.event_metadata2;
+        tflite_event->begin_mem_usage = event.begin_mem_usage;
+        tflite_event->end_mem_usage = event.end_mem_usage;
+        tflite_ptr_events.push_back(tflite_event.get());
+        tflite_events.push_back(std::move(tflite_event));
       }
+      run_summarizer_->ProcessProfiles(tflite_ptr_events, *interpreter_);
       profiler_.Reset();
       profiler_.StartProfiling();
     }
@@ -394,8 +423,12 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
   std::unique_ptr<std::vector<litert::TensorBuffer>> input_buffers_;
   std::unique_ptr<std::vector<litert::TensorBuffer>> output_buffers_;
   litert::Profiler profiler_;
-  BenchmarkLoggingListener log_output_;
+  std::unique_ptr<BenchmarkLoggingListener> log_output_;
   std::unique_ptr<ModelRuntimeInfoListener> model_runtime_info_listener_;
+
+  // TFLite Interpreter is needed for run_summarizer_
+  ::tflite::Interpreter* interpreter_ = nullptr;
+  std::unique_ptr<tflite::profiling::ProfileSummarizer> run_summarizer_;
 };
 
 }  // namespace benchmark
