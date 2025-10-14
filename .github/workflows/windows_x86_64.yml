@@ -46,7 +46,6 @@ jobs:
         with:
           python-version: "3.11"
 
-
       - name: Configure tensorflow & python path
         run: |
           $env:PYTHON_BIN_PATH = (Get-Command python).Source
@@ -56,6 +55,7 @@ jobs:
           $env:TF_SET_ANDROID_WORKSPACE = 0
           $env:CC_OPT_FLAGS = '-Wno-sign-compare'
           python configure.py
+          
       - name : Set up cache keys and bazel output base.
         id: cache-keys
         run: |
@@ -73,10 +73,10 @@ jobs:
           # D: is faster than C: for I/O.
           $SHORT_SHA=$("${{ github.sha }}".SubString(0, 8))
           echo "BAZEL_OUTPUT_BASE=D:/w-$SHORT_SHA" >> "$env:GITHUB_ENV"
+          
       - name: Clean build outputs if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         run: bazel --output_base="$env:BAZEL_OUTPUT_BASE" clean --expunge
-
 
       - name: Restore bazel cache if cache is not being refreshed.
         id: bazel-cache
@@ -90,11 +90,19 @@ jobs:
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_0 }}-
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_1 }}-
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_2 }}-
+            
       - name: Check cache hit
         run: |
           echo "Cache Hit: ${{ steps.bazel-cache.outputs.cache-hit }}"
           echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
+
+      - name: Setup MSVC environment (Crucial for cl.exe)
+        # This script sets all necessary paths for cl.exe and the linker
+        run: |
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        shell: cmd # Must run in cmd or via a specific Visual Studio action
+          
       - name: Run bazel test on Windows for litert
         run: |
           # bazel test --disk_cache=~/.cache/bazel-windows --config=windows -- //litert/c:litert_common_test //litert/c:litert_compiled_model_test //litert/c:litert_custom_op_test //litert/c:litert_environment_options_test //litert/c:litert_logging_test //litert/c:litert_model_test //litert/c:litert_opaque_options_test //litert/c:litert_options_test //litert/c:litert_profiler_test //litert/c:litert_rewriter_test //litert/c:litert_tensor_buffer_requirements_test //litert/c/internal:litert_accelerator_registration_test //litert/c/internal:litert_accelerator_test //litert/c/options:litert_cpu_options_test //litert/c/options:litert_google_tensor_options_test //litert/c/options:litert_gpu_options_test //litert/c/options:litert_mediatek_options_test //litert/c/options:litert_qualcomm_options_test //litert/c/options:litert_runtime_options_test //litert/cc:litert_any_test //litert/cc:litert_buffer_ref_test //litert/cc:litert_c_types_printing_test //litert/cc:litert_custom_op_test //litert/cc:litert_element_type_test //litert/cc:litert_environment_options_test //litert/cc:litert_environment_test //litert/cc:litert_expected_test //litert/cc:litert_handle_test //litert/cc:litert_layout_test //litert/cc:litert_logging_test //litert/cc:litert_model_test //litert/cc:litert_op_options_test //litert/cc:litert_opaque_options_test //litert/cc:litert_rewriter_test //litert/cc:litert_tensor_buffer_requirements_test //litert/cc/dynamic_runtime:litert_tensor_buffer_requirements_test //litert/cc/dynamic_runtime/options:litert_cpu_options_test //litert/cc/dynamic_runtime/options:litert_runtime_options_test //litert/cc/options:darwinn_options_test //litert/cc/options:litert_cpu_options_test //litert/cc/options:litert_gpu_options_test //litert/cc/options:litert_runtime_options_test //litert/compiler/plugin:algo_test //litert/core:build_stamp_test //litert/core:dispatch_op_schema_test //litert/core:environment_options_test //litert/core:environment_test //litert/core:error_reporter_test //litert/core:filesystem_test //litert/core:insert_order_map_test //litert/core/cache:compilation_cache_test //litert/core/model:buffer_manager_test //litert/core/model:flatbuffer_to_litert_test //litert/core/model:ir_allocator_test //litert/core/model:litert_to_flatbuffer_test //litert/core/model:model_buffer_test //litert/core/model:model_graph_test //litert/core/model:model_test //litert/core/model:rewriter_test //litert/core/util:flatbuffer_tools_test //litert/core/util:tensor_type_util_test //litert/runtime:magic_number_utils_test //litert/runtime:profiler_test //litert/runtime:tensor_buffer_registry_test //litert/runtime/dispatch:dispatch_opaque_options_test //litert/test:matchers_test //litert/tools:dump_test //litert/tools:tool_display_test //litert/tools/flags:flag_types_test //litert/tools/flags/vendors:google_tensor_flags_test //litert/tools/flags/vendors:mediatek_flags_test //litert/tools/flags/vendors:qualcomm_flags_test //litert/vendors/examples:example_common_test //litert/vendors/qualcomm/core:common_test //litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_test
@@ -104,7 +112,6 @@ jobs:
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
         run: gh cache delete ${{ steps.cache-keys.outputs.CACHE_KEY }}
-
 
       - name: Save bazel cache if it's new or being refreshed.
         uses: actions/cache/save@v4
