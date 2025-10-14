@@ -43,7 +43,7 @@ pywrap_library(
     },
     common_lib_version_scripts = {
         "litert/python/pywrap_litert_common": select({
-            "@bazel_tools//src/conditions:windows": None,
+            "@bazel_tools//src/conditions:windows": "//litert/c:windows_exported_symbols.def",
             "@bazel_tools//src/conditions:darwin": "//tflite/python:pywrap_tflite_common_darwin.lds",
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
