@@ -52,6 +52,21 @@ jobs:
           $env:TF_SET_ANDROID_WORKSPACE = 0
           $env:CC_OPT_FLAGS = '-Wno-sign-compare'
           python configure.py
+
+      - name: Setup Android SDK and NDK
+        # This action automatically handles downloading, licensing, and setting ANDROID_SDK_ROOT
+        uses: android-actions/setup-android@v3
+        with:
+          # Install the necessary API platform and NDK version
+          # You may need to adjust these versions based on your Bazel WORKSPACE file
+          sdk-version: 34
+          ndk: 25.1.8937393 # Example NDK version, update if needed
+          
+      - name: Display Android SDK path
+        # Optional: Print the path to confirm it is set. 
+        # This is typically where your WORKSPACE file should point.
+        run: |
+          echo "ANDROID_SDK_ROOT is set to: $env:ANDROID_SDK_ROOT"
           
       - name : Set up cache keys and bazel output base.
         id: cache-keys
@@ -94,11 +109,9 @@ jobs:
           echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
           
-      - name: Run bazel test (Excluding Android)
-        # We explicitly exclude the failing target (and any others tagged 'android') 
-        # to proceed with other tests.
+      - name: Run bazel test
         run: |
-          bazel test --disk_cache=~/.cache/bazel-windows --config=windows --test_tag_filters=-android --build_tag_filters=-android -- //litert/...
+          bazel test --disk_cache=~/.cache/bazel-windows --config=windows --action_env=ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT //litert/...
           
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
