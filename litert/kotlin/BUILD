@@ -173,6 +173,7 @@ kt_android_library(
     ],
     exports_manifest = 1,
     manifest = "src/main/AndroidManifest.xml",
+    tags = ["no_windows"],
     visibility = ["//visibility:public"],
     deps = [
         ":litert_kotlin_api_native_deps",  # buildcleaner: keep
