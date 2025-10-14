@@ -19,7 +19,6 @@ namespace qnn {
 
 namespace {
 
-using ::testing::ElementsAreArray;
 // TODO(Alen): The current test coverage is not exhaustive.
 // Some corner cases may not be tested. Narrowed types may lead to unexpected
 // behavior.

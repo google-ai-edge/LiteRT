@@ -29,9 +29,9 @@
 #include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
-#include "absl/strings/str_cat.h"          // from @com_google_absl
-#include "absl/strings/string_view.h"      // from @com_google_absl
-#include "absl/types/span.h"               // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
