@@ -21,9 +21,16 @@ import os  # pylint: disable=unused-import
 from litert.python.internal import litertlm_header_schema_py_generated as schema
 
 # --- File Format Constants ---
+# LINT.IfChange(litertlm_version_constants)  # copybara:comment
 LITERTLM_MAJOR_VERSION = 1
-LITERTLM_MINOR_VERSION = 3
+LITERTLM_MINOR_VERSION = 4
 LITERTLM_PATCH_VERSION = 0
+# copybara:comment_begin(google-only)
+# LINT.ThenChange(
+#   litert_lm/schema/core/litertlm_header.h:litertlm_version_constants,
+#   litert_lm/schema/py/litertlm_core.py:litertlm_version_constants
+# )
+# copybara:comment_end(google-only)
 BLOCK_SIZE = 16 * 1024
 HEADER_BEGIN_BYTE_OFFSET = 32
 HEADER_END_LOCATION_BYTE_OFFSET = 24
