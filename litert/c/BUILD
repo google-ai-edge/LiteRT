@@ -802,6 +802,7 @@ macos_dylib(
     exported_symbols_lists = export_lrt_runtime_only_script(),
     linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+    tags = ["no_windows"],
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
@@ -809,6 +810,7 @@ copy_file(
     name = "litert_runtime_c_api_dylib",
     src = ":build_litert_runtime_c_api_dylib",
     target = "libLiteRtRuntimeCApi.dylib",
+    tags = ["no_windows"],
 )
 
 # Target for windows libLiteRtRuntimeCApi.dll.
