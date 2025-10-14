@@ -151,6 +151,7 @@ cc_library(
 # as a workaround.
 android_library(
     name = "litert_kotlin_api_native_deps",
+    tags = ["no_windows"],
     exports = [
         ":litert_jni_lib",
         "//litert/c:litert_runtime_c_api_shared_lib",
