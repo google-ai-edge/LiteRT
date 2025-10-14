@@ -852,10 +852,9 @@ genrule(
     # Prepend LIBRARY name before building the import library.
     cmd = "echo 'LIBRARY litert_lm_main.exe' > $(RULEDIR)/def.tmp; " +
           "cat $(SRCS) >> $(RULEDIR)/def.tmp; " +
-          "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
+          "llvm-lib /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
           "rm $(RULEDIR)/def.tmp",
     tags = ["manual"],
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 # Import library to resolve symbols in executables.
