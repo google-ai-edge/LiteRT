@@ -127,4 +127,9 @@ Expected<std::string> Filename(absl::string_view path) {
   return std_path.filename().generic_string();
 }
 
+bool IsDir(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  return std::filesystem::is_directory(std_path);
+}
+
 }  // namespace litert::internal
