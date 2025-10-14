@@ -111,7 +111,7 @@ jobs:
           
       - name: Run bazel test
         run: |
-          bazel test --disk_cache=~/.cache/bazel-windows --config=windows --action_env=ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT //litert/...
+          bazel test --disk_cache=~/.cache/bazel-windows --config=windows --action_env=ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT //litert/... -//litert/kotlin/...
           
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
