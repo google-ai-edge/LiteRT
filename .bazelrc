@@ -564,3 +564,4 @@ test:use_local_tf --action_env=TF_LOCAL_SOURCE_PATH
 # END-INTERNAL
 build --action_env=TF_IGNORE_GIT=1
 build --define=protobuf_allow_msvc=true
+build:windows --copt=/FI<cmath>
