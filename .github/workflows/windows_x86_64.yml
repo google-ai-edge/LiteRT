@@ -109,7 +109,7 @@ jobs:
           echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
           
-      - name: Run bazel test (Exclude Kotlin) 🧪
+      - name: Run bazel test (Excluding Kotlin targets) 🧪
         run: |
           bazel test --disk_cache=~/.cache/bazel-windows --config=windows `
             --action_env=ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT `
