@@ -104,14 +104,18 @@ TEST_F(QnnModelTest, SingleElementWiseDivide) {
 
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
   ::qnn::QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.1f, 0);
+  ::qnn::QuantizeParamsWrapperVariant quant_param2;
+  ::qnn::QuantizeParamsWrapperVariant quant_param3;
+  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.000031f, 0);
+  quant_param2.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.000101f, 0);
+  quant_param3.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.000030f, 0);
 
   auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
   auto& input_1 = tensor_pool_.CreateInputTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param2, kDims, "");
   auto& output_0 = tensor_pool_.CreateOutpuTensorWithSuffix(
-      QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
+      QNN_DATATYPE_SFIXED_POINT_16, quant_param3, kDims, "");
   auto ops = ::qnn::BuildElementwiseDivOp(tensor_pool_, {input_0, input_1},
                                           {output_0});
   ASSERT_FALSE(ops.empty());
@@ -131,8 +135,8 @@ TEST_F(QnnModelTest, SingleElementWiseDivide) {
   auto input_idx1 = qnn_model_.AddInputTensor(input_1);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
-  qnn_model_.SetInputData<int16_t>(input_idx, {40, 40, 40, 40});
-  qnn_model_.SetInputData<int16_t>(input_idx1, {4, 4, 4, 2});
+  qnn_model_.SetInputData<int16_t>(input_idx, {1, 1, 1, 1});
+  qnn_model_.SetInputData<int16_t>(input_idx1, {1, 1, 1, 1});
 
   ASSERT_TRUE(qnn_model_.Execute());
 
@@ -140,14 +144,16 @@ TEST_F(QnnModelTest, SingleElementWiseDivide) {
   ASSERT_TRUE(output_data);
   ASSERT_EQ(output_data->size(), 4);
   ASSERT_THAT(output_data.value(),
-              Pointwise(FloatNear(1e-3), {100, 100, 100, 200}));
+              Pointwise(FloatNear(1e-3), {10231, 10231, 10231, 10231}));
 }
 
 TEST_F(QnnModelTest, SingleElementWiseMax) {
   SetUpQnnModel(::qnn::Options(), "SM8650");
 
   ::qnn::QuantizeParamsWrapperVariant quant_param;
-  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.1f, 0);
+  ::qnn::QuantizeParamsWrapperVariant quant_param2;
+  quant_param.emplace<::qnn::ScaleOffsetQuantizeParamsWrapper>(0.00015f, 0);
+
   const std::vector<std::uint32_t> kDims{1, 2, 2, 1};
   auto& input_0 = tensor_pool_.CreateInputTensorWithSuffix(
       QNN_DATATYPE_SFIXED_POINT_16, quant_param, kDims, "");
@@ -174,15 +180,17 @@ TEST_F(QnnModelTest, SingleElementWiseMax) {
   auto input_idx2 = qnn_model_.AddInputTensor(input_1);
   auto output_idx = qnn_model_.AddOutputTensor(output_0);
 
-  qnn_model_.SetInputData<int16_t>(input_idx, {-1, 2, 3, 4});
-  qnn_model_.SetInputData<int16_t>(input_idx2, {2, 0, 5, 6});
+  qnn_model_.SetInputData<int16_t>(input_idx, {-20000, 0, 10000, 20000});
+  qnn_model_.SetInputData<int16_t>(input_idx2,
+                                   {-17204, -17204, -17204, -17204});
 
   ASSERT_TRUE(qnn_model_.Execute());
 
   auto output_data = qnn_model_.GetOutputData<int16_t>(output_idx);
   ASSERT_TRUE(output_data);
   ASSERT_EQ(output_data->size(), 4);
-  ASSERT_THAT(output_data.value(), Pointwise(FloatNear(1e-3), {2, 2, 5, 6}));
+  ASSERT_THAT(output_data.value(),
+              Pointwise(FloatNear(1e-3), {-17204, 0, 10000, 20000}));
 }
 
 }  // namespace
