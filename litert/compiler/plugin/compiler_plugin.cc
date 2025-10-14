@@ -733,4 +733,21 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   return result;
 }
 
+Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
+    absl::string_view soc_manufacturer,
+    absl::Span<const absl::string_view> lib_search_paths,
+    LiteRtEnvironmentOptions env, LiteRtOptions options) {
+  LITERT_ASSIGN_OR_RETURN(auto plugins, CompilerPlugin::LoadPlugins(
+                                            lib_search_paths, env, options));
+  for (auto& plugin : plugins) {
+    if (plugin.SocManufacturer() == soc_manufacturer) {
+      return std::move(plugin);
+    }
+  }
+  return Error(
+      kLiteRtStatusErrorRuntimeFailure,
+      absl::StrFormat("No compiler plugin found for soc manufacturer %s",
+                      soc_manufacturer));
+}
+
 }  // namespace litert::internal
