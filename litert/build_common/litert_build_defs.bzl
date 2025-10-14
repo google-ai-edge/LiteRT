@@ -421,7 +421,7 @@ def litert_dynamic_lib(
 # )
 # copybara:uncomment_end
 
-def copy_file(name, src, target, visibility = None):
+def copy_file(name, src, target, visibility = None, tags = None):
     input_path = "$(location %s)" % src
     output_path = "$(@D)/" + target
 
@@ -431,6 +431,7 @@ def copy_file(name, src, target, visibility = None):
         outs = [target],
         visibility = visibility,
         cmd = "cp %s %s" % (input_path, output_path),
+        tags = tags,
     )
 
 def gtest_main_no_heapcheck_deps():
