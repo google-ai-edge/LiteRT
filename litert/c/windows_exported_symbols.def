@@ -76,13 +76,14 @@ EXPORTS
   LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache
   LiteRtGetGpuOptionsBenchmarkMode
   LiteRtGetGpuOptionsConstantTensorSharing
+  LiteRtGetGpuOptionsExternalTensorsMode
   LiteRtGetGpuOptionsGpuPriority
   LiteRtGetGpuOptionsInfiniteFloatCapping
-  LiteRtGetGpuOptionsExternalTensorsMode
   LiteRtGetGpuOptionsPayloadIdentifier
   LiteRtGetMetric
   LiteRtGetModelSignature
   LiteRtGetModelSubgraph
+  LiteRtGetNextOpaqueOptions
   LiteRtGetNumGpuAcceleratorCompilationOptionsExternalTensorPatterns
   LiteRtGetNumMetrics
   LiteRtGetNumModelSignatures
@@ -95,9 +96,11 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
+  LiteRtGetOpCode
   LiteRtGetOpInput
   LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
+  LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
@@ -118,6 +121,7 @@ EXPORTS
   LiteRtGetTensorBufferSize
   LiteRtGetTensorBufferTensorType
   LiteRtGetTensorBufferType
+  LiteRtGetTensorBufferWebGpuBuffer
   LiteRtGetTensorDefiningOp
   LiteRtGetTensorName
   LiteRtGetTensorTypeId
@@ -162,6 +166,7 @@ EXPORTS
   LiteRtSetAcceleratorGetHardwareSupport
   LiteRtSetAcceleratorGetName
   LiteRtSetAcceleratorGetVersion
+  LiteRtSetCompiledModelCancellationFunction
   LiteRtSetCpuOptionsNumThread
   LiteRtSetCpuOptionsXNNPackFlags
   LiteRtSetCpuOptionsXnnPackWeightCachePath
@@ -177,11 +182,12 @@ EXPORTS
   LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType
   LiteRtSetGpuOptionsBenchmarkMode
   LiteRtSetGpuOptionsConstantTensorSharing
+  LiteRtSetGpuOptionsExternalTensorsMode
   LiteRtSetGpuOptionsGpuBackend
   LiteRtSetGpuOptionsGpuPriority
   LiteRtSetGpuOptionsInfiniteFloatCapping
-  LiteRtSetGpuOptionsExternalTensorsMode
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
+  LiteRtSetOpaqueOptionsHash
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetRuntimeOptionsEnableProfiling
   LiteRtSetRuntimeOptionsErrorReporterMode

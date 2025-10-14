@@ -1463,18 +1463,14 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_event",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_model_predicates",
-        "//litert/cc/dynamic_runtime:litert_op_options",
-        "//litert/cc/dynamic_runtime:litert_opaque_options",
-        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime:litert_profiler",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
-        # C++ Options API targets.
+        # C++ Common Options API targets.
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
-        "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
-        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
-        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         # Other (static) C++ API targets.
         ":litert_any",
@@ -1501,7 +1497,17 @@ cc_library(
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
         "//tflite/profiling:profile_buffer",
-    ] + gles_headers(),
+    ] + select({
+        # Windows excludes some options to avoid unnecessary dependencies.
+        "@platforms//os:windows": [],
+        "//conditions:default": [
+            "//litert/cc/dynamic_runtime:litert_op_options",
+            # C++ NPU Options API targets.
+            "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
+            "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
+            "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        ],
+    }) + gles_headers(),
 )
 
 exports_files(glob([
