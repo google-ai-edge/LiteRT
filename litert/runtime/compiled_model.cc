@@ -883,7 +883,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
   }
 
-  bool backend_requires_cpu_buffer = false;
+  bool buffer_requires_cpu_sync = false;
 
   Expected<LiteRtTensorBufferRequirementsConst> requirements =
       buffer_context_->GetBufferRequirements(tensor);
@@ -908,16 +908,22 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         return {};
       }
       if (type == kLiteRtTensorBufferTypeHostMemory) {
-        backend_requires_cpu_buffer = true;
+        buffer_requires_cpu_sync = true;
       }
     }
+    // At this point, none of the supported buffer types of the backend matches
+    // the buffer type of the tensor. Also, the backend does not support host
+    // memory buffer.
+    // TODO: b/452064364 - refactor register buffer logic.
+    buffer_requires_cpu_sync =
+        buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory;
   } else {
     // If the BufferRequirement is not registered, assumes the backend requires
     // CPU buffer.
-    backend_requires_cpu_buffer = true;
+    buffer_requires_cpu_sync = true;
   }
 
-  if (backend_requires_cpu_buffer) {
+  if (buffer_requires_cpu_sync) {
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory ||

@@ -16,7 +16,6 @@
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
-
 # --- Local Configuration ---
 readonly ROOT_DIR="third_party/odml/litert"
 # built libraries
@@ -35,7 +34,7 @@ EMBEDDER_MODEL="${LOCAL_MODEL_DIR}/embedding_gemma_256_input_seq.tflite"
 
 # --- Device Conifguration ---
 # Where to push files on the Android device (a world-writable location)
-readonly DEVICE_DIR="/data/local/tmp"
+readonly DEVICE_DIR="/data/local/tmp/semantic_similarity_demo"
 # Full path to the binary and model on the device
 readonly DEVICE_BINARY_PATH="${DEVICE_DIR}/${BINARY_NAME}"
 # Sentences for similarity comparison - to be set by command-line flags
@@ -47,6 +46,13 @@ DEVICE_LD_LIBRARY_PATH="${DEVICE_DIR}"
 # Flag to determine if GPU libraries need to be pushed.
 # This will be set to "true" later if "gpu" is a specified accelerator.
 PUSH_GPU_LIBS="false"
+
+# Flag to determine if QNN libraries need to be pushed.
+# This will be set to "true" later if "npu" is a specified accelerator.
+SOC_MAN=""
+
+# -- build flags
+BUILD_FLAGS="-c opt --config=${ANDROID_CONFIG} --copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1 --android_ndk_min_sdk_version=26"
 
 # --- Helper Functions for Colored Output ---
 print_info() {
@@ -101,23 +107,30 @@ usage() {
   echo "A script to build, push, and run a LiteRT sample on an Android device."
   echo
   echo "Options:"
-  echo "  --tokenizer    Path to the tokenizer model. (Default: ${TOKENIZER_MODEL})"
-  echo "  --embedder     Path to the embedder model. (Default: ${EMBEDDER_MODEL})"
-  echo "  --sentence1    (Required) First sentence for comparison."
-  echo "  --sentence2    (Required) Second sentence for comparison."
-  echo "  --accelerator  Backend to use (e.g. cpu, gpu). Can be multiple e.g. 'cpu,npu' (Default: ${ACCELERATOR})"
+  echo "  --tokenizer         Path to the tokenizer model. (Default: ${TOKENIZER_MODEL})"
+  echo "  --embedder          Path to the embedder model. (Default: ${EMBEDDER_MODEL})"
+  echo "  --sentence1         (Required) First sentence for comparison."
+  echo "  --sentence2         (Required) Second sentence for comparison."
+  echo "  --accelerator       Backend to use (e.g. cpu, gpu). Can be multiple e.g. 'cpu,npu' (Default: ${ACCELERATOR})"
+  echo "  --sequence_length   Sequence length of the embedder model. (Default: 0, will be inferred from the model path)"
+  echo "  --push_qnn_libs     Whether to push the QNN libraries. (Default: false)"
   echo
   echo "Example: $0 --sentence1=\"Hello world\" --sentence2=\"Hi there\""
 }
 
 build() {
+  print_info "Building the LiteRt C library..."
+  bazel build ${BUILD_FLAGS} \
+      //third_party/odml/litert/litert/c:libLiteRtRuntimeCApi.so
+
   print_info "Building target for ${ANDROID_CONFIG}..."
-  bazel build -c opt --config=${ANDROID_CONFIG} --copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1 ${TARGET}
+  bazel build ${BUILD_FLAGS} ${TARGET}
   print_success "Build complete."
 }
 
 push() {
   print_info "Pushing files to device directory: ${DEVICE_DIR}"
+  adb shell "mkdir -p ${DEVICE_DIR}"
 
   # Find the compiled binary in the bazel-bin directory.
   local local_binary_path
@@ -131,10 +144,10 @@ push() {
   print_info "Found binary at: ${local_binary_path}"
 
   # Push the binary and the model files using adb
-  adb push "${local_binary_path}" "${DEVICE_BINARY_PATH}"
-  adb push "${TOKENIZER_MODEL}" "${DEVICE_DIR}/${TOKENIZER_MODEL##*/}"
-  adb push "${EMBEDDER_MODEL}" "${DEVICE_DIR}/${EMBEDDER_MODEL##*/}"
-  adb push "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_LD_LIBRARY_PATH}"
+  adb push --sync "${local_binary_path}" "${DEVICE_BINARY_PATH}"
+  adb push --sync "${TOKENIZER_MODEL}" "${DEVICE_DIR}/${TOKENIZER_MODEL##*/}"
+  adb push --sync "${EMBEDDER_MODEL}" "${DEVICE_DIR}/${EMBEDDER_MODEL##*/}"
+  adb push --sync "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_LD_LIBRARY_PATH}"
 
   # Conditionally push the GPU library only if requested.
   if [[ "${PUSH_GPU_LIBS}" == "true" ]]; then
@@ -144,7 +157,30 @@ push() {
       print_error "Could not find GPU library at: ${local_gpu_library_path}"
       exit 1
     fi
-    adb push "${local_gpu_library_path}" "${DEVICE_LD_LIBRARY_PATH}"
+    adb push --sync "${local_gpu_library_path}" "${DEVICE_LD_LIBRARY_PATH}"
+  fi
+
+  # Conditionally push the QNN library only if requested.
+  if [[ "${SOC_MAN}" == "Qualcomm" ]]; then
+    print_info "Pushing QNN accelerator library..."
+    bazel build ${BUILD_FLAGS} third_party/odml/litert/litert/vendors/qualcomm/dispatch:dispatch_api_so
+    adb push --sync bazel-bin/third_party/odml/litert/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ${DEVICE_LD_LIBRARY_PATH}
+
+    print_info "Pushing QNN accelerator library..."
+    ls -l "${QNN_SDK_ROOT}"
+    if [[ ! -d "${QNN_SDK_ROOT}" ]]; then
+      print_error "Could not find QNN library at: ${QNN_SDK_ROOT}"
+      exit 1
+    fi
+    # Push all versions of the QNN libraries for convenience.
+    adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp*Stub.so ${DEVICE_LD_LIBRARY_PATH}
+    adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${DEVICE_LD_LIBRARY_PATH}
+    adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_LD_LIBRARY_PATH}
+    adb push --sync ${QNN_SDK_ROOT}/lib/hexagon-*/unsigned/libQnnHtp*Skel.so ${DEVICE_LD_LIBRARY_PATH}
+  elif [[ "${SOC_MAN}" == "MediaTek" ]]; then
+    print_info "Pushing MTK accelerator library..."
+    bazel build ${BUILD_FLAGS} //third_party/odml/litert/litert/vendors/mediatek/dispatch:dispatch_api_so
+    adb push bazel-bin/third_party/odml/litert/litert/vendors/mediatek/dispatch/libLiteRtDispatch_Mediatek.so ${DEVICE_LD_LIBRARY_PATH}
   fi
 
   print_success "Files pushed to the device."
@@ -160,12 +196,16 @@ run() {
   # 1. Make the binary executable.
   # 2. Run the binary, passing the on-device path to the semantic-similarity model.
   adb shell "chmod +x ${DEVICE_BINARY_PATH} && \
-    LD_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} ${DEVICE_BINARY_PATH} \
+    LD_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
+    ADSP_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
+    ${DEVICE_BINARY_PATH} \
       --tokenizer=${device_tokenizer_path} \
       --embedder=${device_embedder_path} \
       --sentence1=\"${SENTENCE1}\" \
       --sentence2=\"${SENTENCE2}\" \
-      --accelerator=\"${ACCELERATOR}\""
+      --accelerator=\"${ACCELERATOR}\" \
+      --sequence_length=${SEQUENCE_LENGTH} \
+      --dispatch_library_dir=${DEVICE_DIR}"
 
   print_success "Execution finished."
 }
@@ -196,6 +236,16 @@ parse_args() {
       --accelerator)
         if [[ -z "$2" || "$2" == -* ]]; then print_error "Missing value for $1"; usage; exit 1; fi
         ACCELERATOR="$2"
+        shift 2
+        ;;
+      --sequence_length)
+        if [[ -z "$2" || "$2" == -* ]]; then print_error "Missing value for $1"; usage; exit 1; fi
+        SEQUENCE_LENGTH="$2"
+        shift 2
+        ;;
+      --soc_man)
+        if [[ -z "$2" || "$2" == -* ]]; then print_error "Missing value for $1"; usage; exit 1; fi
+        SOC_MAN="$2"
         shift 2
         ;;
       *)

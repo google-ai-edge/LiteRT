@@ -35,8 +35,10 @@
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -46,6 +48,7 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "sentencepiece/src/sentencepiece_processor.h"  // from @com_google_sentencepiece
 
 // Command-line flags for the model paths and input sentences
@@ -60,6 +63,10 @@ ABSL_FLAG(std::string, accelerator, "cpu",
           "Which backend to use. Comma delimited string of accelerators (e.g. "
           "cpu,gpu,npu). Will delegate to NPU, GPU, then CPU if they are "
           "specified in this flag.");
+ABSL_FLAG(int, sequence_length, 0,
+          "Number of threads to use for CPU inference.");
+ABSL_FLAG(std::string, dispatch_library_dir, "",
+          "Path to the dispatch library directory.");
 
 LiteRtHwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -69,6 +76,7 @@ LiteRtHwAcceleratorSet GetAccelerator() {
       accelerators |= kLiteRtHwAcceleratorGpu;
     } else if (accelerator == "npu") {
       accelerators |= kLiteRtHwAcceleratorNpu;
+      accelerators |= kLiteRtHwAcceleratorCpu;
     } else if (accelerator == "cpu") {
       accelerators |= kLiteRtHwAcceleratorCpu;
     }
@@ -190,17 +198,15 @@ absl::StatusOr<std::vector<int>> Tokenize(
  * @param token_ids The token IDs from the tokenizer.
  * @return A vector representing the sentence embedding, or an error status.
  */
-Expected<std::vector<float>> GetEmbedding(CompiledModel* embedder_model,
-                                          const std::vector<int>& token_ids) {
-  LITERT_ASSIGN_OR_RETURN(auto input_buffers,
-                          embedder_model->CreateInputBuffers());
-  LITERT_ASSIGN_OR_RETURN(auto output_buffers,
-                          embedder_model->CreateOutputBuffers());
-
+Expected<std::vector<float>> GetEmbedding(
+    CompiledModel* embedder_model, std::vector<TensorBuffer>& input_buffers,
+    std::vector<TensorBuffer>& output_buffers,
+    const std::vector<int>& token_ids) {
   if (input_buffers.size() != 1) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Expected 1 input tensor for embedder");
   }
+
   LITERT_RETURN_IF_ERROR(input_buffers[0].Write<int>(token_ids));
 
   LITERT_RETURN_IF_ERROR(embedder_model->Run(input_buffers, output_buffers));
@@ -220,6 +226,8 @@ Expected<std::vector<float>> GetEmbedding(CompiledModel* embedder_model,
 // Helper function to run the main logic and handle status returns.
 absl::Status RealMain() {
   const std::string embedder_path = absl::GetFlag(FLAGS_embedder);
+  const std::string dispatch_library_dir =
+      absl::GetFlag(FLAGS_dispatch_library_dir);
   ABSL_QCHECK(!absl::GetFlag(FLAGS_tokenizer).empty())
       << "Please provide --tokenizer.";
   ABSL_QCHECK(!embedder_path.empty()) << "Please provide --embedder.";
@@ -228,12 +236,17 @@ absl::Status RealMain() {
   ABSL_QCHECK(!absl::GetFlag(FLAGS_sentence2).empty())
       << "Please provide --sentence2.";
 
-  // 0. Get sequence length from embedder model path.
-  absl::StatusOr<int> seq_len_or = GetSeqLenFromPath(embedder_path);
-  if (!seq_len_or.ok()) {
-    return seq_len_or.status();
+  // 0. Get sequence length from flag or embedder model path.
+  int seq_len;
+  if (absl::GetFlag(FLAGS_sequence_length) > 0) {
+    seq_len = absl::GetFlag(FLAGS_sequence_length);
+  } else {
+    absl::StatusOr<int> seq_len_or = GetSeqLenFromPath(embedder_path);
+    if (!seq_len_or.ok()) {
+      return seq_len_or.status();
+    }
+    seq_len = *seq_len_or;
   }
-  const int seq_len = *seq_len_or;
 
   // 1. Load Models
   sentencepiece::SentencePieceProcessor tokenizer_processor;
@@ -245,13 +258,29 @@ absl::Status RealMain() {
 
   // Create LiteRT Environment, Model, and CompiledModel, ensuring lifetimes
   // are managed correctly within this scope.
-  LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
+  std::vector<litert::Environment::Option> environment_options = {};
   LITERT_ASSIGN_OR_RETURN(auto embedder_model_def,
                           Model::CreateFromFile(embedder_path));
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   auto accelerator = GetAccelerator();
   // Set CPU compilation options.
-  if (accelerator & kLiteRtHwAcceleratorCpu) {
+  if (accelerator & kLiteRtHwAcceleratorNpu) {
+    if (!absl::GetFlag(FLAGS_dispatch_library_dir).empty()) {
+      environment_options.push_back(litert::Environment::Option{
+          litert::Environment::OptionTag::DispatchLibraryDir,
+          absl::string_view(dispatch_library_dir)});
+    } else {
+      return absl::InvalidArgumentError("Dispatch library directory is empty.");
+    }
+    // QNN options
+    LITERT_ASSIGN_OR_RETURN(auto qnn_opts,
+                            ::litert::qualcomm::QualcommOptions::Create());
+    qnn_opts.SetLogLevel(kLiteRtQualcommLogOff);
+    qnn_opts.SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+    options.AddOpaqueOptions(std::move(qnn_opts));
+    options.SetHardwareAccelerators(accelerator);
+    // Add other NPU options here..
+  } else if (accelerator & kLiteRtHwAcceleratorCpu) {
     LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
     LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
     options.AddOpaqueOptions(std::move(cpu_compilation_options));
@@ -266,6 +295,9 @@ absl::Status RealMain() {
   } else {
     return absl::InvalidArgumentError("No supported accelerators specified.");
   }
+
+  LITERT_ASSIGN_OR_RETURN(
+      auto env, Environment::Create(absl::MakeConstSpan(environment_options)));
 
   LITERT_ASSIGN_OR_RETURN(
       auto embedder_model,
@@ -290,12 +322,22 @@ absl::Status RealMain() {
   auto tokens2 = std::move(*tokens2_or);
   PreprocessTokens(&tokenizer_processor, &tokens2, seq_len);
 
-  LITERT_ASSIGN_OR_RETURN(auto embedding1,
-                          GetEmbedding(&embedder_model, tokens1));
-  LITERT_ASSIGN_OR_RETURN(auto embedding2,
-                          GetEmbedding(&embedder_model, tokens2));
+  LITERT_ASSIGN_OR_RETURN(auto input_buffers,
+                          embedder_model.CreateInputBuffers());
+  LITERT_ASSIGN_OR_RETURN(auto output_buffers,
+                          embedder_model.CreateOutputBuffers());
+
+  ABSL_LOG(INFO) << "Getting embedding for sentence 1";
+  LITERT_ASSIGN_OR_RETURN(
+      auto embedding1,
+      GetEmbedding(&embedder_model, input_buffers, output_buffers, tokens1));
+  ABSL_LOG(INFO) << "Getting embedding for sentence 2";
+  LITERT_ASSIGN_OR_RETURN(
+      auto embedding2,
+      GetEmbedding(&embedder_model, input_buffers, output_buffers, tokens2));
 
   // 3. Calculate and Print the Similarity Score
+  ABSL_LOG(INFO) << "Calculating similarity score";
   const float similarity = CosineSimilarity(embedding1, embedding2);
   std::cout.precision(2);
   std::cout << "Cosine Similarity: " << std::fixed << similarity << std::endl;
