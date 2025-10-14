@@ -3,7 +3,9 @@
 
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_CORE_UTILS_MISCS_H_
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 
 #include <cmath>
 #include <cstddef>

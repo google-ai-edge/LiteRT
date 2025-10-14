@@ -150,7 +150,7 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                          "Failed to get tensor num elements.");
     return nullptr;
   }
-  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const int>(
+  auto lock_and_addr = litert::TensorBufferScopedLock::Create<const jint>(
       tensor_buffer, litert::TensorBuffer::LockMode::kRead);
   jintArray result = env->NewIntArray(*num_elements);
   // Copy the data from the locked tensor buffer to the JVM array.
