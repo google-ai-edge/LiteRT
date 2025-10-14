@@ -98,10 +98,7 @@ jobs:
         # We explicitly exclude the failing target (and any others tagged 'android') 
         # to proceed with other tests.
         run: |
-          bazel test --disk_cache=~/.cache/bazel-windows --config=windows \
-            --test_tag_filters=-android \
-            --build_tag_filters=-android \
-            -- //litert/...
+          bazel test --disk_cache=~/.cache/bazel-windows --config=windows --test_tag_filters=-android --build_tag_filters=-android -- //litert/...
           
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
