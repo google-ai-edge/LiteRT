@@ -802,6 +802,7 @@ macos_dylib(
     exported_symbols_lists = export_lrt_runtime_only_script(),
     linkopts = ["-install_name @rpath/libLiteRtRuntimeCApi.dylib"],
     minimum_os_version = LITERT_MIN_MACOS_VERSION,
+    tags = ["no_windows"],
     deps = LITERT_C_API_COMMON_DEPS,
 )
 
@@ -809,6 +810,7 @@ copy_file(
     name = "litert_runtime_c_api_dylib",
     src = ":build_litert_runtime_c_api_dylib",
     target = "libLiteRtRuntimeCApi.dylib",
+    tags = ["no_windows"],
 )
 
 # Target for windows libLiteRtRuntimeCApi.dll.
@@ -852,10 +854,9 @@ genrule(
     # Prepend LIBRARY name before building the import library.
     cmd = "echo 'LIBRARY litert_lm_main.exe' > $(RULEDIR)/def.tmp; " +
           "cat $(SRCS) >> $(RULEDIR)/def.tmp; " +
-          "$(AR) /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
+          "llvm-lib /def:$(RULEDIR)/def.tmp /out:$(OUTS) /machine:x64; " +
           "rm $(RULEDIR)/def.tmp",
     tags = ["manual"],
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
 )
 
 # Import library to resolve symbols in executables.

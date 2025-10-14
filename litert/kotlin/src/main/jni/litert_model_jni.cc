@@ -103,8 +103,11 @@ jobject ToJavaLayout(JNIEnv* env, const Layout& layout) {
                          "Failed to allocate int array.");
     return nullptr;
   }
+  // Convert int to jint.
+  auto dimensions_vector =
+      std::vector<jint>(layout.Dimensions().begin(), layout.Dimensions().end());
   env->SetIntArrayRegion(dimensions, 0, layout.Dimensions().size(),
-                         layout.Dimensions().data());
+                         dimensions_vector.data());
 
   jobject layout_obj;
   if (layout.HasStrides()) {

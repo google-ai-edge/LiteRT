@@ -22,6 +22,7 @@ package(
 cc_binary(
     name = "tokenizer_client",
     srcs = ["tokenizer_client.cc"],
+    tags = ["no_windows"],
     deps = [
         "//base",
         "@com_google_absl//absl/flags:flag",
@@ -36,6 +37,7 @@ cc_binary(
 cc_binary(
     name = "semantic_similarity",
     srcs = ["main.cc"],
+    tags = ["no_windows"],
     # copybara:uncomment data = ["//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so"],
     deps = [
         "//base",
@@ -58,6 +60,7 @@ cc_binary(
 cc_binary(
     name = "embedding_client",
     srcs = ["embedding_client.cc"],
+    tags = ["no_windows"],
     deps = [
         "//base",
         "//litert/cc:litert_api_with_dynamic_runtime",

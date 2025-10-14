@@ -41,6 +41,7 @@ litert_dynamic_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     shared_lib_name = "intel_openvino_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_IntelOpenvino.so",
+    tags = ["no_windows"],
     ungrte = True,
     visibility = ["//litert:__subpackages__"],
     deps = [
@@ -70,6 +71,7 @@ litert_bin(
     }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     linkshared = 1,
+    tags = ["no_windows"],
     visibility = ["//visibility:public"],
     deps = [
         ":graph_iterator",
@@ -106,6 +108,7 @@ litert_lib(
         "-fexceptions",
     ],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = ["no_windows"],
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -122,6 +125,7 @@ litert_lib(
     hdrs = ["decoder.h"],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    tags = ["no_windows"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
@@ -146,6 +150,7 @@ litert_test(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     tags = [
         "notap",
+        "no_windows",
     ],
     deps = [
         ":decoder",
@@ -177,6 +182,7 @@ litert_test(
         "no-remote-exec",
         "notap",
         "no_oss",
+        "no_windows",
     ],
     target_compatible_with = select({
         "@platforms//os:android": [],

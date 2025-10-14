@@ -32,4 +32,4 @@ def macros_visibility_allowlist():
 
 def core_cc_api_stable_visibility_allowlist():
     """Returns a list of packages that can depend on :cc_api_stable."""
-    return []
+    return ["//litert/tools/culprit_finder:__pkg__"]
