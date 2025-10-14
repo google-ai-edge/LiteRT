@@ -126,6 +126,7 @@ cc_library(
     hdrs = ["graph_helpers.h"],
     deps = [
         ":common",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",

@@ -176,6 +176,16 @@ LiteRtStatus LiteRtGetSignatureInputName(LiteRtSignature signature,
                                          LiteRtParamIndex input_idx,
                                          const char** input_name);
 
+// Get the input tensor for the given signature and input name.
+LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
+                                           const char* input_name,
+                                           LiteRtTensor* tensor);
+
+// Get the input tensor for the given signature and input index.
+LiteRtStatus LiteRtGetSignatureInputTensorByIndex(LiteRtSignature signature,
+                                                  LiteRtParamIndex input_idx,
+                                                  LiteRtTensor* tensor);
+
 // Get the number of outputs for the given signature.
 LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
                                           LiteRtParamIndex* num_outputs);
@@ -186,6 +196,16 @@ LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
 LiteRtStatus LiteRtGetSignatureOutputName(LiteRtSignature signature,
                                           LiteRtParamIndex output_idx,
                                           const char** output_name);
+
+// Get the output tensor for the given signature and output name.
+LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
+                                            const char* output_name,
+                                            LiteRtTensor* tensor);
+
+// Get the output tensor for the given signature and output index.
+LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
+                                                   LiteRtParamIndex output_idx,
+                                                   LiteRtTensor* tensor);
 
 //
 // LiteRtModel
