@@ -146,6 +146,7 @@ litert_test(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     tags = [
         "notap",
+        "no_windows",
     ],
     deps = [
         ":decoder",
