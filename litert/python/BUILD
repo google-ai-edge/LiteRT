@@ -29,10 +29,7 @@ py_strict_library(
     ],
 )
 
-filegroup(
-    name = "windows_empty_version_script",
-    srcs = [],
-)
+exports_files(["windows_empty.lds"])
 
 pywrap_library(
     name = "pywrap_litert",
