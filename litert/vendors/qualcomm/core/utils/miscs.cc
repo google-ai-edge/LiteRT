@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 
+#if !defined(_WIN32)
 #include <dlfcn.h>
+#endif
 
 #include <cstddef>
 #include <cstdint>
@@ -74,6 +76,7 @@ bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
   return true;
 }
 
+#if !defined(_WIN32)
 void DlCloser::operator()(void* handle) const {
   if (handle) {
     dlclose(handle);
@@ -157,6 +160,7 @@ const QNN_INTERFACE_VER_TYPE* ResolveQnnApi(
 
   return &providers[0]->QNN_INTERFACE_VER_NAME;
 }
+#endif  // !defined(_WIN32)
 
 std::optional<::qnn::SocInfo> FindSocModel(std::string_view soc_model_name) {
   std::optional<::qnn::SocInfo> soc_model;
