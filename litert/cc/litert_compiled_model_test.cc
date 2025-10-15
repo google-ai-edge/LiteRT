@@ -547,12 +547,12 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
     // Get the element type from the original model.
     LITERT_ASSERT_OK_AND_ASSIGN(const Signature& signature,
                                 model.GetSignature(0));
-    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor0,
-                                signature.InputTensor("arg0"));
+    LITERT_ASSERT_OK_AND_ASSIGN(const Subgraph subgraph,
+                                model.Subgraph(signature.Key()));
+    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor0, subgraph.Input("arg0"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type0,
                                 tensor0.RankedTensorType());
-    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor1,
-                                signature.InputTensor("arg1"));
+    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor1, subgraph.Input("arg1"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type1,
                                 tensor1.RankedTensorType());
 
@@ -581,7 +581,7 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
         compiled_model.GetOutputBufferRequirements(size_t(0)));
     LITERT_ASSERT_OK_AND_ASSIGN(size_t out_size, out_req.BufferSize());
     LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& out_tensor,
-                                signature.OutputTensor("tfl.add"));
+                                subgraph.Output("tfl.add"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& out_type,
                                 out_tensor.RankedTensorType());
 
