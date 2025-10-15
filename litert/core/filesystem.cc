@@ -132,4 +132,23 @@ bool IsDir(absl::string_view path) {
   return std::filesystem::is_directory(std_path);
 }
 
+Expected<void> MkDir(absl::string_view path) {
+  if (IsDir(path)) {
+    return {};
+  }
+  if (Exists(path)) {
+    return Error(
+        kLiteRtStatusErrorAlreadyExists,
+        absl::StrFormat("Path exists and is not a directory: %s", path.data()));
+  }
+  auto std_path = MakeStdPath(path);
+  const auto stat = std::filesystem::create_directories(std_path);
+  if (!stat) {
+    return Error(
+        kLiteRtStatusErrorFileIO,
+        absl::StrFormat("Failed to create directory: %s", std_path.c_str()));
+  }
+  return {};
+}
+
 }  // namespace litert::internal
