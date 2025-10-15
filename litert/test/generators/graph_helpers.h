@@ -24,7 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -111,7 +110,6 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
   }
 
   std::vector<std::string> input_names;
-  std::vector<LiteRtTensor> input_tensors;
   for (const auto& input : inputs) {
     auto& tensor = sg.EmplaceTensor();
     tensor.SetType(::MakeRankedTensorType(input.element_type, input.dims));
@@ -122,26 +120,22 @@ Expected<LiteRtModelT::Ptr> SingleOpModel(
     } else {
       sg.Inputs().push_back(&tensor);
       input_names.push_back(input.name);
-      input_tensors.push_back(&tensor);
     }
 
     AttachInput(&tensor, op);
   }
 
   std::vector<std::string> output_names;
-  std::vector<LiteRtTensor> output_tensors;
   for (const auto& output : outputs) {
     auto& tensor = sg.EmplaceTensor();
     tensor.SetType(::MakeRankedTensorType(output.element_type, output.dims));
     tensor.SetName(output.name);
     output_names.push_back(output.name);
     sg.Outputs().push_back(&tensor);
-    output_tensors.push_back(&tensor);
     AttachOutput(&tensor, op);
   }
 
-  model.EmplaceSignature(&sg, std::move(input_names), std::move(input_tensors),
-                         std::move(output_names), std::move(output_tensors),
+  model.EmplaceSignature(&sg, std::move(input_names), std::move(output_names),
                          "default");
   SetTflOpCodes(model, std::move(tfl_codes));
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
