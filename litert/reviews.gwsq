@@ -5,6 +5,7 @@ send_cls_to('litert_compiler_core');
 #define Weiyi "weiyiw"
 #define Steven "toribiosteven"
 #define Matt "mattalexander"
+#define Arian "aarfaian"
 
 define AddCritiqueTag(list Tag)  {
   add_description(list_to_string(Tag));
@@ -43,9 +44,9 @@ define EnsureLgtm(list Lgtmers, list Path) {
 define Main {
   set_tag("EXPORT_TO_GITHUB_PR", '1');
 
-  reassign_to_list([Andrew, Luke, Steven, Matt]);
+  reassign_to_list([Andrew, Luke, Steven, Matt, Arian]);
 
-  list Fallback = [Weiyi, Luke];
+  list Fallback = [Weiyi, Luke, Arian];
 
   list PocComment = [];
 
