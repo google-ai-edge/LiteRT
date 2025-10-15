@@ -40,6 +40,13 @@ pytype_strict_contrib_test(
         "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
         "//litert/test:testdata/torchaudio_conformer.tflite",
     ],
+    # Re-enable sans once test libs can be linked in a sans friendly way.
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
     deps = [
         ":aot_compile",
         "//litert/python/aot/core:common",
