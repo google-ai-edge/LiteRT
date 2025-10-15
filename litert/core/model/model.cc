@@ -522,24 +522,34 @@ bool IsIO(const LiteRtSubgraphT& subgraph, const LiteRtTensorT& tensor) {
   return FindInput(subgraph, tensor) || FindOutput(subgraph, tensor);
 }
 
+namespace {
+
+bool IsCompiledOp(const LiteRtModelT& graph, LiteRtOpT& op) {
+  // If there hasn't been a round of serialization,
+  // since dispatches were added, they won't be in the code
+  // table.
+  // TODO: Fix this once the code table is updateded
+  // dynamically.
+  return litert::internal::GetTflOpCodeInd(op) ==
+             litert::internal::kDispatchOpCodeTflInd ||
+         GetCustomOpCode(graph, op) ==
+             litert::internal::kLiteRtDispatchOpCustomName;
+}
+
+}  // namespace
+
 bool IsFullyCompiled(const LiteRtModelT& graph) {
-  for (const auto& subgraph : graph.Subgraphs()) {
-    if (!std::all_of(subgraph->Ops().begin(), subgraph->Ops().end(),
-                     [&](const LiteRtOpT* op) {
-                       // If there hasn't been a round of serialization,
-                       // since dispatches were added, they won't be in the code
-                       // table.
-                       // TODO: Fix this once the code table is updateded
-                       // dynamically.
-                       return litert::internal::GetTflOpCodeInd(*op) ==
-                                  litert::internal::kDispatchOpCodeTflInd ||
-                              GetCustomOpCode(graph, *op) ==
-                                  litert::internal::kLiteRtDispatchOpCustomName;
-                     })) {
-      return false;
-    }
-  }
-  return true;
+  bool res = true;
+  ForEachIr(graph,
+            [&res, &graph](LiteRtOp op) { res &= IsCompiledOp(graph, *op); });
+  return res;
+}
+
+bool HasAnyCompiled(const LiteRtModelT& graph) {
+  bool res = false;
+  ForEachIr(graph,
+            [&res, &graph](LiteRtOp op) { res |= IsCompiledOp(graph, *op); });
+  return res;
 }
 
 LiteRtTensor DisconnectOutput(LiteRtOpT& op, LiteRtParamIndex output_ind) {

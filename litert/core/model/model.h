@@ -1271,6 +1271,9 @@ namespace litert::internal {
 // Does graph consist of only disptach ops.
 bool IsFullyCompiled(const LiteRtModelT& graph);
 
+// Does graph consist of any ops compiled for NPU.
+bool HasAnyCompiled(const LiteRtModelT& graph);
+
 }  // namespace litert::internal
 
 // Apply func to all the IR in the given model. Iteration behavior is determined
@@ -1313,6 +1316,10 @@ void ForEachIr(LiteRtModel model, F func) {
       }
     }
   }
+}
+template <class F>
+void ForEachIr(const LiteRtModelT& model, F func) {
+  return ForEachIr(const_cast<LiteRtModel>(&model), func);
 }
 
 //
