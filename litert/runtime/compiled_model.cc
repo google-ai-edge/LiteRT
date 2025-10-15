@@ -1147,10 +1147,6 @@ Expected<void> LiteRtCompiledModelT::Run(
     if (output_tensor && output_tensor->data.raw != nullptr) {
       const void* const_data_ptr = output_tensor->data.raw;
       if (constant_output.locked_address != nullptr) {
-        LITERT_LOG(
-            LITERT_INFO,
-            "Copying constant output tensor %s data to already-locked buffer",
-            constant_output.tensor_name);
         memcpy(constant_output.locked_address, const_data_ptr,
                constant_output.data_size);
       } else {
