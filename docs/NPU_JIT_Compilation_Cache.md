@@ -24,7 +24,7 @@ In order to enable NPU compilation caching, specify the `CompilerCacheDir`
 environment tag in the environment options. The value must be set to an
 existing writable path of the application.
 
-```
+```C++
    const std::array environment_options = {
         litert::Environment::Option{
             /*.tag=*/litert::Environment::OptionTag::CompilerPluginLibraryDir,
