@@ -30,6 +30,18 @@ cc_library(
     ],
 )
 
+# TODO(b/445944349): Remove the non-static target once the migration is complete.
+cc_library(
+    name = "litert_compiler_plugin_static",
+    hdrs = ["litert_compiler_plugin.h"],
+    deps = [
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_options",
+        "//litert/cc:litert_macros",
+        "//litert/vendors/c:litert_compiler_plugin",
+    ],
+)
+
 cc_library(
     name = "options_helper",
     hdrs = ["options_helper.h"],

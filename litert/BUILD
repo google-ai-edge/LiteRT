@@ -95,6 +95,7 @@ package_group(
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
+        "//litert/vendors/...",
     ],
 )
 

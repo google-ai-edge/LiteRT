@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -35,18 +35,24 @@ litert_dynamic_lib(
     deps = [
         ":example_common",
         ":example_transformations",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/c:litert_logging",
+        "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_options",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_op_options",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
 
 litert_dynamic_lib(
-    name = "example_dispatch_lib",
+    name = "example_dispatch",
     srcs = [
         "example_dispatch.cc",
     ],
@@ -58,14 +64,17 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         ":example_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_metrics",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -89,12 +98,14 @@ cc_test(
     ],
     deps = [
         ":example_plugin",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/c:litert_rewriter",
+        "//litert/cc:litert_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
-        "//litert/vendors/cc:litert_compiler_plugin",
+        "//litert/vendors/cc:litert_compiler_plugin_static",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
     ],
@@ -105,7 +116,8 @@ cc_library(
     srcs = ["example_common.cc"],
     hdrs = ["example_common.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
@@ -129,36 +141,17 @@ cc_test(
     ],
 )
 
-cc_library(
-    name = "example_dispatch",
-    testonly = True,
-    srcs = ["example_dispatch.cc"],
-    deps = [
-        ":example_common",
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
-        "//litert/vendors/c:litert_dispatch_c_api",
-        "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
 cc_test(
     name = "example_dispatch_test",
     srcs = ["example_dispatch_test.cc"],
     deps = [
         ":example_dispatch",  # buildcleaner: keep
-        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_handle",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -173,7 +166,7 @@ cc_test(
     srcs = ["end_to_end_test.cc"],
     data = [
         ":example_dispatch_so",
-        ":libLiteRtCompilerPlugin_Example.so",
+        ":example_plugin_so",
         "//litert/test:mlir_test_data",
     ],
     # This test dlopens, so sanitzers are prone to false positive.
@@ -184,10 +177,10 @@ cc_test(
         "notsan",
     ],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc/dynamic_runtime:litert_compiled_model",
-        "//litert/cc/dynamic_runtime:litert_environment",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_model",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
@@ -201,23 +194,16 @@ cc_library(
     srcs = ["example_transformations.cc"],
     hdrs = ["example_transformations.h"],
     deps = [
-        "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_rewriter",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_rewriter",
     ],
 )
 
 litert_test(
     name = "example_transformations_test",
     srcs = ["example_transformations_test.cc"],
-    linkopts = select({
-        "@org_tensorflow//tensorflow:android": [],
-        "//conditions:default": [
-            make_rpaths([
-                "//litert/c:litert_runtime_c_api_so",
-            ]),
-        ],
-    }),
     linkstatic = True,
     tags = [
         # Tests with ungrte deps do not currently work on forge.
