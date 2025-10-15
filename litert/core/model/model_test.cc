@@ -166,6 +166,7 @@ TEST(ModelSubgraphTest, Input) {
   LiteRtSubgraphT subgraph;
   subgraph.Inputs().push_back(&tensor);
   EXPECT_EQ(&subgraph.Input(0), subgraph.Inputs().front());
+  EXPECT_EQ(tensor.NumElements(), 0);
 }
 
 TEST(ModelSubgraphTest, Output) {
