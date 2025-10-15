@@ -189,6 +189,10 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchGetMetric(
 LITERT_CAPI_EXPORT LiteRtStatus
 LiteRtDispatchDestroyMetrics(LiteRtDispatchMetrics metrics);
 
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchCheckRuntimeCompatibility(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options);
+
 // /////////////////////////////////////////////////////////////////////////////
 // Async Execution API
 // /////////////////////////////////////////////////////////////////////////////

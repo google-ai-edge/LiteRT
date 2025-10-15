@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -42,6 +43,19 @@ struct LiteRtCompilerPluginT {
   std::vector<LiteRtPatternFn> pattern_fns;
   std::vector<const char*> transformation_names;
 };
+
+LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options, const char* soc_model_name) {
+  // Example plugin does not depend on any compiler library, so we can
+  // return an error to test the error handling.
+  if (strcmp(soc_model_name, litert::example::kImcompatiblePluginSocModel) ==
+      0) {
+    LITERT_LOG(LITERT_ERROR, "Incompatible compiler version.");
+    return kLiteRtStatusErrorUnsupportedCompilerVersion;
+  }
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
   if (!api_version) {
