@@ -15,12 +15,18 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_COMMON_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_EXAMPLES_EXAMPLE_COMMON_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -29,6 +35,7 @@ namespace litert::example {
 
 constexpr char kPluginManufacturer[] = "ExampleSocManufacturer";
 constexpr char kPluginSocModel[] = "ExampleSocModel";
+constexpr char kImcompatiblePluginSocModel[] = "UnsupportedSocModel";
 
 static constexpr absl::string_view kFirstDelim = ",";
 static constexpr absl::string_view kSecondDelim = "~";
@@ -150,7 +157,8 @@ struct ExampleOp {
 class ExampleGraph {
  private:
   // clang-format off
-static constexpr absl::string_view kSchema = R"(inputs:%s
+static constexpr absl::string_view kSchema = R"(version:%s
+inputs:%s
 outputs:%s
 tensors:%s
 ops:%s)";
@@ -170,7 +178,8 @@ ops:%s)";
   // Serialize IR (compilation).
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const ExampleGraph& g) {
-    absl::Format(&sink, kSchema, absl::StrJoin(g.inputs_, kFirstDelim),
+    absl::Format(&sink, kSchema, g.version_,
+                 absl::StrJoin(g.inputs_, kFirstDelim),
                  absl::StrJoin(g.outputs_, kFirstDelim),
                  absl::StrJoin(g.tensors_, kFirstDelim),
                  absl::StrJoin(g.ops_, kSecondDelim));
@@ -182,6 +191,7 @@ ops:%s)";
   }
 
   // Read IR (execution).
+  const std::string& version() const { return version_; }
   const std::vector<ExampleTensor>& Tensors() const { return tensors_; }
   const std::vector<ExampleOp>& Ops() const { return ops_; }
   const Inds& Inputs() const { return inputs_; }
@@ -197,10 +207,13 @@ ops:%s)";
     outputs_ = Inds{std::forward<Os>(os)...};
   }
 
+  void SetVersion(std::string version) { version_ = std::move(version); }
+
   // Parse IR (execution).
   static Expected<ExampleGraph> Parse(BufferRef<uint8_t> serialized);
 
  private:
+  std::string version_;
   std::vector<ExampleTensor> tensors_;
   std::vector<ExampleOp> ops_;
   Inds inputs_;

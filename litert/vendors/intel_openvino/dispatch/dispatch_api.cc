@@ -302,6 +302,12 @@ LiteRtStatus DispatchInvoke(
   }
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
+
 }  // namespace openvino
 }  // namespace litert
 
@@ -328,6 +334,12 @@ LiteRtDispatchInterface TheInterface = {
     .detach_input = litert::openvino::DispatchDetachInput,
     .detach_output = litert::openvino::DispatchDetachOutput,
     .invoke = litert::openvino::DispatchInvoke,
+    .start_metrics_collection = nullptr,
+    .stop_metrics_collection = nullptr,
+    .get_num_metrics = nullptr,
+    .get_metric = nullptr,
+    .destroy_metrics = nullptr,
+    .check_runtime_compatibility = litert::openvino::CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi TheApi = {

@@ -721,5 +721,14 @@ TEST(PartitionModelTest, PartitionIsland) {
   EXPECT_EQ(new_model.Subgraphs().at(1)->Ops().size(), 1);
 }
 
+TEST(CheckCompilerCompatibilityTest, Simple) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+  ASSERT_TRUE(plugin.CheckCompilerCompatibility("ExampleSocModel"));
+  ASSERT_FALSE(plugin.CheckCompilerCompatibility("UnsupportedSocModel"));
+}
+
 }  // namespace
 }  // namespace litert::internal

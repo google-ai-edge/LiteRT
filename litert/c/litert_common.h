@@ -277,6 +277,11 @@ typedef enum {
   // Transformation related errors.
   kLiteRtStatusPatternNoMatch = 3000,
   kLiteRtStatusInvalidTransformation = 3001,
+
+  // Version related errors.
+  kLiteRtStatusErrorUnsupportedRuntimeVersion = 4000,
+  kLiteRtStatusErrorUnsupportedCompilerVersion = 4001,
+  kLiteRtStatusErrorIncompatibleByteCodeVersion = 4002,
 } LiteRtStatus;
 // LINT.ThenChange(
 //   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes,

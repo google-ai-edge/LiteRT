@@ -19,7 +19,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
@@ -80,7 +79,8 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
   absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
                                      byte_code_size);
   ASSERT_EQ(byte_code_string,
-            "inputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]\nops:mul(0,"
+            "version:1\ninputs:0,1\noutputs:3\ntensors:[2x2],[2x2],[2x2],[2x2]"
+            "\nops:mul(0,"
             "0)(2)~mul(2,1)(3)");
 
   LiteRtParamIndex byte_code_idx;
@@ -105,6 +105,20 @@ TEST(TestCallDummyPlugin, RegisterAllTransformations) {
       plugin.get(), &transformations, &num_transformations));
   ASSERT_EQ(num_transformations, 1);
   ASSERT_STREQ(transformations[0].name, "MyTransformation");
+}
+
+TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
+  auto plugin = CreatePlugin();
+  LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, plugin.get(), env, options, "ExampleSocModel"));
+
+  EXPECT_EQ(
+      kLiteRtStatusErrorUnsupportedCompilerVersion,
+      LiteRtCompilerPluginCheckCompilerCompatibility(
+          api_version, plugin.get(), env, options, "UnsupportedSocModel"));
 }
 
 }  // namespace

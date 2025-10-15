@@ -338,6 +338,12 @@ LiteRtStatus LiteRtDispatchInvoke(
   INVOKE_FUNC(invoke, invocation_context);
 }
 
+LiteRtStatus LiteRtDispatchCheckRuntimeCompatibility(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options) {
+  INVOKE_FUNC(check_runtime_compatibility, api_version, env, options);
+}
+
 LiteRtStatus LiteRtDispatchStartMetricsCollection(
     LiteRtDispatchInvocationContext invocation_context, int detail_level) {
   if (!invocation_context) {

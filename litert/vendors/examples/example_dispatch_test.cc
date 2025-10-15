@@ -91,6 +91,14 @@ class ExampleDispatchTest : public ::testing::Test {
   LiteRtDispatchApi api_;
 };
 
+TEST_F(ExampleDispatchTest, CheckRuntimeCompatibility) {
+  LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(
+      Api().check_runtime_compatibility(api_version, env, options));
+}
+
 TEST_F(ExampleDispatchTest, GetVendorId) {
   const char* vendor_id;
   LITERT_ASSERT_OK(Api().get_vendor_id(&vendor_id));
@@ -117,7 +125,8 @@ TEST_F(ExampleDispatchTest, DeviceContextCreate) {
 
 TEST_F(ExampleDispatchTest, InvocationContext) {
   // clang-format off
-  static constexpr absl::string_view kSchema = R"(inputs:0,1
+  static constexpr absl::string_view kSchema = R"(version:1
+inputs:0,1
 outputs:2
 tensors:[2x2],[2x2],[2x2]
 ops:mul(0,1)(2))";
@@ -212,5 +221,38 @@ TEST_F(ExampleDispatchTest, RegisterBuffer) {
   LITERT_ASSERT_OK(Api().unregister_tensor_buffer(device_context, handle));
 }
 
+TEST_F(ExampleDispatchTest, UnsupportedVersion) {
+  // clang-format off
+  static constexpr absl::string_view kSchema = R"(version:2
+inputs:0,1
+outputs:2
+tensors:[2x2],[2x2],[2x2]
+ops:mul(0,1)(2))";
+  // clang-format on
+  static constexpr absl::string_view kFunctionName = "partition_0";
+
+  static constexpr int kNumInputs = 2;
+  static constexpr int kNumOutputs = 1;
+
+  LiteRtMemBuffer exec_bytecode_buffer;
+  exec_bytecode_buffer.base_addr = kSchema.data();
+  exec_bytecode_buffer.size = kSchema.size();
+  exec_bytecode_buffer.fd = -1;
+  exec_bytecode_buffer.offset = 0;
+
+  static constexpr LiteRtDispatchExecutableType kExecType =
+      kLiteRtDispatchExecutableTypeMlModel;
+
+  LiteRtDispatchDeviceContext device_context;
+  LITERT_ASSERT_OK(Api().device_context_create(&device_context));
+
+  LiteRtDispatchInvocationContext invocation_context;
+  EXPECT_EQ(kLiteRtStatusErrorUnsupportedCompilerVersion,
+            Api().invocation_context_create(device_context, kExecType,
+                                            &exec_bytecode_buffer,
+                                            kFunctionName.data(), kNumInputs,
+                                            kNumOutputs, &invocation_context));
+  LITERT_ASSERT_OK(Api().device_context_destroy(device_context));
+}
 }  // namespace
 }  // namespace litert::example
