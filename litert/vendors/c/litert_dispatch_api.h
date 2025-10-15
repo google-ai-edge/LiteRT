@@ -107,6 +107,10 @@ typedef LiteRtStatus (*LiteRtDispatchGetMetricT)(LiteRtDispatchMetrics metrics,
 typedef LiteRtStatus (*LiteRtDispatchDestroyMetricsT)(
     LiteRtDispatchMetrics metrics);
 
+typedef LiteRtStatus (*LiteRtDispatchCheckRuntimeCompatibilityT)(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options);
+
 typedef struct LiteRtDispatchInterface {
   LiteRtDispatchInitializeT initialize;
   LiteRtDispatchGetVendorIdT get_vendor_id;
@@ -130,6 +134,7 @@ typedef struct LiteRtDispatchInterface {
   LiteRtDispatchGetNumMetricsT get_num_metrics;
   LiteRtDispatchGetMetricT get_metric;
   LiteRtDispatchDestroyMetricsT destroy_metrics;
+  LiteRtDispatchCheckRuntimeCompatibilityT check_runtime_compatibility;
 } LiteRtDispatchInterface;
 
 // /////////////////////////////////////////////////////////////////////////////

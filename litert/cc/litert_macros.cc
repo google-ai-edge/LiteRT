@@ -128,6 +128,12 @@ absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
       return absl::NotFoundError(error_.Message());
     case kLiteRtStatusInvalidTransformation:
       return absl::InvalidArgumentError(error_.Message());
+    case kLiteRtStatusErrorUnsupportedRuntimeVersion:
+      return absl::FailedPreconditionError(LogMessage());
+    case kLiteRtStatusErrorUnsupportedCompilerVersion:
+      return absl::FailedPreconditionError(LogMessage());
+    case kLiteRtStatusErrorIncompatibleByteCodeVersion:
+      return absl::FailedPreconditionError(LogMessage());
   }
 }
 
