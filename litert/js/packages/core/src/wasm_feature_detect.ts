@@ -54,12 +54,16 @@ interface SupportStatus {
   error?: Error;
 }
 
-const WASM_FEATURE_VALUES: {
+// This must use 'declare' to prevent property renaming since string keys are
+// used to access these properties.
+declare interface WasmFeatureValues {
   relaxedSimd: Promise<SupportStatus>|undefined;
-  threads: Promise<SupportStatus>| undefined;
-} = {
-  relaxedSimd: undefined,
-  threads: undefined,
+  threads: Promise<SupportStatus>|undefined;
+}
+
+const WASM_FEATURE_VALUES: WasmFeatureValues = {
+  'relaxedSimd': undefined,
+  'threads': undefined,
 };
 
 async function tryWasm(wasm: Uint8Array): Promise<SupportStatus> {
@@ -73,13 +77,13 @@ async function tryWasm(wasm: Uint8Array): Promise<SupportStatus> {
 
 const WASM_FEATURE_CHECKS:
     Record<keyof typeof WASM_FEATURE_VALUES, () => Promise<SupportStatus>> = {
-      relaxedSimd: () => {
+      'relaxedSimd': () => {
         if (WASM_FEATURE_VALUES.relaxedSimd === undefined) {
           WASM_FEATURE_VALUES.relaxedSimd = tryWasm(WASM_RELAXED_SIMD_CHECK);
         }
         return WASM_FEATURE_VALUES.relaxedSimd!;
       },
-      threads: () => {
+      'threads': () => {
         if (WASM_FEATURE_VALUES.threads === undefined) {
           try {
             if (typeof MessageChannel !== 'undefined') {
