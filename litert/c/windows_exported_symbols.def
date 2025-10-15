@@ -109,12 +109,8 @@ EXPORTS
   LiteRtGetRuntimeOptionsIdentifier
   LiteRtGetRuntimeOptionsShloCompositeInlining
   LiteRtGetSignatureInputName
-  LiteRtGetSignatureInputTensor
-  LiteRtGetSignatureInputTensorByIndex
   LiteRtGetSignatureKey
   LiteRtGetSignatureOutputName
-  LiteRtGetSignatureOutputTensor
-  LiteRtGetSignatureOutputTensorByIndex
   LiteRtGetSignatureSubgraph
   LiteRtGetSubgraphInput
   LiteRtGetSubgraphOp
