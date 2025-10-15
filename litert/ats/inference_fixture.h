@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -28,10 +27,10 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "litert/ats/capture.h"
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
+#include "litert/ats/inference_capture.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
@@ -51,13 +50,15 @@ using ::testing::litert::MeanSquaredErrorLt;
 
 // Fixture for tests that test execution on a given graph.
 class AtsInferenceTest : public RngTest {
- public:
+ private:
   template <typename T>
   using BufferView = typename SimpleBuffer::CView<T>;
 
+ public:
+  using Capture = InferenceCapture;
+
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
-                       const TestNames& names,
-                       std::optional<AtsCaptureEntry::Ref> cap = {}) {
+                       const TestNames& names, typename Capture::Entry& cap) {
     RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
                  [graph = std::move(graph), &conf = std::as_const(conf), cap,
@@ -72,13 +73,13 @@ class AtsInferenceTest : public RngTest {
     ASSERT_EQ(Graph().MainSubgraph()->NumOutputs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
-    Cap().model.name = names_.report_id;
-    Cap().model.desc = names_.desc;
+    cap_.model.name = names_.report_id;
+    cap_.model.desc = names_.desc;
     const auto is_precompiled = GetBuildStamp(Graph()).has_value();
-    Cap().model.precompiled = is_precompiled;
-    Cap().accelerator.a_type = conf_.Backend();
-    Cap().run.num_iterations = conf_.ItersPerTest();
-    Cap().numerics.reference_type =
+    cap_.model.precompiled = is_precompiled;
+    cap_.accelerator.a_type = conf_.Backend();
+    cap_.run.num_iterations = conf_.ItersPerTest();
+    cap_.numerics.reference_type =
         graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;
   }
 
@@ -97,17 +98,17 @@ class AtsInferenceTest : public RngTest {
     if (conf_.IsNpu()) {
       auto stamp = GetBuildStamp(Graph());
       if (stamp) {
-        Cap().accelerator.soc_man = std::string(stamp->soc_manufacturer);
-        Cap().accelerator.soc_model = std::string(stamp->soc_model);
+        cap_.accelerator.soc_man = std::string(stamp->soc_manufacturer);
+        cap_.accelerator.soc_model = std::string(stamp->soc_model);
       }
     }
 
     if (HasFailure()) {
-      Cap().run.status = RunStatus::kError;
+      cap_.run.status = RunStatus::kError;
     } else if (TimedOut()) {
-      Cap().run.status = RunStatus::kTimeout;
+      cap_.run.status = RunStatus::kTimeout;
     } else {
-      Cap().run.status = RunStatus::kOk;
+      cap_.run.status = RunStatus::kOk;
     }
   }
 
@@ -120,7 +121,7 @@ class AtsInferenceTest : public RngTest {
                          Graph(), conf_.DispatchDir(), conf_.PluginDir()));
       auto res = std::make_unique<CompiledModelExecutor>(std::move(exec));
       // TODO: Fully compiled needs a debug. The capture needs an n/a as well.
-      Cap().accelerator.is_fully_accelerated =
+      cap_.accelerator.is_fully_accelerated =
           ::litert::internal::IsFullyCompiled(Graph());
       return res;
 
@@ -140,7 +141,7 @@ class AtsInferenceTest : public RngTest {
 
   Expected<VarBuffers> Actual(const VarBuffers& inputs,
                               CompiledModelExecutor* exec) {
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, Cap().latency));
+    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, cap_.latency));
     return actual;
   }
 
@@ -184,24 +185,19 @@ class AtsInferenceTest : public RngTest {
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
     EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-5, &mse));
-    Cap().numerics.NewMse(mse);
+    cap_.numerics.NewMse(mse);
   }
 
   LiteRtModelT& Graph() const { return graph_->Graph(); }
 
-  AtsCaptureEntry& Cap() { return cap_.has_value() ? cap_->get() : dummy_cap_; }
-
   AtsInferenceTest(TestGraph::Ptr graph, const AtsConf& conf,
-                   const TestNames& names,
-                   std::optional<AtsCaptureEntry::Ref> cap)
+                   const TestNames& names, typename Capture::Entry& cap)
       : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
   TestNames names_;
-  std::optional<AtsCaptureEntry::Ref> cap_;
-
-  AtsCaptureEntry dummy_cap_;
+  typename Capture::Entry& cap_;
 };
 
 }  // namespace litert::testing

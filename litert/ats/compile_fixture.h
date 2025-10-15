@@ -22,8 +22,8 @@
 #include <utility>
 
 #include <gtest/gtest.h>
-#include "litert/ats/capture.h"
 #include "litert/ats/common.h"
+#include "litert/ats/compile_capture.h"
 #include "litert/ats/configure.h"
 #include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
@@ -43,14 +43,17 @@ using ::testing::RegisterTest;
 // Fixture for tests that run aot flow on a graph and emit the result as file.
 class AtsCompileTest : public ::testing::Test {
  public:
+  // TODO: lukeboyer - Finish compile capture types and populate here..
+  using Capture = CompileCapture;
+
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
-                       const TestNames& names,
-                       std::optional<AtsCaptureEntry::Ref> cap = {}) {
+                       const TestNames& names, typename Capture::Entry& cap) {
     RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [graph = std::move(graph), &conf = std::as_const(conf),
-                  names]() mutable {
-                   return new AtsCompileTest(std::move(graph), conf, names);
+                 [graph = std::move(graph), &conf = std::as_const(conf), names,
+                  cap]() mutable {
+                   return new AtsCompileTest(std::move(graph), conf, names,
+                                             cap);
                  });
   }
 
@@ -66,7 +69,7 @@ class AtsCompileTest : public ::testing::Test {
 
  private:
   AtsCompileTest(TestGraph::Ptr graph, const AtsConf& conf,
-                 const TestNames& names)
+                 const TestNames& names, typename Capture::Entry& cap)
       : graph_(std::move(graph)),
         conf_(conf),
 

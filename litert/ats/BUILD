@@ -38,7 +38,6 @@ cc_test(
     # TODO: Copybara rewrite the gunit flags and remove this tag.
     tags = ["no_oss"],
     deps = [
-        ":capture",
         ":compile_fixture",
         ":configure",
         ":inference_fixture",
@@ -86,7 +85,7 @@ cc_library(
     testonly = True,
     hdrs = ["executor.h"],
     deps = [
-        ":capture",
+        ":inference_capture",
         "//litert/c:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
@@ -105,9 +104,9 @@ cc_library(
     testonly = True,
     hdrs = ["register.h"],
     deps = [
-        ":capture",
         ":common",
         ":configure",
+        ":inference_capture",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_detail",
@@ -143,10 +142,10 @@ cc_library(
     testonly = True,
     hdrs = ["inference_fixture.h"],
     deps = [
-        ":capture",
         ":common",
         ":configure",
         ":executor",
+        ":inference_capture",
         "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_c_types_printing",
@@ -168,8 +167,8 @@ cc_library(
     testonly = True,
     hdrs = ["compile_fixture.h"],
     deps = [
-        ":capture",
         ":common",
+        ":compile_capture",
         ":configure",
         "//litert/c:litert_logging",
         "//litert/cc:litert_c_types_printing",
@@ -217,11 +216,11 @@ cc_test(
         "notsan",
     ],
     deps = [
-        ":capture",
         ":common",
         ":compile_fixture",
         ":configure",
         ":executor",
+        ":inference_capture",
         ":inference_fixture",
         ":register",
         "//litert/c:litert_common",
@@ -245,9 +244,9 @@ cc_test(
 )
 
 cc_library(
-    name = "capture",
+    name = "inference_capture",
     testonly = True,
-    hdrs = ["capture.h"],
+    hdrs = ["inference_capture.h"],
     deps = [
         ":common",
         ":print",
@@ -257,10 +256,10 @@ cc_library(
 )
 
 cc_test(
-    name = "capture_test",
-    srcs = ["capture_test.cc"],
+    name = "inference_capture_test",
+    srcs = ["inference_capture_test.cc"],
     deps = [
-        ":capture",
+        ":inference_capture",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -292,6 +291,26 @@ cc_test(
     srcs = ["print_test.cc"],
     deps = [
         ":print",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "compile_capture",
+    testonly = True,
+    hdrs = ["compile_capture.h"],
+    deps = [
+        ":print",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "compile_capture_test",
+    srcs = ["compile_capture_test.cc"],
+    deps = [
+        ":compile_capture",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
     ],

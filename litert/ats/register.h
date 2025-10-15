@@ -21,7 +21,6 @@
 #include <utility>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/ats/capture.h"
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/c/litert_common.h"
@@ -78,19 +77,19 @@ class RegisterFunctor {
         continue;
       }
       Fixture::Register(std::move(*test_graph), options_, std::move(*names),
-                        AtsCapture::MaybeNewEntry(cap_));
+                        cap_.NewEntry());
     }
   }
 
   RegisterFunctor(size_t iters, size_t& test_id, const AtsConf& options,
-                  std::optional<AtsCapture::Ref> cap = {})
+                  typename Fixture::Capture& cap)
       : iters_(iters), test_id_(test_id), options_(options), cap_(cap) {}
 
  private:
   const size_t iters_;
   size_t& test_id_;
   const AtsConf& options_;
-  std::optional<AtsCapture::Ref> cap_;
+  typename Fixture::Capture& cap_;
 };
 
 // Specializes the given test logic template with the cartesian product of
@@ -100,7 +99,7 @@ class RegisterFunctor {
 template <typename Fixture, template <typename...> typename Logic,
           typename... Lists>
 void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
-                          std::optional<AtsCapture::Ref> cap = {}) {
+                          typename Fixture::Capture& cap) {
   RegisterFunctor<Fixture> f(iters, test_id, options, cap);
   ExpandProduct<Logic, Lists...>(f);
 }
@@ -108,6 +107,7 @@ void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
 /// REGISTER EXTRA MODELS TESTS ////////////////////////////////////////////////
 
 // Container for test graphs that originate from raw .tflite passed to the test.
+// TODO: move this to test/generators/extra_model.h
 class ExtraModel : public TestGraph {
  public:
   using Ptr = std::unique_ptr<ExtraModel>;
@@ -147,7 +147,7 @@ class ExtraModel : public TestGraph {
 // Registers a test for each extra model passed in the options.
 template <typename Fixture>
 void RegisterExtraModels(size_t& test_id, const AtsConf& options,
-                         std::optional<AtsCapture::Ref> cap = {}) {
+                         typename Fixture::Capture& cap) {
   DefaultDevice device(options.GetSeedForParams(ExtraModel::Name()));
   const auto extra_models = options.ExtraModels();
   LITERT_LOG(LITERT_INFO, "Registering %zu extra models", extra_models.size());
@@ -167,7 +167,7 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
       continue;
     }
     Fixture::Register(std::move(*model), options, std::move(*names),
-                      AtsCapture::MaybeNewEntry(cap));
+                      cap.NewEntry());
   }
 }
 

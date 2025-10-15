@@ -15,12 +15,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <optional>
 
 #include <gtest/gtest.h>
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
-#include "litert/ats/capture.h"
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
@@ -29,15 +27,12 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_detail.h"
-#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::testing {
 namespace {
-
-using ::litert::internal::CompilerPlugin;
 
 static constexpr const char* kArt = R"(
    ###     ######   ######  ######## ##       ######## ########     ###    ########  #######  ########     ######## ########  ######  ########     ######  ##     ## #### ######## ######## 
@@ -51,7 +46,7 @@ static constexpr const char* kArt = R"(
 
 template <typename Fixture>
 void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters,
-                  AtsCapture::Ref cap) {
+                  typename Fixture::Capture& cap) {
   // clang-format off
   RegisterCombinations<
       Fixture,
@@ -64,7 +59,7 @@ void RegisterNoOp(const AtsConf& options, size_t& test_id, size_t iters,
 
 template <typename Fixture>
 void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
-                               size_t iters, AtsCapture::Ref cap) {
+                               size_t iters, typename Fixture::Capture& cap) {
   // clang-format off
   RegisterCombinations<
       Fixture,
@@ -78,7 +73,8 @@ void RegisterBinaryNoBroadcast(const AtsConf& options, size_t& test_id,
 }
 
 template <typename Fixture>
-void RegisterAll(const AtsConf& options, size_t& test_id, AtsCapture::Ref cap) {
+void RegisterAll(const AtsConf& options, size_t& test_id,
+                 typename Fixture::Capture& cap) {
   RegisterExtraModels<Fixture>(test_id, options, cap);
   RegisterNoOp<Fixture>(options, test_id, /*iters=*/10, cap);
   RegisterBinaryNoBroadcast<Fixture>(options, test_id, /*iters=*/10, cap);
@@ -91,15 +87,14 @@ int Ats() {
   ABSL_CHECK(options);
 
   size_t test_id = 0;
-  AtsCapture cap;
-
-  std::optional<CompilerPlugin> plugin = std::nullopt;
+  typename AtsInferenceTest::Capture i_cap;
+  typename AtsCompileTest::Capture c_cap;
 
   if (!options->CompileMode()) {
     // TODO: lukeboyer - Add compile tests.
-    RegisterAll<AtsInferenceTest>(*options, test_id, cap);
+    RegisterAll<AtsInferenceTest>(*options, test_id, i_cap);
   } else {
-    RegisterAll<AtsCompileTest>(*options, test_id, cap);
+    RegisterAll<AtsCompileTest>(*options, test_id, c_cap);
   }
 
   // Preliminary report.
@@ -111,8 +106,10 @@ int Ats() {
 
   const auto res = RUN_ALL_TESTS();
 
-  options->Csv(cap);
-  options->Print(cap);
+  options->Csv(i_cap);
+  options->Print(i_cap);
+  options->Csv(c_cap);
+  options->Print(c_cap);
 
   return res;
 }

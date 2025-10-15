@@ -12,26 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/ats/capture.h"
+#include "litert/ats/compile_capture.h"
 
+#include <sstream>
+
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 namespace litert::testing {
 namespace {
 
-TEST(AtsCaptureTest, LatencyRow) {
-  Latency l;
-  l.Stop(l.Start());
-  EXPECT_EQ(l.NumSamples(), 1);
-  EXPECT_EQ(l.Avg(), l.Min());
-  EXPECT_EQ(l.Avg(), l.Max());
-}
+using ::testing::HasSubstr;
 
-TEST(AtsCaptureTest, Numerics) {
-  Numerics n;
-  n.NewMse(2.0);
-  n.NewMse(4.0);
-  EXPECT_EQ(n.AvgMse(), 3.0);
+TEST(AtsCompileCaptureTest, Basic) {
+  CompileCapture cap;
+  cap.NewEntry();
+
+  std::ostringstream s;
+  cap.Print(s);
+
+  EXPECT_THAT(s.str(), HasSubstr("CompileCapture"));
 }
 
 }  // namespace

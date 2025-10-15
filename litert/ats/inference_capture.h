@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_CAPTURE_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_CAPTURE_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_CAPTURE_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_CAPTURE_H_
 
 #include <algorithm>
 #include <chrono>  // NOLINT
@@ -170,11 +170,10 @@ struct RunDetail : public Printable<size_t, RunStatus> {
 };
 
 // Type to hold all of the capturable information related to a single test case.
-struct AtsCaptureEntry : public PrintableRow<ModelDetail, AcceleratorDetail,
-                                             Latency, Numerics, RunDetail> {
-  using Ref = std::reference_wrapper<AtsCaptureEntry>;
-
-  AtsCaptureEntry() = default;
+struct InferenceCaptureEntry
+    : public PrintableRow<ModelDetail, AcceleratorDetail, Latency, Numerics,
+                          RunDetail> {
+  InferenceCaptureEntry() = default;
 
   ModelDetail model = {};
   AcceleratorDetail accelerator = {};
@@ -192,16 +191,9 @@ struct AtsCaptureEntry : public PrintableRow<ModelDetail, AcceleratorDetail,
 };
 
 // Contains a collection of AtsCaptureEntry.
-class AtsCapture : public PrintableCollection<AtsCaptureEntry> {
+class InferenceCapture : public PrintableCollection<InferenceCaptureEntry> {
  public:
-  using Ref = std::reference_wrapper<AtsCapture>;
-  static std::optional<AtsCaptureEntry::Ref> MaybeNewEntry(
-      std::optional<Ref> cap) {
-    if (cap) {
-      return cap->get().NewEntry();
-    }
-    return std::nullopt;
-  }
+  using Entry = InferenceCaptureEntry;
 
  private:
   absl::string_view Name() const override { return "Ats Results"; }
@@ -209,4 +201,4 @@ class AtsCapture : public PrintableCollection<AtsCaptureEntry> {
 
 }  // namespace litert::testing
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_CAPTURE_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_CAPTURE_H_
