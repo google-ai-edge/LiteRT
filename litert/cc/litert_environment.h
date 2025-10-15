@@ -57,6 +57,8 @@ class Environment
     MagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
     MagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
     CompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
+    WebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    WebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
   };
 
   struct Option {
