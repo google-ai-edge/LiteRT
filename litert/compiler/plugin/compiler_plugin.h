@@ -80,6 +80,8 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
+  using Ref = std::reference_wrapper<CompilerPlugin>;
+
   std::string DebugString() const;
 
   // Get the compiler plugin's API version.
