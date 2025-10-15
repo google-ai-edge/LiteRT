@@ -51,7 +51,8 @@ class LiteRtEnvironmentT {
   const LiteRtEnvironmentOptionsT& GetOptions() const { return options_; }
 
   // Adds options to the existing environment.
-  litert::Expected<void> AddOptions(absl::Span<const LiteRtEnvOption> options);
+  litert::Expected<void> AddOptions(absl::Span<const LiteRtEnvOption> options,
+                                    bool overwrite = false);
 
   // Returns the accelerator registry.
   litert::internal::AcceleratorRegistry& GetAcceleratorRegistry() {

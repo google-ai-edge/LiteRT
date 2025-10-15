@@ -211,6 +211,8 @@ cc_test(
     deps = [
         ":litert_any",
         ":litert_common",
+        ":litert_environment",
+        ":litert_environment_header",
         ":litert_environment_options",
         "//litert/core:environment_options",
         "//litert/test:matchers",

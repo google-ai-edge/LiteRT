@@ -85,6 +85,29 @@ LiteRtStatus LiteRtGetEnvironmentOptions(LiteRtEnvironment environment,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtAddEnvironmentOptions(LiteRtEnvironment environment,
+                                         int num_options,
+                                         const LiteRtEnvOption* options,
+                                         bool overwrite) {
+  LITERT_RETURN_IF_ERROR(
+      environment, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+                       << "Environment pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      options, litert::ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument)
+                   << "Options pointer is null.");
+  LITERT_RETURN_IF_ERROR(
+      environment->AddOptions(absl::MakeSpan(options, num_options), overwrite));
+#if !defined(LITERT_DISABLE_GPU)
+  if (environment->HasGpuEnvironment()) {
+    LITERT_ASSIGN_OR_RETURN(litert::internal::GpuEnvironment * gpu_env,
+                            environment->GetGpuEnvironment());
+    LITERT_RETURN_IF_ERROR(gpu_env->AddEnvironmentOptions(
+        absl::MakeSpan(options, num_options)));
+  }
+#endif  // !defined(LITERT_DISABLE_GPU)
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGpuEnvironmentCreate(LiteRtEnvironment environment,
                                         int num_options,
                                         const LiteRtEnvOption* options) {

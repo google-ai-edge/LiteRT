@@ -18,7 +18,9 @@
 #include <memory>
 #include <utility>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
@@ -157,6 +159,10 @@ class GpuEnvironment {
   bool SupportsAhwbGlInterop() {
     return properties_.is_ahwb_gl_interop_supported;
   }
+
+  // Adds options to the existing GPU environment.
+  Expected<void> AddEnvironmentOptions(
+      absl::Span<const LiteRtEnvOption> options);
 
  private:
   // Load the OpenCL device, context and command queue from the environment if

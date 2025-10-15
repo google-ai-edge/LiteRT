@@ -268,7 +268,10 @@ cc_library(
     hdrs = ["gpu_environment.h"],
     copts = litert_metal_opts(),
     linkopts = litert_metal_linkopts(),
-    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps(),
+    deps = GPU_ENVIRONMENT_DEPS + litert_metal_deps() + [
+        "//litert/c:litert_environment_options",
+        "@com_google_absl//absl/types:span",
+    ],
 )
 
 cc_library(
@@ -280,6 +283,8 @@ cc_library(
         "//litert/c:litert_environment_options",
         "//litert/cc:litert_any",
         "//litert/core:environment",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
     ] + litert_metal_deps(),
 )
 

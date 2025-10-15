@@ -17,6 +17,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -398,6 +400,27 @@ Expected<void> GpuEnvironment::Initialize(LiteRtEnvironmentT* environment) {
       options_.device_id, options_.platform_id, options_.context,
       options_.command_queue, options_.egl_context, options_.egl_display);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+  return {};
+}
+
+Expected<void> GpuEnvironment::AddEnvironmentOptions(
+    absl::Span<const LiteRtEnvOption> options) {
+  for (const auto& opt : options) {
+    if (opt.tag == kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy) {
+      options_.callback_on_destroy = reinterpret_cast<void (*)(void*)>(
+          const_cast<void*>(opt.value.ptr_value));
+      continue;
+    }
+    if (opt.tag == kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy) {
+      options_.callback_user_data_on_destroy =
+          reinterpret_cast<void*>(const_cast<void*>(opt.value.ptr_value));
+      continue;
+    }
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      absl::StrFormat("Cannot add the following option to "
+                                      "existing GPU environment. Tag: %d",
+                                      opt.tag));
+  }
   return {};
 }
 
