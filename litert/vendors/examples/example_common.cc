@@ -25,22 +25,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert::example {
-
 namespace {
-
-bool StartsWith(absl::string_view str, absl::string_view prefix) {
-  return str.size() >= prefix.size() &&
-         std::equal(prefix.begin(), prefix.end(), str.begin());
-}
-
-bool EndsWith(absl::string_view str, absl::string_view suffix) {
-  return str.size() >= suffix.size() &&
-         std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
-}
 
 struct SchemaLine {
   std::string key;
@@ -136,8 +126,7 @@ struct SchemaStrings {
 }  // namespace
 
 Expected<ExampleTensor> ExampleTensor::Parse(absl::string_view str) {
-  if (!(::litert::example::StartsWith(str, kOpen) &&
-        ::litert::example::EndsWith(str, kClose))) {
+  if (!(::litert::StartsWith(str, kOpen) && ::litert::EndsWith(str, kClose))) {
     LITERT_LOG(
         LITERT_ERROR,
         "Invalid tensor format, must start and end with square brackets");

@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <functional>
@@ -207,6 +208,17 @@ auto Avg(It begin, It end) -> RemoveCvRefT<decltype(*std::declval<It>())> {
     return std::numeric_limits<T>::max();
   }
   return std::accumulate(begin, end, T{}) / static_cast<T>(size);
+}
+
+// Check string prefix/suffix. Std ends with not supported until
+// C++20 & absl::StartsWith/EndsWith not portable.
+inline bool StartsWith(absl::string_view str, absl::string_view prefix) {
+  return str.size() >= prefix.size() &&
+         std::equal(prefix.begin(), prefix.end(), str.begin());
+}
+inline bool EndsWith(absl::string_view str, absl::string_view suffix) {
+  return str.size() >= suffix.size() &&
+         std::equal(suffix.rbegin(), suffix.rend(), str.rbegin());
 }
 
 // Compile time strings.
