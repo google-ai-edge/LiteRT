@@ -27,9 +27,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture.h"
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
@@ -57,46 +55,16 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   using BufferView = typename SimpleBuffer::CView<T>;
 
-  struct Names {
-    std::string suite;
-    std::string test;
-    std::string desc;
-    std::string report_id;
-
-    static Names Create(size_t test_id, absl::string_view family,
-                        const LiteRtModelT& graph) {
-      auto suite = MakeSuite(test_id, family);
-      auto test = absl::StrFormat("%v", graph.Subgraph(0).Ops());
-      auto desc = test;
-      auto report_id = suite;
-      return {suite, test, desc, report_id};
-    }
-
-    static Names Create(size_t test_id, absl::string_view family,
-                        absl::string_view test, absl::string_view desc = "") {
-      auto suite = MakeSuite(test_id, family);
-      return {suite, std::string(test), std::string(desc), std::string(test)};
-    }
-
-   private:
-    static std::string MakeSuite(size_t test_id, absl::string_view family) {
-      return absl::StrFormat("ats_%lu_%s", test_id, family);
-    }
-  };
-
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
-                       const Names& names, bool always_reg = false,
+                       const TestNames& names,
                        std::optional<AtsCaptureEntry::Ref> cap = {}) {
-    if (!always_reg &&
-        !conf.ShouldRegister(absl::StrCat(names.suite, names.test))) {
-      return;
-    }
-
-    RegisterTest(
-        names.suite.c_str(), names.test.c_str(), nullptr, nullptr, __FILE__,
-        __LINE__, [graph = std::move(graph), conf, cap, names]() mutable {
-          return new AtsInferenceTest(std::move(graph), conf, names, cap);
-        });
+    RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
+                 __FILE__, __LINE__,
+                 [graph = std::move(graph), &conf = std::as_const(conf), cap,
+                  names]() mutable {
+                   return new AtsInferenceTest(std::move(graph), conf, names,
+                                               cap);
+                 });
   }
 
   void SetUp() override {
@@ -151,6 +119,7 @@ class AtsInferenceTest : public RngTest {
           auto exec, NpuCompiledModelExecutor::Create(
                          Graph(), conf_.DispatchDir(), conf_.PluginDir()));
       auto res = std::make_unique<CompiledModelExecutor>(std::move(exec));
+      // TODO: Fully compiled needs a debug. The capture needs an n/a as well.
       Cap().accelerator.is_fully_accelerated =
           ::litert::internal::IsFullyCompiled(Graph());
       return res;
@@ -223,12 +192,13 @@ class AtsInferenceTest : public RngTest {
   AtsCaptureEntry& Cap() { return cap_.has_value() ? cap_->get() : dummy_cap_; }
 
   AtsInferenceTest(TestGraph::Ptr graph, const AtsConf& conf,
-                   const Names& names, std::optional<AtsCaptureEntry::Ref> cap)
+                   const TestNames& names,
+                   std::optional<AtsCaptureEntry::Ref> cap)
       : graph_(std::move(graph)), conf_(conf), names_(names), cap_(cap) {}
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
-  Names names_;
+  TestNames names_;
   std::optional<AtsCaptureEntry::Ref> cap_;
 
   AtsCaptureEntry dummy_cap_;

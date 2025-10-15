@@ -22,6 +22,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture.h"
+#include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
@@ -36,6 +37,20 @@
 
 namespace litert::testing {
 
+// Gets the names of a postential future test case after consulting the options.
+// Only increments test_id if a name is returned.
+template <typename... Args>
+std::optional<TestNames> NamesForNextTest(size_t& test_id,
+                                          const AtsConf& options,
+                                          Args&&... args) {
+  auto names = TestNames::Create(test_id, std::forward<Args>(args)...);
+  if (!options.ShouldRegister(absl::StrCat(names.suite, names.test))) {
+    return std::nullopt;
+  }
+  test_id++;
+  return names;
+}
+
 /// REGISTER GENERATED TESTS ///////////////////////////////////////////////////
 
 // Utility to register a test logic a given number of times with a common
@@ -47,6 +62,9 @@ class RegisterFunctor {
   void operator()() {
     DefaultDevice device(options_.GetSeedForParams(Logic::Name()));
     for (size_t i = 0; i < iters_; ++i) {
+      if (options_.AtLimit(test_id_)) {
+        return;
+      }
       auto test_graph = Logic::Create(device);
       if (!test_graph) {
         LITERT_LOG(LITERT_WARNING, "Failed to create ATS test %lu, %s: %s",
@@ -54,10 +72,13 @@ class RegisterFunctor {
                    test_graph.Error().Message().c_str());
         continue;
       }
-      const auto names = Fixture::Names::Create(test_id_++, Logic::Name(),
-                                                test_graph.Value()->Graph());
-      Fixture::Register(std::move(*test_graph), options_, names,
-                        /*always_reg=*/false, AtsCapture::MaybeNewEntry(cap_));
+      auto names = NamesForNextTest(test_id_, options_, Logic::Name(),
+                                    test_graph.Value()->Graph());
+      if (!names) {
+        continue;
+      }
+      Fixture::Register(std::move(*test_graph), options_, std::move(*names),
+                        AtsCapture::MaybeNewEntry(cap_));
     }
   }
 
@@ -131,16 +152,22 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
   const auto extra_models = options.ExtraModels();
   LITERT_LOG(LITERT_INFO, "Registering %zu extra models", extra_models.size());
   for (const auto& file : extra_models) {
+    if (options.AtLimit(test_id)) {
+      return;
+    }
     auto model = ExtraModel::Create(file);
     if (!model) {
       LITERT_LOG(LITERT_WARNING, "Failed to create extra model %s: %s",
                  file.c_str(), model.Error().Message().c_str());
       continue;
     }
-    const auto names = Fixture::Names::Create(test_id++, ExtraModel::Name(),
-                                              file, "user provided tflite");
-    Fixture::Register(std::move(*model), options, names,
-                      /*always_reg=*/true, AtsCapture::MaybeNewEntry(cap));
+    auto names = NamesForNextTest(test_id, options, ExtraModel::Name(), file,
+                                  "user provided tflite");
+    if (!names) {
+      continue;
+    }
+    Fixture::Register(std::move(*model), options, std::move(*names),
+                      AtsCapture::MaybeNewEntry(cap));
   }
 }
 

@@ -12,30 +12,36 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
-#include <sstream>
-#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/log/absl_check.h"  // from @com_google_absl
-#include "absl/strings/str_split.h"  // from @com_google_absl
+#include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/capture.h"
 #include "litert/ats/common.h"
+#include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
+#include "litert/ats/executor.h"
 #include "litert/ats/inference_fixture.h"
 #include "litert/ats/register.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/core/filesystem.h"
+#include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
 #include "litert/test/common.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/generators/generators.h"
+#include "litert/test/simple_buffer.h"
 
 // Simple validatino logic for the registration of ATS tests. We cannot use
 // gtest constructs for this.
@@ -43,75 +49,107 @@
 namespace litert::testing {
 namespace {
 
-int CheckAts() {
-  const std::string extra_models_path = GetLiteRtPath("test/testdata/");
-  absl::SetFlag(&FLAGS_extra_models, extra_models_path);
+Expected<AtsConf> NpuInferenceOptions() {
+  absl::FlagSaver saver;
+  absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
+  absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
+  absl::SetFlag(&FLAGS_backend, "npu");
+  absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
+  return AtsConf::ParseFlagsAndDoSetup();
+}
+
+Expected<AtsConf> CpuInferenceOptions() {
+  absl::FlagSaver saver;
+  absl::SetFlag(&FLAGS_backend, "cpu");
+  return AtsConf::ParseFlagsAndDoSetup();
+}
+
+Expected<AtsConf> CompileOptions() {
+  absl::FlagSaver saver;
+  absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
+  absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
+  absl::SetFlag(&FLAGS_compile_mode, true);
+  absl::SetFlag(&FLAGS_soc_manufacturer, "ExampleSocManufacturer");
+  absl::SetFlag(&FLAGS_backend, "npu");
+  return AtsConf::ParseFlagsAndDoSetup();
+}
+
+Expected<void> CheckAts() {
+  absl::SetFlag(&FLAGS_extra_models, GetLiteRtPath("test/testdata/"));
+
+  LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
+  absl::SetFlag(&FLAGS_models_out, dir.Str());
+
   size_t test_id = 0;
   AtsCapture cap;
 
-  // Cpu.
-  {
-    auto options = AtsConf::ParseFlagsAndDoSetup();
-    ABSL_CHECK(options);
-    // TODO(lukeboyer): Re-enable once the cpu reference is supported.
-    // RegisterExtraModels<AtsTest>(test_id, *options, cap);
-    static constexpr auto kIters = 1;
-    RegisterCombinations<AtsInferenceTest, NoOp, SizeListC<1>,
-                         TypeList<float, int32_t>>(kIters, test_id, *options,
-                                                   cap);
-    const auto* unit_test = ::testing::UnitTest::GetInstance();
-    ABSL_CHECK_EQ(unit_test->total_test_count(), 2);
-  }
+  // CPU
+  LITERT_ASSIGN_OR_RETURN(auto cpu_inference_options, CpuInferenceOptions());
+  RegisterCombinations<AtsInferenceTest, NoOp, SizeListC<1>,
+                       TypeList<float, int32_t>>(
+      /*iters=*/1, test_id, cpu_inference_options, cap);
+  RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
+                       TypeList<float>,
+                       OpCodeListC<kLiteRtOpCodeTflSub, kLiteRtOpCodeTflAdd>>(
+      /*iters=*/1, test_id, cpu_inference_options, cap);
 
-  // Npu.
-  {
-    absl::SetFlag(&FLAGS_backend, "npu");
-    absl::SetFlag(&FLAGS_dispatch_dir, GetLiteRtPath("vendors/examples/"));
-    absl::SetFlag(&FLAGS_plugin_dir, GetLiteRtPath("vendors/examples/"));
-    auto options = AtsConf::ParseFlagsAndDoSetup();
-    ABSL_CHECK(options);
-    // TODO(lukeboyer): Re-enable once the cpu reference is supported..
-    // RegisterExtraModels<AtsInferenceTest>(test_id, *options, cap);
-    static constexpr auto kIters = 1;
-    RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
-                         TypeList<float>,
-                         OpCodeListC<kLiteRtOpCodeTflSub, kLiteRtOpCodeTflAdd>>(
-        kIters, test_id, *options, cap);
-    const auto* unit_test = ::testing::UnitTest::GetInstance();
-    ABSL_CHECK_EQ(unit_test->total_test_count(), 4);
-  }
+  // NPU
+  LITERT_ASSIGN_OR_RETURN(auto npu_inference_options, NpuInferenceOptions());
+  RegisterCombinations<AtsInferenceTest, BinaryNoBroadcast, SizeListC<1>,
+                       TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
+      /*iters=*/1, test_id, npu_inference_options, cap);
 
-  const auto res = RUN_ALL_TESTS();
+  // Compile
+  LITERT_ASSIGN_OR_RETURN(auto compile_options, CompileOptions());
+  RegisterCombinations<AtsCompileTest, BinaryNoBroadcast, SizeListC<1>,
+                       TypeList<float>, OpCodeListC<kLiteRtOpCodeTflSub>>(
+      /*iters=*/1, test_id, compile_options, cap);
 
-  ABSL_CHECK_EQ(cap.Rows().size(), test_id);
-  auto it = cap.Rows().begin();
-  const auto& entry1 = *it++;
-  ABSL_CHECK_EQ(entry1.accelerator.a_type, ExecutionBackend::kCpu);
-  ABSL_CHECK_EQ(entry1.run.status, RunStatus::kOk);
+  const auto* ut = ::testing::UnitTest::GetInstance();
+  LITERT_ENSURE((ut->total_test_count() == test_id),
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Unexpected number of tests.");
 
-  const auto& entry2 = *it++;
-  ABSL_CHECK_EQ(entry2.accelerator.a_type, ExecutionBackend::kCpu);
-  ABSL_CHECK_EQ(entry2.run.status, RunStatus::kOk);
+  LITERT_ENSURE(!RUN_ALL_TESTS(), Error(kLiteRtStatusErrorRuntimeFailure),
+                "Failed to run all tests.");
 
-  const auto& entry3 = *it++;
-  ABSL_CHECK_EQ(entry3.accelerator.a_type, ExecutionBackend::kNpu);
-  ABSL_CHECK_EQ(entry3.accelerator.is_fully_accelerated, true);
-  ABSL_CHECK_EQ(entry3.run.status, RunStatus::kOk);
-
-  const auto& entry4 = *it++;
-  ABSL_CHECK_EQ(entry4.accelerator.a_type, ExecutionBackend::kNpu);
-  ABSL_CHECK_EQ(entry4.accelerator.is_fully_accelerated, false);
-  ABSL_CHECK_EQ(entry4.run.status, RunStatus::kOk);
-
-  std::ostringstream s;
-  cap.Csv(s);
-  const std::vector<std::string> split = absl::StrSplit(s.str(), '\n');
-  ABSL_CHECK_EQ(split.size(), test_id + 2);
-  ABSL_CHECK(split.back().empty());
-
+  const auto cap_ok = std::all_of(cap.Rows().begin(), cap.Rows().end(),
+                                  [](const AtsCaptureEntry& row) {
+                                    return row.run.status != RunStatus::kError;
+                                  });
+  LITERT_ENSURE(cap_ok && cap.Rows().size() == test_id,
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Status capture contains errors.");
   cap.Print(std::cerr);
 
-  return res;
+  // Check side effects.
+
+  LITERT_ASSIGN_OR_RETURN(auto out_files, internal::ListDir(dir.Str()));
+  LITERT_ENSURE(out_files.size() == 1, Error(kLiteRtStatusErrorRuntimeFailure),
+                "Unexpected number of output files.");
+
+  const auto& out_file = out_files.front();
+  LITERT_ENSURE(EndsWith(out_file, ".tflite"),
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Unexpected output file name.");
+
+  // Check output file can be ran.
+
+  LITERT_ASSIGN_OR_RETURN(auto model, internal::LoadModelFromFile(out_file));
+  LITERT_ENSURE(internal::IsFullyCompiled(*model),
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Model is not fully compiled.")
+
+  LITERT_ASSIGN_OR_RETURN(auto exec,
+                          NpuCompiledModelExecutor::Create(
+                              *model, npu_inference_options.DispatchDir()));
+  const auto& subgraph = *model->Subgraphs()[0];
+  LITERT_ASSIGN_OR_RETURN(auto inputs,
+                          SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),
+                                                      subgraph.Inputs().end()));
+  LITERT_RETURN_IF_ERROR(exec.Run(inputs));
+
+  return {};
 }
 
 }  // namespace
@@ -120,5 +158,6 @@ int CheckAts() {
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   absl::ParseCommandLine(argc, argv);
-  return litert::testing::CheckAts();
+  auto res = litert::testing::CheckAts();
+  return !res;
 }

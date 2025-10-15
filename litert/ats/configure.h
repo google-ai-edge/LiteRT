@@ -28,7 +28,9 @@
 #include "litert/ats/common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_rng.h"
+#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
+#include "litert/core/model/model_serialize.h"
 
 // Seed for the data generation.
 ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
@@ -77,6 +79,19 @@ ABSL_DECLARE_FLAG(std::string, csv);
 
 // Whether to dump the report to the user.
 ABSL_DECLARE_FLAG(bool, dump_report);
+
+// Uses the same input generated models, but instead only runs AOT compilation.
+ABSL_DECLARE_FLAG(bool, compile_mode);
+
+// Where to put any side effect serialized models from the test.
+ABSL_DECLARE_FLAG(std::string, models_out);
+
+// Limit the number of tests registered.
+ABSL_DECLARE_FLAG(int32_t, limit);
+
+// The SOC manufacturer to target for compilation. Only relevant for NPU
+// compilation.
+ABSL_DECLARE_FLAG(std::string, soc_manufacturer);
 
 namespace litert::testing {
 
@@ -141,7 +156,7 @@ class AtsConf {
   // Save the results of the test run to a CSV file if the user has requested.
   template <typename T>
   void Csv(const T& capture) const {
-    if (csv_.empty()) {
+    if (csv_.empty() || compile_mode_) {
       return;
     }
     std::ofstream out(csv_);
@@ -151,11 +166,56 @@ class AtsConf {
   // Dump the results of the test to user.
   template <typename T>
   void Print(const T& capture) const {
-    if (!dump_report_) {
+    if (!dump_report_ || compile_mode_) {
+      // Compile capture not implemented yet.
       return;
     }
     capture.Print(std::cerr);
   }
+
+  // Whether to run the AOT compilation flow.
+  bool CompileMode() const { return compile_mode_; }
+
+  // Saves a model to the user provided directory.
+  Expected<void> SaveModel(const std::string& name,
+                           LiteRtModelT&& model) const {
+    if (models_out_.empty()) {
+      return {};
+    }
+    std::string file_name = name;
+    if (!EndsWith(file_name, ".tflite")) {
+      file_name += ".tflite";
+    }
+    LITERT_RETURN_IF_ERROR(internal::MkDir(models_out_));
+    LITERT_ASSIGN_OR_RETURN(auto serialized,
+                            internal::SerializeModel(std::move(model)));
+    std::ofstream out(internal::Join({models_out_, file_name}));
+    out.write(serialized.StrData(), serialized.Size());
+    return {};
+  }
+
+  // Max tests to register.
+  std::optional<uint32_t> Limit() const {
+    return limit_ > 0 ? std::make_optional(limit_) : std::nullopt;
+  }
+
+  // Whether to stop registering tests because we've hit the limit.
+  bool AtLimit(size_t test_id) const { return Limit() && test_id >= limit_; }
+
+  // The compiler plugin to use for compilation. Only will be loaded if
+  // CompileMode() is true and user requests NPU.
+  std::optional<internal::CompilerPlugin::Ref> Plugin() const {
+    if (!plugin_) {
+      return std::nullopt;
+    } else {
+      return std::ref(const_cast<internal::CompilerPlugin&>(*plugin_));
+    }
+  }
+
+  AtsConf(const AtsConf&) = delete;
+  AtsConf& operator=(const AtsConf&) = delete;
+  AtsConf(AtsConf&&) = default;
+  AtsConf& operator=(AtsConf&&) = default;
 
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
@@ -164,7 +224,9 @@ class AtsConf {
                    std::string extra_models, bool f16_range_for_f32,
                    std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
-                   bool fail_on_timeout, bool dump_report, std::string csv)
+                   bool fail_on_timeout, bool dump_report, std::string csv,
+                   bool compile_mode, std::string models_out, int32_t limit,
+                   std::optional<internal::CompilerPlugin> plugin)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -179,7 +241,11 @@ class AtsConf {
         max_ms_per_test_(std::move(max_ms_per_test)),
         fail_on_timeout_(fail_on_timeout),
         dump_report_(dump_report),
-        csv_(std::move(csv)) {
+        csv_(std::move(csv)),
+        compile_mode_(compile_mode),
+        models_out_(std::move(models_out)),
+        limit_(limit),
+        plugin_(std::move(plugin)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -201,6 +267,10 @@ class AtsConf {
   bool fail_on_timeout_;
   bool dump_report_;
   std::string csv_;
+  bool compile_mode_;
+  std::string models_out_;
+  int32_t limit_;
+  std::optional<internal::CompilerPlugin> plugin_;
 
   RandomTensorDataBuilder data_builder_;
 };

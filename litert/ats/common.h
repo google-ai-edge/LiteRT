@@ -16,11 +16,49 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_COMMON_H_
 
 #include <chrono>  // NOLINT
+#include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/core/model/model.h"
 
 namespace litert::testing {
+
+// Names, ids and descriptions for a given test.
+struct TestNames {
+  // Gtest suite name.
+  std::string suite;
+  // Gtest test name.
+  std::string test;
+  // Description of the test.
+  std::string desc;
+  // Identifier for the test in the report.
+  std::string report_id;
+
+  // Create using repr of ops as desc. Only use if the model has 1-ish ops.
+  static TestNames Create(size_t test_id, absl::string_view family,
+                          const LiteRtModelT& graph) {
+    auto suite = MakeSuite(test_id, family);
+    auto test = absl::StrFormat("%v", graph.Subgraph(0).Ops());
+    auto desc = test;
+    auto report_id = suite;
+    return {suite, test, desc, report_id};
+  }
+
+  // Create with an explicit desc.
+  static TestNames Create(size_t test_id, absl::string_view family,
+                          absl::string_view test, absl::string_view desc = "") {
+    auto suite = MakeSuite(test_id, family);
+    return {suite, std::string(test), std::string(desc), std::string(test)};
+  }
+
+ private:
+  static std::string MakeSuite(size_t test_id, absl::string_view family) {
+    return absl::StrFormat("ats_%lu_%s", test_id, family);
+  }
+};
 
 // The type of reference to use for validation.
 enum class ReferenceType {

@@ -33,6 +33,7 @@
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/compiler/plugin/compiler_plugin.h"
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -89,6 +90,21 @@ ABSL_FLAG(std::string, csv, "",
 ABSL_FLAG(bool, dump_report, true,
           "Whether to dump the report to the user after completion.");
 
+ABSL_FLAG(bool, compile_mode, false,
+          "Enable the AOT compilation flow. Uses the same input and generated "
+          "models, but only runs the AOT (apply plugin) flow. Resulting "
+          "artifacts can be saved via the `models_out` flag.");
+
+ABSL_FLAG(std::string, models_out, "",
+          "Where to save any side effect model artifacts.");
+
+ABSL_FLAG(int32_t, limit, -1,
+          "Limit the number of tests registered. -1 means no limit.");
+
+ABSL_FLAG(std::string, soc_manufacturer, "",
+          "The SOC manufacturer to target for compilation. Only relevant for "
+          "NPU compilation.");
+
 namespace litert::testing {
 
 namespace {
@@ -123,6 +139,18 @@ Expected<ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<std::optional<internal::CompilerPlugin>> ParsePlugin(
+    absl::string_view plugin_dir, absl::string_view soc_manufacturer,
+    bool compile_mode) {
+  using R = std::optional<internal::CompilerPlugin>;
+  if (!compile_mode) {
+    return R(std::nullopt);
+  }
+  LITERT_ASSIGN_OR_RETURN(auto plugin, internal::CompilerPlugin::FindPlugin(
+                                           soc_manufacturer, {plugin_dir}));
+  return R(std::move(plugin));
+}
+
 void Setup(const AtsConf& options) {
   if (options.Quiet()) {
     LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_SILENT);
@@ -153,11 +181,19 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto fail_on_timeout = absl::GetFlag(FLAGS_fail_on_timeout);
   auto csv = absl::GetFlag(FLAGS_csv);
   auto dump_report = absl::GetFlag(FLAGS_dump_report);
+  auto compile_mode = absl::GetFlag(FLAGS_compile_mode);
+  auto models_out = absl::GetFlag(FLAGS_models_out);
+  auto limit = absl::GetFlag(FLAGS_limit);
+  LITERT_ASSIGN_OR_RETURN(
+      auto plugin,
+      ParsePlugin(plugin_dir, absl::GetFlag(FLAGS_soc_manufacturer),
+                  compile_mode));
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               f16_range_for_f32, data_seed, iters_per_test,
               std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
-              std::move(csv));
+              std::move(csv), compile_mode, std::move(models_out), limit,
+              std::move(plugin));
   Setup(res);
   return res;
 }
