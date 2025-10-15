@@ -63,6 +63,7 @@ class LiteRtExternalLiteRtBufferContextT : public TfLiteExternalContext {
   explicit LiteRtExternalLiteRtBufferContextT(
       LiteRtEnvironment env, GetTensorIdentifierFn get_tensor_identifier_fn)
       : env_(env), get_tensor_identifier_fn_(get_tensor_identifier_fn) {}
+
   ~LiteRtExternalLiteRtBufferContextT() = default;
 
   static litert::Expected<LiteRtExternalLiteRtBufferContextT*> GetInstance(

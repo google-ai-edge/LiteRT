@@ -40,6 +40,8 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
+#include "litert/runtime/tensor_identifier.h"
+#include "litert/runtime/tfl_utils.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -80,6 +82,25 @@ litert::Expected<Options> CreateDispatchOptions(const uint8_t* base) {
   return options;
 }
 
+LiteRtExternalLiteRtBufferContextT CreateBufferContext(
+    const LiteRtEnvironment& env, const tflite::Interpreter& interpreter) {
+  auto get_tensor_id = [&interpreter](const TfLiteOpaqueTensor* target_tensor)
+      -> litert::internal::TfLiteTensorIdentifier {
+    auto tensor_id = litert::internal::GetTensorIdentifier(
+        interpreter, reinterpret_cast<const TfLiteTensor*>(target_tensor));
+    if (!tensor_id) {
+      LITERT_LOG(LITERT_ERROR, "Failed to get tensor identifier: %s",
+                 tensor_id.Error().Message().c_str());
+      constexpr litert::internal::TfLiteTensorIdentifier kInvalidTensorId{-1,
+                                                                          -1};
+      return kInvalidTensorId;
+    }
+    return *tensor_id;
+  };
+
+  return LiteRtExternalLiteRtBufferContextT(env, get_tensor_id);
+}
+
 TEST(DispatchDelegate, CpuBuffer) {
   // The dispatch delegate must be declared before the TFL interpreter so that
   // it gets destroyed only after the interpreter and the dispatch delegate
@@ -95,7 +116,8 @@ TEST(DispatchDelegate, CpuBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  LiteRtExternalLiteRtBufferContextT buffer_context(env.Get());
+  LiteRtExternalLiteRtBufferContextT buffer_context =
+      CreateBufferContext(env.Get(), interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
@@ -169,7 +191,8 @@ TEST(DispatchDelegate, HwBuffer) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
 
-  LiteRtExternalLiteRtBufferContextT buffer_context(env.Get());
+  LiteRtExternalLiteRtBufferContextT buffer_context =
+      CreateBufferContext(env.Get(), interpreter);
   interpreter.SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
 
   EXPECT_EQ(interpreter.nodes_size(), 1);
