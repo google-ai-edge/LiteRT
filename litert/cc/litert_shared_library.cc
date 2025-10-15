@@ -19,6 +19,7 @@
 #include <link.h>
 #endif
 
+#include <iostream>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -240,8 +241,10 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
       return Error(kLiteRtStatusErrorDynamicLoading,
                    "This is a logic error. LoadImpl should not be called with "
                    "HandleKind::kInvalid");
-    case HandleKind::kPath:
+    case HandleKind::kPath: {
       if (path.empty()) {
+        std::cout << "============================================000"
+                  << std::endl;
         return Error(kLiteRtStatusErrorDynamicLoading,
                      "Cannot not load shared library: empty path.");
       }
@@ -252,11 +255,14 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
             dlopen(lib.Path().c_str(), SanitizeFlagsInCaseOfAsan(flags));
       }
       if (!lib.handle_) {
+        std::cout << "============================================001"
+                  << std::endl;
         return Error(kLiteRtStatusErrorDynamicLoading,
                      absl::StrFormat("Could not load shared library %s: %s.",
                                      lib.path_, DlError()));
       }
       break;
+    }
     case HandleKind::kRtldNext:
       lib.handle_ = RTLD_NEXT;
       break;
@@ -265,6 +271,8 @@ Expected<SharedLibrary> SharedLibrary::LoadImpl(
       break;
   }
   lib.handle_kind_ = handle_kind;
+  std::cout << "============================================002success"
+            << std::endl;
   return lib;
 }
 
