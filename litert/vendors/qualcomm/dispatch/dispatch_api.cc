@@ -291,6 +291,12 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
+                                       LiteRtEnvironmentOptions env,
+                                       LiteRtOptions options) {
+  return kLiteRtStatusOk;
+}
+
 // /////////////////////////////////////////////////////////////////////////////
 
 LiteRtDispatchInterface TheInterface = {
@@ -311,6 +317,12 @@ LiteRtDispatchInterface TheInterface = {
     /*.detach_input=*/DetachInput,
     /*.detach_output=*/DetachOutput,
     /*.invoke=*/Invoke,
+    /*.start_metrics_collection=*/nullptr,
+    /*.stop_metrics_collection=*/nullptr,
+    /*.get_num_metrics=*/nullptr,
+    /*.get_metric=*/nullptr,
+    /*.destroy_metrics=*/nullptr,
+    /*.check_runtime_compatibility=*/CheckRuntimeCompatibility,
 };
 
 LiteRtDispatchApi TheApi = {
