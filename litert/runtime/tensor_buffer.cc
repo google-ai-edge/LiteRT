@@ -49,6 +49,15 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+// TODO(b/449784615): Include xnnpack.h instead of duplicating the macros.
+#ifndef XNN_EXTRA_BYTES
+#if defined(__hexagon__)
+#define XNN_EXTRA_BYTES 128
+#else
+#define XNN_EXTRA_BYTES 16
+#endif  // defined(__hexagon__)
+#endif  // XNN_EXTRA_BYTES
+
 using litert::BufferTypeToString;
 using litert::Expected;
 using litert::Unexpected;
@@ -223,7 +232,8 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
     const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
     size_t alignment) {
   void* host_memory_ptr;
-  if (auto rc = posix_memalign(&host_memory_ptr, alignment, buffer_size);
+  if (auto rc = posix_memalign(&host_memory_ptr, alignment,
+                               buffer_size + XNN_EXTRA_BYTES);
 
       rc) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
