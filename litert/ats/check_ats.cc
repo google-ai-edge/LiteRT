@@ -74,7 +74,7 @@ Expected<AtsConf> CompileOptions() {
 }
 
 Expected<void> CheckAts() {
-  absl::SetFlag(&FLAGS_extra_models, GetLiteRtPath("test/testdata/"));
+  absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
   absl::SetFlag(&FLAGS_models_out, dir.Str());

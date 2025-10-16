@@ -62,8 +62,8 @@ ABSL_DECLARE_FLAG(std::string, do_register);
 // Will generate values for f32 tensors in the range of f16 values.
 ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
 
-// Optional directory containing models which to add to the test.
-ABSL_DECLARE_FLAG(std::string, extra_models);
+// Optional list of directories, or model files to add to the test.
+ABSL_DECLARE_FLAG(std::vector<std::string>, extra_models);
 
 // Number of iterations per test, each one will have different tensor data.
 ABSL_DECLARE_FLAG(size_t, iters_per_test);
@@ -141,11 +141,19 @@ class AtsConf {
 
   // List of models to add to the test.
   std::vector<std::string> ExtraModels() const {
-    auto res = internal::ListDir(extra_models_);
-    if (!res) {
-      return {};
+    std::vector<std::string> res;
+    for (const auto& model : extra_models_) {
+      if (internal::IsDir(model)) {
+        auto list = internal::ListDir(model);
+        if (!list) {
+          continue;
+        }
+        res.insert(res.end(), list->begin(), list->end());
+      } else {
+        res.push_back(model);
+      }
     }
-    return *res;
+    return res;
   }
 
   // Number of iterations per test, each one will have different tensor data.
@@ -233,8 +241,9 @@ class AtsConf {
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::regex&& neg_re, std::regex&& pos_re,
-                   std::string extra_models, bool f16_range_for_f32,
-                   std::optional<int> data_seed, size_t iters_per_test,
+                   std::vector<std::string> extra_models,
+                   bool f16_range_for_f32, std::optional<int> data_seed,
+                   size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
@@ -274,7 +283,7 @@ class AtsConf {
   std::string plugin_dir_;
   std::regex neg_re_;
   std::regex pos_re_;
-  std::string extra_models_;
+  std::vector<std::string> extra_models_;
   bool f16_range_for_f32_;
   std::optional<int> data_seed_;
   size_t iters_per_test_;
