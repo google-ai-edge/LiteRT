@@ -23,7 +23,7 @@ OverridableFetchContent_Declare(
   flatbuffers
   GIT_REPOSITORY https://github.com/google/flatbuffers
   # Keep in sync with tensorflow/third_party/flatbuffers/workspace.bzl
-  GIT_TAG v25.9.23
+  GIT_TAG v24.3.25
   # NOTE: b/340264458 - `GIT_SHALLOW TRUE` works for tag name only,
   # so if you change the `GIT_TAG` above to a hash rather than a tag name,
   # you need to also change the line below to `GIT_SHALLOW FALSE`.
