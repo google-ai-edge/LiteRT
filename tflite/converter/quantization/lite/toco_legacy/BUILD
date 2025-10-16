@@ -14,10 +14,7 @@ cc_library(
     name = "portable_tensor_utils",
     srcs = ["portable_tensor_utils.cc"],
     hdrs = ["portable_tensor_utils.h"],
-    visibility = [
-        "//tflite/converter/quantization/common/quantization_lib:__pkg__",
-        "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/quantization_lib:__pkg__",
-    ],
+    visibility = ["//tflite/converter/quantization/common/quantization_lib:__pkg__"],
 )
 
 cc_library(
