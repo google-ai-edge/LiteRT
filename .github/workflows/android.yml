@@ -79,6 +79,9 @@ jobs:
           name: flatc-build
           path: tflite/flatc-native-build/
 
+      - name: Set flatc executable
+        run: chmod +x tflite/flatc-native-build/flatbuffers-flatc/bin/flatc
+
       - name: Cache Android NDK
         id: cache-ndk
         uses: actions/cache@v4
