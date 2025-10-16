@@ -187,6 +187,15 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       resolver.AddCustom(op_name, &sStubRegistration);
     }
   }
+  #ifdef __EMSCRIPTEN__
+  else if (hardware_accelerators & kLiteRtHwAcceleratorWebNn) {
+    const char* accelerator_supported_custom_ops[] = {
+        "Convolution2DTransposeBias"};
+    for (const auto& op_name : accelerator_supported_custom_ops) {
+      resolver.AddCustom(op_name, &sStubRegistration);
+    }
+  }
+#endif  // __EMSCRIPTEN__
 
   tflite::InterpreterOptions interpreter_options;
   interpreter_options.SetUseSignatureTensorNames(true);
