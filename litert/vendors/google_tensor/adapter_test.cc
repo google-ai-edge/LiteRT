@@ -16,6 +16,7 @@
 
 #include <sys/types.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
 
@@ -25,6 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -53,18 +55,9 @@ TEST(AdapterTest, CreateFailure) {
 TEST(AdapterTest, CompileSuccess) {
   static constexpr absl::string_view kSocModel = "Tensor_G5";
 
-  auto adapter_result = Adapter::Create(/*shared_library_dir=*/
-                                        std::nullopt);
-  if (!adapter_result.HasValue()) {
-    LITERT_LOG(LITERT_ERROR, "Failed to create Adapter: %s",
-               adapter_result.Error().Message().c_str());
-  }
-  const auto& api = adapter_result.Value()->api();
-
-  // Ensure all necessary API functions are loaded
-  ASSERT_NE(api.compile, nullptr);
-  ASSERT_NE(api.free_compiled_code, nullptr);
-  ASSERT_NE(api.free_error_message, nullptr);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto adapter,
+                              Adapter::Create(/*shared_library_dir=*/
+                                              std::nullopt));
 
   auto model = litert::testing::LoadTestFileModel("mul_simple.tflite");
   ASSERT_NE(model.Get(), nullptr);
@@ -94,26 +87,19 @@ TEST(AdapterTest, CompileSuccess) {
 
   char* compiled_code_data = nullptr;
   size_t compiled_code_size = 0;
-  char* error_message = nullptr;
 
   absl::string_view soc_model_view(kSocModel);
   absl::string_view model_buffer_view(buf.StrView());
   // Ensure memory allocated by the C API is freed.
-  absl::Cleanup error_cleanup = [&] {
-    if (error_message) {
-      api.free_error_message(error_message);
-    }
-  };
   absl::Cleanup code_cleanup = [&] {
     if (compiled_code_data) {
-      api.free_compiled_code(compiled_code_data);
+      adapter->FreeCompiledCode(compiled_code_data);
     }
   };
-  auto compile_status =
-      api.compile(model_buffer_view.data(), model_buffer_view.size(),
-                  soc_model_view.data(), soc_model_view.size(), options.Get(),
-                  &compiled_code_data, &compiled_code_size, &error_message);
-  ASSERT_TRUE(compile_status);
+  LITERT_ASSERT_OK(adapter->Compile(
+      model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
+      soc_model_view.size(), options.Get(), &compiled_code_data,
+      &compiled_code_size));
   ASSERT_NE(compiled_code_data, nullptr);
   ASSERT_GT(compiled_code_size, 0);
 }

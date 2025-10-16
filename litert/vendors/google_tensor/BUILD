@@ -21,14 +21,18 @@ package(
 )
 
 litert_lib(
-    name = "adapter",
-    srcs = ["adapter.cc"],
+    name = "adapter_aot",
+    srcs = [
+        "adapter_aot.cc",
+        "adapter_aot.h",
+    ],
     hdrs = ["adapter.h"],
     data = [
         # copybara:uncomment_begin(google-only)
         # "//platforms/darwinn/compiler:compiler_api_wrapper",
         # copybara:uncomment_end
     ],
+    defines = ["LITERT_GOOGLE_TENSOR_AOT=1"],
     linkopts = [
         # TODO(abhirs): Make this work for OS.
         #copybara:comment_begin(google-only)
@@ -45,11 +49,24 @@ litert_lib(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
     ],
+)
+
+litert_lib(
+    name = "adapter",
+    hdrs = ["adapter.h"],
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_expected",
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": [":adapter_aot"],
+    }),
 )
 
 cc_test(
