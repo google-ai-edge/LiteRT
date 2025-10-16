@@ -1471,6 +1471,7 @@ cc_library(
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
+        "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         # Other (static) C++ API targets.
         ":litert_any",
@@ -1505,7 +1506,6 @@ cc_library(
             # C++ NPU Options API targets.
             "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
             "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
-            "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         ],
     }) + gles_headers(),
 )
