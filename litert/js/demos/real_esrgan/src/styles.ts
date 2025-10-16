@@ -99,7 +99,8 @@ export const componentStyles = css`
     color: #5f6368;
     text-align: center;
   }
-  .drop-zone img {
+  .drop-zone img,
+  .drop-zone canvas {
     max-width: 100%;
     max-height: 70vh;
     object-fit: contain;

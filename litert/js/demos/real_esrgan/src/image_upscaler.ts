@@ -59,7 +59,7 @@ export class ImageUpscaler extends LitElement {
   @state() private progressValue = 0;
   @state() private originalImage: HTMLImageElement|null = null;
   @state() private originalSrc = '';
-  @state() private upscaledSrc = '';
+  @state() private upscaledCanvas: HTMLCanvasElement|null = null;
   @state() private isUpscaling = false;
 
   @state() private models: Record<string, CompiledModel|null> = {};
@@ -105,7 +105,7 @@ export class ImageUpscaler extends LitElement {
       const img = new Image();
       img.onload = () => {
         this.originalImage = img;
-        this.upscaledSrc = '';
+        this.upscaledCanvas = null;
       };
       this.originalSrc = e.target?.result as string;
       img.src = this.originalSrc;
@@ -141,9 +141,9 @@ export class ImageUpscaler extends LitElement {
     }
 
     this.isUpscaling = true;
-    this.upscaledSrc = '';
+    this.upscaledCanvas = null;
     try {
-      const resultSrc = await upscaleImageWithTiling({
+      const resultCanvas = await upscaleImageWithTiling({
         sourceImage: this.originalImage,
         model,
         overlapPercent: this.overlapPercent,
@@ -153,7 +153,7 @@ export class ImageUpscaler extends LitElement {
           this.progressValue = value;
         },
       });
-      this.upscaledSrc = resultSrc;
+      this.upscaledCanvas = resultCanvas;
       this.statusMessage = 'Upscaling complete!';
     } catch (e) {
       this.statusMessage = `Error during upscaling: ${(e as Error).message}`;
@@ -165,7 +165,6 @@ export class ImageUpscaler extends LitElement {
 
   override render() {
     const currentModel = this.models[this.selectedModelName];
-    const displayedSrc = this.upscaledSrc || this.originalSrc;
 
     return html`
       <div class="container">
@@ -211,9 +210,11 @@ export class ImageUpscaler extends LitElement {
             ?.click()}
         >
           ${
-        displayedSrc ?
+        this.upscaledCanvas ?
+        this.upscaledCanvas :
+        this.originalSrc ?
         html`
-            <img src=${displayedSrc} alt="display image" />
+            <img src=${this.originalSrc} alt="display image" />
           ` :
         html`
             <p>Drag & Drop an Image Here, or Click to Select</p>

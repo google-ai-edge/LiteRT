@@ -36,7 +36,7 @@ export async function upscaleImageWithTiling({
   overlapPercent,
   normalizationRange,
   progressCallback,
-}: UpscaleOptions): Promise<string> {
+}: UpscaleOptions): Promise<HTMLCanvasElement> {
   // Get Model Dimensions
   const inputDetails = model.getInputDetails()[0];
   const outputDetails = model.getOutputDetails()[0];
@@ -172,5 +172,5 @@ export async function upscaleImageWithTiling({
 
   progressCallback({message: 'Finalizing image...', value: 1});
   outCtx.putImageData(outImageData, 0, 0);
-  return outCanvas.toDataURL();
+  return outCanvas;
 }
