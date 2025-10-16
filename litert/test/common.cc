@@ -51,7 +51,7 @@ Expected<UniqueTestDirectory> UniqueTestDirectory::Create() {
   ABSL_CONST_INIT static absl::Mutex mutex(absl::kConstInit);
 
   // We don't want multiple threads to create the same directory.
-  absl::MutexLock l(&mutex);
+  absl::MutexLock l(mutex);
 
   auto tmp_dir = std::filesystem::temp_directory_path();
   std::random_device dev;
