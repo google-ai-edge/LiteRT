@@ -121,6 +121,23 @@ cc_test(
 )
 
 cc_library(
+    name = "extra_model",
+    testonly = True,
+    hdrs = ["extra_model.h"],
+    deps = [
+        ":common",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_rng",
+        "//litert/core/model:model_load",
+        "//litert/test:simple_buffer",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
     name = "graph_helpers",
     testonly = True,
     hdrs = ["graph_helpers.h"],
@@ -159,6 +176,7 @@ cc_library(
     deps = [
         ":binary_no_bcast",
         ":common",
+        ":extra_model",
         ":no_op",
     ],
 )

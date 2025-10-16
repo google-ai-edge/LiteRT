@@ -15,23 +15,63 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_COMPILE_CAPTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_COMPILE_CAPTURE_H_
 
+#include <chrono>  // NOLINT
+#include <functional>
+#include <limits>
+#include <ratio>  // NOLINT
 #include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/capture_common.h"
+#include "litert/ats/common.h"
 #include "litert/ats/print.h"
 
 namespace litert::testing {
 
-struct CompileCaptureEntry : public PrintableRow<> {
-  CompileCaptureEntry() = default;
+// Information about the time taken to compile the model.
+class CompilationTime : public Printable<Nanoseconds> {
+ public:
+  // Start timing.
+  TimePoint Start() const { return Clock::now(); }
+
+  // Stop timing and record the latency.
+  void Stop(const TimePoint& start) {
+    std::chrono::duration<Nanoseconds, std::nano> nano = Clock::now() - start;
+    nanos_ = nano.count();
+  }
+
+  Nanoseconds Nanos() const { return nanos_; }
+
+  CompilationTime() : Printable("CompilationTime", "compile_time(ns)") {}
 
  private:
-  Printables GetPrintables() const override { return Printables{}; }
+  Fields GetFields() const override { return Fields{nanos_}; }
 
-  std::string Name() const override { return "CompileCapture"; }
+  Nanoseconds nanos_ = std::numeric_limits<Nanoseconds>::max();
 };
 
-// TODO: lukeboyer - Implement this and subclasses.
+// Type to hold all of the capturable information related compilation test
+// case..
+struct CompileCaptureEntry
+    : public PrintableRow<ModelDetail, CompilationDetail, AcceleratorDetail,
+                          CompilationTime> {
+  CompileCaptureEntry() = default;
+
+  ModelDetail model = {};
+  CompilationDetail compilation_detail = {};
+  AcceleratorDetail accelerator = {};
+  CompilationTime compilation_time = {};
+
+ private:
+  Printables GetPrintables() const override {
+    return Printables{std::cref(model), std::cref(compilation_detail),
+                      std::cref(accelerator), std::cref(compilation_time)};
+  }
+
+  std::string Name() const override { return model.name; }
+};
+
+// Contains a collection of CompileCaptureEntry.
 class CompileCapture : public PrintableCollection<CompileCaptureEntry> {
  public:
   using Entry = CompileCaptureEntry;

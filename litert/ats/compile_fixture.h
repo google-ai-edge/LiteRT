@@ -22,6 +22,8 @@
 #include <utility>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/capture_common.h"
 #include "litert/ats/common.h"
 #include "litert/ats/compile_capture.h"
 #include "litert/ats/configure.h"
@@ -43,26 +45,39 @@ using ::testing::RegisterTest;
 // Fixture for tests that run aot flow on a graph and emit the result as file.
 class AtsCompileTest : public ::testing::Test {
  public:
-  // TODO: lukeboyer - Finish compile capture types and populate here..
   using Capture = CompileCapture;
+
+  static constexpr absl::string_view Name() { return "compile"; }
 
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
                        const TestNames& names, typename Capture::Entry& cap) {
     RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
                  [graph = std::move(graph), &conf = std::as_const(conf), names,
-                  cap]() mutable {
+                  &cap]() mutable {
                    return new AtsCompileTest(std::move(graph), conf, names,
                                              cap);
                  });
   }
 
+  void SetUp() override {
+    cap_.model.SetFields(names_, graph_->Graph());
+    cap_.accelerator.SetFields(conf_);
+  }
+
   void TestBody() override {
-    LITERT_ASSERT_OK(ApplyPlugin(conf_.Plugin()->get(), graph_->Graph()));
+    auto start = cap_.compilation_time.Start();
+    auto stat = ApplyPlugin(conf_.Plugin()->get(), graph_->Graph());
+    cap_.compilation_time.Stop(start);
+    cap_.compilation_detail.SetFields(conf_, graph_->Graph(), !stat.HasValue());
+    ASSERT_TRUE(stat);
     ASSERT_TRUE(internal::HasAnyCompiled(graph_->Graph()));
   }
 
   void TearDown() override {
+    if (HasFailure()) {
+      return;
+    }
     LITERT_ASSERT_OK(
         conf_.SaveModel(names_.report_id, std::move(graph_->Graph())));
   }
@@ -72,12 +87,14 @@ class AtsCompileTest : public ::testing::Test {
                  const TestNames& names, typename Capture::Entry& cap)
       : graph_(std::move(graph)),
         conf_(conf),
-
-        names_(std::move(names)) {}
+        names_(std::move(names)),
+        cap_(cap) {}
 
   TestGraph::Ptr graph_;
   const AtsConf& conf_;
+
   TestNames names_;
+  typename Capture::Entry& cap_;
 };
 
 }  // namespace litert::testing

@@ -105,6 +105,10 @@ ABSL_FLAG(std::string, soc_manufacturer, "",
           "The SOC manufacturer to target for compilation. Only relevant for "
           "NPU compilation.");
 
+ABSL_FLAG(std::string, soc_model, "",
+          "The SOC model to target for compilation. Only relevant for "
+          "NPU compilation.");
+
 namespace litert::testing {
 
 namespace {
@@ -184,16 +188,17 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto compile_mode = absl::GetFlag(FLAGS_compile_mode);
   auto models_out = absl::GetFlag(FLAGS_models_out);
   auto limit = absl::GetFlag(FLAGS_limit);
+  auto soc_manufacturer = absl::GetFlag(FLAGS_soc_manufacturer);
+  auto soc_model = absl::GetFlag(FLAGS_soc_model);
   LITERT_ASSIGN_OR_RETURN(
-      auto plugin,
-      ParsePlugin(plugin_dir, absl::GetFlag(FLAGS_soc_manufacturer),
-                  compile_mode));
+      auto plugin, ParsePlugin(plugin_dir, soc_manufacturer, compile_mode));
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
               f16_range_for_f32, data_seed, iters_per_test,
               std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
               std::move(csv), compile_mode, std::move(models_out), limit,
-              std::move(plugin));
+              std::move(plugin), std::move(soc_manufacturer),
+              std::move(soc_model));
   Setup(res);
   return res;
 }

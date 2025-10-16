@@ -16,23 +16,16 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_REGISTER_H_
 
 #include <cstddef>
-#include <memory>
 #include <optional>
 #include <utility>
 
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_rng.h"
-#include "litert/core/model/model_load.h"
 #include "litert/test/generators/generators.h"
-#include "litert/test/simple_buffer.h"
 
 namespace litert::testing {
 
@@ -71,8 +64,8 @@ class RegisterFunctor {
                    test_graph.Error().Message().c_str());
         continue;
       }
-      auto names = NamesForNextTest(test_id_, options_, Logic::Name(),
-                                    test_graph.Value()->Graph());
+      auto names = NamesForNextTest(test_id_, options_, Fixture::Name(),
+                                    Logic::Name(), test_graph.Value()->Graph());
       if (!names) {
         continue;
       }
@@ -106,44 +99,6 @@ void RegisterCombinations(size_t iters, size_t& test_id, const AtsConf& options,
 
 /// REGISTER EXTRA MODELS TESTS ////////////////////////////////////////////////
 
-// Container for test graphs that originate from raw .tflite passed to the test.
-// TODO: move this to test/generators/extra_model.h
-class ExtraModel : public TestGraph {
- public:
-  using Ptr = std::unique_ptr<ExtraModel>;
-
-  static constexpr absl::string_view Name() { return "ExtraModel"; }
-
-  bool HasReference() const override { return false; }
-
-  static Expected<ExtraModel::Ptr> Create(absl::string_view model_path) {
-    LITERT_ASSIGN_OR_RETURN(auto model,
-                            internal::LoadModelFromFile(model_path));
-    return std::make_unique<ExtraModel>(std::move(model));
-  }
-
-  Expected<VarBuffers> MakeInputs(
-      DefaultDevice& device,
-      const RandomTensorDataBuilder& data_builder) const override {
-    VarBuffers inputs;
-    for (const auto& input : Graph().Subgraph(0).Inputs()) {
-      LITERT_ASSIGN_OR_RETURN(auto t, (input->Ranked()));
-      LITERT_ASSIGN_OR_RETURN(auto b,
-                              SimpleBuffer::Create(RankedTensorType(t)));
-      LITERT_RETURN_IF_ERROR((b.WriteRandom(data_builder, device)));
-      inputs.push_back(std::move(b));
-    }
-    return inputs;
-  }
-
-  Expected<void> Reference(const VarBuffers& inputs,
-                           VarBuffers& outputs) const override {
-    return Error(kLiteRtStatusErrorUnsupported);
-  }
-
-  explicit ExtraModel(LiteRtModelT::Ptr model) : TestGraph(std::move(model)) {}
-};
-
 // Registers a test for each extra model passed in the options.
 template <typename Fixture>
 void RegisterExtraModels(size_t& test_id, const AtsConf& options,
@@ -161,8 +116,9 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
                  file.c_str(), model.Error().Message().c_str());
       continue;
     }
-    auto names = NamesForNextTest(test_id, options, ExtraModel::Name(), file,
-                                  "user provided tflite");
+    auto names =
+        NamesForNextTest(test_id, options, Fixture::Name(), ExtraModel::Name(),
+                         file, "user provided tflite");
     if (!names) {
       continue;
     }

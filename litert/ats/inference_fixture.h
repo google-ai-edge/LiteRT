@@ -27,6 +27,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
@@ -57,11 +58,13 @@ class AtsInferenceTest : public RngTest {
  public:
   using Capture = InferenceCapture;
 
+  static constexpr absl::string_view Name() { return "inference"; }
+
   static void Register(TestGraph::Ptr graph, const AtsConf& conf,
                        const TestNames& names, typename Capture::Entry& cap) {
     RegisterTest(names.suite.c_str(), names.test.c_str(), nullptr, nullptr,
                  __FILE__, __LINE__,
-                 [graph = std::move(graph), &conf = std::as_const(conf), cap,
+                 [graph = std::move(graph), &conf = std::as_const(conf), &cap,
                   names]() mutable {
                    return new AtsInferenceTest(std::move(graph), conf, names,
                                                cap);
@@ -73,11 +76,7 @@ class AtsInferenceTest : public RngTest {
     ASSERT_EQ(Graph().MainSubgraph()->NumOutputs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
-    cap_.model.name = names_.report_id;
-    cap_.model.desc = names_.desc;
-    const auto is_precompiled = GetBuildStamp(Graph()).has_value();
-    cap_.model.precompiled = is_precompiled;
-    cap_.accelerator.a_type = conf_.Backend();
+    cap_.model.SetFields(names_, Graph());
     cap_.run.num_iterations = conf_.ItersPerTest();
     cap_.numerics.reference_type =
         graph_->HasReference() ? ReferenceType::kCustom : ReferenceType::kCpu;
@@ -95,7 +94,8 @@ class AtsInferenceTest : public RngTest {
   }
 
   void TearDown() override {
-    if (conf_.IsNpu()) {
+    cap_.accelerator.SetFields(conf_);
+    if (conf_.IsNpu() && !cap_.accelerator.soc_man.empty()) {
       auto stamp = GetBuildStamp(Graph());
       if (stamp) {
         cap_.accelerator.soc_man = std::string(stamp->soc_manufacturer);
@@ -116,15 +116,14 @@ class AtsInferenceTest : public RngTest {
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      LITERT_ASSIGN_OR_RETURN(
-          auto exec, NpuCompiledModelExecutor::Create(
-                         Graph(), conf_.DispatchDir(), conf_.PluginDir()));
-      auto res = std::make_unique<CompiledModelExecutor>(std::move(exec));
-      // TODO: Fully compiled needs a debug. The capture needs an n/a as well.
-      cap_.accelerator.is_fully_accelerated =
-          ::litert::internal::IsFullyCompiled(Graph());
+      auto exec = NpuCompiledModelExecutor::Create(Graph(), conf_.DispatchDir(),
+                                                   conf_.PluginDir());
+      cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
+      if (!exec) {
+        return exec.Error();
+      }
+      auto res = std::make_unique<CompiledModelExecutor>(std::move(*exec));
       return res;
-
     } else if (conf_.IsCpu()) {
       LITERT_ASSIGN_OR_RETURN(auto exec,
                               CpuCompiledModelExecutor::Create(Graph()));

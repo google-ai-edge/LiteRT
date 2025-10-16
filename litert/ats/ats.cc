@@ -106,10 +106,14 @@ int Ats() {
 
   const auto res = RUN_ALL_TESTS();
 
-  options->Csv(i_cap);
-  options->Print(i_cap);
-  options->Csv(c_cap);
-  options->Print(c_cap);
+  // Final report.
+  if (options->CompileMode()) {
+    options->Csv(c_cap);
+    options->Print(c_cap);
+  } else {
+    options->Csv(i_cap);
+    options->Print(i_cap);
+  }
 
   return res;
 }

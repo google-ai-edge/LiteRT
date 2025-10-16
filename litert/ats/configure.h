@@ -93,6 +93,10 @@ ABSL_DECLARE_FLAG(int32_t, limit);
 // compilation.
 ABSL_DECLARE_FLAG(std::string, soc_manufacturer);
 
+// The SOC model to target for compilation. Only relevant for NPU
+// compilation.
+ABSL_DECLARE_FLAG(std::string, soc_model);
+
 namespace litert::testing {
 
 class AtsConf {
@@ -212,6 +216,14 @@ class AtsConf {
     }
   }
 
+  // The SOC manufacturer to target for compilation. Only relevant for NPU
+  // compilation.
+  const std::string& SocManufacturer() const { return soc_manufacturer_; }
+
+  // The SOC model to target for compilation. Only relevant for NPU
+  // compilation.
+  const std::string& SocModel() const { return soc_model_; }
+
   AtsConf(const AtsConf&) = delete;
   AtsConf& operator=(const AtsConf&) = delete;
   AtsConf(AtsConf&&) = default;
@@ -226,7 +238,8 @@ class AtsConf {
                    std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
-                   std::optional<internal::CompilerPlugin> plugin)
+                   std::optional<internal::CompilerPlugin> plugin,
+                   std::string soc_manufacturer, std::string soc_model)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -245,7 +258,9 @@ class AtsConf {
         compile_mode_(compile_mode),
         models_out_(std::move(models_out)),
         limit_(limit),
-        plugin_(std::move(plugin)) {
+        plugin_(std::move(plugin)),
+        soc_manufacturer_(std::move(soc_manufacturer)),
+        soc_model_(std::move(soc_model)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -271,6 +286,8 @@ class AtsConf {
   std::string models_out_;
   int32_t limit_;
   std::optional<internal::CompilerPlugin> plugin_;
+  std::string soc_manufacturer_;
+  std::string soc_model_;
 
   RandomTensorDataBuilder data_builder_;
 };

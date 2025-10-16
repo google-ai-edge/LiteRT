@@ -44,10 +44,8 @@ cc_test(
         ":register",
         "//litert/c:litert_logging",
         "//litert/c:litert_op_code",
-        "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_c_types_printing",
         "//litert/cc:litert_detail",
-        "//litert/compiler/plugin:compiler_plugin",
         "//litert/test/generators",
         "//litert/test/generators:common",
         "//tflite/schema:schema_fbs",
@@ -106,18 +104,11 @@ cc_library(
     deps = [
         ":common",
         ":configure",
-        ":inference_capture",
-        "//litert/c:litert_common",
         "//litert/c:litert_logging",
         "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
         "//litert/cc:litert_rng",
-        "//litert/core/model:model_load",
-        "//litert/test:simple_buffer",
         "//litert/test/generators",
-        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -158,6 +149,7 @@ cc_library(
         "//litert/test:simple_buffer",
         "//litert/test/generators:common",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -167,6 +159,7 @@ cc_library(
     testonly = True,
     hdrs = ["compile_fixture.h"],
     deps = [
+        ":capture_common",
         ":common",
         ":compile_capture",
         ":configure",
@@ -177,6 +170,7 @@ cc_library(
         "//litert/core/model",
         "//litert/test:matchers",
         "//litert/test/generators:common",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -217,6 +211,7 @@ cc_test(
     ],
     deps = [
         ":common",
+        ":compile_capture",
         ":compile_fixture",
         ":configure",
         ":executor",
@@ -248,6 +243,7 @@ cc_library(
     testonly = True,
     hdrs = ["inference_capture.h"],
     deps = [
+        ":capture_common",
         ":common",
         ":print",
         "//litert/cc:litert_detail",
@@ -301,6 +297,8 @@ cc_library(
     testonly = True,
     hdrs = ["compile_capture.h"],
     deps = [
+        ":capture_common",
+        ":common",
         ":print",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -310,9 +308,22 @@ cc_test(
     name = "compile_capture_test",
     srcs = ["compile_capture_test.cc"],
     deps = [
+        ":common",
         ":compile_capture",
-        "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "capture_common",
+    testonly = True,
+    hdrs = ["capture_common.h"],
+    deps = [
+        ":common",
+        ":configure",
+        ":print",
+        "//litert/core/model",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 

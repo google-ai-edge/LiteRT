@@ -17,6 +17,7 @@
 
 #include "litert/test/generators/binary_no_bcast.h"  // IWYU pragma: export
 #include "litert/test/generators/common.h"  // IWYU pragma: export
+#include "litert/test/generators/extra_model.h"  // IWYU pragma: export
 #include "litert/test/generators/no_op.h"  // IWYU pragma: export
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TEST_GENERATORS_GENERATORS_H_

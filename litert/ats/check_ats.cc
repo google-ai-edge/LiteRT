@@ -24,6 +24,7 @@
 #include "absl/flags/reflection.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
+#include "litert/ats/compile_capture.h"
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
@@ -114,15 +115,28 @@ Expected<void> CheckAts() {
   LITERT_ENSURE(!RUN_ALL_TESTS(), Error(kLiteRtStatusErrorRuntimeFailure),
                 "Failed to run all tests.");
 
-  const auto cap_ok = std::all_of(i_cap.Rows().begin(), i_cap.Rows().end(),
-                                  [](const InferenceCaptureEntry& row) {
-                                    return row.run.status != RunStatus::kError;
-                                  });
-  LITERT_ENSURE(cap_ok && i_cap.Rows().size() == test_id - 1,
+  const auto i_cap_ok =
+      std::all_of(i_cap.Rows().begin(), i_cap.Rows().end(),
+                  [](const InferenceCaptureEntry& row) {
+                    return row.run.status != RunStatus::kError;
+                  });
+  LITERT_ENSURE(i_cap_ok && i_cap.Rows().size() == test_id - 1,
                 Error(kLiteRtStatusErrorRuntimeFailure),
                 "Status capture contains errors.");
+
+  const auto c_cap_ok = std::all_of(c_cap.Rows().begin(), c_cap.Rows().end(),
+                                    [](const CompileCaptureEntry& row) {
+                                      return row.compilation_detail.status !=
+                                             CompilationStatus::kError;
+                                    });
+  LITERT_ENSURE(c_cap_ok && c_cap.Rows().size() == 1,
+                Error(kLiteRtStatusErrorRuntimeFailure),
+                "Status capture contains errors.");
+
   i_cap.Print(std::cerr);
   i_cap.Csv(std::cerr);
+  c_cap.Print(std::cerr);
+  c_cap.Csv(std::cerr);
 
   // Check side effects.
 

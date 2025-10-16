@@ -14,10 +14,12 @@
 
 #include "litert/ats/compile_capture.h"
 
+#include <limits>
 #include <sstream>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "litert/ats/common.h"
 
 namespace litert::testing {
 namespace {
@@ -26,12 +28,17 @@ using ::testing::HasSubstr;
 
 TEST(AtsCompileCaptureTest, Basic) {
   CompileCapture cap;
-  cap.NewEntry();
+  auto& e = cap.NewEntry();
+  e.compilation_time.Stop(e.compilation_time.Start());
+  e.model.name = "FOO";
+
+  ASSERT_NE(e.compilation_time.Nanos(),
+            std::numeric_limits<Nanoseconds>::max());
 
   std::ostringstream s;
   cap.Print(s);
 
-  EXPECT_THAT(s.str(), HasSubstr("CompileCapture"));
+  EXPECT_THAT(s.str(), HasSubstr("FOO"));
 }
 
 }  // namespace

@@ -26,49 +26,12 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/ats/capture_common.h"
 #include "litert/ats/common.h"
 #include "litert/ats/print.h"
 #include "litert/cc/litert_detail.h"
 
 namespace litert::testing {
-
-// Information about the input model.
-struct ModelDetail : public Printable<std::string, std::string, bool> {
-  // File name, if in memeory only graph, an identifier of the graph.
-  std::string name = "";
-  // Optional description or representation of the model.
-  std::string desc = "";
-  // Was the input model precompiled offline?
-  bool precompiled = false;
-
-  ModelDetail() : Printable("ModelDetail", "name", "desc", "precompiled") {}
-
- private:
-  Fields GetFields() const override { return Fields{name, desc, precompiled}; }
-};
-
-// Information about the accelerator used if any.
-struct AcceleratorDetail
-    : public Printable<ExecutionBackend, std::string, std::string, bool> {
-  // The type of accelerator used.
-  ExecutionBackend a_type = ExecutionBackend::kCpu;
-
-  // Only applicable in the NPU case.
-  std::string soc_man = "n/a";
-  std::string soc_model = "n/a";
-
-  // Were all the ops offloaded to the accelerator?
-  bool is_fully_accelerated = false;
-
-  AcceleratorDetail()
-      : Printable("AcceleratorDetail", "backend", "soc_man", "soc_model",
-                  "is_fully_accelerated") {}
-
- private:
-  Fields GetFields() const override {
-    return Fields{a_type, soc_man, soc_model, is_fully_accelerated};
-  }
-};
 
 // Information about the latency of the execution.
 class Latency
@@ -172,7 +135,7 @@ struct RunDetail : public Printable<size_t, RunStatus> {
 // Type to hold all of the capturable information related to a single test case.
 struct InferenceCaptureEntry
     : public PrintableRow<ModelDetail, AcceleratorDetail, Latency, Numerics,
-                          RunDetail> {
+                          RunDetail, CompilationDetail> {
   InferenceCaptureEntry() = default;
 
   ModelDetail model = {};
@@ -180,11 +143,13 @@ struct InferenceCaptureEntry
   Latency latency = {};
   Numerics numerics = {};
   RunDetail run = {};
+  CompilationDetail compilation = {};
 
  private:
   Printables GetPrintables() const override {
-    return Printables{std::cref(model), std::cref(accelerator),
-                      std::cref(latency), std::cref(numerics), std::cref(run)};
+    return Printables{std::cref(model),   std::cref(accelerator),
+                      std::cref(latency), std::cref(numerics),
+                      std::cref(run),     std::cref(compilation)};
   }
 
   std::string Name() const override { return model.name; }

@@ -39,8 +39,8 @@ struct TestNames {
 
   // Create using repr of ops as desc. Only use if the model has 1-ish ops.
   static TestNames Create(size_t test_id, absl::string_view family,
-                          const LiteRtModelT& graph) {
-    auto suite = MakeSuite(test_id, family);
+                          absl::string_view logic, const LiteRtModelT& graph) {
+    auto suite = MakeSuite(test_id, family, logic);
     auto test = absl::StrFormat("%v", graph.Subgraph(0).Ops());
     auto desc = test;
     auto report_id = suite;
@@ -49,14 +49,16 @@ struct TestNames {
 
   // Create with an explicit desc.
   static TestNames Create(size_t test_id, absl::string_view family,
-                          absl::string_view test, absl::string_view desc = "") {
-    auto suite = MakeSuite(test_id, family);
-    return {suite, std::string(test), std::string(desc), std::string(test)};
+                          absl::string_view logic, absl::string_view test,
+                          absl::string_view desc = "") {
+    auto suite = MakeSuite(test_id, family, logic);
+    return {suite, std::string(logic), std::string(desc), std::string(test)};
   }
 
  private:
-  static std::string MakeSuite(size_t test_id, absl::string_view family) {
-    return absl::StrFormat("ats_%lu_%s", test_id, family);
+  static std::string MakeSuite(size_t test_id, absl::string_view family,
+                               absl::string_view logic) {
+    return absl::StrFormat("ats_%lu_%s_%s", test_id, family, logic);
   }
 };
 
@@ -78,6 +80,19 @@ enum class RunStatus {
   kError,
   // The runs failed due to timeout.
   kTimeout,
+};
+
+enum class CompilationStatus {
+  // End never recorded.
+  kNotRequested,
+  // The compilation failed due to an error.
+  kError,
+  // Compilation succeeded, but no ops were compiled.
+  kNoOpsCompiled,
+  // Compilation succeeded, not all ops were compiled.
+  kPartiallyCompiled,
+  // Compilation succeeded, all ops were compiled.
+  kFullyCompiled,
 };
 
 // Timing related types.
@@ -134,6 +149,27 @@ void AbslStringify(Sink& sink, const RunStatus& status) {
       break;
     case RunStatus::kTimeout:
       sink.Append("timeout");
+      break;
+  }
+}
+
+template <typename Sink>
+void AbslStringify(Sink& sink, const CompilationStatus& status) {
+  switch (status) {
+    case CompilationStatus::kNotRequested:
+      sink.Append("not_requested");
+      break;
+    case CompilationStatus::kError:
+      sink.Append("error");
+      break;
+    case CompilationStatus::kNoOpsCompiled:
+      sink.Append("no_ops_compiled");
+      break;
+    case CompilationStatus::kPartiallyCompiled:
+      sink.Append("partially_compiled");
+      break;
+    case CompilationStatus::kFullyCompiled:
+      sink.Append("fully_compiled");
       break;
   }
 }
