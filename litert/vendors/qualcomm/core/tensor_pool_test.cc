@@ -3,15 +3,17 @@
 
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <vector>
 
-#include <gtest/gtest.h>
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -170,6 +172,118 @@ TEST(TensorPoolConvertStaticTensorTest, NarrowTypeConversionInt32) {
   for (size_t i = 0; i < tensor_data.size(); ++i) {
     ASSERT_EQ(tensor_data[i], (*converted_data)[i]);
   }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueFloat) {
+  TensorPool tensor_pool;
+
+  // ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<float> data = {6.0f, 6.0f, 6.0f};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_FLOAT_32, {}, {1, 1, 3}, 6);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<float>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt8) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::int8_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_8, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int8_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt8) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::uint8_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_8, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint8_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt16) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::int16_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_16, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int16_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt16) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::uint16_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_16, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint16_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt32) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::int32_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_32, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int32_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt32) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<std::uint32_t> data = {6, 6, 6};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_32, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint32_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, data);
 }
 
 }  // namespace
