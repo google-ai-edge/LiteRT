@@ -293,7 +293,7 @@ TEST(TensorBuffer, HostMemory) {
 
   auto size = tensor_buffer->Size();
   ASSERT_TRUE(size);
-  ASSERT_EQ(*size, sizeof(kTensorData));
+  ASSERT_EQ(*size, sizeof(kTensorData) + 16);
 
   auto offset = tensor_buffer->Offset();
   ASSERT_TRUE(offset);
@@ -843,10 +843,10 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
     ASSERT_TRUE(write_success);
   }
   {
-    constexpr const float big_data[] = {10, 20, 30, 40, 50};
+    constexpr const float big_data[] = {10, 20, 30, 40, 50, 60, 70, 80, 90};
     // Write with larger size of data.
     auto write_success =
-        tensor_buffer.Write<float>(absl::MakeSpan(big_data, 5));
+        tensor_buffer.Write<float>(absl::MakeSpan(big_data, 9));
     ASSERT_FALSE(write_success);
   }
   auto write_success = tensor_buffer.Write<float>(absl::MakeSpan(
@@ -861,8 +861,8 @@ TEST(TensorBuffer, ReadWriteBufferSizeMismatch) {
   }
   {
     // Read with larger size of buffer.
-    float read_data[5];
-    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 5));
+    float read_data[9];
+    auto read_success = tensor_buffer.Read<float>(absl::MakeSpan(read_data, 9));
     ASSERT_FALSE(read_success);
   }
 }

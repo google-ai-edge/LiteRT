@@ -77,7 +77,7 @@ TEST(TensorBuffer, HostMemory) {
 
   size_t size;
   ASSERT_EQ(LiteRtGetTensorBufferSize(tensor_buffer, &size), kLiteRtStatusOk);
-  ASSERT_EQ(size, sizeof(kTensorData));
+  ASSERT_EQ(size, sizeof(kTensorData) + 16);
 
   size_t offset;
   ASSERT_EQ(LiteRtGetTensorBufferOffset(tensor_buffer, &offset),
