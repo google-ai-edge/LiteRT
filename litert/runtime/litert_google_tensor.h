@@ -22,7 +22,7 @@
 
 struct LiteRtGoogleTensorOptionsT {
   LiteRtGoogleTensorOptionsTruncationType float_truncation_type =
-      kLiteRtGoogleTensorFloatTruncationTypeUnspecified;
+      kLiteRtGoogleTensorFloatTruncationTypeAuto;
   bool int64_to_int32_truncation = false;
   std::string output_dir = "";
   bool dump_op_timings = false;
