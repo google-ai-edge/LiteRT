@@ -49,6 +49,14 @@
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#ifndef XNN_EXTRA_BYTES
+#if XNN_ARCH_HEXAGON
+#define XNN_EXTRA_BYTES 128
+#else
+#define XNN_EXTRA_BYTES 16
+#endif  // XNN_ARCH_HEXAGON
+#endif  // XNN_EXTRA_BYTES
+
 using litert::BufferTypeToString;
 using litert::Expected;
 using litert::Unexpected;
@@ -102,6 +110,9 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
     LITERT_LOG(LITERT_ERROR, "Failed to get num packed bytes");
   } else {
     packed_buffer_size_ = *packed_size;
+    if (buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+      packed_buffer_size_ += XNN_EXTRA_BYTES;
+    }
   }
 // Our Emscripten builds process this as an error rather than a debug log, so
 // disabling for web platform temporarily to avoid breakages.
@@ -571,7 +582,8 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     size_t alignment) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
-      return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);
+      return CreateManagedOnHostMemory(
+          tensor_type, buffer_size + XNN_EXTRA_BYTES, alignment);
     case kLiteRtTensorBufferTypeAhwb:
 #if LITERT_HAS_AHWB_SUPPORT
       return CreateManagedAhwbBuffer(env, tensor_type, buffer_size);
