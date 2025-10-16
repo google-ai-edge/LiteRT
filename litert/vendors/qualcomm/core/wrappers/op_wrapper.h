@@ -68,6 +68,8 @@ class OpWrapper final {
 
   void AddSuffixToName(absl::string_view suffix);
 
+  absl::string_view GetTypeName() const;
+
  private:
   const char* type_name_{nullptr};
   std::string name_{};  // human readable name

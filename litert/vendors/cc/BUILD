@@ -57,3 +57,14 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_library(
+    name = "namespace_heuristics",
+    srcs = ["namespace_heuristics.cc"],
+    hdrs = ["namespace_heuristics.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
