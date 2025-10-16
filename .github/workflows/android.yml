@@ -87,12 +87,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ./ndk
-          key: ${{ runner.os }}-android-ndk-r26b
+          key: ${{ runner.os }}-android-ndk-r28b
 
       - name: Install Android NDK
         if: steps.cache-ndk.outputs.cache-hit != 'true'
         run: |
-          ANDROID_NDK_FILENAME=android-ndk-r26b-linux.zip
+          ANDROID_NDK_FILENAME=android-ndk-r28b-linux.zip
           wget -q https://dl.google.com/android/repository/${ANDROID_NDK_FILENAME}
           unzip -q ${ANDROID_NDK_FILENAME} -d ./ndk
           rm ${ANDROID_NDK_FILENAME}
