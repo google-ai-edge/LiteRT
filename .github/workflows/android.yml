@@ -112,14 +112,31 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-litert-android-
 
+      - name: Build TFLite for Android
+        if: steps.cache-litert-android.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          TFLITE_BUILD_DIR="litert/cmake_build_android_arm64/tflite_build"
+          mkdir -p "${TFLITE_BUILD_DIR}"
+          cd "${TFLITE_BUILD_DIR}"
+
+          cmake ../../../tflite \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.ANDROID_NDK_HOME }}/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="arm64-v8a" \
+            -DANDROID_PLATFORM="26" \
+            -DTFLITE_ENABLE_XNNPACK=ON \
+            -DTFLITE_ENABLE_GPU=ON \
+            -DTFLITE_HOST_TOOLS_DIR="$GITHUB_WORKSPACE/tflite/flatc-native-build"
+
+          cmake --build . -j2 --target tensorflow-lite
+
       - name: Build LiteRT Android Targets
         if: steps.cache-litert-android.outputs.cache-hit != 'true'
         run: |
           set -e
           cd litert
-          HOST_TOOLS_DIR_PATH="$GITHUB_WORKSPACE/tflite/flatc-native-build"
-
-          cmake --preset android-arm64 -DTFLITE_HOST_TOOLS_DIR="${HOST_TOOLS_DIR_PATH}"
+          cmake --preset android-arm64 -DLITERT_AUTO_BUILD_TFLITE=OFF
           cmake --build cmake_build_android_arm64 -j2 --target litert_runtime_c_api_shared_lib dispatch_api_MediaTek_so dispatch_api_Qualcomm_so run_model apply_plugin_main VERBOSE=1
         env:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
