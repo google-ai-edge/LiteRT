@@ -107,6 +107,7 @@ cc_test(
     srcs = ["litert_google_tensor_options_test.cc"],
     deps = [
         ":litert_google_tensor_options",
+        ":litert_google_tensor_options_type",
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc/options:litert_google_tensor_options",
