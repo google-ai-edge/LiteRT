@@ -41,7 +41,7 @@ jobs:
         id: cache-host-build
         uses: actions/cache@v4
         with:
-          path: litert/cmake_build_linux_x64
+          path: litert/cmake_build_host
           key: ${{ runner.os }}-host-build-${{ hashFiles('litert/**', 'litert/CMakeLists.txt', 'litert/CMakePresets.json') }}
           restore-keys: |
             ${{ runner.os }}-host-build-
@@ -51,14 +51,14 @@ jobs:
         run: |
           set -e
           cd litert
-          cmake --preset linux-x64
-          cmake --build cmake_build_linux_x64 -j --target run_model apply_plugin_main
+          cmake --preset default
+          cmake --build cmake_build_host -j --target run_model apply_plugin_main
 
       - name: Upload Host Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: host-build
-          path: litert/cmake_build_linux_x64/
+          path: litert/cmake_build_host/
 
   cross_compile_android:
     name: "Cross-Compile for Android"
