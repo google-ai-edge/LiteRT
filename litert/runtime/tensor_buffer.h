@@ -32,18 +32,20 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gl_texture.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gl_texture.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert::internal {
 class GpuEnvironment;
