@@ -37,7 +37,17 @@ jobs:
           echo "$(realpath ./cmake-install/bin)" >> $GITHUB_PATH
           cmake --version
 
+      - name: Cache Host Build
+        id: cache-host-build
+        uses: actions/cache@v4
+        with:
+          path: litert/cmake_build_linux_x64
+          key: ${{ runner.os }}-host-build-${{ hashFiles('litert/**', 'litert/CMakeLists.txt', 'litert/CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-host-build-
+
       - name: Build LiteRT Host Targets
+        if: steps.cache-host-build.outputs.cache-hit != 'true'
         run: |
           set -e
           cd litert
@@ -101,7 +111,17 @@ jobs:
           echo "ANDROID_NDK_HOME=${NDK_PATH}" >> $GITHUB_ENV
           echo "Found NDK at ${NDK_PATH}"
 
+      - name: Cache Android Build
+        id: cache-android-build
+        uses: actions/cache@v4
+        with:
+          path: litert/cmake_build_android_arm64
+          key: ${{ runner.os }}-android-build-${{ hashFiles('litert/**', 'litert/CMakeLists.txt', 'litert/CMakePresets.json') }}
+          restore-keys: |
+            ${{ runner.os }}-android-build-
+
       - name: Build LiteRT Android Targets
+        if: steps.cache-android-build.outputs.cache-hit != 'true'
         run: |
           set -e
           cd litert
