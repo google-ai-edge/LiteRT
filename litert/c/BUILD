@@ -476,8 +476,8 @@ cc_library(
         ":litert_common",
         ":litert_opaque_options",
         "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "//litert/core:options",
     ],
 )

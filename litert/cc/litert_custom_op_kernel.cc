@@ -21,7 +21,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/cc/litert_handle.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_tensor_buffer.h"
 

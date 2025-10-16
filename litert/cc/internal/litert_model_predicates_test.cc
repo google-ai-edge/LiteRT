@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_model_predicates.h"
+#include "litert/cc/internal/litert_model_predicates.h"
 
 #include <optional>
 
