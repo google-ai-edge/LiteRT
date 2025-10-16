@@ -14,20 +14,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  host_build:
-    name: "Host Build (Ubuntu)"
+  build_host_tools:
+    name: "Build Host Tools (flatc)"
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang ninja-build
 
       - name: Install specific CMake version
         run: |
@@ -37,44 +32,38 @@ jobs:
           echo "$(realpath ./cmake-install/bin)" >> $GITHUB_PATH
           cmake --version
 
-      - name: Cache Host Build
-        id: cache-host-build
+      - name: Cache flatc build
+        id: cache-flatc
         uses: actions/cache@v4
         with:
-          path: litert/cmake_build_host
-          key: ${{ runner.os }}-host-build-${{ hashFiles('litert/**', 'litert/CMakeLists.txt', 'litert/CMakePresets.json') }}
-          restore-keys: |
-            ${{ runner.os }}-host-build-
+          path: tflite/flatc-native-build
+          key: ${{ runner.os }}-flatc-build-${{ hashFiles('tflite/tools/cmake/native_tools/flatbuffers/CMakeLists.txt') }}
 
-      - name: Build LiteRT Host Targets
-        if: steps.cache-host-build.outputs.cache-hit != 'true'
+      - name: Build flatc host tool
+        if: steps.cache-flatc.outputs.cache-hit != 'true'
         run: |
           set -e
-          cd litert
-          cmake --preset default
-          cmake --build cmake_build_host -j --target run_model apply_plugin_main
+          mkdir -p tflite/flatc-native-build
+          cd tflite/flatc-native-build
+          cmake ../tools/cmake/native_tools/flatbuffers -G Ninja
+          cmake --build .
 
-      - name: Upload Host Build Artifacts
+      - name: Upload flatc artifact
         uses: actions/upload-artifact@v4
         with:
-          name: host-build
-          path: litert/cmake_build_host/
+          name: flatc-build
+          path: tflite/flatc-native-build/
 
-  cross_compile_android:
-    name: "Cross-Compile for Android"
+  build_litert:
+    name: "Build LiteRT for Android"
     runs-on: ubuntu-latest
-    needs: host_build
+    needs: build_host_tools
     timeout-minutes: 90
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang ninja-build
 
       - name: Install specific CMake version
         run: |
@@ -84,11 +73,11 @@ jobs:
           echo "$(realpath ./cmake-install/bin)" >> $GITHUB_PATH
           cmake --version
 
-      - name: Download Host Build Artifacts
+      - name: Download flatc artifact
         uses: actions/download-artifact@v4
         with:
-          name: host-build
-          path: host-build/
+          name: flatc-build
+          path: tflite/flatc-native-build/
 
       - name: Cache Android NDK
         id: cache-ndk
@@ -111,23 +100,21 @@ jobs:
           echo "ANDROID_NDK_HOME=${NDK_PATH}" >> $GITHUB_ENV
           echo "Found NDK at ${NDK_PATH}"
 
-      - name: Cache Android Build
-        id: cache-android-build
+      - name: Cache LiteRT Android Build
+        id: cache-litert-android
         uses: actions/cache@v4
         with:
           path: litert/cmake_build_android_arm64
-          key: ${{ runner.os }}-android-build-${{ hashFiles('litert/**', 'litert/CMakeLists.txt', 'litert/CMakePresets.json') }}
+          key: ${{ runner.os }}-litert-android-${{ hashFiles('litert/**', 'tflite/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-android-build-
+            ${{ runner.os }}-litert-android-
 
       - name: Build LiteRT Android Targets
-        if: steps.cache-android-build.outputs.cache-hit != 'true'
+        if: steps.cache-litert-android.outputs.cache-hit != 'true'
         run: |
           set -e
           cd litert
-          # The host tools (like flatc) are needed for cross-compilation.
-          # We point to the host build directory where they were built.
-          HOST_TOOLS_DIR_PATH="$GITHUB_WORKSPACE/host-build/tflite/flatc-native-build"
+          HOST_TOOLS_DIR_PATH="$GITHUB_WORKSPACE/tflite/flatc-native-build"
 
           cmake --preset android-arm64 -DTFLITE_HOST_TOOLS_DIR="${HOST_TOOLS_DIR_PATH}"
           cmake --build cmake_build_android_arm64 -j --target litert_runtime_c_api_shared_lib dispatch_api_MediaTek_so dispatch_api_Qualcomm_so run_model apply_plugin_main VERBOSE=1
