@@ -211,11 +211,9 @@ cc_test(
     ],
     deps = [
         ":common",
-        ":compile_capture",
         ":compile_fixture",
         ":configure",
         ":executor",
-        ":inference_capture",
         ":inference_fixture",
         ":register",
         "//litert/c:litert_common",

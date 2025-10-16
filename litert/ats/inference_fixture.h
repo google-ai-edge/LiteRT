@@ -140,8 +140,7 @@ class AtsInferenceTest : public RngTest {
 
   Expected<VarBuffers> Actual(const VarBuffers& inputs,
                               CompiledModelExecutor* exec) {
-    LITERT_ASSIGN_OR_RETURN(auto actual, exec->Run(inputs, cap_.latency));
-    return actual;
+    return exec->Run(inputs, cap_.latency);
   }
 
   Expected<VarBuffers> Reference(const VarBuffers& inputs) const {
@@ -156,7 +155,9 @@ class AtsInferenceTest : public RngTest {
   }
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
-    return Error(kLiteRtStatusErrorInvalidArgument, "TODO");
+    LITERT_ASSIGN_OR_RETURN(auto exec,
+                            CpuCompiledModelExecutor::Create(Graph()));
+    return exec.Run(inputs);
   }
 
   Expected<VarBuffers> MakeOutputs() const {
