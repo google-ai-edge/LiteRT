@@ -43,7 +43,7 @@ cc_library(
     hdrs = ["build_stamp.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -90,13 +90,13 @@ cc_library(
     ] + select({
         "@org_tensorflow//tensorflow:windows": [
             ":filesystem",
-            "//litert/c:litert_logging",
+            "//litert/c/internal:litert_logging",
             "@com_google_absl//absl/strings",
             "@com_google_absl//absl/strings:str_format",
         ],
         "//conditions:default": [
             ":filesystem",
-            "//litert/c:litert_logging",  # buildcleaner: keep
+            "//litert/c/internal:litert_logging",  # buildcleaner: keep
             "//litert/cc:litert_macros",
             "@com_google_absl//absl/strings",
         ],
@@ -133,7 +133,7 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:accelerator_registry",
@@ -232,7 +232,7 @@ cc_test(
 #         ":filesystem",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/strings:string_view",
-#         "//litert/c:litert_logging",  # buildcleaner: keep
+#         "//litert/c/internal:litert_logging",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
 #     ],
@@ -253,7 +253,7 @@ cc_library(
     hdrs = ["version.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
     ],
 )
 
@@ -263,7 +263,7 @@ cc_library(
     hdrs = ["error_reporter.h"],
     deps = [
         ":buffer_error_reporter",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//tflite/core/api:error_reporter",
     ],
 )

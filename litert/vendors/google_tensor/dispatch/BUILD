@@ -73,6 +73,7 @@ litert_dynamic_lib(
     deps = [
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
+        "//litert/c/internal:litert_logging",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_environment_options",

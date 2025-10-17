@@ -21,7 +21,7 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"
 
 using litert::intel_openvino::IntelOpenVinoOptions;

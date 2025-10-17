@@ -16,9 +16,9 @@
 
 #include <cstddef>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT

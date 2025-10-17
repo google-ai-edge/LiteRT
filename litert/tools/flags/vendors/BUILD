@@ -199,7 +199,7 @@ cc_library(
         "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
     ],
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -220,6 +220,7 @@ cc_library(
         "-DINCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS",
     ],
     deps = [
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

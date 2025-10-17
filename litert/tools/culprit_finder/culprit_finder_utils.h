@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/interpreter.h"
 #include "tflite/tools/command_line_flags.h"

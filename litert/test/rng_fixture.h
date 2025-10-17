@@ -22,7 +22,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/test/fuzz.h"
 
@@ -103,7 +103,6 @@ class RngTest : public ::testing::Test {
   std::vector<std::unique_ptr<ScopedTrace>> traces_;
   std::vector<RepeatedBlock> fuzz_blocks_;
 };
-
 
 }  // namespace litert::testing
 

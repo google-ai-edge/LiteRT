@@ -133,7 +133,7 @@ cc_library(
     hdrs = ["litert_detail.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -175,8 +175,8 @@ cc_library(
     hdrs = ["litert_tensor_buffer_utils.h"],
     visibility = ["//litert:litert_public"],
     deps = [
-        "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
     ],
 )
 
@@ -226,7 +226,7 @@ cc_library(
     hdrs = ["litert_logging.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
     ],
 )
 
@@ -236,7 +236,7 @@ cc_test(
     deps = [
         ":litert_logging",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_googletest//:gtest_main",
     ],
 )

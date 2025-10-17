@@ -31,6 +31,7 @@ litert_cc_lib_with_mtk(
     ungrte = True,
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_shared_library",

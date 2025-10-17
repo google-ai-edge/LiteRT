@@ -15,8 +15,8 @@
 
 // Example usage of Intel OpenVINO options in LiteRT
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 
 using litert::intel_openvino::IntelOpenVinoOptions;

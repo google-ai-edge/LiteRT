@@ -225,29 +225,6 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_logging",
-    srcs = ["litert_logging.cc"],
-    hdrs = ["litert_logging.h"],
-    deps = [
-        ":litert_common",
-        "//tflite:minimal_logging",
-        "//tflite/core/c:private_common",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_test(
-    name = "litert_logging_test",
-    srcs = ["litert_logging_test.cc"],
-    deps = [
-        ":litert_common",
-        ":litert_logging",
-        "//litert/test:matchers",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_layout",
     srcs = ["litert_layout.cc"],
     hdrs = ["litert_layout.h"],
@@ -343,8 +320,8 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_layout",
-        ":litert_logging",
         ":litert_op_code",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//tflite/c:c_api_types",
@@ -386,7 +363,7 @@ cc_library(
     deps = [
         ":litert_common",
         ":litert_event_type",
-        ":litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:event",
         "//tflite/delegates/gpu/cl:opencl_wrapper",
@@ -422,9 +399,9 @@ cc_library(
         ":litert_custom_tensor_buffer",
         ":litert_event",
         ":litert_gl_types",
-        ":litert_logging",
         ":litert_model_types",
         ":litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
@@ -497,8 +474,8 @@ cc_library(
     hdrs = ["litert_options.h"],
     deps = [
         ":litert_common",
-        ":litert_logging",
         ":litert_opaque_options",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/core:options",
@@ -550,11 +527,11 @@ cc_library(
         ":litert_common",
         ":litert_environment",
         ":litert_layout",
-        ":litert_logging",
         ":litert_metrics",
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
         "//tflite/c:c_api_types",
@@ -577,10 +554,10 @@ cc_test(
         ":litert_environment",
         ":litert_environment_options",
         ":litert_layout",
-        ":litert_logging",
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -602,6 +579,7 @@ cc_test(
     deps = [
         ":litert_environment_options",
         ":litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model",
@@ -732,7 +710,6 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_event",
     ":litert_environment",
     ":litert_layout",
-    ":litert_logging",
     ":litert_metrics",
     ":litert_model",
     ":litert_model_types",
@@ -746,6 +723,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/internal:litert_accelerator",
     "//litert/c/internal:litert_dispatch_delegate",
     "//litert/c/internal:litert_external_litert_buffer_context",
+    "//litert/c/internal:litert_logging",
     "//litert/c/internal:litert_tensor_buffer_registry",
     "//litert/c/options:litert_cpu_options",
     "//litert/c/options:litert_darwinn_runtime_options",

@@ -32,8 +32,8 @@
 #include "litert/ats/configure.h"
 #include "litert/ats/executor.h"
 #include "litert/ats/inference_capture.h"
+#include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"

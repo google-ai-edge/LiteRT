@@ -53,10 +53,10 @@ litert_dynamic_lib(
     so_name = "libLiteRtDispatch_Qualcomm.so",
     visibility = ["//litert:litert_public"],
     deps = [
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_logging",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/vendors/cc:options_helper",

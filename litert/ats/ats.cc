@@ -23,7 +23,7 @@
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
 #include "litert/ats/register.h"
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/cc/internal/litert_detail.h"

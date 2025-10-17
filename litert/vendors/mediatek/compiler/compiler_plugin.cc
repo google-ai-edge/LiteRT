@@ -28,8 +28,8 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_environment_options.h"
@@ -145,19 +145,19 @@ std::optional<const char*> FindSocModel(absl::string_view soc_model_name) {
 }
 
 void remove_directory(const std::string& path_to_remove) {
-    // remove_all recursively deletes the directory and all its contents.
-    std::uintmax_t count = fs::remove_all(path_to_remove);
+  // remove_all recursively deletes the directory and all its contents.
+  std::uintmax_t count = fs::remove_all(path_to_remove);
 
-    if (count > 0) {
-      LITERT_LOG(LITERT_INFO,
-                 "Successfully removed directory and its contents: %s (%ju "
-                 "items deleted)",
-                 path_to_remove.c_str(), count);
-    } else {
-      // This might happen if the path didn't exist to begin with.
-      LITERT_LOG(LITERT_INFO, "Could not remove or path did not exist: %s",
-                 path_to_remove.c_str());
-    }
+  if (count > 0) {
+    LITERT_LOG(LITERT_INFO,
+               "Successfully removed directory and its contents: %s (%ju "
+               "items deleted)",
+               path_to_remove.c_str(), count);
+  } else {
+    // This might happen if the path didn't exist to begin with.
+    LITERT_LOG(LITERT_INFO, "Could not remove or path did not exist: %s",
+               path_to_remove.c_str());
+  }
 }
 
 }  // namespace
@@ -327,8 +327,7 @@ namespace {
 
 LiteRtStatus SetNeuronEnvironment(const char* soc_model) {
 #if __ANDROID__
-  char dla_directory_template[] =
-      "/data/local/tmp/tempdir_dla.XXXXXXX";
+  char dla_directory_template[] = "/data/local/tmp/tempdir_dla.XXXXXXX";
 #else
   char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
 #endif

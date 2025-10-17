@@ -84,7 +84,7 @@ cc_library(
     }),
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
@@ -216,7 +216,7 @@ cc_library(
     hdrs = ["rng_fixture.h"],
     deps = [
         ":fuzz",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_rng",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_googletest//:gtest",

@@ -127,7 +127,7 @@ cc_library(
     deps = [
         ":litert_expected",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_source_location",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -221,7 +221,7 @@ cc_library(
         ":litert_expected",
         ":litert_macros",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
@@ -679,8 +679,8 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_layout",
-        "//litert/c:litert_logging",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_tensor_buffer_without_registry",
         "@com_google_absl//absl/types:span",
     ],
@@ -863,6 +863,7 @@ cc_test(
 litert_device_exec(
     name = "litert_event_device_test",
     backend_id = "cpu",
+    data = [],
     target = ":litert_event_test",
 )
 
@@ -1409,6 +1410,8 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "//litert/build_common:build_config",
         "@com_google_absl//absl/types:span",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_logging",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",

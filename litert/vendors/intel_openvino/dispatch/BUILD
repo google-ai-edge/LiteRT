@@ -61,6 +61,7 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -99,6 +100,7 @@ litert_bin(
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -157,6 +159,7 @@ cc_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_environment",

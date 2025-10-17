@@ -53,7 +53,7 @@ cc_test(
     tags = ["manual"],
     deps = [
         ":gen_device_test_lib",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
         "//litert/test:common",

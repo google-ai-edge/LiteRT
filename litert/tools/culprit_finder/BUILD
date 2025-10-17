@@ -32,7 +32,7 @@ cc_library(
         "//conditions:default": [],
     }),
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//tflite:framework",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -97,7 +97,7 @@ cc_library(
     ],  # Incompatible with -fexceptions.
     visibility = ["//visibility:public"],
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
@@ -121,7 +121,7 @@ cc_library(
     deps = [
         ":tflite_input_manager",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//tflite:framework",
         "//tflite/c:c_api_types",
@@ -162,7 +162,7 @@ cc_library(
         # copybara:uncomment_begin(google-only)
         # "//third_party/odml/infra/ml_drift_delegate:ml_drift_delegate_provider",
         # copybara:uncomment_end
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_tflite_error_status_builder",
@@ -199,6 +199,6 @@ cc_binary(
     srcs = ["culprit_finder_main.cc"],
     deps = [
         ":culprit_finder_lib",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
     ],
 )

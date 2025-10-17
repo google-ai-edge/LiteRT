@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/tools/culprit_finder/culprit_finder_lib.h"
 
 int main(int argc, const char* argv[]) {

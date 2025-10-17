@@ -15,8 +15,8 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 #define ODML_LITERT_LITERT_VENDORS_QUALCOMM_COMMON_H_
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/qualcomm/core/common.h"

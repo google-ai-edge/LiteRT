@@ -14,9 +14,9 @@
 
 #include <cstddef>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"

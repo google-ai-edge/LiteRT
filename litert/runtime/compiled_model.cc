@@ -45,10 +45,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
@@ -187,7 +187,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       resolver.AddCustom(op_name, &sStubRegistration);
     }
   }
-  #ifdef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
   else if (hardware_accelerators & kLiteRtHwAcceleratorWebNn) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias"};

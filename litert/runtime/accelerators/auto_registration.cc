@@ -18,8 +18,8 @@
 
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_shared_library.h"
@@ -90,18 +90,18 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #endif
 #if !defined(LITERT_DISABLE_GPU)
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
-    "libLiteRtGpuAccelerator" SO_EXT,
+      "libLiteRtGpuAccelerator" SO_EXT,
 #if LITERT_HAS_OPENCL_SUPPORT
-    "libLiteRtOpenClAccelerator" SO_EXT,
+      "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 #if LITERT_HAS_METAL_SUPPORT
-    "libLiteRtMetalAccelerator" SO_EXT,
+      "libLiteRtMetalAccelerator" SO_EXT,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
-    "libLiteRtWebGpuAccelerator" SO_EXT,
+      "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
 #if LITERT_HAS_VULKAN_SUPPORT
-    "libLiteRtVulkanAccelerator" SO_EXT,
+      "libLiteRtVulkanAccelerator" SO_EXT,
 #endif  // LITERT_HAS_VULKAN_SUPPORT
   };
   bool gpu_accelerator_registered = false;

@@ -29,7 +29,6 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
-        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",
     ],

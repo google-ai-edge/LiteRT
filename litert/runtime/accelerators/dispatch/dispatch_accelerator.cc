@@ -31,8 +31,8 @@ extern "C" LiteRtStatus LiteRtRegisterNpuAccelerator(
 #include "litert/c/internal/litert_accelerator_registration.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -49,7 +49,8 @@ struct NpuAcceleratorVersion {
   static constexpr int kMajor = 1;
   static constexpr int kMinor = 0;
   static constexpr int kPatch = 0;
-  static constexpr LiteRtApiVersion version = {kMajor, kMinor, kPatch};  // NOLINT
+  static constexpr LiteRtApiVersion version = {kMajor, kMinor,
+                                               kPatch};  // NOLINT
 };
 
 }  // namespace

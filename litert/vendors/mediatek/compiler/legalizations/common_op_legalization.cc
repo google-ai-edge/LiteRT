@@ -18,8 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"

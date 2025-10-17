@@ -56,6 +56,7 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
@@ -342,7 +343,7 @@ cc_library(
     name = "outstream",
     hdrs = ["outstream.h"],
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -354,7 +355,7 @@ cc_library(
     hdrs = ["benchmark_litert_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -420,7 +421,7 @@ cc_library(
     hdrs = ["tensor_utils.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",

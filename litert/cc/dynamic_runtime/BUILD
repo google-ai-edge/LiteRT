@@ -42,7 +42,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_event_type",
     "//litert/c:litert_gl_types",
     "//litert/c:litert_layout",
-    "//litert/c:litert_logging",
+    "//litert/c/internal:litert_logging",
     "//litert/c:litert_metrics",
     "//litert/c:litert_model",
     "//litert/c:litert_rewriter",
@@ -77,6 +77,7 @@ cc_library(
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
         ":litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_layout",

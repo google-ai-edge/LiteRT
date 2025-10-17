@@ -31,8 +31,8 @@
 #include "openvino/runtime/core.hpp"
 #include "openvino/runtime/properties.hpp"
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
@@ -51,7 +51,7 @@ namespace {
 
 constexpr char kPluginManufacturer[] = "IntelOpenVINO";
 
-constexpr const char *kPluginSocModels[] = {
+constexpr const char* kPluginSocModels[] = {
     "NPU2700",
 };  // get the name for plugin soc model
 
@@ -127,7 +127,7 @@ constexpr auto kNumPluginSocModels =
 
 }  // namespace
 
-LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion *api_version) {
+LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
   if (api_version == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -137,13 +137,13 @@ LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion *api_version) {
   return kLiteRtStatusOk;
 }
 
-const char *LiteRtGetCompilerPluginSocManufacturer() {
+const char* LiteRtGetCompilerPluginSocManufacturer() {
   return kPluginManufacturer;
 }
 
 LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(
     LiteRtCompilerPlugin compiler_plugin,
-    LiteRtHwAccelerators *supported_hardware) {
+    LiteRtHwAccelerators* supported_hardware) {
   if (!compiler_plugin || !supported_hardware) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -153,7 +153,7 @@ LiteRtStatus LiteRtGetCompilerPluginSupportedHardware(
 
 LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
     LiteRtCompilerPlugin compiler_plugin,
-    LiteRtParamIndex *num_supported_soc_models) {
+    LiteRtParamIndex* num_supported_soc_models) {
   if (compiler_plugin == nullptr || num_supported_soc_models == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -163,7 +163,7 @@ LiteRtStatus LiteRtGetNumCompilerPluginSupportedSocModels(
 
 LiteRtStatus LiteRtGetCompilerPluginSupportedSocModel(
     LiteRtCompilerPlugin compiler_plugin, LiteRtParamIndex soc_model_idx,
-    const char **soc_model_name) {
+    const char** soc_model_name) {
   if (compiler_plugin == nullptr || soc_model_idx >= kNumPluginSocModels ||
       soc_model_name == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -181,22 +181,22 @@ struct LiteRtCompiledResultT {
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex byte_code_idx,
-    const void **byte_code, size_t *byte_code_size) {
-  const char *raw_data_ptr = compiled_result->byte_code[byte_code_idx].data();
-  *byte_code = static_cast<void *>(const_cast<char *>(raw_data_ptr));
+    const void** byte_code, size_t* byte_code_size) {
+  const char* raw_data_ptr = compiled_result->byte_code[byte_code_idx].data();
+  *byte_code = static_cast<void*>(const_cast<char*>(raw_data_ptr));
   *byte_code_size = compiled_result->byte_code[byte_code_idx].length();
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus LiteRtGetCompiledResultCallInfo(
     LiteRtCompiledResult compiled_result, LiteRtParamIndex call_idx,
-    const void **call_info, size_t *call_info_size,
-    LiteRtParamIndex *byte_code_idx) {
+    const void** call_info, size_t* call_info_size,
+    LiteRtParamIndex* byte_code_idx) {
   if (call_idx >= compiled_result->graph_names.size()) {
     return kLiteRtStatusErrorIndexOOB;
   }
 
-  auto &graph_name = compiled_result->graph_names[call_idx];
+  auto& graph_name = compiled_result->graph_names[call_idx];
   *call_info = graph_name.data();
   *call_info_size = graph_name.size();
   *byte_code_idx = call_idx;
@@ -205,7 +205,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 }
 
 LiteRtStatus LiteRtGetNumCompiledResultCalls(
-    LiteRtCompiledResult compiled_result, LiteRtParamIndex *num_calls) {
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_calls) {
   *num_calls = compiled_result->graph_names.size();
   return kLiteRtStatusOk;
 }
@@ -215,7 +215,7 @@ void LiteRtDestroyCompiledResult(LiteRtCompiledResult compiled_result) {
 }
 
 LiteRtStatus LiteRtCompiledResultNumByteCodeModules(
-    LiteRtCompiledResult compiled_result, LiteRtParamIndex *num_byte_code) {
+    LiteRtCompiledResult compiled_result, LiteRtParamIndex* num_byte_code) {
   if (!compiled_result || !num_byte_code) {
     return kLiteRtStatusErrorInvalidArgument;
   }
@@ -253,7 +253,7 @@ struct LiteRtCompilerPluginT {
       kLiteRtStatusErrorInvalidArgument, "Null Intel OpenVINO options");
 };
 
-LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin *compiler_plugin,
+LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
                                         LiteRtEnvironmentOptions env,
                                         LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
@@ -266,8 +266,8 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
-bool IsOpSupported(const ::litert::Op &op) {
-  for (const auto &supportedOp : kSupportedOps) {
+bool IsOpSupported(const ::litert::Op& op) {
+  for (const auto& supportedOp : kSupportedOps) {
     if (op.Code() == supportedOp) return true;
   }
   return false;
@@ -277,13 +277,13 @@ bool IsOpSupported(const ::litert::Op &op) {
 extern "C" {
 #endif
 LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
-                                           const char *soc_model,
+                                           const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
 
   // TODO(rjasuja): Enhance implementation for Partition() call
-  for (const auto &op : graph.Ops()) {
+  for (const auto& op : graph.Ops()) {
     if (!IsOpSupported(op)) {
       LITERT_LOG(LITERT_ERROR, "op type %d is not supported", op.Code());
       continue;
@@ -298,8 +298,8 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 #endif
 
 LiteRtStatus LiteRtCompilerPluginCompile(
-    LiteRtCompilerPlugin compiler_plugin, const char *soc_model,
-    LiteRtModel partitions, LiteRtCompiledResult *compiled_result) {
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   try {
     auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
     const auto num_partitions = model.NumSubgraphs();
