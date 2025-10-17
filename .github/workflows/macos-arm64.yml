@@ -116,7 +116,7 @@ jobs:
             --verbose_failures \
             //litert/core/... \
             //litert/python/...
-
+            
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
         continue-on-error: true  # Ignore errors when cache is not found.
