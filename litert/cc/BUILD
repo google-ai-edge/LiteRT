@@ -18,6 +18,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//litert/build_common:flavor_transition.bzl", "flavored_cc_alias")
+load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 # copybara:uncomment load("@build_bazel_rules_apple//apple:ios.bzl", "ios_unit_test")
@@ -697,10 +698,10 @@ cc_test(
     ],
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "litert_environment",
     hdrs = ["litert_environment.h"],
-    visibility = [
+    vis = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
         # copybara:uncomment_end_and_comment_begin
@@ -1055,10 +1056,10 @@ litert_device_exec(
     target = ":litert_tensor_buffer_test",
 )
 
-cc_library(
+cc_library_with_testonly_vis(
     name = "litert_options",
     hdrs = ["litert_options.h"],
-    visibility = [
+    vis = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
         # copybara:uncomment_end_and_comment_begin
