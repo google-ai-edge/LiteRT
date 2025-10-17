@@ -240,15 +240,17 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
       if (ranked_tensor_type->ElementType() == litert::ElementType::Int4) {
         quantize_params.emplace<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
             ::qnn::kQuantBitWidth4, per_channel_quant.quantized_dimension,
-            absl::Span<const float>{per_channel_quant.scales,
-                                    per_channel_quant.num_channels},
+            absl::Span<const float>{
+                per_channel_quant.scales,
+                static_cast<size_t>(per_channel_quant.num_channels)},
             absl::Span<const std::int32_t>{zero_points.data(),
                                            zero_points.size()});
       } else {
         quantize_params.emplace<::qnn::AxisScaleOffsetQuantizeParamsWrapper>(
             per_channel_quant.quantized_dimension,
-            absl::Span<const float>{per_channel_quant.scales,
-                                    per_channel_quant.num_channels},
+            absl::Span<const float>{
+                per_channel_quant.scales,
+                static_cast<size_t>(per_channel_quant.num_channels)},
             absl::Span<const std::int32_t>{zero_points.data(),
                                            zero_points.size()});
       }
