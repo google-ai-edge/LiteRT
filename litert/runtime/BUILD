@@ -442,7 +442,6 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_tensor_buffer_utils",
-        "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",
@@ -474,6 +473,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
+            "//litert/compiler/plugin:compiler_plugin",
             "//litert/core/cache:compilation_cache",
             "//litert/core/model:model_serialize",
         ],
