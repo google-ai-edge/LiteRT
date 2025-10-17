@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_LITERT_CONSTS_H_
-#define ODML_LITERT_LITERT_CC_LITERT_CONSTS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_CONSTS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_CONSTS_H_
 
 #include <cstddef>
 
@@ -31,4 +31,4 @@ static constexpr size_t kExpectedMaxNumOfSubgraphOutputs = 4;
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_CONSTS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_CONSTS_H_

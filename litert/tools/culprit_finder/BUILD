@@ -165,7 +165,7 @@ cc_library(
         "//litert/c:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_tflite_error_status_builder",
+        "//litert/cc/internal:litert_tflite_error_status_builder",
         "//tflite/profiling/proto:model_runtime_info_cc",
         "//tflite:framework",
         "//tflite/c:c_api_types",

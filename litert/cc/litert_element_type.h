@@ -21,7 +21,7 @@
 #include <type_traits>
 
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 
 namespace litert {
 

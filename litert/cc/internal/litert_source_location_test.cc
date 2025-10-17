@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_source_location.h"
+#include "litert/cc/internal/litert_source_location.h"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_NUMERICS_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_NUMERICS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_NUMERICS_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_NUMERICS_H_
 
 // Wrapper of std::numeric_limits, which needs to be extended for exotic
 // datatypes (e.g. quant, half-precision, etc.).
@@ -22,7 +22,7 @@
 #include <limits>
 #include <type_traits>
 
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 
 namespace litert {
 
@@ -85,4 +85,4 @@ using NumberLike =
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_NUMERICS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_NUMERICS_H_

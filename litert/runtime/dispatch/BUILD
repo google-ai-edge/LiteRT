@@ -154,7 +154,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_tflite_error_status_builder",
+        "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/core:build_stamp",
         "//litert/core:dispatch_op_schema",
         "//litert/runtime:external_litert_buffer_context",

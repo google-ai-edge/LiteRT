@@ -19,7 +19,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/core/model/flatbuffer_to_litert.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"

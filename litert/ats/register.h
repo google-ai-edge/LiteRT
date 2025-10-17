@@ -22,9 +22,9 @@
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/test/generators/generators.h"
 
 namespace litert::testing {

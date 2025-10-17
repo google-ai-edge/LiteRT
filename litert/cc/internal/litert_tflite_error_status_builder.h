@@ -12,17 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_UTILS_H_
-#define ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_UTILS_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_TFLITE_ERROR_STATUS_BUILDER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_TFLITE_ERROR_STATUS_BUILDER_H_
 
-#include <string>
-
-#include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_macros.h"
+#include "tflite/c/c_api_types.h"
 
 namespace litert {
 
-std::string BufferTypeToString(LiteRtTensorBufferType buffer_type);
+inline TfLiteStatus AsTfLiteStatus(const ErrorStatusBuilder& e) {
+  [[maybe_unused]] LiteRtStatus s = e;
+  return kTfLiteError;
+}
 
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_UTILS_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_TFLITE_ERROR_STATUS_BUILDER_H_

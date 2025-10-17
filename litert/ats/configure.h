@@ -26,8 +26,8 @@
 #include "absl/flags/declare.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/common.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model_serialize.h"

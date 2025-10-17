@@ -19,9 +19,9 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 
