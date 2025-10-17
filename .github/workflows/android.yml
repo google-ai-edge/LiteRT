@@ -1,0 +1,46 @@
+name: LiteRT Android CMake Build
+
+
+on: 
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+
+jobs:
+  build:
+    runs-on:  LiteRT_Linux_x64
+
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+
+    - name: Install Android NDK
+      uses: nttld/setup-ndk@v1
+      with:
+        ndk-version: r27
+
+
+    - name: Configure host tools
+      run: cmake --preset default
+      working-directory: ./litert
+
+
+    - name: Build host tools
+      run: cmake --build cmake_build -j
+      working-directory: ./litert
+
+
+    - name: Configure Android build
+      run: |
+        cmake --preset android-arm64 \
+          -DTFLITE_HOST_TOOLS_DIR="$(pwd)/cmake_build"
+      working-directory: ./litert
+
+
+    - name: Build LiteRT for Android
+      run: cmake --build cmake_build_android_arm64 -j
+      working-directory: ./litert
