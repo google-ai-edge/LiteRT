@@ -182,12 +182,7 @@ find_package(absl REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(farmhash REQUIRED)
 find_package(fft2d REQUIRED)
-find_package(FlatBuffers REQUIRED
-  HINTS
-    "${CMAKE_BINARY_DIR}/_deps/flatbuffers-build"
-    "${CMAKE_BINARY_DIR}/flatbuffers/CMake"
-    "${CMAKE_BINARY_DIR}/flatbuffers-flatc/lib/cmake/flatbuffers"
-)
+find_package(FlatBuffers REQUIRED)
 find_package(gemmlowp REQUIRED)
 if (NOT CMAKE_SYSTEM_PROCESSOR OR CMAKE_SYSTEM_PROCESSOR MATCHES "x86")
   find_package(NEON_2_SSE REQUIRED)

@@ -16,12 +16,6 @@ cmake_minimum_required(VERSION 3.20)
 project(LiteRT VERSION 1.4.0 LANGUAGES CXX C)
 
 include(FetchContent)
-FetchContent_Declare(
-    flatbuffers
-    GIT_REPOSITORY https://github.com/google/flatbuffers.git
-    GIT_TAG v2.0.0
-)
-FetchContent_MakeAvailable(flatbuffers)
 
 
 function(_litert_overlay_converter_sources TF_SRC_ROOT)
