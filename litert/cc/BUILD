@@ -1287,6 +1287,7 @@ cc_library(
         "//litert/cc/options:litert_mediatek_options.h",
         "//litert/cc/options:litert_qualcomm_options.h",
         "//litert/cc/options:litert_runtime_options.h",
+        "//litert/cc/options:litert_intel_openvino_options.h",
         # Other headers needed by the C++ API headers.
         "//litert/cc/internal:litert_c_types_printing.h",
         "//litert/cc/internal:litert_consts.h",
@@ -1328,6 +1329,7 @@ cc_library(
         "//litert/cc/dynamic_runtime/options:litert_cpu_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         # Other (static) C++ API targets.
         ":litert_any",

@@ -613,6 +613,7 @@ cc_library(
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
     deps = [":litert_common"],
+    alwayslink = 1,
 )
 
 cc_test(
