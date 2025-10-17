@@ -535,6 +535,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "gpu_numerics_check_jet",
+    srcs = ["gpu_numerics_check.cc"],
+    tags = [
+        "notap",
+        "requires-gpu-nvidia",
+    ],
+    deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc/options:litert_gpu_options",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
+    ],
+)
+
+cc_binary(
     name = "analyze_model_main",
     srcs = ["analyze_model_main.cc"],
     deps = [
@@ -589,6 +604,20 @@ cc_binary(
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
         # "//third_party/vulkan_loader",
+        # copybara:uncomment_end
+    ],
+)
+
+cc_binary(
+    name = "benchmark_model_jet",
+    tags = [
+        "notap",
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":benchmark_model_main",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )

@@ -602,6 +602,63 @@ litert_device_test(
 #     ],
 # )
 #
+# # Should use `--copt=-DCL_DELEGATE_NO_GL` to build for Desktop.
+# cc_test(
+#     name = "litert_compiled_model_jetgpu_test",
+#     srcs = [":litert_compiled_model_jetgpu_test.cc"],
+#     data = [
+#         "//litert/test:mlir_test_data",
+#         "//litert/test:tflite_test_data",
+#     ],
+#     tags = [
+#         "no_oss",
+#         "notap",
+#         "requires-gpu-nvidia",
+#     ],
+#     deps = [
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/container:flat_hash_map",
+#         "@com_google_absl//absl/debugging:leak_check",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment_options",
+#         "//litert/c:litert_event",
+#         "//litert/c:litert_event_type",
+#         "//litert/c:litert_profiler_event",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_compiled_model",
+#         "//litert/cc:litert_element_type",
+#         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_event",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_layout",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc:litert_model",
+#         "//litert/cc:litert_options",
+#         "//litert/cc:litert_profiler",
+#         "//litert/cc:litert_tensor_buffer",
+#         "//litert/cc/internal:litert_platform_support",
+#         "//litert/cc/options:litert_gpu_options",
+#         "//litert/cc/options:litert_runtime_options",
+#         "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model",
+#         "@opencl_headers",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/cl:cl_device",
+#             "//tflite/delegates/gpu/cl:gl_interop",
+#             "//tflite/delegates/gpu/cl:opencl_wrapper",
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+#
 # copybara:uncomment_end
 
 cc_library(
