@@ -979,7 +979,6 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
-        ":litert_detail",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
@@ -1026,7 +1025,6 @@ cc_library(
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_event",
         "//litert/c:litert_gl_types",
-        "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_tensor_buffer_registry",  # buildcleaner: keep

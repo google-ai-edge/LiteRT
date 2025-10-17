@@ -27,37 +27,9 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
-#if LITERT_HAS_AHWB_SUPPORT
-#include <android/hardware_buffer.h>
-#else
-// Define a place holder AHardwareBuffer struct just to enable compilation.
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
-typedef struct AHardwareBuffer AHardwareBuffer;
-#ifdef __cplusplus
-}  // extern "C"
-#endif  // __cplusplus
-#endif  // LITERT_HAS_AHWB_SUPPORT
-
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-
-#define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
-
-typedef void (*LiteRtHostMemoryDeallocator)(void* addr);
-typedef void (*LiteRtAhwbDeallocator)(AHardwareBuffer* ahwb);
-typedef void (*LiteRtIonDeallocator)(void* ion_buffer_addr);
-typedef void (*LiteRtDmaBufDeallocator)(void* dmabuf_buffer_addr);
-typedef void (*LiteRtFastRpcDeallocator)(void* fastrpc_buffer_addr);
-typedef void (*LiteRtOpenClDeallocator)(void* opencl_buffer_addr);
-typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
-typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
-typedef void (*LiteRtWebGpuBufferDeallocator)(void* webgpu_buffer_addr);
-typedef void (*LiteRtWebGpuTextureDeallocator)(void* webgpu_texture_addr);
-typedef void (*LiteRtMetalDeallocator)(void* metal_buffer_addr);
-typedef void (*LiteRtVulkanMemoryDeallocator)(void* vulkan_memory_addr);
 
 // /////////////////////////////////////////////////////////////////////////////
 // TensorBuffers.
@@ -338,7 +310,7 @@ LiteRtStatus LiteRtUnlockTensorBuffer(LiteRtTensorBuffer buffer);
 void LiteRtDestroyTensorBuffer(LiteRtTensorBuffer buffer);
 
 #ifdef __cplusplus
-}
+}  // extern "C"
 #endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_H_
