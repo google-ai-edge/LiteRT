@@ -64,6 +64,8 @@ class OpWrapper final {
 
   void ClearTensorParams();
 
+  void ClearScalarParams();
+
   void AddPrefixToName(absl::string_view prefix);
 
   void AddSuffixToName(absl::string_view suffix);
