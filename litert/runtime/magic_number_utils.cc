@@ -14,6 +14,7 @@
 
 #include "litert/runtime/magic_number_utils.h"
 
+#include <cinttypes>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -96,19 +97,20 @@ void LogDebugInfo(
                subgraph.NumOutputs(), subgraph.Ops().size());
   }
 
-  LITERT_LOG(LITERT_INFO, "Magic number configs: num_configs=%d",
+  LITERT_LOG(LITERT_INFO, "Magic number configs: num_configs=%" PRId64,
              magic_number_configs.num_configs);
   for (int i = 0; i < magic_number_configs.num_configs; ++i) {
     const auto& config = magic_number_configs.configs[i];
     LITERT_LOG(LITERT_INFO,
-               "  config[%d]: magic_number=%d, target_number=%d, "
-               "signature_prefix=%s",
+               "  config[%d]: magic_number=%" PRId64 ", target_number=%" PRId64
+               ", signature_prefix=%s",
                i, config.magic_number, config.target_number,
                config.signature_prefix ? config.signature_prefix : "null");
   }
 
   if (magic_number_verifications != nullptr) {
-    LITERT_LOG(LITERT_INFO, "Magic number verifications: num_verifications=%d",
+    LITERT_LOG(LITERT_INFO,
+               "Magic number verifications: num_verifications=%" PRId64,
                magic_number_verifications->num_verifications);
     for (int i = 0; i < magic_number_verifications->num_verifications; ++i) {
       const auto& verification = magic_number_verifications->verifications[i];
@@ -149,8 +151,9 @@ Expected<int> UpdateMagicNumberInDimensions(
     }
 
     LITERT_LOG(LITERT_DEBUG,
-               "Update shape[%d] of tensor=%d from %d to %d, factor=%d", i,
-               tidx, magic_number, target_number, factor);
+               "Update shape[%d] of tensor=%d from %" PRId64 " to %" PRId64
+               ", factor=%" PRId64,
+               i, tidx, magic_number, target_number, factor);
     layout.dimensions[i] = target_number * factor;
     ++num_updated;
 
@@ -178,8 +181,9 @@ int UpdateMagicNumber(T magic_number, T target_number, LiteRtOpCode op_code,
 
     value = target_number * factor;
     LITERT_LOG(LITERT_DEBUG,
-               "Update param data[%d] of op=%d from %d to %d, factor=%d", i,
-               op_code, magic_number, target_number, factor);
+               "Update param data[%d] of op=%d from %" PRId64 " to %" PRId64
+               ", factor=%" PRId64,
+               i, op_code, magic_number, target_number, factor);
     memcpy(data, &value, sizeof(T));
     ++num_updated;
   }
@@ -268,10 +272,10 @@ Expected<int> ReplaceMagicNumberInSubgraph(
                                        fb_model, *decomp_subgraph,
                                        model.Subgraph(decomp_index)));
       if (num_tensors_updated > 0) {
-        LITERT_LOG(
-            LITERT_DEBUG,
-            "%d tensors of subgraph %d have been updated for magic number %d.",
-            num_tensors_updated, decomp_index, magic_number);
+        LITERT_LOG(LITERT_DEBUG,
+                   "%d tensors of subgraph %d have been updated for magic "
+                   "number %" PRId64,
+                   num_tensors_updated, decomp_index, magic_number);
       }
       updated_tensors += num_tensors_updated;
       continue;
@@ -313,22 +317,24 @@ Expected<int> UpdateMagicNumbersInModel(
         continue;
       }
 
-      LITERT_LOG(LITERT_DEBUG, "Replacing magic number %d in signature=%s",
+      LITERT_LOG(LITERT_DEBUG,
+                 "Replacing magic number %" PRId64 " in signature=%s",
                  config.magic_number, signature->Key().data());
       LITERT_ASSIGN_OR_RETURN(int updated_tensors,
                               ReplaceMagicNumberInSubgraph(
                                   config.magic_number, config.target_number,
                                   model, fb_model, *tfl_subgraph, subgraph));
       if (updated_tensors == 0) {
-        LITERT_LOG(LITERT_DEBUG, "No magic number %d found in signature=%s",
+        LITERT_LOG(LITERT_DEBUG,
+                   "No magic number %" PRId64 " found in signature=%s",
                    config.magic_number, signature->Key().data());
         continue;
       }
       total_updated_tensors += updated_tensors;
-      LITERT_LOG(
-          LITERT_INFO,
-          "%d tensors of signature %s have been updated for magic number %d.",
-          updated_tensors, signature->Key().data(), config.magic_number);
+      LITERT_LOG(LITERT_INFO,
+                 "%d tensors of signature %s have been updated for magic "
+                 "number %" PRId64,
+                 updated_tensors, signature->Key().data(), config.magic_number);
     }
   }
 
