@@ -149,4 +149,9 @@ Expected<void> MkDir(absl::string_view path) {
   return {};
 }
 
+Expected<std::string> Parent(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  return std_path.parent_path().generic_string();
+}
+
 }  // namespace litert::internal
