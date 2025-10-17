@@ -20,8 +20,8 @@
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 

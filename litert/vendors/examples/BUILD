@@ -41,7 +41,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc/internal:litert_op_options",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
@@ -62,11 +62,11 @@ litert_dynamic_lib(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -140,11 +140,11 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -158,9 +158,9 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -205,7 +205,7 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_rewriter",
+        "//litert/cc/internal:litert_rewriter",
     ],
 )
 
