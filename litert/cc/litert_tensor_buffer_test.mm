@@ -59,7 +59,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   auto env = litert::Environment::Create(environment_options);
 
   const litert::RankedTensorType kTensorType(kTestTensorType);
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
+  constexpr auto kTensorBufferType = litert::TensorBufferType::MetalBuffer;
 
   auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
                                                            kTensorType, sizeof(kTensorData));
@@ -115,7 +115,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   auto env = litert::Environment::Create(environment_options);
 
   const litert::RankedTensorType kTensorType(kTestTensorType);
-  constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
+  constexpr auto kTensorBufferType = litert::TensorBufferType::MetalBuffer;
 
   // Create a managed buffer
   auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,

@@ -38,6 +38,7 @@
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
 
@@ -69,14 +70,14 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
     LiteRtEnvironment env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
   LITERT_ASSIGN_OR_RETURN(
-      const std::vector<LiteRtTensorBufferType>& supported_types,
+      const std::vector<litert::TensorBufferType>& supported_types,
       buffer_requirements.SupportedTypes());
   if (supported_types.empty()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Input doesn't support any tensor buffer types");
   }
   // For simplicity we just pick the first supported tensor buffer type.
-  LiteRtTensorBufferType tensor_buffer_type = supported_types[0];
+  litert::TensorBufferType tensor_buffer_type = supported_types[0];
   LITERT_ASSIGN_OR_RETURN(size_t buffer_size, buffer_requirements.BufferSize());
 
   LITERT_ASSIGN_OR_RETURN(TensorBuffer buffer, TensorBuffer::CreateManaged(

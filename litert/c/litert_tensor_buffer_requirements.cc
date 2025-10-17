@@ -19,7 +19,6 @@
 #include <vector>
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/tensor_buffer_requirements.h"

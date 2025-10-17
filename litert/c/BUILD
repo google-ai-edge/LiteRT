@@ -446,12 +446,12 @@ cc_test(
         ":litert_common",
         ":litert_environment",
         ":litert_environment_options",
-        ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
-        "//litert/runtime:tensor_buffer",
+        "//litert/runtime:event",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -464,6 +464,7 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -26,6 +26,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
 
@@ -47,40 +48,55 @@ class TensorBufferRequirements
                                                                 owned) {}
 
   static Expected<TensorBufferRequirements> Create(
-      absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
+      absl::Span<const litert::TensorBufferType> buffer_types,
+      size_t buffer_size,
       absl::Span<const uint32_t> strides =
           absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0),
       OwnHandle owned = OwnHandle::kYes) {
     LiteRtTensorBufferRequirements tensor_buffer_requirements;
+    std::vector<LiteRtTensorBufferType> litert_buffer_types;
+    litert_buffer_types.reserve(buffer_types.size());
+    for (const auto& buffer_type : buffer_types) {
+      litert_buffer_types.push_back(
+          static_cast<LiteRtTensorBufferType>(buffer_type));
+    }
     LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirements(
-        buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
-        strides.data(), &tensor_buffer_requirements));
+        buffer_types.size(), litert_buffer_types.data(), buffer_size,
+        strides.size(), strides.data(), &tensor_buffer_requirements));
     return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
   static Expected<TensorBufferRequirements> CreateWithAlignment(
-      absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
-      size_t alignment,
+      absl::Span<const litert::TensorBufferType> buffer_types,
+      size_t buffer_size, size_t alignment,
       absl::Span<const uint32_t> strides =
           absl::MakeSpan(static_cast<const uint32_t*>(nullptr), 0),
       OwnHandle owned = OwnHandle::kYes) {
     LiteRtTensorBufferRequirements tensor_buffer_requirements;
+    std::vector<LiteRtTensorBufferType> litert_buffer_types;
+    for (const auto& buffer_type : buffer_types) {
+      litert_buffer_types.push_back(
+          static_cast<LiteRtTensorBufferType>(buffer_type));
+    }
     LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferRequirementsWithAlignment(
-        buffer_types.size(), buffer_types.data(), buffer_size, strides.size(),
-        strides.data(), alignment, &tensor_buffer_requirements));
+        buffer_types.size(), litert_buffer_types.data(), buffer_size,
+        strides.size(), strides.data(), alignment,
+        &tensor_buffer_requirements));
     return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
-  Expected<std::vector<LiteRtTensorBufferType>> SupportedTypes() const {
+  Expected<std::vector<litert::TensorBufferType>> SupportedTypes() const {
     int num_types;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(Get(),
                                                                  &num_types));
-    std::vector<LiteRtTensorBufferType> types(num_types);
+    std::vector<litert::TensorBufferType> types(num_types);
     for (auto i = 0; i < num_types; ++i) {
+      LiteRtTensorBufferType type;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
-              Get(), i, &types[i]));
+          LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(Get(), i,
+                                                                     &type));
+      types[i] = static_cast<litert::TensorBufferType>(type);
     }
     return types;
   }
