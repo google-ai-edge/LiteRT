@@ -24,7 +24,7 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
-#include "sentencepiece/src/sentencepiece_processor.h"  // from @com_google_sentencepiece
+#include "sentencepiece_processor.h"  // from @sentencepiece
 
 // Define command-line flags for the model file and the sentence.
 ABSL_FLAG(std::string, model_file, "",

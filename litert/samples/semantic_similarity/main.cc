@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/init_google.h"
+// #include "base/init_google.h"
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
@@ -49,7 +49,7 @@
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
-#include "sentencepiece/src/sentencepiece_processor.h"  // from @com_google_sentencepiece
+#include "sentencepiece_processor.h"  // from @sentencepiece
 
 // Command-line flags for the model paths and input sentences
 ABSL_FLAG(std::string, tokenizer, "", "Path to the tokenizer model file.");
@@ -349,7 +349,7 @@ absl::Status RealMain() {
 }  // namespace litert
 
 int main(int argc, char** argv) {
-  InitGoogle(argv[0], &argc, &argv, true);
+  // InitGoogle(argv[0], &argc, &argv, true);
   absl::ParseCommandLine(argc, argv);
   absl::Status status = litert::RealMain();
   if (!status.ok()) {

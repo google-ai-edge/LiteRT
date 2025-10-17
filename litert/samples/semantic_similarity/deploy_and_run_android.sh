@@ -16,23 +16,25 @@
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
+
 # --- Local Configuration ---
-readonly ROOT_DIR="third_party/odml/litert"
-# built libraries
-readonly C_LIBRARY_LOCATION="bazel-bin/${ROOT_DIR}/litert/c"
+# Assuming this script is run from the root of the repository.
+readonly ROOT_DIR="."
+# Built libraries location for Bazel
+readonly C_LIBRARY_LOCATION="${ROOT_DIR}/bazel-bin/litert/c"
 # Target to build
-readonly TARGET="//third_party/odml/litert/litert/samples/semantic_similarity:semantic_similarity"
+readonly TARGET="//litert/samples/semantic_similarity:semantic_similarity"
 # The Android build config suffix
 readonly ANDROID_CONFIG="android_arm64"
 # Name of the binary produced by the build
 readonly BINARY_NAME="semantic_similarity"
 # Local path to the models directory
-readonly LOCAL_MODEL_DIR="third_party/odml/litert/litert/samples/semantic_similarity/models/"
+readonly LOCAL_MODEL_DIR="${ROOT_DIR}/litert/samples/semantic_similarity/models"
 # tokenizer filename
 TOKENIZER_MODEL="${LOCAL_MODEL_DIR}/262144.model"
 EMBEDDER_MODEL="${LOCAL_MODEL_DIR}/embedding_gemma_256_input_seq.tflite"
 
-# --- Device Conifguration ---
+# --- Device Configuration ---
 # Where to push files on the Android device (a world-writable location)
 readonly DEVICE_DIR="/data/local/tmp/semantic_similarity_demo"
 # Full path to the binary and model on the device
@@ -42,17 +44,19 @@ SENTENCE1=""
 SENTENCE2=""
 ACCELERATOR="cpu"
 DEVICE_LD_LIBRARY_PATH="${DEVICE_DIR}"
+SEQUENCE_LENGTH=0
 
 # Flag to determine if GPU libraries need to be pushed.
-# This will be set to "true" later if "gpu" is a specified accelerator.
 PUSH_GPU_LIBS="false"
 
-# Flag to determine if QNN libraries need to be pushed.
-# This will be set to "true" later if "npu" is a specified accelerator.
+# Flag to determine which NPU libraries to push.
+# Options: "", "Qualcomm", "MediaTek"
 SOC_MAN=""
 
-# -- build flags
-BUILD_FLAGS="-c opt --config=${ANDROID_CONFIG} --copt=-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1 --android_ndk_min_sdk_version=26"
+# -- Build flags for Bazel --
+# Common flags for Android builds.
+# Users might need to configure NDK/SDK paths in their environment or WORKSPACE.bazel.
+BUILD_FLAGS="-c opt --config=${ANDROID_CONFIG} --copt=-DABSL_FLAGS_STRIP_NAMES=0 --copt=-DABSL_FLAGS_STRIP_HELP=0"
 
 # --- Helper Functions for Colored Output ---
 print_info() {
@@ -68,25 +72,19 @@ print_error() {
 # --- Core Functions ---
 
 # Parses and validates the comma-delimited accelerator string.
-# Sets the global PUSH_GPU_LIBS flag if "gpu" is present.
 validate_accelerators() {
   print_info "Validating accelerators: ${ACCELERATOR}"
   local original_ifs="${IFS}"
   IFS=','
-  # Read the comma-separated string into an array.
   local -a accelerator_list
   read -r -a accelerator_list <<< "${ACCELERATOR}"
-  # Restore the original Internal Field Separator.
   IFS="${original_ifs}"
 
-  # Loop through each provided accelerator and validate it.
   for accelerator in "${accelerator_list[@]}"; do
-    # Trim leading/trailing whitespace to handle inputs like "cpu, gpu".
     local trimmed_accelerator
     trimmed_accelerator="$(echo "${accelerator}" | xargs)"
     case "${trimmed_accelerator}" in
       cpu|npu)
-        # These are valid but require no special library push action.
         ;;
       gpu)
         print_info "GPU accelerator detected. Will push GPU delegate libraries."
@@ -112,18 +110,19 @@ usage() {
   echo "  --sentence1         (Required) First sentence for comparison."
   echo "  --sentence2         (Required) Second sentence for comparison."
   echo "  --accelerator       Backend to use (e.g. cpu, gpu). Can be multiple e.g. 'cpu,npu' (Default: ${ACCELERATOR})"
-  echo "  --sequence_length   Sequence length of the embedder model. (Default: 0, will be inferred from the model path)"
-  echo "  --push_qnn_libs     Whether to push the QNN libraries. (Default: false)"
+  echo "  --sequence_length   Sequence length of the embedder model. (Default: ${SEQUENCE_LENGTH}, will be inferred from the model path)"
+  echo "  --soc_man           SoC Manufacturer for NPU libs (e.g., Qualcomm, MediaTek). (Default: ${SOC_MAN})"
   echo
   echo "Example: $0 --sentence1=\"Hello world\" --sentence2=\"Hi there\""
 }
 
 build() {
-  print_info "Building the LiteRt C library..."
+  print_info "Building the LiteRt C library with Bazel..."
   bazel build ${BUILD_FLAGS} \
-      //third_party/odml/litert/litert/c:libLiteRtRuntimeCApi.so
+      //litert/c:libLiteRtRuntimeCApi.so
 
-  print_info "Building target for ${ANDROID_CONFIG}..."
+  print_info "Build command: ${BUILD_FLAGS} ${TARGET}"
+  print_info "Building target for ${ANDROID_CONFIG} with Bazel..."
   bazel build ${BUILD_FLAGS} ${TARGET}
   print_success "Build complete."
 }
@@ -132,26 +131,23 @@ push() {
   print_info "Pushing files to device directory: ${DEVICE_DIR}"
   adb shell "mkdir -p ${DEVICE_DIR}"
 
-  # Find the compiled binary in the bazel-bin directory.
-  local local_binary_path
-  local_binary_path="bazel-bin/third_party/odml/litert/litert/samples/semantic_similarity/semantic_similarity"
+  local local_binary_path="${ROOT_DIR}/bazel-bin/litert/samples/semantic_similarity/semantic_similarity"
 
   if [[ ! -f "${local_binary_path}" ]]; then
-    print_error "Could not find built binary. Please run the 'build' action first."
+    print_error "Could not find built binary at ${local_binary_path}. Please run the build step first."
     exit 1
   fi
 
   print_info "Found binary at: ${local_binary_path}"
 
-  # Push the binary and the model files using adb
   adb push --sync "${local_binary_path}" "${DEVICE_BINARY_PATH}"
   adb push --sync "${TOKENIZER_MODEL}" "${DEVICE_DIR}/${TOKENIZER_MODEL##*/}"
   adb push --sync "${EMBEDDER_MODEL}" "${DEVICE_DIR}/${EMBEDDER_MODEL##*/}"
   adb push --sync "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_LD_LIBRARY_PATH}"
 
-  # Conditionally push the GPU library only if requested.
   if [[ "${PUSH_GPU_LIBS}" == "true" ]]; then
     print_info "Pushing GPU accelerator library..."
+    # This path assumes the library is checked into the repo or built by Bazel
     local local_gpu_library_path="${ROOT_DIR}/litert/samples/semantic_similarity/libs/libLiteRtOpenClAccelerator.so"
     if [[ ! -f "${local_gpu_library_path}" ]]; then
       print_error "Could not find GPU library at: ${local_gpu_library_path}"
@@ -160,27 +156,29 @@ push() {
     adb push --sync "${local_gpu_library_path}" "${DEVICE_LD_LIBRARY_PATH}"
   fi
 
-  # Conditionally push the QNN library only if requested.
   if [[ "${SOC_MAN}" == "Qualcomm" ]]; then
-    print_info "Pushing QNN accelerator library..."
-    bazel build ${BUILD_FLAGS} third_party/odml/litert/litert/vendors/qualcomm/dispatch:dispatch_api_so
-    adb push --sync bazel-bin/third_party/odml/litert/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so ${DEVICE_LD_LIBRARY_PATH}
+    print_info "Building and Pushing QNN accelerator library..."
+    bazel build ${BUILD_FLAGS} //litert/vendors/qualcomm/dispatch:dispatch_api_so
+    adb push --sync "${ROOT_DIR}/bazel-bin/litert/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so" "${DEVICE_LD_LIBRARY_PATH}"
 
-    print_info "Pushing QNN accelerator library..."
-    ls -l "${QNN_SDK_ROOT}"
-    if [[ ! -d "${QNN_SDK_ROOT}" ]]; then
-      print_error "Could not find QNN library at: ${QNN_SDK_ROOT}"
+    if [[ -z "${QNN_SDK_ROOT}" ]]; then
+      print_error "QNN_SDK_ROOT environment variable is not set. Cannot push QNN HTP libraries."
       exit 1
     fi
-    # Push all versions of the QNN libraries for convenience.
+    if [[ ! -d "${QNN_SDK_ROOT}" ]]; then
+      print_error "Could not find QNN SDK at: ${QNN_SDK_ROOT}"
+      exit 1
+    fi
+    print_info "Pushing QNN HTP libraries from ${QNN_SDK_ROOT}..."
     adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp*Stub.so ${DEVICE_LD_LIBRARY_PATH}
     adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnHtp.so ${DEVICE_LD_LIBRARY_PATH}
     adb push --sync ${QNN_SDK_ROOT}/lib/aarch64-android/libQnnSystem.so ${DEVICE_LD_LIBRARY_PATH}
+    # Note: The glob below might need adjustment based on QNN SDK structure.
     adb push --sync ${QNN_SDK_ROOT}/lib/hexagon-*/unsigned/libQnnHtp*Skel.so ${DEVICE_LD_LIBRARY_PATH}
   elif [[ "${SOC_MAN}" == "MediaTek" ]]; then
-    print_info "Pushing MTK accelerator library..."
-    bazel build ${BUILD_FLAGS} //third_party/odml/litert/litert/vendors/mediatek/dispatch:dispatch_api_so
-    adb push bazel-bin/third_party/odml/litert/litert/vendors/mediatek/dispatch/libLiteRtDispatch_Mediatek.so ${DEVICE_LD_LIBRARY_PATH}
+    print_info "Building and Pushing MTK accelerator library..."
+    bazel build ${BUILD_FLAGS} //litert/vendors/mediatek/dispatch:dispatch_api_so
+    adb push --sync "${ROOT_DIR}/bazel-bin/litert/vendors/mediatek/dispatch/libLiteRtDispatch_Mediatek.so" "${DEVICE_LD_LIBRARY_PATH}"
   fi
 
   print_success "Files pushed to the device."
@@ -192,9 +190,20 @@ run() {
   local device_tokenizer_path="${DEVICE_DIR}/${TOKENIZER_MODEL##*/}"
   local device_embedder_path="${DEVICE_DIR}/${EMBEDDER_MODEL##*/}"
 
-  # Use adb shell to execute commands on the device:
-  # 1. Make the binary executable.
-  # 2. Run the binary, passing the on-device path to the semantic-similarity model.
+  print_info "Before running the binary, please make sure the following files exist on the device: ${device_tokenizer_path}, ${device_embedder_path}"
+
+  print_info "running command: chmod +x ${DEVICE_BINARY_PATH} && \
+    LD_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
+    ADSP_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
+    ${DEVICE_BINARY_PATH} \
+      --tokenizer=${device_tokenizer_path} \
+      --embedder=${device_embedder_path} \
+      --sentence1=\"${SENTENCE1}\" \
+      --sentence2=\"${SENTENCE2}\" \
+      --accelerator=\"${ACCELERATOR}\" \
+      --sequence_length=${SEQUENCE_LENGTH} \
+      --dispatch_library_dir=${DEVICE_DIR}"
+
   adb shell "chmod +x ${DEVICE_BINARY_PATH} && \
     LD_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
     ADSP_LIBRARY_PATH=${DEVICE_LD_LIBRARY_PATH} \
@@ -261,7 +270,6 @@ parse_args() {
 main() {
   parse_args "$@"
 
-  # After parsing, validate the accelerator configuration
   validate_accelerators
 
   if [[ -z "${SENTENCE1}" || -z "${SENTENCE2}" ]]; then
@@ -278,4 +286,3 @@ main() {
 }
 
 main "$@"
-
