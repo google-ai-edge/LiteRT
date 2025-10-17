@@ -26,28 +26,45 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
-#include "litert/runtime/ahwb_buffer.h"
-#include "litert/runtime/custom_buffer.h"
-#include "litert/runtime/dmabuf_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/fastrpc_buffer.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gl_texture.h"
-#include "litert/runtime/ion_buffer.h"
+
+#if !defined(LITERT_DISABLE_GPU)
+#include "litert/runtime/custom_buffer.h"
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "litert/c/litert_gl_types.h"
+#include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gl_texture.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+#if LITERT_HAS_ION_SUPPORT
+#include "litert/runtime/ion_buffer.h"
+#endif  // LITERT_HAS_ION_SUPPORT
+
+#if LITERT_HAS_FASTRPC_SUPPORT
+#include "litert/runtime/fastrpc_buffer.h"
+#endif  // LITERT_HAS_FASTRPC_SUPPORT
+
+#if LITERT_HAS_DMABUF_SUPPORT
+#include "litert/runtime/dmabuf_buffer.h"
+#endif  // LITERT_HAS_DMABUF_SUPPORT
+
+#if LITERT_HAS_AHWB_SUPPORT
+#include "litert/runtime/ahwb_buffer.h"
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 // TODO(b/449784615): Include xnnpack.h instead of duplicating the macros.
 #ifndef XNN_EXTRA_BYTES
@@ -441,6 +458,7 @@ LiteRtTensorBufferT::CreateManagedOpenClMemory(
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+#if !defined(LITERT_DISABLE_GPU)
 // TODO b/412405854 - Add CreateFromWebGpuBuffer to support zero-copy scenarios
 // of WebGPU buffer.
 Expected<LiteRtTensorBufferT::Ptr>
@@ -502,6 +520,8 @@ LiteRtTensorBufferT::CreateManagedVulkanMemory(
       std::move(*buffer));
   return tensor_buffer;
 }
+
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 #if LITERT_HAS_OPENGL_SUPPORT
 Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromGlBuffer(
@@ -644,16 +664,26 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     case kLiteRtTensorBufferTypeWebGpuImageBuffer:
     case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
     case kLiteRtTensorBufferTypeWebGpuBufferPacked: {
+#if !defined(LITERT_DISABLE_GPU)
       return CreateManagedWebGpuBuffer(env, tensor_type, buffer_type,
                                        buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "LiteRT GPU is disabled.");
+#endif  // !defined(LITERT_DISABLE_GPU)
     }
     case kLiteRtTensorBufferTypeMetalBuffer:
     case kLiteRtTensorBufferTypeMetalBufferFp16:
     case kLiteRtTensorBufferTypeMetalTexture:
     case kLiteRtTensorBufferTypeMetalTextureFp16:
     case kLiteRtTensorBufferTypeMetalBufferPacked: {
+#if !defined(LITERT_DISABLE_GPU)
       return CreateManagedMetalMemory(env, tensor_type, buffer_type,
                                       buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "LiteRT GPU is disabled.");
+#endif  // !defined(LITERT_DISABLE_GPU)
     }
     case kLiteRtTensorBufferTypeVulkanBuffer:
     case kLiteRtTensorBufferTypeVulkanBufferFp16:
@@ -662,8 +692,13 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     case kLiteRtTensorBufferTypeVulkanImageBuffer:
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
     case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+#if !defined(LITERT_DISABLE_GPU)
       return CreateManagedVulkanMemory(env, tensor_type, buffer_type,
                                        buffer_size);
+#else
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "LiteRT GPU is disabled.");
+#endif  // !defined(LITERT_DISABLE_GPU)
     }
     case kLiteRtTensorBufferTypeUnknown:
     default:
@@ -886,6 +921,7 @@ Expected<litert::internal::GlBuffer*> LiteRtTensorBufferT::GetGlBuffer() {
 }
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
+#if !defined(LITERT_DISABLE_GPU)
 Expected<litert::internal::CustomBuffer*>
 LiteRtTensorBufferT::GetCustomBuffer() {
   if (IsWebGpuMemory(buffer_type_) || IsVulkanMemory(buffer_type_) ||
@@ -895,6 +931,7 @@ LiteRtTensorBufferT::GetCustomBuffer() {
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "Unexpected tensor buffer type");
 }
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_RETURN_IF_ERROR(is_locked_ == false,
@@ -983,10 +1020,15 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     case kLiteRtTensorBufferTypeVulkanImageBuffer:
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
     case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+#if !defined(LITERT_DISABLE_GPU)
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
                               custom_buffer->Lock(mode));
       return host_memory_ptr;
+#else
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "LiteRT GPU support is disabled");
+#endif  // !defined(LITERT_DISABLE_GPU)
     }
     case kLiteRtTensorBufferTypeGlTexture:
     case kLiteRtTensorBufferTypeUnknown: {
@@ -1053,8 +1095,13 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
     case kLiteRtTensorBufferTypeVulkanImageBuffer:
     case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
     case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+#if !defined(LITERT_DISABLE_GPU)
       LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
       return custom_buffer->Unlock();
+#else
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "LiteRT GPU support is disabled");
+#endif  // !defined(LITERT_DISABLE_GPU)
     }
     case kLiteRtTensorBufferTypeHostMemory:
     case kLiteRtTensorBufferTypeIon:

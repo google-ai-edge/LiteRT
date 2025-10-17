@@ -171,9 +171,13 @@ cc_library(
         ":litert_environment_options",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
     ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/runtime/accelerators:auto_registration",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//litert/build_common:build_include_gpu_enabled": [
             "//litert/runtime:gpu_environment",
         ],
@@ -426,7 +430,12 @@ cc_library(
         "//litert/runtime:tensor_buffer",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
-    ] + gles_deps(),
+    ] + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            "//litert/runtime:custom_buffer",
+        ],
+        "//conditions:default": [],
+    }) + gles_deps(),
     alwayslink = 1,
 )
 
@@ -465,12 +474,12 @@ cc_test(
         ":litert_common",
         ":litert_environment",
         ":litert_environment_options",
-        ":litert_model",
+        ":litert_platform_support",
         ":litert_tensor_buffer",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_any",
         "//litert/cc:litert_layout",
-        "//litert/runtime:tensor_buffer",
+        "//litert/runtime:event",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -483,6 +492,7 @@ cc_test(
     deps = [
         ":litert_common",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
     ],
 )

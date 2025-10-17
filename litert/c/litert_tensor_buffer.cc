@@ -24,10 +24,12 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 
+#if !defined(LITERT_DISABLE_GPU)
+#include "litert/runtime/custom_buffer.h"
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
