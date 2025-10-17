@@ -39,10 +39,18 @@ class QnnModelTest : public testing::TestWithParam<
 };
 
 inline auto GetDefaultQnnModelParams() {
+#if !defined(__ANDROID__)
+  std::vector<std::string_view> socs = {"SM8650", "SM8750", "SM8850"};
+#else
+  // On device, qnn manager will use online soc for compilation.
+  std::vector<std::string_view> socs = {"SOC_UNKNOWN"};
+#endif
   return ::testing::Combine(::testing::Values(kTestingDefaultQnnOptions),
-                            ::testing::Values("SM8650", "SM8750", "SM8850"));
+                            ::testing::ValuesIn(socs));
 }
 
+void ConvertDataFromInt8ToInt2(const std::vector<std::int8_t>& src,
+                               std::vector<std::uint8_t>& dst);
 }  // namespace litert::qnn
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_QNN_BACKEND_TEST_TEST_UTILS_H_
