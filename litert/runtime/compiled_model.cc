@@ -919,6 +919,11 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       if (type == kLiteRtTensorBufferTypeHostMemory) {
         buffer_requires_cpu_sync = true;
       }
+#if defined(__ANDROID__)
+      else if (type == kLiteRtTensorBufferTypeFastRpc) {
+        backend_requires_cpu_buffer = true;
+      }
+#endif
     }
     // At this point, none of the supported buffer types of the backend matches
     // the buffer type of the tensor. Also, the backend does not support host
