@@ -39,8 +39,8 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 tensorflow_source_repo(
     name = "org_tensorflow",
     sha256 = "",
-    strip_prefix = "tensorflow-master",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/master.tar.gz"],
+    strip_prefix = "tensorflow-2.19.0",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/v2.19.0.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
