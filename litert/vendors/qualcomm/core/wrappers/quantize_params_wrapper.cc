@@ -137,7 +137,8 @@ void AxisScaleOffsetQuantizeParamsWrapper::GetZeroPoints(
 
 BwScaleOffsetQuantizeParamsWrapper::BwScaleOffsetQuantizeParamsWrapper(
     const std::uint32_t bitwidth, const float scale,
-    const std::int32_t zero_point) {
+    const std::int32_t zero_point)
+    : bitwidth_(bitwidth) {
   qnn_quantize_param_.encodingDefinition = QNN_DEFINITION_DEFINED;
   qnn_quantize_param_.quantizationEncoding =
       QNN_QUANTIZATION_ENCODING_BW_SCALE_OFFSET;
@@ -160,7 +161,9 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
     const std::uint32_t bitwidth, const std::int32_t axis,
     const absl::Span<const float> scales,
     const absl::Span<const std::int32_t> zero_points)
-    : scales_(scales.size()), offsets_(zero_points.size()) {
+    : scales_(scales.size()),
+      offsets_(zero_points.size()),
+      bitwidth_(bitwidth) {
   assert(scales.size() == zero_points.size());
   for (size_t i = 0; i < scales.size(); ++i) {
     scales_[i] = scales[i];
@@ -180,7 +183,8 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
     const BwAxisScaleOffsetQuantizeParamsWrapper& rhs)
     : qnn_quantize_param_{rhs.qnn_quantize_param_},
       scales_{rhs.scales_},
-      offsets_{rhs.offsets_} {
+      offsets_{rhs.offsets_},
+      bitwidth_{rhs.bitwidth_} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
 }
@@ -189,7 +193,8 @@ BwAxisScaleOffsetQuantizeParamsWrapper::BwAxisScaleOffsetQuantizeParamsWrapper(
     BwAxisScaleOffsetQuantizeParamsWrapper&& rhs)
     : qnn_quantize_param_{rhs.qnn_quantize_param_},
       scales_{std::move(rhs.scales_)},
-      offsets_{std::move(rhs.offsets_)} {
+      offsets_{std::move(rhs.offsets_)},
+      bitwidth_{std::move(rhs.bitwidth_)} {
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.scales = scales_.data();
   qnn_quantize_param_.bwAxisScaleOffsetEncoding.offsets = offsets_.data();
 }

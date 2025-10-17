@@ -99,7 +99,10 @@ class BwScaleOffsetQuantizeParamsWrapper final {
 
   void CloneTo(Qnn_QuantizeParams_t& dst);
 
+  std::uint32_t GetBitwidth() const { return bitwidth_; }
+
  private:
+  std::uint32_t bitwidth_{0};
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
 };
 
@@ -120,10 +123,13 @@ class BwAxisScaleOffsetQuantizeParamsWrapper final {
 
   void SetAxis(const std::int32_t axis);
 
+  std::uint32_t GetBitwidth() const { return bitwidth_; }
+
  private:
   Qnn_QuantizeParams_t qnn_quantize_param_ = QNN_QUANTIZE_PARAMS_INIT;
   std::vector<float> scales_;
   std::vector<int32_t> offsets_;
+  std::uint32_t bitwidth_{0};
 };
 
 using QuantizeParamsWrapperVariant = std::variant<

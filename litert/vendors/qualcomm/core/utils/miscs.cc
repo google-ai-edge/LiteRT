@@ -60,6 +60,35 @@ void ConvertDataFromInt4ToInt8(const void* src, std::vector<std::int8_t>& dst,
   }
 }
 
+void ConvertDataFromInt2ToInt8(const void* src, std::vector<std::int8_t>& dst,
+                               size_t num_bytes) {
+  dst.clear();
+  dst.reserve(num_bytes * 4);
+  const std::uint8_t* byte_data = static_cast<const std::uint8_t*>(src);
+  for (size_t i = 0; i < num_bytes; i++) {
+    std::uint8_t byte = byte_data[i];
+
+    // Mask: 0000 0011
+    std::int8_t num1 = byte & 0x03;
+    std::int8_t num2 = (byte >> 2) & 0x03;
+    std::int8_t num3 = (byte >> 4) & 0x03;
+    std::int8_t num4 = (byte >> 6) & 0x03; 
+
+    // Perform sign extension on all four numbers
+    // The sign bit for a 2-bit number is the 2nd bit (mask 0x02)
+    // The sign extension mask is 0xFC (binary 1111 1100)
+    if (num1 & 0x02) num1 |= 0xFC;
+    if (num2 & 0x02) num2 |= 0xFC;
+    if (num3 & 0x02) num3 |= 0xFC;
+    if (num4 & 0x02) num4 |= 0xFC;
+
+    dst.emplace_back(num1);
+    dst.emplace_back(num2);
+    dst.emplace_back(num3);
+    dst.emplace_back(num4);
+  }
+}
+
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
   std::error_code err;
   err.clear();
