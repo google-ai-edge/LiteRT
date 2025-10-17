@@ -191,6 +191,11 @@ cc_library(
     name = "litert_environment_options",
     srcs = ["litert_environment_options.cc"],
     hdrs = ["litert_environment_options.h"],
+    visibility = [
+        "//litert:litert_c_users",
+        # TODO: REMOVE.
+        "//third_party/odml/litert_lm/runtime/executor:__subpackages__",
+    ],
     deps = [
         ":litert_any",
         ":litert_common",
@@ -941,6 +946,12 @@ cc_library(
         "//conditions:default": [],
     }),
     linkstatic = 1,
+    visibility = [
+        "//litert:litert_c_users",
+        # TODO(b/454666070): Remove visibility.
+        "//litert/samples/async_segmentation:__pkg__",
+        "//third_party/odml/litert_lm/android/javatests/com/google/ai/edge/litertlm:__pkg__",
+    ],
     deps = [
         # only depend on headers
         "@com_google_absl//absl/types:span",

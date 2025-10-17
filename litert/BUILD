@@ -67,6 +67,7 @@ package_group(
 package_group(
     name = "litert_cc_users_static_link",
     packages = [
+        "//android/aicore/backend/mldrift_gpu/...",
         # copybara:uncomment "INTERNAL_EDGETPU_LLM_PROTOTYPE/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//third_party/darwinn/litert/...",
@@ -133,9 +134,10 @@ package_group(
 package_group(
     name = "litert_c_users",
     includes = [
-        ":litert_cc_users_dynamic_link",
-        ":litert_cc_users_static_link",
         ":litert_internal_users",
+    ],
+    packages = [
+        "//litert/vendors/...",
     ],
 )
 

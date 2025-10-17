@@ -60,6 +60,11 @@ cc_library(
     name = "litert_qualcomm_options",
     srcs = ["litert_qualcomm_options.cc"],
     hdrs = ["litert_qualcomm_options.h"],
+    visibility = [
+        "//litert:litert_c_users",
+        # TODO: Remove below.
+        "//third_party/odml/litert_lm/runtime/executor:__pkg__",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",

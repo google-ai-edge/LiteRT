@@ -13,34 +13,28 @@
 // limitations under the License.
 
 #include <cstring>
-#include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/internal/litert_dispatch_delegate.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/core/model/model_buffer.h"
-#include "litert/core/util/flatbuffer_tools.h"
-#include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_cascade_model_test_vectors.h"
-#include "tflite/c/c_api_opaque.h"
-#include "tflite/c/common.h"
-#include "tflite/interpreter.h"
-#include "tflite/signature_runner.h"
 
 using litert::testing::MakeRuntimeFromTestFileWithNpuModel;
 using testing::ElementsAre;
@@ -107,55 +101,50 @@ TEST(DispatchDelegate, CompiledModel) {
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::FastRpc, TensorBufferType::DmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::FastRpc, TensorBufferType::DmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg2,
+      std::vector<TensorBufferType> input_buffer_types_arg2,
       input_buffer_requirements_arg2.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::FastRpc, TensorBufferType::DmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg3"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg3,
+      std::vector<TensorBufferType> input_buffer_types_arg3,
       input_buffer_requirements_arg3.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg3,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::FastRpc, TensorBufferType::DmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           signature_index,
           /*output_name=*/"tfl.custom2"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                                               kLiteRtTensorBufferTypeDmaBuf));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types,
+              ElementsAre(TensorBufferType::FastRpc, TensorBufferType::DmaBuf));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.

@@ -23,9 +23,10 @@
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -305,7 +306,9 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
   auto types = std::move(*types_or);
   PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
-    PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
+    PyList_SetItem(
+        py_list, i,
+        PyLong_FromLong(static_cast<LiteRtTensorBufferType>(types[i])));
   }
   PyDict_SetItemString(dict, "supported_types", py_list);
   Py_DECREF(py_list);
@@ -342,7 +345,9 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
   auto types = std::move(*types_or);
   PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
-    PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
+    PyList_SetItem(
+        py_list, i,
+        PyLong_FromLong(static_cast<LiteRtTensorBufferType>(types[i])));
   }
   PyDict_SetItemString(dict, "supported_types", py_list);
   Py_DECREF(py_list);
