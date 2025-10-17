@@ -96,7 +96,7 @@ jobs:
             -DANDROID_PLATFORM="26" \
             -DTFLITE_ENABLE_XNNPACK=ON \
             -DTFLITE_ENABLE_GPU=ON \
-            #-DTFLITE_HOST_TOOLS_DIR="$GITHUB_WORKSPACE/tflite/flatc-native-build"
+           
 
           cmake --build . -j --target tensorflow-lite
 
