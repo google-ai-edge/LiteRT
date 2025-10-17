@@ -32,10 +32,10 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 

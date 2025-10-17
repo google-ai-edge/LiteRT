@@ -41,7 +41,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/cc/internal:litert_op_options",
         "@com_google_absl//absl/strings:str_format",
     ],
 )
@@ -205,7 +205,7 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc/dynamic_runtime:litert_model",
-        "//litert/cc/dynamic_runtime:litert_rewriter",
+        "//litert/cc/internal:litert_rewriter",
     ],
 )
 

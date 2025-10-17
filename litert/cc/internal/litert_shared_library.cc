@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 
 #if defined(_GNU_SOURCE) && !defined(__ANDROID__) && !defined(__APPLE__)
 #define LITERT_IMPLEMENT_SHARED_LIBRARY_INFO 1
