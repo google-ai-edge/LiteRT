@@ -167,7 +167,7 @@ TEST(ScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
   wrapper1.CloneTo(dst1);
   ScaleOffsetQuantizeParamsWrapper wrapper2(dst1.scaleOffsetEncoding);
   Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
-  wrapper1.CloneTo(dst2);
+  wrapper2.CloneTo(dst2);
   EXPECT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
   EXPECT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
   EXPECT_FLOAT_EQ(dst1.scaleOffsetEncoding.scale,
@@ -184,7 +184,7 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
   wrapper1.CloneTo(dst1);
   AxisScaleOffsetQuantizeParamsWrapper wrapper2(dst1.axisScaleOffsetEncoding);
   Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
-  wrapper1.CloneTo(dst2);
+  wrapper2.CloneTo(dst2);
   EXPECT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
   EXPECT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
   EXPECT_EQ(dst1.axisScaleOffsetEncoding.numScaleOffsets,
@@ -195,6 +195,98 @@ TEST(AxisScaleOffsetQuantizeParamsWrapperTest, QnnConstructorTest) {
     EXPECT_EQ(dst1.axisScaleOffsetEncoding.scaleOffset[i].offset,
               dst2.axisScaleOffsetEncoding.scaleOffset[i].offset);
   }
+}
+
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, CopyConstructorTest) {
+  BwScaleOffsetQuantizeParamsWrapper wrapper1(4, 1.5f, 10);
+  Qnn_QuantizeParams_t dst1 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper1.CloneTo(dst1);
+  BwScaleOffsetQuantizeParamsWrapper wrapper2(wrapper1);
+  Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper2.CloneTo(dst2);
+  ASSERT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
+  ASSERT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
+  ASSERT_EQ(dst1.bwScaleOffsetEncoding.bitwidth,
+            dst2.bwScaleOffsetEncoding.bitwidth);
+  ASSERT_FLOAT_EQ(dst1.bwScaleOffsetEncoding.scale,
+                  dst2.bwScaleOffsetEncoding.scale);
+  ASSERT_EQ(dst1.bwScaleOffsetEncoding.offset,
+            dst2.bwScaleOffsetEncoding.offset);
+}
+
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, MoveConstructorTest) {
+  BwScaleOffsetQuantizeParamsWrapper wrapper1(4, 1.5f, 10);
+  Qnn_QuantizeParams_t dst1 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper1.CloneTo(dst1);
+  BwScaleOffsetQuantizeParamsWrapper wrapper2(std::move(wrapper1));
+  Qnn_QuantizeParams_t dst2 = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper2.CloneTo(dst2);
+  ASSERT_EQ(dst1.encodingDefinition, dst2.encodingDefinition);
+  ASSERT_EQ(dst1.quantizationEncoding, dst2.quantizationEncoding);
+  ASSERT_EQ(dst1.bwScaleOffsetEncoding.bitwidth,
+            dst2.bwScaleOffsetEncoding.bitwidth);
+  ASSERT_FLOAT_EQ(dst1.bwScaleOffsetEncoding.scale,
+                  dst2.bwScaleOffsetEncoding.scale);
+  ASSERT_EQ(dst1.bwScaleOffsetEncoding.offset,
+            dst2.bwScaleOffsetEncoding.offset);
+}
+
+TEST(BwScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
+  BwScaleOffsetQuantizeParamsWrapper wrapper(4, 1.5f, 10);
+  ASSERT_EQ(wrapper.GetBitwidth(), 4);
+}
+
+TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, CopyConstructorTest) {
+  std::uint32_t bw = 4;
+  std::int32_t axis = 1;
+  std::vector<float> scales = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points = {10, 20};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper1(bw, axis, scales,
+                                                  zero_points);
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper2(wrapper1);
+  Qnn_QuantizeParams_t dst = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper2.CloneTo(dst);
+  ASSERT_EQ(dst.encodingDefinition, QNN_DEFINITION_DEFINED);
+  ASSERT_EQ(dst.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.bitwidth, bw);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.axis, axis);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.numElements, scales.size());
+  for (size_t i = 0; i < scales.size(); ++i) {
+    ASSERT_FLOAT_EQ(dst.bwAxisScaleOffsetEncoding.scales[i], scales[i]);
+    ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.offsets[i], -zero_points[i]);
+  }
+}
+
+TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, MoveConstructorTest) {
+  std::uint32_t bw = 4;
+  std::int32_t axis = 1;
+  std::vector<float> scales = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points = {10, 20};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper1(bw, axis, scales,
+                                                  zero_points);
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper2(std::move(wrapper1));
+  Qnn_QuantizeParams_t dst = QNN_QUANTIZE_PARAMS_INIT;
+  wrapper2.CloneTo(dst);
+  ASSERT_EQ(dst.encodingDefinition, QNN_DEFINITION_DEFINED);
+  ASSERT_EQ(dst.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_BW_AXIS_SCALE_OFFSET);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.bitwidth, bw);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.axis, axis);
+  ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.numElements, scales.size());
+  for (size_t i = 0; i < scales.size(); ++i) {
+    ASSERT_FLOAT_EQ(dst.bwAxisScaleOffsetEncoding.scales[i], scales[i]);
+    ASSERT_EQ(dst.bwAxisScaleOffsetEncoding.offsets[i], -zero_points[i]);
+  }
+}
+
+TEST(BwAxisScaleOffsetQuantizeParamsWrapperTest, GetBitwidthTest) {
+  std::uint32_t bw = 4;
+  std::int32_t axis = 1;
+  std::vector<float> scales = {1.5f, 2.5f};
+  std::vector<std::int32_t> zero_points = {10, 20};
+  BwAxisScaleOffsetQuantizeParamsWrapper wrapper(bw, axis, scales, zero_points);
+  ASSERT_EQ(wrapper.GetBitwidth(), 4);
 }
 }  // namespace
 }  // namespace qnn

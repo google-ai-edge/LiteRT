@@ -458,7 +458,7 @@ TEST(TensorWrapperTest, ConstQnnTensorPerTensorQuantConstructTest) {
   EXPECT_EQ(ref.v2.clientBuf.data, qnn_tensor.v2.clientBuf.data);
 }
 
-template <typename T>
+template <typename T, bool is_quant_defined = false>
 void ValidateTensor(const Qnn_Tensor_t& tensor,
                     const Qnn_DataType_t expected_datatype,
                     const std::vector<uint32_t>& expected_dims,
@@ -468,8 +468,13 @@ void ValidateTensor(const Qnn_Tensor_t& tensor,
   EXPECT_EQ(tensor.v2.type, QNN_TENSOR_TYPE_APP_WRITE);
   EXPECT_EQ(tensor.v2.dataFormat, QNN_TENSOR_DATA_FORMAT_FLAT_BUFFER);
   EXPECT_EQ(tensor.v2.dataType, expected_datatype);
-  EXPECT_EQ(tensor.v2.quantizeParams.encodingDefinition,
-            QNN_DEFINITION_UNDEFINED);
+  if constexpr (is_quant_defined) {
+    EXPECT_EQ(tensor.v2.quantizeParams.encodingDefinition,
+              QNN_DEFINITION_DEFINED);
+  } else {
+    EXPECT_EQ(tensor.v2.quantizeParams.encodingDefinition,
+              QNN_DEFINITION_UNDEFINED);
+  }
   EXPECT_EQ(tensor.v2.memType, QNN_TENSORMEMTYPE_RAW);
 
   // Validate dimensions.
@@ -486,12 +491,17 @@ void ValidateTensor(const Qnn_Tensor_t& tensor,
       ::testing::ElementsAreArray(expected_data));
 }
 
-template <typename T, bool is_int4 = false>
+template <typename T, bool is_int4 = false, bool is_int2 = false>
 void RunQnnTensorImplicitCopyTest(Qnn_DataType_t datatype) {
   const std::vector<std::uint32_t> kDims = {1, 1, 4};
-  std::vector<T> data = {1, 2, 3, 4};
+  std::vector<T> data = {1, 0, 1, 0};
+  QuantizeParamsWrapperVariant quant_param;
   if constexpr (is_int4) {
     std::vector<int8_t> packed_data;
+    // TODO (chunhsue-qti): Maybe BwAxisScaleOffsetQuantizeParamsWrapper should
+    // also be tested.
+    quant_param.emplace<::qnn::BwScaleOffsetQuantizeParamsWrapper>(
+        ::qnn::kQuantBitWidth4, 1.0f, 0);
     packed_data.reserve(data.size() / 2);
     for (size_t i = 0; i < data.size() / 2; ++i) {
       uint8_t low_nibble = data[i * 2] & 0x0F;
@@ -499,25 +509,38 @@ void RunQnnTensorImplicitCopyTest(Qnn_DataType_t datatype) {
       packed_data.emplace_back((high_nibble << 4) | low_nibble);
     }
     data = packed_data;
+  } else if constexpr (is_int2) {
+    quant_param.emplace<::qnn::BwScaleOffsetQuantizeParamsWrapper>(
+        ::qnn::kQuantBitWidth2, 1.0f, 0);
+    std::vector<int8_t> packed_data;
+    ConvertDataFromInt8ToInt2(data, packed_data);
+    data = packed_data;
   }
 
   const auto data_size = data.size() * sizeof(T);
   const void* data_ptr = static_cast<const void*>(data.data());
 
-  TensorWrapper tensor_wrapper{"",       QNN_TENSOR_TYPE_APP_WRITE,
-                               datatype, QuantizeParamsWrapperVariant(),
-                               kDims,    static_cast<uint32_t>(data_size),
-                               data_ptr, false};
+  TensorWrapper tensor_wrapper{
+      "",    QNN_TENSOR_TYPE_APP_WRITE,        datatype, quant_param,
+      kDims, static_cast<uint32_t>(data_size), data_ptr, false};
 
   Qnn_Tensor_t cloned_tensor;
   tensor_wrapper.CloneTo(cloned_tensor);
   Qnn_Tensor_t& ref_tensor = tensor_wrapper.GetQnnTensor();
   if constexpr (is_int4) {
     std::vector<std::int8_t> int8_data;
-    ConvertDataFromInt4ToInt8(data.data(), int8_data, data.size());
-    ValidateTensor(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
-                   int8_data);
-    ValidateTensor(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims, int8_data);
+    ConvertDataFromInt4ToInt8(data.data(), data.size(), int8_data);
+    ValidateTensor<int8_t, true>(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8,
+                                 kDims, int8_data);
+    ValidateTensor<int8_t, true>(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
+                                 int8_data);
+  } else if constexpr (is_int2) {
+    std::vector<std::int8_t> int8_data;
+    ConvertDataFromInt2ToInt8(data.data(), data.size(), int8_data);
+    ValidateTensor<int8_t, true>(cloned_tensor, QNN_DATATYPE_SFIXED_POINT_8,
+                                 kDims, int8_data);
+    ValidateTensor<int8_t, true>(ref_tensor, QNN_DATATYPE_SFIXED_POINT_8, kDims,
+                                 int8_data);
   } else {
     ValidateTensor(cloned_tensor, datatype, kDims, data);
     ValidateTensor(ref_tensor, datatype, kDims, data);
@@ -537,7 +560,10 @@ TEST(TensorWrapperDatatypeTest, SFIXED_POINT_16) {
   RunQnnTensorImplicitCopyTest<std::int16_t>(QNN_DATATYPE_SFIXED_POINT_16);
 }
 TEST(TensorWrapperDatatypeTest, SFIXED_POINT_4) {
-  RunQnnTensorImplicitCopyTest<std::int8_t, true>(QNN_DATATYPE_SFIXED_POINT_4);
+  RunQnnTensorImplicitCopyTest<std::int8_t, true>(QNN_DATATYPE_SFIXED_POINT_8);
+}
+TEST(TensorWrapperDatatypeTest, SFIXED_POINT_2) {
+  RunQnnTensorImplicitCopyTest<std::int8_t, false, true>(QNN_DATATYPE_SFIXED_POINT_8);
 }
 
 }  // namespace
