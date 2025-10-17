@@ -41,7 +41,6 @@ cc_library_with_testonly_vis(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_consts",
-        "//litert/core:filesystem",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",
