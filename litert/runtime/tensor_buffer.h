@@ -32,18 +32,23 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
-#include "litert/runtime/gl_buffer.h"
-#include "litert/runtime/gl_texture.h"
+
+#if !defined(LITERT_DISABLE_GPU)
+#include "litert/runtime/custom_buffer.h"
+#endif  // !defined(LITERT_DISABLE_GPU)
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+#include "litert/runtime/gl_buffer.h"
+#include "litert/runtime/gl_texture.h"
+#endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert::internal {
 class GpuEnvironment;
@@ -160,7 +165,9 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#if !defined(LITERT_DISABLE_GPU)
   litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
+#endif  // !defined(LITERT_DISABLE_GPU)
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
@@ -216,11 +223,15 @@ class LiteRtTensorBufferT {
 
   using BufferVariant =
       std::variant<HostBuffer, AhwbBuffer, IonBuffer, DmaBufBuffer,
-                   FastRpcBuffer,
+                   FastRpcBuffer
 #if LITERT_HAS_OPENCL_SUPPORT
-                   litert::internal::OpenClMemory,
+                   ,
+                   litert::internal::OpenClMemory
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#if !defined(LITERT_DISABLE_GPU)
+                   ,
                    litert::internal::CustomBuffer
+#endif  // !defined(LITERT_DISABLE_GPU)
 #if LITERT_HAS_OPENGL_SUPPORT
                    ,
                    litert::internal::GlBuffer, litert::internal::GlTexture
