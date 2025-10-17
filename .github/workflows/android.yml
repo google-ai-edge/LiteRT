@@ -15,10 +15,9 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Android NDK
-      uses: nvm-actions/android-ndk-setup@v1
+      uses: nttld/setup-ndk@v1
       with:
         ndk-version: r27
-        add-to-path: false # The preset uses ANDROID_NDK_HOME directly
 
     - name: Configure host tools
       run: cmake --preset default
