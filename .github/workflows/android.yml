@@ -32,28 +32,6 @@ jobs:
           echo "$(realpath ./cmake-install/bin)" >> $GITHUB_PATH
           cmake --version
 
-      - name: Cache flatc build
-        id: cache-flatc
-        uses: actions/cache@v4
-        with:
-          path: tflite/flatc-native-build
-          key: ${{ runner.os }}-flatc-build-${{ hashFiles('tflite/tools/cmake/native_tools/flatbuffers/CMakeLists.txt') }}
-
-      - name: Build flatc host tool
-        if: steps.cache-flatc.outputs.cache-hit != 'true'
-        run: |
-          set -e
-          mkdir -p tflite/flatc-native-build
-          cd tflite/flatc-native-build
-          cmake ../tools/cmake/native_tools/flatbuffers -G Ninja
-          cmake --build .
-
-      - name: Upload flatc artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: flatc-build
-          path: tflite/flatc-native-build/
-
   build_litert:
     name: "Build LiteRT for Android"
     runs-on: LiteRT_Linux_x64
@@ -72,15 +50,6 @@ jobs:
           sh cmake_install.sh --prefix=./cmake-install --skip-license
           echo "$(realpath ./cmake-install/bin)" >> $GITHUB_PATH
           cmake --version
-
-      - name: Download flatc artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: flatc-build
-          path: tflite/flatc-native-build/
-
-      - name: Set flatc executable
-        run: chmod +x tflite/flatc-native-build/flatbuffers-flatc/bin/flatc
 
       - name: Cache Android NDK
         id: cache-ndk
