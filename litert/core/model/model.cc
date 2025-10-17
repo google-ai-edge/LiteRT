@@ -102,21 +102,28 @@ Quantization MakePerTensorQuantization(float scale, int64_t zero_point) {
 }
 
 LiteRtSignatureT MakeDefaultSignature(LiteRtSubgraph subgraph) {
-  auto tensor_name = [](auto* tensor) { return std::string(tensor->Name()); };
+  std::vector<std::string> input_names;
+  std::vector<LiteRtTensor> input_tensors;
+  input_names.reserve(subgraph->NumInputs());
+  input_tensors.reserve(subgraph->NumInputs());
+  for (auto* tensor : subgraph->Inputs()) {
+    input_names.push_back(std::string(tensor->Name()));
+    input_tensors.push_back(tensor);
+  }
 
-  auto in_start = subgraph->Inputs().cbegin();
-  auto in_end = subgraph->Inputs().cend();
-  std::vector<std::string> input_names(subgraph->NumInputs());
-  std::transform(in_start, in_end, input_names.begin(), tensor_name);
-
-  auto out_start = subgraph->Outputs().cbegin();
-  auto out_end = subgraph->Outputs().cend();
-  std::vector<std::string> output_names(subgraph->NumOutputs());
-  std::transform(out_start, out_end, output_names.begin(), tensor_name);
+  std::vector<std::string> output_names;
+  std::vector<LiteRtTensor> output_tensors;
+  output_names.reserve(subgraph->NumOutputs());
+  output_tensors.reserve(subgraph->NumOutputs());
+  for (auto* tensor : subgraph->Outputs()) {
+    output_names.push_back(std::string(tensor->Name()));
+    output_tensors.push_back(tensor);
+  }
 
   std::string name(LiteRtSignatureT::kDefaultSignatureKey);
   return LiteRtSignatureT(subgraph, std::move(input_names),
-                          std::move(output_names), std::move(name));
+                          std::move(input_tensors), std::move(output_names),
+                          std::move(output_tensors), std::move(name));
 }
 
 ::litert::Expected<LiteRtSubgraph> LookupSubgraph(
