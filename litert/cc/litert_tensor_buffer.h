@@ -26,13 +26,13 @@
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -56,20 +56,20 @@ class TensorBuffer
   // Creates a managed TensorBuffer object in a given buffer type and size.
   // The returned object is owned by the caller.
   static Expected<TensorBuffer> CreateManaged(
-      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      LiteRtEnvironment env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
 
   // The same as above, but uses the default environment.
   // Warning: This method can't be used for GPU buffers.
   static Expected<TensorBuffer> CreateManaged(
-      LiteRtTensorBufferType buffer_type, const RankedTensorType& tensor_type,
+      litert::TensorBufferType buffer_type, const RankedTensorType& tensor_type,
       size_t buffer_size) {
     switch (buffer_type) {
-      case kLiteRtTensorBufferTypeHostMemory:
-      case kLiteRtTensorBufferTypeAhwb:
-      case kLiteRtTensorBufferTypeIon:
-      case kLiteRtTensorBufferTypeDmaBuf:
-      case kLiteRtTensorBufferTypeFastRpc:
+      case litert::TensorBufferType::HostMemory:
+      case litert::TensorBufferType::Ahwb:
+      case litert::TensorBufferType::Ion:
+      case litert::TensorBufferType::DmaBuf:
+      case litert::TensorBufferType::FastRpc:
         return CreateManaged(/*env=*/nullptr, buffer_type, tensor_type,
                              buffer_size);
       default:
@@ -103,7 +103,7 @@ class TensorBuffer
 
   static Expected<TensorBuffer> CreateFromClBuffer(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
+      TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromGlBuffer(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
@@ -117,7 +117,7 @@ class TensorBuffer
 #if LITERT_HAS_METAL_SUPPORT
   static Expected<TensorBuffer> CreateFromMetalBuffer(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes);
+      TensorBufferType buffer_type, void* buffer, size_t size_bytes);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   // Creates a duplicate of the current TensorBuffer object. The returned
@@ -232,11 +232,11 @@ class TensorBuffer
     return gl_texture;
   }
 
-  Expected<LiteRtTensorBufferType> BufferType() const {
+  Expected<TensorBufferType> BufferType() const {
     LiteRtTensorBufferType tensor_buffer_type;
     LITERT_RETURN_IF_ERROR(
         LiteRtGetTensorBufferType(Get(), &tensor_buffer_type));
-    return tensor_buffer_type;
+    return TensorBufferType(tensor_buffer_type);
   }
 
   // Returns true if the tensor buffer is an OpenCL memory.

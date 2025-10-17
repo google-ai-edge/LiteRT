@@ -25,7 +25,6 @@
 #include <GLES2/gl2.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
@@ -36,6 +35,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/samples/async_segmentation/image_processor.h"
 #include "litert/samples/async_segmentation/image_utils.h"
@@ -76,7 +76,7 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 
     LITERT_ASSIGN_OR_RETURN(auto input_buffer,
                             litert::TensorBuffer::CreateManaged(
-                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                env, litert::TensorBufferType::GlBuffer,
                                 ranked_tensor_type, buffer_size));
 
     input_buffers.push_back(std::move(input_buffer));
@@ -102,7 +102,7 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
 
     LITERT_ASSIGN_OR_RETURN(auto output_buffer,
                             litert::TensorBuffer::CreateManaged(
-                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                env, litert::TensorBufferType::GlBuffer,
                                 ranked_tensor_type, buffer_size));
 
     output_buffers.push_back(std::move(output_buffer));
