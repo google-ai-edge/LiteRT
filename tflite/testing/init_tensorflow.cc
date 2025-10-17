@@ -15,7 +15,6 @@ limitations under the License.
 #include "tflite/testing/init_tensorflow.h"
 
 #include <cstdlib>
-#include <cstring>
 
 #include "tensorflow/core/platform/init_main.h"
 
