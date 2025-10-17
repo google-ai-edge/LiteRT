@@ -28,9 +28,9 @@
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/tools/culprit_finder/culprit_finder_utils.h"
 #include "litert/tools/culprit_finder/interpreter_handler.h"
 #include "litert/tools/culprit_finder/model_metadata_lib.h"

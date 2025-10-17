@@ -15,7 +15,8 @@ enum class SnapdragonModel {
   SM8550 = 43,
   SA8255 = 52,
   SM8650 = 57,
-  SM8750 = 69
+  SM8750 = 69,
+  SM8850 = 87,
 };
 
 enum class DspArch {
@@ -27,6 +28,7 @@ enum class DspArch {
   V73 = 73,  // HTP supported device
   V75 = 75,  // HTP supported device
   V79 = 79,  // HTP supported device
+  V81 = 81,  // HTP supported device
 };
 
 struct SocInfo {

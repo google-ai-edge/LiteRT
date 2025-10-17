@@ -394,12 +394,8 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
       const {
     bool async = false;
-    auto subgraph = model_.MainSubgraph();
-    if (!subgraph) {
-      return Unexpected(kLiteRtStatusErrorNotFound,
-                        "Failed to get main subgraph");
-    }
-    return RunMapWithIndexHelper(/*signature_index=*/0, *subgraph, input_map,
+    LITERT_ASSIGN_OR_RETURN(Signature signature, model_.GetSignature(0));
+    return RunMapWithIndexHelper(/*signature_index=*/0, signature, input_map,
                                  output_map, async);
   }
 
@@ -698,7 +694,7 @@ class CompiledModel
       bool& async) const;
 
   Expected<void> RunMapWithIndexHelper(
-      size_t signature_index, const Subgraph& subgraph,
+      size_t signature_index, const Signature& signature,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;

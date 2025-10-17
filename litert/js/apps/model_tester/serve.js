@@ -53,6 +53,12 @@ const host = args['public'] ? '0.0.0.0' : '127.0.0.1';
 console.log(staticFilesPath);
 
 const app = express();
+app.use((_req, res, next) => {
+  // Set headers to enable Wasm pthread emulation.
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+  next();
+});
 app.use('/', express.static(staticFilesPath));
 app.listen(args.port, host);
 console.log(

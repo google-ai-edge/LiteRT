@@ -247,8 +247,14 @@ TEST(ModelSerializeTest, WithSignature) {
   static constexpr char kOutput[] = "bar";
   static constexpr char kKey[] = "newKey";
 
-  LiteRtSignatureT signature(litert_model.MainSubgraph(), {kInput}, {kOutput},
-                             kKey);
+  LiteRtSubgraph subgraph = litert_model.MainSubgraph();
+  std::vector<std::string> input_names = {kInput};
+  std::vector<LiteRtTensor> input_tensors = {subgraph->Inputs()[0]};
+  std::vector<std::string> output_names = {kOutput};
+  std::vector<LiteRtTensor> output_tensors = {subgraph->Outputs()[0]};
+  LiteRtSignatureT signature(subgraph, std::move(input_names),
+                             std::move(input_tensors), std::move(output_names),
+                             std::move(output_tensors), kKey);
   litert_model.EmplaceSignature(std::move(signature));
 
   auto serialized = SerializeModel(std::move(*model.Get()));

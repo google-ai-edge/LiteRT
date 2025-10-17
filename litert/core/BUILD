@@ -189,9 +189,7 @@ cc_library_with_testonly_vis(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
     ],

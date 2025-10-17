@@ -31,13 +31,13 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_rng.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"

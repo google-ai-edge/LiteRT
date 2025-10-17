@@ -71,8 +71,8 @@ ABSL_FLAG(
     bool, f16_range_for_f32, false,
     "If true, will generate values f16 values stored as f32 for f32 tensors.");
 
-ABSL_FLAG(std::string, extra_models, "",
-          "Optional directory containing models which to add to the test.");
+ABSL_FLAG(std::vector<std::string>, extra_models, {},
+          "Optional list of directories, or model files to add to the test.");
 
 ABSL_FLAG(size_t, iters_per_test, 1, "Number of iterations per test.");
 

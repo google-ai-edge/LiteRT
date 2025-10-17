@@ -24,6 +24,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -111,8 +112,12 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  LITERT_ASSIGN_OR_RETURN(lib_system_,
-                          SharedLibrary::Load(path, RtldFlags::Default()));
+  auto lib_system_or = SharedLibrary::Load(path, RtldFlags::Default());
+  if (!lib_system_or) {
+    LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
+    return lib_system_or.Error().Status();
+  }
+  lib_system_ = std::move(lib_system_or.Value());
   return kLiteRtStatusOk;
 }
 

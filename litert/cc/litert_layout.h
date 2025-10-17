@@ -25,7 +25,7 @@
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
-#include "litert/cc/litert_consts.h"
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 

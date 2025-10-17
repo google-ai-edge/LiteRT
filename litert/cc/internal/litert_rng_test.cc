@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_rng.h"
+#include "litert/cc/internal/litert_rng.h"
 
 #include <bitset>
 #include <chrono>  // NOLINT
@@ -31,7 +31,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/litert_numerics.h"
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"
 

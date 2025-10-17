@@ -121,11 +121,11 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_google_tensor_options",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
@@ -138,11 +138,11 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_qualcomm_options",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
@@ -156,7 +156,24 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_mediatek_options",
-        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["litert_intel_openvino_options.cc"],
+    hdrs = ["litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
@@ -164,6 +181,18 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
+)
+
+cc_test(
+    name = "litert_intel_openvino_options_test",
+    srcs = ["litert_intel_openvino_options_test.cc"],
+    deps = [
+        ":litert_intel_openvino_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(

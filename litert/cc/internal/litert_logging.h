@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_LOGGING_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_LOGGING_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_LOGGING_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_LOGGING_H_
 
 #include <cstddef>
 #include <ostream>
@@ -103,4 +103,4 @@ inline std::string HumanReadableSize(size_t bytes) {
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_LOGGING_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_LOGGING_H_

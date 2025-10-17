@@ -55,12 +55,12 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/cc/litert_tensor_buffer_utils.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
@@ -187,6 +187,15 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       resolver.AddCustom(op_name, &sStubRegistration);
     }
   }
+  #ifdef __EMSCRIPTEN__
+  else if (hardware_accelerators & kLiteRtHwAcceleratorWebNn) {
+    const char* accelerator_supported_custom_ops[] = {
+        "Convolution2DTransposeBias"};
+    for (const auto& op_name : accelerator_supported_custom_ops) {
+      resolver.AddCustom(op_name, &sStubRegistration);
+    }
+  }
+#endif  // __EMSCRIPTEN__
 
   tflite::InterpreterOptions interpreter_options;
   interpreter_options.SetUseSignatureTensorNames(true);

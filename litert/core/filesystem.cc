@@ -25,9 +25,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 
 namespace litert::internal {
 
@@ -149,6 +147,11 @@ Expected<void> MkDir(absl::string_view path) {
         absl::StrFormat("Failed to create directory: %s", std_path.c_str()));
   }
   return {};
+}
+
+Expected<std::string> Parent(absl::string_view path) {
+  auto std_path = MakeStdPath(path);
+  return std_path.parent_path().generic_string();
 }
 
 }  // namespace litert::internal

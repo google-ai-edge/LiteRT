@@ -95,6 +95,11 @@ litert_device_test(
         "//litert/test:testdata/simple_model_google_tensor.bin",
         "//litert/test:testdata/simple_model_npu.tflite",
     ],
+    # TODO: google_tensor team fix visibility for fence deps.
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
@@ -124,6 +129,11 @@ litert_device_test(
         "//tools/cc_target_os:android": ["-layering_check"],
         "//conditions:default": [],
     }),
+    # TODO: google_tensor team fix visibility for fence deps.
+    tags = [
+        "nobuilder",
+        "notap",
+    ],
     deps = [
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",

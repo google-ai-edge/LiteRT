@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl

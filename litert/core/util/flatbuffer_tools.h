@@ -25,8 +25,8 @@
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_consts.h"
 #include "litert/cc/litert_expected.h"
 #include "tflite/converter/allocation.h"
 #include "tflite/model_builder.h"

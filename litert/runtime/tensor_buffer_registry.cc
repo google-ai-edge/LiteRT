@@ -18,8 +18,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_tensor_buffer_utils.h"
 
 namespace litert {
 namespace internal {

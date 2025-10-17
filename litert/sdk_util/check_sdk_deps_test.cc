@@ -26,7 +26,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/litert_logging.h"
+#include "litert/cc/internal/litert_logging.h"
 #include "litert/test/common.h"
 #include "QnnCommon.h"  // from @qairt  // IWYU pragma: keep
 #include "System/QnnSystemCommon.h"  // from @qairt  // IWYU pragma: keep

@@ -162,6 +162,8 @@ litert_device_test(
     backend_id = "mediatek",
     deps = [
         "//litert/cc:litert_shared_library",
+        "//litert/cc/options:litert_mediatek_options",
+        "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_googletest//:gtest_main",
     ],
@@ -209,7 +211,8 @@ litert_device_test(
 #
 # GOOGLE_TENSOR_GUITAR_TARGS_SMALL = [
 #     ":google_tensor_smoketest",
-#     "//litert/runtime/dispatch:dispatch_delegate_google_tensor_test",
+#     # TODO: lukeboyer - Reenable once vis is updated.
+#     # "//litert/runtime/dispatch:dispatch_delegate_google_tensor_test",
 #     "//litert/runtime/dispatch:dispatch_delegate_cascade_google_tensor_test",
 #     "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_google_tensor_test",
 #     "//litert/cc:litert_compiled_model_gpu_device_test",

@@ -30,9 +30,9 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_consts.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
@@ -371,6 +371,20 @@ class Signature : public internal::NonOwnedHandle<LiteRtSignature> {
     }
     return output_names;
   }
+
+  // Returns the input tensor with the given input signature name in the
+  // signature entry.
+  Expected<Tensor> InputTensor(absl::string_view name) const;
+
+  // Returns the input tensor at the given index in the signature entry.
+  Expected<Tensor> InputTensor(size_t index) const;
+
+  // Returns the output tensor with the given output signature name in the
+  // signature entry.
+  Expected<Tensor> OutputTensor(absl::string_view name) const;
+
+  // Returns the output tensor at the given index in the signature entry.
+  Expected<Tensor> OutputTensor(size_t index) const;
 };
 
 // Model. C++ equivalent of LiteRtModel.
@@ -518,15 +532,19 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   // Returns the tensor type for the given n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
-    LITERT_ASSIGN_OR_RETURN(auto subgraph, Subgraph(signature_index));
-    return subgraph.Inputs()[input_index].RankedTensorType();
+    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const Tensor& tensor,
+                            signature.InputTensor(input_index));
+    return tensor.RankedTensorType();
   }
 
   // Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       size_t signature_index, absl::string_view input_name) const {
-    LITERT_ASSIGN_OR_RETURN(auto subgraph, Subgraph(signature_index));
-    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph.Input(input_name));
+    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(auto tensor, signature.InputTensor(input_name));
     return tensor.RankedTensorType();
   }
 
@@ -539,15 +557,19 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   // Returns the tensor type for the given n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
-    auto subgraph = Subgraph(signature_index);
-    return subgraph->Outputs()[output_index].RankedTensorType();
+    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(const Tensor& tensor,
+                            signature.OutputTensor(output_index));
+    return tensor.RankedTensorType();
   }
 
   // Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       size_t signature_index, absl::string_view output_name) const {
-    auto subgraph = Subgraph(signature_index);
-    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph->Output(output_name));
+    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
+                            GetSignature(signature_index));
+    LITERT_ASSIGN_OR_RETURN(auto tensor, signature.OutputTensor(output_name));
     return tensor.RankedTensorType();
   }
 

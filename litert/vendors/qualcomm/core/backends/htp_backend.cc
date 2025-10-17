@@ -77,22 +77,47 @@ bool HtpBackend::Init(const Options& options,
     return false;
   }
 
-  // Soc Info
+  // Starting from QAIRT 2.39, platform information will be available even when
+  // this API is called during offline preparation. However, it will always
+  // return the default SoC info (SM8350). If user specifies a SoC, we will
+  // override the default.
+  std::optional<::qnn::SocInfo> soc_info_online;
   auto local_qnn_device_platform_info = CreateDevicePlatformInfo();
   if (local_qnn_device_platform_info) {
-    QNN_LOG_INFO("Apply deviceGetPlatformInfo for SoC info.");
-    auto soc_info_online = FindSocInfo(static_cast<::qnn::SnapdragonModel>(
-        local_qnn_device_platform_info->v1.hwDevices->v1.deviceInfoExtension
-            ->onChipDevice.socModel));
-    if (soc_info_online.has_value()) {
-      soc_info_ = *soc_info_online;
-    }
+    auto online_soc_model = local_qnn_device_platform_info->v1.hwDevices->v1
+                                .deviceInfoExtension->onChipDevice.socModel;
+    soc_info_online =
+        FindSocInfo(static_cast<::qnn::SnapdragonModel>(online_soc_model));
+    QNN_LOG_INFO(
+        "Succssfully get platform info. SoC model: %d. SoC name: %s.",
+        online_soc_model,
+        soc_info_online.has_value() ? soc_info_online->soc_name : "NotFound");
+  }
+
+#if defined(__ANDROID__)
+  if (soc_info_online.has_value()) {
+    QNN_LOG_INFO("Using online SoC info. SoC name: %s.",
+                 soc_info_online->soc_name);
+    soc_info_ = *soc_info_online;
   } else if (soc_info.has_value()) {
-    QNN_LOG_INFO("Using provided SoC info.");
+    QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
     soc_info_ = *soc_info;
   } else {
-    QNN_LOG_WARNING("Fail to get platforminfo, using default.");
+    QNN_LOG_WARNING("Fail to get SoC info, using default.");
   }
+#else
+  if (soc_info.has_value()) {
+    QNN_LOG_INFO("Using provided SoC info. SoC name: %s.", soc_info->soc_name);
+    soc_info_ = *soc_info;
+  } else if (soc_info_online.has_value()) {
+    QNN_LOG_INFO("Using online SoC info. SoC name: %s.",
+                 soc_info_online->soc_name);
+    soc_info_ = *soc_info_online;
+  } else {
+    QNN_LOG_WARNING("Fail to get SoC info, using default.");
+  }
+#endif
+
   QNN_LOG_INFO("Initializing QNN backend for SoC model: %s",
                soc_info_.soc_name);
 

@@ -20,7 +20,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/cc/litert_rng.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/test/generators/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/rng_fixture.h"

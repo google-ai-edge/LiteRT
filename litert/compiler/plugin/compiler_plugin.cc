@@ -266,8 +266,12 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
   loaded_plugins.reserve(lib_search_paths.size());
 
   for (const auto& lib_path : plugin_lib_paths) {
+    LITERT_LOG(LITERT_INFO, "Attempting to load plugin at: %s",
+               lib_path.c_str());
     auto plugin = LoadPlugin(lib_path, env, options);
     if (!plugin.HasValue()) {
+      LITERT_LOG(LITERT_WARNING, "Failed to load plugin at: %s",
+                 lib_path.c_str());
       continue;
     }
     loaded_plugins.push_back(std::move(plugin.Value()));
@@ -739,6 +743,11 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
     LiteRtEnvironmentOptions env, LiteRtOptions options) {
   LITERT_ASSIGN_OR_RETURN(auto plugins, CompilerPlugin::LoadPlugins(
                                             lib_search_paths, env, options));
+  if (plugins.size() == 1 && soc_manufacturer.empty()) {
+    // Don't check soc string if there is only one plugin, for compatibility
+    // with tooling and upstreams.
+    return std::move(plugins.front());
+  }
   for (auto& plugin : plugins) {
     if (plugin.SocManufacturer() == soc_manufacturer) {
       return std::move(plugin);

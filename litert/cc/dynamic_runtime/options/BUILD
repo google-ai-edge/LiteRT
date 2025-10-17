@@ -35,6 +35,7 @@ LITERT_C_API_DEPS = [
     "//litert/c/options:litert_darwinn_runtime_options",
     "//litert/c/options:litert_google_tensor_options",
     "//litert/c/options:litert_gpu_options",
+    "//litert/c/options:litert_intel_openvino_options",
     "//litert/c/options:litert_mediatek_options",
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_runtime_options",
@@ -114,11 +115,11 @@ cc_library(
     srcs = ["//litert/cc/options:litert_qualcomm_options.cc"],
     hdrs = ["//litert/cc/options:litert_qualcomm_options.h"],
     deps = [
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
@@ -135,11 +136,11 @@ cc_library(
     srcs = ["//litert/cc/options:litert_google_tensor_options.cc"],
     hdrs = ["//litert/cc/options:litert_google_tensor_options.h"],
     deps = [
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -155,7 +156,28 @@ cc_library(
     srcs = ["//litert/cc/options:litert_mediatek_options.cc"],
     hdrs = ["//litert/cc/options:litert_mediatek_options.h"],
     deps = [
-        "//litert/cc:litert_detail",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_handle",
+        "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_detail",
+        "@com_google_absl//absl/strings:string_view",
+    ] + select({
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["//litert/cc/options:litert_intel_openvino_options.cc"],
+    hdrs = ["//litert/cc/options:litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",

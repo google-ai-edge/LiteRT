@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_
 
 #include <string>
 
@@ -23,7 +23,7 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_logging.h"
+#include "litert/cc/internal/litert_logging.h"
 
 // AbslStringify specializations for types in the litert c api.
 // TODO: lukeboyer - Migrate code in tools/dump.h to leverage the abseil
@@ -245,4 +245,4 @@ void AbslStringify(Sink& sink, const LiteRtOpCode& code) {
   absl::Format(&sink, "%s", op_code_str);
 }
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_C_TYPES_PRINTING_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_C_TYPES_PRINTING_H_
