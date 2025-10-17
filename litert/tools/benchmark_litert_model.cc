@@ -132,6 +132,9 @@ litert::Expected<Environment> CreateDefaultEnvironment(
       params.Get<std::string>("compiler_plugin_library_path");
   LITERT_LOG(LITERT_INFO, "compiler_plugin_library_path: %s",
              compiler_plugin_library_path.c_str());
+  auto compiler_cache_path = params.Get<std::string>("compiler_cache_path");
+  LITERT_LOG(LITERT_INFO, "compiler_cache_path: %s",
+             compiler_cache_path.c_str());
 
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
@@ -141,6 +144,10 @@ litert::Expected<Environment> CreateDefaultEnvironment(
       litert::Environment::Option{
           litert::Environment::OptionTag::CompilerPluginLibraryDir,
           compiler_plugin_library_path.c_str(),
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerCacheDir,
+          compiler_cache_path.c_str(),
       },
   };
   return litert::Environment::Create(absl::MakeConstSpan(environment_options));
