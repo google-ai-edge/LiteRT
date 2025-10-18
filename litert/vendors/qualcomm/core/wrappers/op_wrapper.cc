@@ -60,6 +60,10 @@ void OpWrapper::AddTensorParam(const char* name, const TensorWrapper& tensor) {
   tensor_params_.emplace_back(name, tensor);
 }
 
+absl::string_view OpWrapper::GetTypeName() const {
+  return type_name_;
+}
+
 Qnn_OpConfig_t OpWrapper::GetOpConfig() {
   Qnn_OpConfig_t qnn_op = QNN_OPCONFIG_INIT;
   qnn_op.v1.packageName = QNN_OP_PACKAGE_NAME_QTI_AISW;
