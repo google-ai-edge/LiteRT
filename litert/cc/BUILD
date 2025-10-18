@@ -980,13 +980,13 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
-        ":litert_detail",
         ":litert_expected",
         ":litert_handle",
         ":litert_macros",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/types:span",
     ],
 )
