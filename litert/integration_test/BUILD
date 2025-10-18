@@ -111,7 +111,7 @@ litert_device_test(
     srcs = ["smoketests/google_tensor_smoketest.cc"],
     backend_id = "google_tensor",
     deps = [
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -123,7 +123,7 @@ litert_device_test(
     srcs = ["smoketests/qnn_smoketest.cc"],
     backend_id = "qualcomm",
     deps = [
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
@@ -161,7 +161,7 @@ litert_device_test(
     srcs = ["smoketests/mediatek_smoketest.cc"],
     backend_id = "mediatek",
     deps = [
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",

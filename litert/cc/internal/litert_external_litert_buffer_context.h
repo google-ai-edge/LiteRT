@@ -17,9 +17,9 @@
 
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"

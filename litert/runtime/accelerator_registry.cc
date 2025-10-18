@@ -19,8 +19,8 @@
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/runtime/accelerator.h"
 
 namespace litert::internal {

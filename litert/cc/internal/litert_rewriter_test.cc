@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_rewriter.h"
+#include "litert/cc/internal/litert_rewriter.h"
 
 #include <cstdint>
 #include <optional>
