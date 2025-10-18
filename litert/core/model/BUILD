@@ -44,11 +44,11 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_c_types_printing",
-        "//litert/cc:litert_consts",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_logging",
+        "//litert/cc/internal:litert_c_types_printing",
+        "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_logging",
         "//litert/core:build_stamp",
         "//litert/core/util:flatbuffer_tools",
         "//tflite/converter/core:model_builder_base",
@@ -248,7 +248,7 @@ cc_library(
         ":flatbuffer_to_litert",
         ":model",
         "//litert/c:litert_logging",
-        "//litert/cc:litert_detail",
+        "//litert/cc/internal:litert_detail",
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/types:span",
     ],
@@ -278,7 +278,7 @@ cc_library(
     deps = [
         ":model",
         "//litert/c:litert_logging",
-        "//litert/cc:litert_detail",
+        "//litert/cc/internal:litert_detail",
     ],
 )
 

@@ -107,9 +107,9 @@ cc_library(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_detail",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_detail",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",

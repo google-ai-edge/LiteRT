@@ -56,6 +56,9 @@ Expected<std::string> Filename(absl::string_view path);
 // Make a new directory at the given path.
 Expected<void> MkDir(absl::string_view path);
 
+// Get the parent directory of the given path.
+Expected<std::string> Parent(absl::string_view path);
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_FILESYSTEM_H_

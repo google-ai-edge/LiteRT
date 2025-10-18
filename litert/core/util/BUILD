@@ -38,10 +38,9 @@ cc_library_with_testonly_vis(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
-        "//litert/cc:litert_consts",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/core:filesystem",
+        "//litert/cc/internal:litert_consts",
         "//tflite:model_builder",
         "//tflite:stderr_reporter",
         "//tflite/converter:allocation",

@@ -23,6 +23,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -31,7 +32,6 @@ limitations under the License.
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
-#include "litert/cc/litert_tflite_error_status_builder.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
@@ -132,6 +132,9 @@ litert::Expected<Environment> CreateDefaultEnvironment(
       params.Get<std::string>("compiler_plugin_library_path");
   LITERT_LOG(LITERT_INFO, "compiler_plugin_library_path: %s",
              compiler_plugin_library_path.c_str());
+  auto compiler_cache_path = params.Get<std::string>("compiler_cache_path");
+  LITERT_LOG(LITERT_INFO, "compiler_cache_path: %s",
+             compiler_cache_path.c_str());
 
   const std::vector<litert::Environment::Option> environment_options = {
       litert::Environment::Option{
@@ -141,6 +144,10 @@ litert::Expected<Environment> CreateDefaultEnvironment(
       litert::Environment::Option{
           litert::Environment::OptionTag::CompilerPluginLibraryDir,
           compiler_plugin_library_path.c_str(),
+      },
+      litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerCacheDir,
+          compiler_cache_path.c_str(),
       },
   };
   return litert::Environment::Create(absl::MakeConstSpan(environment_options));

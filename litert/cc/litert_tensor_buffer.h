@@ -27,7 +27,7 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PLATFORM_SUPPORT_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PLATFORM_SUPPORT_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_PLATFORM_SUPPORT_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_PLATFORM_SUPPORT_H_
 
 #include "litert/c/litert_platform_support.h"
 
@@ -45,4 +45,4 @@ inline bool HasMetalSupport() { return LiteRtHasMetalSupport(); }
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_PLATFORM_SUPPORT_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_PLATFORM_SUPPORT_H_

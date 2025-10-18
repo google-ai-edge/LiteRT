@@ -29,7 +29,7 @@
 #include "litert/ats/capture_common.h"
 #include "litert/ats/common.h"
 #include "litert/ats/print.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 
 namespace litert::testing {
 

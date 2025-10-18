@@ -23,13 +23,13 @@ cc_binary(
     name = "tokenizer_client",
     srcs = ["tokenizer_client.cc"],
     deps = [
-        "//base",
+        # copybara:uncomment "//base",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
-        "@com_google_sentencepiece//:sentencepiece_processor",
+        "@sentencepiece//:sentencepiece_processor",
     ],
 )
 
@@ -38,9 +38,7 @@ cc_binary(
     srcs = ["main.cc"],
     # copybara:uncomment data = ["//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_so"],
     deps = [
-        "//base",
-        "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc/options:litert_gpu_options",
+        # copybara:uncomment "//base",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log",
@@ -51,7 +49,9 @@ cc_binary(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-        "@com_google_sentencepiece//:sentencepiece_processor",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc/options:litert_gpu_options",
+        "@sentencepiece//:sentencepiece_processor",
     ],
 )
 
@@ -59,12 +59,12 @@ cc_binary(
     name = "embedding_client",
     srcs = ["embedding_client.cc"],
     deps = [
-        "//base",
-        "//litert/cc:litert_api_with_dynamic_runtime",
+        # copybara:uncomment "//base",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "//litert/cc:litert_api_with_dynamic_runtime",
     ],
 )

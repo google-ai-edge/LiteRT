@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
-#define ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_DETAIL_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_DETAIL_H_
 
 #include <algorithm>
 #include <array>
@@ -298,4 +298,4 @@ inline void AssertOk(F get, Args&&... args) {
 }  // namespace internal
 }  // namespace litert
 
-#endif  // ODML_LITERT_LITERT_CC_LITERT_DETAIL_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_DETAIL_H_

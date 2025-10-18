@@ -67,3 +67,21 @@ target_link_libraries(litert_tool_flags_qualcomm
     PUBLIC
         absl::flags
 )
+
+# Intel OpenVINO flags
+add_library(litert_tool_flags_intel_openvino STATIC
+    intel_openvino_flags.cc
+)
+
+target_include_directories(litert_tool_flags_intel_openvino
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../../..>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(litert_tool_flags_intel_openvino
+    PUBLIC
+        absl::flags
+)

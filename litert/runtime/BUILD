@@ -117,7 +117,7 @@ cc_library(
         "//litert/c/internal:litert_tensor_buffer_registry",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer_utils",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
@@ -201,7 +201,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_tensor_buffer_utils",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -441,8 +441,7 @@ cc_library(
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
-        "//litert/cc:litert_tensor_buffer_utils",
-        "//litert/compiler/plugin:compiler_plugin",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
         "//litert/core:buffer_error_reporter",
         "//litert/core:build_stamp",
         "//litert/core:environment",
@@ -474,6 +473,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
+            "//litert/compiler/plugin:compiler_plugin",
             "//litert/core/cache:compilation_cache",
             "//litert/core/model:model_serialize",
         ],

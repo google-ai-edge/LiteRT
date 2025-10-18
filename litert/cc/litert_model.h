@@ -30,9 +30,9 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_consts.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_buffer_ref.h"
-#include "litert/cc/litert_consts.h"
-#include "litert/cc/litert_detail.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_handle.h"
@@ -371,6 +371,20 @@ class Signature : public internal::NonOwnedHandle<LiteRtSignature> {
     }
     return output_names;
   }
+
+  // Returns the input tensor with the given input signature name in the
+  // signature entry.
+  Expected<Tensor> InputTensor(absl::string_view name) const;
+
+  // Returns the input tensor at the given index in the signature entry.
+  Expected<Tensor> InputTensor(size_t index) const;
+
+  // Returns the output tensor with the given output signature name in the
+  // signature entry.
+  Expected<Tensor> OutputTensor(absl::string_view name) const;
+
+  // Returns the output tensor at the given index in the signature entry.
+  Expected<Tensor> OutputTensor(size_t index) const;
 };
 
 // Model. C++ equivalent of LiteRtModel.

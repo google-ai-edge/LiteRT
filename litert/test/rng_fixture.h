@@ -23,7 +23,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_logging.h"
-#include "litert/cc/litert_rng.h"
+#include "litert/cc/internal/litert_rng.h"
 #include "litert/test/fuzz.h"
 
 // Basic litert rng integration with gtest.

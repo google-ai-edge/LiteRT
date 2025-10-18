@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_
 
 #include <bitset>
 #include <cstdlib>
@@ -32,10 +32,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_numerics.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_numerics.h"
 
 // Various utilities and types for random number generation.
 
@@ -627,4 +627,4 @@ void ScaleDown(Itb& itb, uint32_t scale) {
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_RNG_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_INTERNAL_LITERT_RNG_H_

@@ -31,7 +31,7 @@
 #include "litert/ats/register.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/filesystem.h"
@@ -74,7 +74,7 @@ Expected<AtsConf> CompileOptions() {
 }
 
 Expected<void> CheckAts() {
-  absl::SetFlag(&FLAGS_extra_models, GetLiteRtPath("test/testdata/"));
+  absl::SetFlag(&FLAGS_extra_models, {GetLiteRtPath("test/testdata/")});
 
   LITERT_ASSIGN_OR_RETURN(auto dir, UniqueTestDirectory::Create());
   absl::SetFlag(&FLAGS_models_out, dir.Str());

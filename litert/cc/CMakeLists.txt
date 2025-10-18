@@ -25,7 +25,7 @@ add_library(litert_cc_api STATIC
     litert_rewriter.cc
     litert_shared_library.cc
     litert_tensor_buffer.cc
-    litert_tensor_buffer_utils.cc
+    internal/litert_tensor_buffer_utils.cc
 )
 
 target_include_directories(litert_cc_api
@@ -62,16 +62,13 @@ set(LITERT_CC_HEADERS
     litert_detail.h
     litert_handle.h
     litert_compiled_model.h
-    litert_c_types_printing.h
     litert_buffer_ref.h
     litert_any.h
-    litert_consts.h
     litert_custom_op_kernel.h
     litert_dispatch_delegate.h
     litert_environment.h
     litert_environment_options.h
     litert_event.h
-    litert_logging.h
     litert_model_predicates.h
     litert_numerics.h
     litert_op_options.h
@@ -79,11 +76,14 @@ set(LITERT_CC_HEADERS
     litert_platform_support.h
     litert_profiler.h
     litert_rewriter.h
-    litert_rng.h
     litert_shared_library.h
-    litert_source_location.h
-    litert_tensor_buffer_utils.h
-    litert_tflite_error_status_builder.h
+    internal/litert_rng.h
+    internal/litert_c_types_printing.h
+    internal/litert_consts.h
+    internal/litert_logging.h
+    internal/litert_source_location.h
+    internal/litert_tensor_buffer_utils.h
+    internal/litert_tflite_error_status_builder.h
 )
 
 # Set PUBLIC_HEADER property for proper installation

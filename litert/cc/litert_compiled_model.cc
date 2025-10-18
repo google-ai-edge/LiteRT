@@ -93,8 +93,9 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
 
   LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.get_subgraph(signature.Key()));
 
-  Expected<Tensor> tensor_expected =
-      is_input ? subgraph.Input(tensor_name) : subgraph.Output(tensor_name);
+  Expected<Tensor> tensor_expected = is_input
+                                         ? signature.InputTensor(tensor_name)
+                                         : signature.OutputTensor(tensor_name);
   Expected<TensorBufferRequirements> buffer_requirements_expected =
       is_input ? GetInputBufferRequirements(signature_index, tensor_name)
                : GetOutputBufferRequirements(signature_index, tensor_name);
@@ -185,15 +186,15 @@ Expected<void> CompiledModel::RunMapHelper(
 }
 
 Expected<void> CompiledModel::RunMapWithIndexHelper(
-    size_t signature_index, const Subgraph& subgraph,
+    size_t signature_index, const Signature& signature,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
     const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
     bool& async) const {
-  auto input_tensors = subgraph.Inputs();
-  size_t num_inputs = input_tensors.size();
+  auto input_names = signature.InputNames();
+  size_t num_inputs = input_names.size();
   auto input_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_inputs);
   for (int i = 0; i < num_inputs; ++i) {
-    absl::string_view input_name = input_tensors[i].Name();
+    absl::string_view input_name = input_names[i];
     auto it = input_map.find(input_name);
     // if the input is not provided in the input map, we set it to nullptr.
     if (it == input_map.end()) {
@@ -202,11 +203,11 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
     }
     input_buffers_ptr[i] = it->second.Get();
   }
-  auto output_tensors = subgraph.Outputs();
-  size_t num_outputs = output_tensors.size();
+  auto output_names = signature.OutputNames();
+  size_t num_outputs = output_names.size();
   auto output_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_outputs);
   for (int i = 0; i < num_outputs; ++i) {
-    absl::string_view output_name = output_tensors[i].Name();
+    absl::string_view output_name = output_names[i];
     auto it = output_map.find(output_name);
     if (it == output_map.end()) {
       return Unexpected(kLiteRtStatusErrorNotFound,

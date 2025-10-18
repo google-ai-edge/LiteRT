@@ -28,7 +28,7 @@
 #include "litert/ats/compile_capture.h"
 #include "litert/ats/configure.h"
 #include "litert/c/litert_logging.h"  // IWYU pragma: keep
-#include "litert/cc/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"

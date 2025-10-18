@@ -22,8 +22,8 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_logging.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_logging.h"
 #include "litert/test/matchers.h"
 
 namespace litert {

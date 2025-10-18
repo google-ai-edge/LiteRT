@@ -15,12 +15,16 @@
 
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
+#include <chrono>  // NOLINT
+
+#include "openvino/runtime/tensor.hpp"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
 #include "litert/vendors/c/litert_dispatch.h"
 
@@ -102,34 +106,30 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
 #if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(
-      ov::intel_npu::level_zero::ZeroBufferTensor remote_tensor,
-      device_context_.getRemoteTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
 #else
-  LITERT_ASSIGN_OR_RETURN(
-      ov::RemoteTensor remote_tensor,
-      device_context_.getRemoteTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
 #endif
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
-  infer_request_.set_input_tensor(graph_input_index, remote_tensor);
+  infer_request_.set_input_tensor(graph_input_index, ov_tensor);
   return {};
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
 #if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(
-      ov::intel_npu::level_zero::ZeroBufferTensor remote_tensor,
-      device_context_.getRemoteTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
 #else
-  LITERT_ASSIGN_OR_RETURN(
-      ov::RemoteTensor remote_tensor,
-      device_context_.getRemoteTensor(tensor_buffer_handle));
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
 #endif
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
-  infer_request_.set_output_tensor(graph_output_index, remote_tensor);
+  infer_request_.set_output_tensor(graph_output_index, ov_tensor);
   return {};
 }
 

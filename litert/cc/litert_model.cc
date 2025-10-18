@@ -14,12 +14,13 @@
 
 #include "litert/cc/litert_model.h"
 
+#include <cstddef>
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_detail.h"
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
@@ -148,6 +149,46 @@ std::vector<Op> Subgraph::Ops() const {
     ops.emplace_back(Op(op));
   }
   return ops;
+}
+
+Expected<Tensor> Signature::InputTensor(absl::string_view name) const {
+  LiteRtTensor tensor;
+  auto status =
+      LiteRtGetSignatureInputTensor(Get(), std::string(name).c_str(), &tensor);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to look up signature input tensor");
+  }
+  return Tensor(tensor);
+}
+
+Expected<Tensor> Signature::InputTensor(size_t index) const {
+  LiteRtTensor tensor;
+  auto status = LiteRtGetSignatureInputTensorByIndex(
+      Get(), static_cast<LiteRtParamIndex>(index), &tensor);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to look up signature input tensor");
+  }
+  return Tensor(tensor);
+}
+
+Expected<Tensor> Signature::OutputTensor(absl::string_view name) const {
+  LiteRtTensor tensor;
+  auto status =
+      LiteRtGetSignatureOutputTensor(Get(), std::string(name).c_str(), &tensor);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to look up signature output tensor");
+  }
+  return Tensor(tensor);
+}
+
+Expected<Tensor> Signature::OutputTensor(size_t index) const {
+  LiteRtTensor tensor;
+  auto status = LiteRtGetSignatureOutputTensorByIndex(
+      Get(), static_cast<LiteRtParamIndex>(index), &tensor);
+  if (status != kLiteRtStatusOk) {
+    return Unexpected(status, "Failed to look up signature output tensor");
+  }
+  return Tensor(tensor);
 }
 
 }  // namespace litert

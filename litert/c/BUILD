@@ -171,9 +171,13 @@ cc_library(
         ":litert_environment_options",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
-        "//litert/runtime/accelerators:auto_registration",
         "@com_google_absl//absl/types:span",
     ] + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            "//litert/runtime/accelerators:auto_registration",
+        ],
+        "//conditions:default": [],
+    }) + select({
         "//litert/build_common:build_include_gpu_enabled": [
             "//litert/runtime:gpu_environment",
         ],
@@ -613,6 +617,7 @@ cc_library(
     srcs = ["litert_opaque_options.cc"],
     hdrs = ["litert_opaque_options.h"],
     deps = [":litert_common"],
+    alwayslink = 1,
 )
 
 cc_test(

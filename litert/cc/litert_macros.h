@@ -26,8 +26,8 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_logging.h"
+#include "litert/cc/internal/litert_source_location.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_source_location.h"
 
 // LITERT_RETURN_IF_ERROR(expr);
 // LITERT_RETURN_IF_ERROR(expr, return_value);
