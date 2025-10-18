@@ -24,7 +24,7 @@ jobs:
       working-directory: ./litert
 
     - name: Build host tools
-      run: cmake --build cmake_build -j
+      run: cmake --build cmake_build -j2
       working-directory: ./litert
 
     - name: Configure Android build
@@ -34,5 +34,5 @@ jobs:
       working-directory: ./litert
 
     - name: Build LiteRT for Android
-      run: cmake --build cmake_build_android_arm64 -j
+      run: cmake --build cmake_build_android_arm64 -j2
       working-directory: ./litert

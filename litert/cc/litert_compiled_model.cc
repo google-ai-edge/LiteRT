@@ -91,7 +91,7 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
   LITERT_ASSIGN_OR_RETURN(Signature signature,
                           model_.GetSignature(signature_index));
 
-  LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.Subgraph(signature.Key()));
+  LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.get_subgraph(signature.Key()));
 
   Expected<Tensor> tensor_expected =
       is_input ? subgraph.Input(tensor_name) : subgraph.Output(tensor_name);
@@ -103,7 +103,7 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
   LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
                           buffer_requirements_expected);
   LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
-                          tensor.RankedTensorType());
+                          tensor.get_ranked_tensor_type());
   return CreateBufferImpl(env_, buffer_requirements, tensor_type);
 }
 
@@ -112,7 +112,7 @@ Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(
   LITERT_ASSIGN_OR_RETURN(const Signature& signature,
                           model_.GetSignature(signature_index));
   LITERT_ASSIGN_OR_RETURN(const Subgraph subgraph,
-                          model_.Subgraph(signature.Key()));
+                          model_.get_subgraph(signature.Key()));
   std::vector<TensorBuffer> tensor_buffers;
   std::vector<absl::string_view> tensor_names;
 
@@ -176,7 +176,7 @@ Expected<void> CompiledModel::RunMapHelper(
     return Unexpected(kLiteRtStatusErrorNotFound,
                       "Failed to get signature_index");
   }
-  auto subgraph = model_.Subgraph(signature_key);
+  auto subgraph = model_.get_subgraph(signature_key);
   if (!subgraph) {
     return Unexpected(kLiteRtStatusErrorNotFound, "Failed to get subgraph");
   }

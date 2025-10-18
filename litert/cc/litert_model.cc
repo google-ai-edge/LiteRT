@@ -26,10 +26,10 @@
 namespace litert {
 
 bool Tensor::IsSubgraphInput() const {
-  LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());
+  LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, get_ranked_tensor_type());
   // A special case for zero-sized tensors.
-  if (ranked_tensor_type.Layout().Rank() == 1 &&
-      ranked_tensor_type.Layout().Dimensions()[0] == 0) {
+  if (ranked_tensor_type.get_layout().Rank() == 1 &&
+      ranked_tensor_type.get_layout().Dimensions()[0] == 0) {
     return false;
   }
   return !HasWeights() && !DefiningOp().has_value();
