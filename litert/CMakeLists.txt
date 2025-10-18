@@ -15,6 +15,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(LiteRT VERSION 1.4.0 LANGUAGES CXX C)
 
+include(FetchContent)
+
+
 function(_litert_overlay_converter_sources TF_SRC_ROOT)
   set(_overlay_root "${CMAKE_CURRENT_SOURCE_DIR}/../tflite/converter")
   if(NOT EXISTS "${TF_SRC_ROOT}")

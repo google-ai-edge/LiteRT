@@ -59,16 +59,16 @@ class RankedTensorType {
   }
 
   bool operator==(const RankedTensorType& other) const {
-    return ElementType() == other.ElementType() && Layout() == other.Layout();
+    return get_element_type() == other.get_element_type() && get_layout() == other.get_layout();
   }
 
   bool operator!=(const RankedTensorType& other) const {
     return !(*this == other);
   }
 
-  ElementType ElementType() const { return element_type_; }
+  ElementType get_element_type() const { return element_type_; }
 
-  const Layout& Layout() const { return layout_; }
+  const Layout& get_layout() const { return layout_; }
 
   Expected<size_t> Bytes() const {
     LITERT_ASSIGN_OR_RETURN(const size_t num_elements, layout_.NumElements());
@@ -122,23 +122,23 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
  public:
   explicit Tensor(LiteRtTensor tensor) : NonOwnedHandle(tensor) {}
 
-  ElementType ElementType() const {
+  ElementType get_element_type() const {
     if (TypeId() == kLiteRtUnrankedTensorType) {
       LITERT_ASSIGN_OR_ABORT(auto tensor_type, UnrankedTensorType());
       return static_cast<enum ElementType>(tensor_type.element_type);
     } else {
-      LITERT_ASSIGN_OR_ABORT(auto tensor_type, RankedTensorType());
-      return tensor_type.ElementType();
+      LITERT_ASSIGN_OR_ABORT(auto tensor_type, get_ranked_tensor_type());
+      return tensor_type.get_element_type();
     }
   }
 
   bool HasType(const RankedTensorType& type) const {
-    auto t = RankedTensorType();
+    auto t = get_ranked_tensor_type();
     return t && *t == type;
   }
 
   bool HasType(const LiteRtRankedTensorType& type) const {
-    auto t = RankedTensorType();
+    auto t = get_ranked_tensor_type();
     return t && *t == ::litert::RankedTensorType(type);
   }
 
@@ -159,7 +159,7 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     return unranked_tensor_type;
   }
 
-  Expected<RankedTensorType> RankedTensorType() const {
+  Expected<RankedTensorType> get_ranked_tensor_type() const {
     if (TypeId() != kLiteRtRankedTensorType) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Not a ranked tensor type");
@@ -196,11 +196,11 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
   }
 
   bool HasWeights() const {
-    auto weights = Weights();
+    auto weights = get_weights();
     return !weights.Bytes().empty();
   }
 
-  Weights Weights() const {
+  Weights get_weights() const {
     LiteRtWeights weights;
     internal::AssertOk(LiteRtGetTensorWeights, Get(), &weights);
     return litert::Weights(weights);
@@ -226,12 +226,12 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
 
   template <typename T>
   Expected<absl::Span<const T>> WeightsData() const {
-    auto ranked_tensor_type = RankedTensorType();
+    auto ranked_tensor_type = get_ranked_tensor_type();
     if (!ranked_tensor_type) {
       return ranked_tensor_type.Error();
     }
 
-    const enum ElementType ty = ranked_tensor_type->ElementType();
+    const enum ElementType ty = ranked_tensor_type->get_element_type();
     if (ty != GetElementType<T>()) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
@@ -239,9 +239,9 @@ class Tensor : public internal::NonOwnedHandle<LiteRtTensor> {
     if (!HasWeights()) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
-    const absl::Span<const uint8_t> weights = Weights().Bytes();
+    const absl::Span<const uint8_t> weights = get_weights().Bytes();
 
-    auto num_elements = ranked_tensor_type->Layout().NumElements();
+    auto num_elements = ranked_tensor_type->get_layout().NumElements();
     if (!num_elements) {
       return num_elements.Error();
     }
@@ -436,7 +436,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     LiteRtParamIndex main_subgraph_index;
     internal::AssertOk(LiteRtGetMainModelSubgraphIndex, Get(),
                        &main_subgraph_index);
-    return this->Subgraph(main_subgraph_index);
+    return this->get_subgraph(main_subgraph_index);
   }
 
   size_t NumSubgraphs() const {
@@ -445,7 +445,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return num_subgraphs;
   }
 
-  Expected<Subgraph> Subgraph(size_t subgraph_index) const {
+  Expected<Subgraph> get_subgraph(size_t subgraph_index) const {
     LiteRtSubgraph subgraph;
     if (LiteRtGetModelSubgraph(Get(), subgraph_index, &subgraph) !=
         kLiteRtStatusOk) {
@@ -454,7 +454,7 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return litert::Subgraph(subgraph);
   }
 
-  Expected<class Subgraph> Subgraph(absl::string_view signature_key) const {
+  Expected<class Subgraph> get_subgraph(absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
     if (!signature) {
       return Unexpected(kLiteRtStatusErrorNotFound, "Signature not found");
@@ -532,20 +532,16 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   // Returns the tensor type for the given n-th input tensor.
   Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
                                                 size_t input_index) const {
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            GetSignature(signature_index));
-    LITERT_ASSIGN_OR_RETURN(const Tensor& tensor,
-                            signature.InputTensor(input_index));
-    return tensor.RankedTensorType();
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, get_subgraph(signature_index));
+    return subgraph.Inputs()[input_index].get_ranked_tensor_type();
   }
 
   // Returns the tensor type for the given input tensor name.
   Expected<RankedTensorType> GetInputTensorType(
       size_t signature_index, absl::string_view input_name) const {
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            GetSignature(signature_index));
-    LITERT_ASSIGN_OR_RETURN(auto tensor, signature.InputTensor(input_name));
-    return tensor.RankedTensorType();
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, get_subgraph(signature_index));
+    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph.Input(input_name));
+    return tensor.get_ranked_tensor_type();
   }
 
   // Get input tensor type of the default signature for input name.
@@ -557,20 +553,16 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   // Returns the tensor type for the given n-th output tensor.
   Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
                                                  size_t output_index) const {
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            GetSignature(signature_index));
-    LITERT_ASSIGN_OR_RETURN(const Tensor& tensor,
-                            signature.OutputTensor(output_index));
-    return tensor.RankedTensorType();
+    auto subgraph = get_subgraph(signature_index);
+    return subgraph->Outputs()[output_index].get_ranked_tensor_type();
   }
 
   // Returns the tensor type for the given output tensor name.
   Expected<RankedTensorType> GetOutputTensorType(
       size_t signature_index, absl::string_view output_name) const {
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            GetSignature(signature_index));
-    LITERT_ASSIGN_OR_RETURN(auto tensor, signature.OutputTensor(output_name));
-    return tensor.RankedTensorType();
+    auto subgraph = get_subgraph(signature_index);
+    LITERT_ASSIGN_OR_RETURN(auto tensor, subgraph->Output(output_name));
+    return tensor.get_ranked_tensor_type();
   }
 
   // Get output tensor type of the default signature for output name.

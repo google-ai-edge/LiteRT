@@ -59,8 +59,8 @@ class ModelAnalyzer {
 
   Summary Summarize() {
     Summary summary;
-    summary.num_subgraphs = Model().NumSubgraphs();
-    for (const auto* sg : Model().Subgraphs()) {
+    summary.num_subgraphs = get_model().NumSubgraphs();
+    for (const auto* sg : get_model().Subgraphs()) {
       summary.num_ops += sg->Ops().size();
       for (const auto* op : sg->Ops()) {
         if (op->OpCode() != kLiteRtOpCodeTflCustom) {
@@ -80,14 +80,14 @@ class ModelAnalyzer {
   }
 
   void AnalyzeOp(std::ostream& out, size_t subgraph_idx, size_t op_idx) {
-    Dump(Model().Subgraph(subgraph_idx).Op(op_idx), out);
+    Dump(get_model().Subgraph(subgraph_idx).Op(op_idx), out);
   }
 
   void AnalyzeSubgraph(std::ostream& out, size_t subgraph_idx) {
-    Dump(Model().Subgraph(subgraph_idx), out);
+    Dump(get_model().Subgraph(subgraph_idx), out);
   }
 
-  const LiteRtModelT& Model() { return *model_.Get(); }
+  const LiteRtModelT& get_model() { return *model_.Get(); }
 
  private:
   class Model model_;
@@ -147,13 +147,13 @@ Expected<void> AnalyzeModel(const std::string& model_path, bool no_ops,
 
   display.Start("Analyzing graph");
   display.Display() << "\n";
-  for (auto i = 0; i < analyzer.Model().NumSubgraphs(); ++i) {
+  for (auto i = 0; i < analyzer.get_model().NumSubgraphs(); ++i) {
     display.Display() << "  ";
     analyzer.AnalyzeSubgraph(display.Display(), i);
     if (no_ops) {
       continue;
     }
-    for (auto j = 0; j < analyzer.Model().Subgraph(i).Ops().size(); ++j) {
+    for (auto j = 0; j < analyzer.get_model().Subgraph(i).Ops().size(); ++j) {
       display.Display() << "    ";
       analyzer.AnalyzeOp(display.Display(), i, j);
     }
