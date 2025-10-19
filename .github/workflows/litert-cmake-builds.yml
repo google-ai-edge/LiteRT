@@ -19,7 +19,7 @@ concurrency:
 jobs:
   macos-host:
     name: "macOS Host Build"
-    runs-on: macos-13
+    runs-on: macos-latest
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 6
     steps:
