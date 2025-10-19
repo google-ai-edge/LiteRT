@@ -20,7 +20,7 @@ jobs:
         ndk-version: r27
 
     - name: Configure host tools
-      run: cmake --preset default
+      run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
       working-directory: ./litert
 
     - name: Build host tools
@@ -34,5 +34,5 @@ jobs:
       working-directory: ./litert
 
     - name: Build LiteRT for Android
-      run: cmake --build cmake_build_android_arm64 -j2
+      run: cmake --build cmake_build_android_arm64 -j
       working-directory: ./litert
