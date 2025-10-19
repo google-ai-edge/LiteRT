@@ -240,13 +240,15 @@ target_link_libraries(litert_runtime_c_api_static
         ${_litert_runtime_c_api_private_archives}
 )
 
+
+
 # TFLite archives so downstream shared libraries don't miss any symbols.
 if(UNIX AND NOT APPLE)
-  target_link_libraries(litert_runtime_c_api_static
+  target_link_options(litert_runtime_c_api_static
       INTERFACE
-        LINKER:--whole-archive
+        -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,--no-whole-archive)
 endif()
 
 # Propagate platform GL/Metal requirements to consumers when statically linking
@@ -280,9 +282,12 @@ if(APPLE)
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
-        LINKER:--whole-archive
+        ${_litert_runtime_c_api_private_archives})
+  target_link_options(litert_runtime_c_api_shared_lib 
+      PRIVATE 
+        -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,--no-whole-archive)
 endif()
 # GPU/GL dependencies by platform
 if(APPLE)

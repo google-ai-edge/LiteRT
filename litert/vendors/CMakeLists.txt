@@ -208,7 +208,9 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   )
   target_link_libraries(${TGT}
     PUBLIC
+      -Wl,--whole-archive
       litert_runtime_c_api_static
+      -Wl,--no-whole-archive
       absl::str_format
       absl::strings
       absl::string_view
