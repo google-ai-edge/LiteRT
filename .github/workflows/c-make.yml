@@ -57,7 +57,7 @@ jobs:
         if: env.REFRESH_CACHE == 'true'
         run: |
           rm -rf litert/cmake_build_android_arm64
-          rm -rf litert/host_flatc_build
+          rm -rf host_flatc_build
 
       - name: Restore cmake cache if cache is not being refreshed.
         id: cmake-cache
@@ -66,7 +66,7 @@ jobs:
         with:
           path: |
             litert/cmake_build_android_arm64
-            litert/host_flatc_build
+            host_flatc_build
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
           restore-keys: |
             ${{ steps.cache-keys.outputs.CACHE_RESTORE_KEY_HEAD }}
@@ -107,7 +107,7 @@ jobs:
       - name: Locate host flatc
         id: host-tools
         run: |
-          HOST_DIR="$(cd host_flatc_build/_deps/flatbuffers-build && pwd)"
+          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
           echo "dir=$HOST_DIR" >> "$GITHUB_OUTPUT"
         working-directory: litert
 
@@ -130,5 +130,5 @@ jobs:
         with:
           path: |
             litert/cmake_build_android_arm64
-            litert/host_flatc_build
+            host_flatc_build
           key: ${{ steps.cache-keys.outputs.CACHE_KEY }}
