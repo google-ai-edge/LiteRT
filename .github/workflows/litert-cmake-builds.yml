@@ -1,0 +1,86 @@
+name: "LiteRT CMake Builds"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-host:
+    name: "macOS Host Build"
+    runs-on: macos-13
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake 4.0.1
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: "4.0.1"
+
+      - name: Configure host build
+        run: cmake --preset default
+        working-directory: litert
+
+      - name: Build host binaries
+        run: cmake --build cmake_build --parallel
+        working-directory: litert
+
+  android:
+    name: "Android Cross Build (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-13]
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake 4.0.1
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: "4.0.1"
+
+      - name: Install clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Install Android NDK r27
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Export ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Configure Android build
+        run: cmake --preset android-arm64
+        working-directory: litert
+
+      - name: Build Android artifacts
+        run: cmake --build cmake_build_android_arm64 --parallel
+        working-directory: litert
