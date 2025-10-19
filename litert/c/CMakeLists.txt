@@ -244,7 +244,7 @@ target_link_libraries(litert_runtime_c_api_static
 
 # TFLite archives so downstream shared libraries don't miss any symbols.
 if(UNIX AND NOT APPLE)
-  target_link_options(litert_runtime_c_api_static
+  target_link_libraries(litert_runtime_c_api_static
       INTERFACE
         -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
@@ -282,9 +282,6 @@ if(APPLE)
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
-        ${_litert_runtime_c_api_private_archives})
-  target_link_options(litert_runtime_c_api_shared_lib 
-      PRIVATE 
         -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
         -Wl,--no-whole-archive)
