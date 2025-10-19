@@ -19,6 +19,14 @@ rules_shell_dependencies()
 
 rules_shell_toolchains()
 
+http_archive(
+    name = "rules_platform",
+    sha256 = "0aadd1bd350091aa1f9b6f2fbcac8cd98201476289454e475b28801ecf85d3fd",
+    urls = [
+        "https://github.com/bazelbuild/rules_platform/releases/download/0.1.0/rules_platform-0.1.0.tar.gz",
+    ],
+)
+
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
 # tensorflow is updated to do the same patchcmd.
 http_archive(
