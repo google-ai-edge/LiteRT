@@ -1,0 +1,70 @@
+name: "LiteRT CMake Builds"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-linux:
+    name: "Android Cross Build (Linux)"
+    runs-on: LiteRT_Linux_x64
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Setup CMake 4.0.1
+        uses: jwlawson/actions-setup-cmake@v1
+        with:
+          cmake-version: "4.0.1"
+
+      - name: Ensure clang toolchain
+        run: |
+          if ! command -v clang >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y clang
+          fi
+          clang --version
+      - name: Install Android NDK r27
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Export ANDROID_NDK_HOME
+        run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
+
+      - name: Configure host flatbuffers tools
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Locate host flatc
+        id: host-tools
+        run: |
+          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
+          echo "dir=$HOST_DIR" >> "$GITHUB_OUTPUT"
+        working-directory: litert
+
+      - name: Configure Android build
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="${{ steps.host-tools.outputs.dir }}"
+        working-directory: litert
+
+      - name: Build Android artifacts
+        run: cmake --build cmake_build_android_arm64 --parallel
+        working-directory: litert
