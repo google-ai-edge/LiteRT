@@ -397,3 +397,25 @@ litert_device_test(
 # copybara:uncomment_end
 
 exports_files(srcs = ["mobile_install_template.sh"])
+
+# PLATFORMS ########################################################################################
+
+alias(
+    name = "host",
+    actual = "@bazel_tools//tools:host_platform",
+    visibility = [
+        "//litert:litert_public",
+    ],
+)
+
+platform(
+    name = "device",
+    constraint_values =
+        [
+            "@platforms//cpu:aarch64",
+            "@platforms//os:android",
+        ],
+    visibility = [
+        "//litert:litert_public",
+    ],
+)
