@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -34,20 +35,16 @@ jobs:
           cmake-version: "4.0.1"
 
       - name: Configure host build
-        run: cmake --preset default
+        run: cmake --preset default -DCMAKE_POLICY_VERSION_MINIMUM=3.5
         working-directory: litert
 
       - name: Build host binaries
         run: cmake --build cmake_build --parallel
         working-directory: litert
 
-  android:
-    name: "Android Cross Build (${{ matrix.os }})"
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-22.04, macos-13]
+  android-linux:
+    name: "Android Cross Build (Linux)"
+    runs-on: LiteRT_Linux_x64
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 6
     steps:
@@ -62,11 +59,13 @@ jobs:
         with:
           cmake-version: "4.0.1"
 
-      - name: Install clang (Linux)
-        if: runner.os == 'Linux'
+      - name: Ensure clang toolchain
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang
+          if ! command -v clang >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y clang
+          fi
+          clang --version
 
       - name: Install Android NDK r27
         id: setup-ndk
@@ -77,8 +76,19 @@ jobs:
       - name: Export ANDROID_NDK_HOME
         run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
 
+      - name: Configure host flatbuffers tools
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        working-directory: litert
+
+      - name: Locate host flatc
+        id: host-tools
+        run: |
+          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
+          echo "dir=$HOST_DIR" >> "$GITHUB_OUTPUT"
+        working-directory: litert
+
       - name: Configure Android build
-        run: cmake --preset android-arm64
+        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="${{ steps.host-tools.outputs.dir }}"
         working-directory: litert
 
       - name: Build Android artifacts
