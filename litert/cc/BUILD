@@ -611,6 +611,7 @@ litert_device_test(
 #         "//litert/test:tflite_test_data",
 #     ],
 #     tags = [
+#         "manual",
 #         "no_oss",
 #         "notap",
 #         "requires-gpu-nvidia",

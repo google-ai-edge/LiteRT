@@ -539,6 +539,7 @@ cc_binary(
     name = "gpu_numerics_check_jet",
     srcs = ["gpu_numerics_check.cc"],
     tags = [
+        "manual",
         "notap",
         "requires-gpu-nvidia",
     ],
@@ -612,6 +613,7 @@ cc_binary(
 cc_binary(
     name = "benchmark_model_jet",
     tags = [
+        "manual",
         "notap",
         "requires-gpu-nvidia",
     ],
