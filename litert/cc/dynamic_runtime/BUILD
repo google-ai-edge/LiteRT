@@ -192,6 +192,19 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_tensor_buffer_types",
+    hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
     name = "litert_rewriter",
     srcs = ["//litert/cc:litert_rewriter.cc"],
     hdrs = ["//litert/cc:litert_rewriter.h"],
@@ -358,6 +371,7 @@ cc_library(
     deps = [
         ":litert_event",
         ":litert_model",
+        ":litert_tensor_buffer_types",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
@@ -431,6 +445,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_types",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,

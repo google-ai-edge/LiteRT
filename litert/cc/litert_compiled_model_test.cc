@@ -38,6 +38,7 @@
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -76,28 +77,26 @@ TEST(CompiledModelTest, Basic) {
       TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(/*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(/*output_name=*/"tfl.add"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::HostMemory));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
@@ -160,31 +159,29 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
       TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg0"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
-      input_buffer_requirements_arg0.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto input_buffer_types_arg0,
+                              input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      const std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(signature_index,
                                                  /*output_name=*/"tfl.add"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
+      const std::vector<TensorBufferType> output_buffer_types,
       output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::HostMemory));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -250,30 +247,28 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(signature_index,
                                                 /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(signature_index,
                                                  /*output_name=*/"tfl.add"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::HostMemory));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -341,11 +336,11 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
 
   // Confirm input and output buffers are host memory.
   EXPECT_THAT(input_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
+              IsOkAndHolds(TensorBufferType::HostMemory));
   EXPECT_THAT(input_buffers[1].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
+              IsOkAndHolds(TensorBufferType::HostMemory));
   EXPECT_THAT(output_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeHostMemory));
+              IsOkAndHolds(TensorBufferType::HostMemory));
 
   ASSERT_THAT(input_buffers, SizeIs(2));
   ASSERT_THAT(output_buffers, SizeIs(1));
@@ -411,28 +406,26 @@ TEST(CompiledModelTest, WithProfiler) {
       TensorBufferRequirements input_buffer_requirements_arg0,
       compiled_model.GetInputBufferRequirements(/*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(/*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+              ElementsAre(TensorBufferType::HostMemory));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(/*output_name=*/"tfl.add"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types,
-              ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypes());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::HostMemory));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
@@ -566,12 +559,12 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer0,
-        TensorBuffer::CreateManaged(
-            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type0, size0));
+        TensorBuffer::CreateManaged(env.Get(), TensorBufferType::HostMemory,
+                                    new_type0, size0));
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer1,
-        TensorBuffer::CreateManaged(
-            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type1, size1));
+        TensorBuffer::CreateManaged(env.Get(), TensorBufferType::HostMemory,
+                                    new_type1, size1));
     std::vector<TensorBuffer> input_buffers;
     input_buffers.push_back(std::move(input_buffer0));
     input_buffers.push_back(std::move(input_buffer1));
@@ -598,8 +591,7 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,
-        TensorBuffer::CreateManaged(env.Get(),
-                                    kLiteRtTensorBufferTypeHostMemory,
+        TensorBuffer::CreateManaged(env.Get(), TensorBufferType::HostMemory,
                                     new_out_type, out_size));
 
     std::vector<TensorBuffer> output_buffers;
@@ -1211,7 +1203,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
-          env.Get(), kLiteRtTensorBufferTypeHostMemory,
+          env.Get(), TensorBufferType::HostMemory,
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           sizeof(kInputTensor)));
   LITERT_ASSERT_OK(

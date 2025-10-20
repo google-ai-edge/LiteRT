@@ -20,7 +20,7 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "tflite/delegates/gpu/gl/gl_texture.h"

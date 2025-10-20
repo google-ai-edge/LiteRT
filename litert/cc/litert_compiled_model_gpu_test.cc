@@ -43,6 +43,7 @@
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/test/common.h"
@@ -485,7 +486,7 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto input_buffer,
-        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env.Get(), TensorBufferType::GlBuffer,
                                     ranked_tensor_type, buffer_size));
     input_buffers.push_back(std::move(input_buffer));
   }
@@ -512,7 +513,7 @@ Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto output_buffer,
-        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env.Get(), TensorBufferType::GlBuffer,
                                     ranked_tensor_type, buffer_size));
     output_buffers.push_back(std::move(output_buffer));
   }
@@ -592,7 +593,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   for (int i = 0; i < input_buffers.size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
                                 input_buffers[i].BufferType());
-    ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
+    ASSERT_EQ(buffer_type, TensorBufferType::GlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,
         Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
@@ -674,7 +675,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   for (int i = 0; i < input_buffers.size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
                                 input_buffers[i].BufferType());
-    ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
+    ASSERT_EQ(buffer_type, TensorBufferType::GlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,
         Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
