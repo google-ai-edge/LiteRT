@@ -224,7 +224,10 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   )
 
   if(UNIX AND NOT APPLE)
-    target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so")
+        target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so"
+          -Wl,--whole-archive)
+        target_link_libraries(${TGT} PRIVATE litert_runtime_c_api_static)
+        target_link_options(${TGT} PRIVATE -Wl,--no-whole-archive)
   endif()
 endfunction()
 
