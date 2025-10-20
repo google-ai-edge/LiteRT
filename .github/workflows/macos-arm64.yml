@@ -96,20 +96,26 @@ jobs:
         run: |
           # TODO(b/446718368): Re-enable the tests once we update our workflow with a custom runner.
           bazel build --disk_cache=~/.cache/bazel-macos \
-            -c opt \
-            -s \
+            --copt=-O3 \
+            --repo_env=USE_PYWRAP_RULES=True \
+            --linkopt=-ld_classic \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //litert/core/...
+            //litert/core/... \
+            //litert/python/...
 
       - name: Run LiteRT tests
         run: |
           bazel test --disk_cache=~/.cache/bazel-macos \
             -c opt \
             -s \
+            --copt=-O3 \
+            --repo_env=USE_PYWRAP_RULES=True \
+            --linkopt=-ld_classic \
             --cxxopt=-std=c++17 \
             --verbose_failures \
-            //litert/core/...
+            //litert/core/... \
+            //litert/python/...
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
