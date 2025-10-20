@@ -244,9 +244,9 @@ target_link_libraries(litert_runtime_c_api_static
 if(UNIX AND NOT APPLE)
   target_link_libraries(litert_runtime_c_api_static
       INTERFACE
-        LINKER:--whole-archive
+        -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,:--no-whole-archive)
 endif()
 
 # Propagate platform GL/Metal requirements to consumers when statically linking
@@ -280,9 +280,9 @@ if(APPLE)
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
-        LINKER:--whole-archive
+        -Wl,:--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,:--no-whole-archive)
 endif()
 # GPU/GL dependencies by platform
 if(APPLE)
