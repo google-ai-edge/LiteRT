@@ -93,23 +93,12 @@ jobs:
       - name: Export ANDROID_NDK_HOME
         run: echo "ANDROID_NDK_HOME=${{ steps.setup-ndk.outputs.ndk-path }}" >> "$GITHUB_ENV"
 
-      - name: Configure host flatbuffers tools
-        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      - name: Configure host build
+        run: cmake --preset default
         working-directory: litert
 
-      - name: Locate host flatc
-        id: host-tools
-        run: |
-          HOST_DIR="$(cd ../host_flatc_build/_deps/flatbuffers-build && pwd)"
-          echo "dir=$HOST_DIR" >> "$GITHUB_OUTPUT"
-        working-directory: litert
-
-      - name: Configure Android build
-        run: cmake --preset android-arm64 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DTFLITE_HOST_TOOLS_DIR="${{ steps.host-tools.outputs.dir }}"
-        working-directory: litert
-
-      - name: Build Android artifacts
-        run: cmake --build cmake_build_android_arm64 --parallel
+      - name: Configure Android Build & Build Android artifacts
+        run: cmake --build cmake_build -j
         working-directory: litert
 
       - name: Remove cache if cache is being refreshed.
