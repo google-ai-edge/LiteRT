@@ -37,10 +37,12 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
@@ -1065,10 +1067,11 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
   LiteRtDestroyOptions(jit_compilation_options);
 
+  auto cc_env = litert::Environment(env_ptr, OwnHandle::kNo);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffer,
       TensorBuffer::CreateManaged(
-          env_ptr, kLiteRtTensorBufferTypeHostMemory,
+          cc_env, kLiteRtTensorBufferTypeHostMemory,
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           2 * sizeof(float)));
   // The model has two inputs: "input" and "weight". We only provide the buffer
@@ -1176,8 +1179,7 @@ TEST(CompiledModelTest, GetOutputTensorShapes) {
   std::vector<LiteRtLayout> output_layouts(1);
   auto output_tensor_shapes = absl::MakeSpan(output_layouts);
   LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
-      LiteRtSignatureT::kDefaultSignatureKey,
-      output_tensor_shapes));
+      LiteRtSignatureT::kDefaultSignatureKey, output_tensor_shapes));
   ASSERT_EQ(output_tensor_shapes.size(), 1);
   // The output tensor shape is [[2]]
   EXPECT_EQ(output_tensor_shapes[0].rank, 1);

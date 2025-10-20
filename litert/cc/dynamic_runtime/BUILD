@@ -76,6 +76,7 @@ cc_library(
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
+        ":litert_environment",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -357,6 +358,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
+        ":litert_environment",
         ":litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
