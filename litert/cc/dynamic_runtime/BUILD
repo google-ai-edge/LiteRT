@@ -176,6 +176,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
@@ -357,9 +358,9 @@ cc_library(
     ],
     deps = [
         ":litert_event",
-        ":litert_model",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/cleanup",

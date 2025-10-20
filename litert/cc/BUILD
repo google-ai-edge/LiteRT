@@ -830,6 +830,7 @@ cc_library(
         ":litert_expected",
         ":litert_layout",
         ":litert_macros",
+        ":litert_ranked_tensor_type",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
@@ -866,6 +867,35 @@ flavored_cc_alias(
     tags = ["notap"],
     visibility = ["//visibility:public"],
     deps = [":litert_model"],
+)
+
+cc_library(
+    name = "litert_ranked_tensor_type",
+    hdrs = ["litert_ranked_tensor_type.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_cc_users_static_link",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_buffer_ref",
+        ":litert_element_type",
+        ":litert_expected",
+        ":litert_layout",
+        ":litert_macros",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc/internal:litert_consts",
+        "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
 )
 
 cc_test(
@@ -944,7 +974,7 @@ cc_library(
         ":litert_event",
         ":litert_expected",
         ":litert_macros",
-        ":litert_model",
+        ":litert_ranked_tensor_type",
         "//litert/c:litert_common",
         "//litert/c:litert_custom_tensor_buffer",
         "//litert/c:litert_event",
@@ -1196,6 +1226,7 @@ cc_library(
         "litert_options.h",
         "litert_opaque_options.h",
         "litert_profiler.h",
+        "litert_ranked_tensor_type.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
         "//litert/cc/options:litert_cpu_options.h",

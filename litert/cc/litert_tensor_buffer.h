@@ -32,7 +32,7 @@
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>

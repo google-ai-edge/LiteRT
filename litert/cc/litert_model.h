@@ -17,7 +17,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
 #include <string>
 #include <utility>
@@ -27,7 +26,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_consts.h"
@@ -36,66 +34,10 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
-
-// Type for tensors with known dimensions. C++ equivalent to
-// LiteRtRankedTensorType.
-class RankedTensorType {
- public:
-  RankedTensorType(ElementType element_type, Layout&& layout)
-      : element_type_(element_type), layout_(std::move(layout)) {}
-  explicit RankedTensorType(const LiteRtRankedTensorType& type)
-      : element_type_(static_cast<enum ElementType>(type.element_type)),
-        layout_(type.layout) {}
-
-  explicit operator LiteRtRankedTensorType() const {
-    return LiteRtRankedTensorType{
-        /*.element_type=*/static_cast<LiteRtElementType>(element_type_),
-        /*layout=*/static_cast<LiteRtLayout>(layout_),
-    };
-  }
-
-  bool operator==(const RankedTensorType& other) const {
-    return ElementType() == other.ElementType() && Layout() == other.Layout();
-  }
-
-  bool operator!=(const RankedTensorType& other) const {
-    return !(*this == other);
-  }
-
-  ElementType ElementType() const { return element_type_; }
-
-  const Layout& Layout() const { return layout_; }
-
-  Expected<size_t> Bytes() const {
-    LITERT_ASSIGN_OR_RETURN(const size_t num_elements, layout_.NumElements());
-    auto byte_width = GetByteWidth(element_type_);
-    if (!byte_width) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument);
-    }
-    return num_elements * *byte_width;
-  }
-
- private:
-  enum ElementType element_type_;
-  class Layout layout_;
-};
-
-// Construct a ranked tensor type from c++ type.
-template <typename T>
-RankedTensorType MakeRankedTensorType(
-    std::initializer_list<Layout::Dim> shape) {
-  return RankedTensorType(GetElementType<T>(), Layout(std::move(shape)));
-}
-template <typename T, typename Shape>
-RankedTensorType MakeRankedTensorType(const Shape& shape) {
-  return RankedTensorType(
-      GetElementType<T>(),
-      Layout(Dimensions(std::cbegin(shape), std::cend(shape))));
-}
 
 // Tensor weights. C++ equivalent of LiteRtWeights.
 class Weights : public internal::NonOwnedHandle<LiteRtWeights> {
