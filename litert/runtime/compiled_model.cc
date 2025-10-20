@@ -730,7 +730,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
       return *requirements;
     }
   } else {
-    LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
+    LITERT_LOG(LITERT_DEBUG, "Tensor %s is shared with CPU.\n", tensor->name);
   }
   // Check if we have a cached CPU buffer requirement.
   auto cached_req = cpu_buffer_requirements_.find(tensor_id);
