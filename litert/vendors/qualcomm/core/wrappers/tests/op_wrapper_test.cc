@@ -207,5 +207,11 @@ TEST(OpWrapperTest, ChangeOpName) {
   EXPECT_STREQ(op_wrapper_1.GetOpConfig().v1.name, "namespace/name_new");
 }
 
+TEST(OpWrapperTest, GetTypeName) {
+  OpWrapper op_wrapper{"name", "OP_TYPE", QnnOpCode::kUnknown};
+  ASSERT_FALSE(op_wrapper.GetTypeName().empty());
+  EXPECT_STREQ(op_wrapper.GetTypeName().data(), "OP_TYPE");
+}
+
 }  // namespace
 }  // namespace qnn
