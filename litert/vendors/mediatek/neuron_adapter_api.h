@@ -21,8 +21,8 @@
 
 #include "neuron/api/NeuronAdapter.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
 #if LITERT_HAS_AHWB_SUPPORT

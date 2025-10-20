@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 
 #include <dlfcn.h>
 
@@ -87,7 +87,7 @@ TEST(SharedLibraryTest, LoadEmptyPathFails) {
 
 TEST(SharedLibraryTest, LoadPathWorks) {
   const std::string lib_path = absl::StrCat(
-      "litert/cc/"
+      "litert/cc/internal/"
       "test_shared_library.so");
   LITERT_ASSERT_OK_AND_ASSIGN(
       SharedLibrary lib,
@@ -111,7 +111,7 @@ TEST(SharedLibraryTest, LoadPathWorks) {
 
 TEST(SharedLibraryTest, ConstructionAndAssignmentWork) {
   const std::string lib_path = absl::StrCat(
-      "litert/cc/"
+      "litert/cc/internal/"
       "test_shared_library.so");
   LITERT_ASSERT_OK_AND_ASSIGN(
       SharedLibrary lib,

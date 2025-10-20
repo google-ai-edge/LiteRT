@@ -47,9 +47,9 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_cpu_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -66,9 +66,9 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_gpu_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
@@ -101,9 +101,9 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -116,10 +116,10 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_qualcomm_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
@@ -137,10 +137,10 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_google_tensor_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -157,10 +157,10 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_mediatek_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -179,9 +179,9 @@ cc_library(
     deps = [
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -198,9 +198,9 @@ cc_library(
     hdrs = ["//litert/cc/options:litert_runtime_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -220,9 +220,9 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -235,9 +235,9 @@ cc_library(
     hdrs = ["//litert/cc/options:darwinn_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/runtime:litert_darwinn_options",
         "@com_google_absl//absl/strings:string_view",
     ] + select({

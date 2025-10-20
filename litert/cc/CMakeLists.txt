@@ -17,15 +17,15 @@ cmake_minimum_required(VERSION 3.20)
 
 # Core C++ API library
 add_library(litert_cc_api STATIC
+    internal/litert_op_options.cc
+    internal/litert_rewriter.cc
+    internal/litert_shared_library.cc
+    internal/litert_tensor_buffer_utils.cc
     litert_compiled_model.cc
     litert_macros.cc
     litert_model.cc
-    litert_op_options.cc
     litert_opaque_options.cc
-    litert_rewriter.cc
-    litert_shared_library.cc
     litert_tensor_buffer.cc
-    internal/litert_tensor_buffer_utils.cc
 )
 
 target_include_directories(litert_cc_api
@@ -51,39 +51,39 @@ target_link_libraries(litert_cc_api
 
 # Export headers
 set(LITERT_CC_HEADERS
+    internal/litert_c_types_printing.h
+    internal/litert_consts.h
+    internal/litert_detail.h
+    internal/litert_handle.h
+    internal/litert_logging.h
+    internal/litert_model_predicates.h
+    internal/litert_numerics.h
+    internal/litert_op_options.h
+    internal/litert_platform_support.h
+    internal/litert_rewriter.h
+    internal/litert_rng.h
+    internal/litert_shared_library.h
+    internal/litert_source_location.h
+    internal/litert_tensor_buffer_utils.h
+    internal/litert_tflite_error_status_builder.h
+    litert_any.h
+    litert_buffer_ref.h
+    litert_compiled_model.h
+    litert_custom_op_kernel.h
+    litert_dispatch_delegate.h
     litert_element_type.h
+    litert_environment_options.h
+    litert_environment.h
+    litert_event.h
     litert_expected.h
     litert_layout.h
     litert_macros.h
     litert_model.h
-    litert_options.h
-    litert_tensor_buffer.h
-    litert_tensor_buffer_requirements.h
-    litert_detail.h
-    litert_handle.h
-    litert_compiled_model.h
-    litert_buffer_ref.h
-    litert_any.h
-    litert_custom_op_kernel.h
-    litert_dispatch_delegate.h
-    litert_environment.h
-    litert_environment_options.h
-    litert_event.h
-    litert_model_predicates.h
-    litert_numerics.h
-    litert_op_options.h
     litert_opaque_options.h
-    litert_platform_support.h
+    litert_options.h
     litert_profiler.h
-    litert_rewriter.h
-    litert_shared_library.h
-    internal/litert_rng.h
-    internal/litert_c_types_printing.h
-    internal/litert_consts.h
-    internal/litert_logging.h
-    internal/litert_source_location.h
-    internal/litert_tensor_buffer_utils.h
-    internal/litert_tflite_error_status_builder.h
+    litert_tensor_buffer_requirements.h
+    litert_tensor_buffer.h
 )
 
 # Set PUBLIC_HEADER property for proper installation

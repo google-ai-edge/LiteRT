@@ -28,7 +28,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/core:environment",
         "//litert/runtime/accelerators/dispatch:dispatch_accelerator",
         "//litert/runtime/accelerators/xnnpack:xnnpack_accelerator",

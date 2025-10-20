@@ -159,10 +159,10 @@ cc_test(
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc/dynamic_runtime:litert_opaque_options",
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:darwinn_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_googletest//:gtest_main",
     ],
 )

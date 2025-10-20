@@ -28,9 +28,9 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_mediatek_options.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_shared_library.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 
 #define LOAD_SYMB(S, H)                                                   \

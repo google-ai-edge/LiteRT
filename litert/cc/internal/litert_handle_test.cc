@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_handle.h"
+#include "litert/cc/internal/litert_handle.h"
 
 #include <type_traits>
 #include <utility>

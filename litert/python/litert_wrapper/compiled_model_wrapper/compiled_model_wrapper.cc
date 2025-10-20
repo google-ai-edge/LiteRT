@@ -26,11 +26,11 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
