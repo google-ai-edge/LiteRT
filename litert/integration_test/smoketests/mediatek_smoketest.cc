@@ -17,7 +17,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/test/matchers.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"

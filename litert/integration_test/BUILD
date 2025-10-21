@@ -17,31 +17,14 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
-# copybara:uncomment load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
-
-# copybara:comment_begin(oss-only)
-load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
-# copybara:comment_end
+load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
+load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 # copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_cpu_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = ["//litert:litert_public"],
-)
-
-# Internal test to validate the macros and underlying shell scripts.
-litert_device_test(
-    name = "tools_test",
-    srcs = ["smoketests/tools_test.cc"],
-    backend_id = "cpu",
-    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
-    data = ["//litert/integration_test/models:single_op"],
-    exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
-    deps = [
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/flags:parse",
-        "@com_google_googletest//:gtest_main",
-    ],
 )
 
 # C++ TEST SCAFFOLD ################################################################################
@@ -113,6 +96,7 @@ litert_device_test(
     srcs = ["smoketests/google_tensor_smoketest.cc"],
     backend_id = "google_tensor",
     deps = [
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_shared_library",
         "@com_google_googletest//:gtest_main",
     ],
@@ -125,6 +109,7 @@ litert_device_test(
     srcs = ["smoketests/qnn_smoketest.cc"],
     backend_id = "qualcomm",
     deps = [
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
@@ -163,8 +148,9 @@ litert_device_test(
     srcs = ["smoketests/mediatek_smoketest.cc"],
     backend_id = "mediatek",
     deps = [
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/internal:litert_shared_library",
-        "//litert/cc/options:litert_mediatek_options",
         "//litert/test:matchers",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_googletest//:gtest_main",
@@ -398,7 +384,10 @@ litert_device_test(
 #
 # copybara:uncomment_end
 
-exports_files(srcs = ["mobile_install_template.sh"])
+exports_files(
+    srcs = glob(["*.sh"]),
+    visibility = ["//litert:litert_public"],
+)
 
 # PLATFORMS ########################################################################################
 
@@ -421,6 +410,7 @@ platform(
         "//litert:litert_public",
     ],
 )
+
 # STARLARK LOGIC VALIDATION ########################################################################
 
 cc_binary(
@@ -434,5 +424,71 @@ cc_binary(
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
+    ],
+)
+
+litert_device_script(
+    name = "check_script_device",
+    testonly = True,
+    backend_id = "example",
+    bin = ":dummy_binary",
+    build_for_device = True,
+    build_for_host = False,
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
+    ],
+    exec_args = [
+        "--check_device",
+    ],
+    script = "device_script_test.sh",
+)
+
+litert_device_script(
+    name = "check_script_host",
+    testonly = True,
+    backend_id = "example",
+    bin = ":dummy_binary",
+    build_for_device = False,
+    build_for_host = True,
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
+    ],
+    exec_args = [
+        "--check_host",
+    ],
+    script = "device_script_test.sh",
+)
+
+litert_device_exec(
+    name = "exec_for_testing_device",
+    backend_id = "example",
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
+    ],
+    exec_args = [
+        "--expected_data={}".format(",".join([
+            device_rlocation("//litert/test:testdata/mobilenet_v2_1.0_224.tflite"),
+            device_rlocation("//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite"),
+        ])),
+        "--expected_libs_on_ld={}".format(",".join([device_rlocation(lib) for lib in get_libs("example")])),
+    ],
+    local_suffix = "",
+    remote_suffix = None,
+    target = ":dummy_binary",
+)
+
+litert_device_test(
+    name = "tools_test",
+    srcs = ["smoketests/tools_test.cc"],
+    backend_id = "cpu",
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    data = ["//litert/integration_test/models:single_op"],
+    exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
+    deps = [
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_googletest//:gtest_main",
     ],
 )

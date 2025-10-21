@@ -358,6 +358,7 @@ litert_device_test(
     ],
     deps = [
         ":litert_api_with_dynamic_runtime",
+        "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
