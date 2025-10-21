@@ -54,7 +54,7 @@ template Expected<void> OpenClMemory::Unlock<char>();
 
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
@@ -107,7 +107,7 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
 
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
