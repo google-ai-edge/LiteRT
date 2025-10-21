@@ -200,7 +200,8 @@ litert_device_test(
     deps = [
         ":dispatch_delegate",
         ":dispatch_opaque_options",
-        "//platforms/darwinn/tachyon/core/fence",
+        # TODO: gt team update visibility.
+        # "//platforms/darwinn/tachyon/core/fence",
         "@com_google_googletest//:gtest_main",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_log",
