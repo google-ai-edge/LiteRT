@@ -377,7 +377,10 @@ cc_test(
 
 cc_library(
     name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
+    srcs = select({
+        "@org_tensorflow//tensorflow:android": ["litert_shared_library.cc"],
+        "//conditions:default": [],
+    }),
     hdrs = ["litert_shared_library.h"],
     deps = [
         "//litert/c:litert_common",
@@ -387,7 +390,10 @@ cc_library(
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
-    ],
+    ] + select({
+        "@org_tensorflow//tensorflow:android": [],
+        "//conditions:default": ["//litert/cc:litert_shared_library"],
+    }),
 )
 
 cc_library(
