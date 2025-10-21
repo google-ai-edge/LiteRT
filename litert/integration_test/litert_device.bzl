@@ -443,7 +443,7 @@ def litert_device_test(
         srcs,
         deps,
         features = [],
-        rule = cc_test,
+        rule = native.cc_test,
         backend_id = "",
         data = [],
         exec_args = [],
