@@ -1186,6 +1186,7 @@ cc_library(
     srcs = ["litert_shared_library.cc"],
     hdrs = ["litert_shared_library.h"],
     visibility = [
+        "//litert/cc/internal:__pkg__",
         "//third_party/odml/litert_lm:__subpackages__",
     ],
     deps = [
