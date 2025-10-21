@@ -60,40 +60,157 @@ cc_library(
 )
 
 cc_library(
+    name = "gl_buffer",
+    srcs = ["gl_buffer.cc"],
+    hdrs = ["gl_buffer.h"],
+    linkopts = gles_linkopts(),
+    deps = [
+        ":ahwb_buffer",
+        ":gpu_environment_header",
+        "//litert/c:litert_common",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/types:span",
+    ] + gles_deps() + select({
+        "//litert/build_common:android_gpu_enabled": [
+            "//tflite/delegates/gpu/gl:egl_environment",
+            "//tflite/delegates/gpu/gl:gl_buffer",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+cc_library(
+    name = "ahwb_buffer",
+    srcs = ["ahwb_buffer.cc"],
+    hdrs = ["ahwb_buffer.h"],
+    deps = [
+        ":event",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+)
+
+cc_library(
+    name = "dmabuf_buffer",
+    srcs = ["dmabuf_buffer.cc"],
+    hdrs = ["dmabuf_buffer.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_library(
+    name = "fastrpc_buffer",
+    srcs = ["fastrpc_buffer.cc"],
+    hdrs = ["fastrpc_buffer.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_library(
+    name = "gl_texture",
+    srcs = ["gl_texture.cc"],
+    hdrs = ["gl_texture.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_gl_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//tflite/delegates/gpu/gl:gl_texture",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_library(
+    name = "ion_buffer",
+    srcs = ["ion_buffer.cc"],
+    hdrs = ["ion_buffer.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_library(
+    name = "open_cl_memory",
+    srcs = ["open_cl_memory.cc"],
+    hdrs = ["open_cl_memory.h"],
+    deps = [
+        ":ahwb_buffer",
+        ":gl_buffer",
+        ":gpu_environment_header",
+        ":open_cl_sync",
+        ":tensor_buffer_lockstate",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/util:tensor_type_util",
+        "//tflite/delegates/gpu/cl:buffer",
+        "//tflite/delegates/gpu/cl:cl_context",
+        "//tflite/delegates/gpu/cl:opencl_wrapper",
+        "//tflite/delegates/gpu/cl:util",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
+    name = "open_cl_sync",
+    srcs = ["open_cl_sync.cc"],
+    hdrs = ["open_cl_sync.h"],
+    deps = [
+        ":gpu_environment_header",
+        ":litert_gpu_util",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_macros",
+        "//tflite/delegates/gpu/cl:cl_command_queue",
+        "//tflite/delegates/gpu/cl:cl_memory",
+        "//tflite/delegates/gpu/cl:tensor",
+        "//tflite/delegates/gpu/common:data_type",
+        "//tflite/delegates/gpu/common:shape",
+        "//tflite/delegates/gpu/common:tensor",
+        "//tflite/delegates/gpu/common/task:tensor_desc",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@opencl_headers",
+    ],
+)
+
+cc_library(
     name = "tensor_buffer",
     srcs = [
         "custom_buffer.cc",
         "tensor_buffer.cc",
         "tensor_buffer_requirements.cc",
-    ] + select({
-        "//litert/build_common:build_include_npu_enabled": [
-            "ahwb_buffer.cc",
-            "dmabuf_buffer.cc",
-            "fastrpc_buffer.cc",
-            "ion_buffer.cc",
-        ],
-        "//conditions:default": [],
-    }) + select({
-        "//litert/build_common:build_include_gpu_enabled": [
-            "gl_buffer.cc",
-            "gl_texture.cc",
-            "open_cl_memory.cc",
-            "open_cl_sync.cc",
-        ],
-        "//conditions:default": [],
-    }),
+    ],
     hdrs = [
-        "ahwb_buffer.h",
         "custom_buffer.h",
-        "dmabuf_buffer.h",
         "event.h",
-        "fastrpc_buffer.h",
-        "gl_buffer.h",
-        "gl_texture.h",
-        "ion_buffer.h",
-        "litert_gpu_util.h",
-        "open_cl_memory.h",
-        "open_cl_sync.h",
         "tensor_buffer.h",
         "tensor_buffer_lockstate.h",
         "tensor_buffer_requirements.h",
@@ -102,7 +219,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_requirements.h",
     ],
     copts = litert_metal_opts(),
-    linkopts = gles_linkopts() + litert_metal_linkopts(),
+    linkopts = litert_metal_linkopts(),
     deps = [
         ":event",
         ":gpu_environment",
@@ -121,17 +238,6 @@ cc_library(
         "//litert/core:environment",
         "//litert/core/util:tensor_type_util",
         "//litert/core/util:to_string",
-        "//tflite/delegates/gpu/cl:buffer",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:cl_memory",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "//tflite/delegates/gpu/cl:tensor",
-        "//tflite/delegates/gpu/cl:util",
-        "//tflite/delegates/gpu/common:data_type",
-        "//tflite/delegates/gpu/common:shape",
-        "//tflite/delegates/gpu/common:tensor",
-        "//tflite/delegates/gpu/common/task:tensor_desc",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -144,11 +250,31 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
-    ] + gles_deps() + select({
+    ] + select({
         "//litert/build_common:android_gpu_enabled": [
+            ":gl_buffer",
+            ":gl_texture",
             "//tflite/delegates/gpu/gl:egl_environment",
             "//tflite/delegates/gpu/gl:gl_buffer",
             "//tflite/delegates/gpu/gl:gl_texture",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//litert/build_common:build_include_gpu_enabled": [
+            ":open_cl_memory",
+            ":open_cl_sync",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "//litert/build_common:build_include_npu_enabled": [
+            ":dmabuf_buffer",
+            ":fastrpc_buffer",
+            ":ion_buffer",
+        ],
+        "//conditions:default": [],
+    }) + select({
+        "@org_tensorflow//tensorflow:android": [
+            ":ahwb_buffer",
         ],
         "//conditions:default": [],
     }) + litert_metal_deps(),
@@ -279,6 +405,7 @@ cc_library(
     srcs = ["gpu_environment.cc"],
     hdrs = ["gpu_environment.h"],
     copts = litert_metal_opts(),
+    linkopts = gles_linkopts(),
     deps = GPU_ENVIRONMENT_DEPS + [
         "//litert/c:litert_environment_options",
         "//litert/cc:litert_any",
@@ -518,12 +645,12 @@ cc_test(
     tags = ["requires-gpu-nvidia"],
     deps = [
         ":compiled_model",
+        ":open_cl_memory",
         ":tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
         "//litert/c:litert_layout",
         "//litert/c:litert_model",
-        "//litert/c:litert_options",
         "//litert/c:litert_profiler",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
@@ -558,6 +685,8 @@ cc_test(
     linkopts = litert_android_linkopts(),
     tags = ["notap"],
     deps = [
+        ":ahwb_buffer",
+        ":gl_buffer",
         ":gpu_environment_header",
         ":tensor_buffer",
         "//litert/c:litert_common",

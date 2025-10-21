@@ -24,18 +24,16 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_platform_support.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/runtime/ahwb_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/dmabuf_buffer.h"  // IWYU pragma: keep
 #include "litert/runtime/event.h"
-#include "litert/runtime/fastrpc_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/gl_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/ion_buffer.h"  // IWYU pragma: keep
-#include "litert/runtime/open_cl_memory.h"
 #include "litert/test/matchers.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 namespace {
 constexpr const float kTensorData[] = {10, 20, 30, 40};
@@ -102,7 +100,7 @@ TEST(TensorBuffer, HostMemory) {
 }
 
 TEST(TensorBuffer, Ahwb) {
-  if (!litert::internal::AhwbBuffer::IsSupported()) {
+  if (!LiteRtHasAhwbSupport()) {
     GTEST_SKIP() << "AHardwareBuffers are not supported on this platform; "
                     "skipping the test";
   }
@@ -158,7 +156,7 @@ TEST(TensorBuffer, Ahwb) {
 }
 
 TEST(TensorBuffer, Ion) {
-  if (!litert::internal::IonBuffer::IsSupported()) {
+  if (!LiteRtHasIonSupport()) {
     GTEST_SKIP()
         << "ION buffers are not supported on this platform; skipping the test";
   }
@@ -214,7 +212,7 @@ TEST(TensorBuffer, Ion) {
 }
 
 TEST(TensorBuffer, DmaBuf) {
-  if (!litert::internal::DmaBufBuffer::IsSupported()) {
+  if (!LiteRtHasDmaBufSupport()) {
     GTEST_SKIP()
         << "DMA-BUF buffers are not supported on this platform; skipping "
            "the test";
@@ -271,7 +269,7 @@ TEST(TensorBuffer, DmaBuf) {
 }
 
 TEST(TensorBuffer, FastRpc) {
-  if (!litert::internal::FastRpcBuffer::IsSupported()) {
+  if (!LiteRtHasFastRpcSupport()) {
     GTEST_SKIP()
         << "FastRPC buffers are not supported on this platform; skipping "
            "the test";
@@ -369,15 +367,25 @@ TEST(TensorBuffer, Event) {
   LiteRtDestroyEnvironment(env);
 }
 
+bool CanLoadOpenCl() {
+#if LITERT_HAS_OPENCL_SUPPORT
+  return tflite::gpu::cl::LoadOpenCL().ok();
+#else
+  return false;
+#endif
+}
 TEST(TensorBuffer, OpenCL) {
 // MSAN does not support GPU tests.
 #if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
   GTEST_SKIP() << "GPU tests are not supported In msan or tsan";
 #endif
 
-  if (!litert::internal::OpenClMemory::IsSupported()) {
+  if (!LiteRtHasOpenClSupport()) {
     GTEST_SKIP() << "OpenCL buffers are not supported on this platform; "
                     "skipping the test";
+  }
+  if (!CanLoadOpenCl()){
+    GTEST_SKIP() << "OpenCL could not be loaded; skipping the test";
   }
 
   // Create an option with opencl device id zero. This trick initializes the
@@ -448,7 +456,7 @@ TEST(TensorBuffer, GlBuffer) {
   GTEST_SKIP() << "GPU tests are not supported In msan";
 #endif
 
-  if (!litert::internal::GlBuffer::IsSupported()) {
+  if (!LiteRtHasOpenGlSupport()) {
     GTEST_SKIP() << "OpenGL buffers are not supported on this platform; "
                     "skipping the test";
   }
