@@ -738,61 +738,17 @@ class LiteRtSignatureT {
       "<placeholder signature>";
 
   LiteRtSignatureT(LiteRtSubgraph subgraph, StrVec input_names,
-                   std::vector<LiteRtTensor> input_tensors, StrVec output_names,
-                   std::vector<LiteRtTensor> output_tensors, std::string key)
+                   StrVec output_names, std::string key)
       : key_(std::move(key)),
         subgraph_(subgraph),
         input_names_(std::move(input_names)),
-        input_tensors_(std::move(input_tensors)),
-        output_names_(std::move(output_names)),
-        output_tensors_(std::move(output_tensors)) {
-    ABSL_DCHECK_EQ(input_names_.size(), input_tensors_.size());
-    ABSL_DCHECK_EQ(output_names_.size(), output_tensors_.size());
-    for (size_t i = 0; i < input_names_.size(); ++i) {
-      input_name_to_tensor_.emplace(input_names_[i], input_tensors_[i]);
-    }
-    for (size_t i = 0; i < output_names_.size(); ++i) {
-      output_name_to_tensor_.emplace(output_names_[i], output_tensors_[i]);
-    }
-  }
+        output_names_(std::move(output_names)) {}
 
   // String named inputs for called subgraph.
   const StrVec& InputNames() const { return input_names_; }
 
   // String named outputs for called subgraph.
   const StrVec& OutputNames() const { return output_names_; }
-
-  // Get the input tensor at the given index.
-  LiteRtTensor GetInputTensor(size_t index) const {
-    return input_tensors_.at(index);
-  }
-
-  // Get the output tensor at the given index.
-  LiteRtTensor GetOutputTensor(size_t index) const {
-    return output_tensors_.at(index);
-  }
-
-  // Find the input tensor with the given name.
-  ::litert::Expected<LiteRtTensor> FindInputTensor(
-      absl::string_view name) const {
-    if (auto it = input_name_to_tensor_.find(std::string(name));
-        it != input_name_to_tensor_.end()) {
-      return it->second;
-    }
-    return ::litert::Unexpected(kLiteRtStatusErrorNotFound,
-                                "Signature input alias not found");
-  }
-
-  // Find the output tensor with the given name.
-  ::litert::Expected<LiteRtTensor> FindOutputTensor(
-      absl::string_view name) const {
-    if (auto it = output_name_to_tensor_.find(std::string(name));
-        it != output_name_to_tensor_.end()) {
-      return it->second;
-    }
-    return ::litert::Unexpected(kLiteRtStatusErrorNotFound,
-                                "Signature output alias not found");
-  }
 
   // Get the callable subgraph.
   const LiteRtSubgraphT& GetSubgraph() const { return *subgraph_; }
@@ -805,11 +761,8 @@ class LiteRtSignatureT {
     const auto key_eq = key_ == other.key_;
     const auto subgraph_eq = subgraph_ == other.subgraph_;
     const auto input_names_eq = input_names_ == other.input_names_;
-    const auto input_tensors_eq = input_tensors_ == other.input_tensors_;
     const auto output_names_eq = output_names_ == other.output_names_;
-    const auto output_tensors_eq = output_tensors_ == other.output_tensors_;
-    return key_eq && subgraph_eq && input_names_eq && input_tensors_eq &&
-           output_names_eq && output_tensors_eq;
+    return key_eq && subgraph_eq && input_names_eq && output_names_eq;
   }
 
   // IR is generally, default constructible and movable but not copyable.
@@ -825,11 +778,7 @@ class LiteRtSignatureT {
   LiteRtSubgraph subgraph_;
 
   StrVec input_names_;
-  std::vector<LiteRtTensor> input_tensors_;
-  std::unordered_map<std::string, LiteRtTensor> input_name_to_tensor_;
   StrVec output_names_;
-  std::vector<LiteRtTensor> output_tensors_;
-  std::unordered_map<std::string, LiteRtTensor> output_name_to_tensor_;
 };
 
 // Make a basic signature from information in the given subgraph. Used with the

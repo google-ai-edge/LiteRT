@@ -319,47 +319,36 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
       return kLiteRtStatusErrorInvalidFlatbuffer;
     }
 
-    absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
-    input_aliases.reserve(tfl_inputs.size());
-    for (const auto& tfl_input : tfl_inputs) {
-      auto* tensor = litert_subgraph->Tensors().at(tfl_input->tensor_index);
-      const std::string& name = tfl_input->name;
-      input_aliases[tensor] =
-          !name.empty() ? name : std::string(tensor->Name());
+    // The tensor names may not be matched between signature and subgraph.
+    // Update the tensor names with the signature names since the signature
+    // names are used for LiteRT APIs.
+    for (auto i = 0; i < tfl_inputs.size(); ++i) {
+      const auto& tfl_input = tfl_inputs.at(i);
+      auto* index_litert_input =
+          litert_subgraph->Tensors().at(tfl_input->tensor_index);
+      index_litert_input->SetName(tfl_input->name);
     }
-
-    absl::flat_hash_map<LiteRtTensor, std::string> output_aliases;
-    output_aliases.reserve(tfl_outputs.size());
-    for (const auto& tfl_output : tfl_outputs) {
-      auto* tensor = litert_subgraph->Tensors().at(tfl_output->tensor_index);
-      const std::string& name = tfl_output->name;
-      output_aliases[tensor] =
-          !name.empty() ? name : std::string(tensor->Name());
+    for (auto i = 0; i < tfl_outputs.size(); ++i) {
+      const auto& tfl_output = tfl_outputs.at(i);
+      auto* index_litert_output =
+          litert_subgraph->Tensors().at(tfl_output->tensor_index);
+      index_litert_output->SetName(tfl_output->name);
     }
 
     // Keep signature input/output names in the same order as the subgraph.
     std::vector<std::string> input_names;
-    std::vector<LiteRtTensor> input_tensors;
     input_names.reserve(tfl_inputs.size());
     for (auto& tensor : litert_subgraph->Inputs()) {
-      input_names.push_back(input_aliases.contains(tensor)
-                                ? input_aliases.at(tensor)
-                                : std::string(tensor->Name()));
-      input_tensors.push_back(tensor);
+      input_names.push_back(std::string(tensor->Name()));
     }
     std::vector<std::string> output_names;
-    std::vector<LiteRtTensor> output_tensors;
     output_names.reserve(tfl_outputs.size());
     for (auto& tensor : litert_subgraph->Outputs()) {
-      output_names.push_back(output_aliases.contains(tensor)
-                                 ? output_aliases.at(tensor)
-                                 : std::string(tensor->Name()));
-      output_tensors.push_back(tensor);
+      output_names.push_back(std::string(tensor->Name()));
     }
 
     parent.EmplaceSignature(litert_subgraph, std::move(input_names),
-                            std::move(input_tensors), std::move(output_names),
-                            std::move(output_tensors),
+                            std::move(output_names),
                             tfl_signature->signature_key);
   }
 
