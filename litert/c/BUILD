@@ -744,16 +744,22 @@ cc_test(
     deps = LITERT_C_API_COMMON_DEPS + [":litert_profiler_event"],
 )
 
+# TODO: b/437381008
+cc_library(
+    name = "litert_runtime_c_api_so_shim",
+    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
+    deps = LITERT_C_API_COMMON_DEPS,
+)
+
 # Build `litert/c:litert_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 cc_shared_library(
     name = "litert_runtime_c_api_so",
     additional_linker_inputs = export_lrt_runtime_only_script(),
-    features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     user_link_flags = export_lrt_runtime_only_linkopt() + [
         "-Wl,-soname=libLiteRtRuntimeCApi.so",
     ] + litert_android_linkopts(),
-    deps = LITERT_C_API_COMMON_DEPS,
+    deps = [":litert_runtime_c_api_so_shim"],
 )
 
 # Flavor-specific wrappers for the .so producer itself so dependents can
@@ -861,6 +867,16 @@ alias(
 
 exports_files(srcs = ["windows_exported_symbols.def"])
 
+# TODO: b/437381008
+cc_library(
+    name = "litert_tflite_runtime_c_api_so_shim",
+    linkopts = ["-Wl,--undefined-glob=LiteRt*"],
+    deps = LITERT_C_API_COMMON_DEPS + [
+        "//tflite/c:c_api",
+        "//tflite/c:c_api_experimental",
+    ],
+)
+
 # Build `litert/c:litert_tflite_runtime_c_api_so` for `libLiteRtRuntimeCApi.so`.
 # Warning:Don't build it together with `litert_runtime_c_api_so` in one command.
 # When bazel analyzed the build graph, it detected that two different actions would
@@ -869,14 +885,10 @@ exports_files(srcs = ["windows_exported_symbols.def"])
 cc_shared_library(
     name = "litert_tflite_runtime_c_api_so",
     additional_linker_inputs = export_lrt_tflite_runtime_script(),
-    features = ["-thin_lto"],  # TODO: b/437381008
     shared_lib_name = "libLiteRtRuntimeCApi.so",
     tags = ["manual"],  # To prevent build together with `litert_runtime_c_api_so`.
     user_link_flags = export_lrt_tflite_runtime_linkopt() + litert_android_linkopts(),
-    deps = LITERT_C_API_COMMON_DEPS + [
-        "//tflite/c:c_api",
-        "//tflite/c:c_api_experimental",
-    ],
+    deps = [":litert_tflite_runtime_c_api_so_shim"],
 )
 
 SELECT_LITERT_RUNTIME_C_API_SO = select({
