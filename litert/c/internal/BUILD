@@ -234,9 +234,13 @@ cc_library(
     srcs = ["litert_logging.cc"],
     hdrs = ["litert_logging.h"],
     visibility = [
-        "//litert:__subpackages__",
-        "//third_party/odml/litert_lm/c:__pkg__",
-        "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:__subpackages__",
+        # "//third_party/odml/litert_lm/c:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
     deps = [
         "//litert/c:litert_common",
