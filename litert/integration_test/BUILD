@@ -13,6 +13,7 @@
 # limitations under the License.
 
 # copybara:uncomment load(INTERNAL_PHYSICAL_MOBILE_TESTING_INFRA, "guitar", "guitar_workflow_test")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
@@ -417,5 +418,20 @@ platform(
         ],
     visibility = [
         "//litert:litert_public",
+    ],
+)
+# STARLARK LOGIC VALIDATION ########################################################################
+
+cc_binary(
+    name = "dummy_binary",
+    srcs = ["dummy_binary.cc"],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    deps = [
+        "//litert/core:filesystem",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings",
     ],
 )
