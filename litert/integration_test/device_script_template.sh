@@ -22,6 +22,7 @@
 reset_color='\033[0m'
 host_color='\033[34m'
 hightlight_color='\033[36m'
+error_color='\033[31m'
 
 # Root of runfiles on the device.
 device_runfiles_root="/data/local/tmp/runfiles"
@@ -185,5 +186,11 @@ function print_file() {
   else
     echo -e "    ${1} => ${2}"
   fi
+}
+
+# Print message and exit.
+function fatal() {
+  echo -e "${error_color}ERROR: ${reset_color}${1}"
+  exit 1
 }
 

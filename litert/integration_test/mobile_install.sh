@@ -16,14 +16,52 @@
 
 source "${0%.*}_lib.sh" || exit 1
 
+
+
 extra_args=("${@:1}")
 d_bin=$(device_bin)
 d_libs=($(device_libs))
 d_data=($(data_files))
 d_env_vars=($(exec_env_vars))
+d_args=()
+dry_run=""
+
+function parse_flags() {
+  function handle_user_data() {
+    local user_data=()
+    for f in "$@"; do
+      if [[ -f "$f" ]]; then
+        user_data+=($(realpath "${f}"))
+      elif [[ -d "$f" ]]; then
+        for ff in "${f%/}/"*; do
+          if [[ -f "$ff" ]]; then
+            user_data+=($(realpath "${ff}"))
+          fi
+        done
+      else
+        fatal "${f} is not a file or directory"
+      fi
+    done
+    echo "${user_data[@]}"
+  }
+
+  local in_flags=$1
+  for a in ${in_flags[@]}; do
+    if [[ $a == "--user_data="* ]]; then
+      d_data+=($(handle_user_data "${a#*=}"))
+    elif [[ $a == "--dry_run"* ]]; then
+      dry_run="true"
+    else
+      d_args+=("${a}")
+    fi
+  done
+}
+
+parse_flags "${extra_args[*]}"
+
 
 function print_args() {
-  print "<<< LiteRt Mobile Install Scripts >>>"
+  print_hightlight "<<< LiteRt Mobile Install Scripts >>>"
   
   print "libraries"
   for f in "${d_libs[@]}"; do
@@ -41,26 +79,40 @@ function print_args() {
   if [[ -n $d_bin ]]; then
     print "bin"
     print_file "${d_bin}" "$(device_path "${d_bin}")"
-    if [[ -n "${extra_args[@]}" ]]; then
+    if [[ -n "${d_args[@]}" ]]; then
       print "exec_args"
-      echo "    ${extra_args[*]}"
+      echo "    ${d_args[*]}"
     fi
     if [[ -n "${d_env_vars[@]}" ]]; then
       print "exec_env_vars"
       echo "    ${d_env_vars[@]}"
     fi
   fi
+
+  if [[ -n "${dry_run}" ]]; then
+    print "dry_run"
+    echo "    yes"
+  fi
 }
+
+
+
+# # Push and execute #############################################################
 
 print_args
 
-# Push and execute #############################################################
-
 function push_file() {
-  adb push --sync "$1" "$(device_path "$1")"
+  local cmd="adb push --sync "$1" "$(device_path "$1")""
+  if [[ -n "${dry_run}" ]]; then
+    cmd="echo [dry run] ${cmd}"
+  fi
+  eval "${cmd}"
 }
 
-adb shell rm -rf /data/local/tmp/runfiles/*
+has_adb=$(adb devices | tail -n +2)
+if [[ -z ${has_adb} && -z ${dry_run} ]]; then
+  fatal "No usb device found."
+fi
 
 print "Pushing libraries to device..."
 for f in "${d_libs[@]}"; do
@@ -76,8 +128,12 @@ if [[ -n $d_bin ]]; then
   print "Pushing binary to device..."
   push_file "${d_bin}"
   print "Running: \"${hightlight_color}adb shell ${d_env_vars} $(device_path "${d_bin}") ${extra_args[*]}${host_color}\""
-  adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${extra_args[*]} 
+  if [[ -z "${dry_run}" ]]; then
+    adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]} 
+  fi
 fi
+
+
 
 
 
