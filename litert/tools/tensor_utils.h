@@ -19,11 +19,22 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <fstream>
+#include <ios>
 #include <limits>
+#include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_model.h"
+#include "tflite/schema/schema_generated.h"
+#include "flatbuffers/verifier.h"  // from @flatbuffers
 
 namespace litert {
 namespace tensor_utils {
@@ -195,6 +206,131 @@ void PrintTensorSamples(const std::vector<T>& data, size_t total_elements,
     }
   }
 }
+
+inline Expected<std::vector<uint8_t>> ReadBinaryFile(
+    absl::string_view path) {
+  const std::string path_str(path);
+  std::ifstream file(path_str, std::ios::binary | std::ios::ate);
+  if (!file) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open model file for signature comparison.");
+  }
+
+  const std::streamsize stream_size = file.tellg();
+  if (stream_size < 0) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to determine model file size.");
+  }
+  file.seekg(0, std::ios::beg);
+
+  std::vector<uint8_t> buffer(static_cast<size_t>(stream_size));
+  if (!buffer.empty() &&
+      !file.read(reinterpret_cast<char*>(buffer.data()), stream_size)) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to read model file for signature comparison.");
+  }
+  return buffer;
+}
+
+inline Expected<void> LogTfliteSignatures(absl::string_view model_path) {
+  auto contents_expected = ReadBinaryFile(model_path);
+  if (!contents_expected) {
+    return contents_expected.Error();
+  }
+  std::vector<uint8_t> contents = std::move(*contents_expected);
+
+  if (!contents.empty()) {
+    flatbuffers::Verifier verifier(contents.data(), contents.size());
+    if (!tflite::VerifyModelBuffer(verifier)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Model buffer failed TFLite verification.");
+    }
+  }
+
+  ABSL_LOG(INFO) << "TFLite signature view (raw SignatureDef):";
+  if (contents.empty()) {
+    ABSL_LOG(INFO) << "  (model buffer empty)";
+    return {};
+  }
+
+  const auto* model = tflite::GetModel(contents.data());
+  const auto* signature_defs = model->signature_defs();
+  if (signature_defs == nullptr || signature_defs->empty()) {
+    ABSL_LOG(INFO) << "  (no signatures)";
+    return {};
+  }
+
+  for (int i = 0; i < signature_defs->size(); ++i) {
+    const auto* signature = signature_defs->Get(i);
+    const std::string key =
+        signature->signature_key() ? signature->signature_key()->str() : "";
+    ABSL_LOG(INFO) << "Signature[" << i << "]: key=\"" << key << "\"";
+
+    const auto* inputs = signature->inputs();
+    if (inputs == nullptr || inputs->empty()) {
+      ABSL_LOG(INFO) << "  Inputs: (none)";
+    } else {
+      ABSL_LOG(INFO) << "  Inputs:";
+      for (int j = 0; j < inputs->size(); ++j) {
+        const auto* tensor_map = inputs->Get(j);
+        const std::string name =
+            tensor_map->name() ? tensor_map->name()->str() : "";
+        ABSL_LOG(INFO) << "    " << name
+                       << " (tensor_index=" << tensor_map->tensor_index()
+                       << ")";
+      }
+    }
+
+    const auto* outputs = signature->outputs();
+    if (outputs == nullptr || outputs->empty()) {
+      ABSL_LOG(INFO) << "  Outputs: (none)";
+    } else {
+      ABSL_LOG(INFO) << "  Outputs:";
+      for (int j = 0; j < outputs->size(); ++j) {
+        const auto* tensor_map = outputs->Get(j);
+        const std::string name =
+            tensor_map->name() ? tensor_map->name()->str() : "";
+        ABSL_LOG(INFO) << "    " << name
+                       << " (tensor_index=" << tensor_map->tensor_index()
+                       << ")";
+      }
+    }
+
+    ABSL_LOG(INFO) << "";
+  }
+
+  return {};
+}
+
+inline void LogLiteRtSignatures(absl::Span<const Signature> signatures) {
+  ABSL_LOG(INFO) << "Found " << signatures.size() << " signature(s)";
+  for (size_t i = 0; i < signatures.size(); ++i) {
+    const auto& signature = signatures[i];
+    ABSL_LOG(INFO) << "Signature[" << i << "]: key=\"" << signature.Key()
+                   << "\"";
+
+    const auto input_names = signature.InputNames();
+    if (input_names.empty()) {
+      ABSL_LOG(INFO) << "  Inputs: (none)";
+    } else {
+      ABSL_LOG(INFO) << "  Inputs:";
+      for (const auto& name : input_names) {
+        ABSL_LOG(INFO) << "    " << name;
+      }
+    }
+
+    const auto output_names = signature.OutputNames();
+    if (output_names.empty()) {
+      ABSL_LOG(INFO) << "  Outputs: (none)";
+    } else {
+      ABSL_LOG(INFO) << "  Outputs:";
+      for (const auto& name : output_names) {
+        ABSL_LOG(INFO) << "    " << name;
+      }
+    }
+  }
+}
+
 
 }  // namespace tensor_utils
 }  // namespace litert
