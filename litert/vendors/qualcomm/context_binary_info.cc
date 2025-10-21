@@ -176,6 +176,59 @@ Expected<void> ContextBinaryInfo::Init(
   return {};
 }
 
+bool IsCompatibale(const QnnApi* qnn_api,
+                   const QnnSystemContext_BinaryInfo_t* binary_info) {
+  // Context binary version
+  const char* ctx_buildid;
+  Qnn_Version_t ctx_core_version;
+  Qnn_Version_t ctx_backend_version;
+  if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV1;
+    ctx_buildid = context_binary_info.buildId;
+    ctx_core_version = context_binary_info.coreApiVersion;
+    ctx_backend_version = context_binary_info.backendApiVersion;
+  } else if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV2;
+    ctx_buildid = context_binary_info.buildId;
+    ctx_core_version = context_binary_info.coreApiVersion;
+    ctx_backend_version = context_binary_info.backendApiVersion;
+  } else if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV3;
+    ctx_buildid = context_binary_info.buildId;
+    ctx_core_version = context_binary_info.coreApiVersion;
+    ctx_backend_version = context_binary_info.backendApiVersion;
+  } else {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Failed to get acceptibale contextin binary info version (1~3): %d",
+        binary_info->version);
+    return false;
+  }
+  LITERT_LOG(LITERT_INFO, "Ctx Bin buildId: %s", ctx_buildid);
+  LITERT_LOG(LITERT_INFO, "Ctx Core API Version %d.%d.%d: %s",
+             ctx_core_version.major, ctx_core_version.minor,
+             ctx_core_version.patch);
+  LITERT_LOG(LITERT_INFO, "Ctx Backend API Version %d.%d.%d: %s",
+             ctx_backend_version.major, ctx_backend_version.minor,
+             ctx_backend_version.patch);
+
+  // Runtime library version
+  Qnn_ApiVersion_t qnn_api_version;
+  qnn_api->backendGetApiVersion(&qnn_api_version);
+  Qnn_Version_t core_version = qnn_api_version.coreApiVersion;
+  Qnn_Version_t backend_version = qnn_api_version.backendApiVersion;
+  const char* build_id;
+  qnn_api->backendGetBuildId(&build_id);
+  LITERT_LOG(LITERT_INFO, "Runtime buildId: %s", build_id);
+  LITERT_LOG(LITERT_INFO, "Runtime Core API Version %d.%d.%d: %s",
+             core_version.major, core_version.minor, core_version.patch);
+  LITERT_LOG(LITERT_INFO, "Runtime Backend API Version %d.%d.%d: %s",
+             backend_version.major, backend_version.minor,
+             backend_version.patch);
+
+  return true;
+}
+
 Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
     QnnManager& qnn, const void* exec_bytecode_ptr, size_t exec_bytecode_size) {
   auto system_context_handle = qnn.CreateSystemContextHandle();
@@ -198,7 +251,10 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
     LITERT_LOG(LITERT_ERROR, "Null binary info", "");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Null binary info");
   }
-
+  if (!IsCompatibale(qnn.Api(), binary_info)) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Uncompatible context binary with runtime so.");
+  }
   ContextBinaryInfo info;
   auto status = info.Init(*binary_info);
 
