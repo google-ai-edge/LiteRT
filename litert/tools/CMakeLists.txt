@@ -136,7 +136,6 @@ target_link_libraries(run_model
         litert_runtime
         tensorflow-lite
         litert_tool_flags_google_tensor
-        litert_tool_flags_intel_openvino
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
         absl::flags
@@ -150,30 +149,30 @@ target_link_libraries(run_model
 )
 
 # analyze_model
-add_executable(analyze_model
-    analyze_model_main.cc
-)
-
-target_include_directories(analyze_model
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/..
-        ${CMAKE_CURRENT_SOURCE_DIR}/../..
-        ${TENSORFLOW_SOURCE_DIR}
-)
-
-target_link_libraries(analyze_model
-    PRIVATE
-        litert_dump
-        litert_tool_display
-        litert_core
-        litert_core_model
-        tensorflow-lite
-        absl::flags
-        absl::flags_parse
-        absl::log
-        absl::status
-        absl::statusor
-)
+# add_executable(analyze_model
+#     analyze_model_main.cc
+# )
+# 
+# target_include_directories(analyze_model
+#     PRIVATE
+#         ${CMAKE_CURRENT_SOURCE_DIR}/..
+#         ${CMAKE_CURRENT_SOURCE_DIR}/../..
+#         ${TENSORFLOW_SOURCE_DIR}
+# )
+# 
+# target_link_libraries(analyze_model
+#     PRIVATE
+#         litert_dump
+#         litert_tool_display
+#         litert_core
+#         litert_core_model
+#         tensorflow-lite
+#         absl::flags
+#         absl::flags_parse
+#         absl::log
+#         absl::status
+#         absl::statusor
+# )
 
 # apply_plugin
 add_executable(apply_plugin_main
@@ -187,6 +186,8 @@ target_include_directories(apply_plugin_main
         ${TENSORFLOW_SOURCE_DIR}
 )
 
+target_link_directories(apply_plugin_main PRIVATE ${CMAKE_BINARY_DIR}/vendors)
+
 target_link_libraries(apply_plugin_main
     PRIVATE
         litert_apply_plugin
@@ -194,10 +195,8 @@ target_link_libraries(apply_plugin_main
         litert_tool_flags_apply_plugin
         litert_tool_flags_common
         litert_tool_flags_google_tensor
-        litert_tool_flags_intel_openvino
         litert_tool_flags_mediatek
         litert_tool_flags_qualcomm
-
         litert_tool_display
         litert_core
         litert_core_model
@@ -214,7 +213,7 @@ target_link_libraries(apply_plugin_main
 # Platform-specific configurations for all executables
 if(LITERT_PLATFORM_ANDROID)
     target_link_libraries(run_model PRIVATE ${LOG_LIB})
-    target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
+    # target_link_libraries(analyze_model PRIVATE ${LOG_LIB})
     target_link_libraries(apply_plugin_main PRIVATE ${LOG_LIB})
     # Statically link TFLite GPU/GL core objects for tool executables on Android.
     if(TARGET litert_tflite_gpu_gl_core)
@@ -224,6 +223,6 @@ if(LITERT_PLATFORM_ANDROID)
 endif()
 
 # Install targets
-install(TARGETS run_model analyze_model apply_plugin_main
+install(TARGETS run_model apply_plugin_main
     RUNTIME DESTINATION bin
 )
