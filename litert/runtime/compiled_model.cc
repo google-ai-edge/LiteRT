@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
+#include "absl/status/status.h"  // from @com_google_absl
 #include "litert/c/litert_layout.h"
 
 #if defined(__ANDROID__)
@@ -84,6 +85,9 @@
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+#include "third_party/odml/litert/weight_loader/external_weight_loader_litert.h"
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
@@ -112,6 +116,13 @@ using ::litert::internal::SerializeModel;
 using ::litert::internal::TfLiteTensorIdentifier;
 
 namespace {
+std::optional<std::string> ExtractDirectory(absl::string_view path) {
+  const size_t last_sep = path.find_last_of("/\\");
+  if (last_sep == absl::string_view::npos) {
+    return std::nullopt;
+  }
+  return std::string(path.substr(0, last_sep));
+}
 
 static void* StubOpInit(TfLiteContext* context, const char* buffer,
                         size_t length) {
@@ -295,7 +306,26 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       std::make_unique<LiteRtExternalLiteRtBufferContextT>(env, get_tensor_id);
   interp_->SetExternalContext(kTfLiteLiteRtBufferContext,
                               buffer_context_.get());
-
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
+      fb_model_->GetModel(), model_directory_);
+  if (jit_compilation_options) {
+    reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)->weight_loader =
+        weight_loader_.get();
+  }
+  if (weight_loader_) {
+    weight_loader::WeightAccessRequest request;
+    request.cpu = true;
+    // TODO(b/456318365): Handle weight access request to support multiple
+    // backends.
+    request.opencl = (hardware_accelerators & kLiteRtHwAcceleratorGpu) != 0;
+    absl::Status prepare_status = weight_loader_->PrepareAccess(request, env);
+    if (!prepare_status.ok()) {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                std::string(prepare_status.message()));
+    }
+  }
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   return {};
 }
 
@@ -387,6 +417,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_RETURN_IF_ERROR(
       litert::internal::ReplaceMagicNumbersIfAny(env, model));
+
+  if (auto source_path = model.SourcePath()) {
+    model_directory_ = ExtractDirectory(*source_path);
+  } else {
+    model_directory_.reset();
+  }
 
   // If hardware acceleration is requested then apply the plugins to the model
   // and initialize the compiled model from the translated LiteRt model.

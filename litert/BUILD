@@ -72,6 +72,7 @@ package_group(
         "//litert/runtime/...",
         "//litert/cc/...",
         "//litert/c/...",
+        "//third_party/odml/litert/weight_loader/...",
         "//litert/c/options/...",
         "//litert/compiler/plugin/...",
         "//litert/core/model/...",
@@ -100,6 +101,7 @@ package_group(
         "//litert/test/...",
         "//litert/tools/...",
         "//litert/vendors/...",
+        "//third_party/odml/litert/weight_loader/...",
     ] + litert_friends(),
 )
 

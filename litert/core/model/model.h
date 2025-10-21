@@ -1048,6 +1048,11 @@ class LiteRtModelT {
     }
   }
 
+  // Records the original source path of the model, if known.
+  void SetSourcePath(std::string path) { source_path_ = path; }
+
+  const std::optional<std::string>& SourcePath() const { return source_path_; }
+
   // Attach an asset to the given op. An asset is a non-tensor buffer
   // that is used by the op. Assets may be referenced by multiple ops.
   // Each edge from an op to an asset is identified by a name. All buffers
@@ -1117,6 +1122,7 @@ class LiteRtModelT {
   // TFLITE
   TflOpCodes tfl_operator_codes_;
   TflFlatbuffer tfl_flatbuffer_;
+  std::optional<std::string> source_path_;
 };
 
 // Get the build stamp from the model if it exists.
