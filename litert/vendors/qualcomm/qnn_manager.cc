@@ -114,6 +114,11 @@ LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
   auto lib_system_or = SharedLibrary::Load(path, RtldFlags::Default());
   if (!lib_system_or) {
+    std::cout << "================================================0"
+              << std::endl;
+    std::cout << path << std::endl;
+    std::cout << "================================================0"
+              << std::endl;
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
   }
@@ -356,16 +361,22 @@ LiteRtStatus QnnManager::Init(std::optional<std::string> shared_library_dir,
     litert::internal::PutLibOnLdPath(*shared_library_dir,
                                      ::qnn::HtpBackend::GetLibraryName());
   }
+  LITERT_LOG(LITERT_INFO, "============================================0");
 
   LITERT_RETURN_IF_ERROR(LoadSystemLib(kLibQnnSystemSo));
+  LITERT_LOG(LITERT_INFO, "============================================1");
   LITERT_RETURN_IF_ERROR(ResolveSystemApi());
+  LITERT_LOG(LITERT_INFO, "============================================2");
 
   options_ = options;
   switch (options_.GetBackendType()) {
     case ::qnn::BackendType::kHtpBackend: {
+      LITERT_LOG(LITERT_INFO, "============================================3");
       LITERT_RETURN_IF_ERROR(LoadLib(::qnn::HtpBackend::GetLibraryName()));
+      LITERT_LOG(LITERT_INFO, "============================================4");
       LITERT_RETURN_IF_ERROR(
           ResolveApi(::qnn::HtpBackend::GetExpectedBackendVersion()));
+      LITERT_LOG(LITERT_INFO, "============================================5");
 
       backend_ = std::make_unique<::qnn::HtpBackend>(Api());
       LITERT_RETURN_IF_ERROR(backend_->Init(options_, soc_info));

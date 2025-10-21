@@ -45,6 +45,7 @@ pytype_strict_contrib_test(
         "noasan",
         "nomsan",
         "nosan",
+        "notap",
         "notsan",
     ],
     deps = [
