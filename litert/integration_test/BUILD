@@ -17,11 +17,12 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
+# copybara:uncomment load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
 
-# copybara:uncomment load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_cpu_mh_guitar_test", "litert_device_test", "litert_integration_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 # copybara:comment_begin(oss-only)
 load("//litert/integration_test:litert_device.bzl", "device_rlocation", "litert_device_test", "litert_integration_test")
 # copybara:comment_end
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_cpu_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
