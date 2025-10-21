@@ -34,6 +34,8 @@ Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
   switch (litert_element_type) {
     case kLiteRtElementTypeBool:
       return tflite::TensorType_BOOL;
+    case kLiteRtElementTypeInt2:
+      return tflite::TensorType_INT2;
     case kLiteRtElementTypeInt4:
       return tflite::TensorType_INT4;
     case kLiteRtElementTypeInt8:

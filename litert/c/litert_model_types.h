@@ -46,6 +46,7 @@ LiteRtStatus LiteRtGetTensorIndex(LiteRtTensor tensor, uint32_t* tensor_index);
 typedef enum {
   kLiteRtElementTypeNone = 0,         // kTfLiteNoType,
   kLiteRtElementTypeBool = 6,         // kTfLiteBool,
+  kLiteRtElementTypeInt2 = 20,        // kTfLiteInt2,
   kLiteRtElementTypeInt4 = 18,        // kTfLiteInt4,
   kLiteRtElementTypeInt8 = 9,         // kTfLiteInt8,
   kLiteRtElementTypeInt16 = 7,        // kTfLiteInt16,
