@@ -16,43 +16,46 @@ cmake_minimum_required(VERSION 3.20)
 include(CheckIncludeFileCXX)
 include(FetchContent)
 
+option(LITERT_ENABLE_MEDIATEK "Enable MediaTek dispatch build" OFF)
 set(NEUROPILOT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded NeuroPilot headers (root containing neuron/api)")
 set(QAIRT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded QAIRT/QNN headers (root containing Qnn*.h)")
 
-if(NOT NEUROPILOT_HEADERS_DIR)
-  if(NOT NEUROPILOT_HEADERS_URL AND NOT NEUROPILOT_GIT_REPO)
-    set(NEUROPILOT_HEADERS_URL "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/57c17aa0-90b4-4871-a7b6-cdcdc678b3aa.gz")
-  endif()
-  if(NEUROPILOT_HEADERS_URL OR NEUROPILOT_GIT_REPO)
-    if(NEUROPILOT_HEADERS_URL)
-      FetchContent_Declare(neuro_pilot
-        URL ${NEUROPILOT_HEADERS_URL}
-      )
-    else()
-      FetchContent_Declare(neuro_pilot
-        GIT_REPOSITORY ${NEUROPILOT_GIT_REPO}
-        GIT_TAG        ${NEUROPILOT_GIT_TAG}
-      )
+if(LITERT_ENABLE_MEDIATEK)
+  if(NOT NEUROPILOT_HEADERS_DIR)
+    if(NOT NEUROPILOT_HEADERS_URL AND NOT NEUROPILOT_GIT_REPO)
+      set(NEUROPILOT_HEADERS_URL "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/57c17aa0-90b4-4871-a7b6-cdcdc678b3aa.gz")
     endif()
-    FetchContent_MakeAvailable(neuro_pilot)
-    set(NEUROPILOT_HEADERS_DIR ${neuro_pilot_SOURCE_DIR})
-    set(_np_candidates)
-    list(APPEND _np_candidates
-      "${NEUROPILOT_HEADERS_DIR}/${NEUROPILOT_HEADERS_SUBDIR}"
-      "${NEUROPILOT_HEADERS_DIR}/v8_latest/host/include"
-      "${NEUROPILOT_HEADERS_DIR}/v9_latest/host/include"
-      "${NEUROPILOT_HEADERS_DIR}/v7_latest/host/include"
-      "${NEUROPILOT_HEADERS_DIR}/v8_0_8/host/include"
-      "${NEUROPILOT_HEADERS_DIR}/host/include"
-      "${NEUROPILOT_HEADERS_DIR}/include"
-    )
-    foreach(_cand IN LISTS _np_candidates)
-      if(_cand AND EXISTS "${_cand}/neuron/api/NeuronAdapter.h")
-        set(NEUROPILOT_HEADERS_DIR "${_cand}")
-        break()
+    if(NEUROPILOT_HEADERS_URL OR NEUROPILOT_GIT_REPO)
+      if(NEUROPILOT_HEADERS_URL)
+        FetchContent_Declare(neuro_pilot
+          URL ${NEUROPILOT_HEADERS_URL}
+        )
+      else()
+        FetchContent_Declare(neuro_pilot
+          GIT_REPOSITORY ${NEUROPILOT_GIT_REPO}
+          GIT_TAG        ${NEUROPILOT_GIT_TAG}
+        )
       endif()
-    endforeach()
-    message(STATUS "NeuroPilot headers at: ${NEUROPILOT_HEADERS_DIR}")
+      FetchContent_MakeAvailable(neuro_pilot)
+      set(NEUROPILOT_HEADERS_DIR ${neuro_pilot_SOURCE_DIR})
+      set(_np_candidates)
+      list(APPEND _np_candidates
+        "${NEUROPILOT_HEADERS_DIR}/${NEUROPILOT_HEADERS_SUBDIR}"
+        "${NEUROPILOT_HEADERS_DIR}/v8_latest/host/include"
+        "${NEUROPILOT_HEADERS_DIR}/v9_latest/host/include"
+        "${NEUROPILOT_HEADERS_DIR}/v7_latest/host/include"
+        "${NEUROPILOT_HEADERS_DIR}/v8_0_8/host/include"
+        "${NEUROPILOT_HEADERS_DIR}/host/include"
+        "${NEUROPILOT_HEADERS_DIR}/include"
+      )
+      foreach(_cand IN LISTS _np_candidates)
+        if(_cand AND EXISTS "${_cand}/neuron/api/NeuronAdapter.h")
+          set(NEUROPILOT_HEADERS_DIR "${_cand}")
+          break()
+        endif()
+      endforeach()
+      message(STATUS "NeuroPilot headers at: ${NEUROPILOT_HEADERS_DIR}")
+    endif()
   endif()
 endif()
 
@@ -224,24 +227,23 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
   )
 
   if(UNIX AND NOT APPLE)
-        target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so"
-          -Wl,--whole-archive)
-        target_link_libraries(${TGT} PRIVATE litert_runtime_c_api_static)
-        target_link_options(${TGT} PRIVATE -Wl,--no-whole-archive)
+    target_link_options(${TGT} PRIVATE "-Wl,-soname=libLiteRtDispatch_${OUTPUT_BASENAME}.so")
   endif()
 endfunction()
 
 # Google Tensor
 _litert_add_dispatch_so(GoogleTensor "google_tensor/dispatch" "GoogleTensor")
 # MediaTek
-check_include_file_cxx("neuron/api/NeuronAdapter.h" HAVE_MEDIATEK_NEURON_HDR)
-if(NEUROPILOT_HEADERS_DIR AND EXISTS "${NEUROPILOT_HEADERS_DIR}/neuron/api/NeuronAdapter.h")
-  set(HAVE_MEDIATEK_NEURON_HDR TRUE)
-endif()
-if(HAVE_MEDIATEK_NEURON_HDR)
-  _litert_add_dispatch_so(MediaTek "mediatek/dispatch" "MediaTek")
-else()
-  message(STATUS "Skipping MediaTek dispatch: neuron/api/NeuronAdapter.h not found")
+if(LITERT_ENABLE_MEDIATEK)
+  check_include_file_cxx("neuron/api/NeuronAdapter.h" HAVE_MEDIATEK_NEURON_HDR)
+  if(NEUROPILOT_HEADERS_DIR AND EXISTS "${NEUROPILOT_HEADERS_DIR}/neuron/api/NeuronAdapter.h")
+    set(HAVE_MEDIATEK_NEURON_HDR TRUE)
+  endif()
+  if(HAVE_MEDIATEK_NEURON_HDR)
+    _litert_add_dispatch_so(MediaTek "mediatek/dispatch" "MediaTek")
+  else()
+    message(STATUS "Skipping MediaTek dispatch: neuron/api/NeuronAdapter.h not found")
+  endif()
 endif()
 # Intel OpenVINO
 check_include_file_cxx("openvino/openvino.hpp" HAVE_OPENVINO_HDR)
@@ -252,11 +254,189 @@ else()
 endif()
 
 # Qualcomm
-option(LITERT_ENABLE_QUALCOMM "Enable Qualcomm dispatch build (requires QNN SDK headers/libs)" OFF)
+option(LITERT_ENABLE_QUALCOMM "Enable Qualcomm dispatch build (requires QNN SDK headers/libs)" ON)
 if(QAIRT_HEADERS_DIR AND NOT LITERT_ENABLE_QUALCOMM)
   message(STATUS "Enabling Qualcomm dispatch: QNN headers detected at ${QAIRT_HEADERS_DIR}")
   set(LITERT_ENABLE_QUALCOMM ON CACHE BOOL "" FORCE)
 endif()
 if(LITERT_ENABLE_QUALCOMM)
   _litert_add_dispatch_so(Qualcomm "qualcomm/dispatch" "Qualcomm")
+
+  # Add the Qualcomm compiler plugin build for host
+  message(STATUS "Building Qualcomm compiler plugin for host")
+     
+  FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.2
+  )
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        e2239ee6043f73722e7aa812a459f54a28552929 # release-1.11.0
+)
+  FetchContent_Declare(
+      googlebenchmark
+      GIT_REPOSITORY https://github.com/google/benchmark.git
+      GIT_TAG        0d98dba29d66e93259db7daa53a9327df767a415 # v1.6.1
+  )
+  FetchContent_MakeAvailable(nlohmann_json)
+  FetchContent_MakeAvailable(googletest)
+  FetchContent_MakeAvailable(googlebenchmark)
+  file(GLOB BUILDER_SRCS
+    "qualcomm/core/builders/*.cc"
+    "qualcomm/core/transformation/*.cc"
+    "qualcomm/core/dump/*.cc"
+  )
+  add_library(qnn_compiler_plugin SHARED
+    "qualcomm/compiler/qnn_compiler_plugin.cc"
+    "qualcomm/compiler/qnn_compose_graph.cc"
+    "qualcomm/compiler/graph_mapper.cc"
+    "qualcomm/qnn_manager.cc"
+    "qualcomm/context_binary_info.cc"
+    "qualcomm/core/common.cc"
+    "qualcomm/core/tensor_pool.cc"
+    "qualcomm/core/utils/miscs.cc"
+    "qualcomm/core/schema/soc_table.cc"
+    "qualcomm/core/backends/qnn_backend.cc"
+    "qualcomm/core/backends/htp_backend.cc"
+    "qualcomm/core/backends/htp_perf_control.cc"
+    "qualcomm/core/backends/ir_backend.cc"
+    "qualcomm/core/wrappers/quantize_params_wrapper.cc"
+    "qualcomm/core/wrappers/tensor_wrapper.cc"
+    "qualcomm/core/wrappers/param_wrapper.cc"
+    "qualcomm/core/wrappers/op_wrapper.cc"
+    "qualcomm/core/utils/log_default.cc"
+    ${BUILDER_SRCS}
+  )
+  target_include_directories(qnn_compiler_plugin
+    PUBLIC
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/..>
+      $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${TFLITE_SOURCE_DIR}>
+      $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core>
+        $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
+    )
+    target_link_libraries(qnn_compiler_plugin
+      PUBLIC
+        litert_cc_api
+        litert_core
+        absl::strings
+        absl::str_format
+        litert_cc_options
+        litert_core_model
+        nlohmann_json::nlohmann_json
+        GTest::gtest
+      PRIVATE
+        tensorflow-lite
+        absl::log
+        absl::check
+    )
+    set_target_properties(qnn_compiler_plugin PROPERTIES
+    OUTPUT_NAME "LiteRtCompilerPlugin_Qualcomm"
+    POSITION_INDEPENDENT_CODE ON
+  )
+  if(UNIX AND NOT APPLE)
+    target_link_options(qnn_compiler_plugin PRIVATE "-Wl,-soname=libLiteRtCompilerPlugin_Qualcomm.so")
+  endif()
+
+  if(LITERT_BUILD_TESTS)
+    add_library(litert_test_common STATIC
+      "${CMAKE_CURRENT_SOURCE_DIR}/../test/common.cc"
+    )
+    target_include_directories(litert_test_common PUBLIC
+      "${CMAKE_CURRENT_SOURCE_DIR}/../test"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../"
+      "${TENSORFLOW_SOURCE_DIR}"
+      "${TENSORFLOW_SOURCE_DIR}/third_party/xla/third_party/tsl"
+    )
+    target_link_libraries(litert_test_common PUBLIC
+      GTest::gmock
+      tensorflow-lite
+      absl::string_view
+      flatbuffers::flatbuffers
+    )
+
+    add_executable(qnn_compiler_plugin_test "qualcomm/compiler/qnn_compiler_plugin_test.cc")
+    target_link_libraries(qnn_compiler_plugin_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(qnn_manager_test "qualcomm/qnn_manager_test.cc" "qualcomm/tools/dump.cc")
+    target_link_libraries(qnn_manager_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(common_test "qualcomm/core/common_test.cc")
+    target_link_libraries(common_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(tensor_pool_test "qualcomm/core/tensor_pool_test.cc")
+    target_link_libraries(tensor_pool_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(op_wrapper_test "qualcomm/core/wrappers/tests/op_wrapper_test.cc")
+    target_link_libraries(op_wrapper_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(tensor_wrapper_test "qualcomm/core/wrappers/tests/tensor_wrapper_test.cc")
+    target_link_libraries(tensor_wrapper_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(param_wrapper_test "qualcomm/core/wrappers/tests/param_wrapper_test.cc")
+    target_link_libraries(param_wrapper_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(quantize_params_wrapper_test "qualcomm/core/wrappers/tests/quantize_params_wrapper_test.cc")
+    target_link_libraries(quantize_params_wrapper_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(utils_test "qualcomm/core/utils/utils_test.cc")
+    target_link_libraries(utils_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+
+    add_executable(qnn_backend_test "qualcomm/core/backends/qnn_backend_test.cc")
+    target_link_libraries(qnn_backend_test
+      PRIVATE
+        qnn_compiler_plugin
+        litert_test_common
+        GTest::gtest_main
+    )
+  endif()
 endif()
