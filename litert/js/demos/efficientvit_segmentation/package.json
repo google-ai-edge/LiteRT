@@ -23,7 +23,7 @@
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
-    "esbuild": "^0.23.0",
+    "esbuild": "^0.25.0",
     "rimraf": "^6.0.1",
     "mkdirp": "^3.0.1"
   }

@@ -36,7 +36,7 @@
     "@tensorflow/tfjs-core": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@webgpu/types": "^0.1.54",
-    "esbuild": "^0.23.0",
+    "esbuild": "^0.25.0",
     "eslint": "^9.8.0",
     "tsup": "^8.2.3",
     "typescript": "^5.5.4"
