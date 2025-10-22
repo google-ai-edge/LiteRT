@@ -324,30 +324,32 @@ flavored_cc_alias(
     deps = [":litert_compiled_model"],
 )
 
-litert_device_test(
-    name = "litert_compiled_model_google_tensor_test",
-    srcs = ["litert_compiled_model_google_tensor_test.cc"],
-    backend_id = "google_tensor",
-    data = [
-        "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
-    ],
-    linkopts = gles_linkopts(),
-    deps = [
-        ":litert_api_with_dynamic_runtime",
-        "//litert/test:common",
-        "//litert/test:matchers",
-        "//litert/test:simple_model",
-        "@com_google_absl//absl/log:absl_log",
-        "@com_google_absl//absl/strings:string_view",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
-)
+# copybara:uncomment_begin(google-only)
+# litert_device_test(
+#     name = "litert_compiled_model_google_tensor_test",
+#     srcs = ["litert_compiled_model_google_tensor_test.cc"],
+#     backend_id = "google_tensor",
+#     data = [
+#         "//litert/test:testdata/simple_model_npu_google_tensor_precompiled.tflite",
+#     ],
+#     linkopts = gles_linkopts(),
+#     deps = [
+#         ":litert_api_with_dynamic_runtime",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/log:absl_log",
+#         "@com_google_absl//absl/strings:string_view",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/test:common",
+#         "//litert/test:matchers",
+#         "//litert/test:simple_model",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+# copybara:uncomment_end(google-only)
 
 litert_device_test(
     name = "litert_compiled_model_qualcomm_test",
