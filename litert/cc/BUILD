@@ -1170,35 +1170,6 @@ cc_library(
 # )
 # copybara:uncomment_end(google-only)
 
-# Temporary targets for LiteRT-LM API migration.
-# TODO: b/451641822 - Remove these targets.
-
-cc_library(
-    name = "litert_handle",
-    hdrs = ["litert_handle.h"],
-    visibility = [
-        "//third_party/odml/litert_lm:__subpackages__",
-    ],
-)
-
-cc_library(
-    name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
-    visibility = [
-        "//third_party/odml/litert_lm:__subpackages__",
-    ],
-    deps = [
-        ":litert_expected",
-        ":litert_macros",
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
-        "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
 # -----------------------------------------------------------------------------
 # LiteRT C++ APIs which needs to use (dynamic) C Runtime Framework.
 #
@@ -1219,7 +1190,6 @@ cc_library(
         "litert_environment_options.h",
         "litert_event.h",
         "litert_expected.h",
-        "litert_handle.h",  # TODO: b/451641822 - Remove this target.
         "litert_layout.h",
         "litert_macros.h",
         "litert_model.h",
