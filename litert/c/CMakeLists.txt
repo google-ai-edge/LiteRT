@@ -185,6 +185,11 @@ set(_litert_runtime_c_api_private_archives
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a"
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a"
 )
+set(_litert_kleidiai_lib "${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a")
+if(NOT EXISTS "${_litert_kleidiai_lib}")
+  message(WARNING "LiteRT: optional KleidiAI archive not found at ${_litert_kleidiai_lib}; skipping.")
+  list(REMOVE_ITEM _litert_runtime_c_api_private_archives "${_litert_kleidiai_lib}")
+endif()
 
 # Provide missing TensorFlow Lite GPU GL core objects for Android builds.
 if(LITERT_PLATFORM_ANDROID)
