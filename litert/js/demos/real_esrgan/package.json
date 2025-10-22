@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "@litertjs/tsconfig": "^0.2.1",
-    "esbuild": "^0.25.9",
+    "esbuild": "^0.25.0",
     "mkdirp": "^3.0.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.0.0"
