@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/wasm-utils",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "Wasm utils for LiteRT.js",
   "publishConfig": {
     "access": "public"
@@ -27,8 +27,8 @@
     "pack": "npm pack"
   },
   "devDependencies": {
-    "@litertjs/tsconfig": "^0.1.1",
-    "@litertjs/eslint-config": "^0.1.1",
+    "@litertjs/tsconfig": "^0.2.1",
+    "@litertjs/eslint-config": "^0.2.1",
     "esbuild": "^0.23.0",
     "eslint": "^9.8.0",
     "tsup": "^8.2.3",
