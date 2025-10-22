@@ -62,6 +62,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Wno-changes-meaning -Wno-invalid-constexpr)
+endif()
+
 # Options
 option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
