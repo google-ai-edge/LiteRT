@@ -160,6 +160,8 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
                 -DTFLITE_ENABLE_GPU=ON
                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
                 -DCMAKE_POLICY_VERSION=3.5
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
                 ${_tflite_extra_args}
             WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
             RESULT_VARIABLE TFLITE_CONFIGURE_RESULT
