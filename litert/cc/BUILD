@@ -1020,54 +1020,56 @@ flavored_cc_alias(
     deps = [":litert_tensor_buffer"],
 )
 
-cc_test(
-    name = "litert_tensor_buffer_test",
-    srcs = ["litert_tensor_buffer_test.cc"],
-    linkopts = litert_android_linkopts(),
-    deps = [
-        ":litert_element_type",
-        ":litert_environment",
-        ":litert_event",
-        ":litert_expected",
-        ":litert_layout",
-        ":litert_macros",
-        ":litert_model",
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_environment",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
-        "//litert/cc/internal:litert_platform_support",
-        "//litert/runtime:tensor_buffer",
-        "//litert/test:matchers",
-        "//tflite/delegates/gpu/cl:buffer",
-        "//tflite/delegates/gpu/cl:cl_command_queue",
-        "//tflite/delegates/gpu/cl:cl_context",
-        "//tflite/delegates/gpu/cl:cl_device",
-        "//tflite/delegates/gpu/cl:opencl_wrapper",
-        "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-        "@opencl_headers",
-    ] + select({
-        "@org_tensorflow//tensorflow:android": [
-            "//tflite/delegates/gpu/cl:gl_interop",
-            "//tflite/delegates/gpu/gl:egl_environment",
-        ],
-        "//conditions:default": [],
-    }),
-)
-
-litert_device_exec(
-    name = "litert_tensor_buffer_device_test",
-    backend_id = "cpu",
-    data = [],
-    target = ":litert_tensor_buffer_test",
-)
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "litert_tensor_buffer_test",
+#     srcs = ["litert_tensor_buffer_test.cc"],
+#     linkopts = litert_android_linkopts(),
+#     deps = [
+#         ":litert_element_type",
+#         ":litert_environment",
+#         ":litert_event",
+#         ":litert_expected",
+#         ":litert_layout",
+#         ":litert_macros",
+#         ":litert_model",
+#         ":litert_tensor_buffer",
+#         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/debugging:leak_check",
+#         "@com_google_absl//absl/log:absl_check",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/types:span",
+#         "//litert/c:litert_common",
+#         "//litert/c:litert_environment",
+#         "//litert/c:litert_model_types",
+#         "//litert/c:litert_tensor_buffer",
+#         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc/internal:litert_handle",
+#         "//litert/cc/internal:litert_platform_support",
+#         "//litert/runtime:tensor_buffer",
+#         "//litert/test:matchers",
+#         "@opencl_headers",
+#         "//tflite/delegates/gpu/cl:buffer",
+#         "//tflite/delegates/gpu/cl:cl_command_queue",
+#         "//tflite/delegates/gpu/cl:cl_context",
+#         "//tflite/delegates/gpu/cl:cl_device",
+#         "//tflite/delegates/gpu/cl:opencl_wrapper",
+#     ] + select({
+#         "@org_tensorflow//tensorflow:android": [
+#             "//tflite/delegates/gpu/cl:gl_interop",
+#             "//tflite/delegates/gpu/gl:egl_environment",
+#         ],
+#         "//conditions:default": [],
+#     }),
+# )
+#
+# litert_device_exec(
+#     name = "litert_tensor_buffer_device_test",
+#     backend_id = "cpu",
+#     data = [],
+#     target = ":litert_tensor_buffer_test",
+# )
+# copybara:uncomment_end(google-only)
 
 cc_library_with_testonly_vis(
     name = "litert_options",
