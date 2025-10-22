@@ -150,6 +150,15 @@ TEST(QnnOptionTest, SetIrJsonDir) {
   EXPECT_TRUE(options.GetIrJsonDir().empty());
 }
 
+TEST(QnnOptionTest, SetDlcDir) {
+  Options options;
+  options.SetDlcDir("tmp/");
+  EXPECT_FALSE(options.GetDlcDir().empty());
+  EXPECT_EQ(options.GetDlcDir(), "tmp/");
+  options.SetDlcDir("");
+  EXPECT_TRUE(options.GetDlcDir().empty());
+}
+
 TEST(QnnOptionTest, SetVtcmSize) {
   Options options;
   options.SetVtcmSize(4);
@@ -192,6 +201,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetHtpPerformanceMode(), HtpPerformanceMode::kDefault);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
+  EXPECT_TRUE(options.GetDlcDir().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),
