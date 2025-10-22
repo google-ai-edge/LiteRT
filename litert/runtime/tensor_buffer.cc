@@ -1008,6 +1008,8 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                         "Unexpected tensor buffer type");
     }
   }
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "Unsupported tensor buffer type for Lock()");
 }
 
 Expected<void> LiteRtTensorBufferT::Unlock() {
@@ -1079,4 +1081,6 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
     }
   }
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "Unsupported tensor buffer type for Unlock()");
 }
