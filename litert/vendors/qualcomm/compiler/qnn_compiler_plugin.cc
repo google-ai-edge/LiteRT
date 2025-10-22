@@ -464,14 +464,20 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 
-  // Generate context binary.
-  result->context_bin.resize(next_context_handle_idx);
-  for (int i = 0; i < next_context_handle_idx; ++i) {
-    LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
-    LITERT_RETURN_IF_ERROR((*qnn_manager)
-                               ->GenerateContextBinary(context_handles[i].get(),
-                                                       result->context_bin[i]));
-    LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
+  if (compiler_plugin->Options().GetDlcDir().empty()) {
+    // Generate context binary.
+    result->context_bin.resize(next_context_handle_idx);
+    for (int i = 0; i < next_context_handle_idx; ++i) {
+      LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
+      LITERT_RETURN_IF_ERROR((*qnn_manager)
+                                ->GenerateContextBinary(context_handles[i].get(),
+                                                        result->context_bin[i]));
+      LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
+    }
+  } else {
+    LITERT_LOG(LITERT_INFO,
+               "Since DLC generation is enabled, functional context binaries "
+               "are excluded from the compiled TFLite.");
   }
   *compiled_result = result.release();
 

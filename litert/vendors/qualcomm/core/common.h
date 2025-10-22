@@ -94,6 +94,9 @@ class Options {
   absl::string_view GetIrJsonDir() const;
   void SetIrJsonDir(absl::string_view ir_json_dir);
 
+  absl::string_view GetDlcDir() const;
+  void SetDlcDir(absl::string_view dlc_dir);
+
   std::uint32_t GetVtcmSize() const;
   void SetVtcmSize(std::uint32_t vtcm_size);
 
@@ -117,6 +120,7 @@ class Options {
   HtpPerformanceMode htp_performance_mode_ = HtpPerformanceMode::kDefault;
   std::vector<std::int32_t> dump_tensor_ids_;
   std::string ir_json_dir_;
+  std::string dlc_dir_;
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t num_hvx_threads_ = 0;
   OptimizationLevel optimization_level_ =
