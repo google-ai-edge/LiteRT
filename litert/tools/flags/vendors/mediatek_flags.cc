@@ -78,6 +78,7 @@ std::string AbslUnparseFlag(LiteRtMediatekOptionsNeronSDKVersionType options) {
     case kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9:
       return "version9";
   }
+  return std::string();
 }
 
 bool AbslParseFlag(absl::string_view text,
@@ -120,6 +121,7 @@ std::string AbslUnparseFlag(
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
       return "turbo_boost";
   }
+  return std::string();
 }
 
 bool AbslParseFlag(absl::string_view text,
@@ -158,6 +160,7 @@ std::string AbslUnparseFlag(
     case kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing:
       return "batch_processing";
   }
+  return std::string();
 }
 
 // NOLINTEND(*alien-types*)

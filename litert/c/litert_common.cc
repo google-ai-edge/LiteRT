@@ -52,6 +52,7 @@ const char* LiteRtGetStatusString(LiteRtStatus status) {
     LITERT_STATUS_STR_CASE(kLiteRtStatusCancelled);
 #undef LITERT_STATUS_STR_CASE
   }
+  return "kLiteRtStatusErrorUnknown";
 }
 
 int LiteRtCompareApiVersion(LiteRtApiVersion version,
