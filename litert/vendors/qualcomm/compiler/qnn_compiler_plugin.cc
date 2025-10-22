@@ -476,13 +476,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
   }
 
-  // Generate context binary.
-  result->context_bin.resize(next_context_handle_idx);
-  for (int i = 0; i < next_context_handle_idx; ++i) {
-    LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
-    LITERT_RETURN_IF_ERROR(qnn_manager->GenerateContextBinary(
-        context_handles[i].get(), result->context_bin[i]));
-    LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
+  if (compiler_plugin->Options().GetBackendType() ==
+      ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_WARNING,
+               "Since IR backend is enabled, functional context binaries are "
+               "excluded from the compiled TFLite.");
+    return kLiteRtStatusErrorUnsupported;
+  } else {
+    // Generate context binary.
+    result->context_bin.resize(next_context_handle_idx);
+    for (int i = 0; i < next_context_handle_idx; ++i) {
+      LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
+      LITERT_RETURN_IF_ERROR(qnn_manager->GenerateContextBinary(
+          context_handles[i].get(), result->context_bin[i]));
+      LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
+    }
   }
   *compiled_result = result.release();
 
