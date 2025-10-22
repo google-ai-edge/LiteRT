@@ -2,7 +2,7 @@
 
 Use this guide to configure and build the LiteRT runtime with CMake on macOS
 The instructions cover both Android cross-compilation targets
-(built from Linux and Mac OS) machine and native macOS builds.
+(built from Linux and Mac OS - ARM 64) machine and native macOS builds.
 
 ## Common Build Steps
 
@@ -48,7 +48,7 @@ controlled via `-j` with the desired core count.
 Artifacts such as static libraries will be emitted under
 `cmake_build_android_arm64`.
 
-## macOS Host Build
+## MacOS (ARM 64) Host Build
 
 1.  Configure the default host preset:
 
