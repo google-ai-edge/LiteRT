@@ -91,8 +91,6 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
   LITERT_ASSIGN_OR_RETURN(Signature signature,
                           model_.GetSignature(signature_index));
 
-  LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.Subgraph(signature.Key()));
-
   Expected<Tensor> tensor_expected = is_input
                                          ? signature.InputTensor(tensor_name)
                                          : signature.OutputTensor(tensor_name);
