@@ -31,6 +31,7 @@
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -40,8 +41,9 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/model/model.h"
 #include "litert/core/options.h"
@@ -1068,7 +1070,7 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffer,
       TensorBuffer::CreateManaged(
-          env_ptr, kLiteRtTensorBufferTypeHostMemory,
+          env_ptr, TensorBufferType::HostMemory,
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           2 * sizeof(float)));
   // The model has two inputs: "input" and "weight". We only provide the buffer

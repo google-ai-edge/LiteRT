@@ -24,6 +24,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -41,12 +42,13 @@ Expected<TensorBuffer> TensorBuffer::Duplicate() const {
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateManaged(
-    LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+    LiteRtEnvironment env, TensorBufferType buffer_type,
     const RankedTensorType& tensor_type, size_t buffer_size) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env, buffer_type, &litert_tensor_type, buffer_size, &tensor_buffer));
+      env, static_cast<LiteRtTensorBufferType>(buffer_type),
+      &litert_tensor_type, buffer_size, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
@@ -100,12 +102,13 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 
 Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
     LiteRtEnvironment env, const RankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
+    TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
 #if LITERT_HAS_OPENCL_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromOpenClMemory(
-      env, &litert_tensor_type, buffer_type, cl_memory, size_bytes,
+      env, &litert_tensor_type,
+      static_cast<LiteRtTensorBufferType>(buffer_type), cl_memory, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 #else
@@ -113,7 +116,6 @@ Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
                             "OpenCL is not supported on this platform");
 #endif
 }
-
 
 Expected<TensorBuffer> TensorBuffer::CreateFromGlBuffer(
     LiteRtEnvironment env, const RankedTensorType& tensor_type,
@@ -140,11 +142,12 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
 #if LITERT_HAS_METAL_SUPPORT
 Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
     LiteRtEnvironment env, const RankedTensorType& tensor_type,
-    LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes) {
+    TensorBufferType buffer_type, void* buffer, size_t size_bytes) {
   LiteRtTensorBuffer tensor_buffer;
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
   LITERT_RETURN_IF_ERROR(LiteRtCreateTensorBufferFromMetalMemory(
-      env, &litert_tensor_type, buffer_type, buffer, size_bytes,
+      env, &litert_tensor_type,
+      static_cast<LiteRtTensorBufferType>(buffer_type), buffer, size_bytes,
       /*deallocator=*/nullptr, &tensor_buffer));
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }

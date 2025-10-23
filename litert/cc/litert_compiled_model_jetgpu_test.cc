@@ -23,7 +23,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -31,6 +30,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -90,11 +90,11 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
   LITERT_ASSERT_OK_AND_ASSIGN(auto buffer0_type, input_buffers[0].BufferType());
-  EXPECT_EQ(buffer0_type, kLiteRtTensorBufferTypeHostMemory);
+  EXPECT_EQ(buffer0_type, TensorBufferType::HostMemory);
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
   LITERT_ASSERT_OK_AND_ASSIGN(auto buffer1_type, input_buffers[0].BufferType());
-  EXPECT_EQ(buffer1_type, kLiteRtTensorBufferTypeHostMemory);
+  EXPECT_EQ(buffer1_type, TensorBufferType::HostMemory);
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
@@ -106,7 +106,7 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_type, input_buffers[0].BufferType());
-  EXPECT_EQ(output_type, kLiteRtTensorBufferTypeHostMemory);
+  EXPECT_EQ(output_type, TensorBufferType::HostMemory);
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(
         output_buffers[0], TensorBuffer::LockMode::kRead);
