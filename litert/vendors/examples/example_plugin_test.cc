@@ -108,5 +108,18 @@ TEST(TestCallDummyPlugin, RegisterAllTransformations) {
   ASSERT_STREQ(transformation_names[0], "MyTransformation");
 }
 
+TEST(TestCallDummyPlugin, CheckCompilerCompatibility) {
+  auto plugin = CreatePlugin();
+  LiteRtApiVersion api_version = {.major = 1, .minor = 0, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, env, options, "ExampleSocModel"));
+
+  EXPECT_EQ(kLiteRtStatusErrorUnsupportedCompilerVersion,
+            LiteRtCompilerPluginCheckCompilerCompatibility(
+                api_version, env, options, "UnsupportedSocModel"));
+}
+
 }  // namespace
 }  // namespace litert
