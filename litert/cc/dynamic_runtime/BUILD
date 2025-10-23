@@ -510,6 +510,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
@@ -546,6 +547,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -579,6 +581,7 @@ cc_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",

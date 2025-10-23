@@ -36,6 +36,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -88,23 +89,18 @@ Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
 Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
     size_t signature_index, absl::string_view tensor_name,
     bool is_input) const {
-  LITERT_ASSIGN_OR_RETURN(Signature signature,
-                          model_.GetSignature(signature_index));
-
-  LITERT_ASSIGN_OR_RETURN(Subgraph subgraph, model_.Subgraph(signature.Key()));
-
-  Expected<Tensor> tensor_expected = is_input
-                                         ? signature.InputTensor(tensor_name)
-                                         : signature.OutputTensor(tensor_name);
+  Expected<RankedTensorType> tensor_type_expected =
+      is_input ? model_.GetInputTensorType(signature_index, tensor_name)
+               : model_.GetOutputTensorType(signature_index, tensor_name);
+  LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
+                          tensor_type_expected);
   Expected<TensorBufferRequirements> buffer_requirements_expected =
       is_input ? GetInputBufferRequirements(signature_index, tensor_name)
                : GetOutputBufferRequirements(signature_index, tensor_name);
 
-  LITERT_ASSIGN_OR_RETURN(const Tensor& tensor, tensor_expected);
   LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
                           buffer_requirements_expected);
-  LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
-                          tensor.RankedTensorType());
+
   return CreateBufferImpl(env_, buffer_requirements, tensor_type);
 }
 

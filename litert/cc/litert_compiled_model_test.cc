@@ -36,6 +36,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_runtime_options.h"
@@ -545,16 +546,10 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
     LITERT_ASSERT_OK_AND_ASSIGN(size_t size1, req1.BufferSize());
 
     // Get the element type from the original model.
-    LITERT_ASSERT_OK_AND_ASSIGN(const Signature& signature,
-                                model.GetSignature(0));
-    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor0,
-                                signature.InputTensor("arg0"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type0,
-                                tensor0.RankedTensorType());
-    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& tensor1,
-                                signature.InputTensor("arg1"));
+                                model.GetInputTensorType(0, "arg0"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type1,
-                                tensor1.RankedTensorType());
+                                model.GetInputTensorType(0, "arg1"));
 
     // Manually create a new RankedTensorType with the new shape.
     auto new_type0 = RankedTensorType(
@@ -580,10 +575,8 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
         TensorBufferRequirements out_req,
         compiled_model.GetOutputBufferRequirements(size_t(0)));
     LITERT_ASSERT_OK_AND_ASSIGN(size_t out_size, out_req.BufferSize());
-    LITERT_ASSERT_OK_AND_ASSIGN(const Tensor& out_tensor,
-                                signature.OutputTensor("tfl.add"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& out_type,
-                                out_tensor.RankedTensorType());
+                                model.GetOutputTensorType(0, "tfl.add"));
 
     // Get the output tensor shape from the compiled model.
     LITERT_ASSERT_OK_AND_ASSIGN(

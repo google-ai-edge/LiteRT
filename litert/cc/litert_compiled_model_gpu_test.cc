@@ -41,6 +41,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -468,19 +469,20 @@ TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
-    CompiledModel& compiled_model, Signature& signature) {
+    Model& model, CompiledModel& compiled_model,
+    absl::string_view signature_key,
+    std::vector<absl::string_view> input_names) {
   LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
-  LiteRtSubgraph subgraph_handle = signature.Subgraph();
-  Subgraph subgraph = Subgraph(subgraph_handle);
 
   std::vector<TensorBuffer> input_buffers;
-  input_buffers.reserve(subgraph.Inputs().size());
-  for (Tensor& input_tensor : subgraph.Inputs()) {
-    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements input_buffer_requirements,
-                            compiled_model.GetInputBufferRequirements(
-                                signature.Key(), input_tensor.Name()));
-    LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
-                            input_tensor.RankedTensorType());
+  input_buffers.reserve(input_names.size());
+  for (auto& input_name : input_names) {
+    LITERT_ASSIGN_OR_RETURN(
+        TensorBufferRequirements input_buffer_requirements,
+        compiled_model.GetInputBufferRequirements(signature_key, input_name));
+    LITERT_ASSIGN_OR_RETURN(
+        RankedTensorType ranked_tensor_type,
+        model.GetInputTensorType(signature_key, input_name));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
@@ -495,19 +497,21 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
-    CompiledModel& compiled_model, Signature& signature) {
+    Model& model, CompiledModel& compiled_model,
+    absl::string_view signature_key,
+    std::vector<absl::string_view> output_names) {
   LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
-  LiteRtSubgraph subgraph_handle = signature.Subgraph();
-  Subgraph subgraph = Subgraph(subgraph_handle);
+  LITERT_ASSIGN_OR_RETURN(auto names, compiled_model.GetEnvironment());
 
   std::vector<TensorBuffer> output_buffers;
-  output_buffers.reserve(subgraph.Outputs().size());
-  for (Tensor& output_tensor : subgraph.Outputs()) {
-    LITERT_ASSIGN_OR_RETURN(TensorBufferRequirements input_buffer_requirements,
-                            compiled_model.GetOutputBufferRequirements(
-                                signature.Key(), output_tensor.Name()));
-    LITERT_ASSIGN_OR_RETURN(RankedTensorType ranked_tensor_type,
-                            output_tensor.RankedTensorType());
+  output_buffers.reserve(output_names.size());
+  for (auto& output_name : output_names) {
+    LITERT_ASSIGN_OR_RETURN(
+        TensorBufferRequirements input_buffer_requirements,
+        compiled_model.GetOutputBufferRequirements(signature_key, output_name));
+    LITERT_ASSIGN_OR_RETURN(
+        RankedTensorType ranked_tensor_type,
+        model.GetOutputTensorType(signature_key, output_name));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
@@ -574,11 +578,13 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
   size_t signature_index = 0;
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              model.GetSignatureInputNames(signature_key));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, CreateGlInputBuffers(compiled_model, signatures[0]));
+      auto input_buffers,
+      CreateGlInputBuffers(model, compiled_model, signature_key, input_names));
 
   // Fill model inputs.
-  auto input_names = signatures[0].InputNames();
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
@@ -599,14 +605,15 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
     input_buffers[i].SetEvent(std::move(input_event));
   }
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames(signature_key));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers,
-      CreateGlOutputBuffers(compiled_model, signatures[0]));
+      auto output_buffers, CreateGlOutputBuffers(model, compiled_model,
+                                                 signature_key, output_names));
 
   compiled_model.Run(signature_index, input_buffers, output_buffers);
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   {
@@ -656,11 +663,13 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
   size_t signature_index = 0;
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              model.GetSignatureInputNames(signature_key));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, CreateGlInputBuffers(compiled_model, signatures[0]));
+      auto input_buffers,
+      CreateGlInputBuffers(model, compiled_model, signature_key, input_names));
 
   // Fill model inputs.
-  auto input_names = signatures[0].InputNames();
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
@@ -681,9 +690,11 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
     input_buffers[i].SetEvent(std::move(input_event));
   }
 
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames(signature_key));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers,
-      CreateGlOutputBuffers(compiled_model, signatures[0]));
+      auto output_buffers, CreateGlOutputBuffers(model, compiled_model,
+                                                 signature_key, output_names));
 
   // Execute model asynchronously.
   bool async_execution_mode = true;
@@ -696,7 +707,6 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   ASSERT_TRUE(output_event.Wait());
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   {
