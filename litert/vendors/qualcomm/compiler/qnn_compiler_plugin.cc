@@ -232,6 +232,12 @@ class LiteRtCompilerPluginT {
 
   const ::qnn::Options& Options() const { return qnn_options_; }
 
+  void initQnnManager(std::unique_ptr<QnnManager> qnn_manager) {
+    qnn_manager_ = std::move(qnn_manager);
+  }
+
+  QnnManager* QNN() { return qnn_manager_.get(); }
+
  private:
   litert::Expected<litert::EnvironmentOptions> env_options_ = litert::Error(
       kLiteRtStatusErrorInvalidArgument, "Null environment options");
@@ -242,6 +248,7 @@ class LiteRtCompilerPluginT {
   litert::Expected<litert::qualcomm::QualcommOptions> qualcomm_options_ =
       litert::Error(kLiteRtStatusErrorInvalidArgument, "Null Qualcomm options");
   ::qnn::Options qnn_options_{};
+  QnnManager::Ptr qnn_manager_ = nullptr;
 };
 
 LiteRtStatus LiteRtCreateCompilerPlugin(LiteRtCompilerPlugin* compiler_plugin,
@@ -266,15 +273,19 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   ::litert::Subgraph graph(subgraph);
-
-  auto qnn_manager = QnnManager::Create(
-      compiler_plugin->Options(), std::nullopt,
-      soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+  QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
-    LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().data());
-    return qnn_manager.Error().Status();
+    auto qnn_manager_or = QnnManager::Create(
+        compiler_plugin->Options(), std::nullopt,
+        soc_model ? qnn::FindSocModel(soc_model) : std::nullopt);
+    if (!qnn_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
+      return qnn_manager_or.Error().Status();
+    }
+    LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
+    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    qnn_manager = compiler_plugin->QNN();
   }
-  LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
 
   for (const auto& op : graph.Ops()) {
     // default constructed, won't add tensor to QNN
@@ -311,12 +322,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
       continue;
     }
     if (SkipValidationOfQuantizeOp(op) ||
-        std::all_of(
-            op_wrappers.begin(), op_wrappers.end(),
-            [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
-              return kLiteRtStatusOk ==
-                     (*qnn_manager)->ValidateOp(op_wrapper.GetOpConfig());
-            })) {
+        std::all_of(op_wrappers.begin(), op_wrappers.end(),
+                    [&qnn_manager](::qnn::OpWrapper& op_wrapper) -> bool {
+                      return kLiteRtStatusOk ==
+                             qnn_manager->ValidateOp(op_wrapper.GetOpConfig());
+                    })) {
       LITERT_RETURN_IF_ERROR(
           // Use default partition index if vendor doesn't support multiple
           // partitions.
@@ -351,16 +361,20 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // model.
   result->context_bin.resize(num_partitions);
   result->byte_code_index.resize(num_partitions);
-
-  // Initialize SDK and load qnn shared libraries.
-  LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
-  auto qnn_manager = QnnManager::Create(compiler_plugin->Options(),
-                                        std::nullopt, opt_soc_model);
+  QnnManager* qnn_manager = compiler_plugin->QNN();
   if (!qnn_manager) {
-    LITERT_LOG(LITERT_ERROR, "%s", qnn_manager.Error().Message().c_str());
-    return qnn_manager.Error().Status();
+    // Initialize SDK and load qnn shared libraries.
+    LITERT_LOG(LITERT_INFO, "%s", "Creating QNN manager");
+    auto qnn_manager_or = QnnManager::Create(compiler_plugin->Options(),
+                                             std::nullopt, opt_soc_model);
+    if (!qnn_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
+      return qnn_manager_or.Error().Status();
+    }
+    LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
+    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    qnn_manager = compiler_plugin->QNN();
   }
-  LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
 
   // Map of LiteRt buffer id to context handle index.
   // This map memerizes the last context handle index of a weight was registered
@@ -426,13 +440,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
           }
         }
       }
-      auto context_handle =
-          (*qnn_manager)
-              ->CreateContextHandle(context_configs,
-                                    compiler_plugin->Options().GetProfiling());
+      auto context_handle = qnn_manager->CreateContextHandle(
+          context_configs, compiler_plugin->Options().GetProfiling());
       if (!context_handle) {
         LITERT_LOG(LITERT_ERROR, "%s",
-                   context_handle.Error().Message().c_str());
+                   context_handle.Error().Message().data());
         return context_handle.Error().Status();
       }
       context_handles.push_back(std::move(context_handle.Value()));
@@ -458,7 +470,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
     LITERT_RETURN_IF_ERROR(litert::qnn::ComposeGraph(
-        **qnn_manager, context_handles[context_handle_idx].get(),
+        *qnn_manager, context_handles[context_handle_idx].get(),
         context_handles[context_handle_idx].get_profile_handle(),
         partition.Get(), entry_point_name, compiler_plugin->Options()));
     LITERT_LOG(LITERT_INFO, "%s", "Graph composed");
@@ -468,9 +480,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->context_bin.resize(next_context_handle_idx);
   for (int i = 0; i < next_context_handle_idx; ++i) {
     LITERT_LOG(LITERT_INFO, "%s", "Generating context binary");
-    LITERT_RETURN_IF_ERROR((*qnn_manager)
-                               ->GenerateContextBinary(context_handles[i].get(),
-                                                       result->context_bin[i]));
+    LITERT_RETURN_IF_ERROR(qnn_manager->GenerateContextBinary(
+        context_handles[i].get(), result->context_bin[i]));
     LITERT_LOG(LITERT_INFO, "Context binary %d generated", i);
   }
   *compiled_result = result.release();
