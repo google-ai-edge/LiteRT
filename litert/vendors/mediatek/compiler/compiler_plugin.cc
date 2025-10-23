@@ -26,6 +26,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -326,28 +327,31 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
 namespace {
 
 LiteRtStatus SetNeuronEnvironment(const char* soc_model) {
-#if __ANDROID__
-  char dla_directory_template[] = "/data/local/tmp/tempdir_dla.XXXXXXX";
-#else
-  char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
-#endif
+  // If we are running AOT on host, we dump the DLA to a directory for easier
+  // debugging.
+#ifndef __ANDROID__
+  char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
 
-  char* dla_directory_name = mkdtemp(dla_directory_template);
   if (dla_directory_name == nullptr) {
-    int error_code = errno;
-    LITERT_LOG(LITERT_ERROR,
-               "Failed to make DLA temporary directory, (errno=%d)",
-               error_code);
-    return kLiteRtStatusErrorFileIO;
+    char dla_directory_template[] = "/tmp/tempdir_dla.XXXXXXX";
+    dla_directory_name = mkdtemp(dla_directory_template);
+    if (dla_directory_name == nullptr) {
+      int error_code = errno;
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to make DLA temporary directory, (errno=%d)",
+                 error_code);
+      return kLiteRtStatusErrorFileIO;
+    }
+    setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, /*overwrite=*/1);
   }
+
+  LITERT_LOG(LITERT_INFO, "DLA dump directory path: %s", dla_directory_name);
+#endif
 
   // A null soc_model is passed when performing JIT compilation.
   if (soc_model) {
-    setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, 1);
+    setenv("MTKNN_ADAPTER_DLA_PLATFORM", soc_model, /*overwrite=*/1);
   }
-  setenv("MTKNN_ADAPTER_DLA_DIR", dla_directory_name, 1);
-  LITERT_LOG(LITERT_INFO, "DLA Temporary directory path: %s",
-             dla_directory_name);
 
   return kLiteRtStatusOk;
 }
@@ -397,15 +401,16 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            const char* soc_model,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
-  // Initialize SDK and load mediatek shared libraries.
-  const char* dla_dir = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-  if (dla_dir == nullptr) {
-    LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
-    dla_dir = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-  }
+  LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
+  absl::Cleanup dla_directory_cleanup = [] {
+    const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+    if (dla_directory_name) {
+      remove_directory(dla_directory_name);
+    }
+  };
+
   auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
   if (!soc_and_api) {
-    remove_directory(dla_dir);
     return soc_and_api.Error().Status();
   }
   auto& [opt_soc_model, neuron_adapter_api] = soc_and_api.Value();
@@ -446,7 +451,6 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                        model.get(), &operand_map, &unknown_op_indices);
   if (!status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    remove_directory(dla_dir);
     return status.Error().Status();
   }
 
@@ -459,7 +463,6 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
   if (!status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
-    remove_directory(dla_dir);
     return status.Error().Status();
   }
   for (int op_idx = 0; op_idx < num_ops; ++op_idx) {
@@ -511,11 +514,14 @@ Expected<std::vector<uint8_t>> CompilePartition(
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  const char* dla_dir = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-  if (dla_dir == nullptr) {
-    LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
-    dla_dir = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-  }
+  LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
+  absl::Cleanup dla_directory_cleanup = [] {
+    const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+    if (dla_directory_name) {
+      remove_directory(dla_directory_name);
+    }
+  };
+
   auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
@@ -525,7 +531,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
   if (!soc_and_api) {
-    remove_directory(dla_dir);
     return soc_and_api.Error().Status();
   }
   auto& [opt_soc_model, api] = soc_and_api.Value();
@@ -542,7 +547,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                                      compiler_plugin->GetSubgraphIndex());
     if (!bytecode) {
       LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
-      rmdir(dla_dir);
       return bytecode.Error().Status();
     }
     auto bufferIdx = result->bytebuilder.AddBuffer(
@@ -553,10 +557,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   }
 
   if (!result->bytebuilder.Finish()) {
-    remove_directory(dla_dir);
     return kLiteRtStatusErrorCompilation;
   }
   *compiled_result = result.release();
-  remove_directory(dla_dir);
   return kLiteRtStatusOk;
 }
