@@ -629,9 +629,6 @@ cc_library(
         "//litert/c:litert_layout",
         "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
-        "//litert/cc/internal:litert_handle",
-        "//litert/cc/internal:litert_tensor_buffer_without_registry",
-        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -650,8 +647,9 @@ cc_test(
         ":litert_options",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/test:simple_model_custom_op",
@@ -659,7 +657,6 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
-        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
