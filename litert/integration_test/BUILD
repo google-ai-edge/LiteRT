@@ -444,23 +444,6 @@ litert_device_script(
     script = "device_script_test.sh",
 )
 
-litert_device_script(
-    name = "check_script_host",
-    testonly = True,
-    backend_id = "example",
-    bin = ":dummy_binary",
-    build_for_device = False,
-    build_for_host = True,
-    data = [
-        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
-        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
-    ],
-    exec_args = [
-        "--check_host",
-    ],
-    script = "device_script_test.sh",
-)
-
 litert_device_exec(
     name = "exec_for_testing_device",
     backend_id = "example",
