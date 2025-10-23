@@ -15,6 +15,7 @@
 #include "litert/core/model/model_load.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -25,7 +26,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -90,7 +90,8 @@ class FlatbufferContext {
 };
 
 LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
-                      const TflPackedOp& tfl_op, LiteRtOpT& litert_op) {
+                      const TflPackedOp& tfl_op, LiteRtOpT& litert_op,
+                      size_t op_index) {
   // I/O TENSORS
 
   if (tfl_op.intermediates() && tfl_op.intermediates()->size() != 0) {
@@ -145,6 +146,7 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
   // OP CODE
 
   LITERT_RETURN_IF_ERROR(context.SetOpCode(litert_op, tfl_op.opcode_index()));
+  litert_op.SetOpIndex(op_index);
 
   return kLiteRtStatusOk;
 }
@@ -275,7 +277,7 @@ LiteRtStatus UnpackSubgraph(FlatbufferContext& context,
   for (auto i = 0; i < num_ops; ++i) {
     const auto* tfl_op = tfl_subgraph.operators()->Get(i);
     LITERT_RETURN_IF_ERROR(UnpackOp(context, litert_subgraph, *tfl_op,
-                                    litert_subgraph.EmplaceOp()));
+                                    litert_subgraph.EmplaceOp(), i));
   }
 
   // Update subgraph I/O.
