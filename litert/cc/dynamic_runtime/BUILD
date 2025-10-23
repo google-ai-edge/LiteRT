@@ -76,6 +76,7 @@ cc_library(
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
+        ":litert_environment",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -357,6 +358,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
+        ":litert_environment",
         ":litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -510,6 +512,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
@@ -546,6 +549,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
