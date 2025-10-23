@@ -61,8 +61,8 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   const litert::RankedTensorType kTensorType(kTestTensorType);
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
-                                                           kTensorType, sizeof(kTensorData));
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(*env, kTensorBufferType, kTensorType,
+                                                           sizeof(kTensorData));
 
   auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);
@@ -118,8 +118,8 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   constexpr auto kTensorBufferType = kLiteRtTensorBufferTypeMetalBuffer;
 
   // Create a managed buffer
-  auto tensor_buffer = litert::TensorBuffer::CreateManaged(env->Get(), kTensorBufferType,
-                                                           kTensorType, sizeof(kTensorData));
+  auto tensor_buffer = litert::TensorBuffer::CreateManaged(*env, kTensorBufferType, kTensorType,
+                                                           sizeof(kTensorData));
   XCTAssertTrue(tensor_buffer);
 
   // Get the native handle from the managed buffer.
@@ -128,7 +128,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
 
   // Create a tensor buffer from the existing metal buffer.
   auto metal_buffer_created = litert::TensorBuffer::CreateFromMetalBuffer(
-      env->Get(), kTensorType, kTensorBufferType, *metal_buffer, sizeof(kTensorData));
+      *env, kTensorType, kTensorBufferType, *metal_buffer, sizeof(kTensorData));
   XCTAssertTrue(metal_buffer_created);
 
   // Check properties of the wrapped buffer

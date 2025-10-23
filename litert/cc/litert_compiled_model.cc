@@ -32,6 +32,7 @@
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
@@ -67,7 +68,7 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 }
 
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
-    LiteRtEnvironment env, const TensorBufferRequirements& buffer_requirements,
+    Environment& env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
   LITERT_ASSIGN_OR_RETURN(
       const std::vector<LiteRtTensorBufferType>& supported_types,
@@ -100,8 +101,8 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
 
   LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
                           buffer_requirements_expected);
-
-  return CreateBufferImpl(env_, buffer_requirements, tensor_type);
+  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
+  return CreateBufferImpl(env, buffer_requirements, tensor_type);
 }
 
 Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(

@@ -39,6 +39,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -653,8 +654,7 @@ class CompiledModel
 
   // Creates a TensorBuffer with the given buffer requirements and tensor type.
   static Expected<TensorBuffer> CreateBufferImpl(
-      LiteRtEnvironment env,
-      const TensorBufferRequirements& buffer_requirements,
+      Environment& env, const TensorBufferRequirements& buffer_requirements,
       const RankedTensorType& tensor_type);
 
   // Creates a TensorBuffer for the given signature index and tensor name.
