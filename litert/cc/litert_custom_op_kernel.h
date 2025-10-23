@@ -15,13 +15,15 @@
 #ifndef ODML_LITERT_LITERT_CC_LITERT_CUSTOM_OP_KERNEL_H_
 #define ODML_LITERT_LITERT_CC_LITERT_CUSTOM_OP_KERNEL_H_
 
+#include <cstddef>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_layout.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert {
 
@@ -40,8 +42,10 @@ class CustomOpKernel {
       const std::vector<Layout>& input_layouts,
       std::vector<Layout>& output_layouts) = 0;
 
-  virtual Expected<void> Run(const std::vector<TensorBuffer>& inputs,
-                             std::vector<TensorBuffer>& outputs) = 0;
+  virtual Expected<void> Run(size_t num_inputs,
+                             const LiteRtTensorBuffer* inputs,
+                             size_t num_outputs,
+                             LiteRtTensorBuffer* outputs) = 0;
 
   virtual Expected<void> Destroy() = 0;
 

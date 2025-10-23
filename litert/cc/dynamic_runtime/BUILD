@@ -103,6 +103,8 @@ cc_test(
         ":litert_options",
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_expected",

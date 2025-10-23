@@ -20,10 +20,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_tensor_buffer.h"
-#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_tensor_buffer.h"
 
 namespace litert {
 
@@ -69,19 +66,8 @@ LiteRtStatus CustomOpKernel::RunHelper(void* user_data, size_t num_inputs,
                                        LiteRtTensorBuffer* outputs) {
   auto* self = static_cast<CustomOpKernel*>(user_data);
 
-  std::vector<TensorBuffer> inputs_;
-  inputs_.reserve(num_inputs);
-  for (auto i = 0; i < num_inputs; ++i) {
-    inputs_.push_back(TensorBuffer(inputs[i], OwnHandle::kNo));
-  }
-
-  std::vector<TensorBuffer> outputs_;
-  outputs_.reserve(num_outputs);
-  for (auto i = 0; i < num_outputs; ++i) {
-    outputs_.push_back(TensorBuffer(outputs[i], OwnHandle::kNo));
-  }
-
-  if (auto status = self->Run(inputs_, outputs_); !status) {
+  if (auto status = self->Run(num_inputs, inputs, num_outputs, outputs);
+      !status) {
     LITERT_LOG(LITERT_ERROR, "%s", status.Error().Message().c_str());
     return status.Error().Status();
   }
