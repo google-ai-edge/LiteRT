@@ -139,11 +139,13 @@ static TfLiteRegistration sStubRegistration = {
     .invoke = StubOpEval,
 };
 
+#if !defined(LITERT_DISABLE_NPU)
 LiteRtLogSeverity GetLogSeverityForJitCompilationFailure(
     LiteRtHwAcceleratorSet hw_accelerators) {
   return (hw_accelerators & kLiteRtHwAcceleratorNpu) ? LITERT_WARNING
                                                      : LITERT_VERBOSE;
 }
+#endif  // !defined(LITERT_DISABLE_NPU)
 
 }  // namespace
 
