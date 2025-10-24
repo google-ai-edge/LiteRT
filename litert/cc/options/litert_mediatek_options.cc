@@ -118,4 +118,17 @@ MediatekOptions::GetOptimizationHint() {
   return optimization_hint;
 }
 
+void MediatekOptions::SetDisableDlaDirRemoval(
+    bool disable_dla_dir_removal) {
+  internal::AssertOk(LiteRtMediatekOptionsSetDisableDlaDirRemoval, Data(),
+                     disable_dla_dir_removal);
+}
+
+bool MediatekOptions::GetDisableDlaDirRemoval() {
+  bool disable_dla_dir_removal;
+  internal::AssertOk(LiteRtMediatekOptionsGetDisableDlaDirRemoval, Data(),
+                     &disable_dla_dir_removal);
+  return disable_dla_dir_removal;
+}
+
 }  // namespace litert::mediatek

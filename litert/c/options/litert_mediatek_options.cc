@@ -31,6 +31,7 @@ struct LiteRtMediatekOptionsT {
   bool l1_cache_optimizations = false;
   LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint =
       kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
+  bool disable_dla_dir_removal = false;
 };
 
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -193,6 +194,29 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
   }
 
   *optimization_hint = options->optimization_hint;
+
+  return kLiteRtStatusOk;
+}
+
+
+// disable_dla_dir_removal ---------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool disable_dla_dir_removal) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->disable_dla_dir_removal = disable_dla_dir_removal;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool* disable_dla_dir_removal) {
+  if (disable_dla_dir_removal == nullptr || options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *disable_dla_dir_removal = options->disable_dla_dir_removal;
 
   return kLiteRtStatusOk;
 }

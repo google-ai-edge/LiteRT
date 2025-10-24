@@ -115,6 +115,13 @@ LiteRtStatus LiteRtMediatekOptionsGetOptimizationHint(
     LiteRtMediatekOptions options,
     LiteRtMediatekNeuronAdapterOptimizationHint* optimization_hint);
 
+// disable_dla_dir_removal ---------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool disable_dla_dir_removal);
+
+LiteRtStatus LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+    LiteRtMediatekOptions options, bool* disable_dla_dir_removal);
+
 #ifdef __cplusplus
 
 }  // extern "C"

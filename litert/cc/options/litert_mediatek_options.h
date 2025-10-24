@@ -59,6 +59,10 @@ class MediatekOptions : public OpaqueOptions {
 
   LiteRtMediatekNeuronAdapterOptimizationHint GetOptimizationHint();
 
+  void SetDisableDlaDirRemoval(bool disable_dla_dir_removal);
+
+  bool GetDisableDlaDirRemoval();
+
  private:
   LiteRtMediatekOptions Data() const;
 };
