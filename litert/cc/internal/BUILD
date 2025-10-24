@@ -141,6 +141,15 @@ cc_library(
     ],
 )
 
+cc_test(
+    name = "litert_detail_test",
+    srcs = ["litert_detail_test.cc"],
+    deps = [
+        ":litert_detail",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_library(
     name = "litert_handle",
     hdrs = ["litert_handle.h"],

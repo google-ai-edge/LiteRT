@@ -32,6 +32,7 @@ limitations under the License.
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_profiler.h"
@@ -291,15 +292,11 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
       return kTfLiteError;
     }
     auto signature = params_.Get<std::string>("signature_to_run_for");
-    if (signature.empty()) {
-      LITERT_ASSIGN_OR_RETURN(const auto sig, model_->GetSignature(0),
-                              kTfLiteError);
-      signature = sig.Key();
-    }
-    if (compiled_model_->Run(signature, *input_buffers_, *output_buffers_)) {
+    if (auto res = compiled_model_->Run(signature, *input_buffers_,
+                                        *output_buffers_)) {
       return kTfLiteOk;
     } else {
-      LITERT_LOG(LITERT_ERROR, "Run failed");
+      LITERT_LOG(LITERT_ERROR, "Run failed: %s", res.Error().Message().c_str());
       return kTfLiteError;
     }
   }

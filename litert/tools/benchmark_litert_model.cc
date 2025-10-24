@@ -220,11 +220,6 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   AddListener(log_output_.get());
 
   auto signature = params_.Get<std::string>("signature_to_run_for");
-  if (signature.empty()) {
-    LITERT_ASSIGN_OR_RETURN(auto s, model_->GetSignature(0), AsTfLiteStatus(_));
-    signature = s.Key();
-  }
-
   LITERT_ASSIGN_OR_RETURN(
       auto input_buffers_result, compiled_model_->CreateInputBuffers(signature),
       AsTfLiteStatus(_ << "Failed to create input buffer."));

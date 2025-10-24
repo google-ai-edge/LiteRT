@@ -484,7 +484,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the signature index for the given signature key.
+  // Returns 0 if the signature key is empty.
   Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
+    if (signature_key.empty()) {
+      return 0;
+    }
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
     for (int i = 0; i < num_signatures; ++i) {
@@ -500,7 +504,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the Signature object for the given signature key.
+  // Returns the default signature if the signature key is empty.
   Expected<Signature> FindSignature(absl::string_view signature_key) const {
+    if (signature_key.empty()) {
+      return GetSignature(/*signature_index=*/0);
+    }
     LiteRtParamIndex num_signatures;
     internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
     for (int i = 0; i < num_signatures; ++i) {
