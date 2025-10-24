@@ -32,10 +32,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_detailed_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
@@ -516,7 +516,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
     dla_dir = std::getenv("MTKNN_ADAPTER_DLA_DIR");
   }
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+  auto model = litert::DetailedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
   LITERT_LOG(LITERT_INFO,

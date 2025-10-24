@@ -29,22 +29,18 @@
 
 namespace litert {
 
+class CompiledModel;
+
 // Requirements for allocating a TensorBuffer, typically specified by a HW
 // accelerator for a given I/O tensor. C++ equivalent to
 // LiteRtTensorBufferRequirements.
 class TensorBufferRequirements
     : public internal::Handle<LiteRtTensorBufferRequirements,
                               LiteRtDestroyTensorBufferRequirements> {
+  friend class CompiledModel;
+
  public:
   TensorBufferRequirements() = default;
-
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
-  explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
-                                    OwnHandle owned)
-      : internal::Handle<LiteRtTensorBufferRequirements,
-                         LiteRtDestroyTensorBufferRequirements>(requirements,
-                                                                owned) {}
 
   static Expected<TensorBufferRequirements> Create(
       absl::Span<const LiteRtTensorBufferType> buffer_types, size_t buffer_size,
@@ -110,6 +106,24 @@ class TensorBufferRequirements
   friend Expected<TensorBufferRequirements> Join(
       const TensorBufferRequirements& src1,
       const TensorBufferRequirements& src2);
+
+  // Wraps a LiteRtTensorBufferRequirements C object in a
+  // TensorBufferRequirements C++ object.
+  //
+  // Warning: This is internal use only.
+  static TensorBufferRequirements WrapCObject(
+      LiteRtTensorBufferRequirements requirements, OwnHandle owned) {
+    return TensorBufferRequirements(requirements, owned);
+  }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBufferRequirements object
+  // should take ownership of the provided `requirements` handle.
+  explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
+                                    OwnHandle owned)
+      : internal::Handle<LiteRtTensorBufferRequirements,
+                         LiteRtDestroyTensorBufferRequirements>(requirements,
+                                                                owned) {}
 };
 
 inline Expected<TensorBufferRequirements> Join(

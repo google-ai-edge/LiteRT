@@ -42,16 +42,17 @@ typedef struct _cl_mem* cl_mem;
 
 namespace litert {
 
+class CustomOpKernel;
+class ExternalLiteRtBufferContext;
+
 // Tensor and associated backing buffer. C++ equivalent of LiteRtTensorBuffer.
 class TensorBuffer
     : public internal::Handle<LiteRtTensorBuffer, LiteRtDestroyTensorBuffer> {
+  friend class CustomOpKernel;
+  friend class ExternalLiteRtBufferContext;
+
  public:
   TensorBuffer() = default;
-
-  // Parameter `owned` indicates if the created TensorBuffer object should take
-  // ownership of the provided `tensor_buffer` handle.
-  explicit TensorBuffer(LiteRtTensorBuffer tensor_buffer, OwnHandle owned)
-      : Handle(tensor_buffer, owned) {}
 
   // Creates a managed TensorBuffer object in a given buffer type and size.
   // The returned object is owned by the caller.
@@ -403,6 +404,20 @@ class TensorBuffer
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     return {};
   }
+
+  // Wraps a LiteRtTensorBuffer C object in a TensorBuffer C++ object.
+  //
+  // Warning: This is internal use only.
+  static TensorBuffer WrapCObject(LiteRtTensorBuffer tensor_buffer,
+                                  OwnHandle owned) {
+    return TensorBuffer(tensor_buffer, owned);
+  }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBuffer object should take
+  // ownership of the provided `tensor_buffer` handle.
+  explicit TensorBuffer(LiteRtTensorBuffer tensor_buffer, OwnHandle owned)
+      : Handle(tensor_buffer, owned) {}
 };
 
 class TensorBufferScopedLock {

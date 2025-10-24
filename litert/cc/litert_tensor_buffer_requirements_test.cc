@@ -69,8 +69,8 @@ TEST(TensorBufferRequirements, NotOwned) {
                 &litert_requirements),
             kLiteRtStatusOk);
 
-  litert::TensorBufferRequirements requirements(litert_requirements,
-                                                litert::OwnHandle::kNo);
+  auto requirements = litert::TensorBufferRequirements::WrapCObject(
+      litert_requirements, litert::OwnHandle::kNo);
 
   auto supported_types = requirements.SupportedTypes();
   ASSERT_TRUE(supported_types);

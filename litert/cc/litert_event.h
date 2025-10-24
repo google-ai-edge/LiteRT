@@ -32,13 +32,12 @@ typedef void* EGLSyncKHR;
 
 namespace litert {
 
-class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
- public:
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
-  explicit Event(LiteRtEvent event, OwnHandle owned)
-      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
+class TensorBuffer;
 
+class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
+  friend class TensorBuffer;
+
+ public:
   // Creates an Event object with the given `sync_fence_fd`.
   //
   // Warning: This is an old API that does not take LiteRtEnvironment. It is
@@ -145,6 +144,12 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     LiteRtGetEventEventType(Get(), &type);
     return type;
   }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBufferRequirements object
+  // should take ownership of the provided `requirements` handle.
+  explicit Event(LiteRtEvent event, OwnHandle owned)
+      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
 };
 
 }  // namespace litert
