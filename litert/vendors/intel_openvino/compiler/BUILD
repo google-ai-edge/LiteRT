@@ -74,6 +74,8 @@ litert_bin(
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c:litert_model",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/vendors/cc:options_helper",
@@ -100,10 +102,10 @@ litert_lib(
     hdrs = [
         "graph_iterator.h",
     ],
-    copts = [
-        "-Wno-unused-variable",
-        "-fexceptions",
-    ],
+    copts = ["-fexceptions"] + select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-Wno-unused-variable"],
+    }),
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",

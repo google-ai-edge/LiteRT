@@ -21,7 +21,7 @@
 #include <unordered_map>
 
 #include "openvino/runtime/tensor.hpp"
-#if !LITERT_WINDOWS_OS
+#if undefined(LITERT_WINDOWS_OS)
 #include <sys/mman.h>
 #endif
 

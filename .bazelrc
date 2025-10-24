@@ -254,6 +254,7 @@ build:macos --copt=-w
 # Suppress all C++ compiler warnings on Windows
 build:windows --copt=/W0
 build:windows --host_copt=/W0
+build:windows --cxxopt=/std:c++20
 
 # Suppress most C++ compiler warnings to reduce log size but allow
 # for specific warnings to still be present.
@@ -263,6 +264,16 @@ build:linux --copt="-Wno-deprecated"
 build:linux --copt="-Wno-deprecated-declarations"
 build:linux --copt="-Wno-ignored-attributes"
 build:linux --copt="-Wno-array-bounds"
+
+# protobuf will stop supporting MSVC.
+build:windows --define=protobuf_allow_msvc=true
+
+# protobuf can't find its headers on windows when built locally with bazelisk.
+build:windows --host_copt=/Iexternal/com_google_protobuf/src
+
+# Assume AVX2 x86_64 platforms for linux and windows.
+build:linux --copt=-mavx2
+build:windows --copt=/arch:AVX2
 
 # Windows-specific Python configuration
 build:windows --repo_env=HERMETIC_PYTHON_VERSION=3.11
@@ -454,7 +465,7 @@ build:elinux_armhf --copt -mfp16-format=ieee
 
 # Load rc file written by ./configure.
 # Fail on missing litert configure. It must exist for clang to be properly configured.
-import %workspace%/.litert_configure.bazelrc
+#import %workspace%/.litert_configure.bazelrc
 try-import %workspace%/xla_configure.bazelrc
 
 # Load rc file with user-specific options.

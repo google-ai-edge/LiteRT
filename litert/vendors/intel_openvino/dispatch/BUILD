@@ -100,6 +100,7 @@ litert_bin(
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",

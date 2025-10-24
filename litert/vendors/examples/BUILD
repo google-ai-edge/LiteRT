@@ -14,7 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths")
+load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib", "litert_test", "make_rpaths", "litert_bin", "litert_lib")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -43,6 +43,51 @@ litert_dynamic_lib(
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/cc/dynamic_runtime:litert_op_options",
         "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+litert_bin(
+    name = "LiteRtCompilerPlugin",
+    srcs = ["example_plugin.cc"],
+    copts = ["-fexceptions"] + select({
+        "//litert/runtime/dispatch:windows_msvc": [
+            "/DLITERT_COMPILE_LIBRARY",
+            "/wd4018",  # -Wno-sign-compare
+        ],
+        "//litert/runtime/dispatch:windows_lexan": [
+            "-DLITERT_COMPILE_LIBRARY",
+            "-Wno-sign-compare",
+        ],
+        "//conditions:default": [],
+    }),
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    linkshared = 1,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":example_common",
+        ":example_transformations",
+        ":litert_compiler_plugin_c_api",
+        "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c:litert_op_options",
+        "//litert/c:litert_model",
+        "//litert/c:litert_rewriter",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/vendors/cc:options_helper",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+litert_lib(
+    name = "litert_compiler_plugin_c_api",
+    hdrs = [
+        "//litert/vendors/c:litert_compiler_plugin.h",
+    ],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_runtime_c_api_shared_lib",
     ],
 )
 

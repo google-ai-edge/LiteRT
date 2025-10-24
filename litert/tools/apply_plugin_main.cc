@@ -30,10 +30,10 @@
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+// #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
-#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
+// #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
+// #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/outstream.h"
 
 using ::litert::tools::ApplyPlugin;
@@ -110,33 +110,33 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  {
-    auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
-    if (!qnn_opts) {
-      run->dump_out.Get().get() << "Failed to create Qualcomm options\n";
-      return 1;
-    }
+  // {
+  //   auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
+  //   if (!qnn_opts) {
+  //     run->dump_out.Get().get() << "Failed to create Qualcomm options\n";
+  //     return 1;
+  //   }
 
-    if (!opts->AddOpaqueOptions(std::move(*qnn_opts))) {
-      run->dump_out.Get().get() << "Failed to add Qualcomm options to list\n";
-      return 1;
-    }
-  }
+  //   if (!opts->AddOpaqueOptions(std::move(*qnn_opts))) {
+  //     run->dump_out.Get().get() << "Failed to add Qualcomm options to list\n";
+  //     return 1;
+  //   }
+  // }
 
-  {
-    auto google_tensor_opts =
-        litert::google_tensor::GoogleTensorOptionsFromFlags();
-    if (!google_tensor_opts) {
-      run->dump_out.Get().get() << "Failed to create Google Tensor options\n";
-      return 1;
-    }
+  // {
+  //   auto google_tensor_opts =
+  //       litert::google_tensor::GoogleTensorOptionsFromFlags();
+  //   if (!google_tensor_opts) {
+  //     run->dump_out.Get().get() << "Failed to create Google Tensor options\n";
+  //     return 1;
+  //   }
 
-    if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add google tensor options to list\n";
-      return 1;
-    }
-  }
+  //   if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
+  //     run->dump_out.Get().get()
+  //         << "Failed to add google tensor options to list\n";
+  //     return 1;
+  //   }
+  // }
 
   {
     auto intel_openvino_opts =
@@ -153,20 +153,20 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  {
-    auto mediatek_opts =
-        litert::mediatek::MediatekOptionsFromFlags();
-    if (!mediatek_opts) {
-      run->dump_out.Get().get() << "Failed to create Mediatek options\n";
-      return 1;
-    }
+  // {
+  //   auto mediatek_opts =
+  //       litert::mediatek::MediatekOptionsFromFlags();
+  //   if (!mediatek_opts) {
+  //     run->dump_out.Get().get() << "Failed to create Mediatek options\n";
+  //     return 1;
+  //   }
 
-    if (!opts->AddOpaqueOptions(std::move(*mediatek_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add Mediatek options to list\n";
-      return 1;
-    }
-  }
+  //   if (!opts->AddOpaqueOptions(std::move(*mediatek_opts))) {
+  //     run->dump_out.Get().get()
+  //         << "Failed to add Mediatek options to list\n";
+  //     return 1;
+  //   }
+  // }
 
   run->options = std::move(*opts);
 
