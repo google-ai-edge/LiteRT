@@ -14,6 +14,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_MEDIATEK_OPTIONS_H_
 
+#include <string>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_mediatek_options.h"
@@ -62,6 +64,10 @@ class MediatekOptions : public OpaqueOptions {
   void SetDisableDlaDirRemoval(bool disable_dla_dir_removal);
 
   bool GetDisableDlaDirRemoval();
+
+  void SetMediatekDlaDir(const std::string& mediatek_dla_dir);
+
+  absl::string_view GetMediatekDlaDir();
 
  private:
   LiteRtMediatekOptions Data() const;

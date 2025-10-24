@@ -15,6 +15,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -32,6 +33,7 @@ struct LiteRtMediatekOptionsT {
   LiteRtMediatekNeuronAdapterOptimizationHint optimization_hint =
       kLiteRtMediatekNeuronAdapterOptimizationHintNormal;
   bool disable_dla_dir_removal = false;
+  std::string mediatek_dla_dir;
 };
 
 LiteRtStatus LiteRtMediatekOptionsCreate(LiteRtOpaqueOptions* options) {
@@ -217,6 +219,29 @@ LiteRtStatus LiteRtMediatekOptionsGetDisableDlaDirRemoval(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *disable_dla_dir_removal = options->disable_dla_dir_removal;
+
+  return kLiteRtStatusOk;
+}
+
+// mediatek_dla_dir -------------------------------------------------
+LiteRtStatus LiteRtMediatekOptionsSetMediatekDlaDir(
+    LiteRtMediatekOptions options, const char* mediatek_dla_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->mediatek_dla_dir = mediatek_dla_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtMediatekOptionsGetMediatekDlaDir(
+    LiteRtMediatekOptions options, const char** mediatek_dla_dir) {
+  if (options == nullptr || mediatek_dla_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *mediatek_dla_dir = options->mediatek_dla_dir.c_str();
 
   return kLiteRtStatusOk;
 }

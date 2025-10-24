@@ -319,6 +319,47 @@ TEST(LiteRtMediatekOptionsTest, DisableDlaDirRemovalInvalidArguments) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtMediatekOptionsTest, MediatekDlaDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  const char* mediatek_dla_dir;
+  // Check default value (empty string)
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetMediatekDlaDir(options_data, &mediatek_dla_dir));
+  ASSERT_STREQ(mediatek_dla_dir, "");
+
+  // Set to a value
+  const char* test_dir = "/test/dir";
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetMediatekDlaDir(options_data, test_dir));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetMediatekDlaDir(options_data, &mediatek_dla_dir));
+  ASSERT_STREQ(mediatek_dla_dir, test_dir);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, MediatekDlaDirInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  const char* mediatek_dla_dir;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetMediatekDlaDir(nullptr, "/test/dir"),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtMediatekOptionsGetMediatekDlaDir(options_data, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetMediatekDlaDir(nullptr, &mediatek_dla_dir),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtMediatekOptionsTest, GetWithInvalidArguments) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
@@ -406,6 +447,11 @@ TEST(MediatekOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetDisableDlaDirRemoval());
   options->SetDisableDlaDirRemoval(false);
   EXPECT_FALSE(options->GetDisableDlaDirRemoval());
+
+  // // Test Mediatek DLA Dir
+  EXPECT_EQ(options->GetMediatekDlaDir(), "");
+  options->SetMediatekDlaDir("/test/dir");
+  EXPECT_EQ(options->GetMediatekDlaDir(), "/test/dir");
 }
 
 TEST(LiteRtMediatekOptionsTest, OptionsHash) {
