@@ -21,6 +21,7 @@ add_library(litert_cc_options STATIC
     litert_cpu_options.cc
     litert_google_tensor_options.cc
     litert_gpu_options.cc
+    litert_magic_number_options.cc
     litert_intel_openvino_options.cc
     litert_mediatek_options.cc
     litert_qualcomm_options.cc
