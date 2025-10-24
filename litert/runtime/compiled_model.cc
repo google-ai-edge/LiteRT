@@ -792,6 +792,50 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
   return GetTensorBufferRequirements(output_tensor);
 }
 
+litert::Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
+    size_t signature_index, size_t input_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  const auto& input_names = runner->subgraph_input_names();
+  if (input_index >= input_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Input index out of range");
+  }
+  auto* input_tensor = runner->input_tensor(input_names[input_index]);
+  if (input_tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get input tensor");
+  }
+
+  const TfLiteIntArray* dims = input_tensor->dims;
+  if ((!dims || dims->size == 0) && input_tensor->dims_signature &&
+      input_tensor->dims_signature->size > 0) {
+    dims = input_tensor->dims_signature;
+  }
+
+  const size_t rank = dims ? dims->size : 0;
+  if (rank > LITERT_TENSOR_MAX_RANK) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Input tensor rank exceeds maximum supported "
+                              "rank for layouts");
+  }
+
+  LiteRtLayout layout{};
+  layout.rank = static_cast<unsigned int>(rank);
+  for (size_t i = 0; i < rank; ++i) {
+    layout.dimensions[i] = dims->data[i];
+  }
+  return layout;
+}
+
 Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(
     absl::string_view signature_key, absl::Span<LiteRtLayout>& output_layouts,
     bool update_allocation) {

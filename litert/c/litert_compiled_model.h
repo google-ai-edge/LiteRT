@@ -86,6 +86,19 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
     LiteRtParamIndex output_index,
     LiteRtTensorBufferRequirements* buffer_requirements);
 
+// Returns the tensor layout for the given input tensor. This reflects the most
+// recent shape requested via LiteRtCompiledModelResizeInputTensor or automatic
+// resizing during execution.
+//
+// Parameters:
+// - compiled_model: the target `LiteRtCompiledModel` object.
+// - signature_index: the index of the signature in `LiteRtModel`.
+// - input_index: the index of the input tensor in the signature (subgraph).
+// - layout: user provided storage to receive the `LiteRtLayout`.
+LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtLayout* layout);
+
 // Returns the tensor layouts for all output tensors.
 //
 // Parameters:

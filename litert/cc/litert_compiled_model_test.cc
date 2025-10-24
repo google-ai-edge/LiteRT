@@ -129,6 +129,32 @@ TEST(CompiledModelTest, Basic) {
   }
 }
 
+TEST(CompiledModelTest,
+     ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  Model model = testing::LoadTestFileModel(kDynamicModelFileName);
+  ASSERT_TRUE(model);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+
+  absl::string_view signature_key = model.DefaultSignatureKey();
+
+  const std::vector<int> resized_dims = {4, 2, 3};
+  LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+      signature_key, "arg0", absl::MakeConstSpan(resized_dims)));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBuffer input_buffer,
+      compiled_model.CreateInputBuffer(signature_key, "arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(RankedTensorType buffer_type,
+                              input_buffer.TensorType());
+  EXPECT_THAT(buffer_type.Layout().Dimensions(),
+              ElementsAre(resized_dims[0], resized_dims[1], resized_dims[2]));
+}
+
 TEST(CompiledModelTest, BasicSignatureIndex) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));

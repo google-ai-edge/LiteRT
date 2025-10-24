@@ -29,10 +29,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_profiler.h"
@@ -90,15 +92,36 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
   Expected<RankedTensorType> tensor_type_expected =
       is_input ? model_.GetInputTensorType(signature_index, tensor_name)
                : model_.GetOutputTensorType(signature_index, tensor_name);
-  LITERT_ASSIGN_OR_RETURN(const RankedTensorType& tensor_type,
-                          tensor_type_expected);
+  LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type, tensor_type_expected);
   Expected<TensorBufferRequirements> buffer_requirements_expected =
       is_input ? GetInputBufferRequirements(signature_index, tensor_name)
                : GetOutputBufferRequirements(signature_index, tensor_name);
 
   LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
                           buffer_requirements_expected);
-
+  if (is_input) {
+    LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
+                            FindInputIndex(signature_index, tensor_name));
+    LiteRtLayout input_layout;
+    if (LiteRtGetCompiledModelInputTensorLayout(Get(), signature_index,
+                                                tensor_index, &input_layout) ==
+        kLiteRtStatusOk) {
+      Layout runtime_layout(input_layout);
+      tensor_type = RankedTensorType(tensor_type.ElementType(),
+                                     std::move(runtime_layout));
+    }
+  } else {
+    const auto& dims = tensor_type.Layout().Dimensions();
+    if (absl::c_find(dims, -1) != dims.end()) {
+      LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
+                              FindOutputIndex(signature_index, tensor_name));
+      LITERT_ASSIGN_OR_RETURN(
+          std::vector<Layout> output_layouts,
+          GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
+      tensor_type = RankedTensorType(tensor_type.ElementType(),
+                                     std::move(output_layouts[tensor_index]));
+    }
+  }
   return CreateBufferImpl(env_, buffer_requirements, tensor_type);
 }
 
