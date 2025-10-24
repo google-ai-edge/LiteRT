@@ -164,13 +164,14 @@ export class LiteRt {
     };
   }
 
-  private static async urlToUint8Array(url: string|URL): Promise<Uint8Array> {
-    // TODO(msoulanille): Streaming support for model loading once C++ supports
-    // it.
-    const response = await fetch(url);
-    if (LiteRt.supportsCrossOriginStorage()) {
-      const blob = await response.clone().blob();
-       const hash = await LiteRt.getBlobHash(blob);
+  /**
+   * Stores a resource in Cross-Origin Storage.
+   * @param blob
+   */
+  private static async storeResourceInCrossOriginStorage(blob: Blob) {
+    let hash;
+    try {
+      hash = await LiteRt.getBlobHash(blob);
       // @ts-expect-error Injected by an extension.
       const [handle] = await navigator.crossOriginStorage.requestFileHandles(
         [hash],
@@ -180,6 +181,17 @@ export class LiteRt {
       await writableStream.write(blob);
       await writableStream.close();
       console.log(`Resource with hash "${hash.value}" stored in Cross-Origin Storage.`);
+    } catch (error) {
+      console.warn(`Storing of resource with hash "${hash}" failed.`, error);
+    }
+  }
+
+  private static async urlToUint8Array(url: string|URL): Promise<Uint8Array> {
+    // TODO(msoulanille): Streaming support for model loading once C++ supports
+    // it.
+    const response = await fetch(url);
+    if (LiteRt.supportsCrossOriginStorage()) {
+      await LiteRt.storeResourceInCrossOriginStorage(await response.clone().blob())
     }
     return new Uint8Array(await response.arrayBuffer());
   }
@@ -330,7 +342,7 @@ export class LiteRt {
   }
 
   /**
-   * Get the SHA-256 hash for large Hugging Face resources as per
+   * Get the SHA-256 hash for Hugging Face resources as per
    * https://huggingface.co/docs/hub/en/storage-backends#xet.
    */
   private static async getFileHashFromHuggingFace(url: URL) {
@@ -345,6 +357,11 @@ export class LiteRt {
     return null;
   }
 
+  /**
+   * Try to load a Hugging Face resource from Cross-Origin Storage by first
+   * retrieving the resource's SHA-256 hash from Hugging Face and then checking
+   * if a resource with this hash is found in Cross-Origin Storage.
+   */
   private static async loadResourceFromCrossOriginStorage(model: URL) {
     let hashValue;
     try {
@@ -362,12 +379,11 @@ export class LiteRt {
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'NotAllowedError') {
-        console.log('Access to Cross-Origin Storage not allowed.');
+        console.warn('Access to Cross-Origin Storage not allowed.');
       }
       if (error instanceof Error && error.name === 'NotFoundError') {
-        console.log(`Resource with hash "${hashValue}" not found in Cross-Origin Storage.`);
+        console.warn(`Resource with hash "${hashValue}" not found in Cross-Origin Storage.`);
       }
-      console.error(error);
       throw error;
     }
   }
@@ -393,14 +409,19 @@ export class LiteRt {
       if (!(model instanceof URL)) {
         model = new URL(model);
       }
+      // If Cross-Origin Storage is supported and the model is hosted on
+      // Hugging Face, try loading it from Cross-Origin Storage.
       if (LiteRt.supportsCrossOriginStorage() && model.origin === 'https://huggingface.co') {
         try {
           const blob = await LiteRt.loadResourceFromCrossOriginStorage(model);
           modelData = new Uint8Array(await blob.arrayBuffer());
         } catch {
+          // Either the model wasn't found in Cross-Origin Storage or the user
+          // denied access to Cross-Origin Storage.
           modelData = await LiteRt.urlToUint8Array(model);
         }
       } else {
+        // No Cross-Origin Storage support or model not hosted on Hugging Face.
         modelData = await LiteRt.urlToUint8Array(model);
       }
     } else if (model instanceof Uint8Array) {
