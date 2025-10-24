@@ -436,6 +436,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
   }
 
   // Returns the list of input names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
+    return GetSignatureInputNames(/*signature_index=*/0);
+  }
+
+  // Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       absl::string_view signature_key) const {
     auto signature = FindSignature(signature_key);
@@ -453,6 +458,11 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
                        &lite_rt_signature);
     auto signature = Signature(lite_rt_signature);
     return signature.OutputNames();
+  }
+
+  // Returns the list of output names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
+    return GetSignatureOutputNames(/*signature_index=*/0);
   }
 
   // Returns the list of output names defined in the signature.

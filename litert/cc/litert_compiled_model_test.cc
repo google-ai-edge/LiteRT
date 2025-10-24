@@ -137,17 +137,15 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
   Model model = testing::LoadTestFileModel(kModelFileName);
   ASSERT_TRUE(model);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
-                              model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-  absl::string_view signature_key = signatures[0].Key();
-  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
+  EXPECT_EQ(model.GetNumSignatures(), 1);
   size_t signature_index = 0;
 
-  std::vector<absl::string_view> input_names = signatures[0].InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              model.GetSignatureInputNames(signature_index));
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  std::vector<absl::string_view> output_names = signatures[0].OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames(signature_index));
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel.
@@ -226,17 +224,13 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   Model model = testing::LoadTestFileModel(kModelFileName);
   ASSERT_TRUE(model);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
-                              model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-  absl::string_view signature_key = signatures[0].Key();
-  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
-  size_t signature_index = 0;
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  std::vector<absl::string_view> input_names = signatures[0].InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  std::vector<absl::string_view> output_names = signatures[0].OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Create CompiledModel.
@@ -248,8 +242,8 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   // input and output expect host memory.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg0,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg0"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
@@ -258,8 +252,8 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg1"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
@@ -268,8 +262,8 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
-      compiled_model.GetOutputBufferRequirements(signature_index,
-                                                 /*output_name=*/"tfl.add"));
+      compiled_model.GetOutputBufferRequirements(
+          /*output_name=*/"tfl.add"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> output_buffer_types,
       output_buffer_requirements.SupportedTypes());
@@ -277,15 +271,12 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
               ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 
   // Create and fill input and output buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBuffer input_buffer0,
-      compiled_model.CreateInputBuffer(signature_key, "arg0"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBuffer input_buffer1,
-      compiled_model.CreateInputBuffer(signature_key, "arg1"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBuffer output_buffer0,
-      compiled_model.CreateOutputBuffer(signature_key, "tfl.add"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer0,
+                              compiled_model.CreateInputBuffer("arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer1,
+                              compiled_model.CreateInputBuffer("arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer output_buffer0,
+                              compiled_model.CreateOutputBuffer("tfl.add"));
 
   ASSERT_TRUE(input_buffer0.Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -301,7 +292,7 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   output_map["tfl.add"] = std::move(output_buffer0);
 
   // Execute model with input and output maps instead of buffers.
-  compiled_model.Run(signature_key, input_map, output_map);
+  compiled_model.Run(input_map, output_map);
 
   // Check model output.
   {
@@ -946,11 +937,7 @@ TEST(CompiledModelTest, DispatchAnnotationsWithSignatureName) {
   Model model = testing::LoadTestFileModel(kModelFileName);
   ASSERT_TRUE(model);
 
-  // Get signature name
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
-                              model.GetSignatures());
-  ASSERT_EQ(signatures.size(), 1);
-  absl::string_view signature_key = signatures[0].Key();
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -959,39 +946,34 @@ TEST(CompiledModelTest, DispatchAnnotationsWithSignatureName) {
 
   // Test 1: Set and get annotation using signature name
   {
-    LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(signature_key,
-                                                          "precision", "fp16"));
+    LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation("precision", "fp16"));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto value,
-        compiled_model.GetDispatchAnnotation(signature_key, "precision"));
+        auto value, compiled_model.GetDispatchAnnotation("precision"));
     ASSERT_TRUE(value.has_value());
     EXPECT_EQ(value.value(), "fp16");
   }
 
   // Test 2: Remove annotation using signature name
   {
-    LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(
-        signature_key, "to_remove", "value"));
+    LITERT_ASSERT_OK(
+        compiled_model.SetDispatchAnnotation("to_remove", "value"));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto value_before,
-        compiled_model.GetDispatchAnnotation(signature_key, "to_remove"));
+        auto value_before, compiled_model.GetDispatchAnnotation("to_remove"));
     ASSERT_TRUE(value_before.has_value());
 
-    LITERT_ASSERT_OK(
-        compiled_model.RemoveDispatchAnnotation(signature_key, "to_remove"));
+    LITERT_ASSERT_OK(compiled_model.RemoveDispatchAnnotation("to_remove"));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto value_after,
-        compiled_model.GetDispatchAnnotation(signature_key, "to_remove"));
+        auto value_after, compiled_model.GetDispatchAnnotation("to_remove"));
     EXPECT_FALSE(value_after.has_value());
   }
 
   // Test 3: Annotations set by name should be retrievable by index
   {
-    LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(
-        signature_key, "cross_check", "test_value"));
+    LITERT_ASSERT_OK(
+        compiled_model.SetDispatchAnnotation("cross_check", "test_value"));
 
     // Since this is signature 0, we should be able to get it by index 0
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -1064,10 +1046,7 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
-  // Get signatures
-  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<Signature> signatures,
-                              model.GetSignatures());
-  ASSERT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
   size_t signature_index = 0;
 
   // Create input and output buffers

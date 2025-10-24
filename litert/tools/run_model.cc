@@ -307,7 +307,6 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                           CompiledModel::Create(env, model, options));
 
-  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 

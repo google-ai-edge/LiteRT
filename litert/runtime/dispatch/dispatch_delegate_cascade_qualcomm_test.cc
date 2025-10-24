@@ -68,17 +68,13 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromBuffer(model_with_byte_code));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1", "arg2", "arg3"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom2"));
 
 #if !defined(__ANDROID__)
@@ -104,8 +100,8 @@ TEST(DispatchDelegate, CompiledModel) {
   // be FastRpc and DmaBuf.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg0,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg0"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
@@ -115,8 +111,8 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg1"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
@@ -126,8 +122,8 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg2"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg2,
       input_buffer_requirements_arg2.SupportedTypes());
@@ -137,8 +133,8 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg3"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg3"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg3,
       input_buffer_requirements_arg3.SupportedTypes());
@@ -149,7 +145,6 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
-          signature_index,
           /*output_name=*/"tfl.custom2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> output_buffer_types,
@@ -163,12 +158,12 @@ TEST(DispatchDelegate, CompiledModel) {
   ABSL_LOG(INFO) << "First inference";
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
   ASSERT_EQ(input_buffers.size(), 4);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
   ASSERT_EQ(output_buffers.size(), 1);
 
   // Fill model inputs.
@@ -182,7 +177,7 @@ TEST(DispatchDelegate, CompiledModel) {
       absl::MakeConstSpan(kTestInput3Tensor_1, kTestInput3Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
   {
@@ -214,7 +209,7 @@ TEST(DispatchDelegate, CompiledModel) {
       absl::MakeConstSpan(kTestInput3Tensor_2, kTestInput3Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
   {
@@ -235,10 +230,10 @@ TEST(DispatchDelegate, CompiledModel) {
   // ///////////////////////////////////////////////////////////////////////////
   ABSL_LOG(INFO) << "Third inference";
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   ASSERT_TRUE(input_buffers[0].Write<float>(
@@ -251,7 +246,7 @@ TEST(DispatchDelegate, CompiledModel) {
       absl::MakeConstSpan(kTestInput3Tensor_3, kTestInput3Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
   {

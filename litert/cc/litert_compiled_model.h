@@ -177,9 +177,9 @@ class CompiledModel
   Expected<std::vector<Layout>> GetOutputTensorLayouts(
       size_t signature_index, bool update_allocation = false) const {
     // get num tensors here
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            model_.GetSignature(signature_index));
-    int num_tensors = signature.OutputNames().size();
+    LITERT_ASSIGN_OR_RETURN(auto output_names,
+                            model_.GetSignatureOutputNames(signature_index));
+    int num_tensors = output_names.size();
     std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorLayouts(
         Get(), signature_index, num_tensors, litert_layout_vector.data(),
@@ -394,9 +394,8 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
       const {
     bool async = false;
-    LITERT_ASSIGN_OR_RETURN(Signature signature, model_.GetSignature(0));
-    return RunMapWithIndexHelper(/*signature_index=*/0, signature, input_map,
-                                 output_map, async);
+    return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
+                                 async);
   }
 
   // Runs the model of the given signature key asynchronously, if possible, with
@@ -694,7 +693,7 @@ class CompiledModel
       bool& async) const;
 
   Expected<void> RunMapWithIndexHelper(
-      size_t signature_index, const Signature& signature,
+      size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;

@@ -70,22 +70,15 @@ const float kTolerance = 1e-5;
   XCTAssertTrue(options);
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               litert::CompiledModel::Create(env, *model, options));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model->GetSignatures());
-  XCTAssertEqual(signatures.size(), 1);
+  XCTAssertEqual(model->GetNumSignatures(), 1);
   XCTAssertTrue(compiled_model);
 
-  auto signature_key = signatures[0].Key();
-  XCTAssertEqual(signature_key, litert::Model::DefaultSignatureKey());
-  size_t signature_index = 0;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
-                              compiled_model.CreateInputBuffers(signature_index));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
-                              compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
 
   // // Fill model inputs.
-  auto input_names = signatures[0].InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model->GetSignatureInputNames());
   XCTAssertEqual(input_names.size(), 2);
   XCTAssertEqual(input_names.at(0), "arg0");
   XCTAssertEqual(input_names.at(1), "arg1");
@@ -97,10 +90,10 @@ const float kTolerance = 1e-5;
       input_buffers[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, model->GetSignatureOutputNames());
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqual(output_names.at(0), "tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());
