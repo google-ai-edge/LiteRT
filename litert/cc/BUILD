@@ -96,6 +96,14 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_common",
+    hdrs = ["litert_common.h"],
+    deps = [
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
     name = "litert_macros",
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
@@ -264,6 +272,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_common",
         ":litert_environment",
         ":litert_expected",
         ":litert_layout",
@@ -283,6 +292,7 @@ cc_library(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/functional:any_invocable",
@@ -1076,6 +1086,7 @@ cc_library_with_testonly_vis(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_common",
         ":litert_custom_op_kernel",
         ":litert_expected",
         ":litert_macros",
@@ -1085,6 +1096,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
         "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -1180,6 +1192,7 @@ cc_library(
     hdrs = [
         # C++ API headers.
         "litert_any.h",
+        "litert_common.h",
         "litert_buffer_ref.h",
         "litert_compiled_model.h",
         "litert_custom_op_kernel.h",
@@ -1231,6 +1244,7 @@ cc_library(
     deps = [
         # C++ API targets.
         "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/functional:any_invocable",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_custom_op_kernel",
