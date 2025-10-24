@@ -67,6 +67,8 @@ package_group(
 package_group(
     name = "litert_cc_users_static_link",
     packages = [
+        "INTERNAL_ANDROID_BACKEND_DIRECTORY/...",  #copybara:comment
+        "INTERNAL_ANDROID_APP_DIRECTORY/...",  #copybara:comment
         # copybara:uncomment "INTERNAL_EDGETPU_LLM_PROTOTYPE/...",
         # copybara:uncomment "//platforms/darwinn/compiler/...",
         # copybara:uncomment "//third_party/darwinn/litert/...",
