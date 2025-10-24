@@ -21,10 +21,10 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -187,7 +187,7 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
       Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
   TensorBufferRequirements req(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::HostMemory));
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
@@ -198,7 +198,7 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
       Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
   TensorBufferRequirements req(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::HostMemory));
 }
 
 TEST_F(ExampleDispatchTest, RegisterBuffer) {
