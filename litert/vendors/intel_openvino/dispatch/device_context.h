@@ -20,19 +20,23 @@
 #include <memory>
 #include <unordered_map>
 
-#include "openvino/runtime/tensor.hpp"
 #include "litert/c/litert_common.h"
+#include "openvino/runtime/tensor.hpp"
 #ifndef LITERT_WINDOWS_OS
 #include <sys/mman.h>
 #endif
 
-#include "openvino/runtime/core.hpp"
-#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
-#include "openvino/runtime/remote_context.hpp"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "openvino/runtime/core.hpp"
+#include "openvino/runtime/intel_npu/level_zero/level_zero.hpp"
+#include "openvino/runtime/remote_context.hpp"
+
+#if defined(LITERT_WINDOWS_OS)
+#include "litert/vendors/intel_openvino/dispatch/openvino_shared_core.h"
+#endif // LITERT_WINDOWS_OS
 
 class LiteRtDispatchDeviceContextT {
  public:
@@ -62,19 +66,26 @@ class LiteRtDispatchDeviceContextT {
   }
 
   // Return the core shared_pointer.
-  std::shared_ptr<ov::Core> getCore() const { return core_; }
+  std::shared_ptr<ov::Core> getCore() const {
+#if defined(LITERT_WINDOWS_OS)
+    return OpenVINOSharedCore::GetInstance()->getCore();
+#else
+    return core_;
+#endif // LITERT_WINDOWS_OS
+  }
 
  private:
-  explicit LiteRtDispatchDeviceContextT()
-      : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
-  std::shared_ptr<ov::Core> core_;
 #if defined(LITERT_WINDOWS_OS)
+  explicit LiteRtDispatchDeviceContextT() : next_handle_(0) {}
   std::unordered_map<LiteRtTensorBufferHandle,
                      ov::intel_npu::level_zero::ZeroBufferTensor>
       tensor_handle_map_;
 #else
+  explicit LiteRtDispatchDeviceContextT()
+      : core_(std::make_shared<ov::Core>()), next_handle_(0) {}
+  std::shared_ptr<ov::Core> core_;
   std::unordered_map<LiteRtTensorBufferHandle, ov::Tensor> tensor_handle_map_;
-#endif
+#endif // LITERT_WINDOWS_OS
   uint64_t next_handle_;
 };
 

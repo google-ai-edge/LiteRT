@@ -15,10 +15,9 @@
 
 #include <exception>
 
-#include "openvino/openvino.hpp"
-#include "openvino/runtime/core.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
@@ -29,8 +28,63 @@
 #include "litert/vendors/intel_openvino/dispatch/device_context.h"
 #include "litert/vendors/intel_openvino/dispatch/invocation_context.h"
 
+#if defined(LITERT_WINDOWS_OS)
+#include "litert/vendors/intel_openvino/dispatch/remote_tensor_buffer.h"
+#endif // LITERT_WINDOWS_OS
+
 namespace litert {
 namespace openvino {
+
+#if defined(LITERT_WINDOWS_OS)
+LiteRtStatus CreateRemoteTensorBuffer(
+    LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,
+    LiteRtTensorBufferType buffer_type, size_t bytes, size_t packed_bytes,
+    HwMemoryInfoPtr* hw_memory_info) {
+  auto memory_info = new HwMemoryInfo();
+  RemoteTensorBuffer* custom_tensor_buffer = new RemoteTensorBuffer();
+  litert::Expected<void> result =
+      custom_tensor_buffer->Alloc(*tensor_type, bytes);
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to alloc remote tensor buffer %d.", bytes);
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  memory_info->memory_handle = custom_tensor_buffer;
+  *hw_memory_info = memory_info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus DestroyRemoteTensorBuffer(LiteRtEnvironment env,
+                                         HwMemoryInfoPtr hw_memory_info) {
+  RemoteTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
+  if (custom_tensor_buffer->GetZeroBufferPtr()) {
+    delete custom_tensor_buffer;
+  }
+  delete hw_memory_info;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus UnlockRemoteTensorBuffer(LiteRtEnvironment env,
+                                        HwMemoryInfoPtr hw_memory_info) {
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LockRemoteTensorBuffer(LiteRtEnvironment env,
+                                      HwMemoryInfoPtr hw_memory_info,
+                                      LiteRtTensorBufferLockMode mode,
+                                      void** host_memory_ptr) {
+  RemoteTensorBuffer* custom_tensor_buffer =
+      reinterpret_cast<RemoteTensorBuffer*>(hw_memory_info->memory_handle);
+  auto result = custom_tensor_buffer->GetZeroBufferPtr();
+  if (!result) {
+    LITERT_LOG(LITERT_ERROR, "Failed to lock tensor buffer: %s",
+               result.Error().Message().c_str());
+    return kLiteRtStatusErrorMemoryAllocationFailure;
+  }
+  *host_memory_ptr = result.Value();
+  return kLiteRtStatusOk;
+}
+#endif // LITERT_WINDOWS_OS
 
 // Initialize the Dispatch API runtime.
 // This function should be called before calling any other Dispatch API
@@ -42,6 +96,22 @@ LiteRtStatus DispatchInitialize(LiteRtEnvironmentOptions environment_options,
   for (auto&& device : availableDevices)
     LITERT_LOG(LITERT_INFO, "[Openvino]Found device plugin for: %s",
                device.c_str());
+
+#if defined(LITERT_WINDOWS_OS)
+  LiteRtEnvOption env_option{
+      /*tag=*/kLiteRtEnvOptionTagCustomTensorBufferHandlers,
+      /*value=*/{/*type=*/kLiteRtAnyTypeVoidPtr}};
+  // TODO:: How to free custom_tensor_buffer_handlers.
+  LiteRtCustomTensorBufferHandlers* custom_tensor_buffer_handlers =
+      (LiteRtCustomTensorBufferHandlers*)malloc(
+          sizeof(LiteRtCustomTensorBufferHandlers));
+  custom_tensor_buffer_handlers->create_func = CreateRemoteTensorBuffer;
+  custom_tensor_buffer_handlers->destroy_func = DestroyRemoteTensorBuffer;
+  custom_tensor_buffer_handlers->lock_func = LockRemoteTensorBuffer;
+  custom_tensor_buffer_handlers->unlock_func = UnlockRemoteTensorBuffer;
+  env_option.value.ptr_value = custom_tensor_buffer_handlers;
+  LiteRtSetEnvironmentOptionsValue(environment_options, env_option);
+#endif // LITERT_WINDOWS_OS
 
   return kLiteRtStatusOk;
 }

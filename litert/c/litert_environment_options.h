@@ -19,6 +19,8 @@
 
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,6 +53,7 @@ typedef enum {
   // Dawn procedure table pointer for shared libraries to populate their tables
   // with the shared procedures instead of their own procedures.
   kLiteRtEnvOptionTagWebGpuProcs = 20,
+  kLiteRtEnvOptionTagCustomTensorBufferHandlers = 21,
 } LiteRtEnvOptionTag;
 
 typedef struct {
@@ -111,6 +114,13 @@ typedef struct {
   LiteRtMagicNumberVerification verifications[_LITERT_ARBITRARY_ARRAY_SIZE];
 } LiteRtMagicNumberVerifications;
 
+typedef struct {
+  ::CreateCustomTensorBuffer create_func;
+  ::DestroyCustomTensorBuffer destroy_func;
+  ::LockCustomTensorBuffer lock_func;
+  ::UnlockCustomTensorBuffer unlock_func;
+} LiteRtCustomTensorBufferHandlers;
+
 // Retrieves the value corresponding to the given tag.
 //
 // Returns kLiteRtStatusErrorNotFound if the option tag is not found.
@@ -118,6 +128,8 @@ LiteRtStatus LiteRtGetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
                                               LiteRtEnvOptionTag tag,
                                               LiteRtAny* value);
 
+LiteRtStatus LiteRtSetEnvironmentOptionsValue(LiteRtEnvironmentOptions options,
+                                              LiteRtEnvOption env_option);
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

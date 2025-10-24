@@ -168,6 +168,10 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                cl_mem* cl_mem_addr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+// Return an error if the backing buffer is not a custom tensor buffer.
+LiteRtStatus LiteRtGetTensorBufferCustomTensorBufferHandle(
+    LiteRtTensorBuffer tensor_buffer, HwMemoryHandle* hw_memory_handle);
+
 // Create a tensor buffer from an existing OpenGL Buffer.
 //
 // Caller owns the returned LiteRtTensorBuffer. The owner is responsible for

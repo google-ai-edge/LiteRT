@@ -166,6 +166,8 @@ cc_library(
         ":litert_any",
         ":litert_common",
         "//litert/cc:litert_macros",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/core:environment_options",
     ],
 )

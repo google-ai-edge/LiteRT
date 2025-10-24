@@ -155,6 +155,8 @@ cc_library(
     deps = [
         "//litert/c:litert_any",
         "//litert/c:litert_common",
+        "//litert/c:litert_custom_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_types",
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings",

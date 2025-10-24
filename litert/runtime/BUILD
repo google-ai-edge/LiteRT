@@ -194,6 +194,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/c/internal:litert_logging",
+        "//litert/c:litert_custom_tensor_buffer",
         "//litert/cc:litert_macros",
         "//tflite/delegates/gpu/cl:cl_command_queue",
         "//tflite/delegates/gpu/cl:cl_memory",
