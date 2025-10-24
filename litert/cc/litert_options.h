@@ -18,10 +18,12 @@
 #include <cstddef>
 #include <string>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -45,9 +47,16 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return Options(options, OwnHandle::kYes);
   }
 
+  ABSL_DEPRECATED("Use the overload that takes HwAccelerators instead.")
   Expected<void> SetHardwareAccelerators(LiteRtHwAcceleratorSet accelerators) {
     LITERT_RETURN_IF_ERROR(
         LiteRtSetOptionsHardwareAccelerators(Get(), accelerators));
+    return {};
+  }
+
+  Expected<void> SetHardwareAccelerators(HwAccelerators accelerators) {
+    LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
+        Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators)));
     return {};
   }
 
