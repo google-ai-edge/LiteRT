@@ -425,6 +425,22 @@ class Model : public internal::Handle<LiteRtModel, LiteRtDestroyModel> {
     return std::move(signatures);
   }
 
+  // Returns the list of signature key names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
+    LiteRtParamIndex num_signatures;
+    internal::AssertOk(LiteRtGetNumModelSignatures, Get(), &num_signatures);
+    std::vector<absl::string_view> signature_keys;
+    signature_keys.reserve(num_signatures);
+    for (int i = 0; i < num_signatures; ++i) {
+      LiteRtSignature lite_rt_signature;
+      internal::AssertOk(LiteRtGetModelSignature, Get(), i, &lite_rt_signature);
+      const char* key_cstr;
+      internal::AssertOk(LiteRtGetSignatureKey, lite_rt_signature, &key_cstr);
+      signature_keys.push_back(key_cstr);
+    }
+    return signature_keys;
+  }
+
   // Returns the list of input names defined in the signature.
   Expected<std::vector<absl::string_view>> GetSignatureInputNames(
       size_t signature_index) const {
