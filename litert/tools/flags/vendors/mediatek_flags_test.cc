@@ -140,6 +140,24 @@ TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
   EXPECT_FALSE(options.Value().GetEnableL1CacheOptimizations());
 }
 
+TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, true);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_TRUE(options.Value().GetDisableDlaDirRemoval());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
+  // Explicitly set to false (even though it's the default) to ensure it's
+  // picked up
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_FALSE(options.Value().GetDisableDlaDirRemoval());
+}
+
 TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);

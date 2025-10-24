@@ -47,6 +47,9 @@ ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
           kLiteRtMediatekNeuronAdapterOptimizationHintNormal,
           "Optimization hint for Mediatek Inference.");
 
+ABSL_FLAG(bool, mediatek_disable_dla_dir_removal, false,
+          "Disable DLA directory removal for Mediatek Compilation.");
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error) {
@@ -115,7 +118,8 @@ std::string AbslUnparseFlag(
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed:
       return "sustained_speed";
     case (
-        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer):
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer
+      ):
       return "fast_single_answer";
     case kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost:
       return "turbo_boost";
@@ -175,6 +179,8 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
   options.SetEnableL1CacheOptimizations(
       absl::GetFlag(FLAGS_mediatek_enable_l1_cache_optimizations));
   options.SetOptimizationHint(absl::GetFlag(FLAGS_mediatek_optimization_hint));
+  options.SetDisableDlaDirRemoval(
+      absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
   return options;
 }
 
