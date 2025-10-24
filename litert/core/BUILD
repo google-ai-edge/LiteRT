@@ -188,6 +188,7 @@ cc_library_with_testonly_vis(
     hdrs = ["filesystem.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/strings:str_format",
