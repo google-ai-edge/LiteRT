@@ -210,6 +210,17 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_magic_number_options",
+    srcs = ["litert_magic_number_options.cc"],
+    hdrs = ["litert_magic_number_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/cc:litert_expected",
+    ],
+)
+
 cc_test(
     name = "litert_runtime_options_test",
     srcs = ["litert_runtime_options_test.cc"],
