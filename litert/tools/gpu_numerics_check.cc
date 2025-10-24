@@ -52,6 +52,8 @@ ABSL_FLAG(std::string, gpu_backend, "opencl",
 ABSL_FLAG(bool, external_tensor_mode, false,
           "Whether to enable external tensor mode.");
 ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
+ABSL_FLAG(bool, enable_constant_tensors_sharing, false,
+          "Whether to enable constant tensors sharing.");
 
 namespace litert {
 namespace {
@@ -74,7 +76,17 @@ Expected<Options> GetGpuOptions() {
   } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendOpenGl);
   }
+
+  if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
+    gpu_options.EnableConstantTensorSharing(true);
+  }
   options.AddOpaqueOptions(std::move(gpu_options));
+  return options;
+}
+
+Expected<Options> GetCpuOptions() {
+  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
   return options;
 }
 
@@ -235,9 +247,9 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
   bool print_outputs = absl::GetFlag(FLAGS_print_outputs);
   for (int element_index = 0; element_index < total_elements; ++element_index) {
     if (print_outputs) {
-      std::cout << "Element #" << element_index << ": CPU value = "
-                << cpu_data[element_index] << ", GPU value = "
-                << gpu_data[element_index] << std::endl;
+      std::cout << "Element #" << element_index
+                << ": CPU value = " << cpu_data[element_index]
+                << ", GPU value = " << gpu_data[element_index] << std::endl;
     }
 
     const float abs_diff =
@@ -322,9 +334,10 @@ Expected<void> RunModel() {
                           Model::CreateFromFile(absl::GetFlag(FLAGS_graph)));
 
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
-  LITERT_ASSIGN_OR_RETURN(
-      auto compiled_model_cpu,
-      CompiledModel::Create(env, cpu_model, kLiteRtHwAcceleratorCpu));
+
+  LITERT_ASSIGN_OR_RETURN(auto cpu_options, GetCpuOptions());
+  LITERT_ASSIGN_OR_RETURN(auto compiled_model_cpu,
+                          CompiledModel::Create(env, cpu_model, cpu_options));
 
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GetGpuOptions());
   LITERT_ASSIGN_OR_RETURN(auto compiled_model_gpu,
