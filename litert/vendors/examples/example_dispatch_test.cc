@@ -23,7 +23,6 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"

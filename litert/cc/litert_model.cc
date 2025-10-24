@@ -26,169 +26,46 @@
 
 namespace litert {
 
-bool Tensor::IsSubgraphInput() const {
-  LITERT_ASSIGN_OR_ABORT(auto ranked_tensor_type, RankedTensorType());
-  // A special case for zero-sized tensors.
-  if (ranked_tensor_type.Layout().Rank() == 1 &&
-      ranked_tensor_type.Layout().Dimensions()[0] == 0) {
-    return false;
-  }
-  return !HasWeights() && !DefiningOp().has_value();
-}
-
-bool Tensor::IsConstant() const {
-  return HasWeights() && !DefiningOp().has_value();
-}
-
-Tensor::TensorUses Tensor::Uses() const {
-  LiteRtParamIndex num_uses;
-  internal::AssertOk(LiteRtGetNumTensorUses, Get(), &num_uses);
-
-  TensorUses uses;
-  for (auto i = 0; i < num_uses; ++i) {
-    LiteRtOp user;
-    LiteRtParamIndex user_arg_index;
-    internal::AssertOk(LiteRtGetTensorUse, Get(), i, &user, &user_arg_index);
-    uses.emplace_back(TensorUse{Op(user), user_arg_index});
-  }
-  return uses;
-}
-
-OpInputs Op::Inputs() const {
-  LiteRtParamIndex num_inputs;
-  internal::AssertOk(LiteRtGetNumOpInputs, Get(), &num_inputs);
-
-  OpInputs inputs;
-  for (auto i = 0; i < num_inputs; ++i) {
-    LiteRtTensor input;
-    internal::AssertOk(LiteRtGetOpInput, Get(), i, &input);
-    inputs.emplace_back(Tensor(input));
-  }
-  return inputs;
-}
-
-OpOutputs Op::Outputs() const {
-  LiteRtParamIndex num_outputs;
-  internal::AssertOk(LiteRtGetNumOpOutputs, Get(), &num_outputs);
-
-  OpOutputs outputs;
-  for (auto i = 0; i < num_outputs; ++i) {
-    LiteRtTensor output;
-    internal::AssertOk(LiteRtGetOpOutput, Get(), i, &output);
-    outputs.emplace_back(Tensor(output));
-  }
-  return outputs;
-}
-
-SubgraphInputs Subgraph::Inputs() const {
-  LiteRtParamIndex num_inputs;
-  internal::AssertOk(LiteRtGetNumSubgraphInputs, Get(), &num_inputs);
-
-  SubgraphInputs inputs;
-  for (auto i = 0; i < num_inputs; ++i) {
-    LiteRtTensor input;
-    internal::AssertOk(LiteRtGetSubgraphInput, Get(), i, &input);
-    inputs.emplace_back(Tensor(input));
-  }
-  return inputs;
-}
-
-Expected<Tensor> Subgraph::Input(absl::string_view name) const {
-  LiteRtParamIndex num_inputs;
-  internal::AssertOk(LiteRtGetNumSubgraphInputs, Get(), &num_inputs);
-
-  for (auto i = 0; i < num_inputs; ++i) {
-    LiteRtTensor input;
-    internal::AssertOk(LiteRtGetSubgraphInput, Get(), i, &input);
-    const char* input_name;
-    internal::AssertOk(LiteRtGetTensorName, input, &input_name);
-    if (name == input_name) {
-      return Tensor(input);
-    }
-  }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find input");
-}
-
-Expected<Tensor> Subgraph::Output(absl::string_view name) const {
-  LiteRtParamIndex num_outputs;
-  internal::AssertOk(LiteRtGetNumSubgraphOutputs, Get(), &num_outputs);
-
-  for (auto i = 0; i < num_outputs; ++i) {
-    LiteRtTensor output;
-    internal::AssertOk(LiteRtGetSubgraphOutput, Get(), i, &output);
-    const char* output_name;
-    internal::AssertOk(LiteRtGetTensorName, output, &output_name);
-    if (name == output_name) {
-      return Tensor(output);
-    }
-  }
-  return Unexpected(kLiteRtStatusErrorNotFound, "Failed to find output");
-}
-
-SubgraphOutputs Subgraph::Outputs() const {
-  LiteRtParamIndex num_outputs;
-  internal::AssertOk(LiteRtGetNumSubgraphOutputs, Get(), &num_outputs);
-
-  SubgraphOutputs outputs;
-  for (auto i = 0; i < num_outputs; ++i) {
-    LiteRtTensor output;
-    internal::AssertOk(LiteRtGetSubgraphOutput, Get(), i, &output);
-    outputs.emplace_back(Tensor(output));
-  }
-  return outputs;
-}
-
-std::vector<Op> Subgraph::Ops() const {
-  LiteRtParamIndex num_ops;
-  internal::AssertOk(LiteRtGetNumSubgraphOps, Get(), &num_ops);
-
-  std::vector<Op> ops;
-  for (auto i = 0; i < num_ops; ++i) {
-    LiteRtOp op;
-    internal::AssertOk(LiteRtGetSubgraphOp, Get(), i, &op);
-    ops.emplace_back(Op(op));
-  }
-  return ops;
-}
-
-Expected<Tensor> Signature::InputTensor(absl::string_view name) const {
+Expected<SimpleTensor> SimpleSignature::InputTensor(
+    absl::string_view name) const {
   LiteRtTensor tensor;
   auto status =
       LiteRtGetSignatureInputTensor(Get(), std::string(name).c_str(), &tensor);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to look up signature input tensor");
   }
-  return Tensor(tensor);
+  return SimpleTensor(tensor);
 }
 
-Expected<Tensor> Signature::InputTensor(size_t index) const {
+Expected<SimpleTensor> SimpleSignature::InputTensor(size_t index) const {
   LiteRtTensor tensor;
   auto status = LiteRtGetSignatureInputTensorByIndex(
       Get(), static_cast<LiteRtParamIndex>(index), &tensor);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to look up signature input tensor");
   }
-  return Tensor(tensor);
+  return SimpleTensor(tensor);
 }
 
-Expected<Tensor> Signature::OutputTensor(absl::string_view name) const {
+Expected<SimpleTensor> SimpleSignature::OutputTensor(
+    absl::string_view name) const {
   LiteRtTensor tensor;
   auto status =
       LiteRtGetSignatureOutputTensor(Get(), std::string(name).c_str(), &tensor);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to look up signature output tensor");
   }
-  return Tensor(tensor);
+  return SimpleTensor(tensor);
 }
 
-Expected<Tensor> Signature::OutputTensor(size_t index) const {
+Expected<SimpleTensor> SimpleSignature::OutputTensor(size_t index) const {
   LiteRtTensor tensor;
   auto status = LiteRtGetSignatureOutputTensorByIndex(
       Get(), static_cast<LiteRtParamIndex>(index), &tensor);
   if (status != kLiteRtStatusOk) {
     return Unexpected(status, "Failed to look up signature output tensor");
   }
-  return Tensor(tensor);
+  return SimpleTensor(tensor);
 }
 
 }  // namespace litert
