@@ -50,6 +50,13 @@ ABSL_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
 ABSL_FLAG(bool, mediatek_disable_dla_dir_removal, false,
           "Disable DLA directory removal for Mediatek Compilation.");
 
+ABSL_FLAG(
+    std::string, mediatek_dla_dir, "",
+    "Meidatek DLA provided directory. If provided, all compiled DLA's will be "
+    "stored in the provided directory path. Meant to be used in conjunction "
+    "with `--mediatek_disable_dla_dir_removal` so that DLA's aren't cleaned "
+    "up post compilation.");
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error) {
@@ -181,6 +188,7 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
   options.SetOptimizationHint(absl::GetFlag(FLAGS_mediatek_optimization_hint));
   options.SetDisableDlaDirRemoval(
       absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
+  options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
   return options;
 }
 

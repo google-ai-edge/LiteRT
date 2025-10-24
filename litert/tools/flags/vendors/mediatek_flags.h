@@ -42,6 +42,8 @@ ABSL_DECLARE_FLAG(LiteRtMediatekNeuronAdapterOptimizationHint,
 
 ABSL_DECLARE_FLAG(bool, mediatek_disable_dla_dir_removal);
 
+ABSL_DECLARE_FLAG(std::string, mediatek_dla_dir);
+
 bool AbslParseFlag(absl::string_view text,
                    LiteRtMediatekOptionsNeronSDKVersionType* options,
                    std::string* error);
