@@ -124,6 +124,9 @@ export class LiteRt {
     this.liteRtWasm.setupLogging();
   }
 
+  /**
+   * Checks if Cross-Origin Storage is supported.
+   */
   private static supportsCrossOriginStorage() {
     const supported = typeof navigator !== "undefined" && "crossOriginStorage" in navigator;
     console.log(`Cross-Origin Storage is ${supported ? 'supported' : 'not supported'}.`);
@@ -144,6 +147,9 @@ export class LiteRt {
     popErrorScopes(this.device, callsite, this.gpuErrorReporter.val);
   }
 
+  /**
+   * Returns the hash object of the shape `{value, algorithm}` for a blob.
+   */
   private static async getBlobHash (blob: Blob) {
     const hashAlgorithmIdentifier = "SHA-256";
     // Get the contents of the blob as binary data contained in an ArrayBuffer.
