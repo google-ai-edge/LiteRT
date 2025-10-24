@@ -21,6 +21,9 @@ Thumbs.db
 .idea/
 cmake-build-debug/
 .turbo
+dist/
+wasm/
+
 
 /.bazelrc.user
 /bazel-*
