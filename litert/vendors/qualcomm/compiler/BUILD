@@ -47,10 +47,7 @@ litert_dynamic_lib(
     shared_lib_name = "qnn_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
     ungrte = True,
-    visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
-        "//litert:__subpackages__",
-    ],
+    visibility = ["//litert:__subpackages__"],
     deps = [
         ":qnn_compose_graph",
         "//litert/c:litert_runtime_c_api_shared_lib",
@@ -222,7 +219,6 @@ litert_lib(
     name = "graph_mapper",
     srcs = ["graph_mapper.cc"],
     hdrs = ["graph_mapper.h"],
-    visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
