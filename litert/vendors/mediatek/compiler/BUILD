@@ -32,10 +32,7 @@ litert_dynamic_lib(
     shared_lib_name = "compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_MediaTek.so",
     ungrte = True,
-    visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
-        "//litert:__subpackages__",
-    ],
+    visibility = ["//litert:__subpackages__"],
     deps = [
         ":compile_model",
         ":create_model",
