@@ -39,6 +39,7 @@ litert_test(
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/builders:elementwise_op_builder",
         "@qairt//:qnn_lib_headers",
     ],
 )
