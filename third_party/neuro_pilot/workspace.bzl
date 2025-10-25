@@ -22,7 +22,7 @@ def neuro_pilot():
         build_file = "@//third_party/neuro_pilot:neuro_pilot.BUILD",
         local_path_env = "LITERT_NEURO_PILOT_SDK",
         strip_prefix = "neuro_pilot",
-        url = "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/57c17aa0-90b4-4871-a7b6-cdcdc678b3aa.gz",
+        url = "https://s3.ap-southeast-1.amazonaws.com/mediatek.neuropilot.com/b1c485de-fca8-4b20-836a-8b33152a3609.gz",
         symlink_mapping = {
             "v8_latest": "v8_0_8",
             # Just let the compilation pass, we don't expect it to work...
