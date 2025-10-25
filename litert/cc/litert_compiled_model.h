@@ -74,18 +74,6 @@ class CompiledModel
 
   CompiledModel() = default;
 
-  // Creates a CompiledModel instance.
-  //
-  // If `owned` is `true`, then the created object takes ownership of the
-  // `compiled_model` handle.
-  explicit CompiledModel(LiteRtModel litert_model,
-                         LiteRtCompiledModel compiled_model, OwnHandle owned)
-      : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
-            compiled_model, owned),
-        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
-    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
-  }
-
   // Creates a CompiledModel from a TFLite file.
   //
   // The model is loaded into memory and the caller takes ownership of the
@@ -639,7 +627,28 @@ class CompiledModel
     return RemoveDispatchAnnotation(signature_index, key);
   }
 
+  // Wraps a LiteRtCompiledModel C object in a CompiledModel C++ object.
+  //
+  // Warning: This is internal use only.
+  static CompiledModel WrapCObject(LiteRtModel litert_model,
+                                   LiteRtCompiledModel compiled_model,
+                                   OwnHandle owned) {
+    return CompiledModel(litert_model, compiled_model, owned);
+  }
+
  private:
+  // Creates a CompiledModel instance.
+  //
+  // If `owned` is `true`, then the created object takes ownership of the
+  // `compiled_model` handle.
+  explicit CompiledModel(LiteRtModel litert_model,
+                         LiteRtCompiledModel compiled_model, OwnHandle owned)
+      : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
+            compiled_model, owned),
+        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
+    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
+  }
+
   static bool CheckCancelledWrapper(void* data);
 
   // Returns the signature input index for the given input tensor name.

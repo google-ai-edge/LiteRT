@@ -29,12 +29,15 @@
 
 namespace litert {
 
+class CompiledModel;
+class ExternalLiteRtBufferContext;
+
 class Environment
     : public internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment> {
- public:
-  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
-      : Handle(env, owned) {}
+  friend class CompiledModel;
+  friend class ExternalLiteRtBufferContext;
 
+ public:
   enum class OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
     DispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
@@ -120,7 +123,17 @@ class Environment
     return is_supported;
   }
 
+  // Wraps a LiteRtEnvironment C object in a Environment C++ object.
+  //
+  // Warning: This is internal use only.
+  static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
+    return Environment(env, owned);
+  }
+
  private:
+  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
+      : Handle(env, owned) {}
+
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {
     std::vector<LiteRtEnvOption> c_options;

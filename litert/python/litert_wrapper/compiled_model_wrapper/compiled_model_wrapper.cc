@@ -26,12 +26,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer.h"
+#include "litert/cc/internal/litert_detailed_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/python/litert_wrapper/common/litert_wrapper_utils.h"
 
@@ -46,7 +46,7 @@ size_t CompiledModelWrapper::ByteWidthOfDType(const std::string& dtype) {
 }
 
 // Constructor for CompiledModelWrapper.
-CompiledModelWrapper::CompiledModelWrapper(Environment env, Model model,
+CompiledModelWrapper::CompiledModelWrapper(Environment env, DetailedModel model,
                                            CompiledModel compiled)
     : environment_(std::move(env)),
       model_(std::move(model)),
@@ -100,12 +100,12 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
   Environment env = std::move(*env_or);
 
   // Load model from a file
-  auto model_or = Model::CreateFromFile(model_path);
+  auto model_or = DetailedModel::CreateFromFile(model_path);
   if (!model_or) {
     if (out_error) *out_error = model_or.Error().Message();
     return nullptr;
   }
-  Model model = std::move(*model_or);
+  DetailedModel model = std::move(*model_or);
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
@@ -164,12 +164,12 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
   // Create model from buffer
   BufferRef<uint8_t> ref(reinterpret_cast<uint8_t*>(buf),
                          static_cast<size_t>(length));
-  auto model_or = Model::CreateFromBuffer(ref);
+  auto model_or = DetailedModel::CreateFromBuffer(ref);
   if (!model_or) {
     if (out_error) *out_error = model_or.Error().Message();
     return nullptr;
   }
-  Model model = std::move(*model_or);
+  DetailedModel model = std::move(*model_or);
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
@@ -435,8 +435,8 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
     if (!ptr) {
       return ReportError("capsule missing pointer in input_map");
     }
-    in_map[nm] =
-        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    in_map[nm] = TensorBuffer::WrapCObject(static_cast<LiteRtTensorBuffer>(ptr),
+                                           OwnHandle::kNo);
   }
 
   pos = 0;
@@ -454,8 +454,8 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
     if (!ptr) {
       return ReportError("capsule missing pointer in output_map");
     }
-    out_map[nm] =
-        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    out_map[nm] = TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
   if (auto run_or = compiled_model_.Run(signature_key, in_map, out_map);
@@ -489,7 +489,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in input capsule");
     }
-    inputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    inputs.emplace_back(TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo));
   }
 
   Py_ssize_t n_out = PyList_Size(output_caps_list);
@@ -504,7 +505,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in output capsule");
     }
-    outputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    outputs.emplace_back(TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo));
   }
 
   if (auto run_or = compiled_model_.Run(static_cast<size_t>(signature_index),

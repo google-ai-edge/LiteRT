@@ -27,13 +27,14 @@ namespace litert {
 
 Expected<OpaqueOptions> FindOpaqueOptions(
     OpaqueOptions& options, const std::string& payload_identifier) {
-  Expected<OpaqueOptions> chain(OpaqueOptions(options.Get(), OwnHandle::kNo));
+  Expected<OpaqueOptions> chain(
+      OpaqueOptions::WrapCObject(options.Get(), OwnHandle::kNo));
   while (chain) {
     // TODO: lukeboyer - Error out in all the cases where there isn't
     // a valid identifier.
     const auto next_id = chain->GetIdentifier();
     if (next_id && *next_id == payload_identifier) {
-      return OpaqueOptions(chain->Get(), OwnHandle::kNo);
+      return OpaqueOptions::WrapCObject(chain->Get(), OwnHandle::kNo);
     }
     chain = chain->Next();
   }
