@@ -58,7 +58,7 @@ litert_dynamic_lib(
     ],
     shared_lib_name = "dispatch_api_so",
     so_name = "libLiteRtDispatch_IntelOpenvino.so",
-    visibility = ["//litert:__subpackages__"],
+    visibility = ["//visibility:private"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
