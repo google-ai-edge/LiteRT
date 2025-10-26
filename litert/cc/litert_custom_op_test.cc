@@ -23,6 +23,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_environment.h"
@@ -63,28 +66,35 @@ class MyCustomOpKernel : public CustomOpKernel {
     return {};
   }
 
-  Expected<void> Run(const std::vector<TensorBuffer>& inputs,
-                     std::vector<TensorBuffer>& outputs) override {
-    LITERT_ASSIGN_OR_RETURN(auto tensor_type, outputs[0].TensorType());
-    LITERT_ASSIGN_OR_RETURN(size_t num_elements,
-                            tensor_type.Layout().NumElements());
-    LITERT_ASSIGN_OR_RETURN(auto input0_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(
-                                inputs[0], TensorBuffer::LockMode::kRead));
-    LITERT_ASSIGN_OR_RETURN(auto input1_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(
-                                inputs[1], TensorBuffer::LockMode::kRead));
-    LITERT_ASSIGN_OR_RETURN(auto output_lock_and_addr,
-                            TensorBufferScopedLock::Create<float>(
-                                outputs[0], TensorBuffer::LockMode::kWrite));
+  Expected<void> Run(size_t num_inputs, const LiteRtTensorBuffer* inputs,
+                     size_t num_outputs, LiteRtTensorBuffer* outputs) override {
+    LiteRtRankedTensorType tensor_type;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferTensorType(outputs[0], &tensor_type));
+    size_t num_elements;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetNumLayoutElements(&tensor_type.layout, &num_elements));
 
-    const float* input0 = input0_lock_and_addr.second;
-    const float* input1 = input1_lock_and_addr.second;
-    float* output = output_lock_and_addr.second;
+    float* input0;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtLockTensorBuffer(inputs[0], reinterpret_cast<void**>(&input0),
+                               kLiteRtTensorBufferLockModeRead));
+    float* input1;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtLockTensorBuffer(inputs[1], reinterpret_cast<void**>(&input1),
+                               kLiteRtTensorBufferLockModeRead));
+    float* output;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtLockTensorBuffer(outputs[0], reinterpret_cast<void**>(&output),
+                               kLiteRtTensorBufferLockModeWrite));
 
     for (auto i = 0; i < num_elements; ++i) {
       output[i] = input0[i] + input1[i];
     }
+
+    LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(inputs[0]));
+    LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(inputs[1]));
+    LITERT_RETURN_IF_ERROR(LiteRtUnlockTensorBuffer(outputs[0]));
 
     return {};
   }
