@@ -454,7 +454,9 @@ Expected<LiteRtModelT::Ptr> LoadModelFromFile(absl::string_view filename,
   if (!flatbuffer) {
     return flatbuffer.Error();
   }
-  return UnpackModel(std::move(**flatbuffer));
+  LITERT_ASSIGN_OR_RETURN(auto model, UnpackModel(std::move(**flatbuffer)));
+  model->SetSourcePath(std::string(filename));
+  return std::move(model);
 }
 
 }  // namespace litert::internal
