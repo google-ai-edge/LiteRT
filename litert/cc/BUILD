@@ -272,6 +272,7 @@ cc_library(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_common",
         ":litert_environment",
         ":litert_expected",
         ":litert_layout",
@@ -1188,6 +1189,7 @@ cc_library(
     hdrs = [
         # C++ API headers.
         "litert_any.h",
+        "litert_common.h",
         "litert_buffer_ref.h",
         "litert_compiled_model.h",
         "litert_custom_op_kernel.h",

@@ -32,6 +32,7 @@
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -115,6 +116,16 @@ class CompiledModel
   // The provided hardware accelerator is used to select accelerator to use.
   //
   // Note: It should be specified for both JIT and AOT compiled models.
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(
+        static_cast<LiteRtHwAccelerators>(hardware_accelerators));
+    return Create(env, model, compilation_options);
+  }
+
+  [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]
   static Expected<CompiledModel> Create(
       litert::Environment& env, const litert::Model& model,
       LiteRtHwAccelerators hardware_accelerators) {

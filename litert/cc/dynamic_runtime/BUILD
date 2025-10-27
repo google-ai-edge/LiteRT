@@ -507,6 +507,7 @@ cc_library(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
