@@ -20,6 +20,49 @@
 
 namespace litert {
 
+enum class Status : int {
+  kOk = kLiteRtStatusOk,
+
+  // Generic errors.
+  kErrorInvalidArgument = kLiteRtStatusErrorInvalidArgument,
+  kErrorMemoryAllocationFailure = kLiteRtStatusErrorMemoryAllocationFailure,
+  kErrorRuntimeFailure = kLiteRtStatusErrorRuntimeFailure,
+  kErrorMissingInputTensor = kLiteRtStatusErrorMissingInputTensor,
+  kErrorUnsupported = kLiteRtStatusErrorUnsupported,
+  kErrorNotFound = kLiteRtStatusErrorNotFound,
+  kErrorTimeoutExpired = kLiteRtStatusErrorTimeoutExpired,
+  kErrorWrongVersion = kLiteRtStatusErrorWrongVersion,
+  kErrorUnknown = kLiteRtStatusErrorUnknown,
+  kErrorAlreadyExists = kLiteRtStatusErrorAlreadyExists,
+
+  // Inference progression errors.
+  kCancelled = kLiteRtStatusCancelled,
+
+  // File and loading related errors.
+  kErrorFileIO = kLiteRtStatusErrorFileIO,
+  kErrorInvalidFlatbuffer = kLiteRtStatusErrorInvalidFlatbuffer,
+  kErrorDynamicLoading = kLiteRtStatusErrorDynamicLoading,
+  kErrorSerialization = kLiteRtStatusErrorSerialization,
+  kErrorCompilation = kLiteRtStatusErrorCompilation,
+
+  // IR related errors.
+  kErrorIndexOOB = kLiteRtStatusErrorIndexOOB,
+  kErrorInvalidIrType = kLiteRtStatusErrorInvalidIrType,
+  kErrorInvalidGraphInvariant = kLiteRtStatusErrorInvalidGraphInvariant,
+  kErrorGraphModification = kLiteRtStatusErrorGraphModification,
+
+  // Tool related errors.
+  kErrorInvalidToolConfig = kLiteRtStatusErrorInvalidToolConfig,
+
+  // Legalization related errors.
+  kLegalizeNoMatch = kLiteRtStatusLegalizeNoMatch,
+  kErrorInvalidLegalization = kLiteRtStatusErrorInvalidLegalization,
+
+  // Transformation related errors.
+  kPatternNoMatch = kLiteRtStatusPatternNoMatch,
+  kInvalidTransformation = kLiteRtStatusInvalidTransformation,
+};
+
 enum class HwAccelerators : int {
   Nnone = kLiteRtHwAcceleratorNone,
   Cpu = kLiteRtHwAcceleratorCpu,
@@ -32,6 +75,32 @@ enum class HwAccelerators : int {
 
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int HwAcceleratorSet;
+
+enum class DelegateBufferStorageType : int {
+  kDefault = kLiteRtDelegateBufferStorageTypeDefault,
+  kBuffer = kLiteRtDelegateBufferStorageTypeBuffer,
+  kTexture2D = kLiteRtDelegateBufferStorageTypeTexture2D,
+};
+
+enum class GpuBackend : int {
+  kAutomatic = kLiteRtGpuBackendAutomatic,
+  kOpenCl = kLiteRtGpuBackendOpenCl,
+  kWebGpu = kLiteRtGpuBackendWebGpu,
+  kOpenGl = kLiteRtGpuBackendOpenGl,
+};
+
+enum class GpuPriority : int {
+  kDefault = kLiteRtGpuPriorityDefault,
+  kLow = kLiteRtGpuPriorityLow,
+  kNormal = kLiteRtGpuPriorityNormal,
+  kHigh = kLiteRtGpuPriorityHigh,
+};
+
+enum class DelegatePrecision : int {
+  kDefault = kLiteRtDelegatePrecisionDefault,
+  kFp16 = kLiteRtDelegatePrecisionFp16,
+  kFp32 = kLiteRtDelegatePrecisionFp32,
+};
 
 }  // namespace litert
 

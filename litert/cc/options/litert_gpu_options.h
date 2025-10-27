@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_GPU_OPTIONS_H_
 
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
@@ -35,7 +36,12 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus EnableInfiniteFloatCapping(bool enabled);
   LiteRtStatus EnableBenchmarkMode(bool enabled);
   LiteRtStatus EnableAllowSrcQuantizedFcConvOps(bool enabled);
+  LiteRtStatus SetDelegatePrecision(DelegatePrecision precision);
+  [[deprecated("Use SetDelegatePrecision above instead.")]]
   LiteRtStatus SetDelegatePrecision(LiteRtDelegatePrecision precision);
+  LiteRtStatus SetDelegateBufferStorageType(
+      DelegateBufferStorageType type);
+  [[deprecated("Use SetDelegateBufferStorageType above instead.")]]
   LiteRtStatus SetBufferStorageType(LiteRtDelegateBufferStorageType type);
   LiteRtStatus SetPreferTextureWeights(bool prefer_texture_weights);
   LiteRtStatus SetSerializationDir(const char* serialization_dir);
@@ -44,7 +50,11 @@ class GpuOptions : public litert::OpaqueOptions {
   LiteRtStatus SetSerializeExternalTensors(bool serialize_external_tensors);
   LiteRtStatus EnableExternalTensorsMode(bool enabled);
   LiteRtStatus AddExternalTensorPattern(const char* pattern);
+  LiteRtStatus SetGpuBackend(GpuBackend backend);
+  [[deprecated("Use SetGpuBackend above instead.")]]
   LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
+  LiteRtStatus SetGpuPriority(GpuPriority priority);
+  [[deprecated("Use SetGpuPriority above instead.")]]
   LiteRtStatus SetGpuPriority(LiteRtGpuPriority priority);
   LiteRtStatus SetMadviseOriginalSharedTensors(
       bool madvise_original_shared_tensors);
