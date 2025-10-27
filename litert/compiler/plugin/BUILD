@@ -44,6 +44,7 @@ cc_library(
         "//litert/core:filesystem",
         "//litert/core:version",
         "//litert/core/model",
+        "//litert/core/util:perfetto_profiling",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
         "@com_google_absl//absl/container:flat_hash_set",

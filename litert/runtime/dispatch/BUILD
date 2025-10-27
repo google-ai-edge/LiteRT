@@ -96,6 +96,7 @@ cc_library(
         "//litert/cc/internal:litert_shared_library",
         "//litert/core:dynamic_loading",
         "//litert/core:version",
+        "//litert/core/util:perfetto_profiling",
     ],
     alwayslink = 1,
 )

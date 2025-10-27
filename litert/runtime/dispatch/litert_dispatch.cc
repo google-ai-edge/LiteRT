@@ -30,6 +30,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/dynamic_loading.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 
@@ -42,6 +43,7 @@
     LITERT_LOG(LITERT_ERROR, #function " not found");             \
     return kLiteRtStatusErrorRuntimeFailure;                      \
   }                                                               \
+  LITERT_PERFETTO_TRACE_EVENT("Dispatch API " #function);         \
   return TheApi.interface->function(__VA_ARGS__);
 
 #define INVOKE_ASYNC_FUNC(function, ...)                                \
