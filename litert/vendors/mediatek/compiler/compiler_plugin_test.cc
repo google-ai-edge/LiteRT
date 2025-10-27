@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdlib>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -92,6 +93,40 @@ TEST(TestMediatekPlugin, PartitionAdd) {
 
   ASSERT_EQ(selected_ops.size(), 1);
   EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(TestMediatekPlugin, DlaDirectory) {
+#ifdef __ANDROID__
+  char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+#endif
+
+  auto plugin = CreatePlugin();
+  auto model = testing::LoadTestFileModel("add_simple.tflite");
+
+  auto subgraph = model.Subgraph(0);
+  ASSERT_TRUE(subgraph.HasValue());
+  LiteRtOpListT selected_op_list;
+  ASSERT_EQ(LiteRtCompilerPluginPartition(plugin.get(), /*soc_model=*/"mt6989",
+                                          subgraph->Get(), &selected_op_list),
+            kLiteRtStatusOk);
+  const auto selected_ops = selected_op_list.Values();
+
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+
+  // On Android, the environmental variable should be kept the same.
+#ifdef __ANDROID__
+  if (dla_directory_name) {
+    EXPECT_STREQ(std::getenv("MTKNN_ADAPTER_DLA_DIR"), dla_directory_name);
+  } else {
+    EXPECT_EQ(std::getenv("MTKNN_ADAPTER_DLA_DIR"), nullptr);
+  }
+#else
+  // On non-Android, the environmental variable will always be set after the
+  // execution of compiler plugin.
+  char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+  EXPECT_NE(dla_directory_name, nullptr);
+#endif
 }
 
 // /////////////////////////////////////////////////////////////////////////////
