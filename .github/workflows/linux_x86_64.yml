@@ -89,9 +89,9 @@ jobs:
           echo "Cache Primary Key: ${{ steps.bazel-cache.outputs.cache-primary-key }}"
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
 
-      - name: Run bazel build on Linux
+      - name: Run bazel test on Linux
         run: |
-          bash ci/run_bazel_test_with_docker.sh
+          bash ci/run_bazel_test.sh
         env:
           LITERT_TARGETS_ONLY: true
 
