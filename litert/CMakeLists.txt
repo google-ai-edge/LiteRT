@@ -63,11 +63,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Options
-option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
 option(LITERT_BUILD_TESTS "Build LiteRT tests" OFF)
 option(LITERT_AUTO_BUILD_TFLITE "Automatically build TFLite if not found" ON)
-option(LITERT_ENABLE_GPU "Enable GPU acceleration support" OFF)
+option(LITERT_ENABLE_GPU "Enable GPU acceleration support" ON)
 option(LITERT_ENABLE_NPU "Enable NPU acceleration support" ON)
 
 set(LITERT_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/include")
@@ -119,7 +119,6 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
           if(DEFINED ANDROID_PLATFORM)
             list(APPEND _tflite_extra_args -DANDROID_PLATFORM=${ANDROID_PLATFORM})
           endif()
-          add_compile_definitions(ABSL_FLAGS_STRIP_NAMES=0)
           list(APPEND _tflite_extra_args -DCMAKE_SYSTEM_NAME=Android)
           list(APPEND _tflite_extra_args -DTFLITE_ENABLE_GPU=ON)
 

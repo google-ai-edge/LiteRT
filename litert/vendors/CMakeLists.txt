@@ -16,9 +16,11 @@ cmake_minimum_required(VERSION 3.20)
 include(CheckIncludeFileCXX)
 include(FetchContent)
 
-option(LITERT_ENABLE_MEDIATEK "Enable MediaTek dispatch build" OFF)
+option(LITERT_ENABLE_MEDIATEK "Enable MediaTek vendor build" OFF)
+option(LITERT_OFFLINE_BUILD "Use local dependencies instead of fetching from remote" OFF)
 set(NEUROPILOT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded NeuroPilot headers (root containing neuron/api)")
 set(QAIRT_HEADERS_DIR "" CACHE PATH "Path to pre-downloaded QAIRT/QNN headers (root containing Qnn*.h)")
+set(LITERT_TOOLS_DEP $ENV{LITERT_TOOLS_DEP})
 
 if(LITERT_ENABLE_MEDIATEK)
   if(NOT NEUROPILOT_HEADERS_DIR)
@@ -124,66 +126,69 @@ function(_litert_add_dispatch_so VENDOR DIR OUTPUT_BASENAME)
     "${SRC_DIR}/device_context.cc"
     "${SRC_DIR}/invocation_context.cc"
   )
-
-  if(VENDOR STREQUAL "MediaTek")
-    set(FLATC_EXECUTABLE "")
-    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-      if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
-        set(FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
-      elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
-        set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+  if(LITERT_ENABLE_MEDIATEK)
+    if(VENDOR STREQUAL "MediaTek")
+      set(FLATC_EXECUTABLE "")
+      if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        if(TFLITE_HOST_TOOLS_DIR AND EXISTS "${TFLITE_HOST_TOOLS_DIR}/flatc")
+          set(FLATC_EXECUTABLE "${TFLITE_HOST_TOOLS_DIR}/flatc")
+        elseif(TFLITE_BUILD_DIR AND EXISTS "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+          set(FLATC_EXECUTABLE "${TFLITE_BUILD_DIR}/host_flatc/_deps/flatbuffers-build/flatc")
+        endif()
       endif()
-    endif()
-    if(NOT FLATC_EXECUTABLE)
-      find_program(FLATC_EXECUTABLE NAMES flatc)
-    endif()
-    if(NOT FLATC_EXECUTABLE)
-      message(STATUS "flatc not found in PATH; fetching FlatBuffers to build flatc")
-      FetchContent_Declare(flatbuffers
-        GIT_REPOSITORY https://github.com/google/flatbuffers.git
-        GIT_TAG v25.9.23
-      )
-      set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-      FetchContent_MakeAvailable(flatbuffers)
-      if(NOT TARGET flatc)
-        message(FATAL_ERROR "FlatBuffers 'flatc' target not available after fetch")
+      if(NOT FLATC_EXECUTABLE)
+        find_program(FLATC_EXECUTABLE NAMES flatc)
       endif()
-      set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
+      if(NOT FLATC_EXECUTABLE)
+        message(STATUS "flatc not found in PATH; fetching FlatBuffers to build flatc")
+        FetchContent_Declare(flatbuffers
+          GIT_REPOSITORY https://github.com/google/flatbuffers.git
+          GIT_TAG v25.9.23
+        )
+        set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(flatbuffers)
+        if(NOT TARGET flatc)
+          message(FATAL_ERROR "FlatBuffers 'flatc' target not available after fetch")
+        endif()
+        set(FLATC_EXECUTABLE $<TARGET_FILE:flatc>)
+      endif()
+      set(_mtk_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/include/litert/vendors/mediatek/schema")
+      file(MAKE_DIRECTORY "${_mtk_gen_dir}")
+      set(_mtk_schema "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/schema/neuron_schema.fbs")
+      set(_mtk_gen_hdr "${_mtk_gen_dir}/neuron_schema_generated.h")
+      add_custom_command(
+        OUTPUT "${_mtk_gen_hdr}"
+        COMMAND ${FLATC_EXECUTABLE} --cpp -o "${_mtk_gen_dir}" "${_mtk_schema}"
+        DEPENDS "${_mtk_schema}"
+        COMMENT "Generating MediaTek neuron_schema_generated.h with flatc"
+        VERBATIM)
+      add_custom_target(mediatek_schema_gen DEPENDS "${_mtk_gen_hdr}")
+      list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/neuron_adapter_api.cc")
     endif()
-    set(_mtk_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/include/litert/vendors/mediatek/schema")
-    file(MAKE_DIRECTORY "${_mtk_gen_dir}")
-    set(_mtk_schema "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/schema/neuron_schema.fbs")
-    set(_mtk_gen_hdr "${_mtk_gen_dir}/neuron_schema_generated.h")
-    add_custom_command(
-      OUTPUT "${_mtk_gen_hdr}"
-      COMMAND ${FLATC_EXECUTABLE} --cpp -o "${_mtk_gen_dir}" "${_mtk_schema}"
-      DEPENDS "${_mtk_schema}"
-      COMMENT "Generating MediaTek neuron_schema_generated.h with flatc"
-      VERBATIM)
-    add_custom_target(mediatek_schema_gen DEPENDS "${_mtk_gen_hdr}")
-    list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/mediatek/neuron_adapter_api.cc")
   endif()
 
-  if(VENDOR STREQUAL "Qualcomm")
-    list(APPEND DISPATCH_SRCS
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/qnn_manager.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/context_binary_info.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/common.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/miscs.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/schema/soc_table.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/qnn_backend.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/htp_backend.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/htp_perf_control.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/ir_backend.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/quantize_params_wrapper.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/tensor_wrapper.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/param_wrapper.cc"
-      "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/op_wrapper.cc"
-    )
-    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-      list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/log_android.cc")
-    else()
-      list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/log_default.cc")
+  if(LITERT_ENABLE_QUALCOMM)
+    if(VENDOR STREQUAL "Qualcomm")
+      list(APPEND DISPATCH_SRCS
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/qnn_manager.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/context_binary_info.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/common.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/miscs.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/schema/soc_table.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/qnn_backend.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/htp_backend.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/htp_perf_control.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/backends/ir_backend.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/quantize_params_wrapper.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/tensor_wrapper.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/param_wrapper.cc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/wrappers/op_wrapper.cc"
+      )
+      if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/log_android.cc")
+      else()
+        list(APPEND DISPATCH_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/qualcomm/core/utils/log_default.cc")
+      endif()
     endif()
   endif()
 
@@ -264,22 +269,44 @@ if(LITERT_ENABLE_QUALCOMM)
 
   # Add the Qualcomm compiler plugin build for host
   message(STATUS "Building Qualcomm compiler plugin for host")
-     
-  FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG v3.11.2
-  )
-  FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest.git
-    GIT_TAG        e2239ee6043f73722e7aa812a459f54a28552929 # release-1.11.0
-)
-  FetchContent_Declare(
+    
+  if(LITERT_OFFLINE_BUILD)
+  message(STATUS "Building in offline mode, using local dependencies")
+    FetchContent_Declare(
+      nlohmann_json
+      # GIT_REPOSITORY https://github.com/nlohmann/json.git
+      URL ${LITERT_TOOLS_DEP}/json
+      # GIT_TAG v3.11.3
+    )
+    FetchContent_Declare(
+      googletest
+      # GIT_REPOSITORY https://github.com/google/googletest.git
+      URL ${LITERT_TOOLS_DEP}/googletest
+      # GIT_TAG        e2239ee6043f73722e7aa812a459f54a28552929 # release-1.11.0
+    )
+    FetchContent_Declare(
+        googlebenchmark
+        URL ${LITERT_TOOLS_DEP}/benchmark
+        # GIT_REPOSITORY https://github.com/google/benchmark.git
+        # GIT_TAG        0d98dba29d66e93259db7daa53a9327df767a415 # v1.6.1
+    )
+  else()
+    FetchContent_Declare(
+      nlohmann_json
+      GIT_REPOSITORY https://github.com/nlohmann/json.git
+      GIT_TAG v3.11.3
+    )
+    FetchContent_Declare(
+      googletest
+      GIT_REPOSITORY https://github.com/google/googletest.git
+      GIT_TAG        v1.12.x # release-1.12.x
+    )
+    FetchContent_Declare(
       googlebenchmark
       GIT_REPOSITORY https://github.com/google/benchmark.git
       GIT_TAG        0d98dba29d66e93259db7daa53a9327df767a415 # v1.6.1
-  )
+    )
+  endif()
   FetchContent_MakeAvailable(nlohmann_json)
   FetchContent_MakeAvailable(googletest)
   FetchContent_MakeAvailable(googlebenchmark)
