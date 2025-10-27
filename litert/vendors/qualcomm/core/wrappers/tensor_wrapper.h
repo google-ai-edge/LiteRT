@@ -102,7 +102,7 @@ class TensorWrapper final {
                          Qnn_DataType_t data_type,
                          const QuantizeParamsWrapperVariant& quantize_params,
                          const std::vector<std::uint32_t>& dimentions,
-                         std::uint32_t bytes, const void* data);
+                         std::uint32_t bytes, const void* data, bool copy_data);
 
   TensorWrapper(const Qnn_Tensor_t& qnn_tensor);
 
@@ -340,7 +340,7 @@ class TensorWrapper final {
     qnn_tensor_.v2.dataType = data_type;
   }
 
-  void SetDataBy(std::uint32_t bytes, const void* data);
+  void SetDataBy(std::uint32_t bytes, const void* data, bool copy_data);
 
   bool HasStaticData() const {
     return qnn_tensor_.v2.clientBuf.dataSize != 0 &&

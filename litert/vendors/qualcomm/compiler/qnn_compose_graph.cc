@@ -284,7 +284,8 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
     auto& res = tensor_pool.CreateStaticTensorWithSuffix(
         qnn_data_type, quantize_params, dimentions, litert_suffix,
         litert_tensor.Weights().Bytes().size(),
-        reinterpret_cast<const void*>(litert_tensor.Weights().Bytes().data()));
+        reinterpret_cast<const void*>(litert_tensor.Weights().Bytes().data()),
+        false);
     tensor_wrapper = &res;
   } else {
     auto& res = tensor_pool.CreateNativeTensorWithSuffix(

@@ -96,7 +96,7 @@ TensorWrapper::TensorWrapper(
     std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
     const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
-    const void* data)
+    const void* data, bool copy_data)
     : TensorWrapper(std::move(name), tensor_type, data_type, quantize_params,
                     dimentions) {
   // Use QNN_DATATYPE_SFIXED_POINT_8 for 4 bit quantization
@@ -105,9 +105,9 @@ TensorWrapper::TensorWrapper(
     SetDataType(QNN_DATATYPE_SFIXED_POINT_8);
     std::vector<std::int8_t> int8_data;
     ConvertDataFromInt4ToInt8(data, int8_data, bytes);
-    SetDataBy(GetTensorBytes(), int8_data.data());
+    SetDataBy(GetTensorBytes(), int8_data.data(), copy_data);
   } else {
-    SetDataBy(bytes, data);
+    SetDataBy(bytes, data, copy_data);
   }
 }
 
@@ -119,7 +119,9 @@ TensorWrapper::TensorWrapper(const TensorWrapper& other)
       owned_data_{other.owned_data_} {
   qnn_tensor_.v2.name = name_.c_str();
   qnn_tensor_.v2.dimensions = dimentions_.data();
-  qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  if (!owned_data_.empty()) {
+    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  }
   UpdateQnnQuantParams();
 }
 
@@ -131,7 +133,9 @@ TensorWrapper::TensorWrapper(TensorWrapper&& other)
       owned_data_{std::move(other.owned_data_)} {
   qnn_tensor_.v2.name = name_.c_str();
   qnn_tensor_.v2.dimensions = dimentions_.data();
-  qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  if (!owned_data_.empty()) {
+    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  }
   UpdateQnnQuantParams();
 }
 
@@ -208,17 +212,23 @@ bool TensorWrapper::IsPerTensorQuantWithOffsetDiff(
   return false;
 }
 
-void TensorWrapper::SetDataBy(std::uint32_t bytes, const void* data) {
+void TensorWrapper::SetDataBy(std::uint32_t bytes, const void* data,
+                              bool copy_data) {
   if (bytes != GetTensorBytes()) {
     QNN_LOG_WARNING(
         "Bytes: %d != GetTensorBytes(): %d, use GetTensorBytes() instead.",
         bytes, GetTensorBytes());
     bytes = GetTensorBytes();
   }
-  owned_data_.resize(bytes);
-  std::memcpy(owned_data_.data(), reinterpret_cast<const char*>(data), bytes);
-  qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
-  qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  if (copy_data) {
+    owned_data_.resize(bytes);
+    std::memcpy(owned_data_.data(), reinterpret_cast<const char*>(data), bytes);
+    qnn_tensor_.v2.clientBuf.dataSize = owned_data_.size();
+    qnn_tensor_.v2.clientBuf.data = owned_data_.data();
+  } else {
+    qnn_tensor_.v2.clientBuf.dataSize = bytes;
+    qnn_tensor_.v2.clientBuf.data = const_cast<void*>(data);
+  }
 }
 
 void TensorWrapper::ConvertQint16ToQuint16() {
