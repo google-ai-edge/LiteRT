@@ -96,6 +96,14 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_common",
+    hdrs = ["litert_common.h"],
+    deps = [
+        "//litert/c:litert_common",
+    ],
+)
+
+cc_library(
     name = "litert_macros",
     srcs = ["litert_macros.cc"],
     hdrs = ["litert_macros.h"],
