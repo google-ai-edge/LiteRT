@@ -464,7 +464,7 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto input_buffer,
-        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env, kLiteRtTensorBufferTypeGlBuffer,
                                     ranked_tensor_type, buffer_size));
     input_buffers.push_back(std::move(input_buffer));
   }
@@ -492,7 +492,7 @@ Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
                             input_buffer_requirements.BufferSize());
     LITERT_ASSIGN_OR_RETURN(
         auto output_buffer,
-        TensorBuffer::CreateManaged(env.Get(), kLiteRtTensorBufferTypeGlBuffer,
+        TensorBuffer::CreateManaged(env, kLiteRtTensorBufferTypeGlBuffer,
                                     ranked_tensor_type, buffer_size));
     output_buffers.push_back(std::move(output_buffer));
   }
@@ -531,8 +531,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
-                              litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ASSERT_OK(
@@ -615,8 +614,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options,
-                              litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
       gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
   LITERT_ASSERT_OK(
@@ -840,7 +838,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
-          env.Get(), buffer_type[0],
+          env, buffer_type[0],
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           sizeof(kInputTensor)));
   LITERT_ASSERT_OK(

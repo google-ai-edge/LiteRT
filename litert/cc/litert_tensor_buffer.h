@@ -25,10 +25,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -56,11 +58,22 @@ class TensorBuffer
   // Creates a managed TensorBuffer object in a given buffer type and size.
   // The returned object is owned by the caller.
   static Expected<TensorBuffer> CreateManaged(
-      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const Environment& env, LiteRtTensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
+
+  // TODO(b/453768409): Remove this method once all clients are migrated.
+  [[deprecated]]
+  static Expected<TensorBuffer> CreateManaged(
+      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
+      const RankedTensorType& tensor_type, size_t buffer_size) {
+    auto cc_env = Environment(env, OwnHandle::kNo);
+    return CreateManaged(cc_env, buffer_type, tensor_type, buffer_size);
+  }
 
   // The same as above, but uses the default environment.
   // Warning: This method can't be used for GPU buffers.
+  // TODO(b/453768409): Remove this method once all clients are migrated.
+  [[deprecated]]
   static Expected<TensorBuffer> CreateManaged(
       LiteRtTensorBufferType buffer_type, const RankedTensorType& tensor_type,
       size_t buffer_size) {
@@ -83,8 +96,17 @@ class TensorBuffer
   // The provided host memory is not owned by the TensorBuffer object and must
   // outlive the TensorBuffer object.
   static Expected<TensorBuffer> CreateFromHostMemory(
+      const Environment& env, const RankedTensorType& tensor_type,
+      void* host_mem_addr, size_t buffer_size);
+
+  // TODO(b/453768409): Remove this method once all clients are migrated.
+  [[deprecated]]
+  static Expected<TensorBuffer> CreateFromHostMemory(
       const RankedTensorType& tensor_type, void* host_mem_addr,
-      size_t buffer_size);
+      size_t buffer_size) {
+    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
+    return CreateFromHostMemory(env, tensor_type, host_mem_addr, buffer_size);
+  }
 
   // Creates a TensorBuffer object that wraps an Android Hardware Buffer. Note
   // that the provided AHardwareBuffer is not owned by the TensorBuffer object
@@ -92,32 +114,61 @@ class TensorBuffer
   // specifies the offset in bytes from the start of the AHardwareBuffer where
   // the tensor data starts.
   static Expected<TensorBuffer> CreateFromAhwb(
+      const Environment& env, const RankedTensorType& tensor_type,
+      AHardwareBuffer* ahwb, size_t ahwb_offset);
+
+  // TODO(niuchl): Remove this method once all clients are migrated.
+  [[deprecated]]
+  static Expected<TensorBuffer> CreateFromAhwb(
       const RankedTensorType& tensor_type, AHardwareBuffer* ahwb,
       size_t ahwb_offset);
 
-  // The same as above, with additional parameter `env`. Users should use this
-  // API if they want to create a GPU buffer from the created AHardwareBuffer.
+  // TODO(niuchl): Remove this method once all clients are migrated.
+  [[deprecated]]
   static Expected<TensorBuffer> CreateFromAhwb(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      AHardwareBuffer* ahwb, size_t ahwb_offset);
+      AHardwareBuffer* ahwb, size_t ahwb_offset) {
+    auto cc_env = Environment(env, OwnHandle::kNo);
+    return CreateFromAhwb(cc_env, tensor_type, ahwb, ahwb_offset);
+  }
 
   static Expected<TensorBuffer> CreateFromClBuffer(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      const Environment& env, const RankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromGlBuffer(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      const Environment& env, const RankedTensorType& tensor_type,
       LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset);
 
-  static Expected<TensorBuffer> CreateFromGlTexture(
+  // TODO(niuchl): Remove this method once all clients are migrated.
+  [[deprecated]]
+  static Expected<TensorBuffer> CreateFromGlBuffer(
       LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset) {
+    auto cc_env = Environment(env, OwnHandle::kNo);
+    return CreateFromGlBuffer(cc_env, tensor_type, target, id, size_bytes,
+                              offset);
+  }
+
+  static Expected<TensorBuffer> CreateFromGlTexture(
+      const Environment& env, const RankedTensorType& tensor_type,
       LiteRtGLenum target, LiteRtGLuint id, LiteRtGLenum format,
       size_t size_bytes, LiteRtGLint layer);
 
 #if LITERT_HAS_METAL_SUPPORT
   static Expected<TensorBuffer> CreateFromMetalBuffer(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      const Environment& env, const RankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes);
+
+  // TODO(niuchl): Remove this method once all clients are migrated.
+  [[deprecated]]
+  static Expected<TensorBuffer> CreateFromMetalBuffer(
+      LiteRtEnvironment env, const RankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes) {
+    auto cc_env = Environment(env, OwnHandle::kNo);
+    return CreateFromMetalBuffer(cc_env, tensor_type, buffer_type, buffer,
+                                 size_bytes);
+  }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   // Creates a duplicate of the current TensorBuffer object. The returned

@@ -578,12 +578,12 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer0,
-        TensorBuffer::CreateManaged(
-            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type0, size0));
+        TensorBuffer::CreateManaged(env, kLiteRtTensorBufferTypeHostMemory,
+                                    new_type0, size0));
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer1,
-        TensorBuffer::CreateManaged(
-            env.Get(), kLiteRtTensorBufferTypeHostMemory, new_type1, size1));
+        TensorBuffer::CreateManaged(env, kLiteRtTensorBufferTypeHostMemory,
+                                    new_type1, size1));
     std::vector<TensorBuffer> input_buffers;
     input_buffers.push_back(std::move(input_buffer0));
     input_buffers.push_back(std::move(input_buffer1));
@@ -608,8 +608,7 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,
-        TensorBuffer::CreateManaged(env.Get(),
-                                    kLiteRtTensorBufferTypeHostMemory,
+        TensorBuffer::CreateManaged(env, kLiteRtTensorBufferTypeHostMemory,
                                     new_out_type, out_size));
 
     std::vector<TensorBuffer> output_buffers;
@@ -1209,7 +1208,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
-          env.Get(), kLiteRtTensorBufferTypeHostMemory,
+          env, kLiteRtTensorBufferTypeHostMemory,
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           sizeof(kInputTensor)));
   LITERT_ASSERT_OK(
