@@ -33,6 +33,32 @@ enum class HwAccelerators : int {
 // A bit field of `LiteRtHwAccelerators` values.
 typedef int HwAcceleratorSet;
 
+enum class DelegateBufferStorageType : int {
+  kDefault = kLiteRtDelegateBufferStorageTypeDefault,
+  kBuffer = kLiteRtDelegateBufferStorageTypeBuffer,
+  kTexture2D = kLiteRtDelegateBufferStorageTypeTexture2D,
+};
+
+enum class GpuBackend : int {
+  kAutomatic = kLiteRtGpuBackendAutomatic,
+  kOpenCl = kLiteRtGpuBackendOpenCl,
+  kWebGpu = kLiteRtGpuBackendWebGpu,
+  kOpenGl = kLiteRtGpuBackendOpenGl,
+};
+
+enum class GpuPriority : int {
+  kDefault = kLiteRtGpuPriorityDefault,
+  kLow = kLiteRtGpuPriorityLow,
+  kNormal = kLiteRtGpuPriorityNormal,
+  kHigh = kLiteRtGpuPriorityHigh,
+};
+
+enum class DelegatePrecision : int {
+  kDefault = kLiteRtDelegatePrecisionDefault,
+  kFp16 = kLiteRtDelegatePrecisionFp16,
+  kFp32 = kLiteRtDelegatePrecisionFp32,
+};
+
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_COMMON_H_

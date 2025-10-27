@@ -1262,6 +1262,7 @@ cc_library(
         # Other (static) C++ API targets.
         ":litert_any",
         ":litert_expected",
+        ":litert_common",
         ":litert_macros",
         ":litert_buffer_ref",
         ":litert_element_type",
