@@ -37,6 +37,7 @@ limitations under the License.
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -179,6 +180,10 @@ TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
 }
 
 TfLiteStatus BenchmarkLiteRtModel::Init() {
+  if (params_.Get<bool>("enable_perfetto")) {
+    litert::internal::InitializePerfetto();
+  }
+
   TF_LITE_ENSURE_STATUS(LoadModel());
 
   LITERT_ASSIGN_OR_RETURN(

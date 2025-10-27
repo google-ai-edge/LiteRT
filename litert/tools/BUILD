@@ -371,6 +371,7 @@ cc_library(
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",
