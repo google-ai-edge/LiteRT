@@ -248,6 +248,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     default_params.AddParam("allow_fp16", BenchmarkParam::Create<bool>(true));
     default_params.AddParam("gpu_low_priority",
                             BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("enable_weight_sharing",
+                            BenchmarkParam::Create<bool>(false));
     default_params.AddParam("result_file_path",
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("model_runtime_info_output_file",

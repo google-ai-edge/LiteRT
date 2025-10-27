@@ -61,6 +61,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
+  auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
 
@@ -103,6 +104,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (gpu_low_priority) {
       gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
+    }
+    if (enable_weight_sharing) {
+      gpu_options.EnableConstantTensorSharing(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
