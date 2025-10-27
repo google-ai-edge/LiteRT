@@ -14,7 +14,7 @@
 
 #include "litert/core/model/graph_validation.h"
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_model.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/core/model/model.h"

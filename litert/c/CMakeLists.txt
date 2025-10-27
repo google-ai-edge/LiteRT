@@ -19,6 +19,7 @@ set(LITERT_C_API_SOURCES
     internal/litert_accelerator.cc
     internal/litert_accelerator_registration.cc
     internal/litert_delegate_wrapper.cc
+    internal/litert_logging.cc
     internal/litert_tensor_buffer_registry.cc
     litert_common.cc
     litert_compiled_model.cc
@@ -26,7 +27,6 @@ set(LITERT_C_API_SOURCES
     litert_environment_options.cc
     litert_event.cc
     litert_layout.cc
-    litert_logging.cc
     litert_metrics.cc
     litert_model.cc
     litert_op_options.cc
@@ -77,7 +77,6 @@ set(LITERT_C_HEADERS
     litert_op_code.h
     litert_tensor_buffer.h
     litert_tensor_buffer_requirements.h
-    litert_logging.h
     litert_tensor.h
     litert_compiled_model.h
     litert_compiler_plugin.h
@@ -245,9 +244,9 @@ target_link_libraries(litert_runtime_c_api_static
 if(UNIX AND NOT APPLE)
   target_link_libraries(litert_runtime_c_api_static
       INTERFACE
-        LINKER:--whole-archive
+        -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,--no-whole-archive)
 endif()
 
 # Propagate platform GL/Metal requirements to consumers when statically linking
@@ -281,9 +280,9 @@ if(APPLE)
 else()
   target_link_libraries(litert_runtime_c_api_shared_lib
       PRIVATE
-        LINKER:--whole-archive
+        -Wl,--whole-archive
         ${_litert_runtime_c_api_private_archives}
-        LINKER:--no-whole-archive)
+        -Wl,--no-whole-archive)
 endif()
 # GPU/GL dependencies by platform
 if(APPLE)

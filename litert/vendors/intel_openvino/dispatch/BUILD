@@ -1,5 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,6 +61,7 @@ litert_dynamic_lib(
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
@@ -100,9 +100,11 @@ litert_bin(
     deps = [
         ":litert_dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/core/util:tensor_type_util",
         "//litert/vendors/c:litert_dispatch_c_api",
@@ -157,6 +159,7 @@ cc_test(
     deps = [
         ":dispatch_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc:litert_expected",
         "//litert/cc/dynamic_runtime:litert_environment",

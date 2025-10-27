@@ -14,6 +14,7 @@
 
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
+#define INCLUDE_INTEL_OPENVINO_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
 
 #include <algorithm>
@@ -43,6 +44,7 @@
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
+#include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/tensor_utils.h"
@@ -67,13 +69,19 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
-ABSL_FLAG(bool, language_model, false, "Whether the model is a language model,"
+ABSL_FLAG(bool, language_model, false,
+          "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
+ABSL_FLAG(bool, enable_on_device_compilation_caching, false,
+          "Whether to enable on device compilation caching.");
+constexpr absl::string_view kCompilerCacheDir =
+    "/data/local/tmp/litert_compiler_cache";
 
 namespace litert {
 namespace {
 
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
+using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
 
@@ -108,6 +116,11 @@ Expected<Environment> GetEnvironment() {
     environment_options.push_back(litert::Environment::Option{
         litert::Environment::OptionTag::CompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
+    if (absl::GetFlag(FLAGS_enable_on_device_compilation_caching)) {
+      environment_options.push_back(litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerCacheDir,
+          kCompilerCacheDir.data()});
+    }
   }
 
   return Environment::Create(absl::MakeConstSpan(environment_options));
@@ -121,6 +134,9 @@ Expected<Options> GetOptions() {
   }
   if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*google_tensor_opts));
+  }
+  if (auto intel_openvino_opts = IntelOpenVinoOptionsFromFlags()) {
+    options.AddOpaqueOptions(std::move(*intel_openvino_opts));
   }
   if (auto mediatek_opts = MediatekOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*mediatek_opts));
@@ -291,7 +307,6 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                           CompiledModel::Create(env, model, options));
 
-  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 

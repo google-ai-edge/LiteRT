@@ -25,10 +25,10 @@
 #include <unordered_map>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_metrics.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_options.h"
@@ -85,6 +85,19 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
                                                       output_index));
   *buffer_requirements =
       const_cast<LiteRtTensorBufferRequirements>(buffer_requirements_ptr);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtLayout* layout) {
+  if (!compiled_model || !layout) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtLayout computed_layout,
+      compiled_model->GetInputTensorLayout(signature_index, input_index));
+  *layout = computed_layout;
   return kLiteRtStatusOk;
 }
 

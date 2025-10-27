@@ -75,21 +75,16 @@ TEST_P(ParameterizedTest, Basic) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(*env, model, options));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto signature_key = signatures[0].Key();
-  EXPECT_EQ(signature_key, Model::DefaultSignatureKey());
-  size_t signature_index = 0;
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
-  auto input_names = signatures[0].InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
@@ -101,10 +96,11 @@ TEST_P(ParameterizedTest, Basic) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  compiled_model.Run(signature_index, input_buffers, output_buffers);
+  compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
-  auto output_names = signatures[0].OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsVulkanMemory());

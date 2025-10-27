@@ -20,8 +20,9 @@
 #include <unordered_set>
 #include <vector>
 
+#include "neuron/api/NeuronAdapter.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
@@ -51,7 +52,6 @@
 #include "litert/vendors/mediatek/compiler/legalizations/transpose_conv_op_legalization.h"
 #include "litert/vendors/mediatek/compiler/legalizations/transpose_op_legalization.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
-#include "neuron/api/NeuronAdapter.h"
 
 namespace litert::mediatek {
 

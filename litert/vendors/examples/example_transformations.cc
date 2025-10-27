@@ -14,8 +14,8 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_rewriter.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_rewriter.h"
 
 using litert::Op;
 using litert::OpInputs;

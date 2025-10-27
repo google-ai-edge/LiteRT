@@ -80,17 +80,17 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
       testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   ASSERT_THAT(input_buffers, SizeIs(2));
   ASSERT_THAT(output_buffers, SizeIs(1));
@@ -109,8 +109,7 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Run compiled model.
-  LITERT_ASSERT_OK(compiled_model.Run(model.DefaultSignatureKey(),
-                                      input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model output.
   {
@@ -148,17 +147,17 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
       testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   ASSERT_THAT(input_buffers, SizeIs(2));
   ASSERT_THAT(output_buffers, SizeIs(1));
@@ -178,8 +177,7 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
 
   // Run compiled model.
   bool async;
-  compiled_model.RunAsync(model.DefaultSignatureKey(), input_buffers,
-                          output_buffers, async);
+  compiled_model.RunAsync(input_buffers, output_buffers, async);
   // Since output buffers have events, async should be true.
   ASSERT_TRUE(async);
 
@@ -304,17 +302,17 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
       testing::GetTestFilePath(kPrecompiledTfliteFile);
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   ASSERT_THAT(input_buffers, SizeIs(2));
   ASSERT_THAT(output_buffers, SizeIs(1));
@@ -357,8 +355,7 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
 
   // Run compiled model asynchronously.
   bool async;
-  compiled_model.RunAsync(model.DefaultSignatureKey(), input_buffers,
-                          output_buffers, async);
+  compiled_model.RunAsync(input_buffers, output_buffers, async);
   // Since output buffers have events, async should be true.
   ASSERT_TRUE(async);
 

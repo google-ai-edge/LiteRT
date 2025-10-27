@@ -84,6 +84,28 @@ TEST(CcModelTest, SimpleModel) {
   EXPECT_EQ(main_subgraph->Get(), subgraph_0->Get());
 }
 
+TEST(CcModelTest, SimpleModelSignature) {
+  auto model = testing::LoadTestFileModel("reverse_signature_model.tflite");
+
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+  auto signature_keys = model.GetSignatureKeys();
+  ASSERT_TRUE(signature_keys);
+  EXPECT_EQ(signature_keys->size(), 1);
+  EXPECT_EQ(signature_keys->at(0), "serving_default");
+
+  auto input_names = model.GetSignatureInputNames();
+  ASSERT_TRUE(input_names);
+  EXPECT_EQ(input_names->size(), 2);
+  EXPECT_EQ(input_names->at(0), "y");
+  EXPECT_EQ(input_names->at(1), "x");
+
+  auto output_names = model.GetSignatureOutputNames();
+  ASSERT_TRUE(output_names);
+  EXPECT_EQ(output_names->size(), 2);
+  EXPECT_EQ(output_names->at(0), "sum");
+  EXPECT_EQ(output_names->at(1), "prod");
+}
+
 //===----------------------------------------------------------------------===//
 //                                CC Signature                                //
 //===----------------------------------------------------------------------===//

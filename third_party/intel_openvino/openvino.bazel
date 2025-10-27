@@ -16,6 +16,10 @@ cc_library(
             "openvino/runtime/lib/intel64/Release/openvino.lib",
             "openvino/runtime/lib/intel64/Release/openvino_tensorflow_lite_frontend.lib",
         ],
+        "@org_tensorflow//tensorflow:linux_x86_64": [
+            "openvino/runtime/lib/intel64/libopenvino.so",
+            "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+        ],
         "//conditions:default": [
             "openvino/runtime/lib/intel64/libopenvino.so",
             "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",

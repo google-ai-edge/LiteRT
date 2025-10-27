@@ -20,8 +20,8 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/tools/culprit_finder/tflite_input_manager.h"
 #include "tflite/c/c_api_types.h"

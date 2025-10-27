@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/model-tester",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -25,8 +25,8 @@
   "description": "",
   "dependencies": {
     "@lit/task": "^1.0.2",
-    "@litertjs/tfjs-interop": "^0.1.1",
-    "@litertjs/core": "^0.1.1",
+    "@litertjs/tfjs-interop": "^0.2.1",
+    "@litertjs/core": "^0.2.1",
     "argparse": "^2.0.1",
     "d3": "^5.16.0",
     "esbuild": "^0.23.0",
@@ -37,7 +37,7 @@
     "rimraf": "^6.0.1"
   },
   "devDependencies": {
-    "@litertjs/tsconfig": "^0.1.1",
+    "@litertjs/tsconfig": "^0.2.1",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-cpu": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",

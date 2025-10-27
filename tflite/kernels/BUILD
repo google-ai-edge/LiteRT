@@ -2225,6 +2225,7 @@ cc_test(
         "//tflite/core/api",
         "//tflite/kernels/internal:tensor_utils",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
         "@flatbuffers",

@@ -24,7 +24,6 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -54,7 +53,7 @@ template Expected<void> OpenClMemory::Unlock<char>();
 
 template <typename T>
 Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));
@@ -107,7 +106,7 @@ Expected<T*> OpenClMemory::Lock(LiteRtTensorBufferLockMode mode) {
 
 template <typename T>
 Expected<void> OpenClMemory::Unlock() {
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "OpenCL is not supported"));

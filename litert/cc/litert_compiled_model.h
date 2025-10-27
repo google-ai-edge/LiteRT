@@ -31,12 +31,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
+#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -177,9 +177,9 @@ class CompiledModel
   Expected<std::vector<Layout>> GetOutputTensorLayouts(
       size_t signature_index, bool update_allocation = false) const {
     // get num tensors here
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            model_.GetSignature(signature_index));
-    int num_tensors = signature.OutputNames().size();
+    LITERT_ASSIGN_OR_RETURN(auto output_names,
+                            model_.GetSignatureOutputNames(signature_index));
+    int num_tensors = output_names.size();
     std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorLayouts(
         Get(), signature_index, num_tensors, litert_layout_vector.data(),
@@ -394,13 +394,8 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
       const {
     bool async = false;
-    auto subgraph = model_.MainSubgraph();
-    if (!subgraph) {
-      return Unexpected(kLiteRtStatusErrorNotFound,
-                        "Failed to get main subgraph");
-    }
-    return RunMapWithIndexHelper(/*signature_index=*/0, *subgraph, input_map,
-                                 output_map, async);
+    return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
+                                 async);
   }
 
   // Runs the model of the given signature key asynchronously, if possible, with
@@ -698,7 +693,7 @@ class CompiledModel
       bool& async) const;
 
   Expected<void> RunMapWithIndexHelper(
-      size_t signature_index, const Subgraph& subgraph,
+      size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;

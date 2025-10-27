@@ -21,7 +21,7 @@
 
 #include "litert/ats/common.h"
 #include "litert/ats/configure.h"
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"

@@ -79,9 +79,10 @@ package_group(
         "//litert/ats/...",
         "//litert/google/...",
         "//litert/integration_test/...",
+        "//litert/js/...",
         "//research/xeno/audio/voicelm/calculators/...",
         "//litert/python/...",
-        "//third_party/odml/litert/tensor/examples/...",
+        "//third_party/odml/litert/tensor/...",
         "//litert/samples/semantic_similarity/...",
         # When litert_link_capi_so=false
         # copybara:uncomment "//third_party/odml/litert_lm/...",

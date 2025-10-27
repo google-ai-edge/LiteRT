@@ -229,6 +229,33 @@ LiteRtStatus LiteRtGetSignatureInputName(LiteRtSignature signature,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetSignatureInputTensor(LiteRtSignature signature,
+                                           const char* input_name,
+                                           LiteRtTensor* tensor) {
+  if (!signature || !input_name || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto input_tensor = signature->FindInputTensor(input_name);
+  if (!input_tensor) {
+    return input_tensor.Error().Status();
+  }
+  *tensor = *input_tensor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureInputTensorByIndex(LiteRtSignature signature,
+                                                  LiteRtParamIndex input_idx,
+                                                  LiteRtTensor* tensor) {
+  if (!signature || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (input_idx >= signature->InputNames().size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *tensor = signature->GetInputTensor(input_idx);
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetNumSignatureOutputs(LiteRtSignature signature,
                                           LiteRtParamIndex* num_outputs) {
   if (!signature || !num_outputs) {
@@ -248,6 +275,33 @@ LiteRtStatus LiteRtGetSignatureOutputName(LiteRtSignature signature,
     return kLiteRtStatusErrorIndexOOB;
   }
   *output_name = signature->OutputNames().at(output_idx).data();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureOutputTensor(LiteRtSignature signature,
+                                            const char* output_name,
+                                            LiteRtTensor* tensor) {
+  if (!signature || !output_name || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto output_tensor = signature->FindOutputTensor(output_name);
+  if (!output_tensor) {
+    return output_tensor.Error().Status();
+  }
+  *tensor = *output_tensor;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetSignatureOutputTensorByIndex(LiteRtSignature signature,
+                                                   LiteRtParamIndex output_idx,
+                                                   LiteRtTensor* tensor) {
+  if (!signature || !tensor) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (output_idx >= signature->OutputNames().size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  *tensor = signature->GetOutputTensor(output_idx);
   return kLiteRtStatusOk;
 }
 

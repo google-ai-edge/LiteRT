@@ -159,7 +159,6 @@ cc_library(
         "//litert/c:litert_event_type.h",
         "//litert/c:litert_gl_types.h",
         "//litert/c:litert_layout.h",
-        "//litert/c:litert_logging.h",
         "//litert/c:litert_metrics.h",
         "//litert/c:litert_model_types.h",
         "//litert/c:litert_op_code.h",
@@ -230,11 +229,53 @@ cc_library(
     ],
 )
 
-exports_files(srcs = glob(["litert_*.h"]))
+cc_library(
+    name = "litert_logging",
+    srcs = ["litert_logging.cc"],
+    hdrs = ["litert_logging.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:__subpackages__",
+        # "//third_party/odml/litert_lm/c:__pkg__",
+        # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//tflite:minimal_logging",
+        "//tflite/core/c:private_common",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_logging_test",
+    srcs = ["litert_logging_test.cc"],
+    deps = [
+        ":litert_logging",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# Header files that should be part of the shared library: litert/c:litert_runtime_c_api_shared_lib.
+_HEADER_FILES_FOR_SHARED_LIB = [
+    "litert_accelerator.h",
+    "litert_accelerator_registration.h",
+    "litert_delegate_wrapper.h",
+    "litert_dispatch_delegate.h",
+    "litert_external_litert_buffer_context.h",
+    "litert_tensor_buffer_registry.h",
+]
+
+exports_files(srcs = _HEADER_FILES_FOR_SHARED_LIB)
 
 filegroup(
     name = "internal_headers",
-    srcs = glob(["litert_*.h"]),
+    srcs = _HEADER_FILES_FOR_SHARED_LIB,
     visibility = [
         "//litert/c:__pkg__",
         "//litert/cc:__pkg__",

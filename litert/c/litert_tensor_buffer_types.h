@@ -15,6 +15,27 @@
 #ifndef ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_
 #define ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif  // __cplusplus
+
+typedef struct AHardwareBuffer AHardwareBuffer;
+
+#define LITERT_HOST_MEMORY_BUFFER_ALIGNMENT 64
+
+typedef void (*LiteRtHostMemoryDeallocator)(void* addr);
+typedef void (*LiteRtAhwbDeallocator)(AHardwareBuffer* ahwb);
+typedef void (*LiteRtIonDeallocator)(void* ion_buffer_addr);
+typedef void (*LiteRtDmaBufDeallocator)(void* dmabuf_buffer_addr);
+typedef void (*LiteRtFastRpcDeallocator)(void* fastrpc_buffer_addr);
+typedef void (*LiteRtOpenClDeallocator)(void* opencl_buffer_addr);
+typedef void (*LiteRtGlBufferDeallocator)(void* gl_buffer_addr);
+typedef void (*LiteRtGlTextureDeallocator)(void* gl_texture_addr);
+typedef void (*LiteRtWebGpuBufferDeallocator)(void* webgpu_buffer_addr);
+typedef void (*LiteRtWebGpuTextureDeallocator)(void* webgpu_texture_addr);
+typedef void (*LiteRtMetalDeallocator)(void* metal_buffer_addr);
+typedef void (*LiteRtVulkanMemoryDeallocator)(void* vulkan_memory_addr);
+
 // LINT.IfChange(tensor_buffer_types)
 typedef enum {
   kLiteRtTensorBufferTypeUnknown = 0,
@@ -153,5 +174,9 @@ inline bool IsGpuFloat16Memory(LiteRtTensorBufferType buffer_type) {
          buffer_type == kLiteRtTensorBufferTypeVulkanTextureFp16 ||
          buffer_type == kLiteRtTensorBufferTypeVulkanImageBufferFp16;
 }
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif  // __cplusplus
 
 #endif  // ODML_LITERT_LITERT_C_LITERT_TENSOR_BUFFER_TYPES_H_

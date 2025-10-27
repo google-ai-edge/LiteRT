@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 
 namespace litert::test {
 namespace {

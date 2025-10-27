@@ -34,8 +34,8 @@ cc_library(
     deps = [
         ":hash_util",
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
         "//litert/c:litert_opaque_options",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

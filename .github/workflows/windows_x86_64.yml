@@ -100,7 +100,6 @@ jobs:
             //litert/c:litert_compiled_model_test `
             //litert/c:litert_custom_op_test `
             //litert/c:litert_environment_options_test `
-            //litert/c:litert_logging_test `
             //litert/c:litert_model_test `
             //litert/c:litert_opaque_options_test `
             //litert/c:litert_options_test `
@@ -109,6 +108,7 @@ jobs:
             //litert/c:litert_tensor_buffer_requirements_test `
             //litert/c/internal:litert_accelerator_registration_test `
             //litert/c/internal:litert_accelerator_test `
+            //litert/c/internal:litert_logging_test `
             //litert/c/options:litert_cpu_options_test `
             //litert/c/options:litert_google_tensor_options_test `
             //litert/c/options:litert_gpu_options_test `
@@ -122,19 +122,19 @@ jobs:
             //litert/cc:litert_environment_options_test `
             //litert/cc:litert_environment_test `
             //litert/cc:litert_expected_test `
-            //litert/cc:litert_handle_test `
             //litert/cc:litert_layout_test `
             //litert/cc:litert_model_test `
-            //litert/cc:litert_op_options_test `
             //litert/cc:litert_opaque_options_test `
-            //litert/cc:litert_rewriter_test `
             //litert/cc:litert_tensor_buffer_requirements_test `
             //litert/cc/dynamic_runtime:litert_tensor_buffer_requirements_test `
             //litert/cc/dynamic_runtime/options:litert_cpu_options_test `
             //litert/cc/dynamic_runtime/options:litert_gpu_options_test `
             //litert/cc/dynamic_runtime/options:litert_runtime_options_test `
             //litert/cc/internal:litert_c_types_printing_test `
+            //litert/cc/internal:litert_handle_test `
             //litert/cc/internal:litert_logging_test `
+            //litert/cc/internal:litert_op_options_test `
+            //litert/cc/internal:litert_rewriter_test `
             //litert/cc/options:darwinn_options_test `
             //litert/cc/options:litert_cpu_options_test `
             //litert/cc/options:litert_gpu_options_test `

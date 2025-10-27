@@ -50,6 +50,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_any",
         "//litert/cc/dynamic_runtime:litert_environment",
         "//tflite/java/jni",
@@ -68,6 +69,7 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
@@ -86,9 +88,10 @@ cc_library(
         ":litert_jni_common",
         ":litert_model_jni",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_handle",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/dynamic_runtime:litert_compiled_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
         "//tflite/java/jni",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_check",
@@ -103,8 +106,9 @@ cc_library(
     deps = [
         ":litert_jni_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_handle",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
+        "//litert/cc/internal:litert_handle",
         "//tflite/java/jni",
         "@com_google_absl//absl/types:span",
     ],

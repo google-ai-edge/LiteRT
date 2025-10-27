@@ -15,8 +15,8 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_WEBNN_OPTIONS_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_OPTIONS_LITERT_WEBNN_OPTIONS_H_
 
-#include "litert/c/options/litert_webnn_options.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_webnn_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 

@@ -18,9 +18,9 @@
 #include <string>
 #include <utility>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"

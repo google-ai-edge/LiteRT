@@ -24,8 +24,8 @@
 #include "IR/QnnIrGraph.h"
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
@@ -35,6 +35,20 @@
 #include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
+
+float GetOptimizationValue(::qnn::OptimizationLevel level) {
+  // Default optimization level value is 2
+  switch (level) {
+    case ::qnn::OptimizationLevel::kHtpOptimizeForInference:
+      return 2.0f;
+    case ::qnn::OptimizationLevel::kHtpOptimizeForPrepare:
+      return 1.0f;
+    case ::qnn::OptimizationLevel::kHtpOptimizeForInferenceO3:
+      return 3.0f;
+    default:
+      return 2.0f;
+  }
+}
 
 inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
     const ::qnn::Options& options) {
@@ -53,7 +67,7 @@ inline absl::Span<const QnnGraph_Config_t*> GetDefaultGraphConfigs(
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
   graph_custom_configs[1].optimizationOption.floatValue =
-      static_cast<float>(options.GetOptimizationLevel());
+      GetOptimizationValue(options.GetOptimizationLevel());
   // VTCM
   graph_custom_configs[2] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;
   graph_custom_configs[2].option = QNN_HTP_GRAPH_CONFIG_OPTION_VTCM_SIZE;
@@ -104,7 +118,7 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
       QNN_HTP_GRAPH_OPTIMIZATION_TYPE_FINALIZE_OPTIMIZATION_FLAG;
   // Change to 2 if you want to use O2 (default).
   graph_custom_configs[0].optimizationOption.floatValue =
-      static_cast<float>(options.GetOptimizationLevel());
+      GetOptimizationValue(options.GetOptimizationLevel());
 
   // VTCM
   graph_custom_configs[1] = QNN_HTP_GRAPH_CUSTOM_CONFIG_INIT;

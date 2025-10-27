@@ -45,28 +45,28 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_accelerator.h"
 #include "litert/c/internal/litert_delegate_wrapper.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_tensor_buffer_utils.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
-#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/buffer_error_reporter.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/model.h"
 #if !defined(LITERT_DISABLE_NPU)
+#include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -187,7 +187,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
       resolver.AddCustom(op_name, &sStubRegistration);
     }
   }
-  #ifdef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
   else if (hardware_accelerators & kLiteRtHwAcceleratorWebNn) {
     const char* accelerator_supported_custom_ops[] = {
         "Convolution2DTransposeBias"};
@@ -730,7 +730,7 @@ LiteRtCompiledModelT::GetTensorBufferRequirements(const TfLiteTensor* tensor) {
       return *requirements;
     }
   } else {
-    LITERT_LOG(LITERT_VERBOSE, "Tensor %s is shared with CPU.\n", tensor->name);
+    LITERT_LOG(LITERT_DEBUG, "Tensor %s is shared with CPU.\n", tensor->name);
   }
   // Check if we have a cached CPU buffer requirement.
   auto cached_req = cpu_buffer_requirements_.find(tensor_id);
@@ -790,6 +790,50 @@ LiteRtCompiledModelT::GetOutputBufferRequirements(
   }
 
   return GetTensorBufferRequirements(output_tensor);
+}
+
+litert::Expected<LiteRtLayout> LiteRtCompiledModelT::GetInputTensorLayout(
+    size_t signature_index, size_t input_index) {
+  if (signature_index >= signature_keys_.size()) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorIndexOOB,
+        "Signature index is out of range of signature keys");
+  }
+  auto* runner = GetSignatureRunner(*signature_keys_[signature_index]);
+  if (runner == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Failed to get signature runner");
+  }
+  const auto& input_names = runner->subgraph_input_names();
+  if (input_index >= input_names.size()) {
+    return litert::Unexpected(kLiteRtStatusErrorIndexOOB,
+                              "Input index out of range");
+  }
+  auto* input_tensor = runner->input_tensor(input_names[input_index]);
+  if (input_tensor == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorNotFound,
+                              "Failed to get input tensor");
+  }
+
+  const TfLiteIntArray* dims = input_tensor->dims;
+  if ((!dims || dims->size == 0) && input_tensor->dims_signature &&
+      input_tensor->dims_signature->size > 0) {
+    dims = input_tensor->dims_signature;
+  }
+
+  const size_t rank = dims ? dims->size : 0;
+  if (rank > LITERT_TENSOR_MAX_RANK) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Input tensor rank exceeds maximum supported "
+                              "rank for layouts");
+  }
+
+  LiteRtLayout layout{};
+  layout.rank = static_cast<unsigned int>(rank);
+  for (size_t i = 0; i < rank; ++i) {
+    layout.dimensions[i] = dims->data[i];
+  }
+  return layout;
 }
 
 Expected<void> LiteRtCompiledModelT::GetOutputTensorShapes(

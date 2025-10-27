@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 
 #if defined(_GNU_SOURCE) && !defined(__ANDROID__) && !defined(__APPLE__)
 #define LITERT_IMPLEMENT_SHARED_LIBRARY_INFO 1
@@ -26,8 +26,8 @@
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"  // IWYU pragma: keep
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"  // IWYU pragma: keep
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
 

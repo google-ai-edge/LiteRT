@@ -23,6 +23,7 @@
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -152,6 +153,23 @@ Expected<void> MkDir(absl::string_view path) {
 Expected<std::string> Parent(absl::string_view path) {
   auto std_path = MakeStdPath(path);
   return std_path.parent_path().generic_string();
+}
+
+Expected<void> RmDir(std::string path_to_remove) {
+  // remove_all recursively deletes the directory and all its contents.
+  std::uintmax_t count = std::filesystem::remove_all(path_to_remove);
+
+  if (count > 0 && IsDir(path_to_remove)) {
+    LITERT_LOG(LITERT_INFO,
+               "Successfully removed directory and its contents: %s (%ju "
+               "items deleted)",
+               path_to_remove.c_str(), count);
+  } else {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Could not remove or path did not exist: %s",
+                                 path_to_remove.c_str()));
+  }
+  return {};
 }
 
 }  // namespace litert::internal

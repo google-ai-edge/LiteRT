@@ -1,5 +1,4 @@
-# Copyright (C) 2025 Intel Corporation
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,9 +45,9 @@ litert_dynamic_lib(
     deps = [
         ":graph_iterator",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/vendors/cc:options_helper",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -75,9 +74,9 @@ litert_bin(
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_api_with_dynamic_runtime",
+        "//litert/vendors/cc:options_helper",
         "@com_google_absl//absl/strings:str_format",
         "@intel_openvino//:openvino",
     ],
@@ -109,6 +108,7 @@ litert_lib(
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/vendors/intel_openvino:ov_utils",
@@ -124,6 +124,7 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",
@@ -150,6 +151,7 @@ litert_test(
     deps = [
         ":decoder",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/dynamic_runtime:litert_model",
         "//litert/test:common",
         "//litert/test:matchers_oss",
@@ -189,6 +191,7 @@ litert_test(
     deps = [
         ":openvino_compiler_plugin",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_model",

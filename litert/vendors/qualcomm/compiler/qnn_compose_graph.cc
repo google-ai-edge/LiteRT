@@ -30,15 +30,15 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_op_options.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
@@ -240,15 +240,17 @@ LiteRtStatus ConvertTensor(const litert::Tensor& litert_tensor,
       if (ranked_tensor_type->ElementType() == litert::ElementType::Int4) {
         quantize_params.emplace<::qnn::BwAxisScaleOffsetQuantizeParamsWrapper>(
             ::qnn::kQuantBitWidth4, per_channel_quant.quantized_dimension,
-            absl::Span<const float>{per_channel_quant.scales,
-                                    per_channel_quant.num_channels},
+            absl::Span<const float>{
+                per_channel_quant.scales,
+                static_cast<size_t>(per_channel_quant.num_channels)},
             absl::Span<const std::int32_t>{zero_points.data(),
                                            zero_points.size()});
       } else {
         quantize_params.emplace<::qnn::AxisScaleOffsetQuantizeParamsWrapper>(
             per_channel_quant.quantized_dimension,
-            absl::Span<const float>{per_channel_quant.scales,
-                                    per_channel_quant.num_channels},
+            absl::Span<const float>{
+                per_channel_quant.scales,
+                static_cast<size_t>(per_channel_quant.num_channels)},
             absl::Span<const std::int32_t>{zero_points.data(),
                                            zero_points.size()});
       }

@@ -56,6 +56,7 @@ cc_library(
         ":dump_runtimecapi",
         ":outstream",
         ":tool_display",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core/model:model_serialize",
@@ -139,6 +140,7 @@ litert_bin(
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
         "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
@@ -177,6 +179,7 @@ litert_bin(
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
         "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
@@ -258,6 +261,7 @@ cc_binary(
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
         "//litert/tools/flags/vendors:google_tensor_flags_with_dynamic_runtime",
+        "//litert/tools/flags/vendors:intel_openvino_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:mediatek_flags_with_dynamic_runtime",
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
@@ -339,7 +343,7 @@ cc_library(
     name = "outstream",
     hdrs = ["outstream.h"],
     deps = [
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],
@@ -351,7 +355,8 @@ cc_library(
     hdrs = ["benchmark_litert_model.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -364,6 +369,7 @@ cc_library(
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_runtime_options",
         "//litert/runtime:compiled_model",
         "//tflite:framework_stable",
@@ -417,7 +423,7 @@ cc_library(
     hdrs = ["tensor_utils.h"],
     deps = [
         "//litert/c:litert_common",
-        "//litert/c:litert_logging",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -449,6 +455,7 @@ cc_binary(
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
         "//litert/tools/flags/vendors:google_tensor_flags",
+        "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
         "//tflite/profiling:time",
@@ -531,6 +538,22 @@ cc_binary(
 )
 
 cc_binary(
+    name = "gpu_numerics_check_jet",
+    srcs = ["gpu_numerics_check.cc"],
+    tags = [
+        "manual",
+        "notap",
+        "requires-gpu-nvidia",
+    ],
+    deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc/options:litert_gpu_options",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
+        # copybara:uncomment_end
+    ],
+)
+
+cc_binary(
     name = "analyze_model_main",
     srcs = ["analyze_model_main.cc"],
     deps = [
@@ -585,6 +608,21 @@ cc_binary(
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
         # "//third_party/vulkan_loader",
+        # copybara:uncomment_end
+    ],
+)
+
+cc_binary(
+    name = "benchmark_model_jet",
+    tags = [
+        "manual",
+        "notap",
+        "requires-gpu-nvidia",
+    ],
+    deps = [
+        ":benchmark_model_main",
+        # copybara:uncomment_begin(google-only)
+        # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
     ],
 )

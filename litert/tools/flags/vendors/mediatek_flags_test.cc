@@ -77,6 +77,7 @@ TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(
       options.Value().GetPerformanceMode(),
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferSustainedSpeed);
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "");
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetFlagToVersion7) {
@@ -140,6 +141,24 @@ TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
   EXPECT_FALSE(options.Value().GetEnableL1CacheOptimizations());
 }
 
+TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToTrue) {
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, true);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_TRUE(options.Value().GetDisableDlaDirRemoval());
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
+  // Explicitly set to false (even though it's the default) to ensure it's
+  // picked up
+  absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_FALSE(options.Value().GetDisableDlaDirRemoval());
+}
+
 TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
@@ -151,6 +170,24 @@ TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintNormal);
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetMediatekDlaDir) {
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "/data/local/tmp");
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "/data/local/tmp");
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
+}
+
+TEST(MediatekOptionsFromFlagsTest, SetMediatekDlaDirMalformed) {
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "this is not a path");
+  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  ASSERT_TRUE(options.HasValue());
+  EXPECT_EQ(options.Value().GetMediatekDlaDir(), "this is not a path");
+  // Reset flag to default to avoid affecting other tests
+  absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
 }
 
 TEST(NeuronAdapterPerformanceModeFlagTest, Malformed) {

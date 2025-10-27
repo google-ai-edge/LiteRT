@@ -17,7 +17,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 
 namespace litert {
 

@@ -39,12 +39,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
-#include "litert/cc/litert_model_predicates.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/graph_validation.h"
@@ -247,8 +247,14 @@ TEST(ModelSerializeTest, WithSignature) {
   static constexpr char kOutput[] = "bar";
   static constexpr char kKey[] = "newKey";
 
-  LiteRtSignatureT signature(litert_model.MainSubgraph(), {kInput}, {kOutput},
-                             kKey);
+  LiteRtSubgraph subgraph = litert_model.MainSubgraph();
+  std::vector<std::string> input_names = {kInput};
+  std::vector<LiteRtTensor> input_tensors = {subgraph->Inputs()[0]};
+  std::vector<std::string> output_names = {kOutput};
+  std::vector<LiteRtTensor> output_tensors = {subgraph->Outputs()[0]};
+  LiteRtSignatureT signature(subgraph, std::move(input_names),
+                             std::move(input_tensors), std::move(output_names),
+                             std::move(output_tensors), kKey);
   litert_model.EmplaceSignature(std::move(signature));
 
   auto serialized = SerializeModel(std::move(*model.Get()));

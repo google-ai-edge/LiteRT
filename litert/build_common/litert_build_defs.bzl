@@ -283,6 +283,7 @@ def _litert_base(
 def litert_test(
         ungrte = False,
         use_sys_malloc = False,
+        no_main = False,
         **cc_test_kwargs):
     """
     LiteRT test rule.
@@ -290,16 +291,18 @@ def litert_test(
     Args:
       ungrte: Whether to link against system libraries ("ungrte").
       use_sys_malloc: Whether to use the system malloc.
+      no_main: Whether to use the default main function.
       **cc_test_kwargs: Keyword arguments to pass to the underlying rule.
     """
     if use_sys_malloc:
         # copybara:uncomment cc_test_kwargs["malloc"] = "//base:system_malloc"
         pass
 
-    append_rule_kwargs(
-        cc_test_kwargs,
-        deps = ["@com_google_googletest//:gtest_main"],
-    )
+    if not no_main:
+        append_rule_kwargs(
+            cc_test_kwargs,
+            deps = ["@com_google_googletest//:gtest_main"],
+        )
 
     _litert_base(
         cc_test,

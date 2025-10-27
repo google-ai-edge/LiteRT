@@ -34,9 +34,9 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
 )
@@ -50,9 +50,9 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_cpu_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -68,9 +68,9 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_webnn_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
     ],
 )
 
@@ -95,9 +95,9 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_gpu_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
     ],
 )
 
@@ -122,10 +122,10 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_google_tensor_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
@@ -139,10 +139,10 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
@@ -157,13 +157,42 @@ cc_library(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = True,
+)
+
+cc_library(
+    name = "litert_intel_openvino_options",
+    srcs = ["litert_intel_openvino_options.cc"],
+    hdrs = ["litert_intel_openvino_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = True,
+)
+
+cc_test(
+    name = "litert_intel_openvino_options_test",
+    srcs = ["litert_intel_openvino_options_test.cc"],
+    deps = [
+        ":litert_intel_openvino_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_intel_openvino_options",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -174,10 +203,21 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_magic_number_options",
+    srcs = ["litert_magic_number_options.cc"],
+    hdrs = ["litert_magic_number_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/cc:litert_expected",
     ],
 )
 
@@ -190,9 +230,9 @@ cc_test(
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_runtime_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest_main",
@@ -207,9 +247,9 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/options:litert_darwinn_runtime_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
         "//litert/runtime:litert_darwinn_options",
         "@com_google_absl//absl/strings:string_view",
     ],

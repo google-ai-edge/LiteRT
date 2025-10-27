@@ -42,7 +42,7 @@ using ::litert::testing::IsOss;
 using ::testing::TestWithParam;
 using ::testing::Values;
 
-void DumpLinkDbg(void *lib_handle, absl::string_view lib_name) {
+void DumpLinkDbg(void* lib_handle, absl::string_view lib_name) {
   if (lib_handle != nullptr) {
     std::string dl_info(512, '\0');
     dlinfo(lib_handle, RTLD_DI_ORIGIN, dl_info.data());
@@ -54,30 +54,30 @@ void DumpLinkDbg(void *lib_handle, absl::string_view lib_name) {
   // PWD AND RUNFILES TREE
   auto pwd = std::filesystem::current_path();
   std::cerr << "pwd: " << std::string(pwd) << "\n";
-  for (const auto &file : std::filesystem::recursive_directory_iterator(pwd)) {
+  for (const auto& file : std::filesystem::recursive_directory_iterator(pwd)) {
     if (file.is_regular_file()) {
       std::cerr << "file: " << std::string(file.path()) << "\n";
     }
   }
 
   // DL API OUTPUT
-  char *err = dlerror();
+  char* err = dlerror();
   std::cerr << "------ dlerror() -----\n";
   std::cerr << std::string(err) << "\n";
 
   // RPATH OF THIS ELF
 
-  const ElfW(Dyn) *dyn = _DYNAMIC;
-  const ElfW(Dyn) *rpath = nullptr;
-  const ElfW(Dyn) *runpath = nullptr;
-  const char *strtab = nullptr;
+  const ElfW(Dyn)* dyn = _DYNAMIC;
+  const ElfW(Dyn)* rpath = nullptr;
+  const ElfW(Dyn)* runpath = nullptr;
+  const char* strtab = nullptr;
   for (; dyn->d_tag != DT_NULL; ++dyn) {
     if (dyn->d_tag == DT_RPATH) {
       rpath = dyn;
     } else if (dyn->d_tag == DT_RUNPATH) {
       runpath = dyn;
     } else if (dyn->d_tag == DT_STRTAB) {
-      strtab = (const char *)dyn->d_un.d_val;
+      strtab = (const char*)dyn->d_un.d_val;
     }
   }
 
@@ -99,7 +99,7 @@ class CheckSdkTestImpl : public TestWithParam<absl::string_view> {
     }
   }
   void DoTest() {
-    void *lib_handle = dlopen(GetParam().data(), RTLD_LAZY);
+    void* lib_handle = dlopen(GetParam().data(), RTLD_LAZY);
     EXPECT_NE(lib_handle, nullptr);
     if constexpr (IsDbg()) {
       DumpLinkDbg(lib_handle, GetParam());

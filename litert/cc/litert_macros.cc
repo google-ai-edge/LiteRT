@@ -18,8 +18,8 @@
 #include <string>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/internal/litert_source_location.h"
 #include "litert/cc/litert_expected.h"
 

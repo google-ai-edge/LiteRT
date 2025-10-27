@@ -16,7 +16,7 @@
 
 #include <string>
 
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
 namespace litert {

@@ -28,10 +28,11 @@ limitations under the License.
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_logging.h"
+#include "litert/c/internal/litert_logging.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_profiler.h"
@@ -234,6 +235,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("compiler_plugin_library_path",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("compiler_cache_path",
+                            BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("require_full_delegation",
                             BenchmarkParam::Create<bool>(false));
     default_params.AddParam("use_profiler",
@@ -289,15 +292,11 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
       return kTfLiteError;
     }
     auto signature = params_.Get<std::string>("signature_to_run_for");
-    if (signature.empty()) {
-      LITERT_ASSIGN_OR_RETURN(const auto sig, model_->GetSignature(0),
-                              kTfLiteError);
-      signature = sig.Key();
-    }
-    if (compiled_model_->Run(signature, *input_buffers_, *output_buffers_)) {
+    if (auto res = compiled_model_->Run(signature, *input_buffers_,
+                                        *output_buffers_)) {
       return kTfLiteOk;
     } else {
-      LITERT_LOG(LITERT_ERROR, "Run failed");
+      LITERT_LOG(LITERT_ERROR, "Run failed: %s", res.Error().Message().c_str());
       return kTfLiteError;
     }
   }
@@ -391,6 +390,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "compiler_plugin_library_path", &params_,
         "Compiler plugin library path. Only for JIT compilation."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "compiler_cache_path", &params_,
+        "Compiler plugin cache path, used to store JIT-compiled models."));
     flags.push_back(tflite::benchmark::CreateFlag<bool>(
         "require_full_delegation", &params_,
         "Whether to require full delegation."));

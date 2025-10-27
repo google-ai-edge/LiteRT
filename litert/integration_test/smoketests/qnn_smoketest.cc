@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/litert_shared_library.h"
+#include "litert/cc/internal/litert_shared_library.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"

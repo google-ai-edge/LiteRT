@@ -20,8 +20,8 @@
 #include <optional>
 #include <string>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_logging.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 

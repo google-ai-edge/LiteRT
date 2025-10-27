@@ -207,6 +207,7 @@ TEST(LiteRtMediatekOptionsTest, L1CacheOptimizationsInvalidArguments) {
 
   LiteRtDestroyOpaqueOptions(options);
 }
+
 TEST(LiteRtMediatekOptionsTest, OptimizationHint) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
@@ -266,6 +267,95 @@ TEST(LiteRtMediatekOptionsTest, OptimizationHintInvalidArguments) {
   EXPECT_EQ(
       LiteRtMediatekOptionsGetOptimizationHint(nullptr, &optimization_hint),
       kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, DisableDlaDirRemoval) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  bool disable_dla_dir_removal;
+  // Check default value (false)
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+      options_data, &disable_dla_dir_removal));
+  ASSERT_FALSE(disable_dla_dir_removal);
+
+  // Set to true
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetDisableDlaDirRemoval(options_data, true));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+      options_data, &disable_dla_dir_removal));
+  ASSERT_TRUE(disable_dla_dir_removal);
+
+  // Set to false
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetDisableDlaDirRemoval(options_data, false));
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+      options_data, &disable_dla_dir_removal));
+  ASSERT_FALSE(disable_dla_dir_removal);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, DisableDlaDirRemovalInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  bool disable_dla_dir_removal;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetDisableDlaDirRemoval(nullptr, true),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtMediatekOptionsGetDisableDlaDirRemoval(options_data, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetDisableDlaDirRemoval(
+                nullptr, &disable_dla_dir_removal),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, MediatekDlaDir) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+
+  const char* mediatek_dla_dir;
+  // Check default value (empty string)
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetMediatekDlaDir(options_data, &mediatek_dla_dir));
+  ASSERT_STREQ(mediatek_dla_dir, "");
+
+  // Set to a value
+  const char* test_dir = "/test/dir";
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsSetMediatekDlaDir(options_data, test_dir));
+  LITERT_ASSERT_OK(
+      LiteRtMediatekOptionsGetMediatekDlaDir(options_data, &mediatek_dla_dir));
+  ASSERT_STREQ(mediatek_dla_dir, test_dir);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtMediatekOptionsTest, MediatekDlaDirInvalidArguments) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsCreate(&options));
+  LiteRtMediatekOptions options_data;
+  LITERT_ASSERT_OK(LiteRtMediatekOptionsGet(options, &options_data));
+  const char* mediatek_dla_dir;
+
+  EXPECT_EQ(LiteRtMediatekOptionsSetMediatekDlaDir(nullptr, "/test/dir"),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_EQ(LiteRtMediatekOptionsGetMediatekDlaDir(options_data, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtMediatekOptionsGetMediatekDlaDir(nullptr, &mediatek_dla_dir),
+            kLiteRtStatusErrorInvalidArgument);
 
   LiteRtDestroyOpaqueOptions(options);
 }
@@ -350,6 +440,18 @@ TEST(MediatekOptionsTest, CppApi) {
       kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
   EXPECT_EQ(options->GetOptimizationHint(),
             kLiteRtMediatekNeuronAdapterOptimizationHintBatchProcessing);
+
+  // Test Disable DLA Dir Removal
+  EXPECT_FALSE(options->GetDisableDlaDirRemoval());
+  options->SetDisableDlaDirRemoval(true);
+  EXPECT_TRUE(options->GetDisableDlaDirRemoval());
+  options->SetDisableDlaDirRemoval(false);
+  EXPECT_FALSE(options->GetDisableDlaDirRemoval());
+
+  // // Test Mediatek DLA Dir
+  EXPECT_EQ(options->GetMediatekDlaDir(), "");
+  options->SetMediatekDlaDir("/test/dir");
+  EXPECT_EQ(options->GetMediatekDlaDir(), "/test/dir");
 }
 
 TEST(LiteRtMediatekOptionsTest, OptionsHash) {

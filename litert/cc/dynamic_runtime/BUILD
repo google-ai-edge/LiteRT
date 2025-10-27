@@ -42,7 +42,7 @@ LITERT_C_API_DEPS = [
     "//litert/c:litert_event_type",
     "//litert/c:litert_gl_types",
     "//litert/c:litert_layout",
-    "//litert/c:litert_logging",
+    "//litert/c/internal:litert_logging",
     "//litert/c:litert_metrics",
     "//litert/c:litert_model",
     "//litert/c:litert_rewriter",
@@ -77,9 +77,10 @@ cc_library(
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
         ":litert_tensor_buffer",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_layout",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
@@ -130,8 +131,8 @@ cc_library(
     ],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -173,11 +174,12 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_consts",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -192,16 +194,16 @@ cc_library(
 
 cc_library(
     name = "litert_rewriter",
-    srcs = ["//litert/cc:litert_rewriter.cc"],
-    hdrs = ["//litert/cc:litert_rewriter.h"],
+    srcs = ["//litert/cc/internal:litert_rewriter.cc"],
+    hdrs = ["//litert/cc/internal:litert_rewriter.h"],
     visibility = [
         "//litert:litert_public",
     ],
     deps = [
         ":litert_model",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
@@ -240,8 +242,8 @@ cc_test(
 
 cc_library(
     name = "litert_model_predicates",
-    srcs = ["//litert/cc:litert_model_predicates.cc"],
-    hdrs = ["//litert/cc:litert_model_predicates.h"],
+    srcs = ["//litert/cc/internal:litert_model_predicates.cc"],
+    hdrs = ["//litert/cc/internal:litert_model_predicates.h"],
     visibility = ["//litert:litert_public"],
     deps = [
         ":litert_model",
@@ -257,7 +259,7 @@ cc_library(
 
 cc_test(
     name = "litert_model_predicates_test",
-    srcs = ["//litert/cc:litert_model_predicates_test.cc"],
+    srcs = ["//litert/cc/internal:litert_model_predicates_test.cc"],
     data = ["//litert/test:mlir_test_data"],
     deps = [
         ":litert_model",
@@ -278,8 +280,8 @@ cc_library(
     hdrs = ["//litert/cc:litert_opaque_options.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
@@ -298,8 +300,8 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
@@ -307,8 +309,8 @@ cc_test(
 
 cc_library(
     name = "litert_op_options",
-    srcs = ["//litert/cc:litert_op_options.cc"],
-    hdrs = ["//litert/cc:litert_op_options.h"],
+    srcs = ["//litert/cc/internal:litert_op_options.cc"],
+    hdrs = ["//litert/cc/internal:litert_op_options.h"],
     visibility = ["//litert:litert_public"],
     deps = [
         "//litert/cc:litert_expected",
@@ -326,7 +328,7 @@ cc_library(
 
 cc_test(
     name = "litert_op_options_test",
-    srcs = ["//litert/cc:litert_op_options_test.cc"],
+    srcs = ["//litert/cc/internal:litert_op_options_test.cc"],
     data = [
         "//litert/test:mlir_test_data",
         "//litert/test:tflite_test_data",
@@ -356,11 +358,11 @@ cc_library(
     ],
     deps = [
         ":litert_event",
-        ":litert_model",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
@@ -390,9 +392,9 @@ cc_test(
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "//litert/cc/internal:litert_platform_support",
         "//litert/runtime:tensor_buffer",
         "//litert/test:matchers",
@@ -428,8 +430,8 @@ cc_library(
     hdrs = ["//litert/cc:litert_tensor_buffer_requirements.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
@@ -447,7 +449,7 @@ cc_test(
         ":litert_tensor_buffer",
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
-        "//litert/cc:litert_handle",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -460,8 +462,8 @@ cc_library(
         "//litert/cc:litert_any",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
@@ -506,9 +508,10 @@ cc_library(
         ":litert_profiler",
         ":litert_tensor_buffer",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -544,6 +547,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -577,6 +581,7 @@ cc_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
@@ -602,8 +607,8 @@ cc_library(
         ":litert_custom_op_kernel",
         ":litert_opaque_options",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
@@ -618,8 +623,8 @@ cc_library(
     hdrs = ["//litert/cc:litert_profiler.h"],
     deps = [
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_handle",
         "//litert/cc:litert_macros",
+        "//litert/cc/internal:litert_handle",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,

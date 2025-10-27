@@ -20,8 +20,8 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_handle.h"
 #include "litert/cc/litert_macros.h"
 
 extern "C" {

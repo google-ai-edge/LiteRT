@@ -43,6 +43,7 @@ litert_lib(
     ungrte = False,
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
         "@com_google_absl//absl/debugging:leak_check",

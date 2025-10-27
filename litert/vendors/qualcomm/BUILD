@@ -31,6 +31,7 @@ cc_library(
     hdrs = ["common.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
@@ -44,9 +45,10 @@ cc_library(
     deps = [
         ":common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
@@ -67,9 +69,10 @@ litert_cc_lib_with_qnn(
     deps = [
         ":common",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_shared_library",
+        "//litert/cc/internal:litert_shared_library",
         "//litert/core:dynamic_loading",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/backends:htp_backend",
@@ -130,9 +133,9 @@ cc_library(
     deps = [
         ":qnn_manager",
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
-        "@com_google_absl//absl/strings:string_view",
         "@qairt//:qnn_lib_headers",
     ],
 )
