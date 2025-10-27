@@ -35,6 +35,9 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+#include "third_party/odml/litert/weight_loader/external_weight_loader_litert.h"
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/core/cache/compilation_cache.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
@@ -407,6 +410,14 @@ class LiteRtCompiledModelT {
   // Note: The ExternalLiteRtBufferContext must be destroyed after the
   // Interpreter.
   std::unique_ptr<LiteRtExternalLiteRtBufferContextT> buffer_context_;
+
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  // The loader that manages external weight metadata and bindings.
+  std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
+#endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+
+  // File system hints about the originating model location.
+  std::optional<std::string> model_directory_;
 
   // The set of CPU Tensors. This is used to manage TensorBufferRequirements
   // for shared CPU Tensors.
