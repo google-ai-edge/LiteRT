@@ -59,6 +59,7 @@ EXPORTS
   LiteRtGetCompiledModelInputBufferRequirements
   LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
+  LiteRtGetCompiledModelOutputTensorLayouts
   LiteRtGetCpuOptionsIdentifier
   LiteRtGetCpuOptionsNumThread
   LiteRtGetCpuOptionsXNNPackFlags
