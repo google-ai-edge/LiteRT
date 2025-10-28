@@ -412,7 +412,7 @@ export class LiteRt {
     // Note: This will definitely be async in the future and will likely change.
     let modelData: Uint8Array;
     if (typeof model === 'string' || model instanceof URL) {
-      if (model instanceof 'string')) {
+      if (typeof model === 'string') {
         model = new URL(model);
       }
       // If Cross-Origin Storage is supported and the model is hosted on
