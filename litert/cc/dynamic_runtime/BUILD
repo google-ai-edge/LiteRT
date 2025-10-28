@@ -622,6 +622,7 @@ cc_library(
     deps = [
         ":litert_custom_op_kernel",
         ":litert_opaque_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",

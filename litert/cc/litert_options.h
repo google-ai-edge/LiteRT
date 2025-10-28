@@ -22,6 +22,7 @@
 #include "litert/c/litert_custom_op_kernel.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -45,6 +46,13 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return Options(options, OwnHandle::kYes);
   }
 
+  Expected<void> SetHardwareAccelerators(HwAccelerators accelerators) {
+    LITERT_RETURN_IF_ERROR(LiteRtSetOptionsHardwareAccelerators(
+        Get(), static_cast<LiteRtHwAcceleratorSet>(accelerators)));
+    return {};
+  }
+
+  [[deprecated("Use the overload that takes HwAccelerators above instead.")]]
   Expected<void> SetHardwareAccelerators(LiteRtHwAcceleratorSet accelerators) {
     LITERT_RETURN_IF_ERROR(
         LiteRtSetOptionsHardwareAccelerators(Get(), accelerators));

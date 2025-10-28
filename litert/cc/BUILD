@@ -1087,6 +1087,7 @@ cc_library_with_testonly_vis(
         # copybara:comment_end
     ],
     deps = [
+        ":litert_common",
         ":litert_custom_op_kernel",
         ":litert_expected",
         ":litert_macros",
