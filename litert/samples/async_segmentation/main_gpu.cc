@@ -25,7 +25,6 @@
 #include <GLES2/gl2.h>
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event_type.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
@@ -34,6 +33,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -60,11 +60,12 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
 }
 
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
-    LiteRtEnvironment env, litert::CompiledModel& compiled_model,
+    litert::Environment& env, litert::CompiledModel& compiled_model,
     litert::Model& model, int signature_index) {
-  auto signature = model.GetSignature(signature_index);
+  LITERT_ASSIGN_OR_RETURN(auto input_names,
+                          model.GetSignatureInputNames(signature_index));
   std::vector<litert::TensorBuffer> input_buffers;
-  for (int i = 0; i < signature->InputNames().size(); ++i) {
+  for (int i = 0; i < input_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBufferRequirements input_buffer_requirements,
         compiled_model.GetInputBufferRequirements(signature_index, i));
@@ -84,13 +85,13 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 }
 
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
-    LiteRtEnvironment env, litert::CompiledModel& compiled_model,
+    litert::Environment& env, litert::CompiledModel& compiled_model,
     litert::Model& model, int signature_index) {
-  auto signature = model.GetSignature(signature_index);
-
+  LITERT_ASSIGN_OR_RETURN(auto output_names,
+                          model.GetSignatureOutputNames(signature_index));
   std::vector<litert::TensorBuffer> output_buffers;
-  output_buffers.reserve(signature->OutputNames().size());
-  for (int i = 0; i < signature->OutputNames().size(); ++i) {
+  output_buffers.reserve(output_names.size());
+  for (int i = 0; i < output_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBufferRequirements output_buffer_requirements,
         compiled_model.GetOutputBufferRequirements(signature_index, i));
@@ -169,12 +170,10 @@ int main(int argc, char* argv[]) {
   std::vector<litert::TensorBuffer> input_buffers;
   std::vector<litert::TensorBuffer> output_buffers;
   if (use_gl_buffers) {
+    LITERT_ASSIGN_OR_ABORT(input_buffers,
+                           CreateGlInputBuffers(env, compiled_model, model, 0));
     LITERT_ASSIGN_OR_ABORT(
-        input_buffers,
-        CreateGlInputBuffers(env.Get(), compiled_model, model, 0));
-    LITERT_ASSIGN_OR_ABORT(
-        output_buffers,
-        CreateGlOutputBuffers(env.Get(), compiled_model, model, 0));
+        output_buffers, CreateGlOutputBuffers(env, compiled_model, model, 0));
   } else {
     LITERT_ASSIGN_OR_ABORT(input_buffers, compiled_model.CreateInputBuffers());
     LITERT_ASSIGN_OR_ABORT(output_buffers,

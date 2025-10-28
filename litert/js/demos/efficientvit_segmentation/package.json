@@ -1,7 +1,7 @@
 {
   "name": "@litertjs/efficientvit_segmentation_demo",
   "private": "true",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "main": "index.js",
   "scripts": {
     "copy-wasm": "mkdirp dist && cp -r `node -e \"console.log(path.join(require.resolve('@litertjs/core/package.json'), '../wasm'))\"` dist/",
@@ -18,8 +18,8 @@
   "license": "Apache-2.0",
   "description": "",
   "dependencies": {
-    "@litertjs/core": "^0.1.1",
-    "@litertjs/tfjs-interop": "^0.1.1",
+    "@litertjs/core": "^0.2.1",
+    "@litertjs/tfjs-interop": "^0.2.1",
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",

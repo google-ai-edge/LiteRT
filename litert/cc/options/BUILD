@@ -94,6 +94,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
         "//litert/c/options:litert_gpu_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_opaque_options",
@@ -207,6 +208,17 @@ cc_library(
         "//litert/cc:litert_opaque_options",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_magic_number_options",
+    srcs = ["litert_magic_number_options.cc"],
+    hdrs = ["litert_magic_number_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_environment_options",
+        "//litert/cc:litert_expected",
     ],
 )
 

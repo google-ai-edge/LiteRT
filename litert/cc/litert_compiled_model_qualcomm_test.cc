@@ -49,25 +49,23 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
   LITERT_LOG(LITERT_DEBUG, "Input/output buffers created");
 
   int num_iterations = 10;
   for (int i = 0; i < num_iterations; ++i) {
     LITERT_LOG(LITERT_DEBUG, "Iteration %d", i);
-    LITERT_ASSERT_OK(compiled_model.Run(model.DefaultSignatureKey(),
-                                        input_buffers, output_buffers));
+    LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   }
 }
 
@@ -89,6 +87,7 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -102,16 +101,13 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
   int num_iterations = 10;
   for (int i = 0; i < num_iterations; ++i) {
     LITERT_LOG(LITERT_DEBUG, "Iteration %d", i);
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        std::vector<TensorBuffer> input_buffers,
-        compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
-    LITERT_ASSERT_OK_AND_ASSIGN(
-        std::vector<TensorBuffer> output_buffers,
-        compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+    LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                                compiled_model.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                                compiled_model.CreateOutputBuffers());
     LITERT_LOG(LITERT_DEBUG, "Input/output buffers created");
 
-    LITERT_ASSERT_OK(compiled_model.Run(model.DefaultSignatureKey(),
-                                        input_buffers, output_buffers));
+    LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   }
 }
 

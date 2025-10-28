@@ -88,6 +88,19 @@ LiteRtStatus LiteRtGetCompiledModelOutputBufferRequirements(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetCompiledModelInputTensorLayout(
+    LiteRtCompiledModel compiled_model, LiteRtParamIndex signature_index,
+    LiteRtParamIndex input_index, LiteRtLayout* layout) {
+  if (!compiled_model || !layout) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtLayout computed_layout,
+      compiled_model->GetInputTensorLayout(signature_index, input_index));
+  *layout = computed_layout;
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetCompiledModelEnvironment(
     LiteRtCompiledModel compiled_model, LiteRtEnvironment* environment) {
   if (!compiled_model || !environment) {

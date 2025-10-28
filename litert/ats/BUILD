@@ -15,7 +15,8 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
-load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
+load("//litert/build_common:litert_build_defs.bzl", "litert_test")
+load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -26,20 +27,17 @@ package(
 
 # LiteRt's compliance test suite (CTS).
 
-cc_test(
+litert_test(
     name = "ats",
-    # testonly = True,
     srcs = ["ats.cc"],
-    # TODO: Figure out data seeding and test re-running.
-    args = [
-        # copybara:uncomment "--gunit_random_seed=42",
-        # copybara:uncomment "--gunit_color=yes",
-    ],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    linkstatic = True,
+    no_main = True,
     tags = [
-        # "manual",  # Bazel will complain if this is analyzed in conjunction with the platform_data variant emitted by litert_device_script when target platform is same as host platform.
-        "no_oss",  # TODO: Copybara rewrite the gunit flags and remove this tag.
+        "notap",
     ],
+    ungrte = True,
+    use_sys_malloc = True,
     deps = [
         ":compile_fixture",
         ":configure",
@@ -147,8 +145,8 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_c_types_printing",
         "//litert/core/model",
-        "//litert/test:matchers",
-        "//litert/test:rng_fixture",
+        "//litert/test:matchers_oss",
+        "//litert/test:rng_fixture_oss",
         "//litert/test:simple_buffer",
         "//litert/test/generators:common",
         "@com_google_absl//absl/strings:str_format",
@@ -171,7 +169,7 @@ cc_library(
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:filesystem_testonly",
         "//litert/core/model",
-        "//litert/test:matchers",
+        "//litert/test:matchers_oss",
         "//litert/test/generators:common",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
@@ -328,37 +326,31 @@ cc_library(
     ],
 )
 
-# TEMP STUFF  ######################################################################################s
-
-litert_device_exec(
-    name = "inference_capture_test_device",
-    data = [
-        "//litert/test:testdata/simple_model.tflite",
-        "//litert/vendors/examples:example_dispatch_so",
-        "//litert/vendors/examples:example_plugin_so",
-    ],
-    target = ":inference_capture_test",
-)
-
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
 litert_define_ats(
     name = "sample_cpu_ats",
     backend = "cpu",
+    compile_only_suffix = None,
+    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "example_npu_ats",
     backend = "example",
+    compile_only_suffix = "_aot",
     do_register = [
         "sub.*f32",
         "mul.*f32",
     ],
+    extra_flags = ["--limit=1"],
+    jit_suffix = "",
 )
 
 litert_define_ats(
     name = "qualcomm_ats",
     backend = "qualcomm",
+    compile_only_suffix = "_aot",
     dont_register = [
         ".*5d.*",  # Filter out 5d tests.
         ".*6d.*",  # Filter out 6d tests.
@@ -370,4 +362,5 @@ litert_define_ats(
         "--f16_range_for_f32=true",
         "--data_seed=42",
     ],
+    jit_suffix = "",
 )

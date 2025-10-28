@@ -23,6 +23,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
@@ -34,7 +35,9 @@ limitations under the License.
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
@@ -58,6 +61,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto use_profiler = params.Get<bool>("use_profiler");
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
+  auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
 
@@ -72,6 +76,17 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   if (use_npu) {
     hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu;
+    // QNN options
+    LITERT_ASSIGN_OR_ABORT(auto qnn_opts,
+                           ::litert::qualcomm::QualcommOptions::Create());
+    qnn_opts.SetLogLevel(kLiteRtQualcommLogOff);
+    qnn_opts.SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+    qnn_opts.SetUseFoldReLU(true);
+    qnn_opts.SetUseConvHMX(true);
+    qnn_opts.SetUseHtpPreference(true);
+    qnn_opts.SetOptimizationLevel(kHtpOptimizeForInferenceO3);
+    compilation_options.AddOpaqueOptions(std::move(qnn_opts));
+    // TODO(yunandrew): Add options for other NPU backends.
   }
 
   if (use_gpu) {
@@ -89,6 +104,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     }
     if (gpu_low_priority) {
       gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
+    }
+    if (enable_weight_sharing) {
+      gpu_options.EnableConstantTensorSharing(true);
     }
 
     auto use_profiler = params.Get<bool>("use_profiler");
@@ -119,6 +137,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   return compilation_options;
 }
+
 litert::Expected<Environment> CreateDefaultEnvironment(
     const BenchmarkParams& params) {
   if (!params.Get<bool>("use_npu")) {
@@ -165,6 +184,10 @@ TfLiteStatus BenchmarkLiteRtModel::LoadModel() {
 }
 
 TfLiteStatus BenchmarkLiteRtModel::Init() {
+  if (params_.Get<bool>("enable_perfetto")) {
+    litert::internal::InitializePerfetto();
+  }
+
   TF_LITE_ENSURE_STATUS(LoadModel());
 
   LITERT_ASSIGN_OR_RETURN(
@@ -206,11 +229,6 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   AddListener(log_output_.get());
 
   auto signature = params_.Get<std::string>("signature_to_run_for");
-  if (signature.empty()) {
-    LITERT_ASSIGN_OR_RETURN(auto s, model_->GetSignature(0), AsTfLiteStatus(_));
-    signature = s.Key();
-  }
-
   LITERT_ASSIGN_OR_RETURN(
       auto input_buffers_result, compiled_model_->CreateInputBuffers(signature),
       AsTfLiteStatus(_ << "Failed to create input buffer."));

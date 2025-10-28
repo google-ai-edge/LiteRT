@@ -14,6 +14,7 @@
 #include "litert/cc/options/litert_mediatek_options.h"
 
 #include <memory>
+#include <string>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -116,6 +117,31 @@ MediatekOptions::GetOptimizationHint() {
   internal::AssertOk(LiteRtMediatekOptionsGetOptimizationHint, Data(),
                      &optimization_hint);
   return optimization_hint;
+}
+
+void MediatekOptions::SetDisableDlaDirRemoval(
+    bool disable_dla_dir_removal) {
+  internal::AssertOk(LiteRtMediatekOptionsSetDisableDlaDirRemoval, Data(),
+                     disable_dla_dir_removal);
+}
+
+bool MediatekOptions::GetDisableDlaDirRemoval() {
+  bool disable_dla_dir_removal;
+  internal::AssertOk(LiteRtMediatekOptionsGetDisableDlaDirRemoval, Data(),
+                     &disable_dla_dir_removal);
+  return disable_dla_dir_removal;
+}
+
+void MediatekOptions::SetMediatekDlaDir(const std::string& mediatek_dla_dir) {
+  internal::AssertOk(LiteRtMediatekOptionsSetMediatekDlaDir, Data(),
+                     mediatek_dla_dir.c_str());
+}
+
+absl::string_view MediatekOptions::GetMediatekDlaDir() {
+  const char* mediatek_dla_dir;
+  internal::AssertOk(LiteRtMediatekOptionsGetMediatekDlaDir, Data(),
+                     &mediatek_dla_dir);
+  return absl::string_view(mediatek_dla_dir);
 }
 
 }  // namespace litert::mediatek

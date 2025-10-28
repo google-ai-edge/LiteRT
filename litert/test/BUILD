@@ -223,6 +223,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "rng_fixture_oss",
+    testonly = True,
+    hdrs = ["rng_fixture.h"],
+    deps = [
+        ":fuzz",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc/internal:litert_rng",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
 cc_test(
     name = "matchers_test",
     srcs = ["matchers_test.cc"],

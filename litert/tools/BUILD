@@ -356,6 +356,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_qualcomm_options",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -368,7 +369,9 @@ cc_library(
         "//litert/cc/internal:litert_tflite_error_status_builder",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
         "//tflite:framework_stable",
         "//tflite/c:c_api_types",

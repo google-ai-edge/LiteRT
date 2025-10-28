@@ -1,7 +1,7 @@
 {
   "name": "@litertjs/depth_anything_demo",
   "private": "true",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "type": "module",
   "description": "LiteRT.js Depth Anything Demo",
   "scripts": {
@@ -11,12 +11,12 @@
     "build": "rimraf dist && npm run copy-static-files  && esbuild --bundle --target=es2020 --outfile=dist/_demo_bin.js --sourcemap src/index.ts"
   },
   "dependencies": {
-    "@litertjs/core": "^0.1.1",
+    "@litertjs/core": "^0.2.1",
     "lit": "^3.1.0",
     "esbuild": "^0.25.9"
   },
   "devDependencies": {
-    "@litertjs/tsconfig": "^0.1.1",
+    "@litertjs/tsconfig": "^0.2.1",
     "mkdirp": "^3.0.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.0.0"

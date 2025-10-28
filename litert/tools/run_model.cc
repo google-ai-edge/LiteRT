@@ -69,8 +69,13 @@ ABSL_FLAG(size_t, sample_size, 5,
           "of tensor.");
 ABSL_FLAG(size_t, iterations, 1,
           "The number of iterations the graph will execute.");
-ABSL_FLAG(bool, language_model, false, "Whether the model is a language model,"
+ABSL_FLAG(bool, language_model, false,
+          "Whether the model is a language model,"
           " so that the input tensors will be reasonable.");
+ABSL_FLAG(bool, enable_on_device_compilation_caching, false,
+          "Whether to enable on device compilation caching.");
+constexpr absl::string_view kCompilerCacheDir =
+    "/data/local/tmp/litert_compiler_cache";
 
 namespace litert {
 namespace {
@@ -111,6 +116,11 @@ Expected<Environment> GetEnvironment() {
     environment_options.push_back(litert::Environment::Option{
         litert::Environment::OptionTag::CompilerPluginLibraryDir,
         absl::string_view(compiler_plugin_library_dir)});
+    if (absl::GetFlag(FLAGS_enable_on_device_compilation_caching)) {
+      environment_options.push_back(litert::Environment::Option{
+          litert::Environment::OptionTag::CompilerCacheDir,
+          kCompilerCacheDir.data()});
+    }
   }
 
   return Environment::Create(absl::MakeConstSpan(environment_options));
@@ -297,7 +307,6 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto compiled_model,
                           CompiledModel::Create(env, model, options));
 
-  LITERT_ASSIGN_OR_RETURN(auto signatures, model.GetSignatures());
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 

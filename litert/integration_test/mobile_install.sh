@@ -16,17 +16,14 @@
 
 source "${0%.*}_lib.sh" || exit 1
 
-
-
 extra_args=("${@:1}")
 d_bin=$(device_bin)
 d_libs=($(device_libs))
 d_data=($(data_files))
 d_env_vars=($(exec_env_vars))
 d_args=()
-dry_run=""
 
-function parse_flags() {
+function setup_context() {
   function handle_user_data() {
     local user_data=()
     for f in "$@"; do
@@ -56,9 +53,6 @@ function parse_flags() {
     fi
   done
 }
-
-parse_flags "${extra_args[*]}"
-
 
 function print_args() {
   print_hightlight "<<< LiteRt Mobile Install Scripts >>>"
@@ -99,6 +93,8 @@ function print_args() {
 
 # # Push and execute #############################################################
 
+setup_context "${extra_args[*]}"
+
 print_args
 
 function push_file() {
@@ -127,7 +123,7 @@ done
 if [[ -n $d_bin ]]; then
   print "Pushing binary to device..."
   push_file "${d_bin}"
-  print "Running: \"${hightlight_color}adb shell ${d_env_vars} $(device_path "${d_bin}") ${extra_args[*]}${host_color}\""
+  print "Running: ${hightlight_color}\"adb shell ${d_env_vars} $(device_path "${d_bin}") ${extra_args[*]}${host_color}\""
   if [[ -z "${dry_run}" ]]; then
     adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]} 
   fi

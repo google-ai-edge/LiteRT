@@ -333,7 +333,10 @@ cc_library(
 cc_test(
     name = "litert_op_options_test",
     srcs = ["litert_op_options_test.cc"],
-    data = ["//litert/test:mlir_test_data"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
     tags = ["no_oss"],
     deps = [
         ":litert_common",

@@ -53,6 +53,9 @@ set(LITERT_RUNTIME_SOURCES
 # Runtime library
 add_library(litert_runtime STATIC ${LITERT_RUNTIME_SOURCES})
 
+set(LITERT_XNNPACK_INCLUDE_DIR "${TFLITE_BUILD_DIR}/xnnpack/include" CACHE PATH "Path to XNNPACK public headers used by LiteRT")
+set(LITERT_PTHREADPOOL_INCLUDE_DIR "${TFLITE_BUILD_DIR}/pthreadpool-source/include" CACHE PATH "Path to pthreadpool headers used by LiteRT")
+
 # Optional GPU-related sources
 if(APPLE)
   target_sources(litert_runtime PRIVATE metal_info.cc)
@@ -70,6 +73,8 @@ target_include_directories(litert_runtime
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../..>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../../..>
         $<BUILD_INTERFACE:${TENSORFLOW_SOURCE_DIR}>
+        $<BUILD_INTERFACE:${LITERT_XNNPACK_INCLUDE_DIR}>
+        $<BUILD_INTERFACE:${LITERT_PTHREADPOOL_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${TFLITE_BUILD_DIR}/opencl_headers>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

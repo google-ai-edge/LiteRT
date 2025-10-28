@@ -6,6 +6,8 @@ ci/tools/python/wheel/utils/BUILD:
 litert/build_common/special_rule.bzl:
 litert/build_common/strict.default.bzl:
 litert/compiler/BUILD:
+litert/core/util/perfetto_profiling.cc:
+litert/core/util/perfetto_profiling.h:
 litert/python/aot/core/tflxx_util.py:
 litert/samples/async_segmentation/README.md:
 litert/samples/semantic_similarity/README.md:

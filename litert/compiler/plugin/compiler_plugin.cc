@@ -48,6 +48,7 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
@@ -270,8 +271,8 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
                lib_path.c_str());
     auto plugin = LoadPlugin(lib_path, env, options);
     if (!plugin.HasValue()) {
-      LITERT_LOG(LITERT_WARNING, "Failed to load plugin at: %s",
-                 lib_path.c_str());
+      LITERT_LOG(LITERT_WARNING, "Failed to load plugin at: %s with error: %s",
+                 lib_path.c_str(), plugin.Error().Message().c_str());
       continue;
     }
     loaded_plugins.push_back(std::move(plugin.Value()));
@@ -337,6 +338,7 @@ Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
     LiteRtSubgraph subgraph, absl::string_view soc_model) {
   LiteRtOpListT ops;
   const char* soc_model_str = !soc_model.empty() ? soc_model.data() : nullptr;
+  LITERT_PERFETTO_TRACE_EVENT("CompilerPlugin Partition");
   LITERT_RETURN_IF_ERROR(plugin_api_.compiler_plugin_partition(
       plugin_handle_, soc_model_str, subgraph, &ops));
   return ops.Values();
@@ -350,6 +352,7 @@ Expected<CompiledResult> CompilerPlugin::Compile(LiteRtModel partitions,
   // important for on-device compilation, where the backend must determine the
   // SoC model based on the user device.
   const char* soc_model_str = !soc_model.empty() ? soc_model.data() : nullptr;
+  LITERT_PERFETTO_TRACE_EVENT("CompilerPlugin Compile");
   LITERT_RETURN_IF_ERROR(plugin_api_.compiler_plugin_compile(
       plugin_handle_, soc_model_str, partitions,
       &result.compiled_result_handle_));
@@ -743,6 +746,7 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
     LiteRtEnvironmentOptions env, LiteRtOptions options) {
   LITERT_ASSIGN_OR_RETURN(auto plugins, CompilerPlugin::LoadPlugins(
                                             lib_search_paths, env, options));
+  LITERT_LOG(LITERT_INFO, "Found %d plugin(s)", plugins.size());
   if (plugins.size() == 1 && soc_manufacturer.empty()) {
     // Don't check soc string if there is only one plugin, for compatibility
     // with tooling and upstreams.

@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -63,14 +64,6 @@
 #include "litert/runtime/ahwb_buffer.h"
 #endif  // LITERT_HAS_AHWB_SUPPORT
 
-// TODO(b/449784615): Include xnnpack.h instead of duplicating the macros.
-#ifndef XNN_EXTRA_BYTES
-#if defined(__hexagon__)
-#define XNN_EXTRA_BYTES 128
-#else
-#define XNN_EXTRA_BYTES 16
-#endif  // defined(__hexagon__)
-#endif  // XNN_EXTRA_BYTES
 
 using litert::BufferTypeToString;
 using litert::Expected;

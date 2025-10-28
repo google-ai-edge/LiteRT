@@ -57,7 +57,9 @@ EXPORTS
   LiteRtGetAcceleratorEnvironment
   LiteRtGetCompiledModelEnvironment
   LiteRtGetCompiledModelInputBufferRequirements
+  LiteRtGetCompiledModelInputTensorLayout
   LiteRtGetCompiledModelOutputBufferRequirements
+  LiteRtGetCompiledModelOutputTensorLayouts
   LiteRtGetCpuOptionsIdentifier
   LiteRtGetCpuOptionsNumThread
   LiteRtGetCpuOptionsXNNPackFlags

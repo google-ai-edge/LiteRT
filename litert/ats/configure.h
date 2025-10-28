@@ -178,7 +178,7 @@ class AtsConf {
   // Dump the results of the test to user.
   template <typename T>
   void Print(const T& capture) const {
-    if (!dump_report_ || compile_mode_) {
+    if (!dump_report_) {
       // Compile capture not implemented yet.
       return;
     }

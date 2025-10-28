@@ -102,3 +102,36 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+config_setting(
+    name = "litert_perfetto_enabled",
+    values = {
+        "define": "LITERT_PERFETTO_PROFILING=1",
+    },
+    visibility = ["//visibility:private"],
+)
+
+alias(
+    name = "perfetto_profiling",
+    actual = select({
+        ":litert_perfetto_enabled": ":perfetto_profiling_real",
+        "//conditions:default": ":perfetto_profiling_stub",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "perfetto_profiling_real",
+    srcs = ["perfetto_profiling.cc"],
+    hdrs = ["perfetto_profiling.h"],
+    defines = ["LITERT_PERFETTO_ENABLED"],
+    visibility = ["//visibility:private"],
+    # copybara:uncomment deps = ["//third_party/perfetto:libperfetto_client_experimental"],
+)
+
+cc_library(
+    name = "perfetto_profiling_stub",
+    srcs = ["perfetto_profiling.cc"],
+    hdrs = ["perfetto_profiling.h"],
+    visibility = ["//visibility:private"],
+)

@@ -139,6 +139,10 @@ class LiteRtCompiledModelT {
                                  output_layouts, update_allocation);
   }
 
+  // Returns the layout for an input tensor identified by signature and index.
+  litert::Expected<LiteRtLayout> GetInputTensorLayout(size_t signature_index,
+                                                      size_t input_index);
+
   // Runs the model of the given signature with the provided input/output
   // litert::TensorBuffers. If parameter `async` is true, then the model is run
   // asynchronously, if possible. Upon returning, the function sets parameter

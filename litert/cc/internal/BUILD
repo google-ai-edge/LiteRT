@@ -72,6 +72,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -138,6 +139,15 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_detail_test",
+    srcs = ["litert_detail_test.cc"],
+    deps = [
+        ":litert_detail",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

@@ -32,6 +32,7 @@
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
@@ -39,6 +40,7 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
@@ -63,15 +65,6 @@ namespace litert {
 class CompiledModel
     : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
  public:
-  // Hardware specific metrics collected by the CompiledModel.
-  struct Metrics {
-    struct Metric {
-      std::string name;
-      LiteRtAny value;
-    };
-    std::vector<Metric> metrics;
-  };
-
   CompiledModel() = default;
 
   // Creates a CompiledModel instance.
@@ -115,6 +108,16 @@ class CompiledModel
   // The provided hardware accelerator is used to select accelerator to use.
   //
   // Note: It should be specified for both JIT and AOT compiled models.
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(
+        static_cast<LiteRtHwAccelerators>(hardware_accelerators));
+    return Create(env, model, compilation_options);
+  }
+
+  [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]
   static Expected<CompiledModel> Create(
       litert::Environment& env, const litert::Model& model,
       LiteRtHwAccelerators hardware_accelerators) {
@@ -177,9 +180,9 @@ class CompiledModel
   Expected<std::vector<Layout>> GetOutputTensorLayouts(
       size_t signature_index, bool update_allocation = false) const {
     // get num tensors here
-    LITERT_ASSIGN_OR_RETURN(const Signature& signature,
-                            model_.GetSignature(signature_index));
-    int num_tensors = signature.OutputNames().size();
+    LITERT_ASSIGN_OR_RETURN(auto output_names,
+                            model_.GetSignatureOutputNames(signature_index));
+    int num_tensors = output_names.size();
     std::vector<LiteRtLayout> litert_layout_vector(num_tensors);
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputTensorLayouts(
         Get(), signature_index, num_tensors, litert_layout_vector.data(),
@@ -394,9 +397,8 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map)
       const {
     bool async = false;
-    LITERT_ASSIGN_OR_RETURN(Signature signature, model_.GetSignature(0));
-    return RunMapWithIndexHelper(/*signature_index=*/0, signature, input_map,
-                                 output_map, async);
+    return RunMapWithIndexHelper(/*signature_index=*/0, input_map, output_map,
+                                 async);
   }
 
   // Runs the model of the given signature key asynchronously, if possible, with
@@ -411,12 +413,6 @@ class CompiledModel
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async);
   }
-
-  // Starts collection of HW-specific metrics at a specific level of detail.
-  Expected<void> StartMetricsCollection(int detail_level);
-
-  // Stops collection of HW-specific metrics and report the collected metrics.
-  Expected<Metrics> StopMetricsCollection();
 
   Expected<bool> IsFullyAccelerated();
 
@@ -640,7 +636,26 @@ class CompiledModel
     return RemoveDispatchAnnotation(signature_index, key);
   }
 
- private:
+ protected:
+  // Hardware specific metrics collected by the CompiledModel.
+  struct Metrics {
+    struct Metric {
+      std::string name;
+      LiteRtAny value;
+    };
+    std::vector<Metric> metrics;
+  };
+
+  // Starts collection of HW-specific metrics at a specific level of detail.
+  //
+  // Warning: This method is only for internal use.
+  Expected<void> StartMetricsCollection(int detail_level);
+
+  // Stops collection of HW-specific metrics and report the collected metrics.
+  Expected<Metrics> StopMetricsCollection();
+  //
+  // Warning: This method is only for internal use.
+
   static bool CheckCancelledWrapper(void* data);
 
   // Returns the signature input index for the given input tensor name.
@@ -653,7 +668,7 @@ class CompiledModel
 
   // Creates a TensorBuffer with the given buffer requirements and tensor type.
   static Expected<TensorBuffer> CreateBufferImpl(
-      LiteRtEnvironment env,
+      const Environment& env,
       const TensorBufferRequirements& buffer_requirements,
       const RankedTensorType& tensor_type);
 
@@ -694,7 +709,7 @@ class CompiledModel
       bool& async) const;
 
   Expected<void> RunMapWithIndexHelper(
-      size_t signature_index, const Signature& signature,
+      size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;

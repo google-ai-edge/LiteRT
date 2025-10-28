@@ -19,8 +19,12 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_macros.h"
 
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
@@ -67,6 +71,37 @@ using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
 using testing::ElementsAre;
 
 namespace litert {
+
+class CompiledModelWithMetrics : public CompiledModel {
+ public:
+  explicit CompiledModelWithMetrics(LiteRtModel litert_model,
+                                    LiteRtCompiledModel compiled_model,
+                                    OwnHandle owned)
+      : CompiledModel(litert_model, compiled_model, owned) {}
+
+  static Expected<CompiledModelWithMetrics> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(
+        static_cast<LiteRtHwAccelerators>(hardware_accelerators));
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+    return CompiledModelWithMetrics(litert_model, compiled_model,
+                                    OwnHandle::kYes);
+  }
+
+  Expected<void> StartMetricsCollection(int detail_level) {
+    return CompiledModel::StartMetricsCollection(detail_level);
+  }
+
+  Expected<Metrics> StopMetricsCollection() {
+    return CompiledModel::StopMetricsCollection();
+  }
+};
+
 namespace {
 
 constexpr absl::string_view kPrecompiledTfliteFile =
@@ -310,17 +345,13 @@ TEST(DispatchDelegate, CompiledModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
@@ -340,8 +371,8 @@ TEST(DispatchDelegate, CompiledModel) {
   // be Ahwb.
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg0,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg0"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
@@ -350,8 +381,8 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
-      compiled_model.GetInputBufferRequirements(signature_index,
-                                                /*input_name=*/"arg1"));
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
@@ -360,18 +391,18 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
-      compiled_model.GetOutputBufferRequirements(signature_index,
-                                                 /*output_name=*/"tfl.custom"));
+      compiled_model.GetOutputBufferRequirements(
+          /*output_name=*/"tfl.custom"));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<LiteRtTensorBufferType> output_buffer_types,
       output_buffer_requirements.SupportedTypes());
   EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeAhwb));
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -380,8 +411,7 @@ TEST(DispatchDelegate, CompiledModel) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute compiled model.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model output.
   {
@@ -404,17 +434,13 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
@@ -433,10 +459,10 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   ABSL_LOG(INFO) << "First inference";
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -445,8 +471,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute the model once and check the outputs.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
@@ -472,8 +497,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 
   // Execute model a second time by reusing the same I/O buffers, to verify if
   // the buffer registration is working.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
@@ -492,10 +516,10 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   // ///////////////////////////////////////////////////////////////////////////
   ABSL_LOG(INFO) << "Third inference";
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -505,8 +529,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
 
   // Execute model a third time by using new I/O buffers, to verify if buffer
   // registration and attachment is working.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
   {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto lock_and_addr,
@@ -527,17 +550,12 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
-
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
 #if !defined(__ANDROID__)
@@ -551,10 +569,10 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -563,8 +581,7 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
 
   // Execute model.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model outputs.
   {
@@ -598,17 +615,13 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
@@ -622,13 +635,13 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModelWithMetrics::Create(env, model, HwAccelerators::Npu));
 
   // Create I/O tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, compiled_model.CreateInputBuffers(signature_index));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -640,8 +653,7 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
       compiled_model.StartMetricsCollection(/*detail_level=*/100).HasValue();
 
   // Execute compiled model.
-  LITERT_ASSERT_OK(
-      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 
   // Check model output.
   {
@@ -680,17 +692,13 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   LITERT_ASSERT_OK_AND_ASSIGN(Model model,
                               Model::CreateFromFile(model_file_path));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto signatures, model.GetSignatures());
-  EXPECT_EQ(signatures.size(), 1);
+  EXPECT_EQ(model.GetNumSignatures(), 1);
 
-  auto& signature = signatures.at(0);
-  EXPECT_EQ(signature.Key(), Model::DefaultSignatureKey());
-  size_t signature_index = 0;
-
-  auto input_names = signature.InputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
-  auto output_names = signature.OutputNames();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
   // Environment setup.
@@ -702,13 +710,11 @@ TEST(DispatchDelegate, CompiledModelAsync) {
       CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
 
   // Create and fill input and output tensor buffers.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(signature_index));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_0_cpu_addr_and_lock,
@@ -737,8 +743,7 @@ TEST(DispatchDelegate, CompiledModelAsync) {
 
   // Start the model asynchronously.
   bool async;
-  ASSERT_TRUE(compiled_model.RunAsync(signature_index, input_buffers,
-                                      output_buffers, async));
+  ASSERT_TRUE(compiled_model.RunAsync(input_buffers, output_buffers, async));
   ASSERT_TRUE(async);
   ASSERT_TRUE(output_buffers[0].HasEvent());
 

@@ -76,6 +76,7 @@ cc_library(
     srcs = ["//litert/cc:litert_custom_op_kernel.cc"],
     hdrs = ["//litert/cc:litert_custom_op_kernel.h"],
     deps = [
+        ":litert_environment",
         ":litert_tensor_buffer",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
@@ -184,6 +185,19 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
+    name = "litert_tensor_buffer_types",
+    hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
@@ -357,6 +371,7 @@ cc_library(
         "//litert/cc:litert_tensor_buffer_requirements.h",
     ],
     deps = [
+        ":litert_environment",
         ":litert_event",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -507,9 +522,11 @@ cc_library(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/cleanup",
@@ -546,6 +563,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -579,6 +597,7 @@ cc_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
+#         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",

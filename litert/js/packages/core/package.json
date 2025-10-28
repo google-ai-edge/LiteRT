@@ -1,6 +1,6 @@
 {
   "name": "@litertjs/core",
-  "version": "0.1.1",
+  "version": "0.2.1",
   "description": "LiteRT.js package",
   "publishConfig": {
     "access": "public"
@@ -29,8 +29,8 @@
     "pack": "npm pack"
   },
   "devDependencies": {
-    "@litertjs/eslint-config": "^0.1.1",
-    "@litertjs/tsconfig": "^0.1.1",
+    "@litertjs/eslint-config": "^0.2.1",
+    "@litertjs/tsconfig": "^0.2.1",
     "@tensorflow/tfjs-backend-webgpu": "^4.22.0",
     "@tensorflow/tfjs-core": "^4.22.0",
     "@types/jasmine": "^5.1.8",
@@ -46,6 +46,6 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "@litertjs/wasm-utils": "^0.1.1"
+    "@litertjs/wasm-utils": "^0.2.1"
   }
 }

@@ -21,6 +21,8 @@ Provides a flavored_cc_alias rule that forwards providers from the
 transition that sets //litert/build_common:build_include accordingly.
 """
 
+load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+
 def _flavor_transition_impl(settings, attr):
     _ignore = settings  # buildifier: disable=unused-variable
     return {"//litert/build_common:build_include": attr.build_include}
