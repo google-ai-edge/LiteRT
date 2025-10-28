@@ -150,7 +150,7 @@ export class LiteRt {
   /**
    * Returns the hash object of the shape `{value, algorithm}` for a blob.
    */
-  private static async getBlobHash (blob: Blob) {
+  private static async getBlobHash(blob: Blob) {
     const hashAlgorithmIdentifier = "SHA-256";
     // Get the contents of the blob as binary data contained in an ArrayBuffer.
     const arrayBuffer = await blob.arrayBuffer();
