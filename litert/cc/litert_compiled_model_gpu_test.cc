@@ -447,10 +447,8 @@ TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
-    Model& model, CompiledModel& compiled_model, size_t signature_index,
-    std::vector<absl::string_view> input_names) {
-  LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
-
+    Environment& env, Model& model, CompiledModel& compiled_model,
+    size_t signature_index, std::vector<absl::string_view> input_names) {
   std::vector<TensorBuffer> input_buffers;
   input_buffers.reserve(input_names.size());
   for (auto& input_name : input_names) {
@@ -474,11 +472,8 @@ Expected<std::vector<TensorBuffer>> CreateGlInputBuffers(
 // TODO(b/383176413): Add API to CompiledModel to create buffers of custom
 // buffer type.
 Expected<std::vector<TensorBuffer>> CreateGlOutputBuffers(
-    Model& model, CompiledModel& compiled_model, size_t signature_index,
-    std::vector<absl::string_view> output_names) {
-  LITERT_ASSIGN_OR_RETURN(Environment env, compiled_model.GetEnvironment());
-  LITERT_ASSIGN_OR_RETURN(auto names, compiled_model.GetEnvironment());
-
+    Environment& env, Model& model, CompiledModel& compiled_model,
+    size_t signature_index, std::vector<absl::string_view> output_names) {
   std::vector<TensorBuffer> output_buffers;
   output_buffers.reserve(output_names.size());
   for (auto& output_name : output_names) {
@@ -528,8 +523,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
 
-  auto env = litert::Environment::Create({});
-  ASSERT_TRUE(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
@@ -544,7 +538,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   options.AddOpaqueOptions(std::move(gpu_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(*env, model, options));
+                              CompiledModel::Create(env, model, options));
 
   EXPECT_EQ(model.GetNumSignatures(), 1);
   size_t signature_index = 0;
@@ -552,7 +546,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
                               model.GetSignatureInputNames(signature_index));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, CreateGlInputBuffers(model, compiled_model,
+      auto input_buffers, CreateGlInputBuffers(env, model, compiled_model,
                                                signature_index, input_names));
 
   // Fill model inputs.
@@ -572,7 +566,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
     ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,
-        Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
+        Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
     input_buffers[i].SetEvent(std::move(input_event));
   }
 
@@ -580,7 +574,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
                               model.GetSignatureOutputNames(signature_index));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_buffers,
-      CreateGlOutputBuffers(model, compiled_model, signature_index,
+      CreateGlOutputBuffers(env, model, compiled_model, signature_index,
                             output_names));
 
   compiled_model.Run(signature_index, input_buffers, output_buffers);
@@ -611,8 +605,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
       auto model,
       Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
 
-  auto env = litert::Environment::Create({});
-  ASSERT_TRUE(env);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
@@ -625,7 +618,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   options.AddOpaqueOptions(std::move(gpu_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(*env, model, options));
+                              CompiledModel::Create(env, model, options));
 
   EXPECT_EQ(model.GetNumSignatures(), 1);
   size_t signature_index = 0;
@@ -633,7 +626,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
                               model.GetSignatureInputNames(signature_index));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, CreateGlInputBuffers(model, compiled_model,
+      auto input_buffers, CreateGlInputBuffers(env, model, compiled_model,
                                                signature_index, input_names));
 
   // Fill model inputs.
@@ -653,7 +646,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
     ASSERT_EQ(buffer_type, kLiteRtTensorBufferTypeGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,
-        Event::CreateManaged(env->Get(), LiteRtEventTypeEglSyncFence));
+        Event::CreateManaged(env.Get(), LiteRtEventTypeEglSyncFence));
     input_buffers[i].SetEvent(std::move(input_event));
   }
 
@@ -661,7 +654,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
                               model.GetSignatureOutputNames(signature_index));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto output_buffers,
-      CreateGlOutputBuffers(model, compiled_model, signature_index,
+      CreateGlOutputBuffers(env, model, compiled_model, signature_index,
                             output_names));
 
   // Execute model asynchronously.

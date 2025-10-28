@@ -429,13 +429,9 @@ class CompiledModel
   // Stops collection of HW-specific metrics and report the collected metrics.
   Expected<Metrics> StopMetricsCollection();
 
+  // Returns true if the compiled model is fully accelerated with the given
+  // hardware accelerators.
   Expected<bool> IsFullyAccelerated();
-
-  // Returns the environment used to create this compiled model.
-  // The returned Environment doesn't own the underlying LiteRtEnvironment.
-  Expected<Environment> GetEnvironment() const {
-    return Environment(env_, OwnHandle::kNo);
-  }
 
   // Returns the profiler used by the compiled model.
   // The returned Profiler doesn't own the underlying LiteRtProfiler.
@@ -695,6 +691,12 @@ class CompiledModel
   // Creates a vector of TensorBuffers for the given signature subgraph.
   Expected<std::vector<TensorBuffer>> CreateInputOutputBuffers(
       size_t signature_index, bool is_input) const;
+
+  // Returns the environment used to create this compiled model.
+  // The returned Environment doesn't own the underlying LiteRtEnvironment.
+  Expected<Environment> GetEnvironment() const {
+    return Environment(env_, OwnHandle::kNo);
+  }
 
   Expected<void> RunCApiHelper(LiteRtParamIndex signature_index,
                                size_t num_input_buffers,
