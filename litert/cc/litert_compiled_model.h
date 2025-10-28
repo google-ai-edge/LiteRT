@@ -65,6 +65,15 @@ namespace litert {
 class CompiledModel
     : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
  public:
+  // Hardware specific metrics collected by the CompiledModel.
+  struct Metrics {
+    struct Metric {
+      std::string name;
+      LiteRtAny value;
+    };
+    std::vector<Metric> metrics;
+  };
+
   CompiledModel() = default;
 
   // Creates a CompiledModel instance.
@@ -414,6 +423,12 @@ class CompiledModel
     return RunMapHelper(signature_key, input_map, output_map, async);
   }
 
+  // Starts collection of HW-specific metrics at a specific level of detail.
+  Expected<void> StartMetricsCollection(int detail_level);
+
+  // Stops collection of HW-specific metrics and report the collected metrics.
+  Expected<Metrics> StopMetricsCollection();
+
   Expected<bool> IsFullyAccelerated();
 
   // Returns the environment used to create this compiled model.
@@ -636,26 +651,7 @@ class CompiledModel
     return RemoveDispatchAnnotation(signature_index, key);
   }
 
- protected:
-  // Hardware specific metrics collected by the CompiledModel.
-  struct Metrics {
-    struct Metric {
-      std::string name;
-      LiteRtAny value;
-    };
-    std::vector<Metric> metrics;
-  };
-
-  // Starts collection of HW-specific metrics at a specific level of detail.
-  //
-  // Warning: This method is only for internal use.
-  Expected<void> StartMetricsCollection(int detail_level);
-
-  // Stops collection of HW-specific metrics and report the collected metrics.
-  Expected<Metrics> StopMetricsCollection();
-  //
-  // Warning: This method is only for internal use.
-
+ private:
   static bool CheckCancelledWrapper(void* data);
 
   // Returns the signature input index for the given input tensor name.
