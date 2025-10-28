@@ -21,12 +21,12 @@
 namespace litert {
 
 enum class HwAccelerators : int {
-  Nnone = kLiteRtHwAcceleratorNone,
-  Cpu = kLiteRtHwAcceleratorCpu,
-  Gpu = kLiteRtHwAcceleratorGpu,
-  Npu = kLiteRtHwAcceleratorNpu,
+  kNone = kLiteRtHwAcceleratorNone,
+  kCpu = kLiteRtHwAcceleratorCpu,
+  kGpu = kLiteRtHwAcceleratorGpu,
+  kNpu = kLiteRtHwAcceleratorNpu,
 #if defined(__EMSCRIPTEN__)
-  WebNn = kLiteRtHwAcceleratorWebNn,
+  kWebNn = kLiteRtHwAcceleratorWebNn,
 #endif  // __EMSCRIPTEN__
 };
 
