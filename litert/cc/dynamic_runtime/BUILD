@@ -194,6 +194,19 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_tensor_buffer_types",
+    hdrs = ["//litert/cc:litert_tensor_buffer_types.h"],
+    visibility = ["//litert:litert_public"],
+    deps = [] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
     name = "litert_rewriter",
     srcs = ["//litert/cc/internal:litert_rewriter.cc"],
     hdrs = ["//litert/cc/internal:litert_rewriter.h"],

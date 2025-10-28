@@ -1301,6 +1301,16 @@ cc_library(
     }) + gles_headers(),
 )
 
+cc_library(
+    name = "litert_tensor_buffer_types",
+    srcs = ["litert_tensor_buffer_types.cc"],
+    hdrs = ["litert_tensor_buffer_types.h"],
+    deps = [
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc/internal:litert_tensor_buffer_utils",
+    ],
+)
+
 exports_files(glob([
     "*.h",
     "*.cc",
