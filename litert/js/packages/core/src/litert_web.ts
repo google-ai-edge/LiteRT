@@ -150,10 +150,8 @@ export class LiteRt {
   /**
    * Returns the hash object of the shape `{value, algorithm}` for a blob.
    */
-  private static async getBlobHash(blob: Blob) {
+  private static async getResourceHash(arrayBuffer: ArrayBuffer) {
     const hashAlgorithmIdentifier = "SHA-256";
-    // Get the contents of the blob as binary data contained in an ArrayBuffer.
-    const arrayBuffer = await blob.arrayBuffer();
     // Hash the arrayBuffer using SHA-256.
     const hashBuffer = await crypto.subtle.digest(
       hashAlgorithmIdentifier,
@@ -172,19 +170,19 @@ export class LiteRt {
 
   /**
    * Stores a resource in Cross-Origin Storage.
-   * @param blob
+   * @param arrayBuffer
    */
-  private static async storeResourceInCrossOriginStorage(blob: Blob) {
+  private static async storeResourceInCrossOriginStorage(arrayBuffer: ArrayBuffer) {
     let hash;
     try {
-      hash = await LiteRt.getBlobHash(blob);
+      hash = await LiteRt.getResourceHash(arrayBuffer);
       // @ts-expect-error Injected by an extension.
       const [handle] = await navigator.crossOriginStorage.requestFileHandles(
         [hash],
         { create: true },
       );
       const writableStream = await handle.createWritable();
-      await writableStream.write(blob);
+      await writableStream.write(arrayBuffer);
       await writableStream.close();
       console.log(`Resource with hash "${hash.value}" stored in Cross-Origin Storage.`);
     } catch (error) {
@@ -196,10 +194,11 @@ export class LiteRt {
     // TODO(msoulanille): Streaming support for model loading once C++ supports
     // it.
     const response = await fetch(url);
+    const arrayBuffer = await response.arrayBuffer();
     if (LiteRt.supportsCrossOriginStorage()) {
-      await LiteRt.storeResourceInCrossOriginStorage(await response.clone().blob())
+      await LiteRt.storeResourceInCrossOriginStorage(arrayBuffer)
     }
-    return new Uint8Array(await response.arrayBuffer());
+    return new Uint8Array(arrayBuffer);
   }
 
   private static async readableStreamToUint8Array(
