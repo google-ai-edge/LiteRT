@@ -651,6 +651,16 @@ class CompiledModel
     return RemoveDispatchAnnotation(signature_index, key);
   }
 
+  ///  \internal Wraps a LiteRtCompiledModel C object in a CompiledModel C++
+  ///  object.
+  ///
+  /// Warning: This is internal use only.
+  static CompiledModel WrapCObject(LiteRtModel litert_model,
+                                   LiteRtCompiledModel compiled_model,
+                                   OwnHandle owned) {
+    return CompiledModel(litert_model, compiled_model, owned);
+  }
+
  private:
   static bool CheckCancelledWrapper(void* data);
 

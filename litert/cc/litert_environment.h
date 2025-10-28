@@ -120,6 +120,13 @@ class Environment
     return is_supported;
   }
 
+  ///  \internal Wraps a LiteRtEnvironment C object in a Environment C++ object.
+  ///
+  /// Warning: This is internal use only.
+  static Environment WrapCObject(LiteRtEnvironment env, OwnHandle owned) {
+    return Environment(env, owned);
+  }
+
  private:
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {

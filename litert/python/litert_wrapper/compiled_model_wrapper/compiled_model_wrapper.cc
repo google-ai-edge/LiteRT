@@ -435,8 +435,8 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
     if (!ptr) {
       return ReportError("capsule missing pointer in input_map");
     }
-    in_map[nm] =
-        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    in_map[nm] = TensorBuffer::WrapCObject(static_cast<LiteRtTensorBuffer>(ptr),
+                                           OwnHandle::kNo);
   }
 
   pos = 0;
@@ -454,8 +454,8 @@ PyObject* CompiledModelWrapper::RunByName(const char* signature_key,
     if (!ptr) {
       return ReportError("capsule missing pointer in output_map");
     }
-    out_map[nm] =
-        TensorBuffer(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    out_map[nm] = TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
   }
 
   if (auto run_or = compiled_model_.Run(signature_key, in_map, out_map);
@@ -489,7 +489,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in input capsule");
     }
-    inputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    inputs.emplace_back(TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo));
   }
 
   Py_ssize_t n_out = PyList_Size(output_caps_list);
@@ -504,7 +505,8 @@ PyObject* CompiledModelWrapper::RunByIndex(int signature_index,
     if (!ptr) {
       return ReportError("Missing pointer in output capsule");
     }
-    outputs.emplace_back(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+    outputs.emplace_back(TensorBuffer::WrapCObject(
+        static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo));
   }
 
   if (auto run_or = compiled_model_.Run(static_cast<size_t>(signature_index),

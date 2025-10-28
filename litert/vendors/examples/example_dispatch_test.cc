@@ -185,7 +185,8 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
   LITERT_ASSERT_OK(
       Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
-  TensorBufferRequirements req(requirements, OwnHandle::kYes);
+  auto req =
+      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
   EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 }
@@ -196,7 +197,8 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
   LITERT_ASSERT_OK(
       Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
-  TensorBufferRequirements req(requirements, OwnHandle::kYes);
+  auto req =
+      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
   EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
 }

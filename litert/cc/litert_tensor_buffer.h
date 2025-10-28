@@ -484,6 +484,15 @@ class TensorBuffer
     std::memcpy(data.data(), host_mem_addr, total_read_size);
     return {};
   }
+
+  /// \internal  Wraps a LiteRtTensorBuffer C object in a TensorBuffer C++
+  /// object.
+  ///
+  /// Warning: This is internal use only.
+  static TensorBuffer WrapCObject(LiteRtTensorBuffer tensor_buffer,
+                                  OwnHandle owned) {
+    return TensorBuffer(tensor_buffer, owned);
+  }
 };
 
 class TensorBufferScopedLock {

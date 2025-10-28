@@ -1039,6 +1039,7 @@ flavored_cc_alias(
 #         ":litert_layout",
 #         ":litert_macros",
 #         ":litert_model",
+#         ":litert_ranked_tensor_type",
 #         ":litert_tensor_buffer",
 #         "@com_google_googletest//:gtest_main",
 #         "@com_google_absl//absl/debugging:leak_check",

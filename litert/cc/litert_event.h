@@ -145,6 +145,13 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
     LiteRtGetEventEventType(Get(), &type);
     return type;
   }
+
+  ///  \internal Wraps a LiteRtEvent C object in a Event C++ object.
+  ///
+  /// Warning: This is internal use only.
+  static Event WrapCObject(LiteRtEvent event, OwnHandle owned) {
+    return Event(event, owned);
+  }
 };
 
 }  // namespace litert

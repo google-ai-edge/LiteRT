@@ -64,8 +64,8 @@ class LiteRtDispatchDeviceContextT {
   }
 
   ::litert::TensorBuffer Lookup(BufferHandle handle) {
-    return ::litert::TensorBuffer(registered_buffers_[handle],
-                                  ::litert::OwnHandle::kNo);
+    return ::litert::TensorBuffer::WrapCObject(registered_buffers_[handle],
+                                               ::litert::OwnHandle::kNo);
   }
 
  private:

@@ -43,7 +43,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
   auto input_span = absl::MakeConstSpan(input_array, num_elements);
 
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto write_result = tensor_buffer.Write<jint>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
@@ -61,7 +62,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFloat(
   auto input_span = absl::MakeConstSpan(input_array, num_elements);
 
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto write_result = tensor_buffer.Write<jfloat>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
@@ -81,7 +83,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt8(JNIEnv* env,
   auto input_span = absl::MakeConstSpan(input_array, num_elements);
 
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto write_result = tensor_buffer.Write<jbyte>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
@@ -99,7 +102,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteBoolean(
   auto input_span = absl::MakeConstSpan(input_array, num_elements);
 
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto write_result = tensor_buffer.Write<jboolean>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
@@ -119,7 +123,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
   auto input_span = absl::MakeConstSpan(input_array, num_elements);
 
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto write_result = tensor_buffer.Write<jlong>(input_span);
   if (!write_result) {
     LITERT_LOG(LITERT_ERROR, "Failed to write tensor buffer: %s",
@@ -134,7 +139,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                                                           jclass clazz,
                                                           jlong handle) {
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto tensor_type = tensor_buffer.TensorType();
   if (!tensor_type) {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
@@ -163,7 +169,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadFloat(JNIEnv* env,
                                                             jclass clazz,
                                                             jlong handle) {
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto tensor_type = tensor_buffer.TensorType();
   if (!tensor_type) {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
@@ -193,7 +200,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt8(JNIEnv* env,
                                                            jclass clazz,
                                                            jlong handle) {
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto tensor_type = tensor_buffer.TensorType();
   if (!tensor_type) {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
@@ -223,7 +231,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadBoolean(JNIEnv* env,
                                                               jclass clazz,
                                                               jlong handle) {
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto tensor_type = tensor_buffer.TensorType();
   if (!tensor_type) {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",
@@ -253,7 +262,8 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeReadLong(JNIEnv* env,
                                                            jclass clazz,
                                                            jlong handle) {
   auto tb = reinterpret_cast<LiteRtTensorBuffer>(handle);
-  auto tensor_buffer = litert::TensorBuffer(tb, litert::OwnHandle::kNo);
+  auto tensor_buffer =
+      litert::TensorBuffer::WrapCObject(tb, litert::OwnHandle::kNo);
   auto tensor_type = tensor_buffer.TensorType();
   if (!tensor_type) {
     LITERT_LOG(LITERT_ERROR, "Failed to get tensor type: %s",

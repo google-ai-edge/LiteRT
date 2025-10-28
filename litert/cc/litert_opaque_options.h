@@ -103,6 +103,15 @@ class OpaqueOptions
   Expected<void> SetHash(LiteRtOpaqueOptionsHashFunc payload_hash_func);
 
   Expected<uint64_t> Hash() const;
+
+  ///  \internal  Wraps a LiteRtOpaqueOptions C object in a OpaqueOptions C++
+  ///  object.
+  ///
+  /// Warning: This is internal use only.
+  static OpaqueOptions WrapCObject(LiteRtOpaqueOptions options,
+                                   OwnHandle owned) {
+    return OpaqueOptions(options, owned);
+  }
 };
 
 // Find the opaque option in the chain that matches the provided identifier.

@@ -110,6 +110,15 @@ class TensorBufferRequirements
   friend Expected<TensorBufferRequirements> Join(
       const TensorBufferRequirements& src1,
       const TensorBufferRequirements& src2);
+
+  ///  \internal Wraps a LiteRtTensorBufferRequirements C object in a
+  /// TensorBufferRequirements C++ object.
+  ///
+  /// Warning: This is internal use only.
+  static TensorBufferRequirements WrapCObject(
+      LiteRtTensorBufferRequirements requirements, OwnHandle owned) {
+    return TensorBufferRequirements(requirements, owned);
+  }
 };
 
 inline Expected<TensorBufferRequirements> Join(
