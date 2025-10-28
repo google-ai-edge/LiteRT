@@ -19,8 +19,12 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_macros.h"
 
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
@@ -67,6 +71,37 @@ using Fence = std::shared_ptr<platforms::darwinn::tachyon::Fence>;
 using testing::ElementsAre;
 
 namespace litert {
+
+class CompiledModelWithMetrics : public CompiledModel {
+ public:
+  explicit CompiledModelWithMetrics(LiteRtModel litert_model,
+                                    LiteRtCompiledModel compiled_model,
+                                    OwnHandle owned)
+      : CompiledModel(litert_model, compiled_model, owned) {}
+
+  static Expected<CompiledModelWithMetrics> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(
+        static_cast<LiteRtHwAccelerators>(hardware_accelerators));
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+    return CompiledModelWithMetrics(litert_model, compiled_model,
+                                    OwnHandle::kYes);
+  }
+
+  Expected<void> StartMetricsCollection(int detail_level) {
+    return CompiledModel::StartMetricsCollection(detail_level);
+  }
+
+  Expected<Metrics> StopMetricsCollection() {
+    return CompiledModel::StopMetricsCollection();
+  }
+};
+
 namespace {
 
 constexpr absl::string_view kPrecompiledTfliteFile =
@@ -600,7 +635,7 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModelWithMetrics::Create(env, model, HwAccelerators::Npu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
