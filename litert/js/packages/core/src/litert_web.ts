@@ -186,7 +186,7 @@ export class LiteRt {
       await writableStream.close();
       console.log(`Resource with hash "${hash.value}" stored in Cross-Origin Storage.`);
     } catch (error) {
-      console.warn(`Storing of resource with hash "${hash}" failed.`, error);
+      console.warn(`Storing of resource with hash "${hash?.value || 'unknown'}" failed.`, error);
     }
   }
 
