@@ -68,7 +68,8 @@ enum class TensorBufferType {
   kVulkanBufferPacked = kLiteRtTensorBufferTypeVulkanBufferPacked,
 };
 
-std::string BufferTypeToString(TensorBufferType buffer_type);
+// TODO(b/454666070): Rename to BufferTypeToString once the C version is gone.
+std::string BufferTypeToStringCC(TensorBufferType buffer_type);
 
 inline bool IsOpenClMemory(TensorBufferType buffer_type) {
   return IsOpenClMemory(static_cast<LiteRtTensorBufferType>(buffer_type));

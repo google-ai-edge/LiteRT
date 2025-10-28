@@ -26,6 +26,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -40,6 +41,14 @@ Expected<TensorBuffer> TensorBuffer::Duplicate() const {
   }
   LITERT_RETURN_IF_ERROR(LiteRtDuplicateTensorBuffer(Get()));
   return TensorBuffer(Get(), OwnHandle::kYes);
+}
+
+Expected<TensorBuffer> TensorBuffer::CreateManaged(
+    const Environment& env, TensorBufferType buffer_type,
+    const RankedTensorType& tensor_type, size_t buffer_size) {
+  return CreateManaged(env.Get(),
+                       static_cast<LiteRtTensorBufferType>(buffer_type),
+                       tensor_type, buffer_size);
 }
 
 Expected<TensorBuffer> TensorBuffer::CreateManaged(
@@ -103,6 +112,14 @@ Expected<TensorBuffer> TensorBuffer::CreateFromAhwb(
 
 Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
     const Environment& env, const RankedTensorType& tensor_type,
+    TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
+  return CreateFromClBuffer(env, tensor_type,
+                            static_cast<LiteRtTensorBufferType>(buffer_type),
+                            cl_memory, size_bytes);
+}
+
+Expected<TensorBuffer> TensorBuffer::CreateFromClBuffer(
+    const Environment& env, const RankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes) {
 #if LITERT_HAS_OPENCL_SUPPORT
   LiteRtTensorBuffer tensor_buffer;
@@ -140,6 +157,14 @@ Expected<TensorBuffer> TensorBuffer::CreateFromGlTexture(
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 #if LITERT_HAS_METAL_SUPPORT
+Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
+    const Environment& env, const RankedTensorType& tensor_type,
+    TensorBufferType buffer_type, void* buffer, size_t size_bytes) {
+  return CreateFromMetalBuffer(env, tensor_type,
+                               static_cast<LiteRtTensorBufferType>(buffer_type),
+                               buffer, size_bytes);
+}
+
 Expected<TensorBuffer> TensorBuffer::CreateFromMetalBuffer(
     const Environment& env, const RankedTensorType& tensor_type,
     LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes) {

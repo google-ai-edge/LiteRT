@@ -35,6 +35,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -57,6 +58,12 @@ class TensorBuffer
 
   // Creates a managed TensorBuffer object in a given buffer type and size.
   // The returned object is owned by the caller.
+  static Expected<TensorBuffer> CreateManaged(
+      const Environment& env, TensorBufferType buffer_type,
+      const RankedTensorType& tensor_type, size_t buffer_size);
+
+  [[deprecated(
+      "Use the overload that takes litert::TensorBufferType instead.")]]
   static Expected<TensorBuffer> CreateManaged(
       const Environment& env, LiteRtTensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
@@ -134,6 +141,12 @@ class TensorBuffer
 
   static Expected<TensorBuffer> CreateFromClBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
+      TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
+
+  [[deprecated(
+      "Use the overload that takes litert::TensorBufferType instead.")]]
+  static Expected<TensorBuffer> CreateFromClBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
 
   static Expected<TensorBuffer> CreateFromGlBuffer(
@@ -156,6 +169,12 @@ class TensorBuffer
       size_t size_bytes, LiteRtGLint layer);
 
 #if LITERT_HAS_METAL_SUPPORT
+  static Expected<TensorBuffer> CreateFromMetalBuffer(
+      const Environment& env, const RankedTensorType& tensor_type,
+      TensorBufferType buffer_type, void* buffer, size_t size_bytes);
+
+  [[deprecated(
+      "Use the overload that takes litert::TensorBufferType instead.")]]
   static Expected<TensorBuffer> CreateFromMetalBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes);
@@ -283,6 +302,17 @@ class TensorBuffer
     return gl_texture;
   }
 
+  // TODO(b/454666070): Rename to BufferType after removing deprecated
+  // BufferType function below.
+  Expected<TensorBufferType> BufferTypeCC() const {
+    LiteRtTensorBufferType tensor_buffer_type;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferType(Get(), &tensor_buffer_type));
+    return static_cast<enum TensorBufferType>(tensor_buffer_type);
+  }
+
+  [[deprecated(
+      "Use the overload that returns litert::TensorBufferType instead.")]]
   Expected<LiteRtTensorBufferType> BufferType() const {
     LiteRtTensorBufferType tensor_buffer_type;
     LITERT_RETURN_IF_ERROR(
