@@ -530,6 +530,17 @@ class TensorBufferScopedLock {
                           static_cast<T*>(host_mem_addr));
   }
 
+  // Creates a read-only lock on the tensor buffer.
+  //
+  // This method is introduced to create absl::MakeConstSpan() with non const
+  // data types. The returned data is not a const pointer, but you should not
+  // modify it.
+  template <typename T = void>
+  static Expected<std::pair<TensorBufferScopedLock, T*>> CreateReadOnly(
+      const TensorBuffer& tensor_buffer) {
+    return Create<T>(tensor_buffer.Get(), TensorBuffer::LockMode::kRead);
+  }
+
  private:
   explicit TensorBufferScopedLock(LiteRtTensorBuffer& tensor_buffer)
       : tensor_buffer_(tensor_buffer) {}
