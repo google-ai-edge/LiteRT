@@ -2573,10 +2573,13 @@ cc_test(
     ],
     tags = ["tflite_nnapi"],
     deps = [
+        ":kernel_util",
         ":test_main",
         ":test_util",
         "//tflite:string",
         "//tflite/core/c:common",
+        "//tflite/kernels/internal:tensor_ctypes",
+        "//tflite/kernels/internal:tensor_utils_no_eigen",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@eigen_archive//:eigen3",
