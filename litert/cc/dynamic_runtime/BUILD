@@ -447,6 +447,7 @@ cc_library(
     deps = [
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
     ] + select({

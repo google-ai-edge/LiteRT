@@ -26,6 +26,7 @@
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 
 namespace litert {
 
@@ -71,6 +72,24 @@ class TensorBufferRequirements
     return TensorBufferRequirements(tensor_buffer_requirements, owned);
   }
 
+  // TODO(b/454666070) Rename to SupportedTypes once the old one is deprecated.
+  Expected<std::vector<TensorBufferType>> SupportedTypesCC() const {
+  int num_types;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes(Get(),
+                                                                 &num_types));
+    std::vector<TensorBufferType> types(num_types);
+    for (auto i = 0; i < num_types; ++i) {
+      LiteRtTensorBufferType type;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetTensorBufferRequirementsSupportedTensorBufferType(
+              Get(), i, &type));
+      types[i] = static_cast<TensorBufferType>(type);
+    }
+    return types;
+  }
+
+  [[deprecated("Use SupportedTypesCC instead")]]
   Expected<std::vector<LiteRtTensorBufferType>> SupportedTypes() const {
     int num_types;
     LITERT_RETURN_IF_ERROR(
