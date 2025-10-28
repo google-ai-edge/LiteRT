@@ -263,6 +263,11 @@ class MMapWeightCacheProvider {
     return building_run_;
   };
 
+  // If the cache is being built, this signals that all of the building
+  // operations are done and that `CanStartBuildStep()` should now return
+  // `false`.
+  void FinishBuild() { building_run_ = false; }
+
   // Prepares to add new data to the cache.
   [[nodiscard /*Updating cache data may fail.*/]]
   bool StartBuildStep();
