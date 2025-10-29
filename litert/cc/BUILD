@@ -944,6 +944,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_handle",
         "@com_google_absl//absl/types:span",
