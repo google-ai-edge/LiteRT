@@ -25,9 +25,9 @@
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 
 namespace litert {
 

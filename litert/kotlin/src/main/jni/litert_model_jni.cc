@@ -33,9 +33,9 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_model.h"
 #include "litert/kotlin/src/main/jni/litert_jni_common.h"
 #include "litert/kotlin/src/main/jni/litert_model_wrapper.h"
 
@@ -195,7 +195,7 @@ jobject GetTensorType(JNIEnv* env, bool is_input, jlong handle, jstring name,
                          "Invalid model handle");
     return nullptr;
   }
-  auto model = Model::CreateFromNonOwnedHandle(wrapper->model);
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(wrapper->model);
   auto subgraph =
       signature_str ? model.Subgraph(signature_str) : model.MainSubgraph();
   if (!subgraph) {

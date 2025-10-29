@@ -39,12 +39,12 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/graph_validation.h"
@@ -69,7 +69,7 @@ using ::testing::Values;
 using ::testing::litert::IsError;
 using ::testing::litert::IsOkAndHolds;
 
-using ModelFactory = std::function<Expected<Model>()>;
+using ModelFactory = std::function<Expected<ExtendedModel>()>;
 
 static constexpr absl::string_view kAddSimple = "add_simple.tflite";
 static constexpr absl::string_view kAddCst = "add_cst.tflite";
@@ -91,8 +91,8 @@ GetTestBufferCache() {
 }
 
 // Load a model, then serialize and re-load. Used to test serialization.
-Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
-  auto model = Model::CreateFromFile(GetTestFilePath(filename));
+Expected<ExtendedModel> LoadModelThroughRoundTrip(absl::string_view filename) {
+  auto model = ExtendedModel::CreateFromFile(GetTestFilePath(filename));
   if (!model) {
     return model.Error();
   }
@@ -114,7 +114,7 @@ Expected<Model> LoadModelThroughRoundTrip(absl::string_view filename) {
   LITERT_RETURN_IF_ERROR(LiteRtCreateModelFromBuffer(
       cached_buf.Data(), cached_buf.Size(), &result));
 
-  return Model::CreateFromOwnedHandle(result);
+  return ExtendedModel::CreateFromOwnedHandle(result);
 }
 
 ModelFactory MakeRoundTripFactory(absl::string_view filename) {
@@ -122,7 +122,9 @@ ModelFactory MakeRoundTripFactory(absl::string_view filename) {
 }
 
 ModelFactory MakeLoadFactory(absl::string_view filename) {
-  return [=]() { return Model::CreateFromFile(GetTestFilePath(filename)); };
+  return [=]() {
+    return ExtendedModel::CreateFromFile(GetTestFilePath(filename));
+  };
 }
 
 // Test fixture parameterized by a file path to test model.
@@ -136,7 +138,7 @@ class TestWithModelPath : public ::testing::TestWithParam<absl::string_view> {
 // Test fixture pareterized by a function that loads a model.
 class TestWithModelFactory : public ::testing::TestWithParam<ModelFactory> {
  protected:
-  Expected<Model> LoadModel() { return GetParam()(); }
+  Expected<ExtendedModel> LoadModel() { return GetParam()(); }
 };
 
 // Simple tests

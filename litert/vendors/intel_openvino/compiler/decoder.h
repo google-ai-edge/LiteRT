@@ -21,8 +21,8 @@
 #include <vector>
 
 #include "litert/c/internal/litert_logging.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 
 namespace litert {
 namespace openvino {

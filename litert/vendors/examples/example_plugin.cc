@@ -24,11 +24,11 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_rewriter.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/examples/example_common.h"
 #include "litert/vendors/examples/example_transformations.h"
@@ -271,7 +271,7 @@ LiteRtStatus CompileSinglePartition(LiteRtParamIndex partition_index,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
   result->byte_code.resize(num_partitions);

@@ -38,7 +38,7 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@neuro_pilot//:v8_latest_host_headers",
@@ -61,7 +61,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/strings:str_format",
     ],
@@ -83,7 +83,7 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "@neuro_pilot//:v8_latest_host_headers",
     ],
 )
@@ -102,7 +102,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -121,7 +121,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -140,7 +140,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -161,7 +161,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "@com_google_absl//absl/types:span",
     ],
@@ -181,7 +181,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -200,7 +200,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -219,7 +219,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -238,7 +238,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -257,7 +257,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -277,7 +277,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -296,7 +296,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -315,7 +315,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -334,7 +334,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -353,7 +353,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -372,7 +372,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -392,7 +392,7 @@ cc_library(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -411,7 +411,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -431,7 +431,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )
@@ -450,7 +450,7 @@ cc_library(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/vendors/mediatek:neuron_adapter_api",
     ],
 )

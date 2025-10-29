@@ -32,9 +32,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/cc/options_helper.h"
@@ -311,7 +311,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       partitions == nullptr || compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
   LITERT_LOG(LITERT_INFO,
              "Starting GoogleTensor Compilation for %d subgraphs, soc_model=%s",

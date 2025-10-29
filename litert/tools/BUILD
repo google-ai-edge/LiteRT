@@ -681,7 +681,7 @@ cc_binary(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/core:dispatch_op_schema",
         "//litert/core/model",
         "@com_google_absl//absl/flags:flag",

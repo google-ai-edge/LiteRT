@@ -27,10 +27,10 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/model.h"
 #include "litert/tools/tool_display.h"
@@ -65,7 +65,8 @@ Expected<void> ExtractBytecode(const std::string& model_path) {
 
   // Load the model from the buffer.
   BufferRef<uint8_t> buffer_ref(buffer.data(), buffer.size());
-  LITERT_ASSIGN_OR_ABORT(auto model_obj, Model::CreateFromBuffer(buffer_ref));
+  LITERT_ASSIGN_OR_ABORT(auto model_obj,
+                         ExtendedModel::CreateFromBuffer(buffer_ref));
 
   size_t dispatch_count = 0;
   for (auto i = 0; i < model_obj.NumSubgraphs(); ++i) {

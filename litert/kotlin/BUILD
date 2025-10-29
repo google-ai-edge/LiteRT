@@ -73,7 +73,7 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//tflite/java/jni",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",

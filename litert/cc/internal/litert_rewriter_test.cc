@@ -26,10 +26,10 @@
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 

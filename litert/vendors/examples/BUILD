@@ -40,7 +40,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_op_options",
         "@com_google_absl//absl/strings:str_format",
     ],
@@ -63,7 +63,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
@@ -91,7 +91,7 @@ cc_test(
     deps = [
         ":example_plugin",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/core/model:model_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -141,7 +141,7 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
@@ -158,7 +158,7 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
@@ -204,7 +204,7 @@ cc_library(
     hdrs = ["example_transformations.h"],
     deps = [
         "//litert/c:litert_runtime_c_api_shared_lib",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_rewriter",
     ],
 )

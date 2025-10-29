@@ -129,7 +129,7 @@ cc_test(
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
+        "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_model_predicates",
         "//litert/core:dispatch_op_schema",
         "//litert/core/util:flatbuffer_tools",

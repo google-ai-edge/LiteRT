@@ -19,8 +19,8 @@
 
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_model.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 #define MAX_OEM_OP_STRING_LEN 100

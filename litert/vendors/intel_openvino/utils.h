@@ -5,7 +5,7 @@
 #define ODML_LITERT_LITERT_VENDORS_OPENVINO_UTILS_H_
 #include "openvino/frontend/tensorflow_lite/decoder.hpp"
 #include "litert/c/litert_model.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 
 namespace litert {
 namespace openvino {

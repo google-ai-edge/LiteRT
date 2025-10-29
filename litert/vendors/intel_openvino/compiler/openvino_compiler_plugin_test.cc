@@ -24,7 +24,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/test_models.h"

@@ -26,7 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/options/litert_qualcomm_options.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/model/model.h"

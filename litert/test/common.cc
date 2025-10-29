@@ -31,9 +31,9 @@
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/core/interpreter_builder.h"
@@ -115,9 +115,9 @@ std::string GetLiteRtPath(absl::string_view rel_path) {
   }
 }
 
-Model LoadTestFileModel(absl::string_view filename) {
-  LITERT_ASSIGN_OR_ABORT(auto model,
-                         Model::CreateFromFile(GetTestFilePath(filename)));
+ExtendedModel LoadTestFileModel(absl::string_view filename) {
+  LITERT_ASSIGN_OR_ABORT(
+      auto model, ExtendedModel::CreateFromFile(GetTestFilePath(filename)));
   return model;
 }
 

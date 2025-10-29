@@ -21,7 +21,8 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
 namespace {

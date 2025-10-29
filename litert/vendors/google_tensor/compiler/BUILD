@@ -56,7 +56,7 @@ litert_dynamic_lib(
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
-        "//litert/cc/dynamic_runtime:litert_model",
+        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/google_tensor:adapter",

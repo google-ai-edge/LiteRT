@@ -33,10 +33,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
@@ -522,7 +522,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     }
   };
 
-  auto model = litert::Model::CreateFromNonOwnedHandle(partitions);
+  auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
   LITERT_LOG(LITERT_INFO,
