@@ -25,7 +25,6 @@ load("@rules_cc//cc:cc_shared_library.bzl", "cc_shared_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("//litert/build_common:flavor_transition.bzl", "flavored_cc_alias")
 load(
     "//litert/build_common:litert_build_defs.bzl",
     "copy_file",
@@ -126,31 +125,6 @@ cc_library(
     ],
     # Keep symbols in libLiteRtRuntimeCApi.dylib.
     alwayslink = 1,
-)
-
-# Flavor aliases for environment to select CPU/GPU/NPU
-flavored_cc_alias(
-    name = "litert_environment_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
-)
-
-flavored_cc_alias(
-    name = "litert_environment_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
-)
-
-flavored_cc_alias(
-    name = "litert_environment_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
 )
 
 cc_library(
@@ -266,30 +240,6 @@ cc_library(
 )
 
 # Flavor aliases for model (NPU serialization gated by flavor)
-flavored_cc_alias(
-    name = "litert_model_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_model_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_model_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
-)
-
 cc_test(
     name = "litert_model_test",
     srcs = ["litert_model_test.cc"],
@@ -414,31 +364,6 @@ cc_library(
     alwayslink = 1,
 )
 
-# Flavor aliases for C API tensor_buffer convenience
-flavored_cc_alias(
-    name = "litert_tensor_buffer_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "litert_tensor_buffer_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "litert_tensor_buffer_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
-)
-
 cc_test(
     name = "litert_tensor_buffer_test",
     srcs = ["litert_tensor_buffer_test.cc"],
@@ -498,30 +423,6 @@ cc_test(
         "//litert/cc:litert_macros",
         "@com_google_googletest//:gtest_main",
     ],
-)
-
-flavored_cc_alias(
-    name = "litert_compiled_model_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_compiled_model_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_compiled_model_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
 )
 
 cc_library(
@@ -767,32 +668,6 @@ cc_shared_library(
     deps = [":litert_runtime_c_api_so_shim"],
 )
 
-# Flavor-specific wrappers for the .so producer itself so dependents can
-# select flavors without CLI flags.
-flavored_cc_alias(
-    name = "litert_runtime_c_api_so_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_so"],
-)
-
-flavored_cc_alias(
-    name = "litert_runtime_c_api_so_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_so"],
-)
-
-flavored_cc_alias(
-    name = "litert_runtime_c_api_so_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_so"],
-)
-
 macos_dylib(
     name = "build_litert_runtime_c_api_dylib",
     exported_symbols_lists = export_lrt_runtime_only_script(),
@@ -955,31 +830,6 @@ cc_library(
         "@platforms//os:windows": [":litert_runtime_c_api_import"],
         "//conditions:default": [],
     }),
-)
-
-# Flavor-specific aliases for the header-only wrapper as consumer convenience.
-flavored_cc_alias(
-    name = "litert_runtime_c_api_shared_lib_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_shared_lib"],
-)
-
-flavored_cc_alias(
-    name = "litert_runtime_c_api_shared_lib_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_shared_lib"],
-)
-
-flavored_cc_alias(
-    name = "litert_runtime_c_api_shared_lib_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_runtime_c_api_shared_lib"],
 )
 
 # copybara:uncomment_begin(google-only)

@@ -14,7 +14,6 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
-load("//litert/build_common:flavor_transition.bzl", "flavored_cc_alias")
 load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps")
 load(
     "//litert/build_common:special_rule.bzl",
@@ -279,31 +278,6 @@ cc_library(
         ],
         "//conditions:default": [],
     }) + litert_metal_deps(),
-)
-
-# Flavor aliases for tensor_buffer
-flavored_cc_alias(
-    name = "tensor_buffer_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "tensor_buffer_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "tensor_buffer_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":tensor_buffer"],
 )
 
 cc_library(
@@ -610,31 +584,6 @@ cc_library(
         "//litert:without_builtin_ops": [],
         "//conditions:default": ["//tflite/kernels:builtin_ops"],
     }),
-)
-
-# Flavor aliases for compiled_model
-flavored_cc_alias(
-    name = "compiled_model_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "compiled_model_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "compiled_model_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":compiled_model"],
 )
 
 cc_test(

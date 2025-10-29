@@ -16,7 +16,6 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("//litert/build_common:flavor_transition.bzl", "flavored_cc_alias")
 load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vis")
 load("//litert/build_common:special_rule.bzl", "gles_headers", "gles_linkopts", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
@@ -298,31 +297,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
-)
-
-# Flavor aliases for CC compiled model
-flavored_cc_alias(
-    name = "litert_compiled_model_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_compiled_model_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_compiled_model_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_compiled_model"],
 )
 
 # copybara:uncomment_begin(google-only)
@@ -734,30 +708,6 @@ cc_library_with_testonly_vis(
 )
 
 # Flavor aliases for CC environment
-flavored_cc_alias(
-    name = "litert_environment_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
-)
-
-flavored_cc_alias(
-    name = "litert_environment_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
-)
-
-flavored_cc_alias(
-    name = "litert_environment_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_environment"],
-)
-
 cc_test(
     name = "litert_environment_test",
     srcs = ["litert_environment_test.cc"],
@@ -847,31 +797,6 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
     ],
-)
-
-# Flavor aliases for CC model
-flavored_cc_alias(
-    name = "litert_model_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_model_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
-)
-
-flavored_cc_alias(
-    name = "litert_model_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_model"],
 )
 
 cc_library(
@@ -1000,31 +925,6 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ],
-)
-
-# Flavor aliases for CC tensor_buffer
-flavored_cc_alias(
-    name = "litert_tensor_buffer_cpu",
-    build_include = "cpu_only",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "litert_tensor_buffer_gpu",
-    build_include = "gpu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
-)
-
-flavored_cc_alias(
-    name = "litert_tensor_buffer_npu",
-    build_include = "npu",
-    tags = ["notap"],
-    visibility = ["//visibility:public"],
-    deps = [":litert_tensor_buffer"],
 )
 
 # copybara:uncomment_begin(google-only)
