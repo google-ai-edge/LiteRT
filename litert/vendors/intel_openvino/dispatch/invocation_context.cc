@@ -66,8 +66,8 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
 #if defined(LITERT_WINDOWS_OS)
       kLiteRtTensorBufferTypeHostMemory,
 #else
-      kLiteRtTensorBufferTypeAhwb,
       kLiteRtTensorBufferTypeDmaBuf,
+      kLiteRtTensorBufferTypeAhwb,
 #endif
   };
 
