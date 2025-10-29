@@ -91,15 +91,35 @@ Expected<void> TriggerAcceleratorAutomaticRegistration(
 #if !defined(LITERT_DISABLE_GPU)
   static constexpr absl::string_view kGpuAcceleratorLibs[] = {
       "libLiteRtGpuAccelerator" SO_EXT,
+
+#ifdef __ANDROID__
 #if LITERT_HAS_OPENCL_SUPPORT
       "libLiteRtOpenClAccelerator" SO_EXT,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_WEBGPU_SUPPORT
+      "libLiteRtWebGpuAccelerator" SO_EXT,
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#elif TARGET_OS_IPHONE
 #if LITERT_HAS_METAL_SUPPORT
       "libLiteRtMetalAccelerator" SO_EXT,
 #endif  // LITERT_HAS_METAL_SUPPORT
 #if LITERT_HAS_WEBGPU_SUPPORT
       "libLiteRtWebGpuAccelerator" SO_EXT,
 #endif  // LITERT_HAS_WEBGPU_SUPPORT
+
+#else  // !__ANDROID__ && !TARGET_OS_IPHONE
+#if LITERT_HAS_WEBGPU_SUPPORT
+      "libLiteRtWebGpuAccelerator" SO_EXT,
+#endif  // LITERT_HAS_WEBGPU_SUPPORT
+#if LITERT_HAS_OPENCL_SUPPORT
+      "libLiteRtOpenClAccelerator" SO_EXT,
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+#if LITERT_HAS_METAL_SUPPORT
+      "libLiteRtMetalAccelerator" SO_EXT,
+#endif  // LITERT_HAS_METAL_SUPPORT
+#endif  // !__ANDROID__ && !TARGET_OS_IPHONE
+
 #if LITERT_HAS_VULKAN_SUPPORT
       "libLiteRtVulkanAccelerator" SO_EXT,
 #endif  // LITERT_HAS_VULKAN_SUPPORT

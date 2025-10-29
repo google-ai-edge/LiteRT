@@ -170,7 +170,6 @@ cc_library(
             "//litert/c:litert_runtime_c_api_shared_lib",
         ],
     }),
-    alwayslink = 1,
 )
 
 cc_library(
