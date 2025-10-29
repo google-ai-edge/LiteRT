@@ -497,11 +497,10 @@ Expected<PartitionResult> PartitionModel(
     if (!ops_to_inline.empty()) {
       LITERT_LOG(LITERT_INFO, "Inlined %lu composite ops into subgraph<%d>",
                  ops_to_inline.size(), i);
+      // Re-do partitioning only if inlining happened.
+      selected_ops->clear();
+      selected_ops = compiler_plugin.Partition(subgraph, soc_model);
     }
-
-    // Re-do partitioning
-    selected_ops->clear();
-    selected_ops = compiler_plugin.Partition(subgraph, soc_model);
 
     // Record all decomposition subgraph indexes, where its compositie op will
     // be compiled without relying on the decomposition body.
