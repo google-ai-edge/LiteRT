@@ -270,6 +270,8 @@ ThrStatus thrGraphConnectNodeInput(ThrGraph* graph, ThrNodeId node_id,
                                    ThrEdgeId edge_id);
 
 // Variant for nodes with kThrNodeInterfaceBindingModeNamed.
+//
+// Note: This API will load any lazy SQs.
 ThrStatus thrGraphConnectNodeInputWithPortName(ThrGraph* graph,
                                                ThrNodeId node_id,
                                                ThrEdgeId edge_id,
@@ -282,6 +284,8 @@ ThrStatus thrGraphConnectNodeOutput(ThrGraph* graph, ThrNodeId node_id,
                                     ThrEdgeId edge_id);
 
 // Variant for nodes with kThrNodeInterfaceBindingModeNamed.
+//
+// Note: This API will load any lazy SQs.
 ThrStatus thrGraphConnectNodeOutputWithPortName(ThrGraph* graph,
                                                 ThrNodeId node_id,
                                                 ThrEdgeId edge_id,
