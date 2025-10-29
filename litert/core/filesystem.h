@@ -32,6 +32,9 @@ namespace litert::internal {
 // Append all given subpaths together (e.g. os.path.join).
 std::string Join(const std::vector<absl::string_view>& paths);
 
+// Returns the stem of the given path.
+std::string Stem(absl::string_view path);
+
 // Make a new empty file at the given path.
 void Touch(absl::string_view path);
 

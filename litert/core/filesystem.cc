@@ -73,6 +73,10 @@ std::string Join(const std::vector<absl::string_view>& paths) {
   return std_path.generic_string();
 }
 
+std::string Stem(absl::string_view path) {
+  return MakeStdPath(path).stem().generic_string();
+}
+
 bool Exists(absl::string_view path) { return StdExists(MakeStdPath(path)); }
 
 Expected<size_t> Size(absl::string_view path) {

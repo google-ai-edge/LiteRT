@@ -24,6 +24,8 @@ namespace {
 static constexpr absl::string_view kPrefix = "a/prefix";
 static constexpr absl::string_view kInfix = "an/infix";
 static constexpr absl::string_view kSuffix = "suffix.ext";
+static constexpr absl::string_view kPath = "a/prefix.ext";
+static constexpr absl::string_view kStem = "prefix";
 
 TEST(FilesystemTest, JoinTwo) {
   const auto path = Join({kPrefix, kSuffix});
@@ -33,6 +35,11 @@ TEST(FilesystemTest, JoinTwo) {
 TEST(FilesystemTest, JoinMany) {
   const auto path = Join({kPrefix, kInfix, kSuffix});
   EXPECT_EQ(path, absl::StrFormat("%s/%s/%s", kPrefix, kInfix, kSuffix));
+}
+
+TEST(FilesystemTest, Stem){
+  const auto stem = Stem(kPath);
+  EXPECT_EQ(stem, kStem);
 }
 
 }  // namespace
