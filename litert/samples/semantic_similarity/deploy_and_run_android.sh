@@ -178,7 +178,7 @@ push() {
   elif [[ "${SOC_MAN}" == "MediaTek" ]]; then
     print_info "Building and Pushing MTK accelerator library..."
     bazel build ${BUILD_FLAGS} //litert/vendors/mediatek/dispatch:dispatch_api_so
-    adb push --sync "${ROOT_DIR}/bazel-bin/litert/vendors/mediatek/dispatch/libLiteRtDispatch_Mediatek.so" "${DEVICE_LD_LIBRARY_PATH}"
+    adb push --sync "${ROOT_DIR}/bazel-bin/litert/vendors/mediatek/dispatch/libLiteRtDispatch_MediaTek.so" "${DEVICE_LD_LIBRARY_PATH}"
   fi
 
   print_success "Files pushed to the device."
