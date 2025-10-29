@@ -329,6 +329,96 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   }
 }
 
+TEST(CompiledModelTest, RunWithInputOutputPointerMap) {
+  // Environment setup.
+  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+
+  // Create Model and check signatures.
+  Model model = testing::LoadTestFileModel(kModelFileName);
+  ASSERT_TRUE(model);
+
+  EXPECT_EQ(model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
+
+  // Create CompiledModel.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+
+  // Check CompiledModel buffer requirements.
+  // input and output expect host memory.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_buffer_requirements_arg0,
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg0,
+              ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements input_buffer_requirements_arg1,
+      compiled_model.GetInputBufferRequirements(
+          /*input_name=*/"arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<TensorBufferType> input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg1,
+              ElementsAre(TensorBufferType::kHostMemory));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      TensorBufferRequirements output_buffer_requirements,
+      compiled_model.GetOutputBufferRequirements(
+          /*output_name=*/"tfl.add"));
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBufferType> output_buffer_types,
+                              output_buffer_requirements.SupportedTypesCC());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kHostMemory));
+
+  // Create and fill input and output buffers.
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer0,
+                              compiled_model.CreateInputBuffer("arg0"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer input_buffer1,
+                              compiled_model.CreateInputBuffer("arg1"));
+  LITERT_ASSERT_OK_AND_ASSIGN(TensorBuffer output_buffer0,
+                              compiled_model.CreateOutputBuffer("tfl.add"));
+
+  ASSERT_TRUE(input_buffer0.Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffer1.Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+
+  // Create input and output map.
+  absl::flat_hash_map<absl::string_view, TensorBuffer*> input_map;
+  input_map["arg0"] = &input_buffer0;
+  input_map["arg1"] = &input_buffer1;
+
+  absl::flat_hash_map<absl::string_view, TensorBuffer*> output_map;
+  output_map["tfl.add"] = &output_buffer0;
+
+  // Execute model with input and output maps instead of buffers.
+  compiled_model.Run(input_map, output_map);
+
+  // Check model output.
+  {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock_and_addr,
+        litert::TensorBufferScopedLock::Create<const float>(
+            output_buffer0, TensorBuffer::LockMode::kRead));
+    auto output = absl::MakeSpan(lock_and_addr.second, kTestOutputSize);
+    for (auto i = 0; i < kTestOutputSize; ++i) {
+      ABSL_LOG(INFO) << "Result: " << output[i] << "\t" << kTestOutputTensor[i];
+    }
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
+  }
+}
+
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should
 // always return false.
 TEST(CompiledModelTest, RunAsyncReturnsFalse) {

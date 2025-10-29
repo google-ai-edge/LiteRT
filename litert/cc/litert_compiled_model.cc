@@ -235,6 +235,56 @@ Expected<void> CompiledModel::RunMapWithIndexHelper(
                        num_outputs, output_buffers_ptr.get(), async);
 }
 
+Expected<void> CompiledModel::RunPointerMapHelper(
+    absl::string_view signature_key,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map,
+    bool& async) const {
+  auto signature_index = model_.GetSignatureIndex(signature_key);
+  if (!signature_index) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to get signature_index");
+  }
+  return RunPointerMapWithIndexHelper(*signature_index, input_map, output_map,
+                                      async);
+}
+
+Expected<void> CompiledModel::RunPointerMapWithIndexHelper(
+    size_t signature_index,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+    const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map,
+    bool& async) const {
+  LITERT_ASSIGN_OR_RETURN(auto input_names,
+                          model_.GetSignatureInputNames(signature_index));
+  size_t num_inputs = input_names.size();
+  auto input_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_inputs);
+  for (int i = 0; i < num_inputs; ++i) {
+    absl::string_view input_name = input_names[i];
+    auto it = input_map.find(input_name);
+    // if the input is not provided in the input map, we set it to nullptr.
+    if (it == input_map.end()) {
+      input_buffers_ptr[i] = nullptr;
+      continue;
+    }
+    input_buffers_ptr[i] = it->second->Get();
+  }
+  LITERT_ASSIGN_OR_RETURN(auto output_names,
+                          model_.GetSignatureOutputNames(signature_index));
+  size_t num_outputs = output_names.size();
+  auto output_buffers_ptr = std::make_unique<LiteRtTensorBuffer[]>(num_outputs);
+  for (int i = 0; i < num_outputs; ++i) {
+    absl::string_view output_name = output_names[i];
+    auto it = output_map.find(output_name);
+    if (it == output_map.end()) {
+      return Unexpected(kLiteRtStatusErrorNotFound,
+                        "The given map is missing some output TensorBuffers");
+    }
+    output_buffers_ptr[i] = it->second->Get();
+  }
+  return RunCApiHelper(signature_index, num_inputs, input_buffers_ptr.get(),
+                       num_outputs, output_buffers_ptr.get(), async);
+}
+
 Expected<void> CompiledModel::StartMetricsCollection(int detail_level) {
   if (auto status =
           LiteRtCompiledModelStartMetricsCollection(Get(), detail_level);

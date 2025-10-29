@@ -397,6 +397,16 @@ class CompiledModel
     return RunMapHelper(signature_key, input_map, output_map, async);
   }
 
+  // The same as above, but with TensorBuffer* instead of TensorBuffer.
+  Expected<void> Run(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map)
+      const {
+    bool async = false;
+    return RunPointerMapHelper(signature_key, input_map, output_map, async);
+  }
+
   // Runs the model of the default signature synchronously with the provided
   // input/output TensorBuffer map.
   // If you have bind the input with external buffers through Options,
@@ -410,6 +420,16 @@ class CompiledModel
                                  async);
   }
 
+  // The same as above, but with TensorBuffer* instead of TensorBuffer.
+  Expected<void> Run(
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map)
+      const {
+    bool async = false;
+    return RunPointerMapWithIndexHelper(/*signature_index=*/0, input_map,
+                                        output_map, async);
+  }
+
   // Runs the model of the given signature key asynchronously, if possible, with
   // the provided input/output TensorBuffer map. If asynchronous execution is
   // possible then the function returns true in parameter `async`; otherwise the
@@ -421,6 +441,16 @@ class CompiledModel
       bool& async) const {
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async);
+  }
+
+  // The same as above, but with TensorBuffer* instead of TensorBuffer.
+  Expected<void> RunAsync(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map,
+      bool& async) const {
+    async = true;
+    return RunPointerMapHelper(signature_key, input_map, output_map, async);
   }
 
   // Starts collection of HW-specific metrics at a specific level of detail.
@@ -716,10 +746,22 @@ class CompiledModel
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
       bool& async) const;
 
+  Expected<void> RunPointerMapHelper(
+      absl::string_view signature_key,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map,
+      bool& async) const;
+
   Expected<void> RunMapWithIndexHelper(
       size_t signature_index,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& input_map,
       const absl::flat_hash_map<absl::string_view, TensorBuffer>& output_map,
+      bool& async) const;
+
+  Expected<void> RunPointerMapWithIndexHelper(
+      size_t signature_index,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& input_map,
+      const absl::flat_hash_map<absl::string_view, TensorBuffer*>& output_map,
       bool& async) const;
 
   LiteRtEnvironment env_;
