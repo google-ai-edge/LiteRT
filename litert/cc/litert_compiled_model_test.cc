@@ -141,16 +141,33 @@ TEST(CompiledModelTest,
   absl::string_view signature_key = model.DefaultSignatureKey();
 
   const std::vector<int> resized_dims = {4, 2, 3};
-  LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
-      signature_key, "arg0", absl::MakeConstSpan(resized_dims)));
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input_names,
+                              model.GetSignatureInputNames(signature_key));
+  absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
+  for (const auto& input_name : input_names) {
+    LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
+        signature_key, input_name, absl::MakeConstSpan(resized_dims)));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        TensorBuffer input_buffer,
+        compiled_model.CreateInputBuffer(signature_key, input_name));
+    LITERT_ASSERT_OK_AND_ASSIGN(RankedTensorType buffer_type,
+                                input_buffer.TensorType());
+    EXPECT_THAT(buffer_type.Layout().Dimensions(),
+                ElementsAre(resized_dims[0], resized_dims[1], resized_dims[2]));
+    input_map[input_name] = std::move(input_buffer);
+  }
 
   LITERT_ASSERT_OK_AND_ASSIGN(
-      TensorBuffer input_buffer,
-      compiled_model.CreateInputBuffer(signature_key, "arg0"));
+      TensorBuffer output_buffer,
+      compiled_model.CreateOutputBuffer(signature_key, "tfl.add"));
   LITERT_ASSERT_OK_AND_ASSIGN(RankedTensorType buffer_type,
-                              input_buffer.TensorType());
+                              output_buffer.TensorType());
   EXPECT_THAT(buffer_type.Layout().Dimensions(),
               ElementsAre(resized_dims[0], resized_dims[1], resized_dims[2]));
+  absl::flat_hash_map<absl::string_view, TensorBuffer> output_map;
+  output_map["tfl.add"] = std::move(output_buffer);
+
+  LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map));
 }
 
 TEST(CompiledModelTest, BasicSignatureIndex) {

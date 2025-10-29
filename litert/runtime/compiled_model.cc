@@ -1451,11 +1451,9 @@ litert::Expected<void> LiteRtCompiledModelT::ResizeInputTensor(
                               "Failed to resize input tensor");
   }
 
-  // Clear cached buffer requirements for this tensor
-  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                          GetTensorIdentifier(*interp_, input_tensor));
-  cpu_buffer_requirements_.erase(tensor_id);
-
+  // Clear cached buffer requirements for all tensors since output and
+  // intermediate tensors may change shape after an explicit resize.
+  cpu_buffer_requirements_.clear();
   return {};
 }
 

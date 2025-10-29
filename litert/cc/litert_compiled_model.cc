@@ -94,13 +94,11 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
       is_input ? model_.GetInputTensorType(signature_index, tensor_name)
                : model_.GetOutputTensorType(signature_index, tensor_name);
   LITERT_ASSIGN_OR_RETURN(RankedTensorType tensor_type, tensor_type_expected);
-  Expected<TensorBufferRequirements> buffer_requirements_expected =
-      is_input ? GetInputBufferRequirements(signature_index, tensor_name)
-               : GetOutputBufferRequirements(signature_index, tensor_name);
-
-  LITERT_ASSIGN_OR_RETURN(const TensorBufferRequirements& buffer_requirements,
-                          buffer_requirements_expected);
+  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
   if (is_input) {
+    LITERT_ASSIGN_OR_RETURN(
+        TensorBufferRequirements buffer_requirements,
+        GetInputBufferRequirements(signature_index, tensor_name));
     LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
                             FindInputIndex(signature_index, tensor_name));
     LiteRtLayout input_layout;
@@ -111,20 +109,28 @@ Expected<TensorBuffer> CompiledModel::CreateInputOutputBuffer(
       tensor_type = RankedTensorType(tensor_type.ElementType(),
                                      std::move(runtime_layout));
     }
+    return CreateBufferImpl(env, buffer_requirements, tensor_type);
   } else {
     const auto& dims = tensor_type.Layout().Dimensions();
     if (absl::c_find(dims, -1) != dims.end()) {
       LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
                               FindOutputIndex(signature_index, tensor_name));
       LITERT_ASSIGN_OR_RETURN(
-          std::vector<Layout> output_layouts,
+          std::vector<Layout> runtime_layouts,
           GetOutputTensorLayouts(signature_index, /*update_allocation=*/true));
       tensor_type = RankedTensorType(tensor_type.ElementType(),
-                                     std::move(output_layouts[tensor_index]));
+                                     std::move(runtime_layouts[tensor_index]));
+      LITERT_ASSIGN_OR_RETURN(
+          const TensorBufferRequirements& refreshed_requirements,
+          GetOutputBufferRequirements(signature_index, tensor_name));
+      return CreateBufferImpl(env, refreshed_requirements, tensor_type);
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          const TensorBufferRequirements& requirements,
+          GetOutputBufferRequirements(signature_index, tensor_name));
+      return CreateBufferImpl(env, requirements, tensor_type);
     }
   }
-  LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
-  return CreateBufferImpl(env, buffer_requirements, tensor_type);
 }
 
 Expected<std::vector<TensorBuffer>> CompiledModel::CreateInputOutputBuffers(
