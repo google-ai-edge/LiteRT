@@ -43,9 +43,7 @@ LiteRtStatus LiteRtCreateEnvironment(int num_options,
   auto options_span = absl::MakeSpan(options, num_options);
   LITERT_ASSIGN_OR_RETURN(auto env,
                           LiteRtEnvironmentT::CreateWithOptions(options_span));
-  #if !defined(LITERT_DISABLE_NPU)
   litert::TriggerAcceleratorAutomaticRegistration(*env);
-  #endif  // !defined(LITERT_DISABLE_NPU)
 
   // Check if any GPU-related options are present using modern C++ algorithms
   constexpr std::array<LiteRtEnvOptionTag, 7> kGpuOptionTags = {
