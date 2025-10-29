@@ -25,6 +25,23 @@
 
 namespace qnn {
 
+bool IsNBitQuant(const QuantizeParamsWrapperVariant& quantize_params,
+                 uint32_t bitwidth) {
+  if (std::holds_alternative<BwScaleOffsetQuantizeParamsWrapper>(
+          quantize_params)) {
+    auto wrapper =
+        std::get<BwScaleOffsetQuantizeParamsWrapper>(quantize_params);
+    return wrapper.GetBitwidth() == bitwidth;
+
+  } else if (std::holds_alternative<BwAxisScaleOffsetQuantizeParamsWrapper>(
+                 quantize_params)) {
+    auto wrapper =
+        std::get<BwAxisScaleOffsetQuantizeParamsWrapper>(quantize_params);
+    return wrapper.GetBitwidth() == bitwidth;
+  }
+  return false;
+}
+
 std::size_t GetDataTypeSize(const Qnn_DataType_t data_type) {
   std::size_t bytes = 0;
   switch (data_type) {
@@ -99,12 +116,17 @@ TensorWrapper::TensorWrapper(
     const void* data)
     : TensorWrapper(std::move(name), tensor_type, data_type, quantize_params,
                     dimentions) {
-  // Use QNN_DATATYPE_SFIXED_POINT_8 for 4 bit quantization
-  if (data_type == QNN_DATATYPE_SFIXED_POINT_4) {
-    QNN_LOG_DEBUG("4bit Qunat, converting 4bit data to 8bit for QNN.");
-    SetDataType(QNN_DATATYPE_SFIXED_POINT_8);
+  // Already map to QNN_DATATYPE_SFIXED_POINT_8 for 4-bit and 2-bit
+  // quantization
+  if (IsNBitQuant(quantize_params, 4)) {
     std::vector<std::int8_t> int8_data;
+    QNN_LOG_DEBUG("4-bit Qunat, converting data to 8-bit for QNN.");
     ConvertDataFromInt4ToInt8(data, int8_data, bytes);
+    SetDataBy(GetTensorBytes(), int8_data.data());
+  } else if (IsNBitQuant(quantize_params, 2)) {
+    std::vector<std::int8_t> int8_data;
+    QNN_LOG_DEBUG("2-bit Qunat, converting data to 8-bit for QNN.");
+    ConvertDataFromInt2ToInt8(data, int8_data, bytes);
     SetDataBy(GetTensorBytes(), int8_data.data());
   } else {
     SetDataBy(bytes, data);
