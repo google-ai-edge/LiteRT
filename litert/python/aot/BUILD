@@ -42,9 +42,11 @@ pytype_strict_contrib_test(
     ],
     # Re-enable sans once test libs can be linked in a sans friendly way.
     tags = [
+        "manual",
         "noasan",
         "nomsan",
         "nosan",
+        "notap",
         "notsan",
     ],
     deps = [

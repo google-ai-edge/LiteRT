@@ -49,8 +49,9 @@ class TestWithTfliteModels(googletest.TestCase):
     return resource_path
 
   def get_model_paths(self) -> list[pathlib.Path]:
+    test_data_dir = common.get_resource(_TEST_DATA_DIR, is_dir=True)
     resource_paths = [
-        common.get_resource(mp) for mp in _TEST_DATA_DIR.glob("*.tflite")
+        common.get_resource(mp) for mp in test_data_dir.glob("*.tflite")
     ]
     for rp in resource_paths:
       self.assertTrue(common.is_tflite(rp))
