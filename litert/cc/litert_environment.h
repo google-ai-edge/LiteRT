@@ -32,9 +32,6 @@ namespace litert {
 class Environment
     : public internal::Handle<LiteRtEnvironment, LiteRtDestroyEnvironment> {
  public:
-  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
-      : Handle(env, owned) {}
-
   enum class OptionTag {
     CompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
     DispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
@@ -128,6 +125,9 @@ class Environment
   }
 
  private:
+  explicit Environment(LiteRtEnvironment env, OwnHandle owned = OwnHandle::kYes)
+      : Handle(env, owned) {}
+
   static Expected<std::vector<LiteRtEnvOption>> ConvertOptions(
       absl::Span<const Option> options) {
     std::vector<LiteRtEnvOption> c_options;

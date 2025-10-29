@@ -45,7 +45,7 @@ class ExternalLiteRtBufferContext
     // Note: Tensor buffer is duplicated by the C API.
     LITERT_RETURN_IF_ERROR(LiteRtGetExternalLiteRtBufferContextTensorBuffer(
         Get(), tensor, &tensor_buffer));
-    return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+    return TensorBuffer::WrapCObject(tensor_buffer, OwnHandle::kYes);
   }
 
   // Creates a TensorBuffer object for the given tensor. The returned object is
@@ -55,7 +55,7 @@ class ExternalLiteRtBufferContext
     LITERT_RETURN_IF_ERROR(
         LiteRtExternalLiteRtBufferContextCreateBufferForTensor(Get(), tensor,
                                                                &buffer));
-    return TensorBuffer(buffer, OwnHandle::kYes);
+    return TensorBuffer::WrapCObject(buffer, OwnHandle::kYes);
   }
 
   // Registers a TensorBuffer object for the given tensor. The buffer context
@@ -85,7 +85,7 @@ class ExternalLiteRtBufferContext
     LiteRtEnvironment env;
     LITERT_RETURN_IF_ERROR(
         LiteRtExternalLiteRtBufferContextGetEnvironment(Get(), &env));
-    return Environment(env, OwnHandle::kNo);
+    return Environment::WrapCObject(env, OwnHandle::kNo);
   }
 
   Expected<bool> IsAsyncExecutionMode() {

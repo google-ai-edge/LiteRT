@@ -76,18 +76,6 @@ class CompiledModel
 
   CompiledModel() = default;
 
-  // Creates a CompiledModel instance.
-  //
-  // If `owned` is `true`, then the created object takes ownership of the
-  // `compiled_model` handle.
-  explicit CompiledModel(LiteRtModel litert_model,
-                         LiteRtCompiledModel compiled_model, OwnHandle owned)
-      : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
-            compiled_model, owned),
-        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
-    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
-  }
-
   // Creates a CompiledModel from a TFLite file.
   //
   // The model is loaded into memory and the caller takes ownership of the
@@ -151,7 +139,8 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelInputBufferRequirements(
         Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
+    return TensorBufferRequirements::WrapCObject(buffer_requirements,
+                                                 OwnHandle::kNo);
   }
 
   // The same as above except this function takes input tensor name.
@@ -215,7 +204,8 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputBufferRequirements(
         Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements(buffer_requirements, OwnHandle::kNo);
+    return TensorBufferRequirements::WrapCObject(buffer_requirements,
+                                                 OwnHandle::kNo);
   }
 
   // The same as above except this function takes output tensor name.
@@ -657,7 +647,19 @@ class CompiledModel
     return CompiledModel(litert_model, compiled_model, owned);
   }
 
- private:
+ protected:
+  // Creates a CompiledModel instance.
+  //
+  // If `owned` is `true`, then the created object takes ownership of the
+  // `compiled_model` handle.
+  explicit CompiledModel(LiteRtModel litert_model,
+                         LiteRtCompiledModel compiled_model, OwnHandle owned)
+      : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
+            compiled_model, owned),
+        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
+    LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
+  }
+
   static bool CheckCancelledWrapper(void* data);
 
   // Returns the signature input index for the given input tensor name.
@@ -695,7 +697,7 @@ class CompiledModel
   // Returns the environment used to create this compiled model.
   // The returned Environment doesn't own the underlying LiteRtEnvironment.
   Expected<Environment> GetEnvironment() const {
-    return Environment(env_, OwnHandle::kNo);
+    return Environment::WrapCObject(env_, OwnHandle::kNo);
   }
 
   Expected<void> RunCApiHelper(LiteRtParamIndex signature_index,

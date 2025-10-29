@@ -39,14 +39,6 @@ class TensorBufferRequirements
  public:
   TensorBufferRequirements() = default;
 
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
-  explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
-                                    OwnHandle owned)
-      : internal::Handle<LiteRtTensorBufferRequirements,
-                         LiteRtDestroyTensorBufferRequirements>(requirements,
-                                                                owned) {}
-
   static Expected<TensorBufferRequirements> Create(
       absl::Span<const TensorBufferType> buffer_types, size_t buffer_size,
       absl::Span<const uint32_t> strides =
@@ -169,6 +161,15 @@ class TensorBufferRequirements
       LiteRtTensorBufferRequirements requirements, OwnHandle owned) {
     return TensorBufferRequirements(requirements, owned);
   }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBufferRequirements object
+  // should take ownership of the provided `requirements` handle.
+  explicit TensorBufferRequirements(LiteRtTensorBufferRequirements requirements,
+                                    OwnHandle owned)
+      : internal::Handle<LiteRtTensorBufferRequirements,
+                         LiteRtDestroyTensorBufferRequirements>(requirements,
+                                                                owned) {}
 };
 
 inline Expected<TensorBufferRequirements> Join(

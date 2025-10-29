@@ -34,11 +34,6 @@ namespace litert {
 
 class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
  public:
-  // Parameter `owned` indicates if the created TensorBufferRequirements object
-  // should take ownership of the provided `requirements` handle.
-  explicit Event(LiteRtEvent event, OwnHandle owned)
-      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
-
   // Creates an Event object with the given `sync_fence_fd`.
   //
   // Warning: This is an old API that does not take LiteRtEnvironment. It is
@@ -152,6 +147,12 @@ class Event : public internal::Handle<LiteRtEvent, LiteRtDestroyEvent> {
   static Event WrapCObject(LiteRtEvent event, OwnHandle owned) {
     return Event(event, owned);
   }
+
+ private:
+  // Parameter `owned` indicates if the created TensorBufferRequirements object
+  // should take ownership of the provided `requirements` handle.
+  explicit Event(LiteRtEvent event, OwnHandle owned)
+      : internal::Handle<LiteRtEvent, LiteRtDestroyEvent>(event, owned) {}
 };
 
 }  // namespace litert

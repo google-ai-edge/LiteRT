@@ -265,13 +265,15 @@ TEST(CompiledModelTest, Basic) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -418,13 +420,15 @@ TEST(CompiledModelTest, UseAhwbBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeAhwb);
   {
-    TensorBuffer ahwb_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer ahwb_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer ahwb_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer ahwb_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     ahwb_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -553,13 +557,15 @@ TEST(CompiledModelTest, UseOpenCLBuffer) {
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   EXPECT_EQ(input_0_buffer->buffer_type(), kLiteRtTensorBufferTypeOpenClBuffer);
   {
-    TensorBuffer opencl_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer opencl_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer opencl_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer opencl_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     opencl_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -685,13 +691,15 @@ TEST(CompiledModelTest, WithProfiler) {
 
   LiteRtTensorBuffer& input_0_buffer = input_buffers[0];
   {
-    TensorBuffer cpu_buffer(input_0_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_0_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
   }
   LiteRtTensorBuffer& input_1_buffer = input_buffers[1];
   {
-    TensorBuffer cpu_buffer(input_1_buffer, OwnHandle::kNo);
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_1_buffer, OwnHandle::kNo);
     cpu_buffer.Write<float>(
         absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
   }
@@ -1067,7 +1075,7 @@ TEST(CompiledModelTest, BindExternalWeightBuffer) {
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
   LiteRtDestroyOptions(jit_compilation_options);
 
-  auto cc_env = litert::Environment(env_ptr, OwnHandle::kNo);
+  auto cc_env = litert::Environment::WrapCObject(env_ptr, OwnHandle::kNo);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffer,
       TensorBuffer::CreateManaged(

@@ -260,7 +260,8 @@ PyObject* TensorBufferWrapper::WriteTensor(PyObject* buffer_capsule,
   if (!ptr) {
     return ReportError("WriteTensor: null pointer in capsule");
   }
-  TensorBuffer tb(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  TensorBuffer tb = TensorBuffer::WrapCObject(
+      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
 
   // Convert the Python list to a C++ vector based on the data type
   std::string error;
@@ -308,7 +309,8 @@ PyObject* TensorBufferWrapper::ReadTensor(PyObject* buffer_capsule,
   if (!ptr) {
     return ReportError("ReadTensor: null pointer in capsule");
   }
-  TensorBuffer tb(static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
+  TensorBuffer tb = TensorBuffer::WrapCObject(
+      static_cast<LiteRtTensorBuffer>(ptr), OwnHandle::kNo);
 
   if (dtype == "float32") {
     std::vector data(num_elements, 0.f);

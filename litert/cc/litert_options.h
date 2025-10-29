@@ -74,7 +74,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   Expected<OpaqueOptions> GetOpaqueOptions() {
     LiteRtOpaqueOptions options;
     LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(Get(), &options));
-    return OpaqueOptions(options, OwnHandle::kNo);
+    return OpaqueOptions::WrapCObject(options, OwnHandle::kNo);
   }
 
   Expected<void> AddCustomOpKernel(const std::string& custom_op_name,

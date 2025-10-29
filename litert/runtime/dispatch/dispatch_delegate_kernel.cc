@@ -125,7 +125,8 @@ Expected<DispatchDelegateKernel::Ptr> DispatchDelegateKernel::Create(
 }
 
 Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
-  auto opaque_options = OpaqueOptions(options_->options, OwnHandle::kNo);
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
   LITERT_ASSIGN_OR_RETURN(
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
@@ -133,7 +134,8 @@ Expected<const void*> DispatchDelegateKernel::FindAllocBase() const {
 }
 
 Expected<int> DispatchDelegateKernel::FindAllocBaseFd() const {
-  auto opaque_options = OpaqueOptions(options_->options, OwnHandle::kNo);
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
   LITERT_ASSIGN_OR_RETURN(
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));

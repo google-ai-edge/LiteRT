@@ -38,11 +38,6 @@ class OpaqueOptions
 
   OpaqueOptions() = default;
 
-  // Parameter `owned` indicates if the created AcceleratorCompilationOptions
-  // object should take ownership of the provided `options` handle.
-  explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
-      : Handle(options, owned) {}
-
   static Expected<OpaqueOptions> Create(
       const std::string& payload_identifier, void* payload_data,
       void (*payload_destructor)(void* payload_data)) {
@@ -112,6 +107,12 @@ class OpaqueOptions
                                    OwnHandle owned) {
     return OpaqueOptions(options, owned);
   }
+
+ protected:
+  // Parameter `owned` indicates if the created AcceleratorCompilationOptions
+  // object should take ownership of the provided `options` handle.
+  explicit OpaqueOptions(LiteRtOpaqueOptions options, OwnHandle owned)
+      : Handle(options, owned) {}
 };
 
 // Find the opaque option in the chain that matches the provided identifier.

@@ -203,7 +203,7 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   interpreter_options.SetUseSignatureTensorNames(true);
   int num_threads = 1;
   if (jit_compilation_options) {
-    auto opaque_options = litert::OpaqueOptions(
+    auto opaque_options = litert::OpaqueOptions::WrapCObject(
         jit_compilation_options->options, litert::OwnHandle::kNo);
 
     if (auto runtime_options = litert::FindOpaqueData<LiteRtRuntimeOptionsT>(
