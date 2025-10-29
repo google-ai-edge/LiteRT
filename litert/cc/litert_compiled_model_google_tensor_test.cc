@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,15 +22,12 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_event_type.h"
-#include "litert/c/litert_gl_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_platform_support.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
-#include "litert/cc/litert_event.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -96,12 +91,12 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(input_buffers[1].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(output_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -163,12 +158,12 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(input_buffers[1].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(output_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
@@ -318,12 +313,12 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(input_buffers[1].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
-  EXPECT_THAT(output_buffers[0].BufferType(),
-              IsOkAndHolds(kLiteRtTensorBufferTypeAhwb));
+  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
+  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+              IsOkAndHolds(TensorBufferType::kAhwb));
   // Write to input buffers on GPU.
   LITERT_ASSERT_OK_AND_ASSIGN(auto gl_buffer_1, input_buffers[0].GetGlBuffer());
   FillGlBuffer1(gl_buffer_1.id, 2);
