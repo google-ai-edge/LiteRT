@@ -61,6 +61,14 @@
 #endif  // LITERT_HAS_OPENGL_SUPPORT
 
 namespace litert {
+
+class TensorBufferTest {
+ public:
+  static Expected<TensorBuffer> Duplicate(TensorBuffer& tensor_buffer) {
+    return tensor_buffer.Duplicate();
+  }
+};
+
 namespace {
 
 using ::testing::Eq;
@@ -786,7 +794,7 @@ TEST(TensorBuffer, Duplicate) {
       TensorBuffer::WrapCObject(litert_tensor_buffer, litert::OwnHandle::kYes);
   ASSERT_EQ(GetReferenceCount(tensor_buffer), 1);
   {
-    auto duplicated_tensor_buffer = tensor_buffer.Duplicate();
+    auto duplicated_tensor_buffer = TensorBufferTest::Duplicate(tensor_buffer);
     ASSERT_TRUE(duplicated_tensor_buffer);
     ASSERT_EQ(GetReferenceCount(*duplicated_tensor_buffer), 2);
     // The duplicated tensor buffer should point to the same underlying

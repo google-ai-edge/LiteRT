@@ -43,12 +43,36 @@
 typedef struct _cl_mem* cl_mem;
 #endif
 
+namespace odml::infra {
+class LlmGpuArtisanExecutor;
+}  // namespace odml::infra
+
+namespace litert::lm {
+class InputAudio;
+class InputImage;
+class InputText;
+class LlmLiteRtNpuCompiledModelExecutor;
+class LoRA;
+class VisionLiteRtCompiledModelExecutor;
+}  // namespace litert::lm
+
 namespace litert {
 
+class TensorBufferTest;
 // Tensor and associated backing buffer. C++ equivalent of LiteRtTensorBuffer.
 class TensorBuffer
     : public internal::Handle<LiteRtTensorBuffer, LiteRtDestroyTensorBuffer> {
  public:
+  // friend classes to allow to use Duplicate() method.
+  friend class litert::lm::InputAudio;
+  friend class litert::lm::InputImage;
+  friend class litert::lm::InputText;
+  friend class litert::lm::LlmLiteRtNpuCompiledModelExecutor;
+  friend class litert::lm::LoRA;
+  friend class litert::lm::VisionLiteRtCompiledModelExecutor;
+  friend class odml::infra::LlmGpuArtisanExecutor;
+  friend class TensorBufferTest;
+
   TensorBuffer() = default;
 
   // Parameter `owned` indicates if the created TensorBuffer object should take
@@ -189,11 +213,6 @@ class TensorBuffer
                                  size_bytes);
   }
 #endif  // LITERT_HAS_METAL_SUPPORT
-
-  // Creates a duplicate of the current TensorBuffer object. The returned
-  // object is reference counted so the underlying LiteRtTensorBuffer handle is
-  // not released with the destructor until the last reference is removed.
-  Expected<TensorBuffer> Duplicate() const;
 
   litert::Expected<AHardwareBuffer*> GetAhwb() const {
 #if LITERT_HAS_AHWB_SUPPORT
@@ -401,13 +420,6 @@ class TensorBuffer
     return {};
   }
 
-  // Set the C LiteRtEvent object for the tensor buffer.
-  // The function takes ownership of the passed LiteRtEvent object.
-  Expected<void> SetLiteRtEvent(LiteRtEvent& litert_event) {
-    LITERT_RETURN_IF_ERROR(LiteRtSetTensorBufferEvent(Get(), litert_event));
-    return {};
-  }
-
   Expected<void> ClearEvent() {
     LITERT_RETURN_IF_ERROR(LiteRtClearTensorBufferEvent(Get()));
     return {};
@@ -493,6 +505,12 @@ class TensorBuffer
                                   OwnHandle owned) {
     return TensorBuffer(tensor_buffer, owned);
   }
+
+ private:
+  // Creates a duplicate of the current TensorBuffer object. The returned
+  // object is reference counted so the underlying LiteRtTensorBuffer handle is
+  // not released with the destructor until the last reference is removed.
+  Expected<TensorBuffer> Duplicate() const;
 };
 
 class TensorBufferScopedLock {
