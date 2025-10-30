@@ -33,7 +33,7 @@ TEST(AtsCompileCaptureTest, Basic) {
   e.model.name = "FOO";
 
   ASSERT_NE(e.compilation_time.Nanos(),
-            std::numeric_limits<Nanoseconds>::max());
+            std::numeric_limits<Microseconds>::max());
 
   std::ostringstream s;
   cap.Print(s);

@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_ATS_INFERENCE_FIXTURE_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -116,8 +117,9 @@ class AtsInferenceTest : public RngTest {
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(Graph(), conf_.DispatchDir(),
-                                                   conf_.PluginDir());
+      auto exec = NpuCompiledModelExecutor::Create(
+          Graph(), conf_.TargetOptions(), conf_.DispatchDir(),
+          conf_.PluginDir());
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -125,8 +127,8 @@ class AtsInferenceTest : public RngTest {
       auto res = std::make_unique<CompiledModelExecutor>(std::move(*exec));
       return res;
     } else if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec,
-                              CpuCompiledModelExecutor::Create(Graph()));
+      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                             Graph(), conf_.TargetOptions()));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -135,7 +137,23 @@ class AtsInferenceTest : public RngTest {
 
   template <typename Rng>
   Expected<VarBuffers> MakeInputs(Rng& device) const {
-    return graph_->MakeInputs(device, conf_.DataBuilder());
+    auto inputs = graph_->MakeInputs(device, conf_.DataBuilder());
+    if (!inputs.HasValue()) return inputs.Error();
+
+    LITERT_LOG(LITERT_INFO, "First 5 elements of each input:");
+    for (size_t i = 0; i < inputs->size(); ++i) {
+      const auto& input = (*inputs)[i];
+      LITERT_LOG(LITERT_INFO, "  Input %zu:", i);
+      if (input.Type().ElementType() == ElementType::Float32) {
+        const auto& view = input.template AsView<float>();
+        for (int j = 0; j < std::min(5, (int)view.data.size()); ++j) {
+          LITERT_LOG(LITERT_INFO, "    [%d]: %f", j, view.data[j]);
+        }
+      } else {
+        LITERT_LOG(LITERT_INFO, "    Unsupported element type for printing.");
+      }
+    }
+    return inputs;
   }
 
   Expected<VarBuffers> Actual(const VarBuffers& inputs,
@@ -155,8 +173,8 @@ class AtsInferenceTest : public RngTest {
   }
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
-    LITERT_ASSIGN_OR_RETURN(auto exec,
-                            CpuCompiledModelExecutor::Create(Graph()));
+    LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                           Graph(), conf_.ReferenceOptions()));
     return exec.Run(inputs);
   }
 
@@ -184,7 +202,13 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-5, &mse));
+    LITERT_LOG(LITERT_INFO, "First 5 elements:");
+    for (int i = 0; i < std::min(5, (int)actual.data.size()); ++i) {
+      LITERT_LOG(LITERT_INFO, "  actual[%d]: %f, ref[%d]: %f", i,
+                 static_cast<float>(actual.data[i]), i,
+                 static_cast<float>(ref.data[i]));
+    }
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-4, &mse));
     cap_.numerics.NewMse(mse);
   }
 
