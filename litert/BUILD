@@ -135,9 +135,20 @@ package_group(
 package_group(
     name = "litert_c_users",
     includes = [
-        ":litert_cc_users_dynamic_link",
-        ":litert_cc_users_static_link",
         ":litert_internal_users",
+    ],
+    packages = [
+        "//litert/vendors/...",
+        "//litert/kotlin/...",
+        "//litert/rust/...",
+        "//litert/samples/...",
+        "//third_party/odml/litert/tensor/...",
+        # TODO(b/454666070): Below targets should be removed after we remove their use of C headers.
+        "//third_party/odml/litert_lm/...",
+        "//third_party/odml/infra/genai/inference/...",
+        # copybara:uncomment "//platforms/darwinn/...",
+        "//third_party/odml/genai_modules/rag_pipeline/core/models/...",
+        # copybara:uncomment "//research/xeno/audio/voicelm/calculators/lite_rt/...",
     ],
 )
 
