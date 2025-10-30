@@ -17,7 +17,7 @@
 # Shell library for working with data and executable files from bzl between host
 # and device. Meant to be templated via litert_device_script.bzl.
 
-source third_party/odml/litert/litert/integration_test/device_script_common.sh || exit 1
+source litert/integration_test/device_script_common.sh || exit 1
 
 # Root of runfiles on the device.
 device_runfiles_root="/data/local/tmp/runfiles"
