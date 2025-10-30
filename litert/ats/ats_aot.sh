@@ -14,7 +14,7 @@
 
 #!/bin/bash
 
-source "${0%.*}_lib.sh" || exit 1
+source "${0%.sh}_lib.sh" || exit 1
 
 # TODO: Unify workdirs with other scripts.
 readonly models_out="/tmp/litert_extras/ats"

@@ -116,6 +116,12 @@ def _valid_so_name(name):
 def _make_target_ref(name):
     return ":{}".format(name)
 
+def commandline_flag_copts():
+    return select({
+        "@org_tensorflow//tensorflow:android": ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
+        "//conditions:default": [],
+    })
+
 ####################################################################################################
 # Explicitly Link System Libraries ("ungrte")
 

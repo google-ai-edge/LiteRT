@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
-load("//litert/build_common:litert_build_defs.bzl", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
@@ -31,7 +31,7 @@ package(
 litert_test(
     name = "ats",
     srcs = ["ats.cc"],
-    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
     tags = [
@@ -62,6 +62,7 @@ cc_library(
     testonly = True,
     srcs = ["configure.cc"],
     hdrs = ["configure.h"],
+    copts = commandline_flag_copts(),
     deps = [
         ":common",
         "//litert/c:litert_common",
@@ -199,6 +200,7 @@ litert_device_test(
 cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
+    copts = commandline_flag_copts(),
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
@@ -346,9 +348,8 @@ litert_define_ats(
     backend = "example",
     compile_only_suffix = "_aot",
     do_register = [
-        # "sub.*f32",
-        # "mul.*f32",
-        ".*ExtraModel.*",
+        "sub.*f32",
+        "mul.*f32",
     ],
     extra_flags = ["--limit=1"],
     jit_suffix = "",

@@ -14,7 +14,7 @@
 
 #!/bin/bash
 
-source "${0%.*}_lib.sh" || exit 1
+source "${0%.sh}_lib.sh" || exit 1
 
 extra_args=("${@:1}")
 d_bin=$(device_bin)
