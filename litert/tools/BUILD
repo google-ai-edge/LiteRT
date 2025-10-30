@@ -511,6 +511,7 @@ cc_binary(
     srcs = ["gpu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/core:filesystem",
     ] + GPU_ACCELERATOR_DEPS,
 )
 
@@ -519,6 +520,7 @@ cc_binary(
     srcs = ["gpu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
@@ -531,6 +533,7 @@ cc_binary(
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
         # "//third_party/vulkan_loader",
@@ -548,6 +551,7 @@ cc_binary(
     ],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
         # copybara:uncomment_end
