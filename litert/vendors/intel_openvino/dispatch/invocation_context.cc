@@ -23,6 +23,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
@@ -66,8 +67,10 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
 #if defined(LITERT_WINDOWS_OS)
       kLiteRtTensorBufferTypeHostMemory,
 #else
-      kLiteRtTensorBufferTypeAhwb,
+      // OpenVINO RemoteTensor doesn't support copy-free AHWB buffer. Until
+      // it's supported, we use DMA-BUF.
       kLiteRtTensorBufferTypeDmaBuf,
+      kLiteRtTensorBufferTypeAhwb,
 #endif
   };
 
