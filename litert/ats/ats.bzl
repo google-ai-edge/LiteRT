@@ -89,7 +89,8 @@ def litert_define_ats(
     if compile_aot_and_run_suffix:
         fail("Compile aot and run on device is not supported yet.")
 
-    init_run_args = []
+    # TODO: Unify local workdir paths for scripting.
+    init_run_args = ["--extra_models={}".format("/data/local/tmp/runfiles/user/tmp/litert_extras")]
     if is_npu_backend(backend):
         init_run_args += [
             "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(backend)),
@@ -114,6 +115,7 @@ def litert_define_ats(
             local_suffix = "",
             exec_args = run_args,
             backend_id = backend,
+            model_providers = ["//litert/integration_test:ats_models_provider"],
         )
 
     compile_args = _make_ats_args(
@@ -135,4 +137,5 @@ def litert_define_ats(
             exec_args = compile_args,
             build_for_host = True,
             build_for_device = False,
+            model_providers = ["//litert/integration_test:ats_models_provider"],
         )

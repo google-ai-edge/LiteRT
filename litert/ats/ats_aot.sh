@@ -16,7 +16,8 @@
 
 source "${0%.*}_lib.sh" || exit 1
 
-models_out="/tmp/ats_models"
+# TODO: Unify workdirs with other scripts.
+readonly models_out="/tmp/litert_extras/ats"
 readonly exec_args=("${@:1}")
 
 compile_bin=""
@@ -29,6 +30,7 @@ compiler_libs=()
 
 function setup_context() {
   mkdir -p "$models_out"
+  rm -rf "$models_out"/*
 
   local in_flags=$1
   for a in ${in_flags[@]}; do
@@ -67,6 +69,15 @@ function setup_context() {
       link_path=$(dirname ${lib}):${link_path}
     fi
   done
+
+  local input_models=($(get_provided_models))
+  if [[ $? -ne 0 ]]; then
+    fatal "Failed to get provided models."
+  fi
+
+  if [[ -n "${input_models[*]}" ]]; then
+    compile_args+=("--extra_models=$(str_join "," ${input_models[@]})")
+  fi
 }
 
 function print_args() {

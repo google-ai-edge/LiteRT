@@ -17,6 +17,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
 load("//litert/build_common:litert_build_defs.bzl", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -328,6 +329,11 @@ cc_library(
 
 # PRE-CONFIGURED CTS SUITES ########################################################################
 
+make_download_model_provider(
+    name = "ats_models_provider",
+    url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
+)
+
 litert_define_ats(
     name = "sample_cpu_ats",
     backend = "cpu",
@@ -340,8 +346,9 @@ litert_define_ats(
     backend = "example",
     compile_only_suffix = "_aot",
     do_register = [
-        "sub.*f32",
-        "mul.*f32",
+        # "sub.*f32",
+        # "mul.*f32",
+        ".*ExtraModel.*",
     ],
     extra_flags = ["--limit=1"],
     jit_suffix = "",

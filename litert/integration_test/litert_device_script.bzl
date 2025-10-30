@@ -44,6 +44,9 @@ def _device_script_lib_impl(ctx):
     forwarded_runfiles = []
     subs = ctx.actions.template_dict()
 
+    for k, v in ctx.attr.subs.items():
+        subs.add(k, v)
+
     if ctx.attr.host_bin:
         files = [f for f in ctx.attr.host_bin.files.to_list() if "for_host" in f.short_path]
         if len(files) != 1:
@@ -86,6 +89,12 @@ def _device_script_lib_impl(ctx):
         device_libs.extend(files)
     subs.add("@@device_libs@@", _fmt_location(device_libs))
 
+    model_providers = []
+    for v in ctx.attr.model_providers:
+        forwarded_runfiles.extend(v.files.to_list() + [v.files_to_run.executable])
+        model_providers.append(_extract_binary(v))
+    subs.add("@@model_providers@@", "\"{}\"".format(" ".join(model_providers)))
+
     data_files = []
     for v in ctx.attr.data:
         files = v.files.to_list()
@@ -101,6 +110,7 @@ def _device_script_lib_impl(ctx):
         template = ctx.file.template,
         output = ctx.outputs.out,
         computed_substitutions = subs,
+        is_executable = ctx.attr.executable,
     )
 
     return [DefaultInfo(runfiles = runfiles)]
@@ -176,6 +186,22 @@ _device_script_lib = rule(
             default = [],
             doc = "The environment variables to set before executing the target.",
         ),
+        "subs": attr.string_dict(
+            mandatory = False,
+            default = {},
+            doc = "Other basic string substitutions to make in the template.",
+        ),
+        "executable": attr.bool(
+            mandatory = False,
+            default = False,
+            doc = "Whether the output is executable.",
+        ),
+        "model_providers": attr.label_list(
+            mandatory = False,
+            default = [],
+            allow_files = True,
+            doc = "The model providers to call to get models.",
+        ),
     },
 )
 
@@ -183,6 +209,7 @@ def litert_device_script(
         name,
         script = None,
         bin = None,
+        model_providers = [],
         data = [],
         testonly = True,
         exec_args = [],
@@ -201,6 +228,7 @@ def litert_device_script(
       script: The main shell script file to be executed.
       bin: The label of the binary target to be run. This binary will be built for both the host
            and the device platforms.
+      model_providers: A list of tools dependencies that return tflite models when called.
       data: A list of additional data dependencies required by the script or binary.
       testonly: If True, the generated targets are marked as testonly.
       exec_args: A list of arguments to be passed to the final sh_binary.
@@ -250,11 +278,15 @@ def litert_device_script(
         extra_device_libs = extra_device_libs,
         testonly = testonly,
         exec_env_vars = backend.env_paths,
+        model_providers = model_providers,
     )
 
     sh_library(
         name = name + "_lib",
         srcs = [":" + name + "_lib_expanded"],
+        deps = [
+            "//litert/integration_test:device_script_common",
+        ],
         testonly = testonly,
     )
 
@@ -264,4 +296,26 @@ def litert_device_script(
         deps = [":" + name + "_lib"],
         testonly = testonly,
         args = exec_args,
+    )
+
+def make_download_model_provider(name, url, testonly = True):
+    """Generates a shell script and runfiles for downloading a model from a URL.
+
+    This can be depended on by litert_device_scripts to add more models to the data dependencies.
+    """
+
+    _device_script_lib(
+        name = name + "_expanded",
+        template = "//litert/integration_test:download_model_provider.sh",
+        out = name + ".sh",
+        subs = {
+            "@@url@@": url,
+        },
+        executable = True,
+    )
+
+    sh_binary(
+        name = name,
+        srcs = [":" + name + "_expanded"],
+        testonly = testonly,
     )

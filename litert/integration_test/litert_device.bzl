@@ -133,6 +133,7 @@ def litert_device_exec(
         exec_args = [],
         remote_suffix = "",
         local_suffix = "_adb",
+        model_providers = [],
         testonly = True):
     """
     Macro to execute a binary target on a device through adb.
@@ -159,12 +160,14 @@ def litert_device_exec(
         bin = target,
         script = "//litert/integration_test:mobile_install.sh",
         exec_args = exec_args,
+        model_providers = model_providers,
         testonly = testonly,
         backend_id = backend_id,
     )
 
     # Copybara comment doesn't work right if it is inside an if statement (breaks formatting).
     if remote_suffix != None:
+        # Note model providers are not compatible with mobile harness.
         _litert_mh_exec(
             name = name + remote_suffix,
             target = target,

@@ -72,10 +72,18 @@ function check_len() {
   if (( ${#array[@]} == ${len} )); then
     echo "${tag} array len OK"
   else
-    echo "${tag}: array len NOT OK"
+    echo "${tag}: array len NOT OK, expected ${len}, got ${#array[@]}"
     exit 1
   fi
 }
+
+provided_models=($(get_provided_models))
+if [ $? -ne 0 ]; then
+    echo "Failed to get provided models."
+    exit 1
+else
+    check_len "provided_models" 2 ${provided_models[*]}
+fi
 
 check_len "data_files" 2 $(data_files)
 for file in $(data_files); do
@@ -105,3 +113,6 @@ if [[ -n "$check_device" ]]; then
   check_file "$(find_device_dispatch)" "find_device_dispatch" "Example.so"
   check_file "$(find_device_runtime_lib)" "find_device_runtime_lib" "libLiteRtRuntimeCApi.so"
 fi
+
+
+# echo "$(get_provided_models)"

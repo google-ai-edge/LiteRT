@@ -1,5 +1,3 @@
-#!/bin/bash
-
 # Copyright 2025 Google LLC.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,10 +17,7 @@
 # Shell library for working with data and executable files from bzl between host
 # and device. Meant to be templated via litert_device_script.bzl.
 
-reset_color='\033[0m'
-host_color='\033[34m'
-hightlight_color='\033[36m'
-error_color='\033[31m'
+source third_party/odml/litert/litert/integration_test/device_script_common.sh || exit 1
 
 # Root of runfiles on the device.
 device_runfiles_root="/data/local/tmp/runfiles"
@@ -169,28 +164,17 @@ function find_device_runtime_lib() {
   done
 }
 
-# Print a message in the canonical color.
-function print() {
-  echo -e "${host_color}${1}${reset_color}"
-}
-
-# Print a message in the canonical hightlight color.
-function print_hightlight() {
-  echo -e "${hightlight_color}${1}${reset_color}"
-}
-
-# Print a file or host file device file pair.
-function print_file() {
-  if [[ "$#" -ne 2 ]]; then
-    echo -e "    ${1}"
+# Call any/all model provider scripts built with this tool. The return code
+# of this need to be checked by callers.
+function get_provided_models() {
+  local model_providers=@@model_providers@@
+  if [[ "$model_providers" == "@@"*"@@" ]]; then
+    echo ""
   else
-    echo -e "    ${1} => ${2}"
+    for provider in ${model_providers[@]}; do
+      $provider
+    done
   fi
 }
 
-# Print message and exit.
-function fatal() {
-  echo -e "${error_color}ERROR: ${reset_color}${1}"
-  exit 1
-}
 

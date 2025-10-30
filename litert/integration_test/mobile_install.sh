@@ -22,6 +22,9 @@ d_libs=($(device_libs))
 d_data=($(data_files))
 d_env_vars=($(exec_env_vars))
 d_args=()
+provided_models=()
+
+dry_run=""
 
 function setup_context() {
   function handle_user_data() {
@@ -51,6 +54,16 @@ function setup_context() {
     else
       d_args+=("${a}")
     fi
+  done
+  
+  provided_models=($(get_provided_models))
+  if [ $? -ne 0 ]; then
+    echo "Failed to get provided models."
+    exit 1
+  fi
+
+  for f in "${provided_models[@]}"; do
+    d_data+=("${f}")
   done
 }
 
@@ -89,9 +102,7 @@ function print_args() {
   fi
 }
 
-
-
-# # Push and execute #############################################################
+# Push and execute #############################################################
 
 setup_context "${extra_args[*]}"
 
@@ -123,19 +134,8 @@ done
 if [[ -n $d_bin ]]; then
   print "Pushing binary to device..."
   push_file "${d_bin}"
-  print "Running: ${hightlight_color}\"adb shell ${d_env_vars} $(device_path "${d_bin}") ${extra_args[*]}${host_color}\""
+  print "Running: ${hightlight_color}\"adb shell ${d_env_vars} $(device_path "${d_bin}") ${d_args[*]}${host_color}\""
   if [[ -z "${dry_run}" ]]; then
     adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]} 
   fi
 fi
-
-
-
-
-
-
-
-
-
-
-

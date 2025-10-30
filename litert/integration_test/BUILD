@@ -19,7 +19,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
-load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
+load("//litert/integration_test:litert_device_script.bzl", "litert_device_script", "make_download_model_provider")
 # copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_cpu_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_qualcomm_mh_guitar_test")
 
 package(
@@ -427,6 +427,17 @@ cc_binary(
     ],
 )
 
+sh_binary(
+    name = "dummy_model_provider",
+    srcs = ["dummy_model_provider.sh"],
+)
+
+sh_library(
+    name = "device_script_common",
+    srcs = ["device_script_common.sh"],
+    visibility = ["//litert:litert_public"],
+)
+
 litert_device_script(
     name = "check_script_device",
     testonly = True,
@@ -441,11 +452,40 @@ litert_device_script(
     exec_args = [
         "--check_device",
     ],
+    model_providers = [
+        ":dummy_model_provider",
+    ],
     script = "device_script_test.sh",
+)
+
+litert_device_script(
+    name = "check_script_host",
+    testonly = True,
+    backend_id = "example",
+    bin = ":dummy_binary",
+    build_for_device = False,
+    build_for_host = True,
+    data = [
+        "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
+        "//litert/test:testdata/simple_add_op_qc_v75_precompiled.tflite",
+    ],
+    exec_args = [
+        "--check_host",
+    ],
+    model_providers = [
+        ":dummy_model_provider",
+    ],
+    script = "device_script_test.sh",
+)
+
+make_download_model_provider(
+    name = "ats_models_provider",
+    url = "https://storage.googleapis.com/litert/ats_models.tar.gz",
 )
 
 litert_device_exec(
     name = "exec_for_testing_device",
+    testonly = True,
     backend_id = "example",
     data = [
         "//litert/test:testdata/mobilenet_v2_1.0_224.tflite",
@@ -459,6 +499,9 @@ litert_device_exec(
         "--expected_libs_on_ld={}".format(",".join([device_rlocation(lib) for lib in get_libs("example")])),
     ],
     local_suffix = "",
+    model_providers = [
+        ":ats_models_provider",
+    ],
     remote_suffix = None,
     target = ":dummy_binary",
 )
