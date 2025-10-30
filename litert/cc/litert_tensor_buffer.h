@@ -396,13 +396,6 @@ class TensorBuffer
     return {};
   }
 
-  // Set the C LiteRtEvent object for the tensor buffer.
-  // The function takes ownership of the passed LiteRtEvent object.
-  Expected<void> SetLiteRtEvent(LiteRtEvent& litert_event) {
-    LITERT_RETURN_IF_ERROR(LiteRtSetTensorBufferEvent(Get(), litert_event));
-    return {};
-  }
-
   Expected<void> ClearEvent() {
     LITERT_RETURN_IF_ERROR(LiteRtClearTensorBufferEvent(Get()));
     return {};
