@@ -179,7 +179,8 @@ Expected<void> CheckAts() {
 
     LITERT_ASSIGN_OR_RETURN(auto exec,
                             NpuCompiledModelExecutor::Create(
-                                *model, npu_inference_options.DispatchDir()));
+                                *model, npu_inference_options.TargetOptions(),
+                                npu_inference_options.DispatchDir()));
     const auto& subgraph = *model->Subgraphs()[0];
     LITERT_ASSIGN_OR_RETURN(
         auto inputs, SimpleBuffer::LikeSignature(subgraph.Inputs().begin(),

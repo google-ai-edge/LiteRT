@@ -24,6 +24,7 @@
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
+#include "litert/cc/internal/litert_detail.h"
 #include "litert/core/filesystem.h"
 
 ABSL_FLAG(std::vector<std::string>, expected_data, {},
@@ -33,7 +34,13 @@ ABSL_FLAG(std::vector<std::string>, expected_libs_on_ld, {},
           "link path.");
 
 int main(int argc, char* argv[]) {
-  absl::ParseCommandLine(argc, argv);
+  std::vector<char*> absl_flags;
+  for (int i = 0; i < argc; ++i) {
+    if (!::litert::StartsWith(argv[i], "--a")) {
+      absl_flags.push_back(argv[i]);
+    }
+  }
+  absl::ParseCommandLine(absl_flags.size(), absl_flags.data());
 
   const auto expected_data = absl::GetFlag(FLAGS_expected_data);
   const auto expected_libs_on_ld = absl::GetFlag(FLAGS_expected_libs_on_ld);
