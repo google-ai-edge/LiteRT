@@ -15,11 +15,17 @@
 #ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_TYPES_H_
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_TENSOR_BUFFER_TYPES_H_
 
+#include <cstddef>
 #include <string>
 
 #include "litert/c/litert_tensor_buffer_types.h"
 
 namespace litert {
+
+// Byte alignment is required for host memory TensorBuffers, needed by the
+// LiteRT CPU accelerator.
+inline constexpr size_t kHostMemoryBufferAlignment =
+    static_cast<size_t>(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
 
 // C++-style scoped enum.
 // This inherits from the C enum to ensure C-level interoperability.
