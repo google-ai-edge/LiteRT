@@ -93,7 +93,8 @@ TEST(OpWrapperTest, OpConfigTest) {
                                QuantizeParamsWrapperVariant(),
                                dummy_dims,
                                static_cast<uint32_t>(data_size),
-                               data_ptr};
+                               data_ptr,
+                               true};
 
   Qnn_Tensor_t golden_qnn_tensor;
   tensor_wrapper.CloneTo(golden_qnn_tensor);
@@ -137,7 +138,8 @@ TEST(OpWrapperTest, MoveConstructorTest) {
                                QuantizeParamsWrapperVariant(),
                                dummy_dims,
                                static_cast<uint32_t>(data.size()),
-                               data_ptr};
+                               data_ptr,
+                               true};
   Qnn_Tensor_t golden_qnn_tensor;
   tensor_wrapper.CloneTo(golden_qnn_tensor);
   std::uint8_t value = 255;
