@@ -28,9 +28,12 @@
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: export
+#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: export
 
 // Seed for the data generation.
 ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
@@ -54,13 +57,10 @@ ABSL_DECLARE_FLAG(std::string, dispatch_dir);
 ABSL_DECLARE_FLAG(std::string, plugin_dir);
 
 // Regex to filter tests.
-ABSL_DECLARE_FLAG(std::string, dont_register);
+ABSL_DECLARE_FLAG(std::vector<std::string>, dont_register);
 
 // Regex for explicit inclusions.
-ABSL_DECLARE_FLAG(std::string, do_register);
-
-// Will generate values for f32 tensors in the range of f16 values.
-ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
+ABSL_DECLARE_FLAG(std::vector<std::string>, do_register);
 
 // Optional list of directories, or model files to add to the test.
 ABSL_DECLARE_FLAG(std::vector<std::string>, extra_models);
@@ -232,6 +232,12 @@ class AtsConf {
   // compilation.
   const std::string& SocModel() const { return soc_model_; }
 
+  // Litert options to use for the target backend.
+  const Options& TargetOptions() const { return target_options_; }
+
+  // Litert options to use for the reference backend.
+  const Options& ReferenceOptions() const { return reference_options_; }
+
   AtsConf(const AtsConf&) = delete;
   AtsConf& operator=(const AtsConf&) = delete;
   AtsConf(AtsConf&&) = default;
@@ -240,15 +246,16 @@ class AtsConf {
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
-                   std::regex&& neg_re, std::regex&& pos_re,
+                   std::vector<std::regex> neg_re,
+                   std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
-                   bool f16_range_for_f32, std::optional<int> data_seed,
-                   size_t iters_per_test,
+                   std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
-                   std::string soc_manufacturer, std::string soc_model)
+                   std::string soc_manufacturer, std::string soc_model,
+                   Options&& target_options, Options&& reference_options)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -257,7 +264,6 @@ class AtsConf {
         neg_re_(std::move(neg_re)),
         pos_re_(std::move(pos_re)),
         extra_models_(std::move(extra_models)),
-        f16_range_for_f32_(f16_range_for_f32),
         data_seed_(data_seed),
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
@@ -269,10 +275,12 @@ class AtsConf {
         limit_(limit),
         plugin_(std::move(plugin)),
         soc_manufacturer_(std::move(soc_manufacturer)),
-        soc_model_(std::move(soc_model)) {
-    if (f16_range_for_f32_) {
-      data_builder_.SetF16InF32();
-    }
+        soc_model_(std::move(soc_model)),
+        target_options_(std::move(target_options)),
+        reference_options_(std::move(reference_options)) {
+    // For now, we will provide default settings for data generation.
+    // More configurability may be introduced later.
+    data_builder_.SetSin();
   }
 
   SeedMap seeds_for_params_;
@@ -281,10 +289,9 @@ class AtsConf {
   bool quiet_;
   std::string dispatch_dir_;
   std::string plugin_dir_;
-  std::regex neg_re_;
-  std::regex pos_re_;
+  std::vector<std::regex> neg_re_;
+  std::vector<std::regex> pos_re_;
   std::vector<std::string> extra_models_;
-  bool f16_range_for_f32_;
   std::optional<int> data_seed_;
   size_t iters_per_test_;
   std::chrono::milliseconds max_ms_per_test_;
@@ -297,6 +304,8 @@ class AtsConf {
   std::optional<internal::CompilerPlugin> plugin_;
   std::string soc_manufacturer_;
   std::string soc_model_;
+  Options target_options_;
+  Options reference_options_;
 
   RandomTensorDataBuilder data_builder_;
 };

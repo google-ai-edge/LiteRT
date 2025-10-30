@@ -25,6 +25,7 @@ d_args=()
 provided_models=()
 
 dry_run=""
+no_push=""
 
 function setup_context() {
   function handle_user_data() {
@@ -51,20 +52,24 @@ function setup_context() {
       d_data+=($(handle_user_data "${a#*=}"))
     elif [[ $a == "--dry_run"* ]]; then
       dry_run="true"
+    elif [[ $a == "--no_push"* ]]; then
+      no_push="true"
     else
       d_args+=("${a}")
     fi
   done
   
-  provided_models=($(get_provided_models))
-  if [ $? -ne 0 ]; then
-    echo "Failed to get provided models."
-    exit 1
-  fi
+  if [[ -z "${no_push}" ]]; then
+    provided_models=($(get_provided_models))
+    if [ $? -ne 0 ]; then
+      echo "Failed to get provided models."
+      exit 1
+    fi
 
-  for f in "${provided_models[@]}"; do
-    d_data+=("${f}")
-  done
+    for f in "${provided_models[@]}"; do
+      d_data+=("${f}")
+    done
+  fi
 }
 
 function print_args() {
@@ -100,6 +105,11 @@ function print_args() {
     print "dry_run"
     echo "    yes"
   fi
+
+  if [[ -n "${no_push}" ]]; then
+    print "no_push"
+    echo "    yes"
+  fi
 }
 
 # Push and execute #############################################################
@@ -109,11 +119,15 @@ setup_context "${extra_args[*]}"
 print_args
 
 function push_file() {
-  local cmd="adb push --sync "$1" "$(device_path "$1")""
-  if [[ -n "${dry_run}" ]]; then
-    cmd="echo [dry run] ${cmd}"
+  if [[ -n "${no_push}" ]]; then
+    echo "[no_push] ${1}"
+  else
+    local cmd="adb push --sync "$1" "$(device_path "$1")""
+    if [[ -n "${dry_run}" ]]; then
+      cmd="echo [dry run] ${cmd}"
+    fi
+    eval "${cmd}"
   fi
-  eval "${cmd}"
 }
 
 has_adb=$(adb devices | tail -n +2)
