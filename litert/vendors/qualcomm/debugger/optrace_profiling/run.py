@@ -365,7 +365,7 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
       *bazel_run,
       "//litert/tools:apply_plugin_main",
       "--",
-      f"--libs={_LITERT_ROOT / 'bazel-bin/litert/vendors/qualcomm/compiler'}",
+      "--libs=litert/vendors/qualcomm/compiler",
       "--cmd=apply",
       f"--model={model_path}",
       f"--o={tmp_tflite_path}",
@@ -451,6 +451,10 @@ if __name__ == "__main__":
       default=default_qairt_sdk,
   )
   args = parser.parse_args()
+  
+  # LiteRT uses LITERT_QAIRT_SDK, align it with the one from args
+  os.environ["LITERT_QAIRT_SDK"] = f"{str(args.qairt_sdk.parent)}/"
+
   _setup_logging(args.log_level)
   ctx_bin = _generate_ctx_bin(args.model, args.soc_model)
   ctx_bin_info = _get_ctx_bin_info(ctx_bin, args.qairt_sdk)
