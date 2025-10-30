@@ -291,6 +291,7 @@ load("//third_party/litert_gpu:workspace.bzl", "litert_gpu")
 
 litert_gpu()
 
+# INTEL OPENVINO ---------------------------------------------------------------------------------
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure(
