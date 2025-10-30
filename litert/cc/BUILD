@@ -1052,6 +1052,7 @@ cc_library(
 #         ":litert_macros",
 #         ":litert_model",
 #         ":litert_tensor_buffer",
+#         "@com_google_absl//absl/log:absl_log",
 #         "//third_party/apple_frameworks:XCTest",
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment",

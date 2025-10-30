@@ -15,6 +15,7 @@
 #import "third_party/odml/litert/litert/cc/litert_tensor_buffer.h"
 #import <XCTest/XCTest.h>
 #import <XCTest/XCTestAssertions.h>
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_model_types.h"
@@ -127,6 +128,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   XCTAssertTrue(metal_buffer);
 
   // Create a tensor buffer from the existing metal buffer.
+  ABSL_LOG(INFO) << "Before create from metal buffer";
   auto metal_buffer_created = litert::TensorBuffer::CreateFromMetalBuffer(
       *env, kTensorType, kTensorBufferType, *metal_buffer, sizeof(kTensorData));
   XCTAssertTrue(metal_buffer_created);

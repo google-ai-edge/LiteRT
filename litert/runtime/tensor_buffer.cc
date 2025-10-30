@@ -27,6 +27,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -1001,6 +1002,12 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
                         "Unexpected tensor buffer type");
     }
   }
+}
+
+void* LiteRtTensorBufferT::GetTensorBufferRegistry() {
+  void* registry = nullptr;
+  LiteRtGetTensorBufferRegistry(env_, &registry);
+  return registry;
 }
 
 Expected<void> LiteRtTensorBufferT::Unlock() {
