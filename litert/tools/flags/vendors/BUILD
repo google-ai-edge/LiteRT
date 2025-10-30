@@ -14,6 +14,7 @@
 
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -26,7 +27,7 @@ cc_library(
     name = "qualcomm_flags",
     srcs = ["qualcomm_flags.cc"],
     hdrs = ["qualcomm_flags.h"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
         "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
     ],
@@ -136,7 +137,7 @@ cc_library(
     name = "mediatek_flags",
     srcs = ["mediatek_flags.cc"],
     hdrs = ["mediatek_flags.h"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
         "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
     ],

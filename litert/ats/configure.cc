@@ -33,7 +33,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: export
+#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: export
 
 ABSL_FLAG(std::optional<int>, data_seed, std::nullopt,
           "Seed for the buffer data generation.");
@@ -113,6 +116,9 @@ namespace litert::testing {
 
 namespace {
 
+using ::litert::mediatek::MediatekOptionsFromFlags;
+using ::litert::qualcomm::QualcommOptionsFromFlags;
+
 Expected<AtsConf::SeedMap> ParseParamSeedMap() {
   const auto seed_flags = absl::GetFlag(FLAGS_seeds);
   AtsConf::SeedMap seeds;
@@ -143,15 +149,34 @@ Expected<ExecutionBackend> ParseBackend() {
   }
 }
 
+Expected<Options> ParseOptions(ExecutionBackend backend) {
+  LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
+  if (backend == ExecutionBackend::kNpu) {
+    if (auto qnn_opts = QualcommOptionsFromFlags()) {
+      options.AddOpaqueOptions(std::move(*qnn_opts));
+    }
+    if (auto mediatek_opts = MediatekOptionsFromFlags()) {
+      options.AddOpaqueOptions(std::move(*mediatek_opts));
+    }
+    options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu);
+  } else if (backend == ExecutionBackend::kCpu) {
+    options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  } else if (backend == ExecutionBackend::kGpu) {
+    options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  }
+  return options;
+}
+
 Expected<std::optional<internal::CompilerPlugin>> ParsePlugin(
     absl::string_view plugin_dir, absl::string_view soc_manufacturer,
-    bool compile_mode) {
+    bool compile_mode, const Options& litert_options) {
   using R = std::optional<internal::CompilerPlugin>;
   if (!compile_mode) {
     return R(std::nullopt);
   }
   LITERT_ASSIGN_OR_RETURN(auto plugin, internal::CompilerPlugin::FindPlugin(
-                                           soc_manufacturer, {plugin_dir}));
+                                           soc_manufacturer, {plugin_dir},
+                                           nullptr, litert_options.Get()));
   return R(std::move(plugin));
 }
 
@@ -171,7 +196,6 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   std::regex pos_re(absl::GetFlag(FLAGS_do_register),
                     std::regex_constants::ECMAScript);
   auto extra_models = absl::GetFlag(FLAGS_extra_models);
-  auto f16_range_for_f32 = absl::GetFlag(FLAGS_f16_range_for_f32);
   auto data_seed = absl::GetFlag(FLAGS_data_seed);
   auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
   auto plugin_dir = absl::GetFlag(FLAGS_plugin_dir);
@@ -190,15 +214,19 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto limit = absl::GetFlag(FLAGS_limit);
   auto soc_manufacturer = absl::GetFlag(FLAGS_soc_manufacturer);
   auto soc_model = absl::GetFlag(FLAGS_soc_model);
+  LITERT_ASSIGN_OR_RETURN(auto target_options, ParseOptions(backend));
+  LITERT_ASSIGN_OR_RETURN(auto reference_options, Options::Create());
+  reference_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
   LITERT_ASSIGN_OR_RETURN(
-      auto plugin, ParsePlugin(plugin_dir, soc_manufacturer, compile_mode));
+      auto plugin,
+      ParsePlugin(plugin_dir, soc_manufacturer, compile_mode, target_options));
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
-              f16_range_for_f32, data_seed, iters_per_test,
-              std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
-              std::move(csv), compile_mode, std::move(models_out), limit,
-              std::move(plugin), std::move(soc_manufacturer),
-              std::move(soc_model));
+              data_seed, iters_per_test, std::move(max_ms_per_test_opt),
+              fail_on_timeout, dump_report, std::move(csv), compile_mode,
+              std::move(models_out), limit, std::move(plugin),
+              std::move(soc_manufacturer), std::move(soc_model),
+              std::move(target_options), std::move(reference_options));
   Setup(res);
   return res;
 }
