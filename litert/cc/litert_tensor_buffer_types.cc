@@ -21,7 +21,8 @@
 
 namespace litert {
 
-std::string BufferTypeToString(TensorBufferType buffer_type) {
+// TODO(b/454666070): Rename to BufferTypeToString once the C version is gone.
+std::string BufferTypeToStringCC(TensorBufferType buffer_type) {
   return BufferTypeToString(static_cast<LiteRtTensorBufferType>(buffer_type));
 }
 
