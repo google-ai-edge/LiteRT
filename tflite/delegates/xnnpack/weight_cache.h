@@ -15,6 +15,7 @@ limitations under the License.
 #ifndef TENSORFLOW_LITE_DELEGATES_XNNPACK_WEIGHT_CACHE_H_
 #define TENSORFLOW_LITE_DELEGATES_XNNPACK_WEIGHT_CACHE_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -205,7 +206,7 @@ class WeightCacheBuilder {
   FileDescriptorView fd_;
   std::string file_path_;
 
-  bool is_build_step_ = false;
+  std::atomic<bool> is_build_step_ = false;
 };
 
 // Allows XNNPack to directly load packed weights from disk instead of having to
@@ -262,6 +263,11 @@ class MMapWeightCacheProvider {
   bool CanStartBuildStep() const {
     return building_run_;
   };
+
+  // If the cache is still being built, this signals that all of the building
+  // operations are done and that `CanStartBuildStep()` should now return
+  // `false`.
+  void FinishBuild() { building_run_ = false; }
 
   // Prepares to add new data to the cache.
   [[nodiscard /*Updating cache data may fail.*/]]
