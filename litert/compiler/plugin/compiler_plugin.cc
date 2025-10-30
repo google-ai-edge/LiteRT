@@ -366,7 +366,7 @@ LiteRtStatus PartitionSubgraph(
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
     LiteRtModelT& model) {
   // Group selected ops into connected islands.
-  auto islands = GroupPartitions(selected_ops);
+  auto islands = GroupPartitions(selected_ops, &subgraph);
   if (islands.empty()) {
     return kLiteRtStatusOk;
   }

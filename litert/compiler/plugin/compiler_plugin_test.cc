@@ -662,5 +662,28 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
 }
 
+TEST(PartitionModelTest, PartitionIsland) {
+  auto model_wrap = testing::LoadTestFileModel("island_partial.tflite");
+  auto& model = *model_wrap.Get();
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  const auto& [ops, new_model] = *partition_result;
+
+  EXPECT_EQ(ops.size(), 2);
+
+  EXPECT_EQ(new_model.NumSubgraphs(), 2);
+  EXPECT_EQ(new_model.Subgraphs().at(0)->Ops().size(), 3);
+  EXPECT_EQ(new_model.Subgraphs().at(1)->Ops().size(), 1);
+  // EXPECT_EQ(new_model.Subgraphs().at(2)->Ops().size(), 2);
+}
+
 }  // namespace
 }  // namespace litert::internal

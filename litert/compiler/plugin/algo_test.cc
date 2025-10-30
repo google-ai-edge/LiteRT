@@ -51,7 +51,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(2).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 1);
     ASSERT_EQ(partitions.front().size(), 2);
 
@@ -64,7 +64,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(3).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 2);
     ASSERT_EQ(partitions.front().size(), 1);
     ASSERT_EQ(partitions.back().size(), 1);
@@ -81,7 +81,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
   {
     std::vector<LiteRtOpWithPartitionIndex> selected_ops;
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 0);
   }
 
@@ -92,7 +92,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(2).Get(), 0});
     selected_ops.push_back({ops.at(3).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 1);
     ASSERT_EQ(partitions.front().size(), 4);
 
@@ -265,7 +265,7 @@ TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(2).Get(), 1});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 2);
     ASSERT_EQ(partitions.front().size(), 1);
     ASSERT_EQ(partitions.back().size(), 1);
@@ -288,7 +288,7 @@ TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
     selected_ops.push_back({ops.at(2).Get(), 3});
     selected_ops.push_back({ops.at(3).Get(), 4});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GroupPartitions(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 4);
 
     absl::flat_hash_set<LiteRtOp> ops_in_partition;

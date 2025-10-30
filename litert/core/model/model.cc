@@ -473,6 +473,10 @@ bool IsConstant(const LiteRtTensorT& tensor) {
       << "Constant tensors should not be defined by an op";
   return is_const;
 }
+// TODO: reuse this in cc api.
+bool IsSubgraphInput(const LiteRtTensorT& tensor) {
+  return !IsConstant(tensor) && tensor.DefiningOp() == nullptr;
+}
 
 void AttachInput(LiteRtTensor tensor, LiteRtOpT& op) {
   op.Inputs().push_back(tensor);
