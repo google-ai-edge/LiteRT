@@ -48,11 +48,13 @@ struct TestNames {
   }
 
   // Create with an explicit desc.
-  static TestNames Create(size_t test_id, absl::string_view family,
-                          absl::string_view logic, absl::string_view test,
+  static TestNames Create(size_t test_id, absl::string_view fixture,
+                          absl::string_view source, absl::string_view test,
+                          absl::string_view report_id,
                           absl::string_view desc = "") {
-    auto suite = MakeSuite(test_id, family, logic);
-    return {suite, std::string(logic), std::string(desc), std::string(test)};
+    auto suite = MakeSuite(test_id, fixture, source);
+    return {suite, std::string(test), std::string(desc),
+            std::string(report_id)};
   }
 
  private:
@@ -98,7 +100,7 @@ enum class CompilationStatus {
 // Timing related types.
 using Clock = std::chrono::steady_clock;
 using TimePoint = Clock::time_point;
-using Nanoseconds = uint64_t;
+using Microseconds = uint64_t;
 
 // Which backend to use as the "actual".
 enum class ExecutionBackend { kCpu, kGpu, kNpu };
@@ -175,7 +177,7 @@ void AbslStringify(Sink& sink, const CompilationStatus& status) {
 }
 
 template <typename Sink>
-void AbslStringify(Sink& sink, const Nanoseconds& ns) {
+void AbslStringify(Sink& sink, const Microseconds& ns) {
   absl::Format(&sink, "%e", ns);
 }
 
