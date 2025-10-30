@@ -25,6 +25,7 @@
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/core/filesystem.h"
 #include "litert/test/generators/generators.h"
 
 namespace litert::testing {
@@ -116,9 +117,10 @@ void RegisterExtraModels(size_t& test_id, const AtsConf& options,
                  file.c_str(), model.Error().Message().c_str());
       continue;
     }
+    auto test_name = internal::Filename(file);
     auto names =
         NamesForNextTest(test_id, options, Fixture::Name(), ExtraModel::Name(),
-                         file, "user provided tflite");
+                         *test_name, file, "user provided tflite");
     if (!names) {
       continue;
     }

@@ -29,25 +29,25 @@
 namespace litert::testing {
 
 // Information about the time taken to compile the model.
-class CompilationTime : public Printable<Nanoseconds> {
+class CompilationTime : public Printable<Microseconds> {
  public:
   // Start timing.
   TimePoint Start() const { return Clock::now(); }
 
   // Stop timing and record the latency.
   void Stop(const TimePoint& start) {
-    std::chrono::duration<Nanoseconds, std::nano> nano = Clock::now() - start;
+    std::chrono::duration<Microseconds, std::nano> nano = Clock::now() - start;
     nanos_ = nano.count();
   }
 
-  Nanoseconds Nanos() const { return nanos_; }
+  Microseconds Nanos() const { return nanos_; }
 
   CompilationTime() : Printable("CompilationTime", "compile_time(ns)") {}
 
  private:
   Fields GetFields() const override { return Fields{nanos_}; }
 
-  Nanoseconds nanos_ = std::numeric_limits<Nanoseconds>::max();
+  Microseconds nanos_ = std::numeric_limits<Microseconds>::max();
 };
 
 // Type to hold all of the capturable information related compilation test

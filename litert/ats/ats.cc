@@ -15,10 +15,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/compile_fixture.h"
 #include "litert/ats/configure.h"
 #include "litert/ats/inference_fixture.h"
@@ -88,7 +92,6 @@ int Ats() {
   typename AtsCompileTest::Capture c_cap;
 
   if (!options->CompileMode()) {
-    // TODO: lukeboyer - Add compile tests.
     RegisterAll<AtsInferenceTest>(*options, test_id, i_cap);
   } else {
     RegisterAll<AtsCompileTest>(*options, test_id, c_cap);
@@ -119,7 +122,29 @@ int Ats() {
 }  // namespace litert::testing
 
 int main(int argc, char** argv) {
-  ::testing::InitGoogleTest(&argc, argv);
-  absl::ParseCommandLine(argc, argv);
+  // Shim to support repeatable flags which absl does not.
+  std::vector<char*> absl_flags;
+  static constexpr absl::string_view kDoRegisterPrefix = "--do_register=";
+  static constexpr absl::string_view kDontRegisterPrefix = "--dont_register=";
+  std::vector<std::string> do_register;
+  std::vector<std::string> dont_register;
+  for (int i = 0; i < argc; ++i) {
+    if (::litert::StartsWith(argv[i], kDoRegisterPrefix)) {
+      do_register.push_back(std::string(
+          absl::string_view(argv[i]).substr(kDoRegisterPrefix.size())));
+    } else if (::litert::StartsWith(argv[i], kDontRegisterPrefix)) {
+      dont_register.push_back(std::string(
+          absl::string_view(argv[i]).substr(kDontRegisterPrefix.size())));
+    } else {
+      absl_flags.push_back(argv[i]);
+    }
+  }
+
+  absl::SetFlag(&FLAGS_do_register, do_register);
+  absl::SetFlag(&FLAGS_dont_register, dont_register);
+
+  int absl_argc = absl_flags.size();
+  ::testing::InitGoogleTest(&absl_argc, absl_flags.data());
+  absl::ParseCommandLine(absl_argc, absl_flags.data());
   return litert::testing::Ats();
 }
