@@ -105,10 +105,7 @@ class TensorBuffer
   [[deprecated]]
   static Expected<TensorBuffer> CreateFromHostMemory(
       const RankedTensorType& tensor_type, void* host_mem_addr,
-      size_t buffer_size) {
-    LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create({}));
-    return CreateFromHostMemory(env, tensor_type, host_mem_addr, buffer_size);
-  }
+      size_t buffer_size);
 
   // Creates a TensorBuffer object that wraps an Android Hardware Buffer. Note
   // that the provided AHardwareBuffer is not owned by the TensorBuffer object
