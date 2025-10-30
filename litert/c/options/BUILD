@@ -54,6 +54,30 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "litert_compiler_options",
+    srcs = ["litert_compiler_options.cc"],
+    hdrs = ["litert_compiler_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/cc:litert_macros",
+        "//litert/core/cache:hash_util",
+    ],
+)
+
+cc_test(
+    name = "litert_compiler_options_test",
+    srcs = ["litert_compiler_options_test.cc"],
+    deps = [
+        ":litert_compiler_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # QUALCOMM #########################################################################################
 
 cc_library(

@@ -60,6 +60,32 @@ cc_test(
 )
 
 cc_library(
+    name = "compiler_options",
+    srcs = ["compiler_options.cc"],
+    hdrs = ["compiler_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c/options:litert_compiler_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_opaque_options",
+        "//litert/cc/internal:litert_handle",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "compiler_options_test",
+    srcs = ["compiler_options_test.cc"],
+    deps = [
+        ":compiler_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "litert_webnn_options",
     srcs = ["litert_webnn_options.cc"],
     hdrs = ["litert_webnn_options.h"],

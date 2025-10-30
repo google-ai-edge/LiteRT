@@ -25,6 +25,7 @@ add_library(litert_c_options STATIC
     litert_mediatek_options.cc
     litert_qualcomm_options.cc
     litert_runtime_options.cc
+    litert_compiler_options.cc
 )
 
 target_include_directories(litert_c_options
