@@ -35,7 +35,7 @@ namespace litert::testing {
 
 // Information about the latency of the execution.
 class Latency
-    : public Printable<Nanoseconds, Nanoseconds, Nanoseconds, size_t> {
+    : public Printable<Microseconds, Microseconds, Microseconds, size_t> {
  public:
   using Ref = std::reference_wrapper<Latency>;
 
@@ -58,17 +58,18 @@ class Latency
 
   // Stop timing and record the latency.
   void Stop(const TimePoint& start) {
-    std::chrono::duration<Nanoseconds, std::nano> nano = Clock::now() - start;
-    latencies_.push_back(nano.count());
+    const auto micro = std::chrono::duration_cast<
+        std::chrono::duration<Microseconds, std::micro>>(Clock::now() - start);
+    latencies_.push_back(micro.count());
   }
 
   // Average latency.
-  Nanoseconds Avg() const {
+  Microseconds Avg() const {
     return ::litert::Avg(latencies_.cbegin(), latencies_.cend());
   }
 
   // Maximum latency.
-  Nanoseconds Max() const {
+  Microseconds Max() const {
     if (latencies_.empty()) {
       return 0;
     }
@@ -76,7 +77,7 @@ class Latency
   }
 
   // Minimum latency.
-  Nanoseconds Min() const {
+  Microseconds Min() const {
     if (latencies_.empty()) {
       return 0;
     }
@@ -87,15 +88,15 @@ class Latency
   size_t NumSamples() const { return latencies_.size(); }
 
   Latency()
-      : Printable("Latency", "avg_latency(ns)", "max_latency(ns)",
-                  "min_latency(ns)", "num_samples") {}
+      : Printable("Latency", "avg_latency(us)", "max_latency(us)",
+                  "min_latency(us)", "num_samples") {}
 
  private:
   Fields GetFields() const override {
     return Fields{Avg(), Max(), Min(), NumSamples()};
   }
 
-  std::vector<Nanoseconds> latencies_;
+  std::vector<Microseconds> latencies_;
 };
 
 // Information about the numerics of the execution.

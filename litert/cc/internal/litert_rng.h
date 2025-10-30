@@ -260,6 +260,23 @@ class F16InF32Generator<float> final {
   }
 };
 
+template <typename D>
+class SinGenerator final : public DataGeneratorBase<D> {};
+
+// Generates sin values in the range [-1, 1].
+template <>
+class SinGenerator<float> final : public DataGeneratorBase<float> {
+ public:
+  SinGenerator() = default;
+
+  template <typename Rng>
+  float operator()(Rng& rng) {
+    return std::sin(rng() * 0.12345f);
+  }
+  float Max() const override { return 1.0f; }
+  float Min() const override { return -1.0f; }
+};
+
 // Dummy primitive generator that returns a monotonically increasing sequence.
 template <typename D>
 class DummyGenerator final : public DataGeneratorBase<D> {
@@ -536,6 +553,11 @@ class RandomTensorDataBuilder {
     return *this;
   }
 
+  RandomTensorDataBuilder& SetSin() {
+    float_config_ = Sin();
+    return *this;
+  }
+
   template <typename D>
   std::pair<double, double> Bounds() const {
     if constexpr (std::is_same_v<D, int32_t>) {
@@ -556,6 +578,8 @@ class RandomTensorDataBuilder {
                 std::numeric_limits<float>::max()};
       } else if (std::holds_alternative<F16InF32>(float_config_)) {
         return {std::numeric_limits<float>::lowest(), 65504.0};
+      } else if (std::holds_alternative<Sin>(float_config_)) {
+        return {-1.0f, 1.0f};
       } else {
         auto [min, max] = std::get<std::pair<float, float>>(float_config_);
         return {min, max};
@@ -589,6 +613,9 @@ class RandomTensorDataBuilder {
       } else if (std::holds_alternative<F16InF32>(float_config_)) {
         RandomTensorData<D, F16InF32Generator> data;
         return Functor()(data, std::forward<Args>(args)...);
+      } else if (std::holds_alternative<Sin>(float_config_)) {
+        RandomTensorData<D, SinGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
       } else {
         auto [min, max] = std::get<std::pair<D, D>>(float_config_);
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
@@ -603,12 +630,13 @@ class RandomTensorDataBuilder {
   struct Dummy {};
   struct NullOpt {};
   struct F16InF32 {};
+  struct Sin {};
 
   template <typename D>
   using IntConfig = std::variant<std::pair<D, D>, Dummy, NullOpt>;
   template <typename D>
   using FloatConfig =
-      std::variant<std::pair<float, float>, Dummy, NullOpt, F16InF32>;
+      std::variant<std::pair<float, float>, Dummy, NullOpt, F16InF32, Sin>;
 
   IntConfig<int32_t> int_config_ = NullOpt();
   FloatConfig<float> float_config_ = NullOpt();
