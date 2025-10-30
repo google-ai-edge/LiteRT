@@ -35,6 +35,7 @@ cc_library(
         "//litert/cc:litert_element_type",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core/utils:log",
         "@qairt//:qnn_lib_headers",
     ],
 )

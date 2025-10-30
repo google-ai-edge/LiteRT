@@ -20,6 +20,7 @@
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/vendors/qualcomm/core/common.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "QnnCommon.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
@@ -104,6 +105,7 @@ inline LiteRtStatus InitQnnOptions(
     litert::qualcomm::QualcommOptions& qualcomm_options) {
   qnn_options.SetLogLevel(
       static_cast<::qnn::LogLevel>(qualcomm_options.GetLogLevel()));
+  ::qnn::QNNLogger::SetLogLevel(qnn_options.GetLogLevel());
   qnn_options.SetProfiling(
       static_cast<::qnn::Profiling>(qualcomm_options.GetProfiling()));
   qnn_options.SetUseHtpPreference(qualcomm_options.GetUseHtpPreference());
