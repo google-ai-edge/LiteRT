@@ -14,7 +14,7 @@
 
 #!/bin/bash
 
-source third_party/odml/litert/litert/integration_test/device_script_common.sh || exit 1
+source litert/integration_test/device_script_common.sh || exit 1
 
 # TODO: Unify workdirs with other scripts.
 readonly work_dir="/tmp/litert_extras"

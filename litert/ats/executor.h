@@ -87,16 +87,12 @@ class CompiledModelExecutor {
   virtual ~CompiledModelExecutor() = default;
 
  protected:
-  CompiledModelExecutor(CompiledModel&& api, Options&& options,
-                        Environment&& env)
-      : api_(std::move(api)),
-        options_(std::move(options)),
-        env_(std::move(env)) {}
+  CompiledModelExecutor(CompiledModel&& api, Environment&& env)
+      : api_(std::move(api)), env_(std::move(env)) {}
 
   CompiledModel api_;
 
  private:
-  Options options_;
   Environment env_;
 };
 
@@ -113,32 +109,28 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
 
   static constexpr absl::string_view Name() { return "cpu"; }
 
-  static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model) {
+  static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Options& options) {
     // Setup options.
     const std::vector<Environment::Option> environment_options = {};
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
-    LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-    options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
-
     // Init compiled model api.
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModel::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
 
-    return CpuCompiledModelExecutor(std::move(api), std::move(options),
-                                    std::move(env));
+    return CpuCompiledModelExecutor(std::move(api), std::move(env));
   }
 
   static Expected<CpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Options& options,
                                                    const Args& args) {
-    return Create(model);
+    return Create(model, options);
   }
 
  private:
-  CpuCompiledModelExecutor(CompiledModel&& api, Options&& options,
-                           Environment&& env)
-      : CompiledModelExecutor(std::move(api), std::move(options),
-                              std::move(env)) {}
+  CpuCompiledModelExecutor(CompiledModel&& api, Environment&& env)
+      : CompiledModelExecutor(std::move(api), std::move(env)) {}
 };
 
 // Executor for the NPU backend.
@@ -158,12 +150,14 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
   static constexpr absl::string_view Name() { return "npu"; }
 
   static Expected<NpuCompiledModelExecutor> Create(LiteRtModelT& model,
+                                                   const Options& options,
                                                    const Args& args) {
-    return Create(model, args.dispatch_dir, args.plugin_dir);
+    return Create(model, options, args.dispatch_dir, args.plugin_dir);
   }
 
   static Expected<NpuCompiledModelExecutor> Create(
-      LiteRtModelT& model, const std::string& dispatch_dir,
+      LiteRtModelT& model, const Options& options,
+      const std::string& dispatch_dir,
       const std::optional<std::string>& plugin_dir = std::nullopt) {
     std::vector<litert::Environment::Option> environment_options = {
         litert::Environment::Option{
@@ -177,21 +171,15 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
       });
     }
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
-    LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-    LITERT_RETURN_IF_ERROR(
-        options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu));
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModel::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
-    return NpuCompiledModelExecutor(std::move(api), std::move(options),
-                                    std::move(env));
+    return NpuCompiledModelExecutor(std::move(api), std::move(env));
   }
 
  private:
-  NpuCompiledModelExecutor(CompiledModel&& api, Options&& options,
-                           Environment&& env)
-      : CompiledModelExecutor(std::move(api), std::move(options),
-                              std::move(env)) {}
+  NpuCompiledModelExecutor(CompiledModel&& api, Environment&& env)
+      : CompiledModelExecutor(std::move(api), std::move(env)) {}
 };
 
 }  // namespace litert::testing
