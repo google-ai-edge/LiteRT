@@ -23,9 +23,7 @@
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/environment.h"
-#if !defined(LITERT_DISABLE_NPU)
 #include "litert/runtime/accelerators/auto_registration.h"
-#endif  // !defined(LITERT_DISABLE_NPU)
 #if !defined(LITERT_DISABLE_GPU)
 #include "litert/runtime/gpu_environment.h"
 #endif  // !defined(LITERT_DISABLE_GPU)
