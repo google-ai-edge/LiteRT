@@ -62,6 +62,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  add_compile_options(-Wno-changes-meaning -Wno-invalid-constexpr)
+endif()
+
 # Options
 option(LITERT_BUILD_SHARED_LIBS "Build shared libraries" OFF)
 option(LITERT_BUILD_TOOLS "Build LiteRT tools" ON)
@@ -159,6 +163,9 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
                 -DTFLITE_ENABLE_XNNPACK=ON
                 -DTFLITE_ENABLE_GPU=ON
                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                -DCMAKE_POLICY_VERSION=3.5
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+                -DCMAKE_POLICY_DEFAULT_CMP0169=OLD
                 ${_tflite_extra_args}
             WORKING_DIRECTORY "${TFLITE_BUILD_DIR}"
             RESULT_VARIABLE TFLITE_CONFIGURE_RESULT
@@ -284,6 +291,14 @@ if(NOT TARGET tensorflow-lite)
       INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
       INTERFACE_LINK_LIBRARIES "${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a;${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a;${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a;${TFLITE_BUILD_DIR}/libxnnpack-delegate.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a;${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_blocking_counter.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context_get_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_cpuinfo.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_denormal.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_frontend.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepare_packed_matrices.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepacked_cache.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_system_aligned_alloc.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_thread_pool.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/profiler/libruy_profiler_instrumentation.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_trmul.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a;${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
     )
+    set(_litert_kleidiai_lib "${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a")
+    if(NOT EXISTS "${_litert_kleidiai_lib}")
+      message(WARNING "LiteRT: optional KleidiAI archive not found at ${_litert_kleidiai_lib}; skipping.")
+      get_target_property(_tflite_interface_libs tensorflow-lite INTERFACE_LINK_LIBRARIES)
+      string(REPLACE "${_litert_kleidiai_lib};" "" _tflite_interface_libs "${_tflite_interface_libs}")
+      string(REPLACE ";${_litert_kleidiai_lib}" "" _tflite_interface_libs "${_tflite_interface_libs}")
+      set_target_properties(tensorflow-lite PROPERTIES INTERFACE_LINK_LIBRARIES "${_tflite_interface_libs}")
+    endif()
   endif()
 endif()
 
