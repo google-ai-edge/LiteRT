@@ -976,6 +976,17 @@ cc_library(
 #     }),
 # )
 #
+# cc_test(
+#     name = "litert_options_test",
+#     srcs = ["litert_options_test.cc"],
+#     deps = [
+#         ":litert_common",
+#         ":litert_options",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/test:matchers",
+#     ],
+# )
+#
 # litert_device_exec(
 #     name = "litert_tensor_buffer_device_test",
 #     backend_id = "cpu",
