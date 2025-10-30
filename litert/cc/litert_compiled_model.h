@@ -18,9 +18,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <memory>
-#include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -537,104 +535,6 @@ class CompiledModel
       return std::string();
     }
     return std::string(error_messages);
-  }
-
-  // Sets a dispatch annotation on the compiled model. These annotations will be
-  // propagated to dispatch graphs when they are created during model execution.
-  // The annotations provide runtime hints and metadata that can be used by
-  // hardware accelerators for optimization.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key.
-  // - value: the annotation value.
-  //
-  // Example annotations:
-  // - "priority": "high|medium|low" - execution priority hints
-  // - "memory_type": "shared|dedicated" - memory allocation preferences
-  // - "accelerator": "npu|gpu|dsp" - preferred hardware accelerator
-  // - "precision": "fp32|fp16|int8" - computation precision requirements
-  Expected<void> SetDispatchAnnotation(size_t signature_index,
-                                       absl::string_view key,
-                                       absl::string_view value) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelSetDispatchAnnotation(
-        Get(), signature_index, key.data(), value.data()));
-    return {};
-  }
-
-  // Gets a dispatch annotation from the compiled model.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key to look up.
-  //
-  // Returns:
-  // - The annotation value if found, or nullopt if the key doesn't exist.
-  Expected<std::optional<std::string>> GetDispatchAnnotation(
-      size_t signature_index, absl::string_view key) {
-    const char* value = nullptr;
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelGetDispatchAnnotation(
-        Get(), signature_index, key.data(), &value));
-    if (value == nullptr) {
-      return Expected<std::optional<std::string>>(std::nullopt);
-    }
-    return Expected<std::optional<std::string>>(std::string(value));
-  }
-
-  // Removes a dispatch annotation from the compiled model.
-  //
-  // Parameters:
-  // - signature_index: the index of the signature (zero-based).
-  // - key: the annotation key to remove.
-  //
-  // Note: This function succeeds even if the key doesn't exist.
-  Expected<void> RemoveDispatchAnnotation(size_t signature_index,
-                                          absl::string_view key) {
-    LITERT_RETURN_IF_ERROR(LiteRtCompiledModelRemoveDispatchAnnotation(
-        Get(), signature_index, key.data()));
-    return {};
-  }
-
-  // Overloaded version for the default signature (index 0).
-  Expected<void> SetDispatchAnnotation(absl::string_view key,
-                                       absl::string_view value) {
-    return SetDispatchAnnotation(0, key, value);
-  }
-
-  // Overloaded version for the default signature (index 0).
-  Expected<std::optional<std::string>> GetDispatchAnnotation(
-      absl::string_view key) {
-    return GetDispatchAnnotation(0, key);
-  }
-
-  // Overloaded version for the default signature (index 0).
-  Expected<void> RemoveDispatchAnnotation(absl::string_view key) {
-    return RemoveDispatchAnnotation(0, key);
-  }
-
-  // Overloaded version that takes a signature name instead of index.
-  Expected<void> SetDispatchAnnotation(absl::string_view signature_name,
-                                       absl::string_view key,
-                                       absl::string_view value) {
-    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
-    return SetDispatchAnnotation(signature_index, key, value);
-  }
-
-  // Overloaded version that takes a signature name instead of index.
-  Expected<std::optional<std::string>> GetDispatchAnnotation(
-      absl::string_view signature_name, absl::string_view key) {
-    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
-    return GetDispatchAnnotation(signature_index, key);
-  }
-
-  // Overloaded version that takes a signature name instead of index.
-  Expected<void> RemoveDispatchAnnotation(absl::string_view signature_name,
-                                          absl::string_view key) {
-    LITERT_ASSIGN_OR_RETURN(size_t signature_index,
-                            model_.GetSignatureIndex(signature_name));
-    return RemoveDispatchAnnotation(signature_index, key);
   }
 
   ///  \internal Wraps a LiteRtCompiledModel C object in a CompiledModel C++

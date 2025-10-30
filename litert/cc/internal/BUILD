@@ -475,3 +475,65 @@ exports_files(glob([
     "*.h",
     "*.cc",
 ]))
+
+# -----------------------------------------------------------------------------
+
+# Advanced CompiledModel with new / experimental features.
+cc_library(
+    name = "litert_compiled_model_next",
+    srcs = ["litert_compiled_model_next.cc"],
+    hdrs = ["litert_compiled_model_next.h"],
+    visibility = [
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//platforms/darwinn:__subpackages__",
+        # "//litert:__subpackages__",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
+    deps = [
+        ":litert_handle",
+        "//litert/c:litert_common",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_metrics",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_test(
+    name = "litert_compiled_model_next_test",
+    srcs = ["litert_compiled_model_next_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+    ],
+    deps = [
+        ":litert_compiled_model_next",
+        "//litert/c:litert_compiled_model",
+        "//litert/c:litert_tensor_buffer",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_types",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

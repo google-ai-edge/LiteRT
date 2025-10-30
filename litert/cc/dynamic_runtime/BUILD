@@ -598,6 +598,7 @@ cc_test(
         "//litert/c:litert_tensor_buffer",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
