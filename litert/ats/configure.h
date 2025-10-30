@@ -28,9 +28,12 @@
 #include "litert/ats/common.h"
 #include "litert/cc/internal/litert_rng.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: export
+#include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: export
 
 // Seed for the data generation.
 ABSL_DECLARE_FLAG(std::optional<int>, data_seed);
@@ -232,6 +235,12 @@ class AtsConf {
   // compilation.
   const std::string& SocModel() const { return soc_model_; }
 
+  // Litert options to use for the target backend.
+  const Options& TargetOptions() const { return target_options_; }
+
+  // Litert options to use for the reference backend.
+  const Options& ReferenceOptions() const { return reference_options_; }
+
   AtsConf(const AtsConf&) = delete;
   AtsConf& operator=(const AtsConf&) = delete;
   AtsConf(AtsConf&&) = default;
@@ -248,7 +257,8 @@ class AtsConf {
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
                    std::optional<internal::CompilerPlugin> plugin,
-                   std::string soc_manufacturer, std::string soc_model)
+                   std::string soc_manufacturer, std::string soc_model,
+                   Options&& target_options, Options&& reference_options)
       : seeds_for_params_(std::move(seeds_for_params)),
         backend_(backend),
         quiet_(quiet),
@@ -269,7 +279,9 @@ class AtsConf {
         limit_(limit),
         plugin_(std::move(plugin)),
         soc_manufacturer_(std::move(soc_manufacturer)),
-        soc_model_(std::move(soc_model)) {
+        soc_model_(std::move(soc_model)),
+        target_options_(std::move(target_options)),
+        reference_options_(std::move(reference_options)) {
     if (f16_range_for_f32_) {
       data_builder_.SetF16InF32();
     }
@@ -297,6 +309,8 @@ class AtsConf {
   std::optional<internal::CompilerPlugin> plugin_;
   std::string soc_manufacturer_;
   std::string soc_model_;
+  Options target_options_;
+  Options reference_options_;
 
   RandomTensorDataBuilder data_builder_;
 };

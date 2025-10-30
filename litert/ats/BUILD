@@ -15,7 +15,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/ats:ats.bzl", "litert_define_ats")
-load("//litert/build_common:litert_build_defs.bzl", "litert_test")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
 load("//litert/integration_test:litert_device_script.bzl", "make_download_model_provider")
 
@@ -31,7 +31,7 @@ package(
 litert_test(
     name = "ats",
     srcs = ["ats.cc"],
-    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    copts = commandline_flag_copts(),
     linkstatic = True,
     no_main = True,
     tags = [
@@ -62,16 +62,25 @@ cc_library(
     testonly = True,
     srcs = ["configure.cc"],
     hdrs = ["configure.h"],
+    copts = commandline_flag_copts() + [
+        "-DINCLUDE_QUALCOMM_COMPILE_FLAGS",
+        "-DINCLUDE_QUALCOMM_RUNTIME_FLAGS",
+        "-DINCLUDE_MEDIATEK_COMPILE_FLAGS",
+        "-DINCLUDE_MEDIATEK_RUNTIME_FLAGS",
+    ],
     deps = [
         ":common",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_rng",
         "//litert/compiler/plugin:compiler_plugin",
         "//litert/core:filesystem_testonly",
         "//litert/core/model:model_serialize",
+        "//litert/tools/flags/vendors:mediatek_flags",
+        "//litert/tools/flags/vendors:qualcomm_flags",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/strings",
@@ -110,6 +119,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
+        "//litert/core:filesystem",
         "//litert/test/generators",
     ],
 )
@@ -119,8 +129,10 @@ cc_test(
     srcs = ["executor_test.cc"],
     deps = [
         ":executor",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
@@ -185,8 +197,10 @@ litert_device_test(
     defines = ["_TEST_NPU"],
     deps = [
         ":executor",
+        "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_buffer_ref",
+        "//litert/cc:litert_options",
         "//litert/core/model",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
@@ -199,6 +213,7 @@ litert_device_test(
 cc_test(
     name = "check_ats",
     srcs = ["check_ats.cc"],
+    copts = commandline_flag_copts(),
     data = [
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
@@ -346,9 +361,8 @@ litert_define_ats(
     backend = "example",
     compile_only_suffix = "_aot",
     do_register = [
-        # "sub.*f32",
-        # "mul.*f32",
-        ".*ExtraModel.*",
+        "sub.*f32",
+        "mul.*f32",
     ],
     extra_flags = ["--limit=1"],
     jit_suffix = "",

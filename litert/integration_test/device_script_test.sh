@@ -14,7 +14,7 @@
 
 #!/bin/bash
 
-source ${0#.*}_lib.sh || exit 1
+source ${0%.sh}_lib.sh || exit 1
 
 check_host=""
 check_device=""

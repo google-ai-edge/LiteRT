@@ -16,6 +16,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("//litert/build_common:litert_build_defs.bzl", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test", "litert_integration_test")
 load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "get_libs")
@@ -416,7 +417,7 @@ platform(
 cc_binary(
     name = "dummy_binary",
     srcs = ["dummy_binary.cc"],
-    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
     deps = [
         "//litert/core:filesystem",
         "@com_google_absl//absl/container:flat_hash_set",
@@ -510,7 +511,7 @@ litert_device_test(
     name = "tools_test",
     srcs = ["smoketests/tools_test.cc"],
     backend_id = "cpu",
-    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"],
+    copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
     data = ["//litert/integration_test/models:single_op"],
     exec_args = ["--models_dir={}".format(device_rlocation("//litert/integration_test/models:single_op"))],
     deps = [
