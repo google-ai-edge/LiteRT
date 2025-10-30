@@ -81,9 +81,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
                            ::litert::qualcomm::QualcommOptions::Create());
     qnn_opts.SetLogLevel(kLiteRtQualcommLogOff);
     qnn_opts.SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
-    qnn_opts.SetUseFoldReLU(true);
+    qnn_opts.SetUseFoldReLU(false);
     qnn_opts.SetUseConvHMX(true);
-    qnn_opts.SetUseHtpPreference(true);
     qnn_opts.SetOptimizationLevel(kHtpOptimizeForInferenceO3);
     compilation_options.AddOpaqueOptions(std::move(qnn_opts));
     // TODO(yunandrew): Add options for other NPU backends.
