@@ -319,3 +319,33 @@ def make_download_model_provider(name, url, testonly = True):
         srcs = [":" + name + "_expanded"],
         testonly = testonly,
     )
+
+# copybara:uncomment_begin(google-only)
+# def make_cns_pull_model_provider(name, cns_path, testonly = True):
+#     """Generates a shell script and runfiles for downloading a model(s) from a CNS path.
+#
+#     This can be depended on by litert_device_scripts to add more models to the data dependencies.
+#     Args:
+#       name: The name of the generated sh_binary target.
+#       cns_path: The CNS path to download the model(s) from. Can be a file or a directory. If a
+#                 directory, all .tflite files in the directory will be downloaded.
+#       testonly: If True, the generated targets are marked as testonly.
+#     """
+#
+#     _device_script_lib(
+#         name = name + "_expanded",
+#         template = "//litert/integration_test:cns_pull_model_provider.sh",
+#         out = name + ".sh",
+#         subs = {
+#             "@@cns_path@@": cns_path,
+#         },
+#         executable = True,
+#     )
+#
+#     sh_binary(
+#         name = name,
+#         srcs = [":" + name + "_expanded"],
+#         testonly = testonly,
+#     )
+#
+# copybara:uncomment_end
