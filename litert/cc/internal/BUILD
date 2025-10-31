@@ -493,6 +493,7 @@ cc_library(
     ],
     deps = [
         ":litert_handle",
+        "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_compiled_model",
         "//litert/c:litert_metrics",
@@ -503,6 +504,7 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
+        "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

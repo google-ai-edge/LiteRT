@@ -25,7 +25,6 @@
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
@@ -63,15 +62,6 @@ namespace litert {
 class CompiledModel
     : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
  public:
-  // Hardware specific metrics collected by the CompiledModel.
-  struct Metrics {
-    struct Metric {
-      std::string name;
-      LiteRtAny value;
-    };
-    std::vector<Metric> metrics;
-  };
-
   CompiledModel() = default;
 
   // Creates a CompiledModel from a TFLite file.
@@ -410,12 +400,6 @@ class CompiledModel
     async = true;
     return RunMapHelper(signature_key, input_map, output_map, async);
   }
-
-  // Starts collection of HW-specific metrics at a specific level of detail.
-  Expected<void> StartMetricsCollection(int detail_level);
-
-  // Stops collection of HW-specific metrics and report the collected metrics.
-  Expected<Metrics> StopMetricsCollection();
 
   // Returns true if the compiled model is fully accelerated with the given
   // hardware accelerators.

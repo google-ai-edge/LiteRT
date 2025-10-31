@@ -19,8 +19,12 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_macros.h"
 
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
@@ -34,6 +38,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -600,7 +605,7 @@ TEST(DispatchDelegate, CompiledModelWithMetrics) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModelNext::Create(env, model, HwAccelerators::kNpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
