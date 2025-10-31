@@ -57,6 +57,14 @@ class TensorBuffer
       const Environment& env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
 
+  // Creates a managed TensorBuffer object in the given buffer type using the
+  // default environment (if applicable). The returned object is owned by the
+  // caller.
+  [[deprecated("Use the overload that takes Environmnet instead.")]]
+  static Expected<TensorBuffer> CreateManaged(
+      TensorBufferType buffer_type, const RankedTensorType& tensor_type,
+      size_t buffer_size);
+
   [[deprecated(
       "Use the overload that takes litert::TensorBufferType instead.")]]
   static Expected<TensorBuffer> CreateManaged(
