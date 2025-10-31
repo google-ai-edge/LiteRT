@@ -15,7 +15,6 @@
 #include "litert/cc/options/litert_gpu_options.h"
 
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_opaque_options.h"
 #include "litert/c/options/litert_gpu_options.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
@@ -45,6 +44,12 @@ LiteRtStatus GpuOptions::EnableBenchmarkMode(bool enabled) {
   return LiteRtSetGpuOptionsBenchmarkMode(Get(), enabled);
 }
 
+Expected<void> GpuOptions::SetBackend(Backend backend) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuBackend(
+      Get(), static_cast<LiteRtGpuBackend>(backend)));
+  return {};
+}
+
 LiteRtStatus GpuOptions::SetGpuBackend(LiteRtGpuBackend backend) {
   return LiteRtSetGpuOptionsGpuBackend(Get(), backend);
 }
@@ -54,9 +59,22 @@ LiteRtStatus GpuOptions::EnableAllowSrcQuantizedFcConvOps(bool enabled) {
       Get(), enabled);
 }
 
+Expected<void> GpuOptions::SetPrecision(Precision precision) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuAcceleratorCompilationOptionsPrecision(
+      Get(), static_cast<LiteRtDelegatePrecision>(precision)));
+  return {};
+}
+
 LiteRtStatus GpuOptions::SetDelegatePrecision(
     LiteRtDelegatePrecision precision) {
   return LiteRtSetGpuAcceleratorCompilationOptionsPrecision(Get(), precision);
+}
+
+Expected<void> GpuOptions::SetBufferStorageType(BufferStorageType type) {
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
+          Get(), static_cast<LiteRtDelegateBufferStorageType>(type)));
+  return {};
 }
 
 LiteRtStatus GpuOptions::SetBufferStorageType(
@@ -98,6 +116,12 @@ LiteRtStatus GpuOptions::EnableExternalTensorsMode(bool enabled) {
 
 LiteRtStatus GpuOptions::AddExternalTensorPattern(const char* pattern) {
   return LiteRtAddGpuOptionsExternalTensorPattern(Get(), pattern);
+}
+
+Expected<void> GpuOptions::SetPriority(Priority priority) {
+  LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuPriority(
+      Get(), static_cast<LiteRtGpuPriority>(priority)));
+  return {};
 }
 
 LiteRtStatus GpuOptions::SetGpuPriority(LiteRtGpuPriority priority) {
