@@ -14,11 +14,11 @@
 
 """External versions of LiteRT build rules that differ outside of Google."""
 
-def lite_rt_friends():
+def litert_friends():
     """Internal visibility for packages outside of LiteRT code location.
 
     Return the package group declaration for internal code locations that need
-    visibility to LiteRT APIs"""
+    visibility to all LiteRT APIs"""
 
     return []
 

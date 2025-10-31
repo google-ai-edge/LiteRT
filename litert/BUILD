@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//litert/build_common:special_rule.bzl", "litert_friends")
+
 package(
     # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
@@ -33,13 +35,6 @@ package(
 package_group(
     name = "litert_cc_users_dynamic_link",
     packages = [
-        # copybara:uncomment "INTERNAL_IMAGE_COLLECTION_INTEGRATION/...",
-        # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "@mediapipe//mediapipe/tasks/...",
-        # copybara:uncomment "@mediapipe//mediapipe/tasks/javatests/...",
-        # copybara:uncomment "//third_party/odml/genai_modules/...",
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
         "//litert/cc/...",
         "//litert/compiler/plugin/...",
         "//litert/google/...",
@@ -56,10 +51,9 @@ package_group(
         "//litert/tools/...",
         "//litert/vendors/...",
         # When litert_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert/llm/...",
         "//ci/tools/...",
         # copybara:uncomment "//third_party/odml/litert/tensor/...",
-    ],
+    ] + litert_friends(),
 )
 
 # Users with access to the LiteRT C++ API linked statically (i.e. litert/cc/).
@@ -67,28 +61,13 @@ package_group(
 package_group(
     name = "litert_cc_users_static_link",
     packages = [
-        # copybara:uncomment "INTERNAL_ANDROID_BACKEND_DIRECTORY/...",
-        # copybara:uncomment "INTERNAL_ANDROID_APP_DIRECTORY/...",
-        # copybara:uncomment "INTERNAL_EDGETPU_LLM_PROTOTYPE/...",
-        # copybara:uncomment "//platforms/darwinn/compiler/...",
-        # copybara:uncomment "//third_party/darwinn/litert/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
-        # copybara:uncomment "//third_party/deepmind/lyria_live/internal/odml/pipeline/cc/...",
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/tensor/...",
-        # copybara:uncomment "//third_party/odml/genai_modules/...",
-        # copybara:uncomment "//third_party/odml/infra/genai/inference/...",
-        # copybara:uncomment "//third_party/odml/infra/ml_drift_delegate/...",
         "//litert/ats/...",
         "//litert/google/...",
         "//litert/integration_test/...",
         "//litert/js/...",
-        "//research/xeno/audio/voicelm/calculators/...",
         "//litert/python/...",
         "//third_party/odml/litert/tensor/...",
         "//litert/samples/semantic_similarity/...",
-        # When litert_link_capi_so=false
-        # copybara:uncomment "//third_party/odml/litert_lm/...",
-        # copybara:uncomment "//platforms/darwinn/devtools/google_tensor_tpu_delegate_executor/...",
         # TODO(b/424778444): Internal runtime would better not call cc runtime APIs. Remove below targets.
         "//litert/runtime/...",
         "//litert/cc/...",
@@ -98,7 +77,7 @@ package_group(
         "//litert/core/model/...",
         "//litert/test/...",
         "//litert/tools/...",
-    ],
+    ] + litert_friends(),
 )
 
 # All packages with visibility to the internal APIs
@@ -106,29 +85,29 @@ package_group(
 package_group(
     name = "litert_internal_users",
     packages = [
-        # copybara:uncomment "@mediapipe//mediapipe/...",
-        "//third_party/odml/infra/genai/conversion/juno/npu/...",
-        "//third_party/odml/infra/ml_drift_delegate/...",
+        "//ci/tools/...",
+        "//litert/ats/...",
         "//litert/c/...",
         "//litert/cc/...",
-        "//litert/cc/internal/...",
         "//litert/compiler/...",
         "//litert/core/...",
-        "//litert/ats/...",
         "//litert/google/...",
         "//litert/integration_test/...",
+        "//litert/kotlin/...",
         "//litert/python/...",
         "//litert/runtime/...",
+        "//litert/sdk_util/...",
         "//litert/test/...",
         "//litert/tools/...",
-        "//ci/tools/...",
-        # copybara:uncomment "//platforms/darwinn/toolchain/third_party/...",
-        # TODO(b/424778444) Targets above C API boundary shouldn't call internal. Remove below.
-        # copybara:uncomment "//third_party/darwinn/litert/...",
-        # copybara:uncomment "//third_party/darwinn/tflite/...",
-        # copybara:uncomment "//learning/brain/mobile/lite/tooling/ai_edge_hub/...",
-        # copybara:uncomment "@mediapipe//mediapipe/calculators/...",
-    ],
+        "//litert/vendors/...",
+    ] + litert_friends(),
+)
+
+# All packages with visibility to the internal APIs
+# such as litert/cc/internal and litert/c/internal.
+package_group(
+    name = "litert_friends",
+    packages = litert_friends(),
 )
 
 # Users with access to the LiteRT C API.

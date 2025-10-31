@@ -19,24 +19,33 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        # Temporary visibility for GenAI until they bundle libLiteRtRuntimeCApi.so.
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//litert:litert_cc_users_static_link",
-        # "//litert/c:__pkg__",
-        # "//litert/cc:__pkg__",
-        # "//litert/cc/dynamic_runtime:__pkg__",
-        # "//litert/core:__subpackages__",
-        # "//litert/integration_test:__pkg__",
-        # "//litert/kotlin:__pkg__",
-        # "//litert/runtime/dispatch:__pkg__",
-        # "//litert/sdk_util:__pkg__",
-        # "//litert/test:__pkg__",
-        # "//litert/vendors:__subpackages__",
+        # copybara:uncomment_begin(oss)
+        # "//litert:litert_internal_users",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
         # copybara:comment_end
     ],
 )
+
+internal_static_library_visibility = [
+    # copybara:uncomment_begin(oss)
+    # "//litert:litert_cc_users_static_link",
+    # copybara:uncomment_end_and_comment_begin
+    "//visibility:public",
+    # copybara:comment_end
+]
+
+next_library_visibility = [
+    # copybara:uncomment_begin(oss)
+    # "//litert:litert_friends",
+    # copybara:uncomment_end_and_comment_begin
+    "//visibility:public",
+    # copybara:comment_end
+]
+
+# -----------------------------------------------------------------------------
+# Runtime only internal C++ libraries.
+# -----------------------------------------------------------------------------
 
 cc_library(
     name = "litert_dispatch_delegate",
@@ -99,6 +108,10 @@ cc_library(
         "//tflite/c:common",
     ],
 )
+
+# -----------------------------------------------------------------------------
+# Common internal C++ libraries.
+# -----------------------------------------------------------------------------
 
 cc_library(
     name = "litert_c_types_printing",
@@ -270,12 +283,55 @@ cc_test(
 )
 
 cc_library(
+    name = "litert_shared_library",
+    srcs = ["litert_shared_library.cc"],
+    hdrs = ["litert_shared_library.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "@com_google_absl//absl/debugging:leak_check",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "test_litert_shared_library_impl",
+    srcs = ["test_shared_library.cc"],
+)
+
+cc_shared_library(
+    name = "test_litert_shared_library",
+    shared_lib_name = "test_shared_library.so",
+    deps = [":test_litert_shared_library_impl"],
+)
+
+cc_test(
+    name = "litert_shared_library_test",
+    srcs = ["litert_shared_library_test.cc"],
+    data = [":test_litert_shared_library"],
+    defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
+    deps = [
+        ":litert_shared_library",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+# -----------------------------------------------------------------------------
+# Internal static C++ libraries.
+#
+# There are shared version of these libraries available in cc/dynamic_runtime/.
+# -----------------------------------------------------------------------------
+
+cc_library(
     name = "litert_model_predicates",
     srcs = ["litert_model_predicates.cc"],
     hdrs = ["litert_model_predicates.h"],
-    visibility = [
-        "//litert:litert_cc_users_static_link",
-    ],
+    visibility = internal_static_library_visibility,
     deps = [
         ":litert_detail",
         ":litert_extended_model",
@@ -310,6 +366,7 @@ cc_library(
     name = "litert_op_options",
     srcs = ["litert_op_options.cc"],
     hdrs = ["litert_op_options.h"],
+    visibility = internal_static_library_visibility,
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model",
@@ -350,9 +407,7 @@ cc_library(
     name = "litert_rewriter",
     srcs = ["litert_rewriter.cc"],
     hdrs = ["litert_rewriter.h"],
-    visibility = [
-        "//litert:litert_public",
-    ],
+    visibility = internal_static_library_visibility,
     deps = [
         ":litert_detail",
         ":litert_extended_model",
@@ -385,48 +440,10 @@ cc_test(
 )
 
 cc_library(
-    name = "litert_shared_library",
-    srcs = ["litert_shared_library.cc"],
-    hdrs = ["litert_shared_library.h"],
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "@com_google_absl//absl/debugging:leak_check",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_absl//absl/strings:string_view",
-    ],
-)
-
-cc_library(
-    name = "test_litert_shared_library_impl",
-    srcs = ["test_shared_library.cc"],
-)
-
-cc_shared_library(
-    name = "test_litert_shared_library",
-    shared_lib_name = "test_shared_library.so",
-    deps = [":test_litert_shared_library_impl"],
-)
-
-cc_test(
-    name = "litert_shared_library_test",
-    srcs = ["litert_shared_library_test.cc"],
-    data = [":test_litert_shared_library"],
-    defines = ["LITERT_DEFINE_GTEST_STATUS_PRINTER"],
-    deps = [
-        ":litert_shared_library",
-        "//litert/test:matchers",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_extended_model",
     srcs = ["litert_extended_model.cc"],
     hdrs = ["litert_extended_model.h"],
+    visibility = internal_static_library_visibility,
     deps = [
         ":litert_consts",
         ":litert_detail",
@@ -477,20 +494,15 @@ exports_files(glob([
 ]))
 
 # -----------------------------------------------------------------------------
+# New / experimental features.
+# -----------------------------------------------------------------------------
 
 # Advanced CompiledModel with new / experimental features.
 cc_library(
     name = "litert_compiled_model_next",
     srcs = ["litert_compiled_model_next.cc"],
     hdrs = ["litert_compiled_model_next.h"],
-    visibility = [
-        # copybara:uncomment_begin(oss litert_lm)
-        # "//platforms/darwinn:__subpackages__",
-        # "//litert:__subpackages__",
-        # copybara:uncomment_end_and_comment_begin
-        "//visibility:public",
-        # copybara:comment_end
-    ],
+    visibility = next_library_visibility,
     deps = [
         ":litert_handle",
         "//litert/c:litert_common",
