@@ -33,6 +33,10 @@ class CompilerOptions : public OpaqueOptions {
   static Expected<CompilerOptions> Create();
   static Expected<CompilerOptions> Create(OpaqueOptions& original);
 
+  Expected<void> SetPartitionStrategy(
+      LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+  Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
+
   Expected<void> SetDummyOption(bool dummy_option);
   Expected<bool> GetDummyOption() const;
 };
