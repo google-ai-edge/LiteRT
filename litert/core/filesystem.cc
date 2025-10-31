@@ -19,6 +19,7 @@
 #include <filesystem>  // NOLINT
 #include <fstream>
 #include <string>
+#include <system_error> // NOLINT
 #include <vector>
 
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -160,20 +161,29 @@ Expected<std::string> Parent(absl::string_view path) {
 }
 
 Expected<void> RmDir(std::string path_to_remove) {
-  // remove_all recursively deletes the directory and all its contents.
-  std::uintmax_t count = std::filesystem::remove_all(path_to_remove);
+  std::error_code error_code;
+  std::uintmax_t count =
+      std::filesystem::remove_all(path_to_remove, error_code);
+  if (error_code) {
+    return Error(kLiteRtStatusErrorFileIO,
+                 absl::StrFormat("Could not remove: %s, error: %s",
+                                 path_to_remove.c_str(), error_code.message()));
+  }
 
-  if (count > 0 && IsDir(path_to_remove)) {
-    LITERT_LOG(LITERT_INFO,
-               "Successfully removed directory and its contents: %s (%ju "
-               "items deleted)",
-               path_to_remove.c_str(), count);
+  if (!Exists(path_to_remove)) {
+    if (count > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "Successfully removed directory and its contents: %s (%ju "
+                 "items deleted)",
+                 path_to_remove.c_str(), count);
+    }
+    // If count == 0 and it doesn't exist, it means it never existed. Still Ok.
+    return {};
   } else {
     return Error(kLiteRtStatusErrorFileIO,
-                 absl::StrFormat("Could not remove or path did not exist: %s",
+                 absl::StrFormat("Could not fully remove: %s",
                                  path_to_remove.c_str()));
   }
-  return {};
 }
 
 }  // namespace litert::internal

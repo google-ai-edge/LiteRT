@@ -62,8 +62,9 @@ Expected<void> MkDir(absl::string_view path);
 // Get the parent directory of the given path.
 Expected<std::string> Parent(absl::string_view path);
 
-Expected<void> RmDir();
+Expected<void> RmDir(std::string path_to_remove);
 
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_FILESYSTEM_H_
+
