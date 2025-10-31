@@ -35,9 +35,42 @@ class EnvironmentOptions
   explicit EnvironmentOptions(LiteRtEnvironmentOptions env)
       : NonOwnedHandle(env) {}
 
-  using OptionTag = LiteRtEnvOptionTag;
+  enum class Tag : int {
+    kCompilerPluginLibraryDir = kLiteRtEnvOptionTagCompilerPluginLibraryDir,
+    kDispatchLibraryDir = kLiteRtEnvOptionTagDispatchLibraryDir,
+    kOpenClDeviceId = kLiteRtEnvOptionTagOpenClDeviceId,
+    kOpenClPlatformId = kLiteRtEnvOptionTagOpenClPlatformId,
+    kOpenClContext = kLiteRtEnvOptionTagOpenClContext,
+    kOpenClCommandQueue = kLiteRtEnvOptionTagOpenClCommandQueue,
+    kEglDisplay = kLiteRtEnvOptionTagEglDisplay,
+    kEglContext = kLiteRtEnvOptionTagEglContext,
+    kWebGpuDevice = kLiteRtEnvOptionTagWebGpuDevice,
+    kWebGpuQueue = kLiteRtEnvOptionTagWebGpuQueue,
+    kMetalDevice = kLiteRtEnvOptionTagMetalDevice,
+    kMetalCommandQueue = kLiteRtEnvOptionTagMetalCommandQueue,
+    // WARNING: Vulkan support is experimental.
+    kVulkanEnvironment = kLiteRtEnvOptionTagVulkanEnvironment,
+    kVulkanCommandPool = kLiteRtEnvOptionTagVulkanCommandPool,
+    kCallbackOnGpuEnvDestroy = kLiteRtEnvOptionTagCallbackOnGpuEnvDestroy,
+    kCallbackUserDataOnGpuEnvDestroy =
+        kLiteRtEnvOptionTagCallbackUserDataOnGpuEnvDestroy,
+    kMagicNumberConfigs = kLiteRtEnvOptionTagMagicNumberConfigs,
+    kMagicNumberVerifications = kLiteRtEnvOptionTagMagicNumberVerifications,
+    kCompilerCacheDir = kLiteRtEnvOptionTagCompilerCacheDir,
+    // Singleton ML Drift WebGPU/Dawn instance required for shared libraries not
+    // to create their own instances.
+    kWebGpuInstance = kLiteRtEnvOptionTagWebGpuInstance,
+    // Dawn procedure table pointer for shared libraries to populate their
+    // tables with the shared procedures instead of their own procedures.
+    kWebGpuProcs = kLiteRtEnvOptionTagWebGpuProcs,
+  };
 
-  Expected<LiteRtVariant> GetOption(OptionTag tag) const {
+  Expected<LiteRtVariant> GetOption(Tag tag) const {
+    return GetOption(static_cast<LiteRtEnvOptionTag>(tag));
+  }
+
+  [[deprecated("Use GetOption(Tag) instead.")]]
+  Expected<LiteRtVariant> GetOption(LiteRtEnvOptionTag tag) const {
     if (Get() == nullptr) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Environment options are null");
