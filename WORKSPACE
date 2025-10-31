@@ -46,9 +46,9 @@ load("//litert:tensorflow_source_rules.bzl", "tensorflow_source_repo")
 
 tensorflow_source_repo(
     name = "org_tensorflow",
-    sha256 = "3ec4399033e9691a3375703f418257417191124bcddb754e6ecb53faf68656d2",
-    strip_prefix = "tensorflow-bdb78510d0ce35ea98eb298fc770657a16056a2c",
-    urls = ["https://github.com/tensorflow/tensorflow/archive/bdb78510d0ce35ea98eb298fc770657a16056a2c.tar.gz"],
+    sha256 = "9b453eb4762d2db3579865df07c0de500b095189d80b4abbb6b5dacca0cda9cd",
+    strip_prefix = "tensorflow-061041963ead867e8f47fb63e153db3e61e3b20b",
+    urls = ["https://github.com/tensorflow/tensorflow/archive/061041963ead867e8f47fb63e153db3e61e3b20b.tar.gz"],
 )
 
 # Initialize the TensorFlow repository and all dependencies.
