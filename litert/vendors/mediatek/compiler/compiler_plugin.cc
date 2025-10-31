@@ -404,17 +404,23 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                                            LiteRtSubgraph subgraph,
                                            LiteRtOpList selected_ops) {
   LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
-  absl::Cleanup dla_directory_cleanup = [] {
-    const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-    if (dla_directory_name) {
-      remove_directory(dla_directory_name);
-    }
-  };
 
   auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
   if (!soc_and_api) {
     return soc_and_api.Error().Status();
   }
+
+  litert::mediatek::MediatekOptions& mtk_options =
+      compiler_plugin->GetMediatekOptions().Value();
+  if (!mtk_options.GetDisableDlaDirRemoval()) {
+    absl::Cleanup dla_directory_cleanup = [] {
+      const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+      if (dla_directory_name) {
+        remove_directory(dla_directory_name);
+      }
+    };
+  }
+
   auto& [opt_soc_model, neuron_adapter_api] = soc_and_api.Value();
 
   litert::Subgraph graph(subgraph);
@@ -517,12 +523,22 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
   LITERT_CHECK_STATUS_OK(SetNeuronEnvironment(soc_model));
-  absl::Cleanup dla_directory_cleanup = [] {
-    const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
-    if (dla_directory_name) {
-      remove_directory(dla_directory_name);
-    }
-  };
+
+  auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
+  if (!soc_and_api) {
+    return soc_and_api.Error().Status();
+  }
+
+  litert::mediatek::MediatekOptions& mtk_options =
+      compiler_plugin->GetMediatekOptions().Value();
+  if (!mtk_options.GetDisableDlaDirRemoval()) {
+    absl::Cleanup dla_directory_cleanup = [] {
+      const char* dla_directory_name = std::getenv("MTKNN_ADAPTER_DLA_DIR");
+      if (dla_directory_name) {
+        remove_directory(dla_directory_name);
+      }
+    };
+  }
 
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
@@ -531,10 +547,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
              "Starting MediaTek Compilation for %d subgraphs, soc_model=%s",
              num_partitions, soc_model);
 
-  auto soc_and_api = CreateNeuronAdapterApi(soc_model, compiler_plugin);
-  if (!soc_and_api) {
-    return soc_and_api.Error().Status();
-  }
   auto& [opt_soc_model, api] = soc_and_api.Value();
 
   auto result = std::make_unique<LiteRtCompiledResultT>();
