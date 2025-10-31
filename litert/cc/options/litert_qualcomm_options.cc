@@ -46,14 +46,33 @@ Expected<QualcommOptions> QualcommOptions::Create() {
   return QualcommOptions(options, litert::OwnHandle::kYes);
 }
 
+void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
+  internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(),
+                     static_cast<LiteRtQualcommOptionsLogLevel>(log_level));
+}
+
 void QualcommOptions::SetLogLevel(LiteRtQualcommOptionsLogLevel log_level) {
   internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(), log_level);
+}
+
+QualcommOptions::LogLevel QualcommOptions::GetLogLevelCC() {
+  LiteRtQualcommOptionsLogLevel log_level;
+  internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
+  return static_cast<QualcommOptions::LogLevel>(log_level);
 }
 
 LiteRtQualcommOptionsLogLevel QualcommOptions::GetLogLevel() {
   LiteRtQualcommOptionsLogLevel log_level;
   internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
   return log_level;
+}
+
+void QualcommOptions::SetHtpPerformanceMode(
+    QualcommOptions::HtpPerformanceMode htp_performance_mode) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
+      static_cast<LiteRtQualcommOptionsHtpPerformanceMode>(
+          htp_performance_mode));
 }
 
 void QualcommOptions::SetHtpPerformanceMode(
@@ -106,8 +125,19 @@ bool QualcommOptions::GetUseQint16AsQuint16() {
   return use_qin16_as_quint16;
 }
 
+void QualcommOptions::SetProfiling(QualcommOptions::Profiling profiling) {
+  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(),
+                     static_cast<LiteRtQualcommOptionsProfiling>(profiling));
+}
+
 void QualcommOptions::SetProfiling(LiteRtQualcommOptionsProfiling profiling) {
   internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(), profiling);
+}
+
+QualcommOptions::Profiling QualcommOptions::GetProfilingCC() {
+  LiteRtQualcommOptionsProfiling profiling;
+  internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
+  return static_cast<QualcommOptions::Profiling>(profiling);
 }
 
 LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
@@ -171,9 +201,24 @@ std::uint32_t QualcommOptions::GetNumHvxThreads() {
 }
 
 void QualcommOptions::SetOptimizationLevel(
+    QualcommOptions::OptimizationLevel optimization_level) {
+  internal::AssertOk(
+      LiteRtQualcommOptionsSetOptimizationLevel, Data(),
+      static_cast<LiteRtQualcommOptionsOptimizationLevel>(optimization_level));
+}
+
+void QualcommOptions::SetOptimizationLevel(
     LiteRtQualcommOptionsOptimizationLevel optimization_level) {
   internal::AssertOk(LiteRtQualcommOptionsSetOptimizationLevel, Data(),
                      optimization_level);
+}
+
+QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevelCC() {
+  LiteRtQualcommOptionsOptimizationLevel optimization_level;
+  internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
+                     &optimization_level);
+  return static_cast<QualcommOptions::OptimizationLevel>(
+      optimization_level);
 }
 
 LiteRtQualcommOptionsOptimizationLevel QualcommOptions::GetOptimizationLevel() {
