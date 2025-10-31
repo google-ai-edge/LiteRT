@@ -154,7 +154,54 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
     };
     Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
               OptimizeMHAPrefill);
+
+    const std::vector<QnnOpCode> tiny_gemma_mha_prefill_pattern_0 = {
+        QnnOpCode::kElementWiseMultiply,
+        QnnOpCode::kTranspose,
+        QnnOpCode::kReshape,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kConcat,
+        QnnOpCode::kConcat,   // concat mask
+        QnnOpCode::kReshape,  // reshape mask
+        QnnOpCode::kElementWiseAdd,
+        QnnOpCode::kSoftmax,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kElementWiseAdd,
+        QnnOpCode::kReshape,
+        QnnOpCode::kTranspose,
+        QnnOpCode::kReshape,
+    };
+    Transform(validate_op_config, ops, tensor_pool,
+              tiny_gemma_mha_prefill_pattern_0,
+              OptimizeMHATinyGemmaPrefillPattern0);
+
+    const std::vector<QnnOpCode> tiny_gemma_mha_prefill_pattern_1 = {
+        QnnOpCode::kElementWiseMultiply,
+        QnnOpCode::kTranspose,
+        QnnOpCode::kReshape,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kConcat,
+        QnnOpCode::kElementWiseAdd,
+        QnnOpCode::kSoftmax,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kStridedSlice,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kMatMul,
+        QnnOpCode::kElementWiseAdd,
+        QnnOpCode::kReshape,
+        QnnOpCode::kTranspose,
+        QnnOpCode::kReshape,
+    };
+    Transform(validate_op_config, ops, tensor_pool,
+              tiny_gemma_mha_prefill_pattern_1,
+              OptimizeMHATinyGemmaPrefillPattern1);
   }
+
   const std::vector<QnnOpCode> gemma3_mask = {
       QnnOpCode::kElementWiseNot,
       QnnOpCode::kCast,
