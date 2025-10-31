@@ -80,6 +80,7 @@ cc_test(
     srcs = ["compiler_options_test.cc"],
     deps = [
         ":compiler_options",
+        "//litert/c/options:litert_compiler_options",
         "//litert/test:matchers",
         "@com_google_googletest//:gtest_main",
     ],
