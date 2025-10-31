@@ -41,6 +41,25 @@ Expected<CompilerOptions> CompilerOptions::Create(OpaqueOptions& original) {
   return CompilerOptions(original.Get(), OwnHandle::kNo);
 }
 
+Expected<void> CompilerOptions::SetPartitionStrategy(
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetCompilerOptionsPartitionStrategy(
+      compiler_options, partition_strategy));
+  return {};
+}
+
+Expected<LiteRtCompilerOptionsPartitionStrategy>
+CompilerOptions::GetPartitionStrategy() const {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LiteRtCompilerOptionsPartitionStrategy partition_strategy;
+  LITERT_RETURN_IF_ERROR(LiteRtGetCompilerOptionsPartitionStrategy(
+      compiler_options, &partition_strategy));
+  return partition_strategy;
+}
+
 Expected<void> CompilerOptions::SetDummyOption(bool dummy_option) {
   LiteRtCompilerOptions compiler_options;
   LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
