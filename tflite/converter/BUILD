@@ -18,6 +18,7 @@ package(
     default_visibility = [
         ":friends",
         "//configs/devtools/hawkeye/tflite:__subpackages__",
+        "//litert:__subpackages__",
         "//tflite/experimental/tf_runtime:__subpackages__",
         "//tflite/testing:__subpackages__",
     ],
