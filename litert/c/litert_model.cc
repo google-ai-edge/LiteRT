@@ -16,12 +16,14 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
@@ -136,6 +138,47 @@ LiteRtStatus LiteRtGetModelSignature(LiteRtModel model,
 }
 
 void LiteRtDestroyModel(LiteRtModel model) { delete model; }
+
+LiteRtStatus LiteRtSerializeModelWithSignatures(
+    LiteRtModel model, uint8_t** buf, size_t* size, size_t* offset,
+    bool destroy_model, char** signatures, LiteRtParamIndex num_signatures,
+    LiteRtModelSerializationOptions options) {
+  size_t num_subgraphs = model->NumSubgraphs();
+  if (num_subgraphs != num_signatures) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t i = 0; i < num_subgraphs; ++i) {
+    if (signatures[i] == nullptr) {
+      // If the signature is null, we will use the default signature.
+      // This is to support the backward compatibility with the previous version
+      // of the compiler.
+      continue;
+    }
+    std::string signature_key(signatures[i]);
+
+    LiteRtSubgraphT& subgraph = model->Subgraph(i);
+
+    std::vector<std::string> input_names;
+    std::vector<LiteRtTensor> input_tensors;
+    for (auto& tensor : subgraph.Inputs()) {
+      input_names.push_back(std::string(tensor->Name()));
+      input_tensors.push_back(tensor);
+    }
+    std::vector<std::string> output_names;
+    std::vector<LiteRtTensor> output_tensors;
+    for (auto& tensor : subgraph.Outputs()) {
+      output_names.push_back(std::string(tensor->Name()));
+      output_tensors.push_back(tensor);
+    }
+
+    // Use EmplaceSignature to add a new signature
+    model->EmplaceSignature(&subgraph, std::move(input_names),
+                            std::move(input_tensors), std::move(output_names),
+                            std::move(output_tensors),
+                            std::move(signature_key));
+  }
+  return LiteRtSerializeModel(model, buf, size, offset, destroy_model, options);
+}
 
 LiteRtStatus LiteRtSerializeModel(LiteRtModel model, uint8_t** buf,
                                   size_t* size, size_t* offset,

@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <initializer_list>
 #include <string>
 #include <utility>
@@ -26,6 +27,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
@@ -416,6 +418,180 @@ TEST(LiteRtModelTest, GetSubgraphOOB) {
   LiteRtSubgraph actual_subgraph;
   EXPECT_THAT(LiteRtGetModelSubgraph(&model, 0, &actual_subgraph),
               IsError(kLiteRtStatusErrorIndexOOB));
+}
+
+TEST(LiteRtModelTest, SerializeModelWithSignaturesWithOneSignature) {
+  // This test checks that the serialization succeeds and the signature is
+  // added correctly even if the model has only one subgraph.
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& input_tensor = subgraph.EmplaceTensor();
+  input_tensor.SetName("input");
+  subgraph.Inputs().push_back(&input_tensor);
+
+  auto& output_tensor = subgraph.EmplaceTensor();
+  output_tensor.SetName("output");
+  subgraph.Outputs().push_back(&output_tensor);
+
+  const char* signature_key = "serving_default";
+  char* signatures[] = {const_cast<char*>(signature_key)};
+
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+
+  // We expect this to fail on serialization if NPU is disabled, but signature
+  // should be added regardless.
+  const LiteRtStatus status = LiteRtSerializeModelWithSignatures(
+      &model, &buf, &size, &offset,
+      /*destroy_model=*/false, signatures,
+      /*num_signatures=*/1, options);
+
+#ifdef LITERT_BUILD_INCLUDE_NPU
+  LITERT_ASSERT_OK(status);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_GT(size, 0);
+#else
+  EXPECT_NE(status, kLiteRtStatusOk);
+  EXPECT_EQ(buf, nullptr);
+  EXPECT_EQ(size, 0);
+#endif
+
+  // The model should now have one signature.
+  LiteRtParamIndex num_signatures;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSignatures(&model, &num_signatures));
+  ASSERT_EQ(num_signatures, 1);
+
+  LiteRtSignature signature;
+  LITERT_ASSERT_OK(LiteRtGetModelSignature(&model, 0, &signature));
+
+  const char* key;
+  LITERT_ASSERT_OK(LiteRtGetSignatureKey(signature, &key));
+  EXPECT_STREQ(key, "serving_default");
+
+  LiteRtParamIndex num_inputs;
+  LITERT_ASSERT_OK(LiteRtGetNumSignatureInputs(signature, &num_inputs));
+  ASSERT_EQ(num_inputs, 1);
+
+  const char* input_name;
+  LITERT_ASSERT_OK(LiteRtGetSignatureInputName(signature, 0, &input_name));
+  EXPECT_STREQ(input_name, "input");
+
+  LiteRtTensor sig_input_tensor;
+  LITERT_ASSERT_OK(
+      LiteRtGetSignatureInputTensorByIndex(signature, 0, &sig_input_tensor));
+  EXPECT_EQ(sig_input_tensor, &input_tensor);
+
+  LiteRtParamIndex num_outputs;
+  LITERT_ASSERT_OK(LiteRtGetNumSignatureOutputs(signature, &num_outputs));
+  ASSERT_EQ(num_outputs, 1);
+
+  const char* output_name;
+  LITERT_ASSERT_OK(LiteRtGetSignatureOutputName(signature, 0, &output_name));
+  EXPECT_STREQ(output_name, "output");
+
+  LiteRtTensor sig_output_tensor;
+  LITERT_ASSERT_OK(
+      LiteRtGetSignatureOutputTensorByIndex(signature, 0, &sig_output_tensor));
+  EXPECT_EQ(sig_output_tensor, &output_tensor);
+
+  // Clean up buffer if serialization succeeded.
+  free(buf);
+}
+
+TEST(LiteRtModelTest, SerializeModelWithSignaturesMultipleSubgraphs) {
+  // This test checks that the serialization succeeds and the signatures are
+  // added correctly even if the model has multiple subgraphs.
+  LiteRtModelT model;
+  auto& subgraph1 = model.EmplaceSubgraph();
+  auto& input_tensor1 = subgraph1.EmplaceTensor();
+  input_tensor1.SetName("input1");
+  subgraph1.Inputs().push_back(&input_tensor1);
+  auto& output_tensor1 = subgraph1.EmplaceTensor();
+  output_tensor1.SetName("output1");
+  subgraph1.Outputs().push_back(&output_tensor1);
+
+  auto& subgraph2 = model.EmplaceSubgraph();
+  auto& input_tensor2 = subgraph2.EmplaceTensor();
+  input_tensor2.SetName("input2");
+  subgraph2.Inputs().push_back(&input_tensor2);
+  auto& output_tensor2 = subgraph2.EmplaceTensor();
+  output_tensor2.SetName("output2");
+  subgraph2.Outputs().push_back(&output_tensor2);
+
+  const char* signature_key1 = "sig1";
+  const char* signature_key2 = "sig2";
+  char* signatures[] = {const_cast<char*>(signature_key1),
+                        const_cast<char*>(signature_key2)};
+
+  uint8_t* buf = nullptr;
+  size_t size = 0;
+  size_t offset = 0;
+  const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
+
+  const LiteRtStatus status = LiteRtSerializeModelWithSignatures(
+      &model, &buf, &size, &offset,
+      /*destroy_model=*/false, signatures,
+      /*num_signatures=*/2, options);
+
+#ifdef LITERT_BUILD_INCLUDE_NPU
+  LITERT_ASSERT_OK(status);
+  EXPECT_NE(buf, nullptr);
+  EXPECT_GT(size, 0);
+#else
+  EXPECT_NE(status, kLiteRtStatusOk);
+  EXPECT_EQ(buf, nullptr);
+  EXPECT_EQ(size, 0);
+#endif
+
+  // The model should now have two signatures.
+  LiteRtParamIndex num_signatures;
+  LITERT_ASSERT_OK(LiteRtGetNumModelSignatures(&model, &num_signatures));
+  ASSERT_EQ(num_signatures, 2);
+
+  // Check first signature.
+  {
+    LiteRtSignature signature;
+    LITERT_ASSERT_OK(LiteRtGetModelSignature(&model, 0, &signature));
+
+    const char* key;
+    LITERT_ASSERT_OK(LiteRtGetSignatureKey(signature, &key));
+    EXPECT_STREQ(key, "sig1");
+
+    LiteRtTensor sig_input_tensor;
+    LITERT_ASSERT_OK(
+        LiteRtGetSignatureInputTensorByIndex(signature, 0, &sig_input_tensor));
+    EXPECT_EQ(sig_input_tensor, &input_tensor1);
+
+    LiteRtTensor sig_output_tensor;
+    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(
+        signature, 0, &sig_output_tensor));
+    EXPECT_EQ(sig_output_tensor, &output_tensor1);
+  }
+
+  // Check second signature.
+  {
+    LiteRtSignature signature;
+    LITERT_ASSERT_OK(LiteRtGetModelSignature(&model, 1, &signature));
+
+    const char* key;
+    LITERT_ASSERT_OK(LiteRtGetSignatureKey(signature, &key));
+    EXPECT_STREQ(key, "sig2");
+
+    LiteRtTensor sig_input_tensor;
+    LITERT_ASSERT_OK(
+        LiteRtGetSignatureInputTensorByIndex(signature, 0, &sig_input_tensor));
+    EXPECT_EQ(sig_input_tensor, &input_tensor2);
+
+    LiteRtTensor sig_output_tensor;
+    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(
+        signature, 0, &sig_output_tensor));
+    EXPECT_EQ(sig_output_tensor, &output_tensor2);
+  }
+
+  // Clean up buffer if serialization succeeded.
+  free(buf);
 }
 
 TEST(LiteRtOpListTest, PushOps) {
