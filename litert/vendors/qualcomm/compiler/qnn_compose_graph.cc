@@ -25,6 +25,8 @@
 #include <string>
 #include <vector>
 
+#include "QnnCommon.h"                     // from @qairt
+#include "QnnTypes.h"                      // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -59,6 +61,7 @@
 #include "litert/vendors/qualcomm/core/builders/gelu_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/l2_norm_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/leaky_relu_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/log_softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/logistic_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
@@ -76,6 +79,7 @@
 #include "litert/vendors/qualcomm/core/builders/resize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reverse_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/rms_norm_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/scatter_nd_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
@@ -95,8 +99,6 @@
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_manager.h"
-#include "QnnCommon.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {
@@ -1105,6 +1107,18 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
                                                   output_tensors);
       break;
     }
+    case LiteRtOpCode::kLiteRtOpCodeTflLogSoftmax: {
+      std::uint32_t axis = input_tensors[0].get().GetRank() - 1;
+      float beta{1.0};
+      op_wrappers = ::qnn::BuildLogSoftmaxOp(tensor_pool, input_tensors,
+                                             output_tensors, axis, beta);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflScatterNd: {
+      op_wrappers =
+          ::qnn::BuildScatterNdOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
     default: {
       LITERT_LOG(LITERT_ERROR,
                  "LiteRT Op Code: %d is not supported in Qualcomm Compiler.",
@@ -1241,7 +1255,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
-  // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
+  // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile
+  // flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
                         [api = qnn.Api(), backend = qnn.BackendHandle()](
@@ -1291,7 +1306,8 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
 
 //===----------------------------------------------------------------------===//
 //
-//                                           [WIP] LiteRT SUBGRAPH -> QNN GRAPH
+//                                           [WIP] LiteRT SUBGRAPH -> QNN
+//                                           GRAPH
 //
 // Core driver for IR translation. Traverses LiteRt Subgraph, iteratively
 // "legalizing" (mapping) LiteRt entities to their QNN counterpart.
