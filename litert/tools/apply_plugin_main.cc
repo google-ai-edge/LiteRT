@@ -30,11 +30,14 @@
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
 #include "litert/tools/flags/flag_types.h"
-#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/intel_openvino_flags.h"  // IWYU pragma: keep
+#include "litert/tools/outstream.h"
+
+#if !defined(LITERT_WINDOWS_OS)
+#include "litert/tools/flags/vendors/google_tensor_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
-#include "litert/tools/outstream.h"
+#endif  // !defined(LITERT_WINDOWS_OS)
 
 using ::litert::tools::ApplyPlugin;
 using ::litert::tools::ApplyPluginRun;
@@ -110,6 +113,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+#if !defined(LITERT_WINDOWS_OS)
   {
     auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
     if (!qnn_opts) {
@@ -137,6 +141,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
   }
+#endif  // !defined(LITERT_WINDOWS_OS)
 
   {
     auto intel_openvino_opts =
@@ -153,6 +158,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
+#if !defined(LITERT_WINDOWS_OS)
   {
     auto mediatek_opts =
         litert::mediatek::MediatekOptionsFromFlags();
@@ -167,6 +173,7 @@ int main(int argc, char* argv[]) {
       return 1;
     }
   }
+#endif  // !defined(LITERT_WINDOWS_OS)
 
   run->options = std::move(*opts);
 
