@@ -22,10 +22,12 @@
 #include <cstdint>
 #include <cstring>
 #include <optional>
+#include <queue>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -37,6 +39,7 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -160,6 +163,8 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                    result.get_compiled_result_call_info);
   RESOLVE_API_FUNC(kLiteRtGetNumCompiledResultCalls,
                    result.get_compiled_result_num_calls);
+  RESOLVE_API_FUNC(kLiteRtCompilerPluginRegisterAllTransformations,
+                   result.register_all_transformations);
 
   return kLiteRtStatusOk;
 }
@@ -332,6 +337,86 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
   LITERT_RETURN_IF_ERROR(plugin_api_.get_compiler_plugin_supported_hardware(
       plugin_handle_, &supported_hardware));
   return supported_hardware;
+}
+
+Expected<void> CompilerPlugin::RegisterAllTransformations() {
+  LiteRtParamIndex num_patterns;
+  LiteRtPatternFn* pattern_fns;
+  const char** transformation_names;
+
+  LITERT_RETURN_IF_ERROR(plugin_api_.register_all_transformations(
+      plugin_handle_, &pattern_fns, &transformation_names, &num_patterns));
+  for (LiteRtParamIndex i = 0; i < num_patterns; ++i) {
+    if (pattern_fns[i] == nullptr) {
+      return Unexpected(
+          kLiteRtStatusInvalidTransformation,
+          absl::StrFormat("Transformation %d has a invalid pattern function.",
+                          i));
+    }
+    if (transformation_names[i] == nullptr) {
+      return Unexpected(
+          kLiteRtStatusInvalidTransformation,
+          absl::StrFormat(
+              "Transformation %d has a invalid transformation name.", i));
+    }
+    pattern_fns_.push_back(pattern_fns[i]);
+    transformation_names_.push_back(std::string(transformation_names[i]));
+  }
+  return {};
+}
+
+Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
+    LiteRtModelT& model) {
+  LITERT_LOG(LITERT_DEBUG, "GreedyPatternMatchAndRewrite, total patterns: %d",
+             pattern_fns_.size());
+  for (auto& subgraph : model.Subgraphs()) {
+    bool subgraph_modified = true;
+    int iterations = 0;
+    while (subgraph_modified) {
+      subgraph_modified = false;
+      LITERT_LOG(LITERT_DEBUG, "Iteration %d", iterations);
+      if (iterations++ >= max_transformation_iterations_) {
+        break;
+      }
+      std::queue<LiteRtOp> worklist;
+      for (const auto& op : subgraph->Ops()) {
+        worklist.push(op);
+      }
+      LITERT_LOG(LITERT_DEBUG, "Worklist size: %lu", worklist.size());
+      while (!worklist.empty()) {
+        LiteRtOp op = worklist.front();
+        worklist.pop();
+
+        // Check if the op is still in the subgraph.
+        if (!absl::c_linear_search(subgraph->Ops(), op)) {
+          continue;
+        }
+        LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
+        for (int pattern_idx = 0; pattern_idx < pattern_fns_.size();
+             ++pattern_idx) {
+          LiteRtRewriterT rewriter;
+          LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
+                     transformation_names_[pattern_idx].c_str());
+          // Call the function pointer.
+          if (pattern_fns_[pattern_idx](op, &rewriter) == kLiteRtStatusOk) {
+            LITERT_LOG(LITERT_DEBUG, "Matched pattern '%s'",
+                       transformation_names_[pattern_idx].c_str());
+
+            rewriter.ApplyChanges(subgraph);
+            subgraph_modified = true;
+            // Break from the inner transformation loop since the graph changed.
+            break;
+          }
+        }
+        if (subgraph_modified) {
+          // Restart the scan for this subgraph as it has been modified.
+          LITERT_LOG(LITERT_DEBUG, "Restarting scan");
+          break;
+        }
+      }
+    }
+  }
+  return {};
 }
 
 Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
@@ -657,16 +742,43 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
   return {};
 }
 
+Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
+                              LiteRtModelT& model,
+                              absl::string_view soc_model) {
+  auto status = compiler_plugin.RegisterAllTransformations();
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
+             compiler_plugin.GetNumTransformations());
+
+  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
+
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Applied transformations.");
+  return {};
+}
+
 Expected<void> ApplyPlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition) {
-  // Collect partitions to pass to compilation.
+  // Compiler Plugin: Transformation, apply transformations to model.
+  auto status = TransformModel(compiler_plugin, model, soc_model);
+  if (!status) {
+    return status;
+  }
+
+  // Compiler Plugin: Partitioning, collect partitions to pass to compilation.
   auto partitions =
       PartitionModel(compiler_plugin, model, soc_model, subgraphs_to_partition);
   if (!partitions) {
     return partitions.Error();
   }
+
+  // Compiler Plugin: Compilation, compile partitions and apply to model.
   return ApplyPluginWithPartition(compiler_plugin, model,
                                   std::move(*partitions), soc_model);
 }
