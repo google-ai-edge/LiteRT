@@ -29,6 +29,7 @@ namespace litert {
 enum class ElementType {
   None = kLiteRtElementTypeNone,
   Bool = kLiteRtElementTypeBool,
+  Int2 = kLiteRtElementTypeInt2,
   Int4 = kLiteRtElementTypeInt4,
   Int8 = kLiteRtElementTypeInt8,
   Int16 = kLiteRtElementTypeInt16,

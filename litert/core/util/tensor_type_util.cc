@@ -23,6 +23,8 @@ namespace internal {
 
 Expected<Ratio> GetElementSize(LiteRtElementType element_type) {
   switch (element_type) {
+    case kLiteRtElementTypeInt2:
+      return Ratio{1, 4};
     case kLiteRtElementTypeInt4:
       return Ratio{1, 2};
     case kLiteRtElementTypeBool:
