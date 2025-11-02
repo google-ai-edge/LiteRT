@@ -22,6 +22,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
 
+namespace weight_loader {
+class WeightLoader;
+}  // namespace weight_loader
+
 // New structure to define a binding between a tensor name and an external
 // buffer.
 struct LiteRtExternalTensorBinding {
@@ -57,6 +61,8 @@ struct LiteRtOptionsT {
   LiteRtOpaqueOptions options = nullptr;
   std::vector<CustomOpOption> custom_op_options;
   std::vector<LiteRtExternalTensorBinding> external_tensor_bindings;
+  // Non-owning pointer used to expose the runtime's WeightLoader to delegates.
+  weight_loader::WeightLoader* weight_loader = nullptr;
 };
 
 #endif  // ODML_LITERT_LITERT_CORE_COMPILATION_OPTIONS_H_
