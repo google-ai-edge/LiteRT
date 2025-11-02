@@ -39,6 +39,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update \
+          sudo apt-get install -y \
+            libc++-dev \
+            libc++abi-dev \
+            clang \
+      
       - name: Configure tensorflow & python path
         run: |
           chmod +x configure.py
