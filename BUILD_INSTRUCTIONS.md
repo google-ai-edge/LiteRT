@@ -65,7 +65,7 @@ cd LiteRT
 ./configure
 
 # Build
-bazel build //litert/cc:litert_api
+bazel build //litert/cc:litert_api_with_dynamic_runtime
 bazel build //litert/tools:all
 ```
 
