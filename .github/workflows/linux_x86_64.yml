@@ -120,7 +120,7 @@ jobs:
             "-//litert/vendors/intel_openvino/..."
           )
 
-          bazel test "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
+          bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
           
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
