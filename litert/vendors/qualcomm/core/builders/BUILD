@@ -349,6 +349,20 @@ cc_library(
 )
 
 cc_library(
+    name = "topk_op_builder",
+    srcs = ["topk_op_builder.cc"],
+    hdrs = ["topk_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "pack_op_builder",
     srcs = ["pack_op_builder.cc"],
     hdrs = ["pack_op_builder.h"],

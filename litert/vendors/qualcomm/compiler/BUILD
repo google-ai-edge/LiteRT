@@ -202,6 +202,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:tile_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_conv_op_builder",
         "//litert/vendors/qualcomm/core/builders:transpose_op_builder",
+        "//litert/vendors/qualcomm/core/builders:topk_op_builder",
         "//litert/vendors/qualcomm/core/builders:unpack_op_builder",
         "//litert/vendors/qualcomm/core/dump:dump_graph",
         "//litert/vendors/qualcomm/core/transformation:graph_to_graph",
