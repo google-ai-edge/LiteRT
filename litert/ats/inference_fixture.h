@@ -116,8 +116,9 @@ class AtsInferenceTest : public RngTest {
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
-      auto exec = NpuCompiledModelExecutor::Create(Graph(), conf_.DispatchDir(),
-                                                   conf_.PluginDir());
+      auto exec = NpuCompiledModelExecutor::Create(
+          Graph(), conf_.TargetOptions(), conf_.DispatchDir(),
+          conf_.PluginDir());
       cap_.compilation.SetFields(conf_, Graph(), !exec.HasValue());
       if (!exec) {
         return exec.Error();
@@ -125,8 +126,8 @@ class AtsInferenceTest : public RngTest {
       auto res = std::make_unique<CompiledModelExecutor>(std::move(*exec));
       return res;
     } else if (conf_.IsCpu()) {
-      LITERT_ASSIGN_OR_RETURN(auto exec,
-                              CpuCompiledModelExecutor::Create(Graph()));
+      LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                             Graph(), conf_.TargetOptions()));
       return std::make_unique<CompiledModelExecutor>(std::move(exec));
     }
 
@@ -155,8 +156,8 @@ class AtsInferenceTest : public RngTest {
   }
 
   Expected<VarBuffers> CpuReference(const VarBuffers& inputs) const {
-    LITERT_ASSIGN_OR_RETURN(auto exec,
-                            CpuCompiledModelExecutor::Create(Graph()));
+    LITERT_ASSIGN_OR_RETURN(auto exec, CpuCompiledModelExecutor::Create(
+                                           Graph(), conf_.ReferenceOptions()));
     return exec.Run(inputs);
   }
 
