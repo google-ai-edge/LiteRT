@@ -1047,12 +1047,13 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
             status, absl::StrFormat("Failed to lock the tensor buffer: %s",
                                     tensor->name ? tensor->name : "<unnamed>"));
       }
-      TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
+      TfLiteCustomAllocation custom_allocation{host_mem_addr,
+                                               buffer->buffer_size()};
       // If this is a constant output, save the locked address for later data
       // copying
       if (is_constant_output) {
-        constant_outputs.push_back({buffer, host_mem_addr, tensor_name,
-                                    static_cast<size_t>(tensor->bytes)});
+        constant_outputs.push_back(
+            {buffer, host_mem_addr, tensor_name, buffer->buffer_size()});
         LITERT_LOG(LITERT_INFO,
                    "Tracked constant output tensor %s with locked address",
                    tensor_name);
@@ -1095,13 +1096,14 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     // If this is a constant output, save the locked address for later data
     // copying
     if (is_constant_output) {
-      constant_outputs.push_back({buffer, host_mem_addr, tensor_name,
-                                  static_cast<size_t>(tensor->bytes)});
+      constant_outputs.push_back(
+          {buffer, host_mem_addr, tensor_name, buffer->buffer_size()});
       LITERT_LOG(LITERT_INFO,
                  "Tracked CPU constant output tensor %s with locked address",
                  tensor_name);
     }
-    TfLiteCustomAllocation custom_allocation{host_mem_addr, tensor->bytes};
+    TfLiteCustomAllocation custom_allocation{host_mem_addr,
+                                             buffer->buffer_size()};
     if (is_input) {
       runner->SetCustomAllocationForInputTensor(tensor_name, custom_allocation,
                                                 /*flags=*/0);
