@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <string>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -34,21 +36,27 @@ namespace litert {
 namespace {
 
 using ::litert::google_tensor::GoogleTensorOptions;
+using ::testing::UnorderedElementsAre;
 
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
-  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "GoogleTensor");
+  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Google");
 
   auto plugin = CreatePlugin();
 
   LiteRtParamIndex num_supported_soc_models;
   LITERT_ASSERT_OK(LiteRtGetNumCompilerPluginSupportedSocModels(
       plugin.get(), &num_supported_soc_models));
-  ASSERT_EQ(num_supported_soc_models, 1);
+  ASSERT_EQ(num_supported_soc_models, 3);
 
-  const char* soc_model_name;
-  LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), 0,
-                                                            &soc_model_name));
-  ASSERT_STREQ(soc_model_name, "Tensor_G5");
+  std::vector<std::string> soc_model_names;
+  for (int i = 0; i < num_supported_soc_models; ++i) {
+    const char* soc_model_name;
+    LITERT_ASSERT_OK(LiteRtGetCompilerPluginSupportedSocModel(plugin.get(), i,
+                                                              &soc_model_name));
+    soc_model_names.push_back(soc_model_name);
+  }
+  EXPECT_THAT(soc_model_names,
+              UnorderedElementsAre("Tensor_G3", "Tensor_G4", "Tensor_G5"));
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {

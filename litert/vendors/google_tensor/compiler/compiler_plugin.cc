@@ -96,6 +96,7 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflUnsortedSegmentSum,
     kLiteRtOpCodeTflVarHandle,
     kLiteRtOpCodeTflWhere,
+    kLiteRtOpCodeTflCustom,
 };
 // clang format on
 
@@ -319,10 +320,22 @@ void MakeUniqueSignatureKeysPerSubgraph(LiteRtModelT* model,
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
-  if (compiler_plugin == nullptr || soc_model == nullptr ||
-      partitions == nullptr || compiled_result == nullptr) {
+  if (compiler_plugin == nullptr || partitions == nullptr ||
+      compiled_result == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+#ifdef LITERT_GOOGLE_TENSOR_AOT
+  // soc_model is required for AOT mode.
+  if (soc_model == nullptr) {
+    LITERT_LOG(LITERT_ERROR, "%s", "soc_model is nullptr in AOT mode");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+#else
+  // Allow unspecified soc model for ODC mode.
+  if (soc_model == nullptr) {
+    soc_model = "Unspecified";
+  }
+#endif  // LITERT_GOOGLE_TENSOR_AOT
   auto model = litert::ExtendedModel::CreateFromNonOwnedHandle(partitions);
   const auto num_partitions = model.NumSubgraphs();
 
@@ -356,21 +369,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   // Loading Google Tensor Compiler Adapter
   LITERT_LOG(LITERT_INFO, "%s", "Loading Google Tensor Compiler Adapter");
-  auto adapter_result = litert::google_tensor::Adapter::Create(
-      /*shared_library_dir=*/std::nullopt);
-  if (!adapter_result.HasValue()) {
-    const auto& error_message = adapter_result.Error().Message();
-    LITERT_LOG(LITERT_ERROR, "Failed to create adapter: %s",
-               error_message.c_str());
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-  const auto& api = adapter_result.Value()->api();
-  if (!api.compile || !api.free_compiled_code || !api.free_error_message) {
-    LITERT_LOG(LITERT_ERROR, "%s",
-               "Compiler API functions not loaded correctly.");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
+  LITERT_ASSIGN_OR_RETURN(auto adapter,
+                          litert::google_tensor::Adapter::Create(
+                              /*shared_library_dir=*/std::nullopt));
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
 
@@ -411,26 +412,21 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   char** compiled_code_data = nullptr;
   size_t* compiled_code_sizes = nullptr;
   size_t num_bytecodes = 0;
-  char* error_message = nullptr;
 
   // Ensure memory allocated by the C API is freed.
-  absl::Cleanup error_cleanup = [&] { api.free_error_message(error_message); };
   absl::Cleanup code_cleanup = [&] {
-    api.free_compiled_code(compiled_code_data, compiled_code_sizes,
-                           num_partitions);
+    if (compiled_code_data) {
+      adapter->FreeCompiledCode(compiled_code_data, compiled_code_sizes,
+                                num_bytecodes);
+    }
   };
-  auto compile_status = api.compile(
+  auto compile_status = adapter->Compile(
       model_buffer_view.data(), model_buffer_view.size(), soc_model_view.data(),
       soc_model_view.size(), opaque_options, &compiled_code_data,
-      &compiled_code_sizes, &num_bytecodes, &error_message);
-
+      &compiled_code_sizes, &num_bytecodes);
   if (!compile_status) {
-    std::string error_str = "Failed to compile model";
-    if (error_message) {
-      absl::StrAppend(&error_str, ": ", error_message);
-    }
-    LITERT_LOG(LITERT_ERROR, "%s", error_str.c_str());
-    return kLiteRtStatusErrorRuntimeFailure;
+    LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());
+    return compile_status.Error().Status();
   }
 
   // Result
