@@ -338,6 +338,7 @@ build:windows --host_copt=-D_ENABLE_EXTENDED_ALIGNED_STORAGE
 # build_pip_package script in its current form (as of Aug 2023) uses the
 # runfiles symlink tree to decide what to put into the Python wheel.
 startup --windows_enable_symlinks
+startup --host_jvm_args=-Djava.net.preferIPv6Addresses=true
 build:windows --enable_runfiles
 
 # Default paths for TF_SYSTEM_LIBS
