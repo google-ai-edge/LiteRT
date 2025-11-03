@@ -63,20 +63,20 @@ TensorWrapper& TensorPool::CreateStaticTensor(
     const void* data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_STATIC, data_type,
-                                       quant_params, dimentions, bytes, data);
+  return tensor_wrappers_.emplace_back(
+      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
+      dimentions, bytes, data, true);
 }
 
 TensorWrapper& TensorPool::CreateStaticTensorWithSuffix(
     Qnn_DataType_t data_type, const QuantizeParamsWrapperVariant& quant_params,
     const std::vector<std::uint32_t>& dimentions, std::string_view suffix,
-    std::uint32_t bytes, const void* data) {
+    std::uint32_t bytes, const void* data, bool copy_data) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + std::string(suffix);
-  return tensor_wrappers_.emplace_back(std::move(tensor_name),
-                                       QNN_TENSOR_TYPE_STATIC, data_type,
-                                       quant_params, dimentions, bytes, data);
+  return tensor_wrappers_.emplace_back(
+      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type, quant_params,
+      dimentions, bytes, data, copy_data);
 }
 
 TensorWrapper& TensorPool::CloneNativeTensorFrom(const TensorWrapper& src) {
@@ -100,10 +100,11 @@ TensorWrapper& TensorPool::CloneStaticTensorFrom(const TensorWrapper& src,
                                                  Qnn_DataType_t data_type) {
   const auto id = tensor_wrappers_.size();
   auto tensor_name = std::to_string(id) + kQnnSuffix;
-  return tensor_wrappers_.emplace_back(
-      std::move(tensor_name), QNN_TENSOR_TYPE_STATIC, data_type,
-      src.quantize_params_, src.dimentions_, src.owned_data_.size(),
-      src.owned_data_.data());
+  return tensor_wrappers_.emplace_back(std::move(tensor_name),
+                                       QNN_TENSOR_TYPE_STATIC, data_type,
+                                       src.quantize_params_, src.dimentions_,
+                                       src.qnn_tensor_.v2.clientBuf.dataSize,
+                                       src.qnn_tensor_.v2.clientBuf.data, true);
 }
 
 TensorWrapper& TensorPool::CloneStaticTensorFrom(
@@ -113,7 +114,8 @@ TensorWrapper& TensorPool::CloneStaticTensorFrom(
   return tensor_wrappers_.emplace_back(
       std::move(tensor_name), QNN_TENSOR_TYPE_STATIC,
       src.qnn_tensor_.v2.dataType, src.quantize_params_, dimentions,
-      src.qnn_tensor_.v2.clientBuf.dataSize, src.qnn_tensor_.v2.clientBuf.data);
+      src.qnn_tensor_.v2.clientBuf.dataSize, src.qnn_tensor_.v2.clientBuf.data,
+      true);
 }
 
 }  // namespace qnn
