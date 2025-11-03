@@ -18,8 +18,10 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/cc/internal/litert_handle.h"
@@ -35,9 +37,24 @@ namespace litert {
 //  Advanced CompiledModel with new / experimental features.
 class CompiledModelNext : public CompiledModel {
  public:
+  // Hardware specific metrics collected by the CompiledModel.
+  struct Metrics {
+    struct Metric {
+      std::string name;
+      LiteRtAny value;
+    };
+    std::vector<Metric> metrics;
+  };
+
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators);
+
+  // Starts collection of HW-specific metrics at a specific level of detail.
+  Expected<void> StartMetricsCollection(int detail_level);
+
+  // Stops collection of HW-specific metrics and report the collected metrics.
+  Expected<Metrics> StopMetricsCollection();
 
   // Sets a dispatch annotation on the compiled model. These annotations will be
   // propagated to dispatch graphs when they are created during model execution.
