@@ -119,6 +119,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_detail",
         "//litert/cc/internal:litert_rng",
+        "//litert/core:filesystem",
         "//litert/test/generators",
     ],
 )
