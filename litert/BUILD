@@ -126,10 +126,7 @@ package_group(
         "//third_party/odml/litert/tensor/...",
         # TODO(b/454666070): Below targets should be removed after we remove their use of C headers.
         "//third_party/odml/litert_lm/...",
-        "//third_party/odml/infra/genai/inference/...",
         # copybara:uncomment "//platforms/darwinn/...",
-        "//third_party/odml/genai_modules/rag_pipeline/core/models/...",
-        # copybara:uncomment "//research/xeno/audio/voicelm/calculators/lite_rt/...",
     ],
 )
 
