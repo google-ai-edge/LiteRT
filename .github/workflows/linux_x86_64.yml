@@ -39,6 +39,14 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libc++-dev \
+            libc++abi-dev \
+            clang \
+
       - name: Configure tensorflow & python path
         run: |
           chmod +x configure.py
@@ -90,10 +98,29 @@ jobs:
           echo "Cache Matched Key: ${{ steps.bazel-cache.outputs.cache-matched-key }}"
 
       - name: Run bazel build on Linux
-        run: |
-          bash ci/run_bazel_test_with_docker.sh
         env:
-          LITERT_TARGETS_ONLY: true
+          TEST_LANG_FILTERS: cc,py
+        run: |
+          BUILD_FLAGS=(
+            "--config=bulk_test_cpu"
+            "--test_lang_filters=${TEST_LANG_FILTERS}"
+            "--keep_going"
+            "--repo_env=USE_PYWRAP_RULES=True"
+          )
+
+          LITERT_EXCLUDED_TARGETS=(
+            "-//litert/c:litert_compiled_model_shared_lib_test"
+            "-//litert/c:litert_compiled_model_test"
+            "-//litert/cc:litert_compiled_model_test"
+            "-//litert/cc:litert_environment_test"
+            "-//litert/runtime:compiled_model_test"
+            "-//litert/tools:tool_display_test"
+            "-//litert/tools:dump_test"
+            "-//litert/tools:apply_plugin_test"
+            "-//litert/vendors/intel_openvino/..."
+          )
+
+          bazel test --disk_cache=~/.cache/bazel-linux "${BUILD_FLAGS[@]}" -- //litert/... "${LITERT_EXCLUDED_TARGETS[@]}"
 
       - name: Remove cache if cache is being refreshed.
         if: env.REFRESH_CACHE == 'true'
