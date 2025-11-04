@@ -26,6 +26,22 @@ extern "C" {
 
 LITERT_DEFINE_HANDLE(LiteRtCompilerOptions);
 
+// Partition strategy for the compiler.
+//
+// Default:
+//   Default partition strategy is to partition the graph based on the naive
+//   cutting algorithm.
+//
+// Weakly connected (experimental feature):
+//   Partitions the graph into weakly connected components, this may result in
+//   incorrect partition where there exists a path from a selected to another,
+//   where there is an unselected node in between. This feature is currently in
+//   experimental stage.
+typedef enum LiteRtCompilerOptionsPartitionStrategy {
+  kLiteRtCompilerOptionsPartitionStrategyDefault = 0,
+  kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected = 1,
+} LiteRtCompilerOptionsPartitionStrategy;
+
 // Creates an opaque options object holding Compiler options.
 LiteRtStatus LiteRtCreateCompilerOptions(LiteRtOpaqueOptions* options);
 
@@ -35,6 +51,15 @@ LiteRtStatus LiteRtFindCompilerOptions(LiteRtOpaqueOptions opaque_options,
 
 // Gets the identifier for Compiler options stored in opaque options.
 const char* LiteRtGetCompilerOptionsIdentifier();
+
+// Sets the partition strategy for the compiler.
+LiteRtStatus LiteRtSetCompilerOptionsPartitionStrategy(
+    LiteRtCompilerOptions options,
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+
+LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
+    LiteRtCompilerOptionsConst options,
+    LiteRtCompilerOptionsPartitionStrategy* partition_strategy);
 
 // Dummy options for testing.
 LiteRtStatus LiteRtSetDummyCompilerOptions(LiteRtCompilerOptions options,

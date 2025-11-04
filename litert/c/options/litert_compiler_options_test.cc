@@ -57,6 +57,28 @@ TEST(LiteRtCompilerOptionsTest, DummyOptions) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtCompilerOptionsTest, PartitionStrategy) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options));
+  LiteRtCompilerOptions compiler_options;
+  LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options, &compiler_options));
+
+  LiteRtCompilerOptionsPartitionStrategy partition_strategy;
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsPartitionStrategy(
+      compiler_options, &partition_strategy));
+  EXPECT_EQ(partition_strategy, kLiteRtCompilerOptionsPartitionStrategyDefault);
+
+  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
+      compiler_options,
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
+  LITERT_ASSERT_OK(LiteRtGetCompilerOptionsPartitionStrategy(
+      compiler_options, &partition_strategy));
+  EXPECT_EQ(partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtCompilerOptionsTest, Hash) {
   LiteRtOpaqueOptions options1;
   LITERT_ASSERT_OK(LiteRtCreateCompilerOptions(&options1));
@@ -71,6 +93,9 @@ TEST(LiteRtCompilerOptionsTest, Hash) {
   LiteRtCompilerOptions compiler_options;
   LITERT_ASSERT_OK(LiteRtFindCompilerOptions(options1, &compiler_options));
   LITERT_ASSERT_OK(LiteRtSetDummyCompilerOptions(compiler_options, true));
+  LITERT_ASSERT_OK(LiteRtSetCompilerOptionsPartitionStrategy(
+      compiler_options,
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
   LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
   EXPECT_NE(hash1, hash2);

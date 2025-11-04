@@ -23,6 +23,8 @@
 #include "litert/core/cache/hash_util.h"
 
 struct LiteRtCompilerOptionsT {
+  LiteRtCompilerOptionsPartitionStrategy partition_strategy =
+      kLiteRtCompilerOptionsPartitionStrategyDefault;
   bool dummy_option = false;
 };
 
@@ -65,6 +67,26 @@ LiteRtStatus LiteRtFindCompilerOptions(
 }
 
 const char* LiteRtGetCompilerOptionsIdentifier() { return "litert_compiler"; }
+
+LiteRtStatus LiteRtSetCompilerOptionsPartitionStrategy(
+    LiteRtCompilerOptions options,
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->partition_strategy = partition_strategy;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtGetCompilerOptionsPartitionStrategy(
+    LiteRtCompilerOptionsConst options,
+    LiteRtCompilerOptionsPartitionStrategy* partition_strategy) {
+  if (options == nullptr || partition_strategy == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *partition_strategy = options->partition_strategy;
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LiteRtSetDummyCompilerOptions(LiteRtCompilerOptions options,
                                            bool dummy_option) {

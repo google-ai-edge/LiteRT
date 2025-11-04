@@ -18,10 +18,28 @@
 #include <string>
 
 #include "absl/flags/declare.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_compiler_options.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/options/compiler_options.h"
 #include "litert/tools/flags/flag_types.h"
 
 ABSL_DECLARE_FLAG(std::string, cmd);
 
 ABSL_DECLARE_FLAG(::litert::tools::IntList, subgraphs);
+
+// Compiler plugin partition strategy flag.
+ABSL_DECLARE_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy);
+bool AbslParseFlag(absl::string_view text,
+                   LiteRtCompilerOptionsPartitionStrategy* partition_strategy,
+                   std::string* error);
+std::string AbslUnparseFlag(
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+
+namespace litert {
+
+Expected<CompilerOptions> CompilerOptionsFromFlags();
+
+}  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_TOOLS_FLAGS_APPLY_PLUGIN_FLAGS_H_

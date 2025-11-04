@@ -109,6 +109,20 @@ int main(int argc, char* argv[]) {
     run->dump_out.Get().get() << "Failed to create Litert options\n";
     return 1;
   }
+  // Parse compiler options.
+  {
+    auto compiler_opts = litert::CompilerOptionsFromFlags();
+    if (!compiler_opts) {
+      run->dump_out.Get().get() << "Failed to create compiler options\n";
+      return 1;
+    }
+    if (!opts->AddOpaqueOptions(std::move(*compiler_opts))) {
+      run->dump_out.Get().get() << "Failed to add compiler options to list\n";
+      return 1;
+    }
+  }
+
+  // Parse vendor options.
 
   {
     auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
@@ -154,16 +168,14 @@ int main(int argc, char* argv[]) {
   }
 
   {
-    auto mediatek_opts =
-        litert::mediatek::MediatekOptionsFromFlags();
+    auto mediatek_opts = litert::mediatek::MediatekOptionsFromFlags();
     if (!mediatek_opts) {
       run->dump_out.Get().get() << "Failed to create Mediatek options\n";
       return 1;
     }
 
     if (!opts->AddOpaqueOptions(std::move(*mediatek_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add Mediatek options to list\n";
+      run->dump_out.Get().get() << "Failed to add Mediatek options to list\n";
       return 1;
     }
   }
