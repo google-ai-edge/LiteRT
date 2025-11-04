@@ -153,6 +153,7 @@ litert_lib(
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_op_options",
+        "//litert/vendors/cc:namespace_heuristics",
         "//litert/vendors/qualcomm:common",
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
