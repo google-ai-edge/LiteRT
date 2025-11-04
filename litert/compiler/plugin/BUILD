@@ -32,6 +32,7 @@ cc_library(
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options",
+        "//litert/c:litert_rewriter",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
@@ -47,6 +48,7 @@ cc_library(
         "//litert/core/util:perfetto_profiling",
         "//litert/vendors/c:litert_compiler_plugin",
         "//litert/vendors/c:litert_compiler_plugin_api",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings",
@@ -92,6 +94,41 @@ cc_test(
         "//litert/test:common",
         "//litert/test:matchers",
         "//litert/tools:dump",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_transformation_test",
+    srcs = ["compiler_plugin_transformation_test.cc"],
+    data = [
+        "//litert/test:mlir_test_data",
+        "//litert/test:tflite_test_data",
+        "//litert/vendors/examples:example_plugin_so",
+    ],
+    # copybara:uncomment malloc = "//base:system_malloc",
+    tags = [
+        # Sanitizer runtimes are incompatible with RTLD_DEEPBIND.
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+        # TODO(yunandrew): Re-enable once the test is fixed.
+        "notap",
+    ],
+    deps = [
+        ":compiler_plugin",
+        # copybara:uncomment_begin(no OSS for gunit_main_no_heapcheck)
+        # "@com_google_googletest//:gtest_main_no_heapcheck",
+        # copybara:uncomment_end_and_comment_begin
+        "@com_google_googletest//:gtest_main",
+        # copybara:comment_end
+        "@com_google_absl//absl/strings:string_view",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/model:model_serialize",
+        "//litert/core/util:flatbuffer_tools_testonly",
+        "//litert/test:common",
     ],
 )
 
