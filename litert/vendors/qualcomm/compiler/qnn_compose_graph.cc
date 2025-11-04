@@ -28,6 +28,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -39,6 +40,7 @@
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/vendors/cc/namespace_heuristics.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
 #include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
@@ -1229,13 +1231,18 @@ LiteRtStatus MapGraph(QnnManager& qnn, Qnn_ContextHandle_t context_handle,
           absl::StrCat("_LiteRt_OpId_", std::to_string(idx)));
     }
     if (!op.Outputs().empty()) {
-      // Add op namespace based on the first output tensor name.
-      if (size_t pos = op.Outputs()[0].Name().find(';');
-          pos != std::string_view::npos) {
-        auto op_namespace = op.Outputs()[0].Name().substr(0, pos);
-        for (auto& op_wrapper : op_wrappers) {
-          op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
+      // Add op namespace inference based on output tensor names.
+      std::vector<std::string> candidate_names;
+      for (const auto& output_tensor : op.Outputs()) {
+        for (const auto& name :
+             absl::StrSplit(output_tensor.Name(), ';', absl::SkipEmpty())) {
+          candidate_names.emplace_back(name);
         }
+      }
+      auto op_namespace = TfliteNodeNamespaceHeuristic(
+          GetTfliteOpName(op.Code()), candidate_names);
+      for (auto& op_wrapper : op_wrappers) {
+        op_wrapper.AddPrefixToName(absl::StrCat(op_namespace, "/"));
       }
     }
     // Move op_wrappers to graph_op_wrappers.

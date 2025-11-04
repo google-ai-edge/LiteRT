@@ -43,6 +43,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "namespace_heuristics",
+    srcs = ["namespace_heuristics.cc"],
+    hdrs = ["namespace_heuristics.h"],
+    deps = [
+        "//litert/c:litert_op_code",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_test(
     name = "options_helper_test",
     srcs = ["options_helper_test.cc"],
