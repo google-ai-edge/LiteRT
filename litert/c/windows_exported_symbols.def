@@ -47,6 +47,7 @@ EXPORTS
   LiteRtDestroyTensorBuffer
   LiteRtDestroyTensorBufferRequirements
   LiteRtDuplicateTensorBuffer
+  LiteRtEnvironmentHasGpuEnvironment
   LiteRtExternalLiteRtBufferContextCreateBufferForTensor
   LiteRtExternalLiteRtBufferContextGetEnvironment
   LiteRtExternalLiteRtBufferContextRegisterBufferRequirements
@@ -77,6 +78,7 @@ EXPORTS
   LiteRtGetGpuAcceleratorCompilationOptionsSerializationDir
   LiteRtGetGpuAcceleratorCompilationOptionsSerializeExternalTensors
   LiteRtGetGpuAcceleratorCompilationOptionsSerializeProgramCache
+  LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations
   LiteRtGetGpuOptionsBenchmarkMode
   LiteRtGetGpuOptionsConstantTensorSharing
   LiteRtGetGpuOptionsExternalTensorsMode
@@ -188,6 +190,7 @@ EXPORTS
   LiteRtSetGpuAcceleratorCompilationOptionsSerializeExternalTensors
   LiteRtSetGpuAcceleratorCompilationOptionsSerializeProgramCache
   LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType
+  LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations
   LiteRtSetGpuOptionsBenchmarkMode
   LiteRtSetGpuOptionsConstantTensorSharing
   LiteRtSetGpuOptionsExternalTensorsMode

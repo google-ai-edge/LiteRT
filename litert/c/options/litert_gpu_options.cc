@@ -68,6 +68,9 @@ struct LiteRtGpuOptionsPayloadT {
   // Added in version 2.0.2a1.
   // Set to true to madvise the original shared tensors after use.
   bool madvise_original_shared_tensors = false;
+  // Added in version 2.0.2a1.
+  // Number of steps to prepare WebGPU command buffers in advance.
+  int num_steps_of_command_buffer_preparations = 0;
 };
 
 namespace litert {
@@ -237,6 +240,17 @@ LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
                           litert::GetPayload(gpu_accelerator_options));
   payload->madvise_original_shared_tensors = madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    int num_steps_of_command_buffer_preparations) {
+  LITERT_ASSIGN_OR_RETURN(LiteRtGpuOptionsPayloadT * payload,
+                          litert::GetPayload(gpu_accelerator_options));
+  payload->num_steps_of_command_buffer_preparations =
+      num_steps_of_command_buffer_preparations;
   return kLiteRtStatusOk;
 }
 
@@ -424,5 +438,19 @@ LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
   LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
       << "`payload` cannot be null.";
   *madvise_original_shared_tensors = payload->madvise_original_shared_tensors;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    int* num_steps_of_command_buffer_preparations,
+    LiteRtGpuOptionsPayload payload) {
+  LITERT_RETURN_IF_ERROR(num_steps_of_command_buffer_preparations,
+                         ErrorStatusBuilder::InvalidArgument())
+      << "`num_steps_of_command_buffer_preparations` cannot be null.";
+  LITERT_RETURN_IF_ERROR(payload, ErrorStatusBuilder::InvalidArgument())
+      << "`payload` cannot be null.";
+  *num_steps_of_command_buffer_preparations =
+      payload->num_steps_of_command_buffer_preparations;
   return kLiteRtStatusOk;
 }

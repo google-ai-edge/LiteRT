@@ -84,6 +84,17 @@ class GpuOptions : public litert::OpaqueOptions {
 
   LiteRtStatus SetMadviseOriginalSharedTensors(
       bool madvise_original_shared_tensors);
+
+  // Sets the number of steps to prepare WebGPU command buffers in advance.
+  // 0 (default value) = No command buffer preparation in advance. It must be 0
+  //     when any GPU resource bindings are changed during inference.
+  // 1 = Prepare one step ahead assuming that all the gpu resource bindings are
+  //     the same as the previous step.
+  // 2 = Prepare two steps ahead. It can be used when gpu resource bindings are
+  //     the same as the previous previous step, e.g. LLM inferences which swaps
+  //     input and output KV caches.
+  LiteRtStatus SetNumStepsOfCommandBufferPreparations(
+      int num_steps_of_command_buffer_preparations);
 };
 
 }  // namespace litert

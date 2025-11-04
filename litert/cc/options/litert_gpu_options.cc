@@ -134,4 +134,11 @@ LiteRtStatus GpuOptions::SetMadviseOriginalSharedTensors(
       Get(), madvise_original_shared_tensors);
 }
 
+LiteRtStatus GpuOptions::SetNumStepsOfCommandBufferPreparations(
+    int num_steps_of_command_buffer_preparations) {
+  return
+      LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+          Get(), num_steps_of_command_buffer_preparations);
+}
+
 }  // namespace litert

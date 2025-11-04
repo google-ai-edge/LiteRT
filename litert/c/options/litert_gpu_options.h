@@ -137,6 +137,12 @@ LiteRtSetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
     LiteRtOpaqueOptions gpu_accelerator_options,
     bool madvise_original_shared_tensors);
 
+// Sets the number of steps of command buffer preparations.
+LiteRtStatus
+LiteRtSetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    LiteRtOpaqueOptions gpu_accelerator_options,
+    int num_steps_of_command_buffer_preparations);
+
 // Declarations below this point are meant to be used by accelerator code.
 
 LITERT_DEFINE_HANDLE(LiteRtGpuOptionsPayload);
@@ -202,6 +208,11 @@ LiteRtStatus LiteRtGetGpuOptionsGpuPriority(LiteRtGpuPriority* priority,
 LiteRtStatus
 LiteRtGetGpuAcceleratorCompilationOptionsMadviseOriginalSharedTensors(
     bool* madvise_original_shared_tensors, LiteRtGpuOptionsPayload payload);
+
+LiteRtStatus
+LiteRtGetGpuAcceleratorRuntimeOptionsNumStepsOfCommandBufferPreparations(
+    int* num_steps_of_command_buffer_preparations,
+    LiteRtGpuOptionsPayload payload);
 
 #ifdef __cplusplus
 }  // extern "C"
