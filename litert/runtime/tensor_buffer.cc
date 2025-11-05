@@ -254,7 +254,7 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
           tensor_type,
           absl::MakeSpan(static_cast<uint8_t*>(host_memory_ptr), buffer_size),
           deallocator));
-
+  LITERT_LOG(LITERT_ERROR, "========%p ", host_memory_ptr);
   return std::move(tensor_buffer);
 }
 

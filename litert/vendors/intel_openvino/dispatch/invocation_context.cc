@@ -51,7 +51,13 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
-  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
+  // ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
+   static int graph_num = 0;
+  std::string xml_path = "C:\\Workspace\\junwei\\gemma\\openvino_ir\\Partition_mod_" + std::to_string(graph_num) + ".xml";
+  graph_num++;
+  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize with model %s",
+             xml_path.c_str());
+  ov::CompiledModel compiled_model = core->compile_model(xml_path, "NPU");
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
@@ -108,6 +114,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 #if defined(LITERT_WINDOWS_OS)
   LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
+  input_tensor_buffer_handles_.push_back(tensor_buffer_handle);
 #else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
@@ -123,6 +130,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 #if defined(LITERT_WINDOWS_OS)
   LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
+  output_tensor_buffer_handles_.push_back(tensor_buffer_handle);
 #else
   LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
@@ -134,11 +142,51 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
+  for (auto& tensor_buffer_handle : input_tensor_buffer_handles_) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
+                          device_context_.getTensorBuffer(tensor_buffer_handle));
+
+    size_t tensor_buffer_size;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+        litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to get tensor buffer size"));
+    // LITERT_LOG(LITERT_ERROR, "========%d ", tensor_buffer_size);
+    void* buffer_host_addr;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get HostMemory buffer"));
+
+    LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
+    memcpy(ov_tensor.get(), buffer_host_addr, tensor_buffer_size);
+  }
   infer_request_.start_async();
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
+  for (auto& tensor_buffer_handle : output_tensor_buffer_handles_) {
+    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
+                          device_context_.getTensorBuffer(tensor_buffer_handle));
+
+    size_t tensor_buffer_size;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+        litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to get tensor buffer size"));
+    // LITERT_LOG(LITERT_ERROR, "========%d ", tensor_buffer_size);
+    void* buffer_host_addr;
+      LITERT_RETURN_IF_ERROR(
+          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                             "Failed to get HostMemory buffer"));
+
+    LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+                          device_context_.getOvTensor(tensor_buffer_handle));
+    memcpy(buffer_host_addr, ov_tensor.get(), tensor_buffer_size);
+  }
   return {};
 }

@@ -61,6 +61,19 @@ class LiteRtDispatchDeviceContextT {
     }
   }
 
+  #if defined(LITERT_WINDOWS_OS)
+  litert::Expected<LiteRtTensorBuffer> getTensorBuffer(
+      const LiteRtTensorBufferHandle& handle) const {
+    auto it = tensor_handle_buffer_map_.find(handle);
+    if (it != tensor_handle_buffer_map_.end()) {
+      return it->second;
+    } else {
+      return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                "Failed to get tensor buffer");
+    }
+  }
+#endif
+
   // Return the core shared_pointer.
   std::shared_ptr<ov::Core> getCore() const { return core_; }
 
@@ -72,6 +85,10 @@ class LiteRtDispatchDeviceContextT {
   std::unordered_map<LiteRtTensorBufferHandle,
                      ov::intel_npu::level_zero::ZeroBufferTensor>
       tensor_handle_map_;
+  
+  std::unordered_map<LiteRtTensorBufferHandle,
+                     LiteRtTensorBuffer>
+      tensor_handle_buffer_map_;
 #else
   std::unordered_map<LiteRtTensorBufferHandle, ov::Tensor> tensor_handle_map_;
 #endif

@@ -139,9 +139,11 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
 
       auto remote_tensor = context.create_l0_host_tensor(
           ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
-      memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
+      // memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);
+      tensor_handle_buffer_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
+                                 tensor_buffer);
       return next_handle_++;
     }
     case kLiteRtTensorBufferTypeDmaBuf: {
@@ -228,6 +230,14 @@ litert::Expected<void> LiteRtDispatchDeviceContextT::UnregisterTensorBuffer(
   auto it = tensor_handle_map_.find(tensor_buffer_handle);
   if (it != tensor_handle_map_.end()) {
     tensor_handle_map_.erase(tensor_buffer_handle);
+  } else {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to Unregister Tensor Buffer");
+  }
+
+  auto tensor_buffer_it = tensor_handle_buffer_map_.find(tensor_buffer_handle);
+  if (tensor_buffer_it != tensor_handle_buffer_map_.end()) {
+    tensor_handle_buffer_map_.erase(tensor_buffer_handle);
   } else {
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "Failed to Unregister Tensor Buffer");

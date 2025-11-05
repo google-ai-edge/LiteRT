@@ -71,6 +71,8 @@ class LiteRtDispatchInvocationContextT {
       : device_context_(device_context), infer_request_(infer_request) {}
   LiteRtDispatchDeviceContextT& device_context_;
   ov::InferRequest infer_request_;
+  std::vector<LiteRtTensorBufferHandle> output_tensor_buffer_handles_;
+  std::vector<LiteRtTensorBufferHandle> input_tensor_buffer_handles_;
   // Timeout is in milliseconds
   static constexpr int kInferRequestTimeoutMs = 10000;
 };
