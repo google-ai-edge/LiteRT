@@ -235,6 +235,7 @@ cc_library(
     hdrs = ["litert_logging.h"],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
+        # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
         # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
