@@ -20,6 +20,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
@@ -27,7 +28,6 @@
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
-
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include <CL/cl.h>
@@ -396,10 +396,26 @@ LiteRtStatus LiteRtCreateManagedTensorBufferFromRequirements(
   size_t buffer_size = requirements->BufferSize();
   size_t alignment = requirements->Alignment();
 
+  const LiteRtRankedTensorType* tensor_type_to_use = tensor_type;
+  LiteRtRankedTensorType tensor_type_with_strides;
+  int num_requirement_strides = 0;
+  const uint32_t* requirement_strides = nullptr;
+  if (LiteRtGetTensorBufferRequirementsStrides(
+          requirements, &num_requirement_strides, &requirement_strides) ==
+          kLiteRtStatusOk &&
+      requirement_strides != nullptr && num_requirement_strides > 0) {
+    tensor_type_with_strides = *tensor_type;
+    tensor_type_with_strides.layout.has_strides = true;
+    for (int i = 0; i < num_requirement_strides; ++i) {
+      tensor_type_with_strides.layout.strides[i] = requirement_strides[i];
+    }
+    tensor_type_to_use = &tensor_type_with_strides;
+  }
+
   LITERT_ASSIGN_OR_RETURN(
       auto created_tensor_buffer,
       LiteRtTensorBufferT::CreateManagedWithAlignment(
-          env, buffer_type, *tensor_type, buffer_size, alignment));
+          env, buffer_type, *tensor_type_to_use, buffer_size, alignment));
   *tensor_buffer = created_tensor_buffer.release();
   return kLiteRtStatusOk;
 }
