@@ -408,5 +408,17 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
                          kSupportedOps);
 
+TEST(QnnTestCallDummyPlugin, CheckCompilerCompatibility) {
+  LiteRtApiVersion api_version = {.major = 0, .minor = 1, .patch = 0};
+  LiteRtEnvironmentOptions env = nullptr;
+  LiteRtOptions options = nullptr;
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCheckCompilerCompatibility(
+      api_version, env, options, "ExampleSocModel"));
+
+  // EXPECT_EQ(kLiteRtStatusErrorUnsupportedCompilerVersion,
+  //           LiteRtCompilerPluginCheckCompilerCompatibility(
+  //               api_version, env, options, "UnsupportedSocModel"));
+}
+
 }  // namespace
 }  // namespace litert
