@@ -566,6 +566,7 @@ cc_binary(
     srcs = ["npu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc:litert_common",
+        "//litert/tools:tensor_utils",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
