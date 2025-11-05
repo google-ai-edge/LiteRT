@@ -51,7 +51,9 @@ build:clang_local --repo_env USE_HERMETIC_CC_TOOLCHAIN=1
 build --repo_env=USE_PYWRAP_RULES=True
 build --copt=-DGRPC_BAZEL_BUILD
 build --cxxopt=-std=gnu++17
+build --cxxopt=-fpermissive
 build --host_copt=-DGRPC_BAZEL_BUILD
+build --host_cxxopt=-fpermissive
 build --action_env=GRPC_BAZEL_RUNTIME=1
 build --repo_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb
 build --action_env=PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=upb

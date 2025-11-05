@@ -7,7 +7,8 @@
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/cmake_build",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "$env{CMAKE_BUILD_TYPE} -fpermissive"
       }
     },
     {
