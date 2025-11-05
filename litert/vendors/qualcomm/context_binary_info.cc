@@ -59,6 +59,55 @@ Expected<void> InsertQnnGraphInfos(
   return {};
 }
 
+LiteRtApiVersion ConvertToLiteRtApiVersion(const Qnn_Version_t& qnnVersion) {
+  return {static_cast<int>(qnnVersion.major),
+          static_cast<int>(qnnVersion.minor),
+          static_cast<int>(qnnVersion.patch)};
+}
+
+bool IsCompatibale(const QnnApi* qnn_api,
+                   const QnnSystemContext_BinaryInfo_t* binary_info) {
+  // Context binary version
+  const char* ctx_buildid;
+  Qnn_Version_t ctx_core_version;
+  Qnn_Version_t ctx_backend_version;
+  if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV1;
+    ctx_core_version = context_binary_info.coreApiVersion;
+  } else if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_2) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV2;
+    ctx_core_version = context_binary_info.coreApiVersion;
+  } else if (binary_info->version == QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_3) {
+    const auto& context_binary_info = binary_info->contextBinaryInfoV3;
+    ctx_core_version = context_binary_info.coreApiVersion;
+  } else {
+    LITERT_LOG(
+        LITERT_ERROR,
+        "Failed to get acceptibale contextin binary info version (1~3): %d",
+        binary_info->version);
+    return false;
+  }
+
+  LITERT_LOG(LITERT_INFO, "Ctx Core API Version: %d.%d.%d",
+             ctx_core_version.major, ctx_core_version.minor,
+             ctx_core_version.patch);
+
+  // Runtime library version
+  Qnn_ApiVersion_t qnn_api_version;
+  qnn_api->backendGetApiVersion(&qnn_api_version);
+  Qnn_Version_t core_version = qnn_api_version.coreApiVersion;
+  const char* build_id;
+  qnn_api->backendGetBuildId(&build_id);
+  LITERT_LOG(LITERT_INFO, "Runtime Core API Version: %d.%d.%d",
+             core_version.major, core_version.minor, core_version.patch);
+  if (LiteRtCompareApiVersion(ConvertToLiteRtApiVersion(ctx_core_version),
+                              ConvertToLiteRtApiVersion(core_version)) != 0) {
+    LITERT_LOG(LITERT_ERROR, "Incompatible API versions");
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 Expected<GraphInfo> GraphInfo::Create(
@@ -197,6 +246,11 @@ Expected<ContextBinaryInfo> ContextBinaryInfo::Create(
   if (!binary_info) {
     LITERT_LOG(LITERT_ERROR, "Null binary info", "");
     return Unexpected(kLiteRtStatusErrorRuntimeFailure, "Null binary info");
+  }
+
+  if (!IsCompatibale(qnn.Api(), binary_info)) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Uncompatible context binary with runtime so.");
   }
 
   ContextBinaryInfo info;

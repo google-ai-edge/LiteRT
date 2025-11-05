@@ -291,9 +291,44 @@ LiteRtStatus Invoke(LiteRtDispatchInvocationContext invocation_context) {
   return kLiteRtStatusOk;
 }
 
+LiteRtApiVersion ConvertToLiteRtApiVersion(const Qnn_Version_t& qnnVersion) {
+    return {
+        static_cast<int>(qnnVersion.major),
+        static_cast<int>(qnnVersion.minor),
+        static_cast<int>(qnnVersion.patch)
+    };
+}
+
 LiteRtStatus CheckRuntimeCompatibility(LiteRtApiVersion api_version,
                                        LiteRtEnvironmentOptions env,
                                        LiteRtOptions options) {
+  // Example dispatch does not depend on any runtime library, return OK.
+  Qnn_ApiVersion_t qnn_api_version;
+  Qnn().Api()->backendGetApiVersion(&qnn_api_version);
+  const LiteRtApiVersion core_version =
+      ConvertToLiteRtApiVersion(qnn_api_version.coreApiVersion);
+  // LiteRT API version 0.1.0 is compatible with QAIRT version <= v2.39.1.
+  const LiteRtApiVersion latest_litert_api = {0, 1, 0};
+  int version_check = LiteRtCompareApiVersion(api_version, latest_litert_api);
+  if (version_check == 1) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "LiteRt API version is newer than v%d.%d.%d. QNN Dispatch plugin will "
+        "bypass compatibility check.",
+        latest_litert_api.major, latest_litert_api.minor,
+        latest_litert_api.patch);
+  } else if (LiteRtCompareApiVersion(core_version, {2, 39, 0}) > 1) {
+    LITERT_LOG(LITERT_ERROR,
+               "This QAIRT SDK is not compatible with your LiteRT.");
+    return kLiteRtStatusErrorUnsupported;
+  } else {
+    LITERT_LOG(
+        LITERT_INFO,
+        "This QAIRT SDK (%d.%d.%d) is compatible with your LiteRT (%d.%d.%d).",
+        core_version.major, core_version.minor, core_version.patch,
+        latest_litert_api.major, latest_litert_api.minor,
+        latest_litert_api.patch);
+  }
   return kLiteRtStatusOk;
 }
 
