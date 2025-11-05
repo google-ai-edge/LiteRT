@@ -283,6 +283,38 @@ the NPU implementation.
 npu_numerics_check --cpu_model=<cpu_model_path> --npu_model=<npu_model_path> --dispatch_library_dir=<path_to_dispatch_lib>
 ```
 
+### Test with Custom Inputs
+
+Prepare an input folder containing all input files in .raw format, with each filename corresponding to the model's input signature. See Python example below:
+
+```py
+import numpy as np
+from ai_edge_litert.compiled_model import CompiledModel
+from pathlib import Path
+
+MODEL_PATH = "/path/to/model.tflite"
+OUTPUT_FOLDER = "/output/folder/for/raw_files"
+
+Path(OUTPUT_FOLDER).mkdir(parents=True, exist_ok=True)
+
+compiled_model = CompiledModel.from_file(MODEL_PATH)
+
+# The signature key of the first signature is used in this example.
+signature_key = compiled_model.get_signature_by_index(0)["key"]
+input_details = compiled_model.get_input_tensor_details(signature_key)
+
+for tensor_name, detail in input_details.items():
+    # Random data is used below, or you can read inputs from images here.
+    # Use np.random.randint with dtype for integer types.
+    data = np.random.random(detail["shape"]).astype(detail["dtype"])
+    data.tofile(Path(OUTPUT_FOLDER) / f"{tensor_name}.raw")
+```
+
+Then specify the input folder at `--input_dir` when running `npu_numerics_check`.
+```bash
+npu_numerics_check --cpu_model=<cpu_model_path> --npu_model=<npu_model_path> --dispatch_library_dir=<path_to_dispatch_lib> --input_dir=<path_to_input_folder>
+```
+
 ## `culprit_finder`
 
 A powerful debugging tool to identify the specific operator ("culprit") in a
