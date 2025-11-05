@@ -357,6 +357,7 @@ litert_device_test(
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
+#         ":litert_common",
 #         ":litert_compiled_model",
 #         ":litert_element_type",
 #         ":litert_environment",

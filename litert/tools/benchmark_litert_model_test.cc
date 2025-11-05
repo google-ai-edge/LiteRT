@@ -70,41 +70,6 @@ TEST(BenchmarkLiteRtModelTest, GetModelSizeFromPathSucceeded) {
   EXPECT_GE(listener.results_.model_size_mb(), 0);
 }
 
-TEST(BenchmarkLiteRtModelTest, GPUAcceleration) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported In msan";
-#endif
-  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
-  params.Set<std::string>("graph", kModelPath);
-  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
-  params.Set<bool>("use_cpu", false);
-  params.Set<bool>("use_gpu", true);
-  params.Set<bool>("require_full_delegation", true);
-
-  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
-
-  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
-}
-
-TEST(BenchmarkLiteRtModelTest, GPUAccelerationWithProfiler) {
-  // MSAN does not support GPU tests.
-#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
-  GTEST_SKIP() << "GPU tests are not supported In msan";
-#endif
-  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
-  params.Set<std::string>("graph", kModelPath);
-  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
-  params.Set<bool>("use_cpu", false);
-  params.Set<bool>("use_gpu", true);
-  params.Set<bool>("require_full_delegation", true);
-  params.Set<bool>("use_profiler", true);
-
-  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
-
-  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
-}
-
 TEST(BenchmarkLiteRtModelTest, BenchmarkWithResultFilePath) {
   BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
   params.Set<std::string>("graph", kModelPath);

@@ -29,6 +29,7 @@
 #include "litert/c/litert_event_type.h"
 #include "litert/c/litert_profiler_event.h"
 #include "litert/cc/internal/litert_platform_support.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -384,6 +385,28 @@ TEST_P(CompiledModelGpuTest, PartialDelegation) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_output));
   }
+}
+
+TEST_P(CompiledModelGpuTest, PartialDelegationNoCpuFallbackError) {
+  constexpr const char* kModelPartilaFileName = "simple_cast_and_add_op.tflite";
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model,
+      Model::CreateFromFile(testing::GetTestFilePath(kModelPartilaFileName)));
+
+  auto env = litert::Environment::Create({});
+  ASSERT_TRUE(env);
+
+  auto compilation_options = Options::Create();
+  compilation_options->SetHardwareAccelerators(HwAccelerators::kGpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK(
+      gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
+  compilation_options->AddOpaqueOptions(std::move(gpu_options));
+
+  auto compiled_model_res =
+      CompiledModel::Create(*env, model, *compilation_options);
+  EXPECT_FALSE(compiled_model_res.HasValue());
+  EXPECT_EQ(compiled_model_res.Error().Status(), kLiteRtStatusErrorCompilation);
 }
 
 TEST_P(CompiledModelGpuTest, BasicAdd3dCstInt32) {
