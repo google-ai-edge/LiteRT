@@ -221,14 +221,14 @@ adb push "${HOST_MODEL_DIR}/${MODEL_FILENAME}" "${DEVICE_MODEL_DIR}/"
 echo "Pushed segmentation models."
 
 # Push c api shared library
-LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/" 
+LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/"
 adb push "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_BASE_DIR}/"
 echo "Pushed c api shared library."
 
 # Push gpu accelerator shared library
-LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/" 
+LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/"
 if [[ "$ACCELERATOR" == "gpu" ]]; then
-    adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtGpuAccelerator.so" "${DEVICE_BASE_DIR}/"
+    adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtOpenClAccelerator.so" "${DEVICE_BASE_DIR}/"
 fi
 echo "Pushed gpu accelerator shared library."
 
