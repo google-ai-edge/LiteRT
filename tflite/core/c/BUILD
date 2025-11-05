@@ -112,6 +112,7 @@ tflite_cc_library_with_c_headers_test(
         "//tflite:version",
         "//tflite/c:c_api_internal",
         "//tflite/c:common_internal",
+        "//tflite/converter:allocation",
         "//tflite/core:create_op_resolver_header",
         "//tflite/core:framework_stable",
         "//tflite/core:signature_runner",
