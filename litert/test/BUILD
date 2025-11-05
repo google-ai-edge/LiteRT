@@ -196,10 +196,10 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/cc/internal:litert_c_types_printing",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
@@ -262,6 +262,7 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
