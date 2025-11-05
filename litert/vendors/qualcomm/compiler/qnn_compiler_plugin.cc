@@ -488,3 +488,9 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   return kLiteRtStatusOk;
 }
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
+  return kLiteRtStatusOk;
+}
