@@ -107,7 +107,22 @@ if(NOT EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
 
         # Configure TFLite
         message(STATUS "Configuring TFLite...")
-        set(_tflite_extra_args)
+        set(_tflite_extra_args -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
+        set(_litert_disable_kleidiai FALSE)
+        if(CMAKE_SYSTEM_PROCESSOR)
+          string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" _litert_system_proc_lower)
+        else()
+          set(_litert_system_proc_lower "")
+        endif()
+        if(_litert_system_proc_lower MATCHES "^(x86_64|amd64|i[3-6]86)$")
+          if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+            set(_litert_disable_kleidiai TRUE)
+          endif()
+        endif()
+        if(_litert_disable_kleidiai)
+          list(APPEND _tflite_extra_args -DXNNPACK_ENABLE_KLEIDIAI=OFF)
+          message(STATUS "Disabling KleidiAI for host ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")
+        endif()
         if(CMAKE_SYSTEM_NAME STREQUAL "Android")
           # Propagate Android toolchain settings to the inner TFLite configure
           if(CMAKE_TOOLCHAIN_FILE)
@@ -279,10 +294,58 @@ find_package(absl REQUIRED)
 if(NOT TARGET tensorflow-lite)
   if(EXISTS "${TFLITE_BUILD_DIR}/libtensorflow-lite.a")
     add_library(tensorflow-lite STATIC IMPORTED)
+    set(_litert_tflite_link_libs
+      "${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a"
+      "${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a"
+      "${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a"
+      "${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a"
+      "${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a"
+      "${TFLITE_BUILD_DIR}/libxnnpack-delegate.a"
+      "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a"
+      "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a"
+    )
+    set(_kleidiai_lib "${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a")
+    if(EXISTS "${_kleidiai_lib}")
+      list(APPEND _litert_tflite_link_libs "${_kleidiai_lib}")
+    else()
+      message(STATUS "LiteRT: KleidiAI static library not found at ${_kleidiai_lib}; continuing without it.")
+    endif()
+    list(APPEND _litert_tflite_link_libs
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_blocking_counter.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context_get_ctx.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_cpuinfo.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_ctx.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_denormal.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_frontend.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx2_fma.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx512.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_arm.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx2_fma.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx512.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_arm.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx2_fma.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx512.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepare_packed_matrices.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepacked_cache.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_system_aligned_alloc.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_thread_pool.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/profiler/libruy_profiler_instrumentation.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_trmul.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a"
+      "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a"
+      "${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
+    )
     set_target_properties(tensorflow-lite PROPERTIES
       IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/libtensorflow-lite.a"
       INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
-      INTERFACE_LINK_LIBRARIES "${TFLITE_BUILD_DIR}/pthreadpool/libpthreadpool.a;${TFLITE_BUILD_DIR}/_deps/farmhash-build/libfarmhash.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg2d.a;${TFLITE_BUILD_DIR}/_deps/fft2d-build/libfft2d_fftsg.a;${TFLITE_BUILD_DIR}/_deps/cpuinfo-build/libcpuinfo.a;${TFLITE_BUILD_DIR}/libxnnpack-delegate.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a;${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a;${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_blocking_counter.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_context_get_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_cpuinfo.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_ctx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_denormal.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_frontend.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_have_built_path_for_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_kernel_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_arm.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx2_fma.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_pack_avx512.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepare_packed_matrices.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_prepacked_cache.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_system_aligned_alloc.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_thread_pool.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/profiler/libruy_profiler_instrumentation.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_trmul.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_tune.a;${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_wait.a;${TFLITE_BUILD_DIR}/_deps/flatbuffers-build/libflatbuffers.a"
+      INTERFACE_LINK_LIBRARIES "${_litert_tflite_link_libs}"
     )
   endif()
 endif()
