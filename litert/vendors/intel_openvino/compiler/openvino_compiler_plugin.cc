@@ -35,6 +35,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_environment_options.h"
@@ -420,4 +421,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_ERROR, "Exception in compilation: %s", e.what());
     return kLiteRtStatusErrorCompilation;
   }
+}
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
+  *num_patterns = 0;
+  return kLiteRtStatusOk;
 }

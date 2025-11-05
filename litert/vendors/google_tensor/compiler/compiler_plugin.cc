@@ -32,6 +32,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_macros.h"
@@ -452,5 +453,12 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         absl::StrFormat("Partition_%d", static_cast<int>(i)));
   }
   *compiled_result = result.release();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
+    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
+    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
+  *num_patterns = 0;
   return kLiteRtStatusOk;
 }
