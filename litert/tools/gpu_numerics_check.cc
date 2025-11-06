@@ -42,6 +42,8 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/core/filesystem.h"
+#include "tflite/c/c_api_types.h"
+#include "tflite/tools/utils.h"
 
 ABSL_FLAG(bool, print_diff_stats, false,
           "Whether to print the diff stats CSV.");
@@ -122,59 +124,32 @@ Expected<Options> GetCpuOptions() {
   return options;
 }
 
-Expected<void> FillInputTensor(TensorBuffer& buffer, float scale) {
+Expected<void> FillInputTensor(TensorBuffer& buffer) {
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
   const auto& layout = type.Layout();
   size_t total_elements =
       std::accumulate(layout.Dimensions().begin(), layout.Dimensions().end(), 1,
                       std::multiplies<size_t>());
+  float low_range = 0;
+  float high_range = 0;
+  tflite::utils::GetDataRangesForType(
+      static_cast<TfLiteType>(type.ElementType()), &low_range, &high_range);
+  auto tensor_data = tflite::utils::CreateRandomTensorData(
+      /*name=*/"", static_cast<TfLiteType>(type.ElementType()), total_elements,
+      low_range, high_range);
 
-  if (type.ElementType() == ElementType::Float16 ||
-      type.ElementType() == ElementType::Float32 ||
-      type.ElementType() == ElementType::BFloat16) {
-    std::vector<float> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = std::sin(i * scale);
-    }
-    return buffer.Write<float>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int32) {
-    std::vector<int32_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 32;
-    }
-    return buffer.Write<int32_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int16) {
-    std::vector<int16_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 2048;
-    }
-    return buffer.Write<int16_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int8) {
-    std::vector<int8_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 256 - 128;
-    }
-    return buffer.Write<int8_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::UInt8) {
-    std::vector<uint8_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 256;
-    }
-    return buffer.Write<uint8_t>(absl::MakeConstSpan(data));
-  } else {
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Unsupported element type for filling tensor.");
-  }
+  return buffer.Write<char>(absl::MakeSpan(
+      reinterpret_cast<char*>(tensor_data.data.get()), tensor_data.bytes));
 }
 
 // Creates and fills input buffers for a given compiled model.
 Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffers(
-    const CompiledModel& compiled_model, size_t signature_index, float scale) {
+    const CompiledModel& compiled_model, size_t signature_index) {
   LITERT_ASSIGN_OR_RETURN(auto input_buffers,
                           compiled_model.CreateInputBuffers(signature_index));
 
   for (auto& buffer : input_buffers) {
-    LITERT_RETURN_IF_ERROR(FillInputTensor(buffer, scale));
+    LITERT_RETURN_IF_ERROR(FillInputTensor(buffer));
   }
   return input_buffers;
 }
@@ -386,17 +361,13 @@ Expected<std::vector<BufferDiffStats>> RunModel(absl::string_view model_path) {
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
 
-  float input_scale = 0.12345f;
-
   // Create and fill input buffers
   LITERT_ASSIGN_OR_RETURN(
       auto cpu_input_buffers,
-      CreateAndFillInputBuffers(compiled_model_cpu, signature_index,
-                                input_scale));
+      CreateAndFillInputBuffers(compiled_model_cpu, signature_index));
   LITERT_ASSIGN_OR_RETURN(
       auto gpu_input_buffers,
-      CreateAndFillInputBuffers(compiled_model_gpu, signature_index,
-                                input_scale));
+      CreateAndFillInputBuffers(compiled_model_gpu, signature_index));
 
   // Create output buffers
   LITERT_ASSIGN_OR_RETURN(

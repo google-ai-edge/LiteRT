@@ -518,6 +518,8 @@ cc_binary(
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
+        "//tflite/c:c_api_types",
+        "//tflite/tools:utils",
     ] + GPU_ACCELERATOR_DEPS,
 )
 
@@ -529,6 +531,8 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
+        # "//tflite/c:c_api_types",
+        # "//tflite/tools:utils",
         # copybara:uncomment_end
     ],
 )
@@ -542,6 +546,8 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep
+        # "//tflite/c:c_api_types",
+        # "//tflite/tools:utils",
         # "//third_party/vulkan_loader",
         # copybara:uncomment_end
     ],
@@ -560,6 +566,8 @@ cc_binary(
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
+        # "//tflite/c:c_api_types",
+        # "//tflite/tools:utils",
         # copybara:uncomment_end
     ],
 )
