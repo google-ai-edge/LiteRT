@@ -180,7 +180,7 @@ set(_litert_runtime_c_api_private_archives
     "${TFLITE_BUILD_DIR}/libxnnpack-delegate.a"
     "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libXNNPACK.a"
     "${TFLITE_BUILD_DIR}/_deps/xnnpack-build/libxnnpack-microkernels-prod.a"
-    "${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a"
+    $<$<NOT:$<STREQUAL:${CMAKE_SYSTEM_PROCESSOR},x86_64>>:${TFLITE_BUILD_DIR}/kleidiai/libkleidiai.a>
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_allocator.a"
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_apply_multiplier.a"
     "${TFLITE_BUILD_DIR}/_deps/ruy-build/ruy/libruy_block_map.a"
