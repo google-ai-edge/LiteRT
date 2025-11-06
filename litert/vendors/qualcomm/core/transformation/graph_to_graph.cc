@@ -156,6 +156,8 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
     Transform(validate_op_config, ops, tensor_pool, gemma3_mha_prefill,
               OptimizeMHAPrefill);
   }
+
+  // Mask Gemma Optimization
   const std::vector<QnnOpCode> gemma3_mask = {
       QnnOpCode::kElementWiseNot,
       QnnOpCode::kCast,
@@ -165,6 +167,7 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
   Transform(validate_op_config, ops, tensor_pool, gemma3_mask,
             TransformQuantizeInMask);
 
+  // Embedding Gemma Optimization
   const std::vector<QnnOpCode> embedding_gemma = {
       QnnOpCode::kElementWiseMultiply,
       QnnOpCode::kTranspose,
@@ -179,5 +182,27 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
   };
   Transform(validate_op_config, ops, tensor_pool, embedding_gemma,
             TransformEmbeddingGemma);
+
+  // Fast Vlm Optimization
+  const std::vector<QnnOpCode> fast_vlm_mha_prefill = {
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kReshape,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kConcat,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kReshape,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kStridedSlice,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kElementWiseAdd,
+      QnnOpCode::kReshape,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kReshape};
+  Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
+            OptimizeMHAFastVlmPrefill);
 }
 }  // namespace qnn
