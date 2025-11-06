@@ -544,6 +544,7 @@ cc_library(
         ":passes_inc_gen",
         ":unfold_splat_constant_pass",
         "//tflite/converter:tensorflow_lite",
+        "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:case",
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:conv",
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:custom_call",
         "//tflite/converter/stablehlo/transforms/legalize_hlo_conversions:dot_general",
