@@ -18,6 +18,7 @@
 #include "litert/vendors/qualcomm/core/builders/matmul_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/quantize_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/select_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/softmax_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
@@ -186,7 +187,7 @@ TEST(MatMulConvertTest, Gemma3Decode) {
   ASSERT_EQ(op_wrappers[0].IsOpCode(QnnOpCode::kMatMul), true);
 }
 
-TEST(MHAConvertTest, Gemma3Prefill) {
+TEST(MHAOptimization, Gemma3Prefill) {
   // G2G Test case: MHA -> SHA
   //
   // ---------------- Before ---------------------
@@ -461,7 +462,7 @@ TEST(MHAConvertTest, Gemma3Prefill) {
   ASSERT_EQ(op_wrappers[48].GetOpCode(), QnnOpCode::kReshape);
 }
 
-TEST(MHAConvertTest, Gemma3Decode) {
+TEST(MHAOptimization, Gemma3Decode) {
   // G2G Test case: MHA -> SHA
   //
   // ---------------- Before ---------------------
@@ -1079,6 +1080,209 @@ TEST(MHASHATest, FastVlm) {
         op_wrappers[20 + sha_size * i].IsOpCode(QnnOpCode::kElementWiseAdd));
   }
   ASSERT_TRUE(op_wrappers[op_wrappers.size() - 1].IsOpCode(QnnOpCode::kConcat));
+}
+
+TEST(MHAOptimization, AttentionWithSelect) {
+  // G2G Test case:
+  //
+  // -------------------- Before --------------------
+  //       In0        In1
+  //        |          |
+  //       Mul        Mul       In2
+  //        |          |         |
+  //    Transpose  Transpose  Reshape
+  //         \        /          |
+  //          \      /           |
+  //           MatMul         NotEqual
+  //                \        /        \
+  //                 \      /          \
+  //                  Select    In3 (MHA with Select)
+  //                    |        |
+  //                 Softmax Transpose
+  //                     \      /
+  //                      MatMul
+  //                        |
+  //                    Transpose
+  //                        |
+  //                       Out0
+  //
+  // --------------------- After ---------------------
+  //       In0     In1    In3       In2
+  //        |       |      |         |
+  //      Unpack  Unpack Unpack   NotEqual
+  //        |       |      |     /
+  //         \      |     /    Cast
+  //          \     |    /     /
+  //           |    |   |    Mul
+  //           |    |   |   /
+  //           (MHA-to-SHAs)
+  //                |
+  //               Pack
+  //                |
+  //               Out0
+  //
+  // SHA:
+  //       In0'    In1'    In2
+  //        |       |       |
+  //       Mul     Mul   NotEqual
+  //        |       |       |
+  //        |   Transpose  Cast
+  //        |     /       /
+  //        MatMul     Mul
+  //              \   /   \
+  //               Add     (MHA with Add)
+  //                |
+  //             Softmax
+  //                |
+  //              MatMul
+  //                |
+  //               Out0'
+  //
+  TensorPool tensor_pool;
+  std::vector<OpWrapper> op_wrappers;
+
+  auto& in0 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                             {1, 1024, 5, 128});
+  auto& in1 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                             {1, 1108, 5, 128});
+  auto& in2 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                             {1, 1024, 1108});
+  auto& in3 = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32, {},
+                                             {1, 1108, 5, 128});
+  const std::array<float, 1> mul_val{0.5};
+  auto& mul_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {mul_val.size()},
+      mul_val.size() * sizeof(mul_val[0]), mul_val.data());
+  // Mul0
+  auto& mul_q0_trans = tensor_pool.CloneNativeTensorFrom(in0);
+  auto mul_q0 =
+      BuildElementwiseMulOp(tensor_pool, {in0, mul_const}, {mul_q0_trans});
+  std::move(mul_q0.begin(), mul_q0.end(), std::back_inserter(op_wrappers));
+  // Mul1
+  auto& mul_k0_trans = tensor_pool.CloneNativeTensorFrom(in1);
+  auto mul_k0 =
+      BuildElementwiseMulOp(tensor_pool, {in1, mul_const}, {mul_k0_trans});
+  std::move(mul_k0.begin(), mul_k0.end(), std::back_inserter(op_wrappers));
+  // Transpose2
+  const std::array<int32_t, 4> transpose_q0_val = {0, 2, 1, 3};
+  auto& transpose_q0_perm = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {transpose_q0_val.size()},
+      transpose_q0_val.size() * sizeof(transpose_q0_val[0]),
+      transpose_q0_val.data());
+  auto& transpose_q0_matmul =
+      tensor_pool.CloneNativeTensorFrom(mul_q0_trans, {1, 5, 1024, 128});
+  auto transpose_q0 = BuildTransposeOp(
+      tensor_pool, {mul_q0_trans, transpose_q0_perm}, {transpose_q0_matmul});
+  std::move(transpose_q0.begin(), transpose_q0.end(),
+            std::back_inserter(op_wrappers));
+  // Transpose3
+  const std::array<int32_t, 4> transpose_k0_val = {0, 2, 3, 1};
+  auto& transpose_k0_perm = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {transpose_k0_val.size()},
+      transpose_k0_val.size() * sizeof(transpose_k0_val[0]),
+      transpose_k0_val.data());
+  auto& transpose_k0_matmul =
+      tensor_pool.CloneNativeTensorFrom(mul_k0_trans, {1, 5, 128, 1108});
+  auto transpose_k0 = BuildTransposeOp(
+      tensor_pool, {mul_k0_trans, transpose_k0_perm}, {transpose_k0_matmul});
+  std::move(transpose_k0.begin(), transpose_k0.end(),
+            std::back_inserter(op_wrappers));
+  // MatMul4
+  auto& matmul_select = tensor_pool.CreateNativeTensor(QNN_DATATYPE_FLOAT_32,
+                                                       {}, {1, 5, 1024, 1108});
+  auto matmul0 =
+      BuildMatmulOp(tensor_pool, {transpose_q0_matmul, transpose_k0_matmul},
+                    {matmul_select}, false, false);
+  std::move(matmul0.begin(), matmul0.end(), std::back_inserter(op_wrappers));
+  // Reshape5
+  auto& reshape_notequal =
+      tensor_pool.CloneNativeTensorFrom(in2, {1, 1, 1024, 1108});
+  auto reshape0 = BuildReshapeOp(tensor_pool, {in2}, {reshape_notequal});
+  std::move(reshape0.begin(), reshape0.end(), std::back_inserter(op_wrappers));
+  // NotEqual6
+  auto& notequal_select = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_BOOL_8, {}, {1, 1, 1024, 1108});
+  const std::array<float, 1> zero_val{0};
+  auto& zero_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {zero_val.size()},
+      zero_val.size() * sizeof(zero_val[0]), zero_val.data());
+  auto not_equal = BuildElementwiseNotEqualOp(
+      tensor_pool, {reshape_notequal, zero_const}, {notequal_select});
+  std::move(not_equal.begin(), not_equal.end(),
+            std::back_inserter(op_wrappers));
+  // Select7
+  auto& select_softmax = tensor_pool.CloneNativeTensorFrom(matmul_select);
+  const std::array<float, 1> mask_val{-2.38197633e+38};
+  auto& mask_const = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {mask_val.size()},
+      mask_val.size() * sizeof(mask_val[0]), mask_val.data());
+  auto select =
+      BuildSelectOp(tensor_pool, {notequal_select, matmul_select, mask_const},
+                    {select_softmax});
+  std::move(select.begin(), select.end(), std::back_inserter(op_wrappers));
+  // Softmax8
+  auto& softmax_matmul = tensor_pool.CloneNativeTensorFrom(select_softmax);
+  auto softmax =
+      BuildSoftmaxOp(tensor_pool, {select_softmax}, {softmax_matmul}, 1.0f);
+  std::move(softmax.begin(), softmax.end(), std::back_inserter(op_wrappers));
+  // Transpose9
+  const std::array<int32_t, 4> transpose_v0_val = {0, 2, 3, 1};
+  auto& transpose_v0_perm = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {transpose_v0_val.size()},
+      transpose_v0_val.size() * sizeof(transpose_v0_val[0]),
+      transpose_v0_val.data());
+  auto& transpose_v0_matmul =
+      tensor_pool.CloneNativeTensorFrom(in3, {1, 5, 128, 1108});
+  auto transpose_v0 = BuildTransposeOp(tensor_pool, {in3, transpose_v0_perm},
+                                       {transpose_v0_matmul});
+  std::move(transpose_v0.begin(), transpose_v0.end(),
+            std::back_inserter(op_wrappers));
+  // MatMul10
+  auto& matmul_transpose = tensor_pool.CreateNativeTensor(
+      QNN_DATATYPE_FLOAT_32, {}, {1, 5, 128, 1024});
+  auto matmul_v =
+      BuildMatmulOp(tensor_pool, {transpose_v0_matmul, softmax_matmul},
+                    {matmul_transpose}, false, true);
+  std::move(matmul_v.begin(), matmul_v.end(), std::back_inserter(op_wrappers));
+  // Transpose11
+  const std::array<int32_t, 4> transpose_o0_val = {0, 3, 1, 2};
+  auto& transpose_o0_perm = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_INT_32, {}, {transpose_o0_val.size()},
+      transpose_o0_val.size() * sizeof(transpose_o0_val[0]),
+      transpose_o0_val.data());
+  auto& transpose_o0_out =
+      tensor_pool.CloneNativeTensorFrom(matmul_transpose, {1, 1024, 5, 128});
+  auto transpose_o0 = BuildTransposeOp(
+      tensor_pool, {matmul_transpose, transpose_o0_perm}, {transpose_o0_out});
+  std::move(transpose_o0.begin(), transpose_o0.end(),
+            std::back_inserter(op_wrappers));
+
+  // Transform the graph.
+  const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOpt;
+  GraphToGraphTransform(g2g_option, op_wrappers, tensor_pool,
+                        [](OpWrapper& op) { return true; });
+  // Check the optimized graph is correct.
+  ASSERT_EQ(op_wrappers.size(), 42);
+  ASSERT_TRUE(op_wrappers[0].IsOpCode(QnnOpCode::kElementWiseBinary));
+  ASSERT_TRUE(op_wrappers[1].IsOpCode(QnnOpCode::kCast));
+  ASSERT_TRUE(op_wrappers[2].IsOpCode(QnnOpCode::kElementWiseMultiply));
+  ASSERT_TRUE(op_wrappers[3].IsOpCode(QnnOpCode::kUnPack));
+  ASSERT_TRUE(op_wrappers[4].IsOpCode(QnnOpCode::kUnPack));
+  ASSERT_TRUE(op_wrappers[5].IsOpCode(QnnOpCode::kUnPack));
+
+  const std::vector<QnnOpCode> sha_op_codes = {QnnOpCode::kElementWiseMultiply,
+                                               QnnOpCode::kElementWiseMultiply,
+                                               QnnOpCode::kTranspose,
+                                               QnnOpCode::kMatMul,
+                                               QnnOpCode::kElementWiseAdd,
+                                               QnnOpCode::kSoftmax,
+                                               QnnOpCode::kMatMul};
+  for (int i = 6; i < 41; i = i + sha_op_codes.size()) {
+    for (size_t index = 0; index < sha_op_codes.size(); ++index) {
+      ASSERT_TRUE(op_wrappers[i + index].IsOpCode(sha_op_codes[index]));
+    }
+  }
+  ASSERT_TRUE(op_wrappers[41].IsOpCode(QnnOpCode::kPack));
 }
 
 }  // namespace

@@ -204,5 +204,22 @@ void GraphToGraphTransform(const G2GConfig g2g_option,
       QnnOpCode::kReshape};
   Transform(validate_op_config, ops, tensor_pool, fast_vlm_mha_prefill,
             OptimizeMHAFastVlmPrefill);
+
+  // Attention Optimization
+  const std::vector<QnnOpCode> attn = {
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kElementWiseMultiply,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kReshape,
+      QnnOpCode::kElementWiseBinary,
+      QnnOpCode::kElementWiseSelect,
+      QnnOpCode::kSoftmax,
+      QnnOpCode::kTranspose,
+      QnnOpCode::kMatMul,
+      QnnOpCode::kTranspose,
+  };
+  Transform(validate_op_config, ops, tensor_pool, attn, OptimizeMHAAttn);
 }
 }  // namespace qnn

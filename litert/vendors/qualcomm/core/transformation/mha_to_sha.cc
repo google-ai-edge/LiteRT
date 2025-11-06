@@ -14,10 +14,14 @@
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/elementwise_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/pack_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/reshape_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/split_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
@@ -788,4 +792,275 @@ size_t OptimizeMHAFastVlmPrefill(
   return 1;
 }
 
+
+size_t OptimizeMHAAttn(std::function<bool(OpWrapper&)> validate_op_config,
+                       std::vector<OpWrapper>& ops, size_t attn_start_index,
+                       TensorPool& tensor_pool, size_t pattern_size) {
+  // attn (attention mask)
+  constexpr size_t kAttnSelect = 7;
+  constexpr size_t kAttnNotEqual = 6;
+  constexpr size_t kAttnReshape = 5;
+  // attn (QK)
+  constexpr int32_t kAttnMulQ = -4;
+  constexpr int32_t kAttnMulK = -3;
+  constexpr int32_t kAttnTransposeQ = -2;
+  constexpr int32_t kAttnTransposeK = -1;
+  // attn (Softmax & V)
+  constexpr int32_t kAttnSoftmax = 1;
+  constexpr int32_t kAttnTransposeIn = 2;
+  constexpr int32_t kAttnMatMul = 3;
+  constexpr int32_t kAttnTransposeOut = 4;
+
+  // Connection check: Reshape -> NotEqual -> Select
+  size_t start_index = attn_start_index;
+  if (!(IS_CONNECTED(kAttnReshape, 0, kAttnNotEqual, 0)) &&
+      (IS_CONNECTED(kAttnNotEqual, 0, kAttnSelect, 0))) {
+    return 1;
+  }
+  // attn_not_equal_op is copied from ops since ops will be modified.
+  const auto& attn_not_equal_op = ops[attn_start_index + kAttnNotEqual];
+  const auto& not_equal_out = attn_not_equal_op.GetOutputTensor(0);
+  // Count the operations that have NotEqual as their source op.
+  const auto& reshape_in =
+      ops[attn_start_index + kAttnReshape].GetInputTensor(0);
+  size_t num_out =
+      std::count_if(ops.begin(), ops.end(), [&](const OpWrapper& op) {
+        return op.IsOpCode(QnnOpCode::kElementWiseSelect) &&
+               op.GetInputTensor(0) == not_equal_out;
+      });
+  if (num_out == 0) {
+    return 1;
+  }
+
+  QNN_LOG_INFO("[G2G] MHA optimization (Attn)");
+  // Handle masking.
+  std::vector<OpWrapper> new_ops;
+  auto not_equal_out_dims = not_equal_out.GetDims();
+  not_equal_out_dims.erase(not_equal_out_dims.begin() + 1);
+  auto& select_mask =
+      tensor_pool.CloneNativeTensorFrom(not_equal_out, not_equal_out_dims);
+  // Change NotEqual to Equal -> Cast -> Mul.
+  const auto& zero_tensor = attn_not_equal_op.GetInputTensor(1);
+  auto equal_op =
+      BuildElementwiseEqualOp(tensor_pool,
+                              {const_cast<::qnn::TensorWrapper&>(reshape_in),
+                               const_cast<::qnn::TensorWrapper&>(zero_tensor)},
+                              {select_mask});
+  std::move(equal_op.begin(), equal_op.end(), std::back_inserter(new_ops));
+  const auto& select_out =
+      ops[attn_start_index + kAttnSelect].GetOutputTensor(0);
+  auto select_out_dims = select_out.GetDims();
+  select_out_dims.erase(select_out_dims.begin() + 1);
+
+  auto& mul_in = tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
+  auto cast_select = BuildCastOp(tensor_pool, {select_mask}, {mul_in});
+  std::move(cast_select.begin(), cast_select.end(),
+            std::back_inserter(new_ops));
+
+  const auto& select_const =
+      ops[attn_start_index + kAttnSelect].GetInputTensor(2);
+  // TODO(jiunkaiy): Remove this magic number (-65472) after HTP resolves
+  // accuracy issues.
+  float mul_const_value =
+      std::max(select_const.GetTensorData<float>().value()[0], -65472.f);
+  auto& mul_const = tensor_pool.CreateStaticTensor(
+      select_const.GetDataType(), select_const.GetQuantParams(),
+      select_const.GetDims(), select_const.GetTensorBytes(), &mul_const_value);
+  auto& add_in = tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
+  auto mul_select =
+      BuildElementwiseMulOp(tensor_pool, {mul_in, mul_const}, {add_in});
+  std::move(mul_select.begin(), mul_select.end(), std::back_inserter(new_ops));
+
+  // Create SHAs based on Select index.
+  size_t select_index = 0;
+  for (size_t output_index = 0; output_index < num_out; ++output_index) {
+    // Identify Select index.
+    auto it_select = std::find_if(
+        ops.begin() + select_index + 1, ops.end(), [&](const OpWrapper& op) {
+          return op.IsOpCode(QnnOpCode::kElementWiseSelect) &&
+                 op.GetInputTensor(0) == not_equal_out;
+        });
+    if (it_select == ops.end()) {
+      QNN_LOG_ERROR("Could not find Select op with the given input tensor");
+      break;
+    }
+    select_index = std::distance(ops.begin(), it_select);
+
+    // Connection check based on Select index.
+    start_index = select_index;
+    if (!(IS_CONNECTED(0, 0, kAttnSoftmax, 0) &&
+          IS_CONNECTED(kAttnSoftmax, 0, kAttnMatMul, 1) &&
+          IS_CONNECTED(kAttnTransposeIn, 0, kAttnMatMul, 0) &&
+          IS_CONNECTED(kAttnMatMul, 0, kAttnTransposeOut, 0))) {
+      QNN_LOG_ERROR("[G2G] Connection check failed.");
+      return 1;
+    }
+    // Identify MatMul's index.
+    auto it_matmul =
+        std::find_if(ops.begin(), ops.end(), [&](const OpWrapper& op) {
+          return op.IsOpCode(QnnOpCode::kMatMul) &&
+                 op.GetOutputTensor(0) == ops[select_index].GetInputTensor(1);
+        });
+    if (it_matmul == ops.end()) {
+      QNN_LOG_ERROR("Could not find MatMul op with the given output tensor");
+      break;
+    }
+    size_t matmul_qk_index = std::distance(ops.begin(), it_matmul);
+
+    // Connection check based on Matmul index.
+    start_index = matmul_qk_index;
+    if (!(IS_CONNECTED(kAttnMulQ, 0, kAttnTransposeQ, 0) &&
+          IS_CONNECTED(kAttnMulK, 0, kAttnTransposeK, 0) &&
+          IS_CONNECTED(kAttnTransposeQ, 0, 0, 0) &&
+          IS_CONNECTED(kAttnTransposeK, 0, 0, 1))) {
+      QNN_LOG_ERROR("[G2G] Connection check failed.");
+      return 1;
+    }
+    // QKV Unpack
+    const auto& mul_q_in = ops[matmul_qk_index + kAttnMulQ].GetInputTensor(0);
+    auto q_unpack_dims = mul_q_in.GetDims();
+    uint32_t num_heads = q_unpack_dims[2];
+    const auto& mul_k_in = ops[matmul_qk_index + kAttnMulK].GetInputTensor(0);
+    auto k_unpack_dims = mul_k_in.GetDims();
+    const auto& transpose_v_in =
+        ops[select_index + kAttnTransposeIn].GetInputTensor(0);
+    auto transpose_v_perm =
+        ops[select_index + kAttnTransposeIn].GetTensorPararm(0).GetTensor();
+    std::vector<uint32_t> perm_data = {0, 2, 1};
+    auto perm_tensor = tensor_pool.CreateStaticTensor(
+        transpose_v_perm.GetDataType(), transpose_v_perm.GetQuantParams(), {3},
+        perm_data.size() * sizeof(perm_data[0]), perm_data.data());
+    auto v_unpack_dims = transpose_v_in.GetDims();
+    const auto& mha_out =
+        ops[select_index + kAttnTransposeOut].GetOutputTensor(0);
+    auto mha_out_dims = mha_out.GetDims();
+    if (!(num_heads == k_unpack_dims[2] && num_heads == v_unpack_dims[2] &&
+          num_heads == mha_out_dims[2])) {
+      QNN_LOG_ERROR("[G2G] Num heads mismatches.");
+      return 1;
+    }
+    q_unpack_dims.erase(q_unpack_dims.begin() + 2);
+    k_unpack_dims.erase(k_unpack_dims.begin() + 2);
+    v_unpack_dims.erase(v_unpack_dims.begin() + 2);
+    mha_out_dims.erase(mha_out_dims.begin() + 2);
+    // Prepare inputs and outputs for num_heads SHAs.
+    std::vector<::qnn::TensorWrapperRef> q_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> k_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> v_sha_inputs;
+    std::vector<::qnn::TensorWrapperRef> sha_outputs;
+    q_sha_inputs.reserve(num_heads);
+    k_sha_inputs.reserve(num_heads);
+    v_sha_inputs.reserve(num_heads);
+    sha_outputs.reserve(num_heads);
+
+    for (int i = 0; i < num_heads; ++i) {
+      auto& q_unpack =
+          tensor_pool.CloneNativeTensorFrom(mul_q_in, q_unpack_dims);
+      q_sha_inputs.emplace_back(q_unpack);
+
+      auto& k_unpack =
+          tensor_pool.CloneNativeTensorFrom(mul_k_in, k_unpack_dims);
+      k_sha_inputs.emplace_back(k_unpack);
+
+      auto& v_unpack =
+          tensor_pool.CloneNativeTensorFrom(transpose_v_in, v_unpack_dims);
+      v_sha_inputs.emplace_back(v_unpack);
+      auto& sha_out = tensor_pool.CloneNativeTensorFrom(mha_out, mha_out_dims);
+      sha_outputs.emplace_back(sha_out);
+    }
+    auto unpack_q_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_q_in)},
+        q_sha_inputs, 2);
+    std::move(unpack_q_op.begin(), unpack_q_op.end(),
+              std::back_inserter(new_ops));
+    auto unpack_k_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(mul_k_in)},
+        k_sha_inputs, 2);
+    std::move(unpack_k_op.begin(), unpack_k_op.end(),
+              std::back_inserter(new_ops));
+    auto unpack_v_op = BuildUnpackOp(
+        tensor_pool, {const_cast<::qnn::TensorWrapper&>(transpose_v_in)},
+        v_sha_inputs, 2);
+    std::move(unpack_v_op.begin(), unpack_v_op.end(),
+              std::back_inserter(new_ops));
+
+    for (int i = 0; i < num_heads; ++i) {
+      auto& q_matmul_in = tensor_pool.CloneNativeTensorFrom(q_sha_inputs[i]);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulQ],
+                      {q_sha_inputs[i], std::nullopt}, {q_matmul_in});
+      auto& k_transpose_in = tensor_pool.CloneNativeTensorFrom(k_sha_inputs[i]);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index + kAttnMulK],
+                      {k_sha_inputs[i], std::nullopt}, {k_transpose_in});
+      auto& k_matmul_in = tensor_pool.CloneNativeTensorFrom(
+          k_transpose_in,
+          {k_unpack_dims[0], k_unpack_dims[2], k_unpack_dims[1]});
+      auto transpose_op = BuildTransposeOp(
+          tensor_pool, {k_transpose_in, perm_tensor}, {k_matmul_in});
+      std::move(transpose_op.begin(), transpose_op.end(),
+                std::back_inserter(new_ops));
+      // MatMul
+      const auto& matmul_qk_out = ops[matmul_qk_index].GetOutputTensor(0);
+      auto& select_in = tensor_pool.CloneNativeTensorFrom(
+          matmul_qk_out, {q_matmul_in.GetDim(0), q_matmul_in.GetDim(1),
+                          k_matmul_in.GetDim(2)});
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index], {q_matmul_in, k_matmul_in},
+                      {select_in});
+
+      // Change Select to Add.
+      auto& softmax_in =
+          tensor_pool.CloneNativeTensorFrom(select_out, select_out_dims);
+      auto add_select =
+          BuildElementwiseAddOp(tensor_pool, {select_in, add_in}, {softmax_in});
+      std::move(add_select.begin(), add_select.end(),
+                std::back_inserter(new_ops));
+
+      // Softmax
+      auto& qk_softmax =
+          tensor_pool.CloneNativeTensorFrom(softmax_in, select_out_dims);
+      EmplaceOpWithIO(new_ops, ops[select_index + kAttnSoftmax], {softmax_in},
+                      {qk_softmax});
+      // MatMul
+      const auto& matmul_out =
+          ops[select_index + kAttnMatMul].GetOutputTensor(0);
+      auto matmul_out_dims = matmul_out.GetDims();
+      matmul_out_dims.erase(matmul_out_dims.begin() + 1);
+      EmplaceOpWithIO(new_ops, ops[matmul_qk_index],
+                      {qk_softmax, v_sha_inputs[i]}, {sha_outputs[i]});
+    }
+    // Pack
+    auto pack_op = BuildPackOp(tensor_pool, sha_outputs,
+                               {const_cast<::qnn::TensorWrapper&>(mha_out)}, 2);
+    std::move(pack_op.begin(), pack_op.end(), std::back_inserter(new_ops));
+    const bool is_valid =
+        std::all_of(new_ops.begin(), new_ops.end(),
+                    [validate_op_config](::qnn::OpWrapper& op_wrapper) -> bool {
+                      return validate_op_config(op_wrapper);
+                    });
+    if (is_valid) {
+      // Adjust the name to avoid a name collision in the Qnn JSON dump.
+      for (size_t i = 0; i < new_ops.size(); ++i) {
+        new_ops[i].AddSuffixToName(absl::StrCat("_qcg2g_", i));
+      }
+      // Replace the matched pattern with a newly generated subgraph.
+      ops.insert(ops.begin() + select_index + kAttnTransposeOut + 1,
+                 std::make_move_iterator(new_ops.begin()),
+                 std::make_move_iterator(new_ops.end()));
+      // Erase original pattern backwards.
+      ops.erase(ops.begin() + select_index,
+                ops.begin() + select_index + kAttnTransposeOut + 1);
+      if (output_index == 0) {
+        ops.erase(ops.begin() + attn_start_index + kAttnNotEqual);
+        ops.erase(ops.begin() + attn_start_index + kAttnReshape);
+      }
+      ops.erase(ops.begin() + matmul_qk_index + kAttnMulQ,
+                ops.begin() + matmul_qk_index + 1);
+    } else {
+      QNN_LOG_ERROR(
+          "[G2G] Validation failed. Rolling back to the original graph.");
+      return 1;
+    }
+    new_ops.clear();
+  }
+  return 1;
+}
 }  // namespace qnn

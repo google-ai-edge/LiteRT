@@ -34,6 +34,7 @@ graph TB
 | KV_LEN     | KV Cache Length | 1280                          |
 * Notation reference: [AI Edge Torch](https://github.com/google-ai-edge/ai-edge-torch)
 
+### Gemma3 (Prefill)
 Original MHA (Multi-head Attention) in Gemma3 prefill graph
 ```mermaid
 graph TB
@@ -146,4 +147,113 @@ graph TB
   VSlice@{shape: text}
   KSliceOut@{shape: text}
   VSliceOut@{shape: text}
+```
+
+### Multi-head Attention with MaskedSoftmax via Select
+The figure below shows multi-head attention with `MaskedSoftmax` implemented using `Select`. All MHAs with `Select` share the same structure and use the same `NotEqual` output as input to their `Select` operations.
+```mermaid
+graph TB
+  Q1 --> |"[B, T, N, H]"| Mul1["Mul"]
+  K1 --> |"[B, KV_LEN, N, H]"| Mul2["Mul"]
+  Mul1 --> |"[B, T, N, H]"| Transpose1["Transpose"]
+  Mul2 --> |"[B, KV_LEN, N, H]"| Transpose2["Transpose"]
+  Transpose1 --> |"[B, N, T, H]"| MatMul1["MatMul"]
+  Transpose2 --> |"[B, N, H, KV_LEN]"| MatMul1
+  MatMul1 --> |"[B, N, T, KV_LEN]"| Select
+  Select --> |"[B, N, T, KV_LEN]"| Softmax
+  Softmax --> |"[B, N, T, KV_LEN]"| MatMul2["MatMul
+  (adj_y = true)"]
+  V1 --> |"[B, KV_LEN, N, H]"| Transpose3["Transpose"]
+  Transpose3 --> |"[B, N, H, KV_LEN]"| MatMul2
+  MatMul2 --> |"[B, N, H, T]"| Transpose4["Transpose"]
+  Transpose4 --> |"[B, T, N, H]"| Out
+  Mask --> |"[B, T, KV_LEN]"| Reshape
+  Reshape --> |"[B, 1, T, KV_LEN]"| NotEqual
+  NotEqual --> |"[B, 1, T, KV_LEN]"| Select
+  Q2 --> MHA1["MHAs with Select"]
+  K2 --> MHA1["MHAs with Select"]
+  V2 --> MHA1["MHAs with Select"]
+  MHA1 --> Out2
+  NotEqual --> MHA1["MHAs with Select"]
+  NotEqual --> MHA2["..."]
+  Q1@{ shape: text}
+  K1@{ shape: text}
+  V1@{ shape: text}
+  Q2@{ shape: text}
+  K2@{ shape: text}
+  V2@{ shape: text}
+  Mask@{ shape: text}
+  Out@{ shape: sm-circ}
+  Out2@{ shape: sm-circ}
+  MHA2@{ shape: text }
+```
+The `Reshape → NotEqual → Select` pattern can be optimized through the following operations. It is important to note that the mask produced by the `Mul` operation is reused by all subsequent SHAs involving `Add` for `MaskedSoftmax`.
+```mermaid
+graph TB
+  Mask --> |"[B, T, KV_LEN]"| Equal
+  Equal --> |"[B, T, KV_LEN]"| Cast
+  Cast --> |"[B, T, KV_LEN]"| Mul
+  Mul --> |"[B, T, KV_LEN]"| SHA1["Mask via Add"]
+  SHA1@{ shape: text }
+  Mask@{ shape: text}
+```
+With `Mask via Add`, the overall multi-head attention can be transformed to the following SHAs
+```mermaid
+graph TB
+  Q1 --> |"[B, T, N, H]"| Unpack1["Unpack"]
+  Unpack1 --> |"[B, T, H]"| MHASHA1["SHA with Add"]
+  Unpack1 --> MHASHA2["SHA with Add"]
+  Unpack1 --> MHASHA3["..."]
+  K1 --> |"[B, KV_LEN, N, H]"| Unpack2["Unpack"]
+  Unpack2 --> |"[B, KV_LEN, H]"| MHASHA1["SHA with Add"]
+  Unpack2 --> MHASHA2
+  Unpack2 --> MHASHA3
+  V1 --> |"[B, KV_LEN, N, H]"| Unpack3["Unpack"]
+  Unpack3 --> |"[B, KV_LEN, H]"| MHASHA1["SHA with Add"]
+  Unpack3 --> MHASHA2
+  Unpack3 --> MHASHA3
+  Mask --> MHASHA1
+  Mask --> MHASHA2
+  Mask --> MHASHA3
+  Mask --> MHA1["MHAs with Add"]
+  Q2 --> MHA1
+  K2 --> MHA1
+  V2 --> MHA1
+  MHA1 --> Out2
+  Mask --> MHA2["..."]
+  MHASHA1 --> |"[B, T, H]"| Pack
+  MHASHA2 --> Pack
+  MHASHA3 --> Pack
+  Pack --> |"[B, T, N, H]"| Out
+  Q1@{ shape: text}
+  K1@{ shape: text}
+  V1@{ shape: text}
+  Q2@{ shape: text}
+  K2@{ shape: text}
+  V2@{ shape: text}
+  Mask(Mask via Add)@{ shape: text}
+  Out@{ shape: sm-circ}
+  Out2@{ shape: sm-circ}
+  MHASHA3@{ shape: text }
+  MHA2@{ shape: text }
+```
+with `SHA with add` below.
+```mermaid
+graph TB
+  Q_unpack --> |"[B, T, H]"| Mul1["Mul"]
+  K_unpack --> |"[B, KV_LEN, H]"| Mul2["Mul"]
+  Mul2 --> |"[B, KV_LEN, H]"| Transpose2["Transpose"]
+  Mul1 --> |"[B, T, H]"| MatMul1["MatMul"]
+  Transpose2 --> |"[B, H, KV_LEN]"| MatMul1
+  MatMul1 --> |"[B, T, KV_LEN]"| Add
+  Mask --> Add
+  Add --> |"[B, T, KV_LEN]"| Softmax
+  Softmax --> |"[B, T, KV_LEN]"| MatMul2["MatMul"]
+  V_unpack --> |"[B, KV_LEN, H]"| MatMul2
+  MatMul2 --> |"[B, T, H]"| Out
+  Q_unpack@{ shape: text}
+  K_unpack@{ shape: text}
+  V_unpack@{ shape: text}
+  Mask(Mask via Add)@{ shape: text}
+  Out@{ shape: sm-circ}
 ```
