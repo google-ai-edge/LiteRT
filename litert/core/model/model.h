@@ -498,6 +498,10 @@ class LiteRtOpT {
   // Get any custom options attached to this op. Empty if there are none.
   litert::BufferRef<uint8_t> CustomOptions() const { return custom_options_; }
 
+  // Op index. (For internal debugging only)
+  void SetOpIndex(uint32_t op_index) { op_index_ = op_index; }
+  uint32_t OpIndex() const { return op_index_; }
+
   // Attach custom opaque optins to this op.
   template <class... Args>
   void SetCustomOptions(Args&&... args) {
@@ -572,6 +576,8 @@ class LiteRtOpT {
   std::vector<LiteRtTensor> outputs_;
 
   std::string custom_code_;
+
+  uint32_t op_index_;
 
   // TFLITE
   int32_t tfl_op_code_ind_ = litert::internal::kDispatchOpCodeTflInd;
@@ -1214,6 +1220,9 @@ UseIndices FindUseInds(const LiteRtTensorT& tensor, const LiteRtOpT& op);
 
 // Is this tensor a constant tensor?
 bool IsConstant(const LiteRtTensorT& tensor);
+
+// Is this tensor a subgraph input tensor?
+bool IsSubgraphInput(const LiteRtTensorT& tensor);
 
 // MUTATORS
 
