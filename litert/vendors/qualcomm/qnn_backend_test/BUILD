@@ -36,6 +36,7 @@ litert_test(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:relu_op_builder",
+        "//litert/vendors/qualcomm/core/builders:topk_op_builder",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",

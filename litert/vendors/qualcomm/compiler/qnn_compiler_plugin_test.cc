@@ -130,6 +130,7 @@ const auto kSupportedOps =
                     "simple_sum_op.tflite",
                     "simple_tanh_op.tflite",
                     "simple_tile_op.tflite",
+                    "simple_topk_op.tflite",
                     "simple_transpose_conv_fused_tanh.tflite",
                     "simple_transpose_conv_op.tflite",
                     "simple_transpose_op.tflite",

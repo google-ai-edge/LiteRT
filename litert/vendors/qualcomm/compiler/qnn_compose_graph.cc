@@ -86,12 +86,14 @@
 #include "litert/vendors/qualcomm/core/builders/strided_slice_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tanh_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/tile_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/topk_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_conv_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/transpose_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/unpack_op_builder.h"
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
+#include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
@@ -659,6 +661,36 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
     case LiteRtOpCode::kLiteRtOpCodeTflTile: {
       op_wrappers =
           ::qnn::BuildTileOp(tensor_pool, input_tensors, output_tensors);
+      break;
+    }
+    case LiteRtOpCode::kLiteRtOpCodeTflTopkV2: {
+      // TODO (Graham): Refactor all OpBuilder to follow QNN master definition
+      ::qnn::TensorWrapper k_tensor = input_tensors[1].get();
+      if (!k_tensor.IsTensorStatic() || k_tensor.GetTensorNumElements() != 1) {
+        QNN_LOG_ERROR(
+            "The param 'k' of TopK OP is not static or not 1 element");
+        return {};
+      }
+
+      std::uint32_t k_data = 0;
+      switch (k_tensor.GetDataType()) {
+        case QNN_DATATYPE_UINT_32:
+          if (auto k = k_tensor.GetTensorData<std::uint32_t>(); k.has_value()) {
+            k_data = k.value()[0];
+          }
+          break;
+        case QNN_DATATYPE_INT_32:
+          if (auto k = k_tensor.GetTensorData<std::int32_t>(); k.has_value()) {
+            k_data = static_cast<std::uint32_t>(k.value()[0]);
+          }
+          break;
+        default:
+          QNN_LOG_ERROR("Unsupported data type: %d for k in TopK OP",
+                        k_tensor.GetDataType());
+          return {};
+      }
+      op_wrappers = ::qnn::BuildTopKOp(tensor_pool, input_tensors,
+                                       output_tensors, k_data);
       break;
     }
     case LiteRtOpCode::kLiteRtOpCodeTflPack: {
