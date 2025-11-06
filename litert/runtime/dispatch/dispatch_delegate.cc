@@ -166,7 +166,10 @@ litert::Expected<LiteRtMetricsT> DispatchDelegate::StopMetricsCollection() {
 litert::Expected<void> DispatchDelegate::InitializeDispatchApi() {
   LITERT_RETURN_IF_ERROR(
       LiteRtDispatchInitialize(environment_options_, options_));
-
+  LITERT_RETURN_IF_ERROR(LiteRtDispatchCheckRuntimeCompatibility(
+      LiteRtApiVersion{LITERT_API_VERSION_MAJOR, LITERT_API_VERSION_MINOR,
+                       LITERT_API_VERSION_PATCH},
+      environment_options_, options_));
   const char* vendor_id;
   LITERT_RETURN_IF_ERROR(LiteRtDispatchGetVendorId(&vendor_id));
   LITERT_LOG(LITERT_INFO, "Dispatch API vendor ID: %s", vendor_id);

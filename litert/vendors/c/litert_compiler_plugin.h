@@ -119,6 +119,13 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
     const char*** transformation_names, LiteRtParamIndex* num_patterns);
 
+// Check version compatibility.
+//
+// Experimental: Unstable ABI, function signature is subject to change.
+LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options, const char* soc_model_name);
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

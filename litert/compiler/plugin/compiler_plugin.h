@@ -139,6 +139,9 @@ class CompilerPlugin {
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
 
+  // Check if the compiler is compatible with the plugin.
+  Expected<bool> CheckCompilerCompatibility(absl::string_view soc_model);
+
   CompilerPlugin(CompilerPlugin&& other);
   CompilerPlugin& operator=(CompilerPlugin&& other);
   CompilerPlugin(const CompilerPlugin& other) = delete;
@@ -162,6 +165,8 @@ class CompilerPlugin {
   std::vector<std::string> transformation_names_;
 
   size_t max_transformation_iterations_ = 100;
+  LiteRtEnvironmentOptions env_ = nullptr;
+  LiteRtOptions options_ = nullptr;
 
   // Internal LiteRtCompiledResult wrapper.
 
@@ -227,7 +232,7 @@ Expected<ApplyPluginsResult> ApplyPlugins(
 Expected<ApplyPluginsResult> ApplyPlugins(
     LiteRtModel model, LiteRtHwAcceleratorSet selected_hw_accelerators,
     std::vector<CompilerPlugin>& compiler_plugins, bool* mutated = nullptr);
-//
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_COMPILER_PLUGIN_COMPILER_PLUGIN_H_

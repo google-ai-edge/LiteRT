@@ -662,5 +662,14 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
 }
 
+TEST(CheckCompilerCompatibilityTest, Simple) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+  ASSERT_TRUE(plugin.CheckCompilerCompatibility("ExampleSocModel"));
+  ASSERT_FALSE(plugin.CheckCompilerCompatibility("UnsupportedSocModel"));
+}
+
 }  // namespace
 }  // namespace litert::internal

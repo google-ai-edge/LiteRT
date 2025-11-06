@@ -105,6 +105,15 @@ bool SkipValidationOfQuantizeOp(const litert::Op& op) {
   return false;
 }
 
+
+LiteRtApiVersion ConvertToLiteRtApiVersion(const Qnn_Version_t& qnnVersion) {
+    return {
+        static_cast<int>(qnnVersion.major),
+        static_cast<int>(qnnVersion.minor),
+        static_cast<int>(qnnVersion.patch)
+    };
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -494,5 +503,64 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
     LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
     const char*** transformation_names, LiteRtParamIndex* num_patterns) {
   *num_patterns = 0;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginCheckCompilerCompatibility(
+    LiteRtApiVersion api_version, LiteRtEnvironmentOptions env,
+    LiteRtOptions options, const char* soc_model_name) {
+
+  // Create compiler plugin.
+  LiteRtCompilerPlugin compiler_plugin;
+  if (LiteRtCreateCompilerPlugin(&compiler_plugin, env, options) !=
+      kLiteRtStatusOk) {
+    return kLiteRtStatusErrorRuntimeFailure;
+  };
+
+  // Create QNN manager.
+  QnnManager* qnn_manager = compiler_plugin->QNN();
+  if (!qnn_manager) {
+    auto qnn_manager_or = QnnManager::Create(
+        compiler_plugin->Options(), std::nullopt,
+        soc_model_name ? qnn::FindSocModel(soc_model_name) : std::nullopt);
+    if (!qnn_manager_or) {
+      LITERT_LOG(LITERT_ERROR, "%s", qnn_manager_or.Error().Message().data());
+      LiteRtDestroyCompilerPlugin(compiler_plugin);
+      return qnn_manager_or.Error().Status();
+    }
+    LITERT_LOG(LITERT_INFO, "%s", "QNN manager created");
+    compiler_plugin->initQnnManager(std::move(*qnn_manager_or));
+    qnn_manager = compiler_plugin->QNN();
+  }
+
+  // Get QNN core api version.
+  Qnn_ApiVersion_t qnn_api_version;
+  qnn_manager->Api()->backendGetApiVersion(&qnn_api_version);
+  const LiteRtApiVersion core_version =
+      ConvertToLiteRtApiVersion(qnn_api_version.coreApiVersion);
+
+  // LiteRT API version 0.1.0 is compatible with QAIRT version <= v2.39.1.
+  const LiteRtApiVersion latest_litert_api = {0, 1, 0};
+  int version_check = LiteRtCompareApiVersion(api_version, latest_litert_api);
+  if (version_check == 1) {
+    LITERT_LOG(
+        LITERT_WARNING,
+        "LiteRt API version is newer than v%d.%d.%d. QNN Compiler plugin will "
+        "bypass compatibility check.",
+        latest_litert_api.major, latest_litert_api.minor,
+        latest_litert_api.patch);
+  } else if (LiteRtCompareApiVersion(core_version, {2, 39, 0}) > 1) {
+    LITERT_LOG(LITERT_ERROR,
+               "This QAIRT SDK is not compatible with your LiteRT.");
+    return kLiteRtStatusErrorUnsupported;
+  } else {
+    LITERT_LOG(
+        LITERT_INFO,
+        "This QAIRT SDK (%d.%d.%d) is compatible with your LiteRT (%d.%d.%d).",
+        core_version.major, core_version.minor, core_version.patch,
+        latest_litert_api.major, latest_litert_api.minor,
+        latest_litert_api.patch);
+  }
+  LiteRtDestroyCompilerPlugin(compiler_plugin);
   return kLiteRtStatusOk;
 }
