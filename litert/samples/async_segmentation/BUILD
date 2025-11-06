@@ -71,6 +71,7 @@ cc_binary(
     deps = [
         ":image_processor",
         ":image_utils",
+        ":timing_utils",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
@@ -98,6 +99,7 @@ cc_binary(
     deps = [
         ":image_processor",
         ":image_utils",
+        ":timing_utils",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
@@ -131,6 +133,7 @@ cc_binary(
     deps = [
         ":image_processor",
         ":image_utils",
+        ":timing_utils",
         "//litert/cc:litert_api_with_dynamic_runtime",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
@@ -156,4 +159,13 @@ cc_library(
         ":image_utils",
         "@com_google_absl//absl/log:absl_check",
     ] + gles_deps(),
+)
+
+cc_library(
+    name = "timing_utils",
+    srcs = ["timing_utils.cc"],
+    hdrs = ["timing_utils.h"],
+    deps = [
+        "@com_google_absl//absl/time",
+    ],
 )
