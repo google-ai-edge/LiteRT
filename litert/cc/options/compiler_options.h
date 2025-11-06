@@ -26,12 +26,16 @@ class CompilerOptions : public OpaqueOptions {
  public:
   using OpaqueOptions::OpaqueOptions;
 
-  static absl::string_view Identifier() {
+  static absl::string_view Discriminator() {
     return LiteRtGetCompilerOptionsIdentifier();
   };
 
   static Expected<CompilerOptions> Create();
   static Expected<CompilerOptions> Create(OpaqueOptions& original);
+
+  Expected<void> SetPartitionStrategy(
+      LiteRtCompilerOptionsPartitionStrategy partition_strategy);
+  Expected<LiteRtCompilerOptionsPartitionStrategy> GetPartitionStrategy() const;
 
   Expected<void> SetDummyOption(bool dummy_option);
   Expected<bool> GetDummyOption() const;

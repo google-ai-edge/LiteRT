@@ -17,6 +17,7 @@
 #include "litert/cc/options/compiler_options.h"
 
 #include <gtest/gtest.h>
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/test/matchers.h"
 
 namespace litert {
@@ -27,6 +28,17 @@ TEST(CompilerOptionsTest, CreateSetAndGetDummyOptionWorks) {
                               ::litert::CompilerOptions::Create());
   LITERT_EXPECT_OK(options.SetDummyOption(true));
   EXPECT_TRUE(options.GetDummyOption());
+}
+
+TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
+  LITERT_ASSERT_OK_AND_ASSIGN(::litert::CompilerOptions options,
+                              ::litert::CompilerOptions::Create());
+  LITERT_EXPECT_OK(options.SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto partition_strategy,
+                              options.GetPartitionStrategy());
+  EXPECT_EQ(partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 
 }  // namespace

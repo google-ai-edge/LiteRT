@@ -35,10 +35,29 @@ Expected<CompilerOptions> CompilerOptions::Create() {
 
 Expected<CompilerOptions> CompilerOptions::Create(OpaqueOptions& original) {
   const auto id = original.GetIdentifier();
-  if (!id || *id != Identifier()) {
+  if (!id || *id != Discriminator()) {
     return Error(kLiteRtStatusErrorInvalidArgument);
   }
   return CompilerOptions(original.Get(), OwnHandle::kNo);
+}
+
+Expected<void> CompilerOptions::SetPartitionStrategy(
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LITERT_RETURN_IF_ERROR(LiteRtSetCompilerOptionsPartitionStrategy(
+      compiler_options, partition_strategy));
+  return {};
+}
+
+Expected<LiteRtCompilerOptionsPartitionStrategy>
+CompilerOptions::GetPartitionStrategy() const {
+  LiteRtCompilerOptions compiler_options;
+  LITERT_RETURN_IF_ERROR(LiteRtFindCompilerOptions(Get(), &compiler_options));
+  LiteRtCompilerOptionsPartitionStrategy partition_strategy;
+  LITERT_RETURN_IF_ERROR(LiteRtGetCompilerOptionsPartitionStrategy(
+      compiler_options, &partition_strategy));
+  return partition_strategy;
 }
 
 Expected<void> CompilerOptions::SetDummyOption(bool dummy_option) {

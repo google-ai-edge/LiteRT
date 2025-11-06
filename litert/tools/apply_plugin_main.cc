@@ -8,7 +8,7 @@
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expruns or implied.
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
@@ -24,8 +24,16 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/compiler_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
@@ -35,6 +43,8 @@
 #include "litert/tools/flags/vendors/mediatek_flags.h"  // IWYU pragma: keep
 #include "litert/tools/flags/vendors/qualcomm_flags.h"  // IWYU pragma: keep
 #include "litert/tools/outstream.h"
+
+namespace {
 
 using ::litert::tools::ApplyPlugin;
 using ::litert::tools::ApplyPluginRun;
@@ -80,6 +90,28 @@ ApplyPluginRun::Ptr ParseFlags() {
   return res;
 }
 
+template <typename T>
+bool ParseAndAddOptions(
+    litert::Options& opts, ApplyPluginRun::Ptr& run,
+    absl::FunctionRef<litert::Expected<T>()> options_from_flags) {
+  static_assert(std::is_base_of_v<litert::OpaqueOptions, T>);
+  litert::Expected<T> options = options_from_flags();
+  if (!options) {
+    run->dump_out.Get().get()
+        << "Failed to create " << T::Discriminator()
+        << " options, Error:" << options.Error().Message() << "\n";
+    return false;
+  }
+  if (!opts.AddOpaqueOptions(std::move(*options))) {
+    run->dump_out.Get().get()
+        << "Failed to add " << T::Discriminator() << " options to list\n";
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 int main(int argc, char* argv[]) {
   absl::ParseCommandLine(argc, argv);
 
@@ -110,62 +142,20 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  {
-    auto qnn_opts = litert::qualcomm::QualcommOptionsFromFlags();
-    if (!qnn_opts) {
-      run->dump_out.Get().get() << "Failed to create Qualcomm options\n";
-      return 1;
-    }
+  bool all_flags_parsed =
+      (ParseAndAddOptions<litert::CompilerOptions>(
+           *opts, run, litert::CompilerOptionsFromFlags) ||
+       ParseAndAddOptions<litert::qualcomm::QualcommOptions>(
+           *opts, run, litert::qualcomm::QualcommOptionsFromFlags) ||
+       ParseAndAddOptions<litert::google_tensor::GoogleTensorOptions>(
+           *opts, run, litert::google_tensor::GoogleTensorOptionsFromFlags) ||
+       ParseAndAddOptions<litert::intel_openvino::IntelOpenVinoOptions>(
+           *opts, run, litert::intel_openvino::IntelOpenVinoOptionsFromFlags) ||
+       ParseAndAddOptions<litert::mediatek::MediatekOptions>(
+           *opts, run, litert::mediatek::MediatekOptionsFromFlags));
 
-    if (!opts->AddOpaqueOptions(std::move(*qnn_opts))) {
-      run->dump_out.Get().get() << "Failed to add Qualcomm options to list\n";
-      return 1;
-    }
-  }
-
-  {
-    auto google_tensor_opts =
-        litert::google_tensor::GoogleTensorOptionsFromFlags();
-    if (!google_tensor_opts) {
-      run->dump_out.Get().get() << "Failed to create Google Tensor options\n";
-      return 1;
-    }
-
-    if (!opts->AddOpaqueOptions(std::move(*google_tensor_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add google tensor options to list\n";
-      return 1;
-    }
-  }
-
-  {
-    auto intel_openvino_opts =
-        litert::intel_openvino::IntelOpenVinoOptionsFromFlags();
-    if (!intel_openvino_opts) {
-      run->dump_out.Get().get() << "Failed to create Intel OpenVINO options\n";
-      return 1;
-    }
-
-    if (!opts->AddOpaqueOptions(std::move(*intel_openvino_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add Intel OpenVINO options to list\n";
-      return 1;
-    }
-  }
-
-  {
-    auto mediatek_opts =
-        litert::mediatek::MediatekOptionsFromFlags();
-    if (!mediatek_opts) {
-      run->dump_out.Get().get() << "Failed to create Mediatek options\n";
-      return 1;
-    }
-
-    if (!opts->AddOpaqueOptions(std::move(*mediatek_opts))) {
-      run->dump_out.Get().get()
-          << "Failed to add Mediatek options to list\n";
-      return 1;
-    }
+  if (!all_flags_parsed) {
+    return 1;
   }
 
   run->options = std::move(*opts);
