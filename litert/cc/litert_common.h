@@ -20,6 +20,44 @@
 
 namespace litert {
 
+// LINT.IfChange(status_codes)
+enum class Status : int {
+  kOk = kLiteRtStatusOk,
+  // Generic errors.
+  kErrorInvalidArgument = kLiteRtStatusErrorInvalidArgument,
+  kErrorMemoryAllocationFailure = kLiteRtStatusErrorMemoryAllocationFailure,
+  kErrorRuntimeFailure = kLiteRtStatusErrorRuntimeFailure,
+  kErrorMissingInputTensor = kLiteRtStatusErrorMissingInputTensor,
+  kErrorUnsupported = kLiteRtStatusErrorUnsupported,
+  kErrorNotFound = kLiteRtStatusErrorNotFound,
+  kErrorTimeoutExpired = kLiteRtStatusErrorTimeoutExpired,
+  kErrorWrongVersion = kLiteRtStatusErrorWrongVersion,
+  kErrorUnknown = kLiteRtStatusErrorUnknown,
+  kErrorAlreadyExists = kLiteRtStatusErrorAlreadyExists,
+  // Inference progression errors.
+  kCancelled = kLiteRtStatusCancelled,
+  // File and loading related errors.
+  kErrorFileIO = kLiteRtStatusErrorFileIO,
+  kErrorInvalidFlatbuffer = kLiteRtStatusErrorInvalidFlatbuffer,
+  kErrorDynamicLoading = kLiteRtStatusErrorDynamicLoading,
+  kErrorSerialization = kLiteRtStatusErrorSerialization,
+  kErrorCompilation = kLiteRtStatusErrorCompilation,
+  // IR related errors.
+  kErrorIndexOOB = kLiteRtStatusErrorIndexOOB,
+  kErrorInvalidIrType = kLiteRtStatusErrorInvalidIrType,
+  kErrorInvalidGraphInvariant = kLiteRtStatusErrorInvalidGraphInvariant,
+  kErrorGraphModification = kLiteRtStatusErrorGraphModification,
+  // Tool related errors.
+  kErrorInvalidToolConfig = kLiteRtStatusErrorInvalidToolConfig,
+  // Legalization related errors.
+  kLegalizeNoMatch = kLiteRtStatusLegalizeNoMatch,
+  kErrorInvalidLegalization = kLiteRtStatusErrorInvalidLegalization,
+  // Transformation related errors.
+  kPatternNoMatch = kLiteRtStatusPatternNoMatch,
+  kInvalidTransformation = kLiteRtStatusInvalidTransformation,
+};
+// LINT.ThenChange(../c/litert_common.h:status_codes)
+
 enum class HwAccelerators : int {
   kNone = kLiteRtHwAcceleratorNone,
   kCpu = kLiteRtHwAcceleratorCpu,

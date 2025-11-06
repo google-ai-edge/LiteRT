@@ -34,10 +34,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_c_types_printing.h"  // IWYU pragma: keep
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_model.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 // Is equivalent to `ASSERT_THAT(expr, testing::litert::IsOk())`
 #define LITERT_ASSERT_OK(EXPR) ASSERT_THAT((EXPR), ::testing::litert::IsOk())
@@ -348,32 +348,42 @@ inline IsErrorMatcher IsError() {
 }
 
 // Matches `litert::Expected`, `litert::Unexpected`, `litert::Error` and
-// `LiteRtStatus` values that hold a specific error status.
+// `litert::Status` values that hold a specific error status.
 //
 // ```cpp
 // Expected<Something> BuildSomething();
 //
 // // Will fail the test if BuildSomething()'s returned object holds a value or
-// // if the error status is not `kLiteRtStatusErrorSystemError`.
-// EXPECT_THAT(BuildSomething(), IsError(kLiteRtStatusErrorSystemError));
+// // if the error status is not `kErrorSystemError`.
+// EXPECT_THAT(BuildSomething(), IsError(::litert::Status::kErrorSystemError));
 // ```
+inline IsErrorMatcher IsError(::litert::Status status) {
+  return IsErrorMatcher(static_cast<LiteRtStatus>(status),
+                        /*msg=*/std::nullopt);
+}
+
 inline IsErrorMatcher IsError(LiteRtStatus status) {
   return IsErrorMatcher(status, /*msg=*/std::nullopt);
 }
 
-// Matches `litert::Expected` and `LiteRtStatus` values that have a specific
+// Matches `litert::Expected` and `litert::Status` values that have a specific
 // error status and error message.
 //
-// Warning: This will always return `false` for `LiteRtStatus` objects as those
-// do not convey a message.
+// Warning: This will always return `false` for `litert::Status` objects as
+// those do not convey a message.
 //
 // ```cpp
 // Expected<Something> BuildSomething();
 //
 // // Will fail the test if BuildSomething()'s returned object holds a value.
-// EXPECT_THAT(BuildSomething(), IsError(kLiteRtStatusErrorSystemError,
+// EXPECT_THAT(BuildSomething(), IsError(::litert::Status::kErrorSystemError,
 //                                       "System is not initialised"));
 // ```
+inline IsErrorMatcher IsError(::litert::Status status, std::string msg) {
+  return IsErrorMatcher(static_cast<LiteRtStatus>(status), std::move(msg));
+}
+
+[[deprecated("Use the litert::Status version instead.")]]
 inline IsErrorMatcher IsError(LiteRtStatus status, std::string msg) {
   return IsErrorMatcher(status, std::move(msg));
 }

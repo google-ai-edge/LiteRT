@@ -28,6 +28,7 @@
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/internal/litert_detail.h"
 
 namespace litert {
@@ -44,13 +45,27 @@ class Error {
  public:
   // Construct Unexpected from status and optional error message.
   //
-  // NOTE: kLiteRtStatusOk should not be passed to Unexpected.
+  // NOTE: ::litert::Status::kOk should not be passed to Unexpected.
+  explicit Error(Status status, std::string message = "")
+      : status_(static_cast<LiteRtStatus>(status)),
+        message_(std::move(message)) {
+    ABSL_DCHECK(status != Status::kOk);
+  }
+
+  [[deprecated("Use the constructor that takes ::litert::Status instead.")]]
   explicit Error(LiteRtStatus status, std::string message = "")
       : status_(status), message_(std::move(message)) {
     ABSL_DCHECK(status != kLiteRtStatusOk);
   }
 
   // Get the status.
+  // TODO: b/454666070 - Rename to Status() after the deprecated function is
+  // removed.
+  constexpr Status StatusCC() const {
+    return static_cast<enum Status>(status_);
+  }
+
+  [[deprecated("Use StatusCC() instead.")]]
   constexpr LiteRtStatus Status() const { return status_; }
 
   // Get the error message, empty string if none was attached.

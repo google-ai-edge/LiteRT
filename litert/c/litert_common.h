@@ -282,7 +282,10 @@ typedef enum {
   kLiteRtStatusPatternNoMatch = 3000,
   kLiteRtStatusInvalidTransformation = 3001,
 } LiteRtStatus;
-// LINT.ThenChange(../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes)
+// LINT.ThenChange(
+//   ../kotlin/src/main/kotlin/com/google/ai/edge/litert/LiteRtException.kt:status_codes,
+//   ../cc/litert_common.h:status_codes
+// )
 
 // Returns a string describing the status value.
 const char* LiteRtGetStatusString(LiteRtStatus status);
