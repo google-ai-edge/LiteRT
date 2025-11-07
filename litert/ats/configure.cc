@@ -31,6 +31,7 @@
 #include "litert/ats/common.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -158,11 +159,11 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
     if (auto mediatek_opts = MediatekOptionsFromFlags()) {
       options.AddOpaqueOptions(std::move(*mediatek_opts));
     }
-    options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu);
+    options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
-    options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+    options.SetHardwareAccelerators(HwAccelerators::kCpu);
   } else if (backend == ExecutionBackend::kGpu) {
-    options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+    options.SetHardwareAccelerators(HwAccelerators::kGpu);
   }
   return options;
 }
@@ -217,7 +218,7 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   auto soc_model = absl::GetFlag(FLAGS_soc_model);
   LITERT_ASSIGN_OR_RETURN(auto target_options, ParseOptions(backend));
   LITERT_ASSIGN_OR_RETURN(auto reference_options, Options::Create());
-  reference_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  reference_options.SetHardwareAccelerators(HwAccelerators::kCpu);
   LITERT_ASSIGN_OR_RETURN(
       auto plugin,
       ParsePlugin(plugin_dir, soc_manufacturer, compile_mode, target_options));

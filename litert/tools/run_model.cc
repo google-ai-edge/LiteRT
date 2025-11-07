@@ -35,6 +35,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -85,16 +86,17 @@ using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
 
-LiteRtHwAcceleratorSet GetAccelerator() {
+litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
-  LiteRtHwAcceleratorSet accelerators = 0;
+  litert::HwAcceleratorSet accelerators(
+      static_cast<int>(litert::HwAccelerators::kNone));
   for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
     if (accelerator == "gpu") {
-      accelerators |= kLiteRtHwAcceleratorGpu;
+      accelerators |= litert::HwAccelerators::kGpu;
     } else if (accelerator == "npu") {
-      accelerators |= kLiteRtHwAcceleratorNpu;
+      accelerators |= litert::HwAccelerators::kNpu;
     } else if (accelerator == "cpu") {
-      accelerators |= kLiteRtHwAcceleratorCpu;
+      accelerators |= litert::HwAccelerators::kCpu;
     }
   }
   return accelerators;

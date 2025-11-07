@@ -359,6 +359,7 @@ litert_device_test(
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
+#         ":litert_common",
 #         ":litert_compiled_model",
 #         ":litert_element_type",
 #         ":litert_environment",
@@ -442,6 +443,7 @@ litert_device_test(
 #         "@ml_drift//ml_drift/webgpu:webgpu_headers",
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment_options",
+#         "//litert/cc:litert_common",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator",  # buildcleaner: keep
 #         "//litert/test:common",
@@ -478,6 +480,7 @@ litert_device_test(
 #         "//litert/c:litert_event_type",
 #         "//litert/c:litert_profiler_event",
 #         "//litert/c:litert_tensor_buffer_types",
+#         "//litert/cc:litert_common",
 #         "//litert/cc:litert_compiled_model",
 #         "//litert/cc:litert_environment",
 #         "//litert/cc:litert_event",
@@ -620,6 +623,7 @@ cc_test(
     srcs = ["litert_custom_op_test.cc"],
     data = ["//litert/test:testdata/simple_model_custom_op.tflite"],
     deps = [
+        ":litert_common",
         ":litert_compiled_model",
         ":litert_custom_op_kernel",
         ":litert_environment",

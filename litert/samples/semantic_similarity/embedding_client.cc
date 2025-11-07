@@ -28,7 +28,7 @@
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/str_split.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
 
   // Compile the model.
   LITERT_ASSIGN_OR_RETURN(auto options, litert::Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
   auto compiled_model = litert::CompiledModel::Create(*env, *model, options);
   if (!compiled_model) {
     ABSL_LOG(FATAL) << "Failed to compile model: " << compiled_model.Error();

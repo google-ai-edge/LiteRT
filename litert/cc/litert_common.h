@@ -73,6 +73,9 @@ struct HwAcceleratorSet {
   int value;
 
   explicit HwAcceleratorSet(int val) : value(val) {}
+
+  explicit HwAcceleratorSet(HwAccelerators val)
+      : value(static_cast<int>(val)) {}
 };
 
 inline HwAcceleratorSet operator|(HwAccelerators lhs, HwAccelerators rhs) {

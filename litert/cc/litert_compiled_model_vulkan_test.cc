@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cstdint>
-#include <cstring>
 #include <tuple>
 #include <utility>
 
@@ -25,6 +24,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -53,7 +53,7 @@ Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<1>(params)));
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
   options.AddOpaqueOptions(std::move(gpu_options));
   return std::move(options);
 }

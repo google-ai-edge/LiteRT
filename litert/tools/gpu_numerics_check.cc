@@ -32,6 +32,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -100,7 +101,7 @@ Expected<Environment> GetEnvironment() {
 
 Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
   gpu_options.EnableExternalTensorsMode(
       absl::GetFlag(FLAGS_external_tensor_mode));
@@ -120,7 +121,7 @@ Expected<Options> GetGpuOptions() {
 
 Expected<Options> GetCpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
   return options;
 }
 

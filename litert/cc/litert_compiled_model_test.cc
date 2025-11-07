@@ -28,6 +28,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -416,7 +417,7 @@ TEST(CompiledModelTest, WithProfiler) {
 
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
-  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
   LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
   compilation_options.AddOpaqueOptions(std::move(runtime_options));
@@ -655,7 +656,7 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
 
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
-  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   // Configure BufferErrorReporter mode
   LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
@@ -748,7 +749,7 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
 
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
-  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
   LITERT_ASSERT_OK(
@@ -805,7 +806,7 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
 
   // Create compilation options with no error reporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
-  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
   LITERT_ASSERT_OK(
@@ -959,7 +960,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
 
   // Create Compilation options and bind weight tensor.
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
-  compilation_options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
   LITERT_ASSERT_OK(compilation_options.AddExternalTensorBinding(
       /*signature_name=*/"", /*tensor_name=*/"arg1", kWeightTensor,
       kWeightSize));

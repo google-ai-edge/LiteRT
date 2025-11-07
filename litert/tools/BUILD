@@ -363,6 +363,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/c/options:litert_qualcomm_options",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -453,6 +454,7 @@ cc_binary(
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_environment",
@@ -499,6 +501,7 @@ cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc:litert_common",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
         "//litert/tools/flags/vendors:qualcomm_flags",
@@ -516,6 +519,7 @@ cc_binary(
     name = "gpu_numerics_check",
     srcs = ["gpu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
+        "//litert/cc:litert_common",
         "//litert/cc/options:litert_gpu_options",
         "//litert/core:filesystem",
         "//tflite/c:c_api_types",
@@ -528,6 +532,7 @@ cc_binary(
     srcs = ["gpu_numerics_check.cc"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc:litert_common",
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_cl_gl_accelerator",  # buildcleaner: keep
@@ -543,6 +548,7 @@ cc_binary(
     tags = ["requires-gpu-nvidia"],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc:litert_common",
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu:ml_drift_vulkan_accelerator",  # buildcleaner: keep

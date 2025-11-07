@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -29,6 +28,7 @@
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -41,7 +41,6 @@
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
-using testing::Eq;
 using testing::FloatNear;
 using testing::Pointwise;
 
@@ -59,7 +58,7 @@ Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
   options.AddOpaqueOptions(std::move(gpu_options));
   return std::move(options);
 }

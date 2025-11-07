@@ -23,6 +23,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_custom_op_kernel.h"
 #include "litert/cc/litert_environment.h"
@@ -106,7 +107,7 @@ TEST(CompiledModelTest, CustomOp) {
   Model model = testing::LoadTestFileModel(kModelFileName);
 
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   MyCustomOpKernel my_custom_op_kernel;
   ASSERT_TRUE(options.AddCustomOpKernel(my_custom_op_kernel));

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/cc/litert_common.h"
 #define INCLUDE_QUALCOMM_RUNTIME_FLAGS
 #define INCLUDE_MEDIATEK_RUNTIME_FLAGS
 #define INCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS
@@ -86,7 +87,7 @@ Expected<Environment> GetEnvironment() {
 
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
   if (auto qnn_opts = QualcommOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*qnn_opts));
   }

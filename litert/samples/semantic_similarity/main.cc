@@ -39,6 +39,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -68,17 +69,17 @@ ABSL_FLAG(int, sequence_length, 0,
 ABSL_FLAG(std::string, dispatch_library_dir, "",
           "Path to the dispatch library directory.");
 
-LiteRtHwAcceleratorSet GetAccelerator() {
+litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
-  LiteRtHwAcceleratorSet accelerators = 0;
+  litert::HwAcceleratorSet accelerators(litert::HwAccelerators::kNone);
   for (absl::string_view accelerator : absl::StrSplit(accelerator_str, ',')) {
     if (accelerator == "gpu") {
-      accelerators |= kLiteRtHwAcceleratorGpu;
+      accelerators |= litert::HwAccelerators::kGpu;
     } else if (accelerator == "npu") {
-      accelerators |= kLiteRtHwAcceleratorNpu;
-      accelerators |= kLiteRtHwAcceleratorCpu;
+      accelerators |= litert::HwAccelerators::kNpu;
+      accelerators |= litert::HwAccelerators::kCpu;
     } else if (accelerator == "cpu") {
-      accelerators |= kLiteRtHwAcceleratorCpu;
+      accelerators |= litert::HwAccelerators::kCpu;
     }
   }
   return accelerators;
@@ -264,7 +265,7 @@ absl::Status RealMain() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   auto accelerator = GetAccelerator();
   // Set CPU compilation options.
-  if (accelerator & kLiteRtHwAcceleratorNpu) {
+  if (accelerator & litert::HwAccelerators::kNpu) {
     if (!absl::GetFlag(FLAGS_dispatch_library_dir).empty()) {
       environment_options.push_back(litert::Environment::Option{
           litert::Environment::OptionTag::DispatchLibraryDir,
@@ -280,13 +281,13 @@ absl::Status RealMain() {
     options.AddOpaqueOptions(std::move(qnn_opts));
     options.SetHardwareAccelerators(accelerator);
     // Add other NPU options here..
-  } else if (accelerator & kLiteRtHwAcceleratorCpu) {
+  } else if (accelerator & litert::HwAccelerators::kCpu) {
     LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
     LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
     options.AddOpaqueOptions(std::move(cpu_compilation_options));
     options.SetHardwareAccelerators(accelerator);
     // Set GPU compilation options.
-  } else if (accelerator & kLiteRtHwAcceleratorGpu) {
+  } else if (accelerator & litert::HwAccelerators::kGpu) {
     LITERT_ASSIGN_OR_RETURN(auto gpu_compilation_options, GpuOptions::Create());
     gpu_compilation_options.SetPrecision(GpuOptions::Precision::kFp32);
     options.AddOpaqueOptions(std::move(gpu_compilation_options));

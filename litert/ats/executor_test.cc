@@ -20,12 +20,11 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_options.h"
-#include "litert/core/model/model.h"
 #include "litert/test/generators/graph_helpers.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
@@ -52,7 +51,7 @@ TEST(CpuCompiledModelExecutorTest, CreateAndRunModel) {
                       tflite::ActivationFunctionType_NONE, false));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(HwAccelerators::kCpu);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto executor, CpuCompiledModelExecutor::Create(*model, options));
   std::vector<SimpleBuffer> inputs;
@@ -80,7 +79,7 @@ TEST(NpuCompiledModelExecutorTest, CreateAndRunModel) {
                       tflite::ActivationFunctionType_NONE, false));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu);
+  options.SetHardwareAccelerators(HwAccelerators::kNpu);
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto executor,
       NpuCompiledModelExecutor::Create(*model, options, "/data/local/tmp",

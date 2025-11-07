@@ -25,7 +25,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
@@ -74,8 +74,8 @@ int main(int argc, char* argv[]) {
 
   // Compile the model for the NPU, allowing CPU fallback for unsupported ops.
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorNpu |
-                                  kLiteRtHwAcceleratorCpu);
+  options.SetHardwareAccelerators(litert::HwAccelerators::kNpu |
+                                  litert::HwAccelerators::kCpu);
   LITERT_ASSIGN_OR_ABORT(auto compiled_model,
                          litert::CompiledModel::Create(env, model, options));
 

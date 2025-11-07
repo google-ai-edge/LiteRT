@@ -97,8 +97,7 @@ class CompiledModel
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
-    compilation_options.SetHardwareAccelerators(
-        static_cast<LiteRtHwAccelerators>(hardware_accelerators));
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
     return Create(env, model, compilation_options);
   }
 

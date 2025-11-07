@@ -25,6 +25,7 @@ limitations under the License.
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -72,10 +73,10 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     std::abort();
   }
 
-  LiteRtHwAcceleratorSet hardware_accelerators = 0;
+  HwAcceleratorSet hardware_accelerators(HwAccelerators::kNone);
 
   if (use_npu) {
-    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorNpu;
+    hardware_accelerators |= HwAccelerators::kNpu;
     // QNN options
     LITERT_ASSIGN_OR_ABORT(auto qnn_opts,
                            ::litert::qualcomm::QualcommOptions::Create());
@@ -90,7 +91,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   }
 
   if (use_gpu) {
-    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorGpu;
+    hardware_accelerators |= HwAccelerators::kGpu;
     LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
     // Enable benchmark mode to run clFinish() after each inference.
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
@@ -118,7 +119,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   }
 
   if (use_cpu || !require_full_delegation) {
-    hardware_accelerators |= LiteRtHwAccelerators::kLiteRtHwAcceleratorCpu;
+    hardware_accelerators |= HwAccelerators::kCpu;
 
     if (num_threads > 0) {
       LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
