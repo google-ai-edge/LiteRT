@@ -24,9 +24,10 @@
 
 #include <GLES2/gl2.h>
 #include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_event.h"
@@ -37,6 +38,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/samples/async_segmentation/image_processor.h"
 #include "litert/samples/async_segmentation/image_utils.h"
@@ -48,15 +50,16 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, litert::GpuOptions::Create());
   if (use_gl_buffers) {
     LITERT_ABORT_IF_ERROR(
-        gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+        gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32));
     LITERT_ABORT_IF_ERROR(gpu_options.SetBufferStorageType(
-        kLiteRtDelegateBufferStorageTypeBuffer));
+        litert::GpuOptions::BufferStorageType::kBuffer));
     LITERT_ABORT_IF_ERROR(gpu_options.EnableExternalTensorsMode(true));
   } else {
     LITERT_ABORT_IF_ERROR(gpu_options.EnableExternalTensorsMode(false));
   }
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
+  options.SetHardwareAccelerators(litert::HwAccelerators::kGpu |
+                                  litert::HwAccelerators::kCpu);
   options.AddOpaqueOptions(std::move(gpu_options));
   return options;
 }
@@ -78,7 +81,7 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 
     LITERT_ASSIGN_OR_RETURN(auto input_buffer,
                             litert::TensorBuffer::CreateManaged(
-                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                env, litert::TensorBufferType::kGlBuffer,
                                 ranked_tensor_type, buffer_size));
 
     input_buffers.push_back(std::move(input_buffer));
@@ -104,7 +107,7 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
 
     LITERT_ASSIGN_OR_RETURN(auto output_buffer,
                             litert::TensorBuffer::CreateManaged(
-                                env, kLiteRtTensorBufferTypeGlBuffer,
+                                env, litert::TensorBufferType::kGlBuffer,
                                 ranked_tensor_type, buffer_size));
 
     output_buffers.push_back(std::move(output_buffer));
@@ -131,8 +134,8 @@ int main(int argc, char* argv[]) {
 
   if (argc == 5) {
     std::string use_gl_buffers_arg = argv[4];
-    std::transform(use_gl_buffers_arg.begin(), use_gl_buffers_arg.end(),
-                   use_gl_buffers_arg.begin(), ::tolower);
+    absl::c_transform(use_gl_buffers_arg, use_gl_buffers_arg.begin(),
+                      ::tolower);
     if (use_gl_buffers_arg == "true") {
       use_gl_buffers = true;
     } else if (use_gl_buffers_arg != "false") {

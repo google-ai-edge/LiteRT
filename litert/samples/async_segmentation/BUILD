@@ -101,6 +101,7 @@ cc_binary(
         ":image_utils",
         ":timing_utils",
         "//litert/cc:litert_api_with_dynamic_runtime",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
