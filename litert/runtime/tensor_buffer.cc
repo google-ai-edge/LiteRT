@@ -18,6 +18,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -63,7 +64,6 @@
 #if LITERT_HAS_AHWB_SUPPORT
 #include "litert/runtime/ahwb_buffer.h"
 #endif  // LITERT_HAS_AHWB_SUPPORT
-
 
 using litert::BufferTypeToString;
 using litert::Expected;
@@ -246,6 +246,8 @@ LiteRtTensorBufferT::CreateManagedOnHostMemory(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
   }
+  std::memset(static_cast<uint8_t*>(host_memory_ptr) + buffer_size, 0,
+              XNN_EXTRA_BYTES);
 
   LiteRtHostMemoryDeallocator deallocator = FreeHostMemory;
   LITERT_ASSIGN_OR_RETURN(
