@@ -23,7 +23,6 @@ cc_library(
         "//conditions:default": [
             "openvino/runtime/lib/intel64/libopenvino.so",
             "openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
-            "openvino/runtime/lib/intel64/libc++_shared.so",
         ],
     }),
     # Important: This strips the prefix so users include like <ie/cpp/foo.h>

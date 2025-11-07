@@ -71,13 +71,9 @@ static const LiteRtStatus GetOVTensorShape(const litert::Tensor& litert_tensor,
                           litert_tensor.RankedTensorType());
 
   const auto tensor_layout = ranked_tensor_type.Layout();
-  if (tensor_layout.Rank() == 0) {
-    return kLiteRtStatusErrorUnsupported;
-  } else {
-    ov_shape_vec.resize(tensor_layout.Rank());
-    for (int i = 0; i < ov_shape_vec.size(); i++)
-      ov_shape_vec[i] = tensor_layout.Dimensions()[i];
-  }
+  ov_shape_vec.resize(tensor_layout.Rank());
+  for (int i = 0; i < ov_shape_vec.size(); i++)
+    ov_shape_vec[i] = tensor_layout.Dimensions()[i];
   return kLiteRtStatusOk;
 }
 
