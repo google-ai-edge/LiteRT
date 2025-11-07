@@ -341,26 +341,24 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
 
 Expected<void> CompilerPlugin::RegisterAllTransformations() {
   LiteRtParamIndex num_patterns;
-  LiteRtPatternFn* pattern_fns;
-  const char** transformation_names;
+  LiteRtTransformation* transformations;
 
   LITERT_RETURN_IF_ERROR(plugin_api_.register_all_transformations(
-      plugin_handle_, &pattern_fns, &transformation_names, &num_patterns));
+      plugin_handle_, &transformations, &num_patterns));
   for (LiteRtParamIndex i = 0; i < num_patterns; ++i) {
-    if (pattern_fns[i] == nullptr) {
+    if (transformations[i].pattern == nullptr) {
       return Unexpected(
           kLiteRtStatusInvalidTransformation,
           absl::StrFormat("Transformation %d has a invalid pattern function.",
                           i));
     }
-    if (transformation_names[i] == nullptr) {
+    if (transformations[i].name == nullptr) {
       return Unexpected(
           kLiteRtStatusInvalidTransformation,
           absl::StrFormat(
               "Transformation %d has a invalid transformation name.", i));
     }
-    pattern_fns_.push_back(pattern_fns[i]);
-    transformation_names_.push_back(std::string(transformation_names[i]));
+    transformations_.push_back(transformations[i]);
   }
   return {};
 }
@@ -368,7 +366,7 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
 Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
     LiteRtModelT& model) {
   LITERT_LOG(LITERT_DEBUG, "GreedyPatternMatchAndRewrite, total patterns: %d",
-             pattern_fns_.size());
+             transformations_.size());
   for (auto& subgraph : model.Subgraphs()) {
     bool subgraph_modified = true;
     int iterations = 0;
@@ -392,15 +390,14 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
           continue;
         }
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
-        for (int pattern_idx = 0; pattern_idx < pattern_fns_.size();
-             ++pattern_idx) {
+        for (const auto& transformation : transformations_) {
           LiteRtRewriterT rewriter;
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
-                     transformation_names_[pattern_idx].c_str());
+                     transformation.name);
           // Call the function pointer.
-          if (pattern_fns_[pattern_idx](op, &rewriter) == kLiteRtStatusOk) {
+          if (transformation.pattern(op, &rewriter) == kLiteRtStatusOk) {
             LITERT_LOG(LITERT_DEBUG, "Matched pattern '%s'",
-                       transformation_names_[pattern_idx].c_str());
+                       transformation.name);
 
             rewriter.ApplyChanges(subgraph);
             subgraph_modified = true;

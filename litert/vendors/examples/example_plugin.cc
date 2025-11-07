@@ -39,8 +39,7 @@
 
 // Plugins can hold state.
 struct LiteRtCompilerPluginT {
-  std::vector<LiteRtPatternFn> pattern_fns;
-  std::vector<const char*> transformation_names;
+  std::vector<LiteRtTransformation> transformations;
 };
 
 LiteRtStatus LiteRtGetCompilerPluginVersion(LiteRtApiVersion* api_version) {
@@ -288,12 +287,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 }
 
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
-    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
-    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
-  compiler_plugin->pattern_fns.push_back(SqrtMeanSquareTransformation);
-  compiler_plugin->transformation_names.push_back("MyTransformation");
-  *num_patterns = compiler_plugin->pattern_fns.size();
-  *pattern_fns = compiler_plugin->pattern_fns.data();
-  *transformation_names = compiler_plugin->transformation_names.data();
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
+  compiler_plugin->transformations.push_back(
+      {&SqrtMeanSquareTransformation, "MyTransformation"});
+  *num_patterns = compiler_plugin->transformations.size();
+  *transformations = compiler_plugin->transformations.data();
   return kLiteRtStatusOk;
 }

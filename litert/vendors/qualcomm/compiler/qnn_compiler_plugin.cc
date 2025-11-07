@@ -444,8 +444,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       auto context_handle = qnn_manager->CreateContextHandle(
           context_configs, compiler_plugin->Options().GetProfiling());
       if (!context_handle) {
-        LITERT_LOG(LITERT_ERROR, "%s",
-                   context_handle.Error().Message().data());
+        LITERT_LOG(LITERT_ERROR, "%s", context_handle.Error().Message().data());
         return context_handle.Error().Status();
       }
       context_handles.push_back(std::move(context_handle.Value()));
@@ -491,8 +490,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 }
 
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
-    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
-    const char*** transformation_names, LiteRtParamIndex* num_patterns) {
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns) {
   *num_patterns = 0;
   return kLiteRtStatusOk;
 }

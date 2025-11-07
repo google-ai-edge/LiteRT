@@ -99,13 +99,12 @@ TEST(TestCallDummyPlugin, CompileMulSubgraph) {
 
 TEST(TestCallDummyPlugin, RegisterAllTransformations) {
   auto plugin = CreatePlugin();
-  LiteRtPatternFn* pattern_fns;
-  const char** transformation_names;
+  LiteRtTransformation* transformations;
   LiteRtParamIndex num_transformations;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
-      plugin.get(), &pattern_fns, &transformation_names, &num_transformations));
+      plugin.get(), &transformations, &num_transformations));
   ASSERT_EQ(num_transformations, 1);
-  ASSERT_STREQ(transformation_names[0], "MyTransformation");
+  ASSERT_STREQ(transformations[0].name, "MyTransformation");
 }
 
 }  // namespace

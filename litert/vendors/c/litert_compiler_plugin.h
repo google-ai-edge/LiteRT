@@ -28,6 +28,10 @@ LITERT_DEFINE_HANDLE(LiteRtCompilerPlugin);
 
 // Artifact produced from compiling a selected partition of ops.
 LITERT_DEFINE_HANDLE(LiteRtCompiledResult);
+typedef struct {
+  const LiteRtPatternFn pattern;  // pointer to the pattern function pointer.
+  const char* name;
+} LiteRtTransformation;
 
 //
 // Plugin
@@ -116,8 +120,8 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtGetNumCompiledResultCalls(
 //
 // Experimental: Unstable ABI, function signature is subject to change.
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
-    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
-    const char*** transformation_names, LiteRtParamIndex* num_patterns);
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns);
 
 #ifdef __cplusplus
 }

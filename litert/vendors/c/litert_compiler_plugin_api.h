@@ -77,8 +77,8 @@ typedef LiteRtStatus (*LiteRtGetNumCompiledResultCallsT)(
     LiteRtCompiledResult, LiteRtParamIndex* num_calls);
 
 typedef LiteRtStatus (*LiteRtCompilerPluginRegisterAllTransformationsT)(
-    LiteRtCompilerPlugin compiler_plugin, LiteRtPatternFn** pattern_fns,
-    const char*** transformation_names, LiteRtParamIndex* num_patterns);
+    LiteRtCompilerPlugin compiler_plugin,
+    LiteRtTransformation** transformations, LiteRtParamIndex* num_patterns);
 
 //
 // Function Pointer Container

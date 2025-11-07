@@ -80,7 +80,7 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
-  int GetNumTransformations() const { return pattern_fns_.size(); }
+  int GetNumTransformations() const { return transformations_.size(); }
 
   using Ref = std::reference_wrapper<CompilerPlugin>;
 
@@ -158,8 +158,7 @@ class CompilerPlugin {
   SharedLibrary lib_;
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
-  std::vector<LiteRtPatternFn> pattern_fns_;
-  std::vector<std::string> transformation_names_;
+  std::vector<LiteRtTransformation> transformations_;
 
   size_t max_transformation_iterations_ = 100;
 
