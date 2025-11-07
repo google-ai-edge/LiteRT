@@ -120,6 +120,10 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflSelectV2,
     kLiteRtOpCodeTflHardSwish,
     kLiteRtOpCodeTflPrelu,
+    kLiteRtOpCodeTflSqrt,
+    kLiteRtOpCodeTflGreaterEqual,
+    kLiteRtOpCodeTflLessEqual,
+    kLiteRtOpCodeTflLogicalAnd,
 };
 // clang format on
 
@@ -399,11 +403,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                     &expected_subgraph.Value());
         auto input_model = tflite_fe->load(graph_delegate);
         LITERT_LOG(LITERT_INFO, "Model loaded");
-        auto model = tflite_fe->convert(input_model);
+        auto ov_model = tflite_fe->convert(input_model);
 
         // Use device and configs_map from Intel OpenVINO options
         std::ostringstream oss;
-        auto compiled_model = core.compile_model(model, device, configs_map);
+        auto compiled_model = core.compile_model(ov_model, device, configs_map);
         compiled_model.export_model(oss);
         LITERT_LOG(LITERT_INFO, "Model export done");
         result->byte_code[partition_idx] = oss.str();
