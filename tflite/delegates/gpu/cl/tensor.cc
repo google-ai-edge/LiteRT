@@ -41,6 +41,7 @@ absl::Status AllocateTensorMemoryInternal(const CLContext& context,
     data_ptr = descriptor.GetData().data();
     mem_flags |= CL_MEM_COPY_HOST_PTR;
   }
+  mem_flags |= CL_MEM_ALLOC_HOST_PTR;
   std::vector<uint64_t> storage_dims = descriptor.GetStorageDims();
   switch (descriptor.GetStorageType()) {
     case TensorStorageType::BUFFER:

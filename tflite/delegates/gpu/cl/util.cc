@@ -183,6 +183,7 @@ absl::Status CreateCLBuffer(cl_context context, int size_in_bytes,
   if (data) {
     flags |= CL_MEM_COPY_HOST_PTR;
   }
+  flags |=  CL_MEM_ALLOC_HOST_PTR;
   cl_int error_code;
   *result = clCreateBuffer(context, flags, size_in_bytes, data, &error_code);
   if (!*result) {

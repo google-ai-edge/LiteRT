@@ -123,6 +123,21 @@ Expected<Environment> GetEnvironment() {
     }
   }
 
+  // Create an option with opencl device id zero. This trick initializes the
+  // OpenCL environment at the LiteRtEnvironment creation time.
+  // LITERT_ASSERT_OK_AND_ASSIGN(
+  //     LiteRtAny null_deivce_id,
+  //     litert::ToLiteRtAny(litert::LiteRtVariant(INT64_C(0))));
+  // const std::array<LiteRtEnvOption, 1> environment_options = {
+  //     LiteRtEnvOption{
+  //         /*.tag=*/kLiteRtEnvOptionTagOpenClDeviceId,
+  //         /*.value=*/0,
+  //     },
+  // };
+  environment_options.push_back(litert::Environment::Option{
+          litert::Environment::OptionTag::ClDeviceId,
+          0});
+
   return Environment::Create(absl::MakeConstSpan(environment_options));
 }
 
@@ -168,7 +183,7 @@ Expected<void> FillInputBuffer(TensorBuffer& buffer) {
   std::vector<float> data(total_elements);
   for (size_t i = 0; i < total_elements; ++i) {
     // Rotate through 0.0, 0.1, 0.2, ..., 0.9, 0.0, 0.1, ...
-    data[i] = static_cast<float>(i % 10) * 0.1f;
+    data[i] = static_cast<float>(10);
   }
 
   // Write the data to the tensor buffer

@@ -124,12 +124,13 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
   switch (tensor_buffer_type) {
-    case kLiteRtTensorBufferTypeHostMemory: {
-      void* buffer_host_addr;
+    case kLiteRtTensorBufferTypeOpenClBuffer: {
+      LITERT_LOG(LITERT_ERROR, "======111==kLiteRtTensorBufferTypeOpenClBuffer ");
+      cl_mem cl_mem_addr;
       LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+          LiteRtGetTensorBufferOpenClMemory(tensor_buffer, &cl_mem_addr),
           litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get HostMemory buffer"));
+                             "Failed to get cl_mem buffer"));
 
       auto context = core_->get_default_context("NPU")
                          .as<ov::intel_npu::level_zero::ZeroContext>();
@@ -137,13 +138,16 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
       for (int i = 0; i < ov_shape_vec.size(); i++)
         ov_shape_vec[i] = tensor_type.layout.dimensions[i];
 
-      auto remote_tensor = context.create_l0_host_tensor(
-          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()});
+      LITERT_LOG(LITERT_ERROR, "======111==create_tensor%p ", cl_mem_addr);
+      auto remote_tensor = context.create_tensor(
+          ov_element_type, ov::Shape{ov_shape_vec.begin(), ov_shape_vec.end()}, cl_mem_addr);
       // memcpy(remote_tensor.get(), buffer_host_addr, tensor_buffer_size);
       tensor_handle_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  remote_tensor);
       tensor_handle_buffer_map_.emplace((LiteRtTensorBufferHandle)next_handle_,
                                  tensor_buffer);
+
+      LITERT_LOG(LITERT_ERROR, "====222====create_tensor%p ", cl_mem_addr);
       return next_handle_++;
     }
     case kLiteRtTensorBufferTypeDmaBuf: {

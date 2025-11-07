@@ -26,7 +26,15 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/tensor_type_util.h"
+#include "litert/c/litert_platform_support.h"
 #include "litert/vendors/c/litert_dispatch.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "tflite/delegates/gpu/cl/cl_command_queue.h"
+#include "tflite/delegates/gpu/cl/cl_context.h"
+#include "tflite/delegates/gpu/cl/cl_device.h"
+#include "tflite/delegates/gpu/cl/opencl_wrapper.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 litert::Expected<LiteRtDispatchInvocationContextT::Ptr>
 LiteRtDispatchInvocationContextT::Create(
@@ -51,13 +59,13 @@ LiteRtDispatchInvocationContextT::Create(
     return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                          "Failed to get OpenVINO core from device context");
   }
-  // ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
-   static int graph_num = 0;
-  std::string xml_path = "C:\\Workspace\\junwei\\gemma\\openvino_ir\\Partition_mod_" + std::to_string(graph_num) + ".xml";
-  graph_num++;
-  LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize with model %s",
-             xml_path.c_str());
-  ov::CompiledModel compiled_model = core->compile_model(xml_path, "NPU");
+  ov::CompiledModel compiled_model = core->import_model(model_stream, "NPU");
+  //  static int graph_num = 0;
+  // std::string xml_path = "C:\\Workspace\\junwei\\gemma\\openvino_ir\\Partition_mod_" + std::to_string(graph_num) + ".xml";
+  // graph_num++;
+  // LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize with model %s",
+  //            xml_path.c_str());
+  // ov::CompiledModel compiled_model = core->compile_model(xml_path, "NPU");
   auto infer_request = compiled_model.create_infer_request();
   LITERT_LOG(LITERT_INFO, "Openvino InvocationContext Initialize SUCCESS");
   // TODO: add support for loading cached model
@@ -70,17 +78,29 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
 #if defined(LITERT_WINDOWS_OS)
-      kLiteRtTensorBufferTypeHostMemory,
+      kLiteRtTensorBufferTypeOpenClBuffer,
 #else
       kLiteRtTensorBufferTypeAhwb,
       kLiteRtTensorBufferTypeDmaBuf,
 #endif
   };
+  
 
   int num_supported_tensor_buffer_types =
       sizeof(supported_tensor_buffer_types) /
       sizeof(supported_tensor_buffer_types[0]);
-
+// if (!HasOpenClSupport()) {
+//     GTEST_SKIP()
+//         << "OpenCL is not supported on this platform; skipping the test";
+//   }
+//   if (!CanLoadOpenCl()) {
+//     GTEST_SKIP() << "OpenCL library could not be loaded; skipping the test";
+//   }
+ bool has_opencl_support = LiteRtHasOpenClSupport();
+ bool can_load_opencl = tflite::gpu::cl::LoadOpenCL().ok();
+LITERT_LOG(LITERT_ERROR, "======111==HasOpenClSupport %d ", has_opencl_support);
+LITERT_LOG(LITERT_ERROR, "======111==CanLoadOpenCl %d ", can_load_opencl);
+      LITERT_LOG(LITERT_ERROR, "======111==GetTensorBufferRequirements%d ", num_supported_tensor_buffer_types);
   auto buffer_size = litert::internal::GetNumPackedBytes(tensor_type);
   if (!buffer_size) {
     return litert::Unexpected(buffer_size.Error());
@@ -112,7 +132,7 @@ LiteRtDispatchInvocationContextT::GetOutputRequirements(
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
     int graph_input_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
 #if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
   input_tensor_buffer_handles_.push_back(tensor_buffer_handle);
 #else
@@ -128,7 +148,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachInput(
 litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
     int graph_output_index, LiteRtTensorBufferHandle tensor_buffer_handle) {
 #if defined(LITERT_WINDOWS_OS)
-  LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+  LITERT_ASSIGN_OR_RETURN(ov::Tensor ov_tensor,
                           device_context_.getOvTensor(tensor_buffer_handle));
   output_tensor_buffer_handles_.push_back(tensor_buffer_handle);
 #else
@@ -142,51 +162,85 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 }
 
 litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
-  for (auto& tensor_buffer_handle : input_tensor_buffer_handles_) {
-    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
-                          device_context_.getTensorBuffer(tensor_buffer_handle));
+  // for (auto& tensor_buffer_handle : input_tensor_buffer_handles_) {
+  //   LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
+  //                         device_context_.getTensorBuffer(tensor_buffer_handle));
 
-    size_t tensor_buffer_size;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
-        litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to get tensor buffer size"));
-    // LITERT_LOG(LITERT_ERROR, "========%d ", tensor_buffer_size);
-    void* buffer_host_addr;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
-          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get HostMemory buffer"));
+  //   size_t tensor_buffer_size;
+  //   LITERT_RETURN_IF_ERROR(
+  //       LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+  //       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                         "Failed to get tensor buffer size"));
+  //   // LITERT_LOG(LITERT_ERROR, "========input_tensor_buffer_handles_ %d ", tensor_buffer_size);
+  //   void* buffer_host_addr;
+  //     LITERT_RETURN_IF_ERROR(
+  //         LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+  //         litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                            "Failed to get HostMemory buffer"));
 
-    LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-    memcpy(ov_tensor.get(), buffer_host_addr, tensor_buffer_size);
-  }
+  //   LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+  //                         device_context_.getOvTensor(tensor_buffer_handle));
+  //   size_t tensor_buffer_offset;
+  //   LITERT_RETURN_IF_ERROR(
+  //       LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset),
+  //       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                         "Failed to get tensor buffer offset"));
+  //   // LITERT_LOG(LITERT_ERROR, "========input tensor_buffer_offset %d ", tensor_buffer_offset);
+  //   LiteRtRankedTensorType tensor_type;
+  //   LITERT_RETURN_IF_ERROR(
+  //       LiteRtGetTensorBufferTensorType(tensor_buffer, &tensor_type),
+  //       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                         "Failed to get tensor buffer's type"));
+  //   // switch (tensor_type.element_type) {
+  //   //   case kLiteRtElementTypeInt64:
+  //   //     for (int i = 0; i < tensor_buffer_size / sizeof(int64_t); ++i) {
+  //   //       LITERT_LOG(LITERT_ERROR, "========kLiteRtElementTypeInt64 %d ", ((int64_t*)buffer_host_addr)[i]);
+  //   //     }
+  //   //     break;
+  //   //   case kLiteRtElementTypeFloat32:
+  //   //     for (int i = 0; i < 5; ++i) {
+  //   //       LITERT_LOG(LITERT_ERROR, "========kLiteRtElementTypeFloat32 %f ", ((float_t*)buffer_host_addr)[i]);
+  //   //     }
+  //   //     break;
+  //   //   default:
+  //   //     LITERT_LOG(LITERT_ERROR, "========unsupported data type ");
+  //   // }
+  //   memcpy(ov_tensor.get(), buffer_host_addr, tensor_buffer_size);
+  // }
   infer_request_.start_async();
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
-  for (auto& tensor_buffer_handle : output_tensor_buffer_handles_) {
-    LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
-                          device_context_.getTensorBuffer(tensor_buffer_handle));
+  // for (auto& tensor_buffer_handle : output_tensor_buffer_handles_) {
+  //   LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
+  //                         device_context_.getTensorBuffer(tensor_buffer_handle));
 
-    size_t tensor_buffer_size;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
-        litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                          "Failed to get tensor buffer size"));
-    // LITERT_LOG(LITERT_ERROR, "========%d ", tensor_buffer_size);
-    void* buffer_host_addr;
-      LITERT_RETURN_IF_ERROR(
-          LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
-          litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                             "Failed to get HostMemory buffer"));
+  //   size_t tensor_buffer_size;
+  //   LITERT_RETURN_IF_ERROR(
+  //       LiteRtGetTensorBufferSize(tensor_buffer, &tensor_buffer_size),
+  //       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                         "Failed to get tensor buffer size"));
+  //   // LITERT_LOG(LITERT_ERROR, "========output_tensor_buffer_handles_ %d ", tensor_buffer_size);
+  //   void* buffer_host_addr;
+  //     LITERT_RETURN_IF_ERROR(
+  //         LiteRtGetTensorBufferHostMemory(tensor_buffer, &buffer_host_addr),
+  //         litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                            "Failed to get HostMemory buffer"));
+  //   size_t tensor_buffer_offset;
+  //   LITERT_RETURN_IF_ERROR(
+  //       LiteRtGetTensorBufferOffset(tensor_buffer, &tensor_buffer_offset),
+  //       litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                         "Failed to get tensor buffer offset"));
+  //   // LITERT_LOG(LITERT_ERROR, "========output tensor_buffer_offset %d ", tensor_buffer_offset);
 
-    LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
-                          device_context_.getOvTensor(tensor_buffer_handle));
-    memcpy(buffer_host_addr, ov_tensor.get(), tensor_buffer_size);
-  }
+  //   LITERT_ASSIGN_OR_RETURN(ov::intel_npu::level_zero::ZeroBufferTensor ov_tensor,
+  //                         device_context_.getOvTensor(tensor_buffer_handle));
+  //   // for (int i = 0; i < 5; ++i) {
+  //   //   LITERT_LOG(LITERT_ERROR, "========output kLiteRtElementTypeFloat32 %f ", ((float_t*)ov_tensor.get())[i]);
+  //   // }
+  //   memcpy(buffer_host_addr, ov_tensor.get(), tensor_buffer_size);
+  // }
   return {};
 }
