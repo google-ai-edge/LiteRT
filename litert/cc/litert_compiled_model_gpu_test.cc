@@ -826,7 +826,8 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   float kInputTensor[] = {1.0f, 1.0f};
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBufferRequirements requirements,
                               compiled_model.GetInputBufferRequirements(0));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type, requirements.SupportedTypes());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
+                              requirements.SupportedTypesCC());
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
