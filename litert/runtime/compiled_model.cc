@@ -1349,11 +1349,7 @@ Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() {
 // then return error.
 Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
     const TfLiteTensor* tensor, absl::Span<const int> new_shape) {
-  const TfLiteIntArray* shape_array =
-      (tensor->dims_signature && tensor->dims_signature->size > 0)
-          ? tensor->dims_signature
-          : tensor->dims;
-
+  const TfLiteIntArray* shape_array = tensor->dims;
   if (!shape_array || shape_array->size == 0 || new_shape.empty()) {
     return false;
   }
@@ -1367,10 +1363,20 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
     return false;
   }
 
+  if (!tensor->dims_signature || tensor->dims_signature->size == 0) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("Cannot auto-resize tensor ",
+                     tensor->name ? tensor->name : "<unnamed>",
+                     ": no dims_signature exists"));
+  }
   // Validate that the tensor has dynamic dimensions (contains -1).
+  absl::Span<const int> signature_shape = absl::MakeConstSpan(
+      tensor->dims_signature->data, tensor->dims_signature->size);
+
   LITERT_RETURN_IF_ERROR(
-      std::find(current_shape.begin(), current_shape.end(), -1) !=
-          current_shape.end(),
+      std::find(signature_shape.begin(), signature_shape.end(), -1) !=
+          signature_shape.end(),
       litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
                          absl::StrCat("Cannot auto-resize tensor ",
                                       tensor->name ? tensor->name : "<unnamed>",
@@ -1378,26 +1384,26 @@ Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
 
   // Validate that new shape is compatible with tensor structure.
   LITERT_RETURN_IF_ERROR(
-      current_shape.size() == new_shape.size(),
+      signature_shape.size() == new_shape.size(),
       litert::Unexpected(
           kLiteRtStatusErrorInvalidArgument,
           absl::StrCat("Cannot auto-resize tensor ",
                        tensor->name ? tensor->name : "<unnamed>",
-                       ": rank mismatch (current: ", current_shape.size(),
+                       ": rank mismatch (current: ", signature_shape.size(),
                        ", new: ", new_shape.size(), ")")));
 
   // Check that static dimensions match and dynamic dimensions are reasonable.
-  for (size_t i = 0; i < current_shape.size(); ++i) {
-    if (current_shape[i] != -1) {
+  for (size_t i = 0; i < signature_shape.size(); ++i) {
+    if (signature_shape[i] != -1) {
       // Static dim ⇒ must be identical.
       LITERT_RETURN_IF_ERROR(
-          current_shape[i] == new_shape[i],
+          signature_shape[i] == new_shape[i],
           litert::Unexpected(
               kLiteRtStatusErrorInvalidArgument,
               absl::StrCat("Cannot auto-resize tensor ",
                            tensor->name ? tensor->name : "<unnamed>",
                            ": static dimension mismatch at index ", i,
-                           " (current: ", current_shape[i],
+                           " (current: ", signature_shape[i],
                            ", new: ", new_shape[i], ")")));
     } else {
       // Dynamic dim ⇒ new value must be positive.
@@ -1544,19 +1550,6 @@ Expected<std::string> LiteRtCompiledModelT::GetErrorMessages() {
   return buffer_reporter->message();
 }
 
-litert::Expected<::tflite::Interpreter*> GetInterpreter(
-    LiteRtCompiledModelT* compiled_model) {
-  if (compiled_model == nullptr) {
-    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Compiled model is null");
-  }
-  if (compiled_model->interp_ == nullptr) {
-    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
-                              "Interpreter is null");
-  }
-  return compiled_model->interp_.get();
-}
-
 bool LiteRtCompiledModelT::CheckCancelledWrapper(void* data) {
   auto* model = static_cast<LiteRtCompiledModelT*>(data);
   if (model && model->check_cancelled_func_cpp_) {
@@ -1579,4 +1572,27 @@ void LiteRtCompiledModelT::SetCancellationFunction(
 
   // Set the cancellation function on the underlying TFLite interpreter
   interp_->SetCancellationFunction(data, check_cancelled_func);
+}
+
+// -----------------------------------------------------------------------------
+// Friend APIs
+// -----------------------------------------------------------------------------
+
+litert::Expected<::tflite::Interpreter*> GetInterpreter(
+    LiteRtCompiledModelT* compiled_model) {
+  if (compiled_model == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Compiled model is null");
+  }
+  if (compiled_model->interp_ == nullptr) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Interpreter is null");
+  }
+  return compiled_model->interp_.get();
+}
+
+litert::Expected<bool> InputTensorNeedsResize(
+    LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
+    absl::Span<const int> new_shape) {
+  return compiled_model->InputTensorNeedsResize(tensor, new_shape);
 }

@@ -591,7 +591,10 @@ cc_library(
 cc_test(
     name = "compiled_model_test",
     srcs = ["compiled_model_test.cc"],
-    data = ["//litert/test:testdata/simple_model.tflite"],
+    data = [
+        "//litert/test:testdata/simple_add_dynamic_shape.tflite",
+        "//litert/test:testdata/simple_model.tflite",
+    ],
     linkopts = litert_android_linkopts(),
     # require GPU to run OpenCL tests.
     tags = ["requires-gpu-nvidia"],

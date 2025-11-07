@@ -229,6 +229,12 @@ class LiteRtCompiledModelT {
   // Helper function to automatically resize input tensor based on shape change
   static litert::Expected<bool> InputTensorNeedsResize(
       const TfLiteTensor* tensor, absl::Span<const int> new_shape);
+
+  // Friend function to test InputTensorNeedsResize.
+  friend litert::Expected<bool> InputTensorNeedsResize(
+      LiteRtCompiledModelT* compiled_model, const TfLiteTensor* tensor,
+      absl::Span<const int> new_shape);
+
   // A opaque delegate and its metrics collection functions.
   struct Delegate {
     std::unique_ptr<LiteRtDelegateWrapperT,
