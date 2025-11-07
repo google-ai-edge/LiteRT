@@ -23,7 +23,7 @@ from litert.python.internal import litertlm_header_schema_py_generated as schema
 # --- File Format Constants ---
 # LINT.IfChange(litertlm_version_constants)  # copybara:comment
 LITERTLM_MAJOR_VERSION = 1
-LITERTLM_MINOR_VERSION = 4
+LITERTLM_MINOR_VERSION = 5
 LITERTLM_PATCH_VERSION = 0
 # copybara:comment_begin(google-only)
 # LINT.ThenChange(
