@@ -52,7 +52,10 @@ class TensorBuffer
   TensorBuffer() = default;
 
   // Creates a managed TensorBuffer object in a given buffer type and size.
-  // The returned object is owned by the caller.
+  // The returned object is owned by the caller. For host memory this allocator
+  // guarantees `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT` alignment and reserves any
+  // delegate-specific padding (e.g. XNNPACK extra bytes), so callers do not
+  // need to over-allocate manually.
   static Expected<TensorBuffer> CreateManaged(
       const Environment& env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
@@ -104,7 +107,10 @@ class TensorBuffer
 
   // Creates a TensorBuffer object that wraps the provided host memory.
   // The provided host memory is not owned by the TensorBuffer object and must
-  // outlive the TensorBuffer object.
+  // outlive the TensorBuffer object. Callers are responsible for ensuring that
+  // the pointer is aligned to at least `LITERT_HOST_MEMORY_BUFFER_ALIGNMENT`
+  // bytes and, if a delegate such as XNNPACK needs extra padding, that the
+  // underlying allocation includes and initializes that region.
   static Expected<TensorBuffer> CreateFromHostMemory(
       const Environment& env, const RankedTensorType& tensor_type,
       void* host_mem_addr, size_t buffer_size);
