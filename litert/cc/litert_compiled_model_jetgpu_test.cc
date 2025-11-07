@@ -42,11 +42,11 @@ using testing::Pointwise;
 namespace litert {
 namespace {
 
-using TestParams = std::tuple<LiteRtDelegatePrecision>;
+using TestParams = std::tuple<GpuOptions::Precision>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
-  LITERT_RETURN_IF_ERROR(gpu_options.SetDelegatePrecision(std::get<0>(params)));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<0>(params)));
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
@@ -124,10 +124,10 @@ TEST_P(ParameterizedTest, Basic) {
 
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
-    ::testing::Combine(::testing::ValuesIn<LiteRtDelegatePrecision>({
-        kLiteRtDelegatePrecisionDefault,
-        kLiteRtDelegatePrecisionFp16,
-        kLiteRtDelegatePrecisionFp32,
+    ::testing::Combine(::testing::ValuesIn<GpuOptions::Precision>({
+        GpuOptions::Precision::kDefault,
+        GpuOptions::Precision::kFp16,
+        GpuOptions::Precision::kFp32,
     })));
 
 }  // namespace

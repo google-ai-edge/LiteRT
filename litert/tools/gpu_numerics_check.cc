@@ -104,7 +104,7 @@ Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
   gpu_options.EnableExternalTensorsMode(
       absl::GetFlag(FLAGS_external_tensor_mode));
-  gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+  gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
   } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {

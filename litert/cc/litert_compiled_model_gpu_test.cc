@@ -526,9 +526,9 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
-      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
-      gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+      gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
 
@@ -608,9 +608,9 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
   LITERT_ASSERT_OK(
-      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32));
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
-      gpu_options.SetBufferStorageType(kLiteRtDelegateBufferStorageTypeBuffer));
+      gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
 
   LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);

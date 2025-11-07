@@ -95,15 +95,15 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     // Enable benchmark mode to run clFinish() after each inference.
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     if (gpu_backend == "webgpu") {
-      gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
+      gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
     } else if (gpu_backend == "opengl") {
-      gpu_options.SetGpuBackend(kLiteRtGpuBackendOpenGl);
+      gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
     }
     if (allow_fp16 == false) {
-      gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+      gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
     }
     if (gpu_low_priority) {
-      gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
+      gpu_options.SetPriority(GpuOptions::Priority::kLow);
     }
     if (enable_weight_sharing) {
       gpu_options.EnableConstantTensorSharing(true);
@@ -111,7 +111,7 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
     auto use_profiler = params.Get<bool>("use_profiler");
     if (use_profiler) {
-      gpu_options.SetGpuPriority(kLiteRtGpuPriorityLow);
+      gpu_options.SetPriority(GpuOptions::Priority::kLow);
     }
 
     compilation_options.AddOpaqueOptions(std::move(gpu_options));

@@ -49,13 +49,13 @@ namespace litert {
 namespace {
 
 using TestParams =
-    std::tuple<bool, LiteRtDelegatePrecision, LiteRtDelegateBufferStorageType>;
+    std::tuple<bool, GpuOptions::Precision, GpuOptions::BufferStorageType>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
   LITERT_RETURN_IF_ERROR(
       gpu_options.EnableExternalTensorsMode(std::get<0>(params)));
-  LITERT_RETURN_IF_ERROR(gpu_options.SetDelegatePrecision(std::get<1>(params)));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<1>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
 
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
@@ -125,15 +125,15 @@ TEST_P(ParameterizedTest, Basic) {
 INSTANTIATE_TEST_SUITE_P(
     CompiledModelWebGpuTest, ParameterizedTest,
     ::testing::Combine(::testing::ValuesIn<bool>({false, true}),
-                       ::testing::ValuesIn<LiteRtDelegatePrecision>({
-                           kLiteRtDelegatePrecisionDefault,
-                           kLiteRtDelegatePrecisionFp16,
-                           kLiteRtDelegatePrecisionFp32,
+                       ::testing::ValuesIn<GpuOptions::Precision>({
+                           GpuOptions::Precision::kDefault,
+                           GpuOptions::Precision::kFp16,
+                           GpuOptions::Precision::kFp32,
                        }),
-                       ::testing::ValuesIn<LiteRtDelegateBufferStorageType>({
-                           kLiteRtDelegateBufferStorageTypeDefault,
-                           kLiteRtDelegateBufferStorageTypeBuffer,
-                           kLiteRtDelegateBufferStorageTypeTexture2D,
+                       ::testing::ValuesIn<GpuOptions::BufferStorageType>({
+                           GpuOptions::BufferStorageType::kDefault,
+                           GpuOptions::BufferStorageType::kBuffer,
+                           GpuOptions::BufferStorageType::kTexture2D,
                        })));
 
 TEST(CompiledModelWebGpuTest, GpuEnvironment) {
@@ -149,8 +149,8 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({false, kLiteRtDelegatePrecisionDefault,
-                        kLiteRtDelegateBufferStorageTypeDefault}));
+      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
+                        GpuOptions::BufferStorageType::kDefault}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
                               CompiledModel::Create(*env_1, model, options_1));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
@@ -174,8 +174,8 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_2,
-      CreateGpuOptions({true, kLiteRtDelegatePrecisionFp32,
-                        kLiteRtDelegateBufferStorageTypeTexture2D}));
+      CreateGpuOptions({true, GpuOptions::Precision::kFp32,
+                        GpuOptions::BufferStorageType::kTexture2D}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2,
                               CompiledModel::Create(*env_2, model, options_2));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
@@ -204,8 +204,8 @@ TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options_1,
-      CreateGpuOptions({false, kLiteRtDelegatePrecisionDefault,
-                        kLiteRtDelegateBufferStorageTypeDefault}));
+      CreateGpuOptions({false, GpuOptions::Precision::kDefault,
+                        GpuOptions::BufferStorageType::kDefault}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
                               CompiledModel::Create(*env_1, model, options_1));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());

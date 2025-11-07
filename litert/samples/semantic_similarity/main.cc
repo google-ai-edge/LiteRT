@@ -288,7 +288,7 @@ absl::Status RealMain() {
     // Set GPU compilation options.
   } else if (accelerator & kLiteRtHwAcceleratorGpu) {
     LITERT_ASSIGN_OR_RETURN(auto gpu_compilation_options, GpuOptions::Create());
-    gpu_compilation_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
+    gpu_compilation_options.SetPrecision(GpuOptions::Precision::kFp32);
     options.AddOpaqueOptions(std::move(gpu_compilation_options));
 
     options.SetHardwareAccelerators(accelerator);
