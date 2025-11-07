@@ -28,7 +28,6 @@ class QnnModel {
         context_handle_(context_handle) {};
 
   QnnModel() = default;
-  ~QnnModel() { QNN_LOG_INFO("QnnModel::~QnnModel"); };
 
   template <typename T>
   bool SetInputData(size_t idx, absl::Span<const T> data) {

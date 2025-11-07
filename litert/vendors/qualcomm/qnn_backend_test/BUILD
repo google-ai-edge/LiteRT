@@ -9,9 +9,9 @@ package(
 )
 
 litert_test(
-    name = "qnn_backend_test",
+    name = "qnn_model_test",
     srcs = [
-        "qnn_backend_test.cc",
+        "qnn_model_test.cc",
     ],
     linkopts = select({
         "@org_tensorflow//tensorflow:android": [],
@@ -31,15 +31,21 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
-        "//litert/test:common",
+        ":test_utils",
+        "//litert/vendors/qualcomm/core:common",
+    ],
+)
+
+cc_library(
+    name = "test_utils",
+    srcs = ["test_utils.cc"],
+    hdrs = ["test_utils.h"],
+    deps = [
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
-        "//litert/vendors/qualcomm/core/builders:relu_op_builder",
-        "//litert/vendors/qualcomm/core/builders:topk_op_builder",
         "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/utils:qnn_model",
-        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
-        "@qairt//:qnn_lib_headers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
