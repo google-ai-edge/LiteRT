@@ -91,6 +91,11 @@ inline int operator&(HwAcceleratorSet lhs, HwAccelerators rhs) {
   return lhs.value & static_cast<int>(rhs);
 }
 
+inline HwAcceleratorSet& operator|=(HwAcceleratorSet& lhs, HwAccelerators rhs) {
+  lhs.value |= static_cast<int>(rhs);
+  return lhs;
+}
+
 }  // namespace litert
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_COMMON_H_
