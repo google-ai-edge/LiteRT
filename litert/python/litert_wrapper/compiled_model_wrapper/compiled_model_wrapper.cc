@@ -29,6 +29,7 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -109,7 +110,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromFile(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model, static_cast<LiteRtHwAccelerators>(hardware_accel));
+      env, model, static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;
@@ -173,7 +174,7 @@ CompiledModelWrapper* CompiledModelWrapper::CreateWrapperFromBuffer(
 
   // Create a compiled model
   auto compiled_or = CompiledModel::Create(
-      env, model, static_cast<LiteRtHwAccelerators>(hardware_accel));
+      env, model, static_cast<HwAccelerators>(hardware_accel));
   if (!compiled_or) {
     if (out_error) *out_error = compiled_or.Error().Message();
     return nullptr;

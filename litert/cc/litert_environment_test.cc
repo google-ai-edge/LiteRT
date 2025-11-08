@@ -21,6 +21,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_model.h"
@@ -59,7 +60,7 @@ TEST(EnvironmentTest, CompiledModelBasic) {
 
   // Create CompiledModel.
   auto compiled_model =
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu);
+      CompiledModel::Create(env, model, HwAccelerators::kCpu);
   EXPECT_TRUE(compiled_model);
 }
 
@@ -86,7 +87,7 @@ TEST(EnvironmentTest, StringLifeCycle) {
 
   // Create CompiledModel.
   auto compiled_model =
-      CompiledModel::Create(*env, model, kLiteRtHwAcceleratorCpu);
+      CompiledModel::Create(*env, model, HwAccelerators::kCpu);
   EXPECT_TRUE(compiled_model);
 }
 

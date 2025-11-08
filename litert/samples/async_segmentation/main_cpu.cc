@@ -24,6 +24,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_macros.h"
@@ -66,7 +67,7 @@ int main(int argc, char* argv[]) {
   // Compile the model for the CPU
   LITERT_ASSIGN_OR_ABORT(
       auto compiled_model,
-      litert::CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      litert::CompiledModel::Create(env, model, litert::HwAccelerators::kCpu));
 
   // Create input and output buffers
   LITERT_ASSIGN_OR_ABORT(auto input_buffers,

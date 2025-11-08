@@ -61,6 +61,7 @@ cc_library(
     hdrs = ["gen_device_test_lib.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",

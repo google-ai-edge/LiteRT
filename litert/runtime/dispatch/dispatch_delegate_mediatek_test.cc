@@ -26,9 +26,9 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -329,7 +329,7 @@ TEST(DispatchDelegate, CompiledModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb and DmaBuf.
@@ -420,7 +420,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -540,7 +540,7 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,

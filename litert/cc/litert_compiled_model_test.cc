@@ -66,7 +66,7 @@ TEST(CompiledModelTest, Basic) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Check fully accelerated.
   LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
@@ -138,7 +138,7 @@ TEST(CompiledModelTest,
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   absl::string_view signature_key = model.DefaultSignatureKey();
 
@@ -194,7 +194,7 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -278,7 +278,7 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -361,7 +361,7 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Create input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -510,7 +510,7 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Test resizing input tensor by index - resize from (?, 2, 3) to (1, 2, 3)
   {
@@ -724,7 +724,7 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   // Create CompiledModel with default StderrReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // ReportError should work with StderrReporter (prints to stderr)
   LITERT_ASSERT_OK(compiled_model.ReportError("This goes to stderr: %d", 123));
@@ -843,7 +843,7 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
   // Create CompiledModel
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   EXPECT_EQ(model.GetNumSignatures(), 1);
   size_t signature_index = 0;

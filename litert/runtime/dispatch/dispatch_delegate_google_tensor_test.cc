@@ -335,7 +335,7 @@ TEST(DispatchDelegate, CompiledModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb.
@@ -421,7 +421,7 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -536,7 +536,7 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorCpu));
+      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
@@ -677,7 +677,7 @@ TEST(DispatchDelegate, CompiledModelAsync) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
 
   // Create and fill input and output tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,

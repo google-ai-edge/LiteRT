@@ -28,7 +28,7 @@ litert_device_test(
         "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
     ],
     deps = [
-        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
@@ -57,7 +57,7 @@ litert_device_test(
         "//litert/vendors/mediatek/compiler:compiler_plugin_so",
     ],
     deps = [
-        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",

@@ -23,6 +23,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_platform_support.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
@@ -80,7 +81,8 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
+
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());

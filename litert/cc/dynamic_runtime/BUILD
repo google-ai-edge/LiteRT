@@ -539,6 +539,7 @@ cc_test(
         ":litert_environment",
         ":litert_model",
         "//litert/c:litert_common",
+        "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/test:common",
         "//litert/test:matchers",

@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
@@ -63,7 +64,7 @@ class CmInvoker {
   virtual void MaybeSkip() const = 0;
 
   // Which accelerator option to use.
-  virtual LiteRtHwAccelerators Accelerator() const = 0;
+  virtual HwAccelerators Accelerator() const = 0;
 
   std::vector<TensorBuffer>& GetInputBuffers() { return input_buffers_; }
   std::vector<TensorBuffer>& GetOutputBuffers() { return output_buffers_; }
@@ -87,8 +88,8 @@ class SkippedCmInvoker : public CmInvoker {
     GTEST_SKIP() << "User requested skip for this model.";
   }
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return kLiteRtHwAcceleratorNone;
+  HwAccelerators Accelerator() const override {
+    return HwAccelerators::kNone;
   };
 };
 
@@ -105,8 +106,8 @@ class CmNpuInvoker : public CmInvoker {
     return !IsCompiled(m);
   }
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return IsJit() ? kLiteRtHwAcceleratorNpu : kLiteRtHwAcceleratorNone;
+  HwAccelerators Accelerator() const override {
+    return IsJit() ? HwAccelerators::kNpu : HwAccelerators::kNone;
   }
 
   void MaybeSkip() const override {
@@ -123,8 +124,8 @@ class CmCpuInvoker : public CmInvoker {
   CmCpuInvoker(Environment&& env, Model&& model)
       : CmInvoker(std::move(env), std::move(model)) {}
 
-  LiteRtHwAccelerators Accelerator() const override {
-    return kLiteRtHwAcceleratorCpu;
+  HwAccelerators Accelerator() const override {
+    return HwAccelerators::kCpu;
   }
 
   void MaybeSkip() const override {

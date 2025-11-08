@@ -19,6 +19,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
@@ -54,7 +55,7 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -92,7 +93,7 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model, HwAccelerators::kNpu));
 
   // Creates and destroys tensor buffers each iteration to test proper memory
   // registration/deregistration in Qualcomm Dispatch.

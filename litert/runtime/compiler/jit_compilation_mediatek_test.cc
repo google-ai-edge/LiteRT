@@ -21,7 +21,7 @@
 #include "absl/log/log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
@@ -63,9 +63,10 @@ TEST(JitCompilation, MediaTek) {
                   "MediaTek NPU";
 #endif
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              litert::CompiledModel::Create(
-                                  environment, model, kLiteRtHwAcceleratorNpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      litert::CompiledModel::Create(environment, model,
+                                    litert::HwAccelerators::kNpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers,
@@ -135,8 +136,9 @@ class LiteRtCompilationCachingTest : public testing::Test {
 #endif
 
     LITERT_ASSERT_OK_AND_ASSIGN(
-        auto compiled_model, litert::CompiledModel::Create(
-                                 environment, model, kLiteRtHwAcceleratorNpu));
+        auto compiled_model,
+        litert::CompiledModel::Create(environment, model,
+                                      litert::HwAccelerators::kNpu));
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_buffers,

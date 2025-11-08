@@ -19,6 +19,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
@@ -54,7 +55,7 @@ TEST(ExampleEndToEndTest, JIT) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto model,
                               Model::CreateFromFile(GetTestFilePath(kModel)));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto cm, CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      auto cm, CompiledModel::Create(env, model, HwAccelerators::kNpu));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto input_buffers, cm.CreateInputBuffers(model.DefaultSignatureKey()));
   LITERT_ASSERT_OK_AND_ASSIGN(

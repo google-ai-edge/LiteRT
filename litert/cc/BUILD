@@ -726,6 +726,7 @@ cc_test(
         "//conditions:default": [],
     }),
     deps = [
+        ":litert_common",
         ":litert_compiled_model",
         ":litert_environment",
         ":litert_expected",
