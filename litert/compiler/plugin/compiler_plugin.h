@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -25,6 +26,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
@@ -139,6 +141,9 @@ class CompilerPlugin {
       absl::Span<const absl::string_view> lib_search_paths,
       LiteRtEnvironmentOptions env = nullptr, LiteRtOptions options = nullptr);
 
+  // Returns the compiler options used to create this plugin.
+  Expected<LiteRtCompilerOptions> CompilerOptions() const;
+
   CompilerPlugin(CompilerPlugin&& other);
   CompilerPlugin& operator=(CompilerPlugin&& other);
   CompilerPlugin(const CompilerPlugin& other) = delete;
@@ -156,6 +161,7 @@ class CompilerPlugin {
 
   std::vector<std::string> soc_models_;
   SharedLibrary lib_;
+  LiteRtOptions options_ = nullptr;
   LiteRtCompilerPluginApi plugin_api_ = {};
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;

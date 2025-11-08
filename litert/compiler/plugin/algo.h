@@ -26,8 +26,18 @@ namespace litert::internal {
 // Identifies sub-DAGs of ops connected w.r.t. the use-def chain. Expects
 // all "ops" belong to the same Subgraph. The ops in the input
 // and output will always be the same.
+//
+// Strategy 1: Weakly connected component.
+// TODO(yunandrew): Fix strategy 1, by adding a addtional pass to cut the WCCs
+// into correct partitions.
 std::vector<std::vector<LiteRtOp>> GroupPartitions(
-    const std::vector<LiteRtOpWithPartitionIndex>& ops);
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph);
+
+// Strategy 2: Cut based on execution order.
+std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph);
 
 // Outlines "partition" from "root" into the empty subgraph "slice". Assumes
 // the partition is a valid sub-DAG, and replaces it with a single

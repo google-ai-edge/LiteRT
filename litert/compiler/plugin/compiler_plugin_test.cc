@@ -25,8 +25,11 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/compiler_options.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
@@ -61,6 +64,20 @@ TEST(CompilerPluginTest, FindTestPluginOk) {
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)}));
+  EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
+}
+
+TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
+  auto litert_options = Options::Create();
+  auto compiler_options = CompilerOptions::Create();
+  compiler_options->SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyDefault);
+  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr, litert_options->Get()));
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
 }
 
@@ -660,6 +677,28 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   const auto& sgs = partition_result->second.Subgraphs();
   ASSERT_EQ(sgs.size(), 1);
   ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+}
+
+TEST(PartitionModelTest, PartitionIsland) {
+  auto model_wrap = testing::LoadTestFileModel("island_partial.tflite");
+  auto& model = *model_wrap.Get();
+
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+
+  auto partition_result = PartitionModel(plugin, model);
+  ASSERT_TRUE(partition_result);
+  ASSERT_EQ(model.NumSubgraphs(), 1);
+
+  const auto& [ops, new_model] = *partition_result;
+
+  EXPECT_EQ(ops.size(), 2);
+
+  EXPECT_EQ(new_model.NumSubgraphs(), 2);
+  EXPECT_EQ(new_model.Subgraphs().at(0)->Ops().size(), 3);
+  EXPECT_EQ(new_model.Subgraphs().at(1)->Ops().size(), 1);
 }
 
 }  // namespace

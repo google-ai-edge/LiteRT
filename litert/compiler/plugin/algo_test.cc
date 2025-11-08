@@ -20,10 +20,9 @@
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
-#include "litert/cc/litert_model.h"
 #include "litert/core/model/graph_validation.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
@@ -32,7 +31,15 @@
 namespace litert::internal {
 namespace {
 
-TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
+using PartitionFunc = decltype(&GroupPartitions);
+
+class PartitionTest : public ::testing::TestWithParam<PartitionFunc> {};
+
+INSTANTIATE_TEST_SUITE_P(PartitionStrategies, PartitionTest,
+                         ::testing::Values(&GroupPartitions,
+                                           &GroupPartitionsV2));
+
+TEST_P(PartitionTest, SimpleMultiOp) {
   auto model = litert::testing::LoadTestFileModel("simple_multi_op.tflite");
   auto subgraph = model.MainSubgraph();
   EXPECT_TRUE(subgraph);
@@ -51,7 +58,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(2).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 1);
     ASSERT_EQ(partitions.front().size(), 2);
 
@@ -64,7 +71,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(3).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 2);
     ASSERT_EQ(partitions.front().size(), 1);
     ASSERT_EQ(partitions.back().size(), 1);
@@ -81,7 +88,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
   {
     std::vector<LiteRtOpWithPartitionIndex> selected_ops;
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 0);
   }
 
@@ -92,7 +99,7 @@ TEST(TestPartitionsFromFlatList, SimpleMultiOp) {
     selected_ops.push_back({ops.at(2).Get(), 0});
     selected_ops.push_back({ops.at(3).Get(), 0});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 1);
     ASSERT_EQ(partitions.front().size(), 4);
 
@@ -246,7 +253,7 @@ TEST(TestSliceSubgraphSimpleMultiOp, TwoPartitions) {
   }
 }
 
-TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
+TEST_P(PartitionTest, PartitionWithIndex) {
   auto model = litert::testing::LoadTestFileModel("simple_multi_op.tflite");
   auto subgraph = model.MainSubgraph();
   EXPECT_TRUE(subgraph);
@@ -265,7 +272,7 @@ TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
     selected_ops.push_back({ops.at(1).Get(), 0});
     selected_ops.push_back({ops.at(2).Get(), 1});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 2);
     ASSERT_EQ(partitions.front().size(), 1);
     ASSERT_EQ(partitions.back().size(), 1);
@@ -288,7 +295,7 @@ TEST(TestSliceSubgraphSimpleMultiOp, PartitionWithIndex) {
     selected_ops.push_back({ops.at(2).Get(), 3});
     selected_ops.push_back({ops.at(3).Get(), 4});
 
-    auto partitions = GroupPartitions(selected_ops);
+    auto partitions = GetParam()(selected_ops, subgraph->Get());
     ASSERT_EQ(partitions.size(), 4);
 
     absl::flat_hash_set<LiteRtOp> ops_in_partition;

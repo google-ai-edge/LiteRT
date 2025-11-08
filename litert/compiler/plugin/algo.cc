@@ -24,7 +24,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -199,7 +199,7 @@ LiteRtOp DisjointSets::GetBucket(LiteRtOp op) {
 class GraphSlicer {
  public:
   // Slices "partitions" from "root" into the empty subgraph "slice". Assumes
-  // the partition is a valid sub-DAG, and replaces it witha single
+  // the partition is a valid sub-DAG, and replaces it with a single
   // tfl.custom_op in "root". A reference to that op is returned.
   static LiteRtOp SlicePartitionFromGraph(LiteRtSubgraphT& root,
                                           LiteRtSubgraph slice,
@@ -321,9 +321,91 @@ void GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
 
 }  // namespace
 
+//===----------------------------------------------------------------------===//
+// LiteRt Core partitioning algorithm.
+//
+// This algorithm is used to partition a flat list of ops into disjoint sets.
+// Given a flat list of pairs of (op, partition_index), group ops by partition
+// index to create a list of partitions.
+//
+// For example, if the input is:
+//   (op1, 0), (op3, 1), (op2, 0), (op4, 2)
+// The output will be:
+//   [[op1, op2], [op3], [op4]]
+//===----------------------------------------------------------------------===//
+
+std::vector<std::vector<LiteRtOp>> GetPartitionsFromFlatListV2(
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph) {
+  if (subgraph->Ops().empty()) {
+    LITERT_LOG(LITERT_INFO, "Found empty subgraph, skipping partitioning");
+    return {};
+  }
+  // Map of op to partition index.
+  absl::flat_hash_map<LiteRtOp, LiteRtParamIndex> op_to_partition_index = {};
+
+  // Determine the largest partition index `idx`, and use `idx+1` to represent
+  // the partition index for ops not selected by the plugin.
+  LiteRtParamIndex max_partition_index = 0;
+  for (LiteRtOpWithPartitionIndex op : ops) {
+    op_to_partition_index[op.first] = op.second;
+    if (op.second > max_partition_index) {
+      max_partition_index = op.second;
+    }
+  }
+  LiteRtParamIndex unselected_ops_partition_index = max_partition_index + 1;
+
+  // Retain the execution order of the ops.
+  //
+  // Note: We do not use op index to maintain execution order, because inlined
+  // ops from decomposition subgraph do not have respective index in the main
+  // subgraph. Instead, we use the op order in the subgraph to maintain the
+  // execution order.
+  std::vector<LiteRtOpWithPartitionIndex> sorted_ops;
+  sorted_ops.reserve(subgraph->Ops().size());
+  for (LiteRtOp& op : subgraph->Ops()) {
+    auto it = op_to_partition_index.find(op);
+    if (it == op_to_partition_index.end()) {
+      sorted_ops.push_back({op, unselected_ops_partition_index});
+    } else {
+      sorted_ops.push_back({op, it->second});
+    }
+  }
+
+  // Partition based on the execution order and partition index.
+  std::vector<std::vector<LiteRtOp>> partitions;
+  std::vector<LiteRtOp> current_partition;
+  ABSL_DCHECK(!sorted_ops.empty());
+  LiteRtParamIndex current_partition_index = sorted_ops.front().second;
+
+  for (const auto& [partition, index] : sorted_ops) {
+    if (index != current_partition_index) {
+      if (!current_partition.empty()) {
+        partitions.push_back(std::move(current_partition));
+        current_partition.clear();
+      }
+      current_partition_index = index;
+    }
+    if (current_partition_index != unselected_ops_partition_index) {
+      current_partition.push_back(partition);
+    }
+  }
+  if (!current_partition.empty()) {
+    partitions.push_back(current_partition);
+  }
+  return partitions;
+}
+
 std::vector<std::vector<LiteRtOp>> GroupPartitions(
-    const std::vector<LiteRtOpWithPartitionIndex>& ops) {
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph) {
   return DisjointSets::GetPartitionsFromFlatList(ops);
+}
+
+std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph) {
+  return GetPartitionsFromFlatListV2(ops, subgraph);
 }
 
 LiteRtOp OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,

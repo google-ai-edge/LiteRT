@@ -39,7 +39,9 @@
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
+#include "litert/c/litert_options.h"
 #include "litert/c/litert_rewriter.h"
+#include "litert/c/options/litert_compiler_options.h"
 #include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_buffer_ref.h"
@@ -51,6 +53,7 @@
 #include "litert/core/environment.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model.h"
+#include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
@@ -252,6 +255,9 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
     return soc_models.Error();
   }
   plugin.soc_models_ = *soc_models;
+  if (!options) {
+    plugin.options_ = options;
+  }
 
   return plugin;
 }
@@ -446,9 +452,19 @@ namespace {
 LiteRtStatus PartitionSubgraph(
     std::vector<LiteRtOpWithPartitionIndex> selected_ops,
     LiteRtSubgraphT& subgraph, std::vector<LiteRtOp>& res_ops,
-    LiteRtModelT& model) {
+    LiteRtModelT& model,
+    LiteRtCompilerOptionsPartitionStrategy partition_strategy_option) {
+  // Pick partition strategy based on compiler options.
+  std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
+      const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
+      GroupPartitions;
+  if (partition_strategy_option ==
+      kLiteRtCompilerOptionsPartitionStrategyDefault) {
+    partition_strategy_func = GroupPartitionsV2;
+  }
+
   // Group selected ops into connected islands.
-  auto islands = GroupPartitions(selected_ops);
+  auto islands = partition_strategy_func(selected_ops, &subgraph);
   if (islands.empty()) {
     return kLiteRtStatusOk;
   }
@@ -490,7 +506,7 @@ Expected<PartitionResult> PartitionModel(
   // 2. Standard non npu_call composite ops.
   //
   // 2.1 Composite op is supported by the plugin. Since a plugin is capable of
-  // directly compile the composite op, the composite op will be seleceted
+  // directly compile the composite op, the composite op will be selected
   // during partitioning. Therefore, all ops in the decomposition subgraph will
   // be ignored, furthermore, the decomposition subgraph will be removed from
   // the model.
@@ -600,8 +616,21 @@ Expected<PartitionResult> PartitionModel(
     auto num_ops = subgraph->Ops().size();
 
     auto num_partitions = dispatch_ops.size();
-    LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
-                                             *subgraph, dispatch_ops, model));
+    // Get partition strategy from compiler options.
+    auto compiler_options = compiler_plugin.CompilerOptions();
+    LiteRtCompilerOptionsPartitionStrategy strategy =
+        kLiteRtCompilerOptionsPartitionStrategyDefault;
+    if (compiler_options.HasValue()) {
+      LiteRtCompilerOptionsPartitionStrategy strategy;
+      auto status = LiteRtGetCompilerOptionsPartitionStrategy(*compiler_options,
+                                                              &strategy);
+      if (status != kLiteRtStatusOk) {
+        return Unexpected(
+            status, "Failed to get partition strategy from compiler options.");
+      }
+    }
+    LITERT_RETURN_IF_ERROR(PartitionSubgraph(
+        std::move(*selected_ops), *subgraph, dispatch_ops, model, strategy));
     num_partitions = dispatch_ops.size() - num_partitions;
     LITERT_LOG(LITERT_INFO,
                "Partitioned subgraph<%d>, selected %lu "
@@ -658,8 +687,9 @@ Expected<PartitionResult> PartitionModelDirect(
   // Accumulate partition results for each subgraph in model.
   auto* subgraph = model.Subgraphs().front();
   std::vector<LiteRtOp> dispatch_ops;
-  LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(selected_ops), *subgraph,
-                                           dispatch_ops, model));
+  LITERT_RETURN_IF_ERROR(PartitionSubgraph(
+      std::move(selected_ops), *subgraph, dispatch_ops, model,
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected));
   ABSL_DCHECK_EQ(dispatch_ops.size(), model.NumSubgraphs() - 1);
 
   std::vector<size_t> decomps_to_compile;
@@ -846,6 +876,15 @@ Expected<ApplyPluginsResult> ApplyPlugins(
   result.error_message = absl::StrJoin(error_messages, ", ");
 
   return result;
+}
+
+Expected<LiteRtCompilerOptions> CompilerPlugin::CompilerOptions() const {
+  LiteRtCompilerOptions compiler_options;
+  LiteRtOpaqueOptions opaque_options;
+  LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options_, &opaque_options));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtFindCompilerOptions(options_->options, &compiler_options));
+  return compiler_options;
 }
 
 Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
