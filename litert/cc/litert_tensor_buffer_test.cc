@@ -279,7 +279,7 @@ TEST(TensorBuffer, HostMemory) {
       env, kTensorBufferType, kTensorType, sizeof(kTensorData));
   ASSERT_TRUE(tensor_buffer);
 
-  auto tensor_buffer_type = tensor_buffer->BufferTypeCC();
+  auto tensor_buffer_type = tensor_buffer->BufferType();
   ASSERT_TRUE(tensor_buffer_type);
   ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
 
@@ -343,7 +343,7 @@ TEST(TensorBuffer, ClBuffer) {
                               user_gpu_env->GetEnvironment(), kTensorBufferType,
                               kTensorType, sizeof(kTensorData)));
 
-  auto tensor_buffer_type = tensor_buffer.BufferTypeCC();
+  auto tensor_buffer_type = tensor_buffer.BufferType();
   ASSERT_TRUE(tensor_buffer_type);
   ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
 
@@ -461,7 +461,7 @@ TEST(TensorBuffer, Ahwb) {
       env, kTensorBufferType, kTensorType, sizeof(kTensorData));
   ASSERT_TRUE(tensor_buffer);
 
-  auto tensor_buffer_type = tensor_buffer->BufferTypeCC();
+  auto tensor_buffer_type = tensor_buffer->BufferType();
   ASSERT_TRUE(tensor_buffer_type);
   ASSERT_EQ(*tensor_buffer_type, kTensorBufferType);
 
@@ -516,7 +516,7 @@ TEST(TensorBuffer, Ion) {
                                   sizeof(kTensorData)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_buffer_type,
-                              tensor_buffer.BufferTypeCC());
+                              tensor_buffer.BufferType());
   ASSERT_EQ(tensor_buffer_type, kTensorBufferType);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_type, tensor_buffer.TensorType());
@@ -567,7 +567,7 @@ TEST(TensorBuffer, DmaBuf) {
                                   sizeof(kTensorData)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_buffer_type,
-                              tensor_buffer.BufferTypeCC());
+                              tensor_buffer.BufferType());
   ASSERT_EQ(tensor_buffer_type, kTensorBufferType);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_type, tensor_buffer.TensorType());
@@ -619,7 +619,7 @@ TEST(TensorBuffer, FastRpc) {
                                   sizeof(kTensorData)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_buffer_type,
-                              tensor_buffer.BufferTypeCC());
+                              tensor_buffer.BufferType());
   ASSERT_EQ(tensor_buffer_type, kTensorBufferType);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto tensor_type, tensor_buffer.TensorType());
