@@ -346,7 +346,7 @@ if(NOT TARGET tensorflow-lite)
     set_target_properties(tensorflow-lite PROPERTIES
       IMPORTED_LOCATION "${TFLITE_BUILD_DIR}/libtensorflow-lite.a"
       INTERFACE_INCLUDE_DIRECTORIES "${TFLITE_SOURCE_DIR};${TFLITE_BUILD_DIR}"
-      INTERFACE_LINK_LIBRARIES "${_litert_tflite_link_libs}"
+      INTERFACE_LINK_LIBRARIES "$<LINK_GROUP:RESCAN,${_litert_tflite_link_libs}>"
     )
   endif()
 endif()
