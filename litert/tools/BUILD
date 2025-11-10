@@ -406,25 +406,35 @@ cc_library(
 # )
 # copybara:uncomment_end
 
-#copybara:comment_begin(google-only)
 cc_test(
     name = "benchmark_litert_model_test",
     srcs = ["benchmark_litert_model_test.cc"],
     data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
-    tags = ["requires-gpu-nvidia"],
-    deps =
-        [
-            ":benchmark_litert_model",
-            "@com_google_googletest//:gtest_main",
-            # copybara:uncomment_begin(google-only)
-            # "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
-            # copybara:uncomment_end
-            "//tflite/core/c:private_c_api_types",
-            "//tflite/tools/benchmark:benchmark_model_lib",
-            "//tflite/tools/benchmark:benchmark_params",
-        ],
+    deps = [
+        ":benchmark_litert_model",
+        "//tflite/core/c:private_c_api_types",
+        "//tflite/tools/benchmark:benchmark_model_lib",
+        "//tflite/tools/benchmark:benchmark_params",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
-#copybara:comment_end
+
+# copybara:uncomment_begin(google-only)
+# cc_test(
+#     name = "benchmark_litert_model_gpu_test",
+#     srcs = ["benchmark_litert_model_gpu_test.cc"],
+#     data = ["//litert/test:testdata/mobilenet_v2_1.0_224.tflite"],
+#     tags = ["requires-gpu-nvidia"],
+#     deps = [
+#         ":benchmark_litert_model",
+#         "@com_google_googletest//:gtest_main",
+#         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator",  # buildcleaner: keep
+#         "//tflite/core/c:private_c_api_types",
+#         "//tflite/tools/benchmark:benchmark_model_lib",
+#         "//tflite/tools/benchmark:benchmark_params",
+#     ],
+# )
+# copybara:uncomment_end
 
 cc_library(
     name = "tensor_utils",

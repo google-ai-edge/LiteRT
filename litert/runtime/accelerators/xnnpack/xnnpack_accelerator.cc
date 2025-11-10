@@ -109,6 +109,22 @@ class CpuAccelerator final
     LiteRtUnwrapDelegate(delegate_wrapper, &xnnpack_delegate);
     TfLiteXNNPackDelegateDelete(xnnpack_delegate);
   }
+
+  // Returns true to indicate the XNNPack delegate is responsible for JIT
+  // compilation.
+  static LiteRtStatus IsTfLiteDelegateResponsibleForJitCompilation(
+      LiteRtAcceleratorT* accelerator, bool* does_jit_compilation) {
+    LITERT_RETURN_IF_ERROR(does_jit_compilation,
+                           litert::ErrorStatusBuilder::InvalidArgument())
+        << "`does_jit_compilation` pointer is null.";
+#if defined(__EMSCRIPTEN__)
+    // Xnnpack is always applied to Web.
+    *does_jit_compilation = false;
+#else
+    *does_jit_compilation = true;
+#endif  // defined(__EMSCRIPTEN__)
+    return kLiteRtStatusOk;
+  }
 };
 
 }  // namespace
@@ -130,6 +146,11 @@ LiteRtStatus LiteRtRegisterCpuAccelerator(LiteRtEnvironment environment) {
 
   LITERT_ASSIGN_OR_RETURN(auto accelerator_impl,
                           litert::CpuAccelerator::Create());
+
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation(
+          accelerator.get(), litert::CpuAccelerator::
+                                 IsTfLiteDelegateResponsibleForJitCompilation));
 
   LITERT_RETURN_IF_ERROR(LiteRtRegisterAccelerator(
       environment, accelerator.release(), accelerator_impl.release(),
