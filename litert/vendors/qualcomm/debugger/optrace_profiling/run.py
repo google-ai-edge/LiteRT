@@ -87,11 +87,9 @@ def _get_ctx_bin_info(ctx_bin_path: str, qairt_sdk: Path) -> dict[str, Any]:
   if version_parse(bin_id) == version_parse(qairt_id):
     logging.info("Build ID matches.")
   else:
-    logging.warning(
-        "Ensure the context binary '%s' is built with the same SDK"
-        " version '%s'.",
-        bin_id,
-        qairt_id,
+    raise RuntimeError(
+        f"The context binary is compiled with BUILD ID: {bin_id} "
+        f"!= current qairt sdk BUILD ID: {qairt_id}"
     )
   return json_data["info"]
 
@@ -365,7 +363,7 @@ def _generate_ctx_bin(model_path: Path, soc_model: str) -> Path:
       *bazel_run,
       "//litert/tools:apply_plugin_main",
       "--",
-      f"--libs={_LITERT_ROOT / 'bazel-bin/litert/vendors/qualcomm/compiler'}",
+      "--libs=litert/vendors/qualcomm/compiler",
       "--cmd=apply",
       f"--model={model_path}",
       f"--o={tmp_tflite_path}",
