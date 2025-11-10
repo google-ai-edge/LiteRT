@@ -49,25 +49,6 @@ LiteRtStatus LiteRtFindRuntimeOptions(LiteRtOpaqueOptions opaque_options,
 
 const char* LiteRtGetRuntimeOptionsIdentifier() { return "runtime"; }
 
-LiteRtStatus LiteRtSetRuntimeOptionsShloCompositeInlining(
-    LiteRtRuntimeOptions options, bool shlo_composite_inlining) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  options->shlo_composite_inlining = shlo_composite_inlining;
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtGetRuntimeOptionsShloCompositeInlining(
-    LiteRtRuntimeOptions options, bool* shlo_composite_inlining) {
-  LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
-      << "options is null.";
-  LITERT_RETURN_IF_ERROR(shlo_composite_inlining,
-                         litert::ErrorStatusBuilder::InvalidArgument())
-      << "shlo_composite_inlining is null.";
-  *shlo_composite_inlining = options->shlo_composite_inlining;
-  return kLiteRtStatusOk;
-}
-
 LiteRtStatus LiteRtSetRuntimeOptionsEnableProfiling(
     LiteRtRuntimeOptions options, bool enable_profiling) {
   LITERT_RETURN_IF_ERROR(options, litert::ErrorStatusBuilder::InvalidArgument())
