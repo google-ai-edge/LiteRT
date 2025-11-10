@@ -19,20 +19,8 @@
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/runtime/ahwb_wrapper.h"
 #include "litert/runtime/event.h"
-
-#if LITERT_HAS_AHWB_SUPPORT
-#include <android/hardware_buffer.h>
-#else
-// Define a place holder AHardwareBuffer struct just to enable compilation.
-#ifdef __cplusplus
-extern "C" {
-#endif  // __cplusplus
-typedef struct AHardwareBuffer AHardwareBuffer;
-#ifdef __cplusplus
-}  // extern "C"
-#endif  // __cplusplus
-#endif  // LITERT_HAS_AHWB_SUPPORT
 
 namespace litert::internal {
 
