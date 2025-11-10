@@ -144,13 +144,13 @@ int main(int argc, char* argv[]) {
 
   bool all_flags_parsed =
       (ParseAndAddOptions<litert::CompilerOptions>(
-           *opts, run, litert::CompilerOptionsFromFlags) ||
+           *opts, run, litert::CompilerOptionsFromFlags) &&
        ParseAndAddOptions<litert::qualcomm::QualcommOptions>(
-           *opts, run, litert::qualcomm::QualcommOptionsFromFlags) ||
+           *opts, run, litert::qualcomm::QualcommOptionsFromFlags) &&
        ParseAndAddOptions<litert::google_tensor::GoogleTensorOptions>(
-           *opts, run, litert::google_tensor::GoogleTensorOptionsFromFlags) ||
+           *opts, run, litert::google_tensor::GoogleTensorOptionsFromFlags) &&
        ParseAndAddOptions<litert::intel_openvino::IntelOpenVinoOptions>(
-           *opts, run, litert::intel_openvino::IntelOpenVinoOptionsFromFlags) ||
+           *opts, run, litert::intel_openvino::IntelOpenVinoOptionsFromFlags) &&
        ParseAndAddOptions<litert::mediatek::MediatekOptions>(
            *opts, run, litert::mediatek::MediatekOptionsFromFlags));
 
