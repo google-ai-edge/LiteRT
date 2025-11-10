@@ -255,9 +255,7 @@ Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
     return soc_models.Error();
   }
   plugin.soc_models_ = *soc_models;
-  if (!options) {
-    plugin.options_ = options;
-  }
+  plugin.options_ = options;
 
   return plugin;
 }
@@ -298,12 +296,14 @@ Expected<std::vector<CompilerPlugin>> CompilerPlugin::LoadPlugins(
 CompilerPlugin::CompilerPlugin(CompilerPlugin&& other)
     : soc_models_(std::move(other.soc_models_)),
       lib_(std::move(other.lib_)),
+      options_(other.options_),
       plugin_api_(std::move(other.plugin_api_)),
       plugin_handle_(std::move(other.plugin_handle_)) {
   other.soc_models_ = {};
   other.plugin_api_ = {};
   other.lib_.Close();
   other.plugin_handle_ = nullptr;
+  other.options_ = nullptr;
 }
 
 CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
@@ -312,6 +312,7 @@ CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
     std::swap(lib_, other.lib_);
     std::swap(plugin_api_, other.plugin_api_);
     std::swap(plugin_handle_, other.plugin_handle_);
+    std::swap(options_, other.options_);
   }
   return *this;
 }
@@ -883,7 +884,7 @@ Expected<LiteRtCompilerOptions> CompilerPlugin::CompilerOptions() const {
   LiteRtOpaqueOptions opaque_options;
   LITERT_RETURN_IF_ERROR(LiteRtGetOpaqueOptions(options_, &opaque_options));
   LITERT_RETURN_IF_ERROR(
-      LiteRtFindCompilerOptions(options_->options, &compiler_options));
+      LiteRtFindCompilerOptions(opaque_options, &compiler_options));
   return compiler_options;
 }
 

@@ -81,6 +81,26 @@ TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
 }
 
+TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
+  auto litert_options = Options::Create();
+  auto compiler_options = CompilerOptions::Create();
+  compiler_options->SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+  litert_options->AddOpaqueOptions(std::move(*compiler_options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr, litert_options->Get()));
+
+  auto compiler_options_from_plugin = plugin.CompilerOptions();
+  LiteRtCompilerOptionsPartitionStrategy strategy;
+  auto status = LiteRtGetCompilerOptionsPartitionStrategy(
+      *compiler_options_from_plugin, &strategy);
+  EXPECT_EQ(status, kLiteRtStatusOk);
+  EXPECT_EQ(strategy, kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+}
+
 TEST(CompilerPluginTest, FindTestPluginNotFound) {
   auto plugin =
       CompilerPlugin::FindPlugin("not_a_soc", {kTestPluginSearchPath});
