@@ -237,7 +237,7 @@ Expected<void> PrintTensorBuffer(TensorBuffer& buffer,
                                  const std::string& buffer_type, size_t index) {
   LITERT_ASSIGN_OR_RETURN(size_t size, buffer.Size());
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
-  LITERT_ASSIGN_OR_RETURN(auto buffer_type_enum, buffer.BufferType());
+  LITERT_ASSIGN_OR_RETURN(auto buffer_type_enum, buffer.BufferTypeCC());
 
   ABSL_LOG(INFO) << buffer_type << " buffer " << index << ":";
   ABSL_LOG(INFO) << "  Size: " << size << " bytes";

@@ -317,15 +317,6 @@ class TensorBuffer
     return static_cast<enum TensorBufferType>(tensor_buffer_type);
   }
 
-  [[deprecated(
-      "Use the overload that returns litert::TensorBufferType instead.")]]
-  Expected<LiteRtTensorBufferType> BufferType() const {
-    LiteRtTensorBufferType tensor_buffer_type;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetTensorBufferType(Get(), &tensor_buffer_type));
-    return tensor_buffer_type;
-  }
-
   // Returns true if the tensor buffer is an OpenCL memory.
   // Note: This function doesn't return Expected<bool> users can easily make
   // mistakes when using it.
