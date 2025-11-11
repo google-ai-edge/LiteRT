@@ -66,9 +66,8 @@ Expected<size_t> CompiledModel::FindOutputIndex(
 Expected<TensorBuffer> CompiledModel::CreateBufferImpl(
     const Environment& env, const TensorBufferRequirements& buffer_requirements,
     const RankedTensorType& tensor_type) {
-  LITERT_ASSIGN_OR_RETURN(
-      const std::vector<TensorBufferType>& supported_types,
-      buffer_requirements.SupportedTypesCC());
+  LITERT_ASSIGN_OR_RETURN(const auto supported_types,
+                          buffer_requirements.SupportedTypesCC());
   if (supported_types.empty()) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Input doesn't support any tensor buffer types");

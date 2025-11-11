@@ -271,7 +271,7 @@ jobject CreateJavaTensorBufferRequirements(
   }
 
   // Convert supported types to int array.
-  auto supported_types = requirements.SupportedTypes();
+  auto supported_types = requirements.SupportedTypesCC();
   if (!supported_types) {
     LITERT_LOG(LITERT_ERROR, "Failed to get supported types: %s",
                supported_types.Error().Message().c_str());

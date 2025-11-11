@@ -31,6 +31,8 @@
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/runtime/external_litert_buffer_context.h"
@@ -103,54 +105,49 @@ TEST(DispatchDelegate, CompiledModel) {
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
-      input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+      auto input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
-      input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+      auto input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg2,
-      input_buffer_requirements_arg2.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+      auto input_buffer_types_arg2,
+      input_buffer_requirements_arg2.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg2, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg3"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg3,
-      input_buffer_requirements_arg3.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg3,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+      auto input_buffer_types_arg3,
+      input_buffer_requirements_arg3.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg3, ElementsAre(TensorBufferType::kFastRpc,
+                                                   TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom2"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                                               kLiteRtTensorBufferTypeDmaBuf));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffer_types,
+                              output_buffer_requirements.SupportedTypesCC());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kFastRpc,
+                                               TensorBufferType::kDmaBuf));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.

@@ -24,13 +24,14 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_tensor_buffer_requirements_utils.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -211,10 +212,10 @@ Expected<TensorBufferRequirements> GetTensorBufferRequirements(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }
-  static constexpr std::array<const LiteRtTensorBufferType, 1> types = {
-      kLiteRtTensorBufferTypeHostMemory};
+  static constexpr std::array<const TensorBufferType, 1> types = {
+      TensorBufferType::kHostMemory};
   LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
-  return TensorBufferRequirements::Create(types, size, {}, OwnHandle::kNo);
+  return TensorBufferRequirements::Create(types, size, {});
 }
 
 LiteRtStatus GetInputRequirements(
@@ -223,7 +224,10 @@ LiteRtStatus GetInputRequirements(
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  LITERT_ASSIGN_OR_RETURN(
+      auto litert_requirements,
+      litert::internal::ToLiteRtTensorBufferRequirements(requirements));
+  *tensor_buffer_requirements = litert_requirements;
   return kLiteRtStatusOk;
 }
 
@@ -233,7 +237,10 @@ LiteRtStatus GetOutputRequirements(
     LiteRtTensorBufferRequirements* tensor_buffer_requirements) {
   LITERT_ASSIGN_OR_RETURN(auto requirements,
                           GetTensorBufferRequirements(*tensor_type));
-  *tensor_buffer_requirements = requirements.Get();
+  LITERT_ASSIGN_OR_RETURN(
+      auto litert_requirements,
+      litert::internal::ToLiteRtTensorBufferRequirements(requirements));
+  *tensor_buffer_requirements = litert_requirements;
   return kLiteRtStatusOk;
 }
 
