@@ -81,6 +81,7 @@ cc_library(
         "//litert/c:litert_gl_types",
         "//litert/c:litert_model_types",
         "//litert/c:litert_tensor_buffer",
+        "//litert/c:litert_tensor_buffer_requirements",
         "//litert/c:litert_tensor_buffer_types",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_event",
@@ -100,12 +101,14 @@ cc_library(
     hdrs = ["litert_external_litert_buffer_context.h"],
     deps = [
         ":litert_handle",
+        ":litert_tensor_buffer_requirements_utils",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_external_litert_buffer_context",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//tflite/c:common",
     ],
 )
@@ -208,6 +211,22 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
+cc_library(
+    name = "litert_tensor_buffer_requirements_utils",
+    srcs = ["litert_tensor_buffer_requirements_utils.cc"],
+    hdrs = ["litert_tensor_buffer_requirements_utils.h"],
+    visibility = ["//litert:litert_internal_users"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_tensor_buffer_requirements",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_tensor_buffer_types",
     ],
 )
 
@@ -538,6 +557,7 @@ cc_test(
         "//litert/cc:litert_model",
         "//litert/cc:litert_options",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc:litert_tensor_buffer_types",
         "//litert/test:common",
         "//litert/test:matchers",

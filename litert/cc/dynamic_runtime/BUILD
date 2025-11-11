@@ -476,39 +476,6 @@ litert_device_exec(
 )
 
 cc_library(
-    name = "litert_tensor_buffer_requirements",
-    hdrs = ["//litert/cc:litert_tensor_buffer_requirements.h"],
-    deps = [
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/types:span",
-    ] + select({
-        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
-        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
-        "//conditions:default": [
-            "//litert/c:litert_runtime_c_api_shared_lib",
-        ],
-    }),
-)
-
-cc_test(
-    name = "litert_tensor_buffer_requirements_test",
-    srcs = ["//litert/cc:litert_tensor_buffer_requirements_test.cc"],
-    deps = [
-        ":litert_tensor_buffer",
-        "//litert/c:litert_common",
-        "//litert/c:litert_tensor_buffer",
-        "//litert/c:litert_tensor_buffer_types",
-        "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/internal:litert_handle",
-        "@com_google_absl//absl/types:span",
-        "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_library(
     name = "litert_environment",
     hdrs = ["//litert/cc:litert_environment.h"],
     deps = [
@@ -561,6 +528,7 @@ cc_library(
         ":litert_options",
         ":litert_profiler",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements_utils",
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
@@ -640,7 +608,6 @@ cc_test(
 #         "@com_google_absl//absl/strings:string_view",
 #         "@com_google_absl//absl/types:span",
 #         "//litert/cc:litert_api_with_dynamic_runtime",
-#         "//litert/cc:litert_ranked_tensor_type",
 #         "//litert/runtime/accelerators/gpu:ml_drift_cl_accelerator_shared_lib",  # buildcleaner: keep
 #         "//litert/test:common",
 #         "//litert/test:matchers",
@@ -685,6 +652,25 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_handle",
+    ] + select({
+        "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
+        "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
+        "//conditions:default": [
+            "//litert/c:litert_runtime_c_api_shared_lib",
+        ],
+    }),
+)
+
+cc_library(
+    name = "litert_tensor_buffer_requirements_utils",
+    srcs = ["//litert/cc/internal:litert_tensor_buffer_requirements_utils.cc"],
+    hdrs = ["//litert/cc/internal:litert_tensor_buffer_requirements_utils.h"],
+    visibility = ["//litert:litert_internal_users"],
+    deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
+        "//litert/cc:litert_tensor_buffer_types",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,

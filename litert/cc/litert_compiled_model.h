@@ -29,6 +29,7 @@
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_tensor_buffer_requirements_utils.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -126,8 +127,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelInputBufferRequirements(
         Get(), signature_index, input_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
+    return litert::internal::ToTensorBufferRequirements(buffer_requirements);
   }
 
   // The same as above except this function takes input tensor name.
@@ -191,8 +191,7 @@ class CompiledModel
     LiteRtTensorBufferRequirements buffer_requirements;
     LITERT_RETURN_IF_ERROR(LiteRtGetCompiledModelOutputBufferRequirements(
         Get(), signature_index, output_index, &buffer_requirements));
-    return TensorBufferRequirements::WrapCObject(buffer_requirements,
-                                                 OwnHandle::kNo);
+    return litert::internal::ToTensorBufferRequirements(buffer_requirements);
   }
 
   // The same as above except this function takes output tensor name.
