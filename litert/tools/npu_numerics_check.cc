@@ -18,8 +18,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <utility>
@@ -64,10 +67,40 @@ ABSL_FLAG(bool, print_distribution, false,
 ABSL_FLAG(
     bool, print_difference_distribution, false,
     "Whether to print the difference distribution of the output buffers.");
+ABSL_FLAG(std::string, input_dir, "",
+          "An input folder containing .raw files with model input signatures "
+          "as their file names.");
 
 namespace litert {
 namespace {
 
+template <typename T>
+constexpr auto ToUnderlying(T t) noexcept {
+  return static_cast<std::underlying_type_t<T>>(t);
+}
+
+constexpr float kScale = 0.12345f;
+
+using FillFn = Expected<void> (*)(TensorBuffer&, const std::vector<char>&);
+template <typename T>
+Expected<void> FillInputTensor(TensorBuffer& buffer,
+                               const std::vector<char>& input_data);
+
+constexpr std::array<FillFn, ToUnderlying(ElementType::BFloat16) + 1>
+GetFillerTable() {
+  std::array<FillFn, ToUnderlying(ElementType::BFloat16) + 1> filler_table{};
+
+  filler_table[ToUnderlying(ElementType::Bool)] = &FillInputTensor<bool>;
+  filler_table[ToUnderlying(ElementType::Int8)] = &FillInputTensor<std::int8_t>;
+  filler_table[ToUnderlying(ElementType::Int16)] =
+      &FillInputTensor<std::int16_t>;
+  filler_table[ToUnderlying(ElementType::Int32)] =
+      &FillInputTensor<std::int32_t>;
+  filler_table[ToUnderlying(ElementType::Float16)] = &FillInputTensor<float>;
+  filler_table[ToUnderlying(ElementType::Float32)] = &FillInputTensor<float>;
+  filler_table[ToUnderlying(ElementType::BFloat16)] = &FillInputTensor<float>;
+  return filler_table;
+}
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
@@ -100,60 +133,92 @@ Expected<Options> GetOptions() {
   return options;
 }
 
-Expected<void> FillInputTensor(TensorBuffer& buffer, float scale) {
+template <typename T>
+Expected<void> FillInputTensor(TensorBuffer& buffer,
+                               const std::vector<char>& input_data) {
   LITERT_ASSIGN_OR_RETURN(auto type, buffer.TensorType());
   const auto& layout = type.Layout();
   size_t total_elements =
       std::accumulate(layout.Dimensions().begin(), layout.Dimensions().end(), 1,
                       std::multiplies<size_t>());
-
-  if (type.ElementType() == ElementType::Float16 ||
-      type.ElementType() == ElementType::Float32 ||
-      type.ElementType() == ElementType::BFloat16) {
-    std::vector<float> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = std::sin(i * scale);
+  if (input_data.empty()) {
+    // Use uint8_t for bool since vector<bool> is not compatible with
+    // MakeConstSpan.
+    if constexpr (std::is_same_v<T, bool>) {
+      std::vector<uint8_t> data(total_elements);
+      for (size_t i = 0; i < total_elements; ++i) {
+        data[i] = i % 2;
+      }
+      return buffer.Write<uint8_t>(absl::MakeConstSpan(data));
+    } else {
+      std::vector<T> data(total_elements);
+      unsigned int seed = 7;
+      for (size_t i = 0; i < total_elements; ++i) {
+        if constexpr (std::is_same_v<T, float>) {
+          data[i] = std::sin(i * kScale);
+        } else if constexpr (std::is_same_v<T, std::int32_t>) {
+          data[i] = rand_r(&seed) % 1024 + 1;
+        } else {
+          data[i] = i % std::numeric_limits<T>::max();
+        }
+      }
+      return buffer.Write<T>(absl::MakeConstSpan(data));
     }
-    return buffer.Write<float>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int32) {
-    std::vector<int32_t> data(total_elements);
-    unsigned int seed = 7;
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = rand_r(&seed) % 1024 + 1;
-    }
-    return buffer.Write<int32_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int16) {
-    std::vector<int16_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 2048;
-    }
-    return buffer.Write<int16_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::Int8) {
-    std::vector<int8_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 256 - 128;
-    }
-    return buffer.Write<int8_t>(absl::MakeConstSpan(data));
-  } else if (type.ElementType() == ElementType::UInt8) {
-    std::vector<uint8_t> data(total_elements);
-    for (size_t i = 0; i < total_elements; ++i) {
-      data[i] = i % 256;
-    }
-    return buffer.Write<uint8_t>(absl::MakeConstSpan(data));
   } else {
-    return Error(kLiteRtStatusErrorInvalidArgument,
-                 "Unsupported element type for filling tensor.");
+    auto buffer_size = buffer.Size();
+    if (input_data.size() != buffer_size.Value()) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrFormat("Mismatched input size, input data size: %d bytes != "
+                          "model buffer size: %d bytes.",
+                          input_data.size(), buffer_size.Value()));
+    }
+    return buffer.Write<T>(absl::Span<T>(
+        reinterpret_cast<T*>(const_cast<char*>(input_data.data())),
+        input_data.size() / sizeof(T)));
   }
+}
+
+Expected<std::vector<char>> ReadDataFromFile(const std::string& input_dir,
+                                             absl::string_view input_name) {
+  const auto input_file_name = std::string(input_name.data()) + ".raw";
+  const auto input_file_path =
+      std::filesystem::path(input_dir) / input_file_name;
+
+  std::ifstream file(input_file_path, std::ios::binary);
+  if (!file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to find input file " + input_file_path.string());
+  }
+  std::vector<char> input_data(std::filesystem::file_size(input_file_path));
+  file.read(input_data.data(), input_data.size());
+  return input_data;
 }
 
 // Creates and fills input buffers for a given compiled model.
 Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffers(
-    const CompiledModel& compiled_model, size_t signature_index, float scale) {
-  LITERT_ASSIGN_OR_RETURN(auto input_buffers,
-                          compiled_model.CreateInputBuffers(signature_index));
+    const CompiledModel& compiled_model, absl::string_view signature_key,
+    const std::vector<absl::string_view>& input_names,
+    const std::string& input_dir) {
+  std::vector<TensorBuffer> input_buffers;
+  for (const auto& input_name : input_names) {
+    LITERT_ASSIGN_OR_RETURN(auto input_buffer, compiled_model.CreateInputBuffer(
+                                                   signature_key, input_name));
 
-  for (auto& buffer : input_buffers) {
-    LITERT_RETURN_IF_ERROR(FillInputTensor(buffer, scale));
+    LITERT_ASSIGN_OR_RETURN(auto type, input_buffer.TensorType());
+    FillFn filler_func = GetFillerTable()[ToUnderlying(type.ElementType())];
+    if (!filler_func) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Unsupported element type for filling tensor.");
+    }
+    if (input_dir.empty()) {
+      LITERT_RETURN_IF_ERROR(filler_func(input_buffer, {}));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(auto input_data,
+                              ReadDataFromFile(input_dir, input_name));
+      LITERT_RETURN_IF_ERROR(filler_func(input_buffer, input_data));
+    }
+    input_buffers.emplace_back(std::move(input_buffer));
   }
   return input_buffers;
 }
@@ -538,14 +603,22 @@ Expected<void> RunModel() {
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
+  std::string input_dir = absl::GetFlag(FLAGS_input_dir);
 
-  float input_scale = 0.12345f;
+  LITERT_ASSIGN_OR_RETURN(auto cpu_signatures, cpu_model.GetSignatures());
+  const auto cpu_input_names = cpu_signatures[signature_index].InputNames();
+
+  std::vector<litert::TensorBuffer> cpu_input_buffers;
+  if (!input_dir.empty()) {
+    ABSL_LOG(INFO) << "Using inputs from: " << input_dir;
+  }
 
   // Create and fill input buffers
   LITERT_ASSIGN_OR_RETURN(
-      auto cpu_input_buffers,
-      CreateAndFillInputBuffers(compiled_model_cpu, signature_index,
-                                input_scale));
+      cpu_input_buffers,
+      CreateAndFillInputBuffers(compiled_model_cpu,
+                                cpu_signatures[signature_index].Key(),
+                                cpu_input_names, input_dir));
   LITERT_ASSIGN_OR_RETURN(
       auto npu_input_buffers,
       compiled_model_npu.CreateInputBuffers(signature_index));
