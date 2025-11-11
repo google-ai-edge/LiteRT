@@ -17,6 +17,9 @@
 #include <utility>
 #include <vector>
 
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
+
 #if defined(__ANDROID__)
 #include "platforms/darwinn/tachyon/core/fence/fence.h"
 #endif
@@ -29,8 +32,6 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "third_party/darwinn/driver_shared/fence/fence_test_util.h"
 #include "litert/c/internal/litert_dispatch_delegate.h"
-#include "litert/c/litert_common.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/internal/litert_dispatch_delegate.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
@@ -42,10 +43,6 @@
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_cascade_model_test_vectors.h"
-#include "tflite/c/c_api_opaque.h"
-#include "tflite/c/common.h"
-#include "tflite/interpreter.h"
-#include "tflite/signature_runner.h"
 
 using litert::testing::MakeRuntimeFromTestFileWithNpuModel;
 using testing::ElementsAre;
@@ -111,49 +108,44 @@ TEST(DispatchDelegate, CompiledModel) {
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
-      input_buffer_requirements_arg0.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeAhwb));
+      auto input_buffer_types_arg0,
+      input_buffer_requirements_arg0.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg0, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
-      input_buffer_requirements_arg1.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeAhwb));
+      auto input_buffer_types_arg1,
+      input_buffer_requirements_arg1.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg1, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg2,
-      input_buffer_requirements_arg2.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(kLiteRtTensorBufferTypeAhwb));
+      auto input_buffer_types_arg2,
+      input_buffer_requirements_arg2.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg2, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg3"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg3,
-      input_buffer_requirements_arg3.SupportedTypes());
-  EXPECT_THAT(input_buffer_types_arg3,
-              ElementsAre(kLiteRtTensorBufferTypeAhwb));
+      auto input_buffer_types_arg3,
+      input_buffer_requirements_arg3.SupportedTypesCC());
+  EXPECT_THAT(input_buffer_types_arg3, ElementsAre(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom2"));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
-      output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeAhwb));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffer_types,
+                              output_buffer_requirements.SupportedTypesCC());
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kAhwb));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.

@@ -21,9 +21,11 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_tensor_buffer_requirements_utils.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -184,10 +186,11 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
   LITERT_ASSERT_OK(
       Api().get_input_requirements(nullptr, 0, &litert_t, &requirements));
-  auto req =
-      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto req, litert::internal::ToTensorBufferRequirements(requirements));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypesCC());
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
+  LiteRtDestroyTensorBufferRequirements(requirements);
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
@@ -196,10 +199,11 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   const auto litert_t = static_cast<LiteRtRankedTensorType>(t);
   LITERT_ASSERT_OK(
       Api().get_output_requirements(nullptr, 0, &litert_t, &requirements));
-  auto req =
-      TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto req, litert::internal::ToTensorBufferRequirements(requirements));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypesCC());
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
+  LiteRtDestroyTensorBufferRequirements(requirements);
 }
 
 TEST_F(ExampleDispatchTest, RegisterBuffer) {

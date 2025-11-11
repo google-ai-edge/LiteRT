@@ -23,7 +23,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_tensor_buffer_types.h"
-#include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_tensor_buffer_requirements_utils.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 #include "litert/cc/litert_tensor_buffer_types.h"
 
@@ -77,21 +77,19 @@ TEST(TensorBufferRequirements, NotOwned) {
           /*num_strides=*/0, /*strides=*/nullptr, &litert_requirements),
       kLiteRtStatusOk);
 
-  auto requirements = litert::TensorBufferRequirements::WrapCObject(
-      litert_requirements, litert::OwnHandle::kNo);
+  auto requirements =
+      litert::internal::ToTensorBufferRequirements(litert_requirements);
 
-  auto supported_types = requirements.SupportedTypesCC();
+  auto supported_types = requirements->SupportedTypesCC();
   ASSERT_TRUE(supported_types);
   ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
   for (auto i = 0; i < supported_types->size(); ++i) {
     ASSERT_EQ((*supported_types)[i], kSupportedTensorBufferTypes[i]);
   }
 
-  auto size = requirements.BufferSize();
+  auto size = requirements->BufferSize();
   ASSERT_TRUE(size);
   ASSERT_EQ(*size, kBufferSize);
-
-  ASSERT_EQ(requirements.Get(), litert_requirements);
 
   LiteRtDestroyTensorBufferRequirements(litert_requirements);
 }
