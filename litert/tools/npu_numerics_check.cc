@@ -73,9 +73,34 @@ ABSL_FLAG(std::string, input_dir, "",
 
 namespace litert {
 namespace {
+
+template <typename T>
+constexpr auto ToUnderlying(T t) noexcept {
+  return static_cast<std::underlying_type_t<T>>(t);
+}
+
 constexpr float kScale = 0.12345f;
-using FillFn =
-    std::function<Expected<void>(TensorBuffer&, const std::vector<char>&)>;
+
+using FillFn = Expected<void> (*)(TensorBuffer&, const std::vector<char>&);
+template <typename T>
+Expected<void> FillInputTensor(TensorBuffer& buffer,
+                               const std::vector<char>& input_data);
+
+constexpr std::array<FillFn, ToUnderlying(ElementType::BFloat16) + 1>
+GetFillerTable() {
+  std::array<FillFn, ToUnderlying(ElementType::BFloat16) + 1> filler_table{};
+
+  filler_table[ToUnderlying(ElementType::Bool)] = &FillInputTensor<bool>;
+  filler_table[ToUnderlying(ElementType::Int8)] = &FillInputTensor<std::int8_t>;
+  filler_table[ToUnderlying(ElementType::Int16)] =
+      &FillInputTensor<std::int16_t>;
+  filler_table[ToUnderlying(ElementType::Int32)] =
+      &FillInputTensor<std::int32_t>;
+  filler_table[ToUnderlying(ElementType::Float16)] = &FillInputTensor<float>;
+  filler_table[ToUnderlying(ElementType::Float32)] = &FillInputTensor<float>;
+  filler_table[ToUnderlying(ElementType::BFloat16)] = &FillInputTensor<float>;
+  return filler_table;
+}
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
@@ -174,26 +199,24 @@ Expected<std::vector<char>> ReadDataFromFile(const std::string& input_dir,
 Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffers(
     const CompiledModel& compiled_model, absl::string_view signature_key,
     const std::vector<absl::string_view>& input_names,
-    const std::string& input_dir,
-    const std::map<ElementType, FillFn>& filler_functions) {
+    const std::string& input_dir) {
   std::vector<TensorBuffer> input_buffers;
   for (const auto& input_name : input_names) {
     LITERT_ASSIGN_OR_RETURN(auto input_buffer, compiled_model.CreateInputBuffer(
                                                    signature_key, input_name));
 
     LITERT_ASSIGN_OR_RETURN(auto type, input_buffer.TensorType());
-    auto it = filler_functions.find(type.ElementType());
-    if (it != filler_functions.end()) {
-      auto selected_filler = it->second;
-      if (input_dir.empty()) {
-        LITERT_RETURN_IF_ERROR(selected_filler(input_buffer, {}));
-      } else {
-        LITERT_ASSIGN_OR_RETURN(auto input_data, ReadDataFromFile(input_dir, input_name));
-        LITERT_RETURN_IF_ERROR(selected_filler(input_buffer, input_data));
-      }
-    } else {
+    FillFn filler_func = GetFillerTable()[ToUnderlying(type.ElementType())];
+    if (!filler_func) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Unsupported element type for filling tensor.");
+    }
+    if (input_dir.empty()) {
+      LITERT_RETURN_IF_ERROR(filler_func(input_buffer, {}));
+    } else {
+      LITERT_ASSIGN_OR_RETURN(auto input_data,
+                              ReadDataFromFile(input_dir, input_name));
+      LITERT_RETURN_IF_ERROR(filler_func(input_buffer, input_data));
     }
     input_buffers.emplace_back(std::move(input_buffer));
   }
@@ -585,15 +608,6 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto cpu_signatures, cpu_model.GetSignatures());
   const auto cpu_input_names = cpu_signatures[signature_index].InputNames();
 
-  std::map<ElementType, FillFn> filler_functions;
-  filler_functions[ElementType::Bool] = &FillInputTensor<bool>;
-  filler_functions[ElementType::Int8] = &FillInputTensor<std::int8_t>;
-  filler_functions[ElementType::Int16] = &FillInputTensor<std::int16_t>;
-  filler_functions[ElementType::Int32] = &FillInputTensor<std::int32_t>;
-  filler_functions[ElementType::Float16] = &FillInputTensor<float>;
-  filler_functions[ElementType::Float32] = &FillInputTensor<float>;
-  filler_functions[ElementType::BFloat16] = &FillInputTensor<float>;
-
   std::vector<litert::TensorBuffer> cpu_input_buffers;
   if (!input_dir.empty()) {
     ABSL_LOG(INFO) << "Using inputs from: " << input_dir;
@@ -604,7 +618,7 @@ Expected<void> RunModel() {
       cpu_input_buffers,
       CreateAndFillInputBuffers(compiled_model_cpu,
                                 cpu_signatures[signature_index].Key(),
-                                cpu_input_names, input_dir, filler_functions));
+                                cpu_input_names, input_dir));
   LITERT_ASSIGN_OR_RETURN(
       auto npu_input_buffers,
       compiled_model_npu.CreateInputBuffers(signature_index));
