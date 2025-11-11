@@ -269,6 +269,7 @@ _HEADER_FILES_FOR_SHARED_LIB = [
     "litert_delegate_wrapper.h",
     "litert_dispatch_delegate.h",
     "litert_external_litert_buffer_context.h",
+    "litert_logging.h",
     "litert_tensor_buffer_registry.h",
 ]
 

@@ -112,7 +112,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
 
   if (use_gpu) {
     hardware_accelerators |= HwAccelerators::kGpu;
-    LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
+    LITERT_ASSIGN_OR_ABORT(auto& gpu_options,
+                           compilation_options.GetGpuOptions());
     // Enable benchmark mode to run clFinish() after each inference.
     gpu_options.EnableBenchmarkMode(/*enabled=*/true);
     if (gpu_backend == "webgpu") {
@@ -134,8 +135,6 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     if (use_profiler) {
       gpu_options.SetPriority(GpuOptions::Priority::kLow);
     }
-
-    compilation_options.AddOpaqueOptions(std::move(gpu_options));
   }
 
   if (use_cpu || !require_full_delegation) {

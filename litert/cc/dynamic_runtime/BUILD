@@ -78,7 +78,6 @@ cc_library(
     deps = [
         ":litert_environment",
         ":litert_tensor_buffer",
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc/internal:litert_handle",
@@ -88,6 +87,7 @@ cc_library(
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
         "//conditions:default": [
             "//litert/c:litert_runtime_c_api_shared_lib",
+            "//litert/c/internal:litert_logging",
         ],
     }),
 )
@@ -661,6 +661,7 @@ cc_test(
 
 cc_library(
     name = "litert_options",
+    srcs = ["//litert/cc:litert_options.cc"],
     hdrs = ["//litert/cc:litert_options.h"],
     deps = [
         ":litert_custom_op_kernel",
@@ -668,6 +669,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/internal:litert_handle",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,

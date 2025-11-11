@@ -68,13 +68,11 @@ namespace litert {
 namespace {
 
 Expected<Options> CreateGpuOptions(bool external_tensors_mode) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
-
-  LITERT_RETURN_IF_ERROR(
-      gpu_options.EnableExternalTensorsMode(external_tensors_mode));
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
+  LITERT_RETURN_IF_ERROR(
+      gpu_options.EnableExternalTensorsMode(external_tensors_mode));
   return std::move(options);
 }
 
@@ -334,10 +332,10 @@ TEST_P(CompiledModelGpuTest, PartialDelegation) {
       HwAccelerators::kGpu | HwAccelerators::kCpu;
   auto compilation_options = Options::Create();
   compilation_options->SetHardwareAccelerators(accelerator_flags);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options,
+                              compilation_options->GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
-  compilation_options->AddOpaqueOptions(std::move(gpu_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, model, *compilation_options));
@@ -399,10 +397,10 @@ TEST_P(CompiledModelGpuTest, PartialDelegationNoCpuFallbackError) {
 
   auto compilation_options = Options::Create();
   compilation_options->SetHardwareAccelerators(HwAccelerators::kGpu);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options,
+                              compilation_options->GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
-  compilation_options->AddOpaqueOptions(std::move(gpu_options));
 
   auto compiled_model_res =
       CompiledModel::Create(*env, model, *compilation_options);
@@ -548,7 +546,8 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
@@ -556,9 +555,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   LITERT_ASSERT_OK(
       gpu_options.EnableExternalTensorsMode(CompiledModelGpuTest::GetParam()));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(env, model, options));
@@ -630,15 +627,14 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, litert::Environment::Create({}));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& gpu_options, options.GetGpuOptions());
   LITERT_ASSERT_OK(
       gpu_options.SetPrecision(GpuOptions::Precision::kFp32));
   LITERT_ASSERT_OK(
       gpu_options.SetBufferStorageType(GpuOptions::BufferStorageType::kBuffer));
 
-  LITERT_ASSERT_OK_AND_ASSIGN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
                               CompiledModel::Create(env, model, options));

@@ -30,13 +30,11 @@
 
 namespace {
 litert::Expected<litert::Options> CreateGpuOptions(bool external_tensors_mode) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_options, litert::GpuOptions::Create());
-
-  LITERT_RETURN_IF_ERROR(gpu_options.EnableExternalTensorsMode(external_tensors_mode));
   LITERT_ASSIGN_OR_RETURN(litert::Options options, litert::Options::Create());
-  options.SetHardwareAccelerators(kLiteRtHwAcceleratorGpu);
-  gpu_options.SetDelegatePrecision(kLiteRtDelegatePrecisionFp32);
-  options.AddOpaqueOptions(std::move(gpu_options));
+  options.SetHardwareAccelerators(litert::HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto &gpu_options, options.GetGpuOptions());
+  LITERT_RETURN_IF_ERROR(gpu_options.EnableExternalTensorsMode(external_tensors_mode));
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32));
   return std::move(options);
 }
 }  // namespace
