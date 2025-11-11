@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <cstring>
 #include <utility>
 
 #include <gmock/gmock.h>
@@ -283,5 +284,56 @@ TEST(RewriterTest, AddOpAndMulOpToDivOpTransformation) {
   EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflDiv);
   EXPECT_EQ(subgraph.Tensors().size(), 2);
 }
+
+TEST(RewriterTest, BuildWeightsSuccess) {
+  static constexpr absl::string_view kData = "911GT3RS";
+  absl::Span<const uint8_t> data = absl::MakeConstSpan(
+      reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
+  LiteRtRewriterT rewriter;
+  LiteRtWeightsT null_weights;
+  null_weights.SetBufferManager(nullptr);
+  auto& tensor =
+      rewriter.BuildTensor(null_weights, Quantization(), TensorType());
+  auto& weights = rewriter.BuildWeights(data.data(), data.size(), &tensor);
+  EXPECT_EQ(weights.Buffer().Size(), kData.size());
+  EXPECT_EQ(tensor.Weights().Buffer().Size(), kData.size());
+  EXPECT_EQ(memcmp(weights.Buffer().Data(), kData.data(), kData.size()), 0);
+}
+
+TEST(RewriterTest, TransforWeightsAfterApplyingChangesSuccess) {
+  static constexpr absl::string_view kData = "911GT3RS";
+  absl::Span<const uint8_t> data = absl::MakeConstSpan(
+      reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
+  BufferManager manager;
+  LiteRtSubgraphT subgraph = LiteRtSubgraphT(&manager);
+  // Scope to ensure that the rewriter is destroyed after the changes are
+  // applied.
+  {
+    LiteRtRewriterT rewriter;
+    LiteRtTensorT input_tensor;
+    LiteRtTensorT output_tensor;
+    LiteRtWeightsT null_weights;
+    null_weights.SetBufferManager(nullptr);
+    auto& const_tensor = rewriter.BuildTensor(null_weights, Quantization(),
+                                              TensorType(), kTensorName);
+
+    auto& weights =
+        rewriter.BuildWeights(data.data(), data.size(), &const_tensor);
+    EXPECT_EQ(memcmp(weights.Buffer().Data(), kData.data(), kData.size()), 0);
+    rewriter.BuildOp(kLiteRtOpCodeTflAdd, {&const_tensor, &input_tensor},
+                     {&output_tensor});
+    rewriter.ApplyChanges(&subgraph);
+  }
+  ASSERT_EQ(subgraph.Ops().size(), 1);
+  ASSERT_EQ(subgraph.Ops().front()->Inputs().size(), 2);
+  auto const_tensor_after_apply_changes =
+      subgraph.Ops().front()->Inputs().front();
+  EXPECT_EQ(const_tensor_after_apply_changes->Weights().Buffer().Size(),
+            kData.size());
+  EXPECT_EQ(memcmp(const_tensor_after_apply_changes->Weights().Buffer().Data(),
+                   kData.data(), kData.size()),
+            0);
+}
+
 }  // namespace
 }  // namespace litert::internal

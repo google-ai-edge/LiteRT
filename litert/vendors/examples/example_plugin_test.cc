@@ -103,8 +103,9 @@ TEST(TestCallDummyPlugin, RegisterAllTransformations) {
   LiteRtParamIndex num_transformations;
   LITERT_ASSERT_OK(LiteRtCompilerPluginRegisterAllTransformations(
       plugin.get(), &transformations, &num_transformations));
-  ASSERT_EQ(num_transformations, 1);
-  ASSERT_STREQ(transformations[0].name, "MyTransformation");
+  ASSERT_EQ(num_transformations, 2);
+  ASSERT_STREQ(transformations[0].name, "MyTransformation0");
+  ASSERT_EQ(transformations[0].benefit, 100);
 }
 
 }  // namespace

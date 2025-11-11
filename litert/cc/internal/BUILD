@@ -374,6 +374,7 @@ cc_library(
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
+        "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "@com_google_absl//absl/strings:string_view",
@@ -413,11 +414,15 @@ cc_library(
         ":litert_detail",
         ":litert_extended_model",
         ":litert_handle",
+        ":litert_op_options",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c:litert_rewriter",
         "//litert/cc:litert_expected",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_ranked_tensor_type",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -426,6 +431,7 @@ cc_test(
     srcs = ["litert_rewriter_test.cc"],
     deps = [
         ":litert_extended_model",
+        ":litert_op_options",
         ":litert_rewriter",
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
@@ -433,9 +439,11 @@ cc_test(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
         "//litert/core/model",
         "//litert/core/model:buffer_manager",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

@@ -22,14 +22,17 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_layout.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
 
@@ -169,6 +172,45 @@ TEST(CcRewriterTest, TestBuildOp) {
   EXPECT_EQ(op.Inputs().size(), 2);
   EXPECT_EQ(op.Outputs().size(), 1);
   EXPECT_EQ(op.Code(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(CcRewriterTest, TestBuildWeights) {
+  const float kData[] = {1.0f, 2.0f, 3.0f};
+  absl::Span<const float> data = absl::MakeConstSpan(kData);
+
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  LiteRtTensorT litert_tensor_0;
+  RankedTensorType tensor_type(kTensorType);
+
+  auto tensor_spec = RankedTensorSpecBuilder(tensor_type).Build();
+  auto tensor = cc_rewriter.BuildTensor(tensor_spec);
+  auto weights = cc_rewriter.BuildWeights<float>(data, tensor.Value());
+
+  EXPECT_TRUE(weights.HasValue());
+  EXPECT_EQ(weights.Value().Get()->Buffer().Size(),
+            data.size() * sizeof(float));
+  const float* weights_data =
+      reinterpret_cast<const float*>(weights.Value().Get()->Buffer().Data());
+  for (int i = 0; i < data.size(); ++i) {
+    EXPECT_EQ(weights_data[i], data[i]);
+  }
+}
+
+TEST(CcRewriterTest, TestSetOpOptions) {
+  LiteRtRewriterT rewriter;
+  Rewriter cc_rewriter(&rewriter);
+  OpInputs inputs;
+  OpOutputs outputs;
+  auto op = cc_rewriter.BuildOp(kLiteRtOpCodeTflAdd, inputs, outputs);
+  {
+    AddOptions add_options;
+    add_options.fused_activation_function = kActivationFunctionTypeRelu;
+    cc_rewriter.SetOpOptions<AddOptions>(op, std::move(add_options));
+  }
+  auto res = GetOptionsAs<AddOptions>(op.Get());
+  ASSERT_TRUE(res.HasValue());
+  EXPECT_EQ(res.Value().fused_activation_function, kActivationFunctionTypeRelu);
 }
 
 }  // namespace

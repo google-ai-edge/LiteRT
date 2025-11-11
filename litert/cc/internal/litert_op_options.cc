@@ -21,6 +21,8 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/c/litert_op_options.h"
+#include "litert/c/litert_rewriter.h"  // IWYU pragma: keep
+#include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 
 namespace litert {
@@ -66,7 +68,7 @@ LiteRtStatus RmsNormOpts::InitFromOp(LiteRtOp litert_op) {
   if (raw_epsilon.IsNull()) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  epsilon  = raw_epsilon.AsFloat();
+  epsilon = raw_epsilon.AsFloat();
   return kLiteRtStatusOk;
 }
 
@@ -82,6 +84,12 @@ LiteRtStatus AddOptions::InitFromOp(LiteRtOp op) {
   this->op = op;
 
   return kLiteRtStatusOk;
+}
+
+Expected<void> AddOptions::SetOpOptions(LiteRtRewriter rewriter) {
+  LITERT_RETURN_IF_ERROR(
+      LiteRtRewriterBuildAddOpOption(rewriter, op, &fused_activation_function));
+  return Expected<void>();
 }
 
 LiteRtStatus BatchMatmulOptions::InitFromOp(LiteRtOp op) {

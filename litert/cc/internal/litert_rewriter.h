@@ -16,10 +16,13 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
 
 // Model Rewriter. C++ equivalent of LiteRtRewriter.
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
@@ -28,6 +31,8 @@
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
+#include "litert/cc/internal/litert_op_options.h"
 
 namespace litert {
 
@@ -92,6 +97,18 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
   // For ranked tensors.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
 
+  // Build weights for a tensor.
+  template <typename T>
+  Expected<Weights> BuildWeights(absl::Span<const T> data,
+                                 Tensor& tensor) const {
+    const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
+    size_t size_uint8 = data.size() * sizeof(T);
+    LiteRtWeights weights;
+    internal::AssertOk(LiteRtRewriterBuildWeights, this->Get(), data_uint8,
+                       size_uint8, tensor.Get(), &weights);
+    return Weights(weights);
+  }
+
   // Trait for building scalars.
   Expected<Tensor> BuildScalar(
       LiteRtElementType element_type,
@@ -103,9 +120,20 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
     return BuildOp(src.Code(), inputs, outputs);
   };
 
+  template <typename T>
+  Expected<void> SetOpOptions(Op& op, T&& options) const {
+    if constexpr (!std::is_base_of_v<OpOptions, T>) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+    options.op = op.Get();
+    options.SetOpOptions(this->Get());
+
+    return Expected<void>();
+  }
+
   // Record the op to be erased.
   void EraseOp(Op& op) const {
-    internal::AssertOk(LiteRtRewriterEraseOp, op.Get(), this->Get());
+    internal::AssertOk(LiteRtRewriterEraseOp, this->Get(), op.Get());
   }
 };
 
