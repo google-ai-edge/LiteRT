@@ -12,22 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
-#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
+#ifndef THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
+#define THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
 
-// Model Rewriter. C++ equivalent of LiteRtRewriter.
+// Model Builder. C++ equivalent of LiteRtBuilder.
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <utility>
 
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_builder.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_detail.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_op_options.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_ranked_tensor_type.h"
 
 namespace litert {
 
@@ -85,12 +90,24 @@ class RankedTensorSpecBuilder {
   std::optional<std::string> tensor_name_;
 };
 
-class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
+class Builder : public internal::NonOwnedHandle<LiteRtBuilder> {
  public:
-  explicit Rewriter(LiteRtRewriter rewriter)
-      : internal::NonOwnedHandle<LiteRtRewriter>(rewriter) {}
+  explicit Builder(LiteRtBuilder builder)
+      : internal::NonOwnedHandle<LiteRtBuilder>(builder) {}
   // For ranked tensors.
   Expected<Tensor> BuildTensor(const RankedTensorSpec& spec) const;
+
+  // Build weights for a tensor.
+  template <typename T>
+  Expected<Weights> BuildWeights(absl::Span<const T> data,
+                                 Tensor& tensor) const {
+    const uint8_t* data_uint8 = reinterpret_cast<const uint8_t*>(data.data());
+    size_t size_uint8 = data.size() * sizeof(T);
+    LiteRtWeights weights;
+    internal::AssertOk(LiteRtBuilderBuildWeights, this->Get(), data_uint8,
+                       size_uint8, tensor.Get(), &weights);
+    return Weights(weights);
+  }
 
   // Trait for building scalars.
   Expected<Tensor> BuildScalar(
@@ -103,12 +120,23 @@ class Rewriter : public internal::NonOwnedHandle<LiteRtRewriter> {
     return BuildOp(src.Code(), inputs, outputs);
   };
 
+  template <typename T>
+  Expected<void> SetOpOptions(Op& op, T&& options) const {
+    if constexpr (!std::is_base_of_v<OpOptions, T>) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument);
+    }
+    options.op = op.Get();
+    options.SetOpOptions(this->Get());
+
+    return Expected<void>();
+  }
+
   // Record the op to be erased.
   void EraseOp(Op& op) const {
-    internal::AssertOk(LiteRtRewriterEraseOp, op.Get(), this->Get());
+    internal::AssertOk(LiteRtBuilderEraseOp, this->Get(), op.Get());
   }
 };
 
 }  // namespace litert
 
-#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_REWRITER_H_
+#endif  // THIRD_PARTY_ODML_LITERT_LITERT_CC_LITERT_BUILDER_H_
