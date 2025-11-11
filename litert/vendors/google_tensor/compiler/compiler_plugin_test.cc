@@ -36,7 +36,7 @@ namespace {
 using ::litert::google_tensor::GoogleTensorOptions;
 
 TEST(TestGoogleTensorPlugin, GetConfigInfo) {
-  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "GoogleTensor");
+  ASSERT_STREQ(LiteRtGetCompilerPluginSocManufacturer(), "Google");
 
   auto plugin = CreatePlugin();
 
@@ -108,8 +108,8 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
 
   LiteRtCompiledResult compiled;
-  LITERT_ASSERT_OK(
-      LiteRtCompilerPluginCompile(plugin.get(), "g5", model.Get(), &compiled));
+  LITERT_ASSERT_OK(LiteRtCompilerPluginCompile(plugin.get(), "Tensor_G5",
+                                               model.Get(), &compiled));
 
   const void* byte_code;
   size_t byte_code_size;
