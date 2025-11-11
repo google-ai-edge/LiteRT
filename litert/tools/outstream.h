@@ -49,7 +49,7 @@ class UserStream {
       // File stream.
       LITERT_LOG(LITERT_INFO, "Setup file stream\n", "");
       auto ofstream = std::make_unique<std::ofstream>();
-      ofstream->open(flag.data());
+      ofstream->open(flag.data(), std::ios::out | std::ios::binary);
       ABSL_CHECK(!ofstream->fail()) << "Unable to open file: " << flag.data();
       return UserStream(std::move(ofstream));
     }
