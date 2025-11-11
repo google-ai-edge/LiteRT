@@ -5,6 +5,8 @@ ci/tools/python/wheel/BUILD:
 ci/tools/python/wheel/utils/BUILD:
 litert/build_common/special_rule.bzl:
 litert/build_common/strict.default.bzl:
+litert/cc/litert_friends.inc:
+litert/cc/litert_friends_def.inc:
 litert/compiler/BUILD:
 litert/core/util/perfetto_profiling.cc:
 litert/core/util/perfetto_profiling.h:
