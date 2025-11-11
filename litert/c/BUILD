@@ -99,6 +99,7 @@ cc_test(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "//litert/cc:litert_macros",
         "//litert/test:common",
@@ -352,14 +353,8 @@ cc_library(
 
 cc_library(
     name = "litert_tensor_buffer",
-    srcs = [
-        "litert_tensor_buffer.cc",
-        "litert_tensor_buffer_requirements.cc",
-    ],
-    hdrs = [
-        "litert_tensor_buffer.h",
-        "litert_tensor_buffer_requirements.h",
-    ],
+    srcs = ["litert_tensor_buffer.cc"],
+    hdrs = ["litert_tensor_buffer.h"],
     copts = litert_metal_opts(),
     linkopts = litert_android_linkopts() + gles_linkopts() + litert_metal_linkopts(),
     deps = [
@@ -369,6 +364,7 @@ cc_library(
         ":litert_gl_types",
         ":litert_model_types",
         ":litert_opencl_types",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         ":litert_webgpu_types",
         "//litert/c/internal:litert_logging",
@@ -376,9 +372,25 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/runtime:tensor_buffer",
+        "//litert/runtime:tensor_buffer_requirements",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
     ] + gles_deps(),
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "litert_tensor_buffer_requirements",
+    srcs = ["litert_tensor_buffer_requirements.cc"],
+    hdrs = ["litert_tensor_buffer_requirements.h"],
+    copts = litert_metal_opts(),
+    linkopts = litert_android_linkopts() + litert_metal_linkopts(),
+    deps = [
+        ":litert_common",
+        ":litert_tensor_buffer_types",
+        "//litert/cc:litert_macros",
+        "//litert/runtime:tensor_buffer_requirements",
+    ],
     alwayslink = 1,
 )
 
@@ -441,7 +453,7 @@ cc_test(
     linkopts = litert_android_linkopts(),
     deps = [
         ":litert_common",
-        ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         ":litert_tensor_buffer_types",
         "@com_google_googletest//:gtest_main",
     ],
@@ -486,6 +498,7 @@ cc_library(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_macros",
         "//litert/runtime:compiled_model",
@@ -512,6 +525,7 @@ cc_test(
         ":litert_model",
         ":litert_options",
         ":litert_tensor_buffer",
+        ":litert_tensor_buffer_requirements",
         "//litert/c/internal:litert_logging",
         "//litert/test:common",
         "//litert/test:matchers",
@@ -675,6 +689,7 @@ LITERT_C_API_COMMON_DEPS = [
     ":litert_profiler",
     ":litert_builder",
     ":litert_tensor_buffer",
+    ":litert_tensor_buffer_requirements",
     "//litert/c/internal:litert_accelerator_registration",
     "//litert/c/internal:litert_accelerator",
     "//litert/c/internal:litert_dispatch_delegate",
