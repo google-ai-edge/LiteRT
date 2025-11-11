@@ -288,9 +288,9 @@ absl::Status RealMain() {
     options.SetHardwareAccelerators(accelerator);
     // Set GPU compilation options.
   } else if (accelerator & litert::HwAccelerators::kGpu) {
-    LITERT_ASSIGN_OR_RETURN(auto gpu_compilation_options, GpuOptions::Create());
+    LITERT_ASSIGN_OR_RETURN(auto& gpu_compilation_options,
+                            options.GetGpuOptions());
     gpu_compilation_options.SetPrecision(GpuOptions::Precision::kFp32);
-    options.AddOpaqueOptions(std::move(gpu_compilation_options));
 
     options.SetHardwareAccelerators(accelerator);
   } else {

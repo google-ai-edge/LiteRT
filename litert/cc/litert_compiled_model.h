@@ -81,6 +81,18 @@ class CompiledModel
   // NPU accelerator in `hardware_accelerators` to use NPU properly.
   static Expected<CompiledModel> Create(litert::Environment& env,
                                         const litert::Model& model,
+                                        Options& compilation_options) {
+    LiteRtModel litert_model = model.Get();
+    LITERT_RETURN_IF_ERROR(compilation_options.Build());
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+    return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
+  }
+
+  [[deprecated("Use the version that takes non-const Options& instead.")]]
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        const litert::Model& model,
                                         const Options& compilation_options) {
     LiteRtModel litert_model = model.Get();
     LiteRtCompiledModel compiled_model;

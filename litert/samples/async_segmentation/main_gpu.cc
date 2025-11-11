@@ -47,7 +47,8 @@
 namespace {
 
 litert::Options CreateGpuOptions(bool use_gl_buffers) {
-  LITERT_ASSIGN_OR_ABORT(auto gpu_options, litert::GpuOptions::Create());
+  LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
+  LITERT_ASSIGN_OR_ABORT(auto& gpu_options, options.GetGpuOptions());
   if (use_gl_buffers) {
     LITERT_ABORT_IF_ERROR(
         gpu_options.SetPrecision(litert::GpuOptions::Precision::kFp32));
@@ -57,10 +58,9 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
   } else {
     LITERT_ABORT_IF_ERROR(gpu_options.EnableExternalTensorsMode(false));
   }
-  LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
+
   options.SetHardwareAccelerators(litert::HwAccelerators::kGpu |
                                   litert::HwAccelerators::kCpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
   return options;
 }
 

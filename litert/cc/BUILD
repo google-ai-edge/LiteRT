@@ -514,6 +514,7 @@ litert_device_test(
 #     data = ["//litert/test:testdata/simple_model.tflite"],
 #     tags = ["notap"],
 #     deps = [
+#         ":litert_common",
 #         ":litert_compiled_model",
 #         ":litert_environment",
 #         ":litert_expected",
@@ -547,6 +548,7 @@ litert_device_test(
 #         "requires-gpu-nvidia",
 #     ],
 #     deps = [
+#         ":litert_common",
 #         ":litert_compiled_model",
 #         ":litert_element_type",
 #         ":litert_environment",
@@ -1004,6 +1006,7 @@ cc_library(
 
 cc_library_with_testonly_vis(
     name = "litert_options",
+    srcs = ["litert_options.cc"],
     hdrs = ["litert_options.h"],
     vis = [
         # copybara:uncomment_begin(oss litert_lm)
@@ -1022,7 +1025,9 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_custom_op_kernel",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+        "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:litert_gpu_options",
     ],
 )
 
