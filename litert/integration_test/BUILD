@@ -233,10 +233,12 @@ litert_device_test(
 #
 # # Guitar QUALCOMM ----------------------------------------------------------------------------------
 #
+# # TODO: b/450621174 - Reenable flaky device tests.
+# # The tests commented out below are currently failing.
 # QUALCOMMM_GUITAR_TARGS_SMALL = [
 #     ":qnn_smoketest",
 #     "//litert/vendors/qualcomm:qnn_manager_device_test",
-#     "//litert/vendors/qualcomm/dispatch:dispatch_api_qualcomm_test",
+#     # "//litert/vendors/qualcomm/dispatch:dispatch_api_qualcomm_test",
 #     "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_device_test",
 #     "//litert/vendors/qualcomm/core/utils:utils_device_test",
 #     "//litert/vendors/qualcomm/core:tensor_pool_device_test",
@@ -244,12 +246,12 @@ litert_device_test(
 #     "//litert/vendors/qualcomm/core/wrappers/tests:tensor_wrapper_device_test",
 #     "//litert/vendors/qualcomm/core/wrappers/tests:param_wrapper_device_test",
 #     "//litert/vendors/qualcomm/core/wrappers/tests:quantize_params_wrapper_device_test",
-#     "//litert/runtime/dispatch:dispatch_delegate_qualcomm_test",
-#     "//litert/runtime/dispatch:dispatch_delegate_cascade_qualcomm_test",
-#     "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_qualcomm_test",
+#     # "//litert/runtime/dispatch:dispatch_delegate_qualcomm_test",
+#     # "//litert/runtime/dispatch:dispatch_delegate_cascade_qualcomm_test",
+#     # "//litert/runtime/dispatch:dispatch_delegate_mixed_cascade_qualcomm_test",
 #     "//litert/runtime/compiler:jit_compilation_qualcomm_test",
 #     "//litert/runtime:gl_buffer_device_test",
-#     "//litert/cc:litert_compiled_model_qualcomm_test",
+#     # "//litert/cc:litert_compiled_model_qualcomm_test",
 #     "//litert/cc/dynamic_runtime:litert_tensor_buffer_device_test",
 # ]
 #
