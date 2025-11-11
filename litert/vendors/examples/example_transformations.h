@@ -27,6 +27,8 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
                                           LiteRtRewriter rewriter_ptr);
 
+LiteRtStatus DummyTransformation(LiteRtOp op, LiteRtRewriter rewriter_ptr);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif

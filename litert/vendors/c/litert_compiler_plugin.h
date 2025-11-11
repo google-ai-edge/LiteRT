@@ -28,9 +28,13 @@ LITERT_DEFINE_HANDLE(LiteRtCompilerPlugin);
 
 // Artifact produced from compiling a selected partition of ops.
 LITERT_DEFINE_HANDLE(LiteRtCompiledResult);
+
+// Struct to hold information about a transformation. Append only.
 typedef struct {
-  const LiteRtPatternFn pattern;  // pointer to the pattern function pointer.
-  const char* name;
+  LiteRtPatternFn pattern;  // The function pointer of the pattern.
+  const char* name;         // The name of the transformation.
+  size_t benefit;  // All added transformations will be sorted by benefit
+                   // in descending order.
 } LiteRtTransformation;
 
 //

@@ -82,7 +82,13 @@ class CompiledResult {
 // Wraps vendor compiler plugin.
 class CompilerPlugin {
  public:
-  int GetNumTransformations() const { return transformations_.size(); }
+  // Get the number of transformations registered by the plugin.
+  size_t GetNumTransformations() const { return transformations_.size(); }
+
+  // Get the transformation at the given index.
+  LiteRtTransformation GetTransformation(int index) const {
+    return transformations_[index];
+  }
 
   using Ref = std::reference_wrapper<CompilerPlugin>;
 

@@ -38,6 +38,7 @@ LiteRtStatus SimpleAddOpToMulOpTransformation(LiteRtOp op,
   rewriter.EraseOp(root_op);
   return kLiteRtStatusOk;
 }
+
 LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
                                           LiteRtRewriter rewriter_ptr) {
   Rewriter rewriter = Rewriter(rewriter_ptr);
@@ -71,6 +72,10 @@ LiteRtStatus SqrtMeanSquareTransformation(LiteRtOp op,
   rewriter.EraseOp(square_op);
   rewriter.EraseOp(mean_op);
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus DummyTransformation(LiteRtOp op, LiteRtRewriter rewriter_ptr) {
+  return kLiteRtStatusPatternNoMatch;
 }
 
 }  // extern "C"

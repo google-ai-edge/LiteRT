@@ -123,5 +123,18 @@ TEST(TransformationTest, MatchesTwice) {
   EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
 }
 
+TEST(TransformationTest, SortTransformationsByBenefit) {
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+  ASSERT_EQ(plugins->size(), 1);
+  auto& plugin = plugins->front();
+  plugin.RegisterAllTransformations();
+  ASSERT_EQ(plugin.GetNumTransformations(), 2);
+  absl::string_view name_0 = plugin.GetTransformation(0).name;
+  absl::string_view name_1 = plugin.GetTransformation(1).name;
+  EXPECT_EQ(name_0, "MyTransformation0");
+  EXPECT_EQ(name_1, "MyTransformation1");
+}
+
 }  // namespace
 }  // namespace litert::internal
