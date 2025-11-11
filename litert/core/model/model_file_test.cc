@@ -760,6 +760,42 @@ TEST(ModelSerializeTest, TransferAndSerializeOffsetBuffers) {
   ASSERT_TRUE(serialized);
 }
 
+TEST(ModelSerializeTest,
+     LoadModelWithBytecodeThenAddMetadataSerializationSuccess) {
+  static constexpr absl::string_view kMetadataKey = "metadata_key";
+  static constexpr absl::string_view kMetadataValue = "metadata_value";
+  static constexpr absl::string_view kNpuModelPath = "simple_model_npu.tflite";
+
+  auto model = litert::testing::LoadTestFileModel(kNpuModelPath);
+  ASSERT_TRUE(model);
+  LITERT_ASSERT_OK(
+      model.AddMetadata(kMetadataKey.data(), kMetadataValue.data()));
+
+  auto serialized = SerializeModel(std::move(*model.Get()));
+  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
+
+  // Reload model using the cached buffer.
+  LiteRtModel result_model = nullptr;
+  EXPECT_EQ(LiteRtCreateModelFromBuffer(serialized->Data(), serialized->Size(),
+                                        &result_model),
+            kLiteRtStatusOk);
+
+  // Check dispatch op is present.
+  ASSERT_TRUE(result_model);
+  const auto& op = result_model->MainSubgraph()->Ops().front();
+  auto custom_op_code = GetCustomOpCode(*result_model, *op);
+  ASSERT_TRUE(custom_op_code.has_value());
+  EXPECT_EQ(*custom_op_code, "DISPATCH_OP");
+
+  // Check metadata is present.
+  const void* metadata;
+  size_t metadata_size;
+  LITERT_ASSERT_OK(LiteRtGetModelMetadata(result_model, kMetadataKey.data(),
+                                          &metadata, &metadata_size));
+  EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kMetadataValue);
+  LiteRtDestroyModel(result_model);
+}
+
 // Tests that explicitly check litert graph structure.
 //===---------------------------------------------------------------------------
 

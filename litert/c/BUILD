@@ -221,12 +221,14 @@ cc_library(
         ":litert_model_types",
         ":litert_op_code",
         "//litert/build_common:build_config",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_macros",
         "//litert/core/model",
         "//litert/core/model:model_load",
         "//tflite/core/c:private_c_api_types",
         "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
     ] + select({
         "//litert/build_common:build_include_npu_enabled": [
             "//litert/core/model:model_serialize",

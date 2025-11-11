@@ -224,6 +224,13 @@ LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
                                     const void** metadata_buffer,
                                     size_t* metadata_buffer_size);
 
+// Add metadata to the model. LiteRtModel copies key and metadata internally. It
+// doesn't take ownership of the key and metadata, so users can free them after
+// this API call.
+LiteRtStatus LiteRtAddModelMetadata(LiteRtModel model, const char* metadata_key,
+                                    const void* metadata_buffer,
+                                    size_t metadata_buffer_size);
+
 // Get the index of the entry subgraph.
 // TODO: b/365299994 - Figure out signatures.
 LiteRtStatus LiteRtGetMainModelSubgraphIndex(

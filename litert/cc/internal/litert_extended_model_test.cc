@@ -218,5 +218,36 @@ TEST(CcSubgraphTest, SimpleModel) {
   ASSERT_EQ(output_ranked_tensor_type->ElementType(), ElementType::Float32);
 }
 
+//===----------------------------------------------------------------------===//
+//                               CC Model                                     //
+//===----------------------------------------------------------------------===//
+
+TEST(CcModelTest, AddMetadataSuccess) {
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  constexpr absl::string_view kKey = "KEY";
+  constexpr absl::string_view kData = "DATA";
+  LITERT_ASSERT_OK(model.AddMetadata(kKey.data(), kData.data()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metadata, model.Metadata(kKey.data()));
+  EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(metadata.data()),
+                              metadata.size()),
+            kData);
+}
+
+TEST(CcModelTest, AddMetadataGetMetadataOutsideOfScopeSuccess) {
+  auto model = testing::LoadTestFileModel("one_mul.tflite");
+  constexpr absl::string_view kExpectedKey = "KEY";
+  constexpr absl::string_view kExpectedData = "DATA";
+  {
+    constexpr absl::string_view kKey = "KEY";
+    constexpr absl::string_view kData = "DATA";
+    LITERT_ASSERT_OK(model.AddMetadata(kKey.data(), kData.data()));
+  }
+  LITERT_ASSERT_OK_AND_ASSIGN(auto metadata,
+                              model.Metadata(kExpectedKey.data()));
+  EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(metadata.data()),
+                              metadata.size()),
+            kExpectedData);
+}
+
 }  // namespace
 }  // namespace litert

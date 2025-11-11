@@ -1035,7 +1035,7 @@ class LiteRtModelT {
   template <class... Args>
   LiteRtStatus PushMetadata(absl::string_view key, Args&&... args) {
     if (metadata_.find(std::string(key)) != metadata_.end()) {
-      return kLiteRtStatusErrorInvalidArgument;
+      return kLiteRtStatusErrorAlreadyExists;
     }
     const auto buf_id = Buffers()->RegisterOwnedBuffer(
         ::litert::OwningBufferRef<uint8_t>(std::forward<Args>(args)...));

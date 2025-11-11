@@ -269,6 +269,16 @@ class ExtendedModel : public litert::Model {
     return absl::MakeSpan(static_cast<const uint8_t*>(buffer), buffer_size);
   }
 
+  Expected<void> AddMetadata(const std::string& metadata_key,
+                             const std::string& metadata_data) {
+    LiteRtStatus status = LiteRtAddModelMetadata(
+        Get(), metadata_key.data(), metadata_data.data(), metadata_data.size());
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to add metadata");
+    }
+    return {};
+  }
+
   Expected<Subgraph> MainSubgraph() const {
     LiteRtParamIndex main_subgraph_index;
     internal::AssertOk(LiteRtGetMainModelSubgraphIndex, Get(),

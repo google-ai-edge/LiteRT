@@ -403,6 +403,53 @@ TEST(LiteRtModelTest, GetMetadata) {
   EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kData);
 }
 
+TEST(LiteRtModelTest, AddMetadataSuccess) {
+  static constexpr absl::string_view kKey = "KEY";
+  static constexpr absl::string_view kData = "DATA";
+
+  LiteRtModelT model;
+  LITERT_ASSERT_OK(
+      LiteRtAddModelMetadata(&model, kKey.data(), kData.data(), kData.size()));
+
+  const void* metadata;
+  size_t metadata_size;
+  LITERT_ASSERT_OK(
+      LiteRtGetModelMetadata(&model, kKey.data(), &metadata, &metadata_size));
+  EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kData);
+}
+
+TEST(LiteRtModelTest, AddMetadataGetMetadataOutsideOfScopeSuccess) {
+  LiteRtModelT model;
+  std::string kExpectedKey = "KEY";
+  std::string kExpectedData = "DATA";
+  // Scope to add metadata.
+  {
+    std::string kKey = "KEY";
+    std::string kData = "DATA";
+    LITERT_ASSERT_OK(LiteRtAddModelMetadata(&model, kKey.c_str(), kData.c_str(),
+                                            kData.size()));
+  }
+  const void* metadata;
+  size_t metadata_size;
+  LITERT_ASSERT_OK(LiteRtGetModelMetadata(&model, kExpectedKey.data(),
+                                          &metadata, &metadata_size));
+  EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kExpectedData.data());
+}
+
+TEST(LiteRtModelTest, AddMetadataExistingFails) {
+  static constexpr absl::string_view kKey = "KEY";
+  static constexpr absl::string_view kData = "DATA";
+
+  LiteRtModelT model;
+  LITERT_ASSERT_OK(
+      LiteRtAddModelMetadata(&model, kKey.data(), kData.data(), kData.size()));
+
+  // Adding again should fail.
+  EXPECT_THAT(
+      LiteRtAddModelMetadata(&model, kKey.data(), kData.data(), kData.size()),
+      IsError(kLiteRtStatusErrorAlreadyExists));
+}
+
 TEST(LiteRtModelTest, GetSubgraph) {
   LiteRtModelT model;
   auto& subgraph = model.EmplaceSubgraph();
@@ -443,10 +490,10 @@ TEST(LiteRtModelTest, SerializeModelWithSignaturesWithOneSignature) {
 
   // We expect this to fail on serialization if NPU is disabled, but signature
   // should be added regardless.
-  const LiteRtStatus status = LiteRtSerializeModelWithSignatures(
-      &model, &buf, &size, &offset,
-      /*destroy_model=*/false, signatures,
-      /*num_signatures=*/1, options);
+  const LiteRtStatus status =
+      LiteRtSerializeModelWithSignatures(&model, &buf, &size, &offset,
+                                         /*destroy_model=*/false, signatures,
+                                         /*num_signatures=*/1, options);
 
 #ifdef LITERT_BUILD_INCLUDE_NPU
   LITERT_ASSERT_OK(status);
@@ -530,10 +577,10 @@ TEST(LiteRtModelTest, SerializeModelWithSignaturesMultipleSubgraphs) {
   size_t offset = 0;
   const LiteRtModelSerializationOptions options = {/*bytecode_alignment=*/64};
 
-  const LiteRtStatus status = LiteRtSerializeModelWithSignatures(
-      &model, &buf, &size, &offset,
-      /*destroy_model=*/false, signatures,
-      /*num_signatures=*/2, options);
+  const LiteRtStatus status =
+      LiteRtSerializeModelWithSignatures(&model, &buf, &size, &offset,
+                                         /*destroy_model=*/false, signatures,
+                                         /*num_signatures=*/2, options);
 
 #ifdef LITERT_BUILD_INCLUDE_NPU
   LITERT_ASSERT_OK(status);
@@ -565,8 +612,8 @@ TEST(LiteRtModelTest, SerializeModelWithSignaturesMultipleSubgraphs) {
     EXPECT_EQ(sig_input_tensor, &input_tensor1);
 
     LiteRtTensor sig_output_tensor;
-    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(
-        signature, 0, &sig_output_tensor));
+    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(signature, 0,
+                                                           &sig_output_tensor));
     EXPECT_EQ(sig_output_tensor, &output_tensor1);
   }
 
@@ -585,8 +632,8 @@ TEST(LiteRtModelTest, SerializeModelWithSignaturesMultipleSubgraphs) {
     EXPECT_EQ(sig_input_tensor, &input_tensor2);
 
     LiteRtTensor sig_output_tensor;
-    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(
-        signature, 0, &sig_output_tensor));
+    LITERT_ASSERT_OK(LiteRtGetSignatureOutputTensorByIndex(signature, 0,
+                                                           &sig_output_tensor));
     EXPECT_EQ(sig_output_tensor, &output_tensor2);
   }
 

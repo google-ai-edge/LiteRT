@@ -22,6 +22,8 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
@@ -112,6 +114,32 @@ LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
   *metadata_buffer = m_buf->Data();
   *metadata_buffer_size = m_buf->Size();
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtAddModelMetadata(LiteRtModel model, const char* metadata_key,
+                                    const void* metadata_buffer,
+                                    size_t metadata_buffer_size) {
+  if (!model) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: model is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!metadata_key) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: metadata_key is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!metadata_buffer) {
+    LITERT_LOG(LITERT_ERROR, "LiteRtAddModelMetadata: metadata_buffer is null");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (metadata_buffer_size < 0) {
+    LITERT_LOG(LITERT_ERROR,
+               "LiteRtAddModelMetadata: metadata_buffer_size is negative");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return model->PushMetadata(
+      metadata_key, absl::Span<const uint8_t>(
+                        reinterpret_cast<const uint8_t*>(metadata_buffer),
+                        metadata_buffer_size));
 }
 
 LiteRtStatus LiteRtGetNumModelSignatures(LiteRtModel model,
