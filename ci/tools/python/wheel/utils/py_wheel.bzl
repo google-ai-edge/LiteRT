@@ -35,12 +35,18 @@ def _get_full_wheel_name(wheel_name, version, platform_name):
         wheel_platform_tag = platform_name,
     )
 
+def _generate_structured_deps_filelist(structured_deps):
+    filelist_lists = [dep[DefaultInfo].files.to_list() for dep in structured_deps]
+    filelist = [f for structured_deps_filelist in filelist_lists for f in structured_deps_filelist if not f.path.startswith("bazel-out/k8-opt/bin/external/")]
+    return depset(filelist).to_list()
+
 def _py_wheel_impl(ctx):
     executable = ctx.executable.wheel_binary
     filelist_lists = [src.files.to_list() for src in ctx.attr.srcs]
     filelist = [f for filelist in filelist_lists for f in filelist]
     py_filelist_lists = [src.files.to_list() for src in ctx.attr.py_srcs]
     py_filelist = [f for py_filelist in py_filelist_lists for f in py_filelist]
+    structured_deps_filelist = _generate_structured_deps_filelist(ctx.attr.structured_deps)
     package_data_filelist_lists = [src.files.to_list() for src in ctx.attr.package_data]
     package_data_filelist = [f for package_data_filelist in package_data_filelist_lists for f in package_data_filelist]
     version = ctx.attr.version
@@ -69,6 +75,9 @@ def _py_wheel_impl(ctx):
     for f in py_filelist:
         args.add("--py_src", f.path)
 
+    for f in structured_deps_filelist:
+        args.add("--structured_deps", f.path)
+
     for f in package_data_filelist:
         args.add("--package_data", f.path)
 
@@ -81,7 +90,7 @@ def _py_wheel_impl(ctx):
     ctx.actions.run(
         mnemonic = "WheelBuilder",
         arguments = [args],
-        inputs = filelist + py_filelist + package_data_filelist + [ctx.file.setup_py],
+        inputs = filelist + py_filelist + structured_deps_filelist + package_data_filelist + [ctx.file.setup_py],
         outputs = [output_file],
         executable = executable,
     )
@@ -95,6 +104,10 @@ py_wheel = rule(
         ),
         "py_srcs": attr.label_list(
             allow_files = True,
+        ),
+        "structured_deps": attr.label_list(
+            allow_files = True,
+            doc = "These dependencies are copied to the wheel preserving their directory structure.",
         ),
         "package_data": attr.label_list(
             allow_files = True,
