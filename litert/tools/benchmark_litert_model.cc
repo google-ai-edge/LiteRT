@@ -23,6 +23,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
@@ -36,6 +37,7 @@ limitations under the License.
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/cc/options/litert_runtime_options.h"
 #include "litert/core/util/perfetto_profiling.h"
@@ -63,6 +65,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   auto require_full_delegation = params.Get<bool>("require_full_delegation");
   auto num_threads = params.Get<int>("num_threads");
   auto enable_weight_sharing = params.Get<bool>("enable_weight_sharing");
+  auto mediatek_nerun_pilot_version =
+      params.Get<std::string>("mediatek_nerun_pilot_version");
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
 
@@ -80,13 +84,29 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     // QNN options
     LITERT_ASSIGN_OR_ABORT(auto qnn_opts,
                            ::litert::qualcomm::QualcommOptions::Create());
-    qnn_opts.SetLogLevel(kLiteRtQualcommLogOff);
-    qnn_opts.SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
-    qnn_opts.SetUseFoldReLU(true);
+    qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
+    qnn_opts.SetHtpPerformanceMode(
+        litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
+    qnn_opts.SetUseFoldReLU(false);
     qnn_opts.SetUseConvHMX(true);
-    qnn_opts.SetUseHtpPreference(true);
-    qnn_opts.SetOptimizationLevel(kHtpOptimizeForInferenceO3);
+    qnn_opts.SetOptimizationLevel(
+        litert::qualcomm::QualcommOptions::OptimizationLevel::
+            kOptimizeForInferenceO3);
     compilation_options.AddOpaqueOptions(std::move(qnn_opts));
+
+    // MTK options
+    LITERT_ASSIGN_OR_ABORT(auto mtk_opts,
+                           ::litert::mediatek::MediatekOptions::Create());
+    if (mediatek_nerun_pilot_version == "version9") {
+      mtk_opts.SetNeronSDKVersionType(
+          kLiteRtMediatekOptionsNeronSDKVersionTypeVersion9);
+    }
+    mtk_opts.SetPerformanceMode(
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferFastSingleAnswer);  // NOLINT
+    mtk_opts.SetPerformanceMode(
+        kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferTurboBoost);
+    mtk_opts.SetEnableL1CacheOptimizations(true);
+    compilation_options.AddOpaqueOptions(std::move(mtk_opts));
     // TODO(yunandrew): Add options for other NPU backends.
   }
 

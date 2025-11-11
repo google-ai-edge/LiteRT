@@ -128,6 +128,12 @@ Expected<void> FillInputTensor(TensorBuffer& buffer, float scale) {
       data[i] = i % 2048;
     }
     return buffer.Write<int16_t>(absl::MakeConstSpan(data));
+  } else if (type.ElementType() == ElementType::Int64) {
+    std::vector<int64_t> data(total_elements);
+    for (size_t i = 0; i < total_elements; ++i) {
+      data[i] = i % 2048;
+    }
+    return buffer.Write<int64_t>(absl::MakeConstSpan(data));
   } else if (type.ElementType() == ElementType::Int8) {
     std::vector<int8_t> data(total_elements);
     for (size_t i = 0; i < total_elements; ++i) {
@@ -374,6 +380,11 @@ Expected<void> CompareSingleOutputBuffer(TensorBuffer& cpu_buffer,
     if (element_type == ElementType::Int16) {
       std::vector<int16_t> data(total_elements);
       LITERT_RETURN_IF_ERROR(buffer.Read<int16_t>(absl::MakeSpan(data)));
+      copy_data_and_return(buffer_data, data, total_elements);
+    }
+    if (element_type == ElementType::Int64) {
+      std::vector<int64_t> data(total_elements);
+      LITERT_RETURN_IF_ERROR(buffer.Read<int64_t>(absl::MakeSpan(data)));
       copy_data_and_return(buffer_data, data, total_elements);
     }
     if (element_type == ElementType::Int8) {

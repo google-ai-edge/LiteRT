@@ -254,6 +254,8 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>(""));
     default_params.AddParam("model_runtime_info_output_file",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("mediatek_nerun_pilot_version",
+                            BenchmarkParam::Create<std::string>("version8"));
     return default_params;
   }
 
@@ -418,6 +420,9 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     flags.push_back(tflite::benchmark::CreateFlag<std::string>(
         "model_runtime_info_output_file", &params_,
         "Path to save the model runtime info in binary proto format."));
+    flags.push_back(tflite::benchmark::CreateFlag<std::string>(
+        "mediatek_nerun_pilot_version", &params_,
+        "Which version of the MediaTek NPU SDK to use."));
     return flags;
   }
 
