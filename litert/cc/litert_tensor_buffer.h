@@ -60,10 +60,13 @@ class TensorBuffer
       const Environment& env, TensorBufferType buffer_type,
       const RankedTensorType& tensor_type, size_t buffer_size);
 
-  // Creates a managed TensorBuffer object in the given buffer type using the
+  // Creates a managed host memory TensorBuffer object using the
   // default environment (if applicable). The returned object is owned by the
   // caller.
-  [[deprecated("Use the overload that takes Environmnet instead.")]]
+  static Expected<TensorBuffer> CreateManagedHostMemory(
+      const RankedTensorType& tensor_type, size_t buffer_size);
+
+  [[deprecated("Use CreateManagedHostMemory instead.")]]
   static Expected<TensorBuffer> CreateManaged(
       TensorBufferType buffer_type, const RankedTensorType& tensor_type,
       size_t buffer_size);
@@ -115,8 +118,6 @@ class TensorBuffer
       const Environment& env, const RankedTensorType& tensor_type,
       void* host_mem_addr, size_t buffer_size);
 
-  // TODO(b/453768409): Remove this method once all clients are migrated.
-  [[deprecated]]
   static Expected<TensorBuffer> CreateFromHostMemory(
       const RankedTensorType& tensor_type, void* host_mem_addr,
       size_t buffer_size);
