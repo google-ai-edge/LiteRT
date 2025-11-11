@@ -97,6 +97,7 @@ constexpr LiteRtOpCode kUnSupportedOps[] = {
     kLiteRtOpCodeTflUnsortedSegmentSum,
     kLiteRtOpCodeTflVarHandle,
     kLiteRtOpCodeTflWhere,
+    kLiteRtOpCodeTflCustom,
 };
 // clang format on
 
