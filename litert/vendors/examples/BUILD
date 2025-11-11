@@ -63,9 +63,10 @@ litert_dynamic_lib(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements_utils",
         "//litert/cc/internal:litert_handle",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -141,10 +142,11 @@ cc_library(
         "//litert/cc:litert_buffer_ref",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/internal:litert_tensor_buffer_requirements_utils",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings:string_view",
@@ -158,8 +160,9 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_tensor_buffer_requirements",
         "//litert/cc/dynamic_runtime:litert_extended_model",
-        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
+        "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements_utils",
         "//litert/cc/internal:litert_handle",
         "//litert/test:matchers",
         "//litert/test:simple_buffer",
@@ -222,6 +225,7 @@ litert_test(
     }),
     linkstatic = True,
     tags = [
+        "manual",
         # Tests with ungrte deps do not currently work on forge.
         "no-remote-exec",
         "notap",

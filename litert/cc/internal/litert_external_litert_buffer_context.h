@@ -18,6 +18,7 @@
 #include "litert/c/internal/litert_external_litert_buffer_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/internal/litert_tensor_buffer_requirements_utils.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -73,9 +74,12 @@ class ExternalLiteRtBufferContext
   Expected<void> RegisterBufferRequirements(
       const TfLiteTensor* tensor,
       TensorBufferRequirements&& buffer_requirements) {
+    LITERT_ASSIGN_OR_RETURN(auto litert_buffer_requirements,
+                            litert::internal::ToLiteRtTensorBufferRequirements(
+                                buffer_requirements));
     LITERT_RETURN_IF_ERROR(
         LiteRtExternalLiteRtBufferContextRegisterBufferRequirements(
-            Get(), tensor, buffer_requirements.Release()));
+            Get(), tensor, litert_buffer_requirements));
     return {};
   }
 
