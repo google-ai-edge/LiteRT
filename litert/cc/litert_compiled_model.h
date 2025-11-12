@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -40,6 +41,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/core/scoped_file.h"
 
 namespace litert {
 
@@ -111,6 +113,31 @@ class CompiledModel
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
     return Create(env, model, compilation_options);
+  }
+
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      Options& compilation_options, ScopedFile scoped_file,
+      Options::ScopedWeightSectionMap sections) {
+#if !defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+    return Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "LiteRT was built without external weight loader support");
+#else
+    LITERT_RETURN_IF_ERROR(compilation_options.SetExternalWeightScopedFile(
+        std::move(scoped_file), std::move(sections)));
+    return Create(env, model, compilation_options);
+#endif
+  }
+
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAcceleratorSet hardware_accelerators, ScopedFile scoped_file,
+      Options::ScopedWeightSectionMap sections) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, model, compilation_options, std::move(scoped_file),
+                  std::move(sections));
   }
 
   [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]

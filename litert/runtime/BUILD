@@ -567,6 +567,7 @@ cc_library(
         "//litert/core:environment",
         "//litert/core:error_reporter",
         "//litert/core:options",
+        "//litert/core:scoped_weight_source",
         "//litert/core/model",
         "//litert/core/util:flatbuffer_tools",
         "//litert/runtime/dispatch:dispatch_opaque_options",

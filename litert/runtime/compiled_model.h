@@ -420,6 +420,7 @@ class LiteRtCompiledModelT {
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   // The loader that manages external weight metadata and bindings.
   std::unique_ptr<weight_loader::WeightLoader> weight_loader_;
+  std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source_;
 #endif  // defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
 
   // File system hints about the originating model location.

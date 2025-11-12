@@ -308,7 +308,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                               buffer_context_.get());
 #if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
   weight_loader_ = weight_loader::CreateLiteRtWeightLoader(
-      fb_model_->GetModel(), model_directory_);
+      fb_model_->GetModel(), model_directory_,
+      std::move(scoped_weight_source_));
   if (jit_compilation_options) {
     reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options)->weight_loader =
         weight_loader_.get();
@@ -516,6 +517,15 @@ Expected<LiteRtCompiledModelT::Ptr> LiteRtCompiledModelT::Create(
 
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeModel(
       *model, hardware_accelerators, jit_compilation_options, *env));
+
+#if defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  LiteRtOptionsT* options_struct =
+      reinterpret_cast<LiteRtOptionsT*>(jit_compilation_options);
+  if (options_struct && options_struct->scoped_weight_source) {
+    compiled_model->scoped_weight_source_ =
+        std::move(options_struct->scoped_weight_source);
+  }
+#endif
 
   LITERT_RETURN_IF_ERROR(compiled_model->InitializeRuntime(
       env, hardware_accelerators, jit_compilation_options));
