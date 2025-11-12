@@ -107,7 +107,7 @@ class CompiledModel
   // Note: It should be specified for both JIT and AOT compiled models.
   static Expected<CompiledModel> Create(
       litert::Environment& env, const litert::Model& model,
-      litert::HwAccelerators hardware_accelerators) {
+      litert::HwAcceleratorSet hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
     return Create(env, model, compilation_options);
