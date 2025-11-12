@@ -276,8 +276,9 @@ absl::Status RealMain() {
     // QNN options
     LITERT_ASSIGN_OR_RETURN(auto qnn_opts,
                             ::litert::qualcomm::QualcommOptions::Create());
-    qnn_opts.SetLogLevel(kLiteRtQualcommLogOff);
-    qnn_opts.SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+    qnn_opts.SetLogLevel(::litert::qualcomm::QualcommOptions::LogLevel::kOff);
+    qnn_opts.SetHtpPerformanceMode(
+        ::litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
     options.AddOpaqueOptions(std::move(qnn_opts));
     options.SetHardwareAccelerators(accelerator);
     // Add other NPU options here..

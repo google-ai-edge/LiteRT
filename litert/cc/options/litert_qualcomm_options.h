@@ -53,16 +53,7 @@ class QualcommOptions : public OpaqueOptions {
   };
 
   void SetLogLevel(LogLevel log_level);
-
-  [[deprecated("Use SetLogLevel(QualcommOptionsLogLevel) instead.")]]
-  void SetLogLevel(LiteRtQualcommOptionsLogLevel log_level);
-
-  // TODO(b/454666070): Rename to GetLogLevel once the deprecated function is
-  // removed.
-  LogLevel GetLogLevelCC();
-
-  [[deprecated("Use GetLogLevelCC() instead.")]]
-  LiteRtQualcommOptionsLogLevel GetLogLevel();
+  LogLevel GetLogLevel();
 
   // This option controls whether to convert a LiteRt operation to QNN
   // operations which are preferred by the HTP backend. Defaults to false.
@@ -81,11 +72,7 @@ class QualcommOptions : public OpaqueOptions {
   };
 
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
-
-  [[deprecated("Use SetLogLevel(QualcommOptionsLogLevel) instead.")]]
-  void SetHtpPerformanceMode(
-      LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode);
-  LiteRtQualcommOptionsHtpPerformanceMode GetHtpPerformanceMode();
+  HtpPerformanceMode GetHtpPerformanceMode();
 
   void SetUseHtpPreference(bool use_htp_preference);
   bool GetUseHtpPreference();
@@ -123,16 +110,7 @@ class QualcommOptions : public OpaqueOptions {
   };
 
   void SetProfiling(Profiling profiling);
-
-  [[deprecated("Use SetProfiling(QualcommOptionsProfiling) instead.")]]
-  void SetProfiling(LiteRtQualcommOptionsProfiling profiling);
-
-  // TODO(b/454666070): Rename to GetProfiling once the deprecated function is
-  // removed.
-  Profiling GetProfilingCC();
-
-  [[deprecated("Use GetProfilingCC() instead.")]]
-  LiteRtQualcommOptionsProfiling GetProfiling();
+  Profiling GetProfiling();
 
   void SetDumpTensorIds(const std::vector<std::int32_t>& ids);
   std::vector<std::int32_t> GetDumpTensorIds();
@@ -153,19 +131,7 @@ class QualcommOptions : public OpaqueOptions {
   };
 
   void SetOptimizationLevel(OptimizationLevel optimization_level);
-
-  [[deprecated(
-      "Use SetOptimizationLevel(QualcommOptionsOptimizationLevel) "
-      "instead.")]]
-  void SetOptimizationLevel(
-      LiteRtQualcommOptionsOptimizationLevel optimization_level);
-
-  // TODO(b/454666070): Rename to GetOptimizationLevel once the deprecated
-  // function is removed.
-  OptimizationLevel GetOptimizationLevelCC();
-
-  [[deprecated("Use GetOptimizationLevelCC() instead.")]]
-  LiteRtQualcommOptionsOptimizationLevel GetOptimizationLevel();
+  OptimizationLevel GetOptimizationLevel();
 
  private:
   LiteRtQualcommOptions Data() const;

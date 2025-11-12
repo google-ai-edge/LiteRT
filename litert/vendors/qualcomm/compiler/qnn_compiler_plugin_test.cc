@@ -238,7 +238,7 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
 
   auto qnn_opts = qualcomm::QualcommOptions::Create();
   ASSERT_TRUE(qnn_opts);
-  qnn_opts->SetLogLevel(kLiteRtQualcommLogLevelError);
+  qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
 
   ASSERT_TRUE(opts->AddOpaqueOptions(std::move(*qnn_opts)));

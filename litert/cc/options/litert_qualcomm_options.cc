@@ -51,20 +51,10 @@ void QualcommOptions::SetLogLevel(QualcommOptions::LogLevel log_level) {
                      static_cast<LiteRtQualcommOptionsLogLevel>(log_level));
 }
 
-void QualcommOptions::SetLogLevel(LiteRtQualcommOptionsLogLevel log_level) {
-  internal::AssertOk(LiteRtQualcommOptionsSetLogLevel, Data(), log_level);
-}
-
-QualcommOptions::LogLevel QualcommOptions::GetLogLevelCC() {
+QualcommOptions::LogLevel QualcommOptions::GetLogLevel() {
   LiteRtQualcommOptionsLogLevel log_level;
   internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
   return static_cast<QualcommOptions::LogLevel>(log_level);
-}
-
-LiteRtQualcommOptionsLogLevel QualcommOptions::GetLogLevel() {
-  LiteRtQualcommOptionsLogLevel log_level;
-  internal::AssertOk(LiteRtQualcommOptionsGetLogLevel, Data(), &log_level);
-  return log_level;
 }
 
 void QualcommOptions::SetHtpPerformanceMode(
@@ -75,18 +65,11 @@ void QualcommOptions::SetHtpPerformanceMode(
           htp_performance_mode));
 }
 
-void QualcommOptions::SetHtpPerformanceMode(
-    LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode) {
-  internal::AssertOk(LiteRtQualcommOptionsSetHtpPerformanceMode, Data(),
-                     htp_performance_mode);
-}
-
-LiteRtQualcommOptionsHtpPerformanceMode
-QualcommOptions::GetHtpPerformanceMode() {
+QualcommOptions::HtpPerformanceMode QualcommOptions::GetHtpPerformanceMode() {
   LiteRtQualcommOptionsHtpPerformanceMode htp_performance_mode;
   internal::AssertOk(LiteRtQualcommOptionsGetHtpPerformanceMode, Data(),
                      &htp_performance_mode);
-  return htp_performance_mode;
+  return static_cast<QualcommOptions::HtpPerformanceMode>(htp_performance_mode);
 }
 
 void QualcommOptions::SetEnableWeightSharing(bool weight_sharing_enabled) {
@@ -130,20 +113,10 @@ void QualcommOptions::SetProfiling(QualcommOptions::Profiling profiling) {
                      static_cast<LiteRtQualcommOptionsProfiling>(profiling));
 }
 
-void QualcommOptions::SetProfiling(LiteRtQualcommOptionsProfiling profiling) {
-  internal::AssertOk(LiteRtQualcommOptionsSetProfiling, Data(), profiling);
-}
-
-QualcommOptions::Profiling QualcommOptions::GetProfilingCC() {
+QualcommOptions::Profiling QualcommOptions::GetProfiling() {
   LiteRtQualcommOptionsProfiling profiling;
   internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
   return static_cast<QualcommOptions::Profiling>(profiling);
-}
-
-LiteRtQualcommOptionsProfiling QualcommOptions::GetProfiling() {
-  LiteRtQualcommOptionsProfiling profiling;
-  internal::AssertOk(LiteRtQualcommOptionsGetProfiling, Data(), &profiling);
-  return profiling;
 }
 
 void QualcommOptions::SetDumpTensorIds(const std::vector<std::int32_t>& ids) {
@@ -207,25 +180,12 @@ void QualcommOptions::SetOptimizationLevel(
       static_cast<LiteRtQualcommOptionsOptimizationLevel>(optimization_level));
 }
 
-void QualcommOptions::SetOptimizationLevel(
-    LiteRtQualcommOptionsOptimizationLevel optimization_level) {
-  internal::AssertOk(LiteRtQualcommOptionsSetOptimizationLevel, Data(),
-                     optimization_level);
-}
-
-QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevelCC() {
+QualcommOptions::OptimizationLevel QualcommOptions::GetOptimizationLevel() {
   LiteRtQualcommOptionsOptimizationLevel optimization_level;
   internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
                      &optimization_level);
   return static_cast<QualcommOptions::OptimizationLevel>(
       optimization_level);
-}
-
-LiteRtQualcommOptionsOptimizationLevel QualcommOptions::GetOptimizationLevel() {
-  LiteRtQualcommOptionsOptimizationLevel optimization_level;
-  internal::AssertOk(LiteRtQualcommOptionsGetOptimizationLevel, Data(),
-                     &optimization_level);
-  return optimization_level;
 }
 
 void QualcommOptions::SetUseConvHMX(bool use_conv_hmx) {

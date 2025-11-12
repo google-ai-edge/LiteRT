@@ -283,9 +283,9 @@ TEST(QualcommOptionsTest, CppApi) {
   auto options = QualcommOptions::Create();
   ASSERT_TRUE(options);
 
-  EXPECT_EQ(options->GetLogLevel(), kLiteRtQualcommLogLevelInfo);
-  options->SetLogLevel(kLiteRtQualcommLogLevelWarn);
-  EXPECT_EQ(options->GetLogLevel(), kLiteRtQualcommLogLevelWarn);
+  EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kInfo);
+  options->SetLogLevel(QualcommOptions::LogLevel::kWarn);
+  EXPECT_EQ(options->GetLogLevel(), QualcommOptions::LogLevel::kWarn);
 
   EXPECT_FALSE(options->GetEnableWeightSharing());
   options->SetEnableWeightSharing(true);
@@ -300,14 +300,14 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetUseQint16AsQuint16());
 
   EXPECT_EQ(options->GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeDefault);
-  options->SetHtpPerformanceMode(kLiteRtQualcommHtpPerformanceModeBurst);
+            QualcommOptions::HtpPerformanceMode::kDefault);
+  options->SetHtpPerformanceMode(QualcommOptions::HtpPerformanceMode::kBurst);
   EXPECT_EQ(options->GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeBurst);
+            QualcommOptions::HtpPerformanceMode::kBurst);
 
-  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingOff);
-  options->SetProfiling(kLiteRtQualcommProfilingDetailed);
-  EXPECT_EQ(options->GetProfiling(), kLiteRtQualcommProfilingDetailed);
+  EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
+  options->SetProfiling(QualcommOptions::Profiling::kDetailed);
+  EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
 
   const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
   EXPECT_TRUE(options->GetDumpTensorIds().empty());
@@ -329,9 +329,12 @@ TEST(QualcommOptionsTest, CppApi) {
   options->SetNumHvxThreads(4);
   EXPECT_EQ(options->GetNumHvxThreads(), 4);
 
-  EXPECT_EQ(options->GetOptimizationLevel(), kHtpOptimizeForInferenceO3);
-  options->SetOptimizationLevel(kHtpOptimizeForPrepare);
-  EXPECT_EQ(options->GetOptimizationLevel(), kHtpOptimizeForPrepare);
+  EXPECT_EQ(options->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
+  options->SetOptimizationLevel(
+      QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
+  EXPECT_EQ(options->GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
 
   EXPECT_TRUE(options->GetUseConvHMX());
   options->SetUseConvHMX(false);

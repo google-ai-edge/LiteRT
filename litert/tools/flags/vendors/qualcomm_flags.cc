@@ -21,7 +21,6 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/c/options/litert_qualcomm_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -30,55 +29,59 @@
 // TODO: Move absl parse/unparse function to same file as enum types if
 // it becomes an issue.
 
-ABSL_FLAG(LiteRtQualcommOptionsLogLevel, qualcomm_log_level,
-          kLiteRtQualcommLogLevelInfo, "Log level for Qualcomm.");
+ABSL_FLAG(litert::qualcomm::QualcommOptions::LogLevel, qualcomm_log_level,
+          litert::qualcomm::QualcommOptions::LogLevel::kInfo,
+          "Log level for Qualcomm.");
 
-bool AbslParseFlag(absl::string_view text,
-                   LiteRtQualcommOptionsLogLevel* options, std::string* error) {
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
+                   std::string* error) {
   if (text == "off") {
-    *options = kLiteRtQualcommLogOff;
+    *options = QualcommOptions::LogLevel::kOff;
     return true;
   }
   if (text == "error") {
-    *options = kLiteRtQualcommLogLevelError;
+    *options = QualcommOptions::LogLevel::kError;
     return true;
   }
   if (text == "warn") {
-    *options = kLiteRtQualcommLogLevelWarn;
+    *options = QualcommOptions::LogLevel::kWarn;
     return true;
   }
   if (text == "info") {
-    *options = kLiteRtQualcommLogLevelInfo;
+    *options = QualcommOptions::LogLevel::kInfo;
     return true;
   }
   if (text == "verbose") {
-    *options = kLiteRtQualcommLogLevelVerbose;
+    *options = QualcommOptions::LogLevel::kVerbose;
     return true;
   }
   if (text == "debug") {
-    *options = kLiteRtQualcommLogLevelDebug;
+    *options = QualcommOptions::LogLevel::kDebug;
     return true;
   }
   *error = "Unknown log level";
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtQualcommOptionsLogLevel options) {
+std::string AbslUnparseFlag(QualcommOptions::LogLevel options) {
   switch (options) {
-    case kLiteRtQualcommLogOff:
+    case QualcommOptions::LogLevel::kOff:
       return "off";
-    case kLiteRtQualcommLogLevelError:
+    case QualcommOptions::LogLevel::kError:
       return "error";
-    case kLiteRtQualcommLogLevelWarn:
+    case QualcommOptions::LogLevel::kWarn:
       return "warn";
-    case kLiteRtQualcommLogLevelInfo:
+    case QualcommOptions::LogLevel::kInfo:
       return "info";
-    case kLiteRtQualcommLogLevelVerbose:
+    case QualcommOptions::LogLevel::kVerbose:
       return "verbose";
-    case kLiteRtQualcommLogLevelDebug:
+    case QualcommOptions::LogLevel::kDebug:
       return "debug";
   }
 }
+}  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
           "Whether to enable weight sharing, this is unsupported on mobile "
@@ -91,132 +94,142 @@ ABSL_FLAG(bool, qualcomm_use_qint16_as_quint16, false,
           "Whether to automatically convert a quantized int16 model into a "
           "quantized uin16 model.");
 
-// Default should be kLiteRtQualcommHtpPerformanceModeDefault since we need
+// Default should be
+// litert::qualcomm::QualcommOptions::HtpPerformanceMode::kDefault since we need
 // default performance model during compilation.
-ABSL_FLAG(LiteRtQualcommOptionsHtpPerformanceMode,
+ABSL_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
           qualcomm_htp_performance_mode,
-          kLiteRtQualcommHtpPerformanceModeDefault, "HTP performance mode.");
+          litert::qualcomm::QualcommOptions::HtpPerformanceMode::kDefault,
+          "HTP performance mode.");
 
 ABSL_FLAG(std::vector<std::string>, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
 
+namespace litert::qualcomm {
+
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtQualcommOptionsHtpPerformanceMode* options,
+                   QualcommOptions::HtpPerformanceMode* options,
                    std::string* error) {
   if (text == "default") {
-    *options = kLiteRtQualcommHtpPerformanceModeDefault;
+    *options = QualcommOptions::HtpPerformanceMode::kDefault;
     return true;
   }
   if (text == "sustained_high_performance") {
-    *options = kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance;
+    *options = QualcommOptions::HtpPerformanceMode::kSustainedHighPerformance;
     return true;
   }
   if (text == "burst") {
-    *options = kLiteRtQualcommHtpPerformanceModeBurst;
+    *options = QualcommOptions::HtpPerformanceMode::kBurst;
     return true;
   }
   if (text == "high_performance") {
-    *options = kLiteRtQualcommHtpPerformanceModeHighPerformance;
+    *options = QualcommOptions::HtpPerformanceMode::kHighPerformance;
     return true;
   }
   if (text == "power_saver") {
-    *options = kLiteRtQualcommHtpPerformanceModePowerSaver;
+    *options = QualcommOptions::HtpPerformanceMode::kPowerSaver;
     return true;
   }
   if (text == "low_power_saver") {
-    *options = kLiteRtQualcommHtpPerformanceModeLowPowerSaver;
+    *options = QualcommOptions::HtpPerformanceMode::kLowPowerSaver;
     return true;
   }
   if (text == "high_power_saver") {
-    *options = kLiteRtQualcommHtpPerformanceModeHighPowerSaver;
+    *options = QualcommOptions::HtpPerformanceMode::kHighPowerSaver;
     return true;
   }
   if (text == "low_balanced") {
-    *options = kLiteRtQualcommHtpPerformanceModeLowBalanced;
+    *options = QualcommOptions::HtpPerformanceMode::kLowBalanced;
     return true;
   }
   if (text == "balanced") {
-    *options = kLiteRtQualcommHtpPerformanceModeBalanced;
+    *options = QualcommOptions::HtpPerformanceMode::kBalanced;
     return true;
   }
   if (text == "extreme_power_saver") {
-    *options = kLiteRtQualcommHtpPerformanceModeExtremePowerSaver;
+    *options = QualcommOptions::HtpPerformanceMode::kExtremePowerSaver;
     return true;
   }
   *error = "Unknown htp performance mode";
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtQualcommOptionsHtpPerformanceMode options) {
+std::string AbslUnparseFlag(QualcommOptions::HtpPerformanceMode options) {
   switch (options) {
-    case kLiteRtQualcommHtpPerformanceModeDefault:
+    case QualcommOptions::HtpPerformanceMode::kDefault:
       return "default";
-    case kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance:
+    case QualcommOptions::HtpPerformanceMode::kSustainedHighPerformance:
       return "sustained_high_performance";
-    case kLiteRtQualcommHtpPerformanceModeBurst:
+    case QualcommOptions::HtpPerformanceMode::kBurst:
       return "burst";
-    case kLiteRtQualcommHtpPerformanceModeHighPerformance:
+    case QualcommOptions::HtpPerformanceMode::kHighPerformance:
       return "high_performance";
-    case kLiteRtQualcommHtpPerformanceModePowerSaver:
+    case QualcommOptions::HtpPerformanceMode::kPowerSaver:
       return "power_saver";
-    case kLiteRtQualcommHtpPerformanceModeLowPowerSaver:
+    case QualcommOptions::HtpPerformanceMode::kLowPowerSaver:
       return "low_power_saver";
-    case kLiteRtQualcommHtpPerformanceModeHighPowerSaver:
+    case QualcommOptions::HtpPerformanceMode::kHighPowerSaver:
       return "high_power_saver";
-    case kLiteRtQualcommHtpPerformanceModeLowBalanced:
+    case QualcommOptions::HtpPerformanceMode::kLowBalanced:
       return "low_balanced";
-    case kLiteRtQualcommHtpPerformanceModeBalanced:
+    case QualcommOptions::HtpPerformanceMode::kBalanced:
       return "balanced";
-    case kLiteRtQualcommHtpPerformanceModeExtremePowerSaver:
+    case QualcommOptions::HtpPerformanceMode::kExtremePowerSaver:
       return "extreme_power_saver";
   }
 }
 
-ABSL_FLAG(LiteRtQualcommOptionsProfiling, qualcomm_profiling,
-          kLiteRtQualcommProfilingOff, "QNN profiling mode");
+}  // namespace litert::qualcomm
 
-bool AbslParseFlag(absl::string_view text,
-                   LiteRtQualcommOptionsProfiling* options,
+ABSL_FLAG(litert::qualcomm::QualcommOptions::Profiling, qualcomm_profiling,
+          litert::qualcomm::QualcommOptions::Profiling::kOff,
+          "QNN profiling mode");
+
+namespace litert::qualcomm {
+
+bool AbslParseFlag(absl::string_view text, QualcommOptions::Profiling* options,
                    std::string* error) {
   if (text == "off") {
-    *options = kLiteRtQualcommProfilingOff;
+    *options = QualcommOptions::Profiling::kOff;
     return true;
   }
   if (text == "basic") {
-    *options = kLiteRtQualcommProfilingBasic;
+    *options = QualcommOptions::Profiling::kBasic;
     return true;
   }
   if (text == "detailed") {
-    *options = kLiteRtQualcommProfilingDetailed;
+    *options = QualcommOptions::Profiling::kDetailed;
     return true;
   }
   if (text == "linting") {
-    *options = kLiteRtQualcommProfilingLinting;
+    *options = QualcommOptions::Profiling::kLinting;
     return true;
   }
   if (text == "optrace") {
-    *options = kLiteRtQualcommProfilingOptrace;
+    *options = QualcommOptions::Profiling::kOptrace;
     return true;
   }
   *error = "Unknown htp performance mode";
   return false;
 }
 
-std::string AbslUnparseFlag(LiteRtQualcommOptionsProfiling options) {
+std::string AbslUnparseFlag(QualcommOptions::Profiling options) {
   switch (options) {
-    case kLiteRtQualcommProfilingOff:
+    case QualcommOptions::Profiling::kOff:
       return "off";
-    case kLiteRtQualcommProfilingBasic:
+    case QualcommOptions::Profiling::kBasic:
       return "basic";
-    case kLiteRtQualcommProfilingDetailed:
+    case QualcommOptions::Profiling::kDetailed:
       return "detailed";
-    case kLiteRtQualcommProfilingLinting:
+    case QualcommOptions::Profiling::kLinting:
       return "linting";
-    case kLiteRtQualcommProfilingOptrace:
+    case QualcommOptions::Profiling::kOptrace:
       return "optrace";
   }
 }
+
+}  // namespace litert::qualcomm
 
 ABSL_FLAG(
     std::string, qualcomm_ir_json_dir, "",
@@ -231,22 +244,30 @@ ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
 
-ABSL_FLAG(LiteRtQualcommOptionsOptimizationLevel, qualcomm_optimization_level,
-          kHtpOptimizeForInferenceO3, "QNN optimization level");
+ABSL_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
+          qualcomm_optimization_level,
+          litert::qualcomm::QualcommOptions::OptimizationLevel::
+              kOptimizeForInferenceO3,
+          "QNN optimization level");
+
+namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
-                   LiteRtQualcommOptionsOptimizationLevel* optimization_level,
+                   QualcommOptions::OptimizationLevel* optimization_level,
                    std::string* error) {
   if (text == "O1") {
-    *optimization_level = kHtpOptimizeForInference;
+    *optimization_level =
+        QualcommOptions::OptimizationLevel::kOptimizeForInference;
     return true;
   }
   if (text == "O2") {
-    *optimization_level = kHtpOptimizeForPrepare;
+    *optimization_level =
+        QualcommOptions::OptimizationLevel::kOptimizeForPrepare;
     return true;
   }
   if (text == "O3") {
-    *optimization_level = kHtpOptimizeForInferenceO3;
+    *optimization_level =
+        QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3;
     return true;
   }
   *error = "Unknown optimization level";
@@ -254,16 +275,18 @@ bool AbslParseFlag(absl::string_view text,
 }
 
 std::string AbslUnparseFlag(
-    LiteRtQualcommOptionsOptimizationLevel optimization_level) {
+    QualcommOptions::OptimizationLevel optimization_level) {
   switch (optimization_level) {
-    case kHtpOptimizeForInference:
+    case QualcommOptions::OptimizationLevel::kOptimizeForInference:
       return "O1";
-    case kHtpOptimizeForPrepare:
+    case QualcommOptions::OptimizationLevel::kOptimizeForPrepare:
       return "O2";
-    case kHtpOptimizeForInferenceO3:
+    case QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3:
       return "O3";
   }
 }
+
+}  // namespace litert::qualcomm
 
 ABSL_FLAG(bool, qualcomm_use_conv_hmx, true,
           "When using short conv hmx, one might have better performance, but "

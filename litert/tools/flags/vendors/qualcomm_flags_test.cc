@@ -27,19 +27,19 @@ namespace {
 
 TEST(LogLevelFlagTest, Malformed) {
   std::string error;
-  LiteRtQualcommOptionsLogLevel value;
+  QualcommOptions::LogLevel value;
 
   EXPECT_FALSE(AbslParseFlag("oogabooga", &value, &error));
 }
 
 TEST(LogLevelFlagTest, Parse) {
   std::string error;
-  LiteRtQualcommOptionsLogLevel value;
+  QualcommOptions::LogLevel value;
 
   {
     static constexpr absl::string_view kLevel = "off";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogOff;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kOff;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -47,8 +47,8 @@ TEST(LogLevelFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "error";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogLevelError;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kError;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -56,8 +56,8 @@ TEST(LogLevelFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "warn";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogLevelWarn;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kWarn;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -65,8 +65,8 @@ TEST(LogLevelFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "info";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogLevelInfo;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kInfo;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -74,8 +74,8 @@ TEST(LogLevelFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "verbose";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogLevelVerbose;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kVerbose;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -83,8 +83,8 @@ TEST(LogLevelFlagTest, Parse) {
 
   {
     static constexpr absl::string_view kLevel = "debug";
-    static constexpr LiteRtQualcommOptionsLogLevel kLevelEnum =
-        kLiteRtQualcommLogLevelDebug;
+    static constexpr QualcommOptions::LogLevel kLevelEnum =
+        QualcommOptions::LogLevel::kDebug;
     EXPECT_TRUE(AbslParseFlag(kLevel, &value, &error));
     EXPECT_EQ(value, kLevelEnum);
     EXPECT_EQ(kLevel, AbslUnparseFlag(value));
@@ -93,19 +93,19 @@ TEST(LogLevelFlagTest, Parse) {
 
 TEST(HtpPerformanceModeTest, Malformed) {
   std::string error;
-  LiteRtQualcommOptionsHtpPerformanceMode value;
+  QualcommOptions::HtpPerformanceMode value;
 
   EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
 }
 
 TEST(HtpPerformanceModeTest, Parse) {
   std::string error;
-  LiteRtQualcommOptionsHtpPerformanceMode value;
+  QualcommOptions::HtpPerformanceMode value;
 
   {
     static constexpr absl::string_view kMode = "default";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeDefault;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kDefault;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -113,8 +113,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "sustained_high_performance";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeSustainedHighPerformance;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kSustainedHighPerformance;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -122,8 +122,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "burst";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeBurst;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kBurst;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -131,8 +131,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "high_performance";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeHighPerformance;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kHighPerformance;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -140,8 +140,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "power_saver";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModePowerSaver;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kPowerSaver;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -149,8 +149,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "low_power_saver";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeLowPowerSaver;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kLowPowerSaver;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -158,8 +158,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "high_power_saver";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeHighPowerSaver;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kHighPowerSaver;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -167,8 +167,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "low_balanced";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeLowBalanced;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kLowBalanced;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -176,8 +176,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "balanced";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeBalanced;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kBalanced;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -185,8 +185,8 @@ TEST(HtpPerformanceModeTest, Parse) {
 
   {
     static constexpr absl::string_view kMode = "extreme_power_saver";
-    static constexpr LiteRtQualcommOptionsHtpPerformanceMode kModeEnum =
-        kLiteRtQualcommHtpPerformanceModeExtremePowerSaver;
+    static constexpr QualcommOptions::HtpPerformanceMode kModeEnum =
+        QualcommOptions::HtpPerformanceMode::kExtremePowerSaver;
     EXPECT_TRUE(AbslParseFlag(kMode, &value, &error));
     EXPECT_EQ(value, kModeEnum);
     EXPECT_EQ(kMode, AbslUnparseFlag(value));
@@ -195,19 +195,19 @@ TEST(HtpPerformanceModeTest, Parse) {
 
 TEST(ProfilingTest, Malformed) {
   std::string error;
-  LiteRtQualcommOptionsProfiling value;
+  QualcommOptions::Profiling value;
 
   EXPECT_FALSE(AbslParseFlag("boogabooga", &value, &error));
 }
 
 TEST(ProfilingTest, Parse) {
   std::string error;
-  LiteRtQualcommOptionsProfiling value;
+  QualcommOptions::Profiling value;
 
   {
     static constexpr absl::string_view kProfiling = "off";
-    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
-        kLiteRtQualcommProfilingOff;
+    static constexpr QualcommOptions::Profiling kProfilingEnum =
+        QualcommOptions::Profiling::kOff;
     EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
@@ -215,8 +215,8 @@ TEST(ProfilingTest, Parse) {
 
   {
     static constexpr absl::string_view kProfiling = "basic";
-    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
-        kLiteRtQualcommProfilingBasic;
+    static constexpr QualcommOptions::Profiling kProfilingEnum =
+        QualcommOptions::Profiling::kBasic;
     EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
@@ -224,8 +224,8 @@ TEST(ProfilingTest, Parse) {
 
   {
     static constexpr absl::string_view kProfiling = "detailed";
-    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
-        kLiteRtQualcommProfilingDetailed;
+    static constexpr QualcommOptions::Profiling kProfilingEnum =
+        QualcommOptions::Profiling::kDetailed;
     EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
@@ -233,8 +233,8 @@ TEST(ProfilingTest, Parse) {
 
   {
     static constexpr absl::string_view kProfiling = "linting";
-    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
-        kLiteRtQualcommProfilingLinting;
+    static constexpr QualcommOptions::Profiling kProfilingEnum =
+        QualcommOptions::Profiling::kLinting;
     EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
@@ -242,8 +242,8 @@ TEST(ProfilingTest, Parse) {
 
   {
     static constexpr absl::string_view kProfiling = "optrace";
-    static constexpr LiteRtQualcommOptionsProfiling kProfilingEnum =
-        kLiteRtQualcommProfilingOptrace;
+    static constexpr QualcommOptions::Profiling kProfilingEnum =
+        QualcommOptions::Profiling::kOptrace;
     EXPECT_TRUE(AbslParseFlag(kProfiling, &value, &error));
     EXPECT_EQ(value, kProfilingEnum);
     EXPECT_EQ(kProfiling, AbslUnparseFlag(value));
@@ -252,12 +252,12 @@ TEST(ProfilingTest, Parse) {
 
 TEST(OptimizationLevelTest, Parse) {
   std::string error;
-  LiteRtQualcommOptionsOptimizationLevel value;
+  QualcommOptions::OptimizationLevel value;
 
   {
     static constexpr absl::string_view kOptimizationLevel = "O1";
-    static constexpr LiteRtQualcommOptionsOptimizationLevel
-        kOptimizationLevelEnum = kHtpOptimizeForInference;
+    static constexpr QualcommOptions::OptimizationLevel kOptimizationLevelEnum =
+        QualcommOptions::OptimizationLevel::kOptimizeForInference;
     EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
     EXPECT_EQ(value, kOptimizationLevelEnum);
     EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
@@ -265,8 +265,8 @@ TEST(OptimizationLevelTest, Parse) {
 
   {
     static constexpr absl::string_view kOptimizationLevel = "O2";
-    static constexpr LiteRtQualcommOptionsOptimizationLevel
-        kOptimizationLevelEnum = kHtpOptimizeForPrepare;
+    static constexpr QualcommOptions::OptimizationLevel kOptimizationLevelEnum =
+        QualcommOptions::OptimizationLevel::kOptimizeForPrepare;
     EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
     EXPECT_EQ(value, kOptimizationLevelEnum);
     EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
@@ -274,8 +274,8 @@ TEST(OptimizationLevelTest, Parse) {
 
   {
     static constexpr absl::string_view kOptimizationLevel = "O3";
-    static constexpr LiteRtQualcommOptionsOptimizationLevel
-        kOptimizationLevelEnum = kHtpOptimizeForInferenceO3;
+    static constexpr QualcommOptions::OptimizationLevel kOptimizationLevelEnum =
+        QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3;
     EXPECT_TRUE(AbslParseFlag(kOptimizationLevel, &value, &error));
     EXPECT_EQ(value, kOptimizationLevelEnum);
     EXPECT_EQ(kOptimizationLevel, AbslUnparseFlag(value));
@@ -285,19 +285,20 @@ TEST(OptimizationLevelTest, Parse) {
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   Expected<QualcommOptions> options = QualcommOptionsFromFlags();
   ASSERT_TRUE(options.HasValue());
-  EXPECT_EQ(options.Value().GetLogLevel(), kLiteRtQualcommLogLevelInfo);
-  EXPECT_EQ(options.Value().GetProfiling(), kLiteRtQualcommProfilingOff);
+  EXPECT_EQ(options.Value().GetLogLevel(), QualcommOptions::LogLevel::kInfo);
+  EXPECT_EQ(options.Value().GetProfiling(), QualcommOptions::Profiling::kOff);
   EXPECT_FALSE(options.Value().GetUseHtpPreference());
   EXPECT_FALSE(options.Value().GetUseQint16AsQuint16());
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
   EXPECT_EQ(options.Value().GetHtpPerformanceMode(),
-            kLiteRtQualcommHtpPerformanceModeDefault);
+            QualcommOptions::HtpPerformanceMode::kDefault);
   EXPECT_TRUE(options.Value().GetDumpTensorIds().empty());
   EXPECT_EQ(options.Value().GetVtcmSize(), 0);
   EXPECT_EQ(options.Value().GetNumHvxThreads(), 0);
-  EXPECT_EQ(options.Value().GetOptimizationLevel(), kHtpOptimizeForInferenceO3);
+  EXPECT_EQ(options.Value().GetOptimizationLevel(),
+            QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
 }
 
 }  // namespace
