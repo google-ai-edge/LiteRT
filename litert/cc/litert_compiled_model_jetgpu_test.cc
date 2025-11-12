@@ -46,12 +46,10 @@ namespace {
 using TestParams = std::tuple<GpuOptions::Precision>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
-  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<0>(params)));
-
   LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
+  LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<0>(params)));
   return std::move(options);
 }
 

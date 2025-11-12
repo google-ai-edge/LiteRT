@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <optional>
 #include <string>
 
 #include "litert/c/litert_common.h"
@@ -27,11 +28,16 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_gpu_options.h"
 
 namespace litert {
 
+class CompiledModel;
+
 class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
  public:
+  friend class CompiledModel;
+
   Options() = default;
 
   // Parameter `owned` indicates if the created CompilationOptions object
@@ -72,6 +78,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return accelerators;
   }
 
+  [[deprecated("Use the GetXXXOptions() methods instead.")]]
   Expected<void> AddOpaqueOptions(OpaqueOptions&& options) {
     LITERT_RETURN_IF_ERROR(LiteRtAddOpaqueOptions(Get(), options.Release()));
     return {};
@@ -113,6 +120,17 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
         Get(), signature_name.c_str(), tensor_name.c_str(), data, size_bytes));
     return {};
   }
+
+  // Returns the reference to the GPU options. User will use this function to
+  // set the GPU options.
+  Expected<GpuOptions&> GetGpuOptions();
+
+ private:
+  // Builds the options object. This should be called after all the setters.
+  // It's automatically called in CompiledModel::Create.
+  Expected<void> Build();
+
+  std::optional<GpuOptions> gpu_options_;
 };
 
 }  // namespace litert

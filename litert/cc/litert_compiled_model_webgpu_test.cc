@@ -51,15 +51,13 @@ using TestParams =
     std::tuple<bool, GpuOptions::Precision, GpuOptions::BufferStorageType>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
+  LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   LITERT_RETURN_IF_ERROR(
       gpu_options.EnableExternalTensorsMode(std::get<0>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<1>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<2>(params)));
-
-  LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
-  options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
   return std::move(options);
 }
 

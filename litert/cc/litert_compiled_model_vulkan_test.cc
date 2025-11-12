@@ -22,7 +22,6 @@
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -47,14 +46,12 @@ using TestParams =
     std::tuple<GpuOptions::Precision, GpuOptions::BufferStorageType>;
 
 Expected<Options> CreateGpuOptions(const TestParams& params) {
-  LITERT_ASSIGN_OR_RETURN(auto gpu_options, GpuOptions::Create());
+  LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
+  options.SetHardwareAccelerators(HwAccelerators::kGpu);
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   LITERT_RETURN_IF_ERROR(gpu_options.EnableExternalTensorsMode(true));
   LITERT_RETURN_IF_ERROR(gpu_options.SetPrecision(std::get<0>(params)));
   LITERT_RETURN_IF_ERROR(gpu_options.SetBufferStorageType(std::get<1>(params)));
-
-  LITERT_ASSIGN_OR_RETURN(litert::Options options, Options::Create());
-  options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  options.AddOpaqueOptions(std::move(gpu_options));
   return std::move(options);
 }
 

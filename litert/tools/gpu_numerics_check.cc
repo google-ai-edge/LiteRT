@@ -102,7 +102,7 @@ Expected<Environment> GetEnvironment() {
 Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kGpu);
-  LITERT_ASSIGN_OR_ABORT(auto gpu_options, GpuOptions::Create());
+  LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   gpu_options.EnableExternalTensorsMode(
       absl::GetFlag(FLAGS_external_tensor_mode));
   gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
@@ -115,7 +115,6 @@ Expected<Options> GetGpuOptions() {
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
     gpu_options.EnableConstantTensorSharing(true);
   }
-  options.AddOpaqueOptions(std::move(gpu_options));
   return options;
 }
 
