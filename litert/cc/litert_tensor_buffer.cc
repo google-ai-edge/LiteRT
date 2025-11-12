@@ -62,6 +62,16 @@ Expected<TensorBuffer> TensorBuffer::CreateManaged(
   return TensorBuffer(tensor_buffer, OwnHandle::kYes);
 }
 
+Expected<TensorBuffer> TensorBuffer::CreateManagedHostMemory(
+    const RankedTensorType& tensor_type, size_t buffer_size) {
+  LiteRtTensorBuffer tensor_buffer;
+  auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
+      /*env=*/nullptr, kLiteRtTensorBufferTypeHostMemory, &litert_tensor_type,
+      buffer_size, &tensor_buffer));
+  return TensorBuffer(tensor_buffer, OwnHandle::kYes);
+}
+
 Expected<TensorBuffer> TensorBuffer::CreateManaged(
     TensorBufferType buffer_type, const RankedTensorType& tensor_type,
     size_t buffer_size) {
