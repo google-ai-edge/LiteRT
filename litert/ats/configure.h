@@ -283,7 +283,8 @@ class AtsConf {
         target_options_(std::move(target_options)),
         reference_options_(std::move(reference_options)) {
     if (f16_range_for_f32_) {
-      data_builder_.SetF16InF32();
+      // TODO: Toggle different behavior here via flag.
+      data_builder_.SetSin();
     }
   }
 

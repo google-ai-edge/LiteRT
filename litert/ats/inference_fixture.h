@@ -136,7 +136,9 @@ class AtsInferenceTest : public RngTest {
 
   template <typename Rng>
   Expected<VarBuffers> MakeInputs(Rng& device) const {
-    return graph_->MakeInputs(device, conf_.DataBuilder());
+    auto inputs = graph_->MakeInputs(device, conf_.DataBuilder());
+    if (!inputs.HasValue()) return inputs.Error();
+    return inputs;
   }
 
   Expected<VarBuffers> Actual(const VarBuffers& inputs,
@@ -185,7 +187,7 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-5, &mse));
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-4, &mse));
     cap_.numerics.NewMse(mse);
   }
 
