@@ -30,7 +30,7 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/ats/inference_capture.h"
 #include "litert/c/litert_common.h"
-#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -87,10 +87,10 @@ class CompiledModelExecutor {
   virtual ~CompiledModelExecutor() = default;
 
  protected:
-  CompiledModelExecutor(CompiledModel&& api, Environment&& env)
+  CompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
       : api_(std::move(api)), env_(std::move(env)) {}
 
-  CompiledModel api_;
+  CompiledModelNext api_;
 
  private:
   Environment env_;
@@ -116,7 +116,7 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
     // Init compiled model api.
     LITERT_ASSIGN_OR_RETURN(
-        auto api, CompiledModel::Create(
+        auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
 
     return CpuCompiledModelExecutor(std::move(api), std::move(env));
@@ -129,7 +129,7 @@ class CpuCompiledModelExecutor : public CompiledModelExecutor {
   }
 
  private:
-  CpuCompiledModelExecutor(CompiledModel&& api, Environment&& env)
+  CpuCompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
       : CompiledModelExecutor(std::move(api), std::move(env)) {}
 };
 
@@ -172,13 +172,13 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
     }
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
     LITERT_ASSIGN_OR_RETURN(
-        auto api, CompiledModel::Create(
+        auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
     return NpuCompiledModelExecutor(std::move(api), std::move(env));
   }
 
  private:
-  NpuCompiledModelExecutor(CompiledModel&& api, Environment&& env)
+  NpuCompiledModelExecutor(CompiledModelNext&& api, Environment&& env)
       : CompiledModelExecutor(std::move(api), std::move(env)) {}
 };
 

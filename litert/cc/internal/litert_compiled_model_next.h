@@ -31,6 +31,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_model.h"
+#include "litert/cc/litert_options.h"
 
 namespace litert {
 
@@ -46,6 +47,19 @@ class CompiledModelNext : public CompiledModel {
     std::vector<Metric> metrics;
   };
 
+  // Creates a CompiledModelNext with the given model and non-const compilation
+  // options. The passed options will be built during the creation.
+  static Expected<CompiledModelNext> Create(litert::Environment& env,
+                                            const litert::Model& model,
+                                            Options& compilation_options);
+
+  // Similar to above, but takes const compilation options that are already
+  // built.
+  static Expected<CompiledModelNext> Create(litert::Environment& env,
+                                            const litert::Model& model,
+                                            const Options& compilation_options);
+
+  // Simple version that only takes hardware accelerators.
   static Expected<CompiledModelNext> Create(
       litert::Environment& env, const litert::Model& model,
       litert::HwAccelerators hardware_accelerators);

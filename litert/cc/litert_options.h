@@ -33,10 +33,12 @@
 namespace litert {
 
 class CompiledModel;
+class CompiledModelNext;
 
 class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
  public:
   friend class CompiledModel;
+  friend class CompiledModelNext;
 
   Options() = default;
 

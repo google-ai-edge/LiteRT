@@ -33,6 +33,27 @@ namespace litert {
 
 Expected<CompiledModelNext> CompiledModelNext::Create(
     litert::Environment& env, const litert::Model& model,
+    Options& compilation_options) {
+  LITERT_RETURN_IF_ERROR(compilation_options.Build());
+  LiteRtModel litert_model = model.Get();
+  LiteRtCompiledModel compiled_model;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+      env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+  return CompiledModelNext(litert_model, compiled_model, OwnHandle::kYes);
+}
+
+Expected<CompiledModelNext> CompiledModelNext::Create(
+    litert::Environment& env, const litert::Model& model,
+    const Options& compilation_options) {
+  LiteRtModel litert_model = model.Get();
+  LiteRtCompiledModel compiled_model;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+      env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+  return CompiledModelNext(litert_model, compiled_model, OwnHandle::kYes);
+}
+
+Expected<CompiledModelNext> CompiledModelNext::Create(
+    litert::Environment& env, const litert::Model& model,
     litert::HwAccelerators hardware_accelerators) {
   LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
