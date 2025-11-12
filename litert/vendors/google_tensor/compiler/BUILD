@@ -58,6 +58,7 @@ litert_dynamic_lib(
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
+        "//litert/cc/options:compiler_options",
         "//litert/vendors/cc:options_helper",
         "//litert/vendors/google_tensor:adapter",
         "@com_google_absl//absl/cleanup",

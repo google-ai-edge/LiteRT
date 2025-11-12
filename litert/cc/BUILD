@@ -1027,7 +1027,14 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:compiler_options",
+        "//litert/cc/options:litert_cpu_options",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/cc/options:litert_mediatek_options",
+        "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_runtime_options",
     ],
 )
 
@@ -1142,6 +1149,7 @@ cc_library(
         "litert_ranked_tensor_type.h",
         "litert_tensor_buffer.h",
         "litert_tensor_buffer_requirements.h",
+        "//litert/cc/options:compiler_options.h",
         "//litert/cc/options:litert_cpu_options.h",
         "//litert/cc/options:litert_google_tensor_options.h",
         "//litert/cc/options:litert_gpu_options.h",
