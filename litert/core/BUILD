@@ -19,7 +19,11 @@ load("//litert/build_common:litert_build_defs.bzl", "cc_library_with_testonly_vi
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
     default_visibility = [
-        "//litert:litert_internal_users",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_internal_users",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
     ],
 )
 
