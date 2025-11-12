@@ -197,7 +197,6 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   std::regex pos_re(absl::GetFlag(FLAGS_do_register),
                     std::regex_constants::ECMAScript);
   auto extra_models = absl::GetFlag(FLAGS_extra_models);
-  auto f16_range_for_f32 = absl::GetFlag(FLAGS_f16_range_for_f32);
   auto data_seed = absl::GetFlag(FLAGS_data_seed);
   auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
   auto plugin_dir = absl::GetFlag(FLAGS_plugin_dir);
@@ -224,12 +223,11 @@ Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
       ParsePlugin(plugin_dir, soc_manufacturer, compile_mode, target_options));
   AtsConf res(std::move(seeds), backend, quiet, dispatch_dir, plugin_dir,
               std::move(neg_re), std::move(pos_re), std::move(extra_models),
-              f16_range_for_f32, data_seed, iters_per_test,
-              std::move(max_ms_per_test_opt), fail_on_timeout, dump_report,
-              std::move(csv), compile_mode, std::move(models_out), limit,
-              std::move(plugin), std::move(soc_manufacturer),
-              std::move(soc_model), std::move(target_options),
-              std::move(reference_options));
+              data_seed, iters_per_test, std::move(max_ms_per_test_opt),
+              fail_on_timeout, dump_report, std::move(csv), compile_mode,
+              std::move(models_out), limit, std::move(plugin),
+              std::move(soc_manufacturer), std::move(soc_model),
+              std::move(target_options), std::move(reference_options));
   Setup(res);
   return res;
 }

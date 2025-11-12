@@ -383,7 +383,6 @@ litert_define_ats(
         # "^(?:(?!npu_ats_87).)*$$",
     ],
     extra_flags = [
-        "--f16_range_for_f32=true",
         "--data_seed=42",
     ],
     jit_suffix = "",

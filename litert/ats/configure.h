@@ -62,9 +62,6 @@ ABSL_DECLARE_FLAG(std::string, dont_register);
 // Regex for explicit inclusions.
 ABSL_DECLARE_FLAG(std::string, do_register);
 
-// Will generate values for f32 tensors in the range of f16 values.
-ABSL_DECLARE_FLAG(bool, f16_range_for_f32);
-
 // Optional list of directories, or model files to add to the test.
 ABSL_DECLARE_FLAG(std::vector<std::string>, extra_models);
 
@@ -251,8 +248,7 @@ class AtsConf {
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
                    std::regex&& neg_re, std::regex&& pos_re,
                    std::vector<std::string> extra_models,
-                   bool f16_range_for_f32, std::optional<int> data_seed,
-                   size_t iters_per_test,
+                   std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
                    bool fail_on_timeout, bool dump_report, std::string csv,
                    bool compile_mode, std::string models_out, int32_t limit,
@@ -267,7 +263,7 @@ class AtsConf {
         neg_re_(std::move(neg_re)),
         pos_re_(std::move(pos_re)),
         extra_models_(std::move(extra_models)),
-        f16_range_for_f32_(f16_range_for_f32),
+
         data_seed_(data_seed),
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
@@ -282,10 +278,9 @@ class AtsConf {
         soc_model_(std::move(soc_model)),
         target_options_(std::move(target_options)),
         reference_options_(std::move(reference_options)) {
-    if (f16_range_for_f32_) {
-      // TODO: Toggle different behavior here via flag.
-      data_builder_.SetSin();
-    }
+    // For now, we will provide default settings for data generation.
+    // More configurability may be introduced later.
+    data_builder_.SetSin();
   }
 
   SeedMap seeds_for_params_;
@@ -297,7 +292,6 @@ class AtsConf {
   std::regex neg_re_;
   std::regex pos_re_;
   std::vector<std::string> extra_models_;
-  bool f16_range_for_f32_;
   std::optional<int> data_seed_;
   size_t iters_per_test_;
   std::chrono::milliseconds max_ms_per_test_;
