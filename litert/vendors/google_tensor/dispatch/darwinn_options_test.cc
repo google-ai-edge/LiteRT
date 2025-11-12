@@ -34,8 +34,11 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   LiteRtOptions litert_options = nullptr;
   ASSERT_EQ(LiteRtCreateOptions(&litert_options), kLiteRtStatusOk);
 
+  // Create a C++ wrapper for the LiteRT options
+  Options cc_options(litert_options, OwnHandle::kNo);
+
   // Create and configure Darwinn runtime options
-  auto darwinn_options = DarwinnRuntimeOptions::Create();
+  auto darwinn_options = cc_options.GetDarwinnRuntimeOptions();
   ASSERT_TRUE(darwinn_options);
 
   EXPECT_TRUE(darwinn_options->SetInferencePowerState(3));
@@ -43,12 +46,6 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   EXPECT_TRUE(darwinn_options->SetInferencePriority(10));
   EXPECT_TRUE(darwinn_options->SetAtomicInference(false));
   EXPECT_TRUE(darwinn_options->SetPreferCoherent(false));
-
-  // Create a C++ wrapper for the LiteRT options
-  Options cc_options(litert_options, OwnHandle::kNo);
-
-  // Add the Darwinn options to the LiteRT options
-  EXPECT_TRUE(cc_options.AddOpaqueOptions(std::move(*darwinn_options)));
 
   // Verify we can find the Darwinn options in the chain
   auto opaque_options = cc_options.GetOpaqueOptions();

@@ -63,6 +63,14 @@ cc_library(
     name = "compiler_options",
     srcs = ["compiler_options.cc"],
     hdrs = ["compiler_options.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/compiler/plugin:__pkg__",
+        "//litert/tools:__pkg__",
+        "//litert/tools/flags:__pkg__",
+        "//litert/vendors/google_tensor/compiler:__pkg__",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",
@@ -226,6 +234,7 @@ cc_library(
     name = "litert_runtime_options",
     srcs = ["litert_runtime_options.cc"],
     hdrs = ["litert_runtime_options.h"],
+    visibility = ["//litert/cc/dynamic_runtime:__pkg__"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_runtime_options",
@@ -270,6 +279,15 @@ cc_library(
     name = "darwinn_options",
     srcs = ["darwinn_options.cc"],
     hdrs = ["darwinn_options.h"],
+    visibility = [
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/vendors/google_tensor/dispatch:__pkg__",
+        # copybara:uncomment_begin(oss litert_lm)
+        # "//litert:litert_cc_users_static_link",
+        # copybara:uncomment_end_and_comment_begin
+        "//visibility:public",
+        # copybara:comment_end
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c/options:litert_darwinn_runtime_options",
