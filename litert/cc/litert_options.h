@@ -64,13 +64,6 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
     return {};
   }
 
-  [[deprecated("Use the overload that takes HwAccelerators above instead.")]]
-  Expected<void> SetHardwareAccelerators(LiteRtHwAcceleratorSet accelerators) {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtSetOptionsHardwareAccelerators(Get(), accelerators));
-    return {};
-  }
-
   Expected<LiteRtHwAcceleratorSet> GetHardwareAccelerators() {
     LiteRtHwAcceleratorSet accelerators;
     LITERT_RETURN_IF_ERROR(
