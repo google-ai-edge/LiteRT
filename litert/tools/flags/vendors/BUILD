@@ -245,6 +245,7 @@ cc_test(
         "//litert/c/options:litert_intel_openvino_options",
         "//litert/cc:litert_expected",
         "//litert/cc/options:litert_intel_openvino_options",
+        "//litert/test:matchers",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:marshalling",
         "@com_google_absl//absl/strings:string_view",

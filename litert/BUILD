@@ -61,9 +61,11 @@ package_group(
 package_group(
     name = "litert_cc_users_static_link",
     packages = [
+        "//litert/cc/dynamic_runtime/...",
         "//litert/ats/...",
         "//litert/google/...",
         "//litert/integration_test/...",
+        "//litert/vendors/google_tensor/dispatch/...",
         "//litert/js/...",
         "//litert/python/...",
         "//third_party/odml/litert/tensor/...",

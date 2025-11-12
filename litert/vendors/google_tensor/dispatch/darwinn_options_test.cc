@@ -23,10 +23,10 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/test/matchers.h"
 
 namespace litert {
 namespace google_tensor {
-namespace {
 
 // Test creating LiteRT options with Darwinn runtime options
 TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
@@ -34,8 +34,11 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   LiteRtOptions litert_options = nullptr;
   ASSERT_EQ(LiteRtCreateOptions(&litert_options), kLiteRtStatusOk);
 
+  // Create a C++ wrapper for the LiteRT options
+  Options cc_options(litert_options, OwnHandle::kNo);
+
   // Create and configure Darwinn runtime options
-  auto darwinn_options = DarwinnRuntimeOptions::Create();
+  auto darwinn_options = cc_options.GetDarwinnRuntimeOptions();
   ASSERT_TRUE(darwinn_options);
 
   EXPECT_TRUE(darwinn_options->SetInferencePowerState(3));
@@ -44,11 +47,7 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   EXPECT_TRUE(darwinn_options->SetAtomicInference(false));
   EXPECT_TRUE(darwinn_options->SetPreferCoherent(false));
 
-  // Create a C++ wrapper for the LiteRT options
-  Options cc_options(litert_options, OwnHandle::kNo);
-
-  // Add the Darwinn options to the LiteRT options
-  EXPECT_TRUE(cc_options.AddOpaqueOptions(std::move(*darwinn_options)));
+  ASSERT_TRUE(cc_options.Build());
 
   // Verify we can find the Darwinn options in the chain
   auto opaque_options = cc_options.GetOpaqueOptions();
@@ -74,6 +73,5 @@ TEST(DarwinnOptionsTest, IntegrateWithLiteRtOptions) {
   LiteRtDestroyOptions(litert_options);
 }
 
-}  // namespace
 }  // namespace google_tensor
 }  // namespace litert

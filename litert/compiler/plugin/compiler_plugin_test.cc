@@ -69,10 +69,11 @@ TEST(CompilerPluginTest, FindTestPluginOk) {
 
 TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
   auto litert_options = Options::Create();
-  auto compiler_options = CompilerOptions::Create();
+  ASSERT_TRUE(litert_options);
+  auto compiler_options = litert_options->GetCompilerOptions();
+  ASSERT_TRUE(compiler_options);
   compiler_options->SetPartitionStrategy(
       kLiteRtCompilerOptionsPartitionStrategyDefault);
-  litert_options->AddOpaqueOptions(std::move(*compiler_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
@@ -83,10 +84,11 @@ TEST(CompilerPluginTest, FindTestPluginWithOptionsOk) {
 
 TEST(CompilerPluginTest, GetOptionsFromTestPluginOk) {
   auto litert_options = Options::Create();
-  auto compiler_options = CompilerOptions::Create();
+  ASSERT_TRUE(litert_options);
+  auto compiler_options = litert_options->GetCompilerOptions();
+  ASSERT_TRUE(compiler_options);
   compiler_options->SetPartitionStrategy(
       kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
-  litert_options->AddOpaqueOptions(std::move(*compiler_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
