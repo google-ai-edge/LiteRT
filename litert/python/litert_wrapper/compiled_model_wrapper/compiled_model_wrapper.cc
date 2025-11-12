@@ -306,7 +306,7 @@ PyObject* CompiledModelWrapper::GetInputBufferRequirements(int signature_index,
   auto types = std::move(*types_or);
   PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
-    PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
+    PyList_SetItem(py_list, i, PyLong_FromLong(static_cast<int64_t>(types[i])));
   }
   PyDict_SetItemString(dict, "supported_types", py_list);
   Py_DECREF(py_list);
@@ -343,7 +343,7 @@ PyObject* CompiledModelWrapper::GetOutputBufferRequirements(int signature_index,
   auto types = std::move(*types_or);
   PyObject* py_list = PyList_New(static_cast<Py_ssize_t>(types.size()));
   for (size_t i = 0; i < types.size(); i++) {
-    PyList_SetItem(py_list, i, PyLong_FromLong(types[i]));
+    PyList_SetItem(py_list, i, PyLong_FromLong(static_cast<int64_t>(types[i])));
   }
   PyDict_SetItemString(dict, "supported_types", py_list);
   Py_DECREF(py_list);
