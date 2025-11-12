@@ -261,7 +261,6 @@ cc_binary(
         ":apply_plugin_runtimecapi",
         ":outstream",
         "//litert/cc:litert_api_with_dynamic_runtime",
-        "//litert/cc/options:compiler_options",
         "//litert/tools/flags:apply_plugin_flags",
         "//litert/tools/flags:common_flags",
         "//litert/tools/flags:flag_types",
@@ -271,7 +270,6 @@ cc_binary(
         "//litert/tools/flags/vendors:qualcomm_flags_with_dynamic_runtime",
         "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
-        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/strings:str_format",
     ],
 )

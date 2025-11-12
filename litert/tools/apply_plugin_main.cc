@@ -25,16 +25,10 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
-#include "litert/cc/options/compiler_options.h"
-#include "litert/cc/options/litert_google_tensor_options.h"
-#include "litert/cc/options/litert_intel_openvino_options.h"
-#include "litert/cc/options/litert_mediatek_options.h"
-#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/tools/apply_plugin.h"
 #include "litert/tools/flags/apply_plugin_flags.h"
 #include "litert/tools/flags/common_flags.h"
