@@ -113,7 +113,9 @@ TEST(PerformanceModeFlagTest, Parse) {
 }
 
 TEST(IntelOpenVinoOptionsFromFlagsTest, DefaultValues) {
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   ASSERT_TRUE(options.HasValue());
   EXPECT_EQ(options.Value().GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeNPU);
   EXPECT_EQ(options.Value().GetPerformanceMode(),
@@ -123,9 +125,10 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, DefaultValues) {
 TEST(IntelOpenVinoOptionsFromFlagsTest, SetDeviceTypeToCPU) {
   absl::SetFlag(&FLAGS_intel_openvino_device_type,
                 kLiteRtIntelOpenVinoDeviceTypeCPU);
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetDeviceType(), kLiteRtIntelOpenVinoDeviceTypeCPU);
 
   // Reset flag to default to avoid affecting other tests
@@ -136,9 +139,10 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, SetDeviceTypeToCPU) {
 TEST(IntelOpenVinoOptionsFromFlagsTest, SetPerformanceModeToThroughput) {
   absl::SetFlag(&FLAGS_intel_openvino_performance_mode,
                 kLiteRtIntelOpenVinoPerformanceModeThroughput);
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetPerformanceMode(),
             kLiteRtIntelOpenVinoPerformanceModeThroughput);
 
@@ -150,9 +154,10 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, SetPerformanceModeToThroughput) {
 TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapSingleOption) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map,
                 "INFERENCE_PRECISION_HINT=f16");
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   // The options should be created successfully with the config map set
 
   // Reset flag to default
@@ -163,9 +168,10 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapMultipleOptions) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map,
                 "INFERENCE_PRECISION_HINT=f16,NPU_COMPILATION_MODE_PARAMS=test,"
                 "CACHE_DIR=/tmp/cache");
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   // The options should be created successfully with multiple config map entries
 
   // Reset flag to default
@@ -174,18 +180,20 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapMultipleOptions) {
 
 TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapEmptyValue) {
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "");
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   // Empty configs_map should work fine
 }
 
 TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapWithSpaces) {
   // Test handling of values with spaces (though typically avoided)
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "KEY1=VALUE1,KEY2=VALUE2");
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
 
   // Reset flag to default
   absl::SetFlag(&FLAGS_intel_openvino_configs_map, "");
@@ -198,9 +206,10 @@ TEST(IntelOpenVinoOptionsFromFlagsTest, ConfigsMapMalformedPairs) {
   absl::SetFlag(
       &FLAGS_intel_openvino_configs_map,
       "GOOD_KEY=GOOD_VALUE,BAD_KEY_NO_EQUALS,KEY_WITH=MULTIPLE=EQUALS");
-  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptionsFromFlags();
+  Expected<IntelOpenVinoOptions> options = IntelOpenVinoOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(IntelOpenVinoOptionsFromFlags(options.Value()).HasValue());
   // Only the well-formed pair should be set (BAD_KEY_NO_EQUALS will be ignored)
   // KEY_WITH=MULTIPLE=EQUALS will be split as KEY_WITH = MULTIPLE=EQUALS (3
   // parts, ignored)

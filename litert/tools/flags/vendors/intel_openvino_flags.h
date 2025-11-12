@@ -57,7 +57,7 @@ std::string AbslUnparseFlag(LiteRtIntelOpenVinoPerformanceMode options);
 
 namespace litert::intel_openvino {
 
-Expected<IntelOpenVinoOptions> IntelOpenVinoOptionsFromFlags();
+Expected<void> IntelOpenVinoOptionsFromFlags(IntelOpenVinoOptions& options);
 
 }  // namespace litert::intel_openvino
 

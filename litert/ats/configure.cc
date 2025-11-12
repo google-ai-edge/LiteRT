@@ -153,11 +153,14 @@ Expected<ExecutionBackend> ParseBackend() {
 Expected<Options> ParseOptions(ExecutionBackend backend) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   if (backend == ExecutionBackend::kNpu) {
-    if (auto qnn_opts = QualcommOptionsFromFlags()) {
-      options.AddOpaqueOptions(std::move(*qnn_opts));
+    {
+      LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+      LITERT_RETURN_IF_ERROR(QualcommOptionsFromFlags(qnn_opts));
     }
-    if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-      options.AddOpaqueOptions(std::move(*mediatek_opts));
+    {
+      LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts,
+                              options.GetMediatekOptions());
+      LITERT_RETURN_IF_ERROR(MediatekOptionsFromFlags(mediatek_opts));
     }
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {

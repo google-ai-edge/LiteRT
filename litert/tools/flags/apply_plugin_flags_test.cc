@@ -55,8 +55,9 @@ TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {
   absl::SetFlag(&FLAGS_partition_strategy,
                 kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 
-  Expected<CompilerOptions> options = CompilerOptionsFromFlags();
+  Expected<CompilerOptions> options = CompilerOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(CompilerOptionsFromFlags(options.Value()).HasValue());
   auto partition_strategy = options.Value().GetPartitionStrategy();
   ASSERT_TRUE(partition_strategy.HasValue());
   EXPECT_EQ(partition_strategy.Value(),

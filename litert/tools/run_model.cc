@@ -131,17 +131,23 @@ Expected<Environment> GetEnvironment() {
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(GetAccelerator());
-  if (auto qnn_opts = QualcommOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*qnn_opts));
+  {
+    LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+    LITERT_RETURN_IF_ERROR(QualcommOptionsFromFlags(qnn_opts));
   }
-  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*google_tensor_opts));
+  {
+    LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                            options.GetGoogleTensorOptions());
+    LITERT_RETURN_IF_ERROR(GoogleTensorOptionsFromFlags(google_tensor_opts));
   }
-  if (auto intel_openvino_opts = IntelOpenVinoOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*intel_openvino_opts));
+  {
+    LITERT_ASSIGN_OR_RETURN(auto& intel_openvino_opts,
+                            options.GetIntelOpenVinoOptions());
+    LITERT_RETURN_IF_ERROR(IntelOpenVinoOptionsFromFlags(intel_openvino_opts));
   }
-  if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*mediatek_opts));
+  {
+    LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+    LITERT_RETURN_IF_ERROR(MediatekOptionsFromFlags(mediatek_opts));
   }
   return options;
 }

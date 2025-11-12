@@ -163,6 +163,7 @@ cc_test(
         "//litert/cc/dynamic_runtime:litert_options",
         "//litert/cc/dynamic_runtime/options:darwinn_options",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:darwinn_options",
         "@com_google_googletest//:gtest_main",
     ],
 )

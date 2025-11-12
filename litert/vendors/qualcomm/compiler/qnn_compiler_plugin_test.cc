@@ -236,12 +236,10 @@ TEST(TestQnnPlugin, CompileMulSubgraphWithOptions) {
   auto opts = Options::Create();
   ASSERT_TRUE(opts);
 
-  auto qnn_opts = qualcomm::QualcommOptions::Create();
+  auto qnn_opts = opts->GetQualcommOptions();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetLogLevel(qualcomm::QualcommOptions::LogLevel::kError);
   qnn_opts->SetEnableWeightSharing(false);
-
-  ASSERT_TRUE(opts->AddOpaqueOptions(std::move(*qnn_opts)));
 
   auto plugin = CreatePlugin(/*env=*/nullptr, opts->Get());
   auto model = testing::LoadTestFileModel("one_mul.tflite");

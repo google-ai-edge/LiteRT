@@ -69,8 +69,9 @@ TEST(NeronSDKVersionTypeFlagTest, Parse) {
 }
 
 TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion8);
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
@@ -83,17 +84,19 @@ TEST(MediatekOptionsFromFlagsTest, DefaultValue) {
 TEST(MediatekOptionsFromFlagsTest, SetFlagToVersion7) {
   absl::SetFlag(&FLAGS_mediatek_sdk_version_type,
                 kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetNeronSDKVersionType(),
             kLiteRtMediatekOptionsNeronSDKVersionTypeVersion7);
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToTrue) {
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, true);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetEnableGemmaCompilerOptimizations());
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
@@ -103,8 +106,9 @@ TEST(MediatekOptionsFromFlagsTest, SetEnableGemmaCompilerOptimizationsToFalse) {
   // Explicitly set to false (even though it's the default) to ensure it's
   // picked up
   absl::SetFlag(&FLAGS_mediatek_enable_gemma_compiler_optimizations, false);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_FALSE(options.Value().GetEnableGemmaCompilerOptimizations());
 }
 
@@ -112,9 +116,10 @@ TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
   absl::SetFlag(
       &FLAGS_mediatek_performance_mode_type,
       kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetPerformanceMode(),
             kLiteRtMediatekNeuronAdapterPerformanceModeNeuronPreferLowPower);
   // Reset flag to default to avoid affecting other tests
@@ -125,8 +130,9 @@ TEST(MediatekOptionsFromFlagsTest, SetPerformanceMode) {
 
 TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToTrue) {
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, true);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetEnableL1CacheOptimizations());
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
@@ -136,15 +142,17 @@ TEST(MediatekOptionsFromFlagsTest, SetEnableL1CacheOptimizationsToFalse) {
   // Explicitly set to false (even though it's the default) to ensure it's
   // picked up
   absl::SetFlag(&FLAGS_mediatek_enable_l1_cache_optimizations, false);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_FALSE(options.Value().GetEnableL1CacheOptimizations());
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToTrue) {
   absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, true);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetDisableDlaDirRemoval());
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
@@ -154,17 +162,19 @@ TEST(MediatekOptionsFromFlagsTest, SetDisableDlaDirRemovalToFalse) {
   // Explicitly set to false (even though it's the default) to ensure it's
   // picked up
   absl::SetFlag(&FLAGS_mediatek_disable_dla_dir_removal, false);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_FALSE(options.Value().GetDisableDlaDirRemoval());
 }
 
 TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
   absl::SetFlag(&FLAGS_mediatek_optimization_hint,
                 kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
 
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetOptimizationHint(),
             kLiteRtMediatekNeuronAdapterOptimizationHintLowLatency);
   // Reset flag to default to avoid affecting other tests
@@ -174,8 +184,9 @@ TEST(MediatekOptionsFromFlagsTest, SetOptimizationHint) {
 
 TEST(MediatekOptionsFromFlagsTest, SetMediatekDlaDir) {
   absl::SetFlag(&FLAGS_mediatek_dla_dir, "/data/local/tmp");
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetMediatekDlaDir(), "/data/local/tmp");
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
@@ -183,8 +194,9 @@ TEST(MediatekOptionsFromFlagsTest, SetMediatekDlaDir) {
 
 TEST(MediatekOptionsFromFlagsTest, SetMediatekDlaDirMalformed) {
   absl::SetFlag(&FLAGS_mediatek_dla_dir, "this is not a path");
-  Expected<MediatekOptions> options = MediatekOptionsFromFlags();
+  Expected<MediatekOptions> options = MediatekOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(MediatekOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetMediatekDlaDir(), "this is not a path");
   // Reset flag to default to avoid affecting other tests
   absl::SetFlag(&FLAGS_mediatek_dla_dir, "");
