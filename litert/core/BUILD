@@ -303,6 +303,15 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "scoped_weight_source",
+    hdrs = ["scoped_weight_source.h"],
+    deps = [
+        ":scoped_file",
+        "@com_google_absl//absl/container:flat_hash_map",
+    ],
+)
+
 cc_test(
     name = "scoped_file_test",
     srcs = ["scoped_file_test.cc"],
