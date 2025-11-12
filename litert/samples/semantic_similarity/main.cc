@@ -279,9 +279,9 @@ absl::Status RealMain() {
     options.SetHardwareAccelerators(accelerator);
     // Add other NPU options here..
   } else if (accelerator & litert::HwAccelerators::kCpu) {
-    LITERT_ASSIGN_OR_RETURN(auto cpu_compilation_options, CpuOptions::Create());
+    LITERT_ASSIGN_OR_RETURN(auto& cpu_compilation_options,
+                            options.GetCpuOptions());
     LITERT_RETURN_IF_ERROR(cpu_compilation_options.SetNumThreads(4));
-    options.AddOpaqueOptions(std::move(cpu_compilation_options));
     options.SetHardwareAccelerators(accelerator);
     // Set GPU compilation options.
   } else if (accelerator & litert::HwAccelerators::kGpu) {
