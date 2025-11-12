@@ -140,9 +140,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     hardware_accelerators |= HwAccelerators::kCpu;
 
     if (num_threads > 0) {
-      LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
+      LITERT_ASSIGN_OR_ABORT(auto& cpu_options,
+                             compilation_options.GetCpuOptions());
       cpu_options.SetNumThreads(num_threads);
-      compilation_options.AddOpaqueOptions(std::move(cpu_options));
     }
   }
 
