@@ -63,6 +63,14 @@ cc_library(
     name = "compiler_options",
     srcs = ["compiler_options.cc"],
     hdrs = ["compiler_options.h"],
+    visibility = [
+        "//litert/cc:__pkg__",
+        "//litert/cc/dynamic_runtime:__pkg__",
+        "//litert/compiler/plugin:__pkg__",
+        "//litert/tools:__pkg__",
+        "//litert/tools/flags:__pkg__",
+        "//litert/vendors/google_tensor/compiler:__pkg__",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_opaque_options",

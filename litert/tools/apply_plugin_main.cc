@@ -24,7 +24,6 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
-#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
@@ -90,26 +89,6 @@ ApplyPluginRun::Ptr ParseFlags() {
   return res;
 }
 
-template <typename T>
-bool ParseAndAddOptions(
-    litert::Options& opts, ApplyPluginRun::Ptr& run,
-    absl::FunctionRef<litert::Expected<T>()> options_from_flags) {
-  static_assert(std::is_base_of_v<litert::OpaqueOptions, T>);
-  litert::Expected<T> options = options_from_flags();
-  if (!options) {
-    run->dump_out.Get().get()
-        << "Failed to create " << T::Discriminator()
-        << " options, Error:" << options.Error().Message() << "\n";
-    return false;
-  }
-  if (!opts.AddOpaqueOptions(std::move(*options))) {
-    run->dump_out.Get().get()
-        << "Failed to add " << T::Discriminator() << " options to list\n";
-    return false;
-  }
-  return true;
-}
-
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -142,17 +121,87 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  bool all_flags_parsed =
-      (ParseAndAddOptions<litert::CompilerOptions>(
-           *opts, run, litert::CompilerOptionsFromFlags) &&
-       ParseAndAddOptions<litert::qualcomm::QualcommOptions>(
-           *opts, run, litert::qualcomm::QualcommOptionsFromFlags) &&
-       ParseAndAddOptions<litert::google_tensor::GoogleTensorOptions>(
-           *opts, run, litert::google_tensor::GoogleTensorOptionsFromFlags) &&
-       ParseAndAddOptions<litert::intel_openvino::IntelOpenVinoOptions>(
-           *opts, run, litert::intel_openvino::IntelOpenVinoOptionsFromFlags) &&
-       ParseAndAddOptions<litert::mediatek::MediatekOptions>(
-           *opts, run, litert::mediatek::MediatekOptionsFromFlags));
+  bool all_flags_parsed = true;
+
+  if (all_flags_parsed) {
+    auto compiler_opts = opts->GetCompilerOptions();
+    if (!compiler_opts) {
+      run->dump_out.Get().get() << "Failed to create Compiler options: "
+                                << compiler_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status = litert::CompilerOptionsFromFlags(*compiler_opts);
+               !status) {
+      run->dump_out.Get().get() << "Failed to parse Compiler flags, Error: "
+                                << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    auto google_tensor_opts = opts->GetGoogleTensorOptions();
+    if (!google_tensor_opts) {
+      run->dump_out.Get().get() << "Failed to create Google Tensor options: "
+                                << google_tensor_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::google_tensor::GoogleTensorOptionsFromFlags(
+                       *google_tensor_opts);
+               !status) {
+      run->dump_out.Get().get()
+          << "Failed to parse Google Tensor flags, Error: "
+          << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    auto qnn_opts = opts->GetQualcommOptions();
+    if (!qnn_opts) {
+      run->dump_out.Get().get()
+          << "Failed to create Qualcomm options: " << qnn_opts.Error().Message()
+          << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::qualcomm::QualcommOptionsFromFlags(*qnn_opts);
+               !status) {
+      run->dump_out.Get().get() << "Failed to parse Qualcomm flags, Error: "
+                                << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    auto mediatek_opts = opts->GetMediatekOptions();
+    if (!mediatek_opts) {
+      run->dump_out.Get().get() << "Failed to create Mediatek options: "
+                                << mediatek_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::mediatek::MediatekOptionsFromFlags(*mediatek_opts);
+               !status) {
+      run->dump_out.Get().get() << "Failed to parse Mediatek flags, Error: "
+                                << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    auto intel_openvino_opts = opts->GetIntelOpenVinoOptions();
+    if (!intel_openvino_opts) {
+      run->dump_out.Get().get()
+          << "Failed to create Intel OpenVINO options: "
+          << intel_openvino_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::intel_openvino::IntelOpenVinoOptionsFromFlags(
+                       *intel_openvino_opts);
+               !status) {
+      run->dump_out.Get().get()
+          << "Failed to parse Intel OpenVINO flags, Error: "
+          << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
 
   if (!all_flags_parsed) {
     return 1;

@@ -118,7 +118,7 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 namespace litert::qualcomm {
 
-Expected<QualcommOptions> QualcommOptionsFromFlags();
+Expected<void> QualcommOptionsFromFlags(QualcommOptions& options);
 
 }  // namespace litert::qualcomm
 

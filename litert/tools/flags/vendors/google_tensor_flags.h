@@ -63,7 +63,7 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
 
 namespace litert::google_tensor {
 
-Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags();
+Expected<void> GoogleTensorOptionsFromFlags(GoogleTensorOptions& options);
 
 }  // namespace litert::google_tensor
 

@@ -28,7 +28,14 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/compiler_options.h"
+#include "litert/cc/options/litert_cpu_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_intel_openvino_options.h"
+#include "litert/cc/options/litert_mediatek_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 namespace litert {
 
@@ -125,12 +132,27 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // set the GPU options.
   Expected<GpuOptions&> GetGpuOptions();
 
+  Expected<CpuOptions&> GetCpuOptions();
+  Expected<CompilerOptions&> GetCompilerOptions();
+  Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
+  Expected<mediatek::MediatekOptions&> GetMediatekOptions();
+  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions();
+  Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
+  Expected<RuntimeOptions&> GetRuntimeOptions();
+
  private:
   // Builds the options object. This should be called after all the setters.
   // It's automatically called in CompiledModel::Create.
   Expected<void> Build();
 
   std::optional<GpuOptions> gpu_options_;
+  std::optional<CpuOptions> cpu_options_;
+  std::optional<CompilerOptions> compiler_options_;
+  std::optional<qualcomm::QualcommOptions> qualcomm_options_;
+  std::optional<mediatek::MediatekOptions> mediatek_options_;
+  std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
+  std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
+  std::optional<RuntimeOptions> runtime_options_;
 };
 
 }  // namespace litert
