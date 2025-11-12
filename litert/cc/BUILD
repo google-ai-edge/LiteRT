@@ -1030,12 +1030,14 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:darwinn_options",
         "//litert/cc/options:litert_cpu_options",
         "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_runtime_options",
     ],
 )
 
@@ -1229,6 +1231,7 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_logging",
+        "//litert/cc/options:darwinn_options",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",

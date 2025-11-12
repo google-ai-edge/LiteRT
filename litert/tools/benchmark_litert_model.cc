@@ -149,9 +149,9 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
 
   if (use_profiler) {
-    LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+    LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                           compilation_options.GetRuntimeOptions());
     runtime_options.SetEnableProfiling(/*enabled=*/true);
-    compilation_options.AddOpaqueOptions(std::move(runtime_options));
   }
 
   return compilation_options;

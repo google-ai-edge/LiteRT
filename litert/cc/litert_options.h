@@ -28,14 +28,20 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/darwinn_options.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 namespace litert {
+
+namespace google_tensor {
+class DarwinnOptionsTest_IntegrateWithLiteRtOptions_Test;
+}  // namespace google_tensor
 
 class CompiledModel;
 class CompiledModelNext;
@@ -44,6 +50,8 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
  public:
   friend class CompiledModel;
   friend class CompiledModelNext;
+  friend class google_tensor::
+      DarwinnOptionsTest_IntegrateWithLiteRtOptions_Test;
 
   Options() = default;
 
@@ -143,6 +151,8 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // Returns the reference to the Intel OpenVINO options. User will use this
   // function to set the Intel OpenVINO options.
   Expected<intel_openvino::IntelOpenVinoOptions&> GetIntelOpenVinoOptions();
+  Expected<RuntimeOptions&> GetRuntimeOptions();
+  Expected<DarwinnRuntimeOptions&> GetDarwinnRuntimeOptions();
 
  private:
   // Builds the options object. This should be called after all the setters.
@@ -155,6 +165,8 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   std::optional<mediatek::MediatekOptions> mediatek_options_;
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
   std::optional<intel_openvino::IntelOpenVinoOptions> intel_openvino_options_;
+  std::optional<RuntimeOptions> runtime_options_;
+  std::optional<DarwinnRuntimeOptions> darwinn_runtime_options_;
 };
 
 }  // namespace litert

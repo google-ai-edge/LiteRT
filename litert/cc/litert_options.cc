@@ -27,6 +27,7 @@
 #include "litert/cc/options/litert_intel_openvino_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
+#include "litert/cc/options/litert_runtime_options.h"
 
 namespace litert {
 
@@ -80,6 +81,14 @@ Options::GetIntelOpenVinoOptions() {
   return EnsureOption(intel_openvino_options_);
 }
 
+Expected<RuntimeOptions&> Options::GetRuntimeOptions() {
+  return EnsureOption(runtime_options_);
+}
+
+Expected<DarwinnRuntimeOptions&> Options::GetDarwinnRuntimeOptions() {
+  return EnsureOption(darwinn_runtime_options_);
+}
+
 Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), cpu_options_));
@@ -87,6 +96,8 @@ Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), mediatek_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), intel_openvino_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), runtime_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), darwinn_runtime_options_));
   return {};
 }
 

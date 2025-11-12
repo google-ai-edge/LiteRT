@@ -676,7 +676,11 @@ cc_library(
         "//litert/cc/dynamic_runtime/options:litert_intel_openvino_options",
         "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
+        "//litert/cc/dynamic_runtime/options:litert_runtime_options",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:compiler_options",
+        "//litert/cc/options:darwinn_options",
+        "//litert/cc/options:litert_runtime_options",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
