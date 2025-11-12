@@ -121,6 +121,17 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetOptimizationLevel(static_cast<::qnn::OptimizationLevel>(
       qualcomm_options.GetOptimizationLevel()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+
+  // TODO(jiunkaiy): Set backend type based on qualcomm options.
+  // However, if a DLC directory is set, we must use the IR backend.
+  qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
+  if (!qualcomm_options.GetDlcDir().empty() &&
+      qnn_options.GetBackendType() != ::qnn::BackendType::kIrBackend) {
+    LITERT_LOG(LITERT_WARNING,
+               "Overriding backend type to IR Backend because DLC dir is set.");
+    qnn_options.SetBackendType(::qnn::BackendType::kIrBackend);
+  }
+
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
 }

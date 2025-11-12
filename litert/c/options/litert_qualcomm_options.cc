@@ -40,6 +40,7 @@ struct LiteRtQualcommOptionsT {
       kLiteRtQualcommHtpPerformanceModeDefault;
   std::vector<std::int32_t> dump_tensor_ids;
   std::string ir_json_dir;
+  std::string dlc_dir;
   std::uint32_t vtcm_size = 0;
   std::uint32_t num_hvx_threads = 0;
   LiteRtQualcommOptionsOptimizationLevel optimization_level =
@@ -68,8 +69,8 @@ LiteRtStatus LiteRtQualcommOptionsCreate(LiteRtOpaqueOptions* options) {
         ans, options->log_level, options->profiling,
         options->use_htp_preference, options->use_qint16_as_quint16,
         options->enable_weight_sharing, options->htp_performance_mode,
-        options->ir_json_dir, options->vtcm_size, options->num_hvx_threads,
-        options->optimization_level);
+        options->ir_json_dir, options->dlc_dir, options->vtcm_size,
+        options->num_hvx_threads, options->optimization_level);
     return ans;
   };
   LITERT_RETURN_IF_ERROR(LiteRtSetOpaqueOptionsHash(*options, qti_hash));
@@ -332,6 +333,28 @@ LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
   }
 
   *ir_json_dir = options->ir_json_dir.c_str();
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsSetDlcDir(LiteRtQualcommOptions options,
+                                            const char* dlc_dir) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->dlc_dir = dlc_dir;
+
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtQualcommOptionsGetDlcDir(LiteRtQualcommOptions options,
+                                            const char** dlc_dir) {
+  if (options == nullptr || dlc_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *dlc_dir = options->dlc_dir.c_str();
 
   return kLiteRtStatusOk;
 }

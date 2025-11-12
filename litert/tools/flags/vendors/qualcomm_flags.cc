@@ -236,6 +236,10 @@ ABSL_FLAG(
     "Qnn IR JSON directory. If provided, you can obtain Qnn IR in Qnn JSON "
     "format.");
 
+ABSL_FLAG(
+    std::string, qualcomm_dlc_dir, "",
+    "DLC directory. If provided, you can obtain Qnn graphs in DLC format.");
+
 ABSL_FLAG(uint32_t, qualcomm_vtcm_size, 0,
           "The vtcm size of the target device. If this option is set to 0, the "
           "max size of vtcm size will be used.");
@@ -336,6 +340,9 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);
+
+  const std::string dlc_dir = absl::GetFlag(FLAGS_qualcomm_dlc_dir);
+  opts.SetDlcDir(dlc_dir);
 
   const auto vtcm_size = absl::GetFlag(FLAGS_qualcomm_vtcm_size);
   opts.SetVtcmSize(vtcm_size);
