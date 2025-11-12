@@ -129,8 +129,8 @@ ABSL_FLAG(std::string, google_tensor_testing_flags, "",
 
 namespace litert::google_tensor {
 
-Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto options, GoogleTensorOptions::Create());
+Expected<void> UpdateGoogleTensorOptionsFromFlags(
+    GoogleTensorOptions& options) {
   options.SetFloatTruncationType(
       absl::GetFlag(FLAGS_google_tensor_truncation_type));
   options.SetInt64ToInt32Truncation(
@@ -143,7 +143,7 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
   options.SetShardingIntensity(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));
-  return options;
+  return {};
 }
 
 }  // namespace litert::google_tensor

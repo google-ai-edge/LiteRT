@@ -98,11 +98,10 @@ TEST(TestCallGoogleTensorPlugin, CompileMulSubgraphWithOptions) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options, env.GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
-  LITERT_ASSERT_OK_AND_ASSIGN(auto google_tensor_options,
-                              GoogleTensorOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetGoogleTensorOptions());
   google_tensor_options.SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
-  LITERT_ASSERT_OK(options.AddOpaqueOptions(std::move(google_tensor_options)));
 
   auto plugin = CreatePlugin(env_options.Get(), options.Get());
   auto model = testing::LoadTestFileModel("mul_simple.tflite");
