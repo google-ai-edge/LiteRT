@@ -121,9 +121,8 @@ std::string AbslUnparseFlag(LiteRtIntelOpenVinoPerformanceMode options) {
 
 namespace litert::intel_openvino {
 
-Expected<IntelOpenVinoOptions> IntelOpenVinoOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto options, IntelOpenVinoOptions::Create());
-
+Expected<void> UpdateIntelOpenVinoOptionsFromFlags(
+    IntelOpenVinoOptions& options) {
   options.SetDeviceType(absl::GetFlag(FLAGS_intel_openvino_device_type));
   options.SetPerformanceMode(
       absl::GetFlag(FLAGS_intel_openvino_performance_mode));
@@ -147,7 +146,7 @@ Expected<IntelOpenVinoOptions> IntelOpenVinoOptionsFromFlags() {
     }
   }
 
-  return options;
+  return {};
 }
 
 }  // namespace litert::intel_openvino
