@@ -67,18 +67,16 @@ TEST_P(ParameterizedTest, Basic) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
-
   auto env = litert::Environment::Create({});
   ASSERT_TRUE(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(GetParam()));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              CompiledModel::Create(*env, model, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
+                            options));
 
-  EXPECT_EQ(model.GetNumSignatures(), 1);
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -87,7 +85,8 @@ TEST_P(ParameterizedTest, Basic) {
                               compiled_model.CreateOutputBuffers());
 
   // Fill model inputs.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
   EXPECT_EQ(input_names.size(), 2);
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
@@ -103,7 +102,7 @@ TEST_P(ParameterizedTest, Basic) {
 
   // Check model output.
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
+                              compiled_model.GetSignatureOutputNames());
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
@@ -137,10 +136,6 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
-
   auto env_1 = litert::Environment::Create({});
   ASSERT_TRUE(env_1);
 
@@ -148,8 +143,10 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
       auto options_1,
       CreateGpuOptions({false, GpuOptions::Precision::kDefault,
                         GpuOptions::BufferStorageType::kDefault}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
-                              CompiledModel::Create(*env_1, model, options_1));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_1,
+      CompiledModel::Create(*env_1, testing::GetTestFilePath(kModelFileName),
+                            options_1));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_1,
@@ -173,8 +170,10 @@ TEST(CompiledModelWebGpuTest, GpuEnvironment) {
       auto options_2,
       CreateGpuOptions({true, GpuOptions::Precision::kFp32,
                         GpuOptions::BufferStorageType::kTexture2D}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_2,
-                              CompiledModel::Create(*env_2, model, options_2));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_2,
+      CompiledModel::Create(*env_2, testing::GetTestFilePath(kModelFileName),
+                            options_2));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_2, env_2->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_2,
@@ -192,10 +191,6 @@ TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
   // To workaround the memory leak in Nvidia's driver
   absl::LeakCheckDisabler disable_leak_check;
 
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto model,
-      Model::CreateFromFile(testing::GetTestFilePath(kModelFileName)));
-
   auto env_1 = litert::Environment::Create({});
   ASSERT_TRUE(env_1);
 
@@ -203,8 +198,10 @@ TEST(CompiledModelWebGpuTest, ConstructMlDriftWebGpuEnvironment) {
       auto options_1,
       CreateGpuOptions({false, GpuOptions::Precision::kDefault,
                         GpuOptions::BufferStorageType::kDefault}));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model_1,
-                              CompiledModel::Create(*env_1, model, options_1));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model_1,
+      CompiledModel::Create(*env_1, testing::GetTestFilePath(kModelFileName),
+                            options_1));
   LITERT_ASSERT_OK_AND_ASSIGN(auto env_options_1, env_1->GetOptions());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto wegpu_device_id_1,

@@ -60,15 +60,13 @@ const float kTolerance = 1e-5;
     return;
   }
 
-  auto model = litert::Model::CreateFromFile(modelFilePath.UTF8String);
-  XCTAssertTrue(model);
   XCTAssertTrue(env);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CreateGpuOptions(/*external_tensors_mode=*/true));
   XCTAssertTrue(options);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model,
-                              litert::CompiledModel::Create(env, *model, options));
-  XCTAssertEqual(model->GetNumSignatures(), 1);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model, litert::CompiledModel::Create(env, modelFilePath.UTF8String, options));
+  XCTAssertEqual(compiled_model.GetNumSignatures(), 1);
   XCTAssertTrue(compiled_model);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, compiled_model.CreateInputBuffers());
@@ -76,7 +74,7 @@ const float kTolerance = 1e-5;
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, compiled_model.CreateOutputBuffers());
 
   // // Fill model inputs.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model->GetSignatureInputNames());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, compiled_model.GetSignatureInputNames());
   XCTAssertEqual(input_names.size(), 2);
   XCTAssertEqual(input_names.at(0), "arg0");
   XCTAssertEqual(input_names.at(1), "arg1");
@@ -91,7 +89,7 @@ const float kTolerance = 1e-5;
   compiled_model.Run(input_buffers, output_buffers);
 
   // Check model output.
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, model->GetSignatureOutputNames());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names, compiled_model.GetSignatureOutputNames());
   XCTAssertEqual(output_names.size(), 1);
   XCTAssertEqual(output_names.at(0), "tfl.add");
   XCTAssertTrue(output_buffers[0].IsMetalMemory());

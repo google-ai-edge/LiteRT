@@ -306,17 +306,6 @@ TEST(DispatchDelegate, CompiledModel) {
       OwningBufferRef<uint8_t> model_with_byte_code,
       internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
                                         testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
-  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -329,7 +318,17 @@ TEST(DispatchDelegate, CompiledModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kCpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb and DmaBuf.
@@ -400,18 +399,6 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
       OwningBufferRef<uint8_t> model_with_byte_code,
       internal::GetModelBufWithByteCode(testing::GetTestFilePath(kTfliteFile),
                                         testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
-  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "MediaTek NPU";
@@ -420,7 +407,17 @@ TEST(DispatchDelegate, CompiledModelMultiRun) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kCpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom"));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
@@ -520,17 +517,6 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
       internal::GetModelBufWithByteCode(
           testing::GetTestFilePath("shared_input_cpu_npu.tflite"),
           testing::GetTestFilePath(kNpuFile)));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
-  EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -540,7 +526,17 @@ TEST(DispatchDelegate, CompiledModelSharedInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kCpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.add", "tfl.custom"));
 
   // Create I/O tensor buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,

@@ -48,14 +48,11 @@ TEST(CompiledModelTest, RunMultipleIterationsWithSameTensorBuffers) {
   std::string model_file_path = testing::GetTestFilePath(
       "simple_model_qualcomm_sm8650_precompiled.tflite");
 
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromFile(model_file_path));
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kNpu));
+      CompiledModel::Create(env, model_file_path, HwAccelerators::kNpu));
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -86,14 +83,11 @@ TEST(CompiledModelTest, RunMultipleIterationsWithNewTensorBuffers) {
   std::string model_file_path = testing::GetTestFilePath(
       "simple_model_qualcomm_sm8650_precompiled.tflite");
 
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromFile(model_file_path));
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kNpu));
+      CompiledModel::Create(env, model_file_path, HwAccelerators::kNpu));
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   // Creates and destroys tensor buffers each iteration to test proper memory
   // registration/deregistration in Qualcomm Dispatch.

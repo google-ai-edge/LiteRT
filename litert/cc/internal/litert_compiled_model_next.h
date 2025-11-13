@@ -172,7 +172,8 @@ class CompiledModelNext : public CompiledModel {
   explicit CompiledModelNext(LiteRtModel litert_model,
                              LiteRtCompiledModel compiled_model,
                              OwnHandle owned)
-      : CompiledModel(litert_model, compiled_model, owned) {}
+      : CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
+                      compiled_model, owned) {}
 };
 
 }  // namespace litert

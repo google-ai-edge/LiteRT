@@ -59,14 +59,11 @@ TEST(CompiledModelTest, Basic) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
 
   // Check fully accelerated.
   LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
@@ -133,18 +130,18 @@ TEST(CompiledModelTest,
      ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  Model model = testing::LoadTestFileModel(kDynamicModelFileName);
-  ASSERT_TRUE(model);
-
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env,
+                            testing::GetTestFilePath(kDynamicModelFileName),
+                            HwAccelerators::kCpu));
 
-  absl::string_view signature_key = model.DefaultSignatureKey();
+  absl::string_view signature_key = compiled_model.DefaultSignatureKey();
 
   const std::vector<int> resized_dims = {4, 2, 3};
-  LITERT_ASSERT_OK_AND_ASSIGN(const auto& input_names,
-                              model.GetSignatureInputNames(signature_key));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      const auto& input_names,
+      compiled_model.GetSignatureInputNames(signature_key));
   absl::flat_hash_map<absl::string_view, TensorBuffer> input_map;
   for (const auto& input_name : input_names) {
     LITERT_ASSERT_OK(compiled_model.ResizeInputTensor(
@@ -176,25 +173,23 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model and check signatures.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-  size_t signature_index = 0;
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
-                              model.GetSignatureInputNames(signature_index));
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames(signature_index));
-  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
-
-  // Create CompiledModel.
+  // Create CompiledModel and check signatures.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+  size_t signature_index = 0;
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
+  EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -262,23 +257,21 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model and check signatures.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
+  // Create CompiledModel and check signatures.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
 
-  EXPECT_EQ(model.GetNumSignatures(), 1);
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
   EXPECT_THAT(input_names, ElementsAre("arg0", "arg1"));
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
+                              compiled_model.GetSignatureOutputNames());
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
-
-  // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
 
   // Check CompiledModel buffer requirements.
   // input and output expect host memory.
@@ -354,22 +347,19 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model and check signatures.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
 
   // Create input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> input_buffers,
-      compiled_model.CreateInputBuffers(model.DefaultSignatureKey()));
+      compiled_model.CreateInputBuffers(compiled_model.DefaultSignatureKey()));
   LITERT_ASSERT_OK_AND_ASSIGN(
       std::vector<TensorBuffer> output_buffers,
-      compiled_model.CreateOutputBuffers(model.DefaultSignatureKey()));
+      compiled_model.CreateOutputBuffers(compiled_model.DefaultSignatureKey()));
 
   // Confirm input and output buffers are host memory.
   EXPECT_THAT(input_buffers[0].BufferTypeCC(),
@@ -389,7 +379,7 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
 
   // Execute model with input and output buffers.
   bool async;
-  compiled_model.RunAsync(model.DefaultSignatureKey(), input_buffers,
+  compiled_model.RunAsync(compiled_model.DefaultSignatureKey(), input_buffers,
                           output_buffers, async);
   // Since there are no events on the output buffers, async should be false.
   ASSERT_FALSE(async);
@@ -411,10 +401,6 @@ TEST(CompiledModelTest, WithProfiler) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -425,7 +411,8 @@ TEST(CompiledModelTest, WithProfiler) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, compilation_options));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
 
   // Check fully accelerated.
   LITERT_ASSERT_OK_AND_ASSIGN(auto fullyAccelerated,
@@ -503,14 +490,12 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model with dynamic shapes.
-  Model model = testing::LoadTestFileModel(kDynamicModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env,
+                            testing::GetTestFilePath(kDynamicModelFileName),
+                            HwAccelerators::kCpu));
 
   // Test resizing input tensor by index - resize from (?, 2, 3) to (1, 2, 3)
   {
@@ -576,9 +561,9 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     // Get the element type from the original model.
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type0,
-                                model.GetInputTensorType(0, "arg0"));
+                                compiled_model.GetInputTensorType(0, "arg0"));
     LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& type1,
-                                model.GetInputTensorType(0, "arg1"));
+                                compiled_model.GetInputTensorType(0, "arg1"));
 
     // Manually create a new RankedTensorType with the new shape.
     auto new_type0 = RankedTensorType(
@@ -604,8 +589,9 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
         TensorBufferRequirements out_req,
         compiled_model.GetOutputBufferRequirements(size_t(0)));
     LITERT_ASSERT_OK_AND_ASSIGN(size_t out_size, out_req.BufferSize());
-    LITERT_ASSERT_OK_AND_ASSIGN(const RankedTensorType& out_type,
-                                model.GetOutputTensorType(0, "tfl.add"));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        const RankedTensorType& out_type,
+        compiled_model.GetOutputTensorType(0, "tfl.add"));
 
     // Get the output tensor shape from the compiled model.
     LITERT_ASSERT_OK_AND_ASSIGN(
@@ -650,10 +636,6 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -668,7 +650,8 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Create CompiledModel with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, compilation_options));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
 
   // Test 1: Basic ReportError functionality
   LITERT_ASSERT_OK(compiled_model.ReportError("Simple error message"));
@@ -717,14 +700,11 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel with default StderrReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            HwAccelerators::kCpu));
 
   // ReportError should work with StderrReporter (prints to stderr)
   LITERT_ASSERT_OK(compiled_model.ReportError("This goes to stderr: %d", 123));
@@ -743,10 +723,6 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -759,7 +735,8 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, compilation_options));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
 
   // Test 1: Empty error message
   LITERT_ASSERT_OK(compiled_model.ReportError(""));
@@ -800,10 +777,6 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create compilation options with no error reporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -816,7 +789,8 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, compilation_options));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
 
   // ReportError should work but do nothing
   LITERT_ASSERT_OK(
@@ -833,19 +807,17 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
 
 // Test for constant output tensor support
 TEST(CompiledModelTest, ConstantOutputTensor) {
-  // Create Model with constant output tensor.
-  Model model = testing::LoadTestFileModel(kConstantOutputTensorModelFileName);
-  ASSERT_TRUE(model);
-
   // Environment setup
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create CompiledModel
+  // Create CompiledModel with constant output tensor.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kCpu));
+      CompiledModel::Create(
+          env, testing::GetTestFilePath(kConstantOutputTensorModelFileName),
+          HwAccelerators::kCpu));
 
-  EXPECT_EQ(model.GetNumSignatures(), 1);
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
   size_t signature_index = 0;
 
   // Create input and output buffers
@@ -949,10 +921,6 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create weight tensor buffer.
   alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,
                                                                         2.0f};
@@ -968,7 +936,8 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, compilation_options));
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            compilation_options));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,

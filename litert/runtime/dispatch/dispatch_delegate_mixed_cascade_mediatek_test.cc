@@ -65,17 +65,6 @@ TEST(DispatchDelegate, CompiledModel) {
       auto model_with_byte_code,
       internal::GetModelBufWithByteCode(
           testing::GetTestFilePath(kModelFileName), custom_code_to_npu_file));
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromBuffer(model_with_byte_code));
-
-  EXPECT_EQ(model.GetNumSignatures(), 1);
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names, model.GetSignatureInputNames());
-  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1", "arg2", "arg3", "arg4"));
-
-  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
-                              model.GetSignatureOutputNames());
-  EXPECT_THAT(output_names, ElementsAre("tfl.custom2"));
 
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
@@ -94,7 +83,17 @@ TEST(DispatchDelegate, CompiledModel) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kNpu));
+      CompiledModel::Create(env, model_with_byte_code, HwAccelerators::kNpu));
+
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
+                              compiled_model.GetSignatureInputNames());
+  EXPECT_THAT(input_names, ElementsAre("arg0", "arg1", "arg2", "arg3", "arg4"));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_names,
+                              compiled_model.GetSignatureOutputNames());
+  EXPECT_THAT(output_names, ElementsAre("tfl.custom2"));
 
   // Check CompiledModel buffer requirements. Input and output are supposed to
   // be Ahwb and DmaBuf.

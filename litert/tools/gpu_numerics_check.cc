@@ -343,20 +343,18 @@ Expected<std::vector<BufferDiffStats>> CompareOutputBuffers(
 
 Expected<std::vector<BufferDiffStats>> RunModel(absl::string_view model_path) {
   ABSL_LOG(INFO) << "Model: " << model_path;
-  LITERT_ASSIGN_OR_RETURN(auto cpu_model,
-                          Model::CreateFromFile(std::string(model_path)));
-  LITERT_ASSIGN_OR_RETURN(auto gpu_model,
-                          Model::CreateFromFile(std::string(model_path)));
 
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
 
   LITERT_ASSIGN_OR_RETURN(auto cpu_options, GetCpuOptions());
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_cpu,
-                          CompiledModel::Create(env, cpu_model, cpu_options));
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_cpu,
+      CompiledModel::Create(env, std::string(model_path), cpu_options));
 
   LITERT_ASSIGN_OR_RETURN(auto gpu_options, GetGpuOptions());
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_gpu,
-                          CompiledModel::Create(env, gpu_model, gpu_options));
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_gpu,
+      CompiledModel::Create(env, std::string(model_path), gpu_options));
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;

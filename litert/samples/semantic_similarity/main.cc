@@ -257,11 +257,9 @@ absl::Status RealMain() {
         absl::StrCat("Failed to load tokenizer model: ", status.ToString()));
   }
 
-  // Create LiteRT Environment, Model, and CompiledModel, ensuring lifetimes
+  // Create LiteRT Environment and CompiledModel, ensuring lifetimes
   // are managed correctly within this scope.
   std::vector<litert::Environment::Option> environment_options = {};
-  LITERT_ASSIGN_OR_RETURN(auto embedder_model_def,
-                          Model::CreateFromFile(embedder_path));
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   auto accelerator = GetAccelerator();
   // Set CPU compilation options.
@@ -301,9 +299,8 @@ absl::Status RealMain() {
   LITERT_ASSIGN_OR_RETURN(
       auto env, Environment::Create(absl::MakeConstSpan(environment_options)));
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto embedder_model,
-      CompiledModel::Create(env, embedder_model_def, options));
+  LITERT_ASSIGN_OR_RETURN(auto embedder_model,
+                          CompiledModel::Create(env, embedder_path, options));
 
   // 2. Process Sentences
   auto tokens1_or =

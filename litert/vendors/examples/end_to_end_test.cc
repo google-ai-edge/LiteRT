@@ -52,18 +52,17 @@ TEST(ExampleEndToEndTest, JIT) {
   };
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto env, Environment::Create(absl::MakeConstSpan(environment_options)));
-  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
-                              Model::CreateFromFile(GetTestFilePath(kModel)));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      auto cm, CompiledModel::Create(env, model, HwAccelerators::kNpu));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto input_buffers, cm.CreateInputBuffers(model.DefaultSignatureKey()));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto output_buffers, cm.CreateOutputBuffers(model.DefaultSignatureKey()));
+      auto cm, CompiledModel::Create(env, GetTestFilePath(kModel),
+                                     HwAccelerators::kNpu));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              cm.CreateInputBuffers(cm.DefaultSignatureKey()));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              cm.CreateOutputBuffers(cm.DefaultSignatureKey()));
   LITERT_ASSERT_OK(input_buffers[0].Write<float>({1.0f, 2.0f, 3.0f, 4.0f}));
   LITERT_ASSERT_OK(input_buffers[1].Write<float>({1.0f, 2.0f, 3.0f, 4.0f}));
   LITERT_ASSERT_OK(
-      cm.Run(model.DefaultSignatureKey(), input_buffers, output_buffers));
+      cm.Run(cm.DefaultSignatureKey(), input_buffers, output_buffers));
   std::vector<float> output(4);
   LITERT_ASSERT_OK(output_buffers[0].Read(absl::MakeSpan(output)));
   EXPECT_THAT(output, ElementsAre(1.0f, 4.0f, 9.0f, 16.0f));

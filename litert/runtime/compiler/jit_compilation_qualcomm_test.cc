@@ -51,13 +51,6 @@ TEST(JitCompilation, Qualcomm) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto environment,
                               litert::Environment::Create(environment_options));
 
-  auto model_path = litert::testing::GetTestFilePath(kModelFileName);
-  LITERT_ASSERT_OK_AND_ASSIGN(auto model,
-                              litert::Model::CreateFromFile(model_path));
-
-  auto num_signatures = model.GetNumSignatures();
-  ASSERT_EQ(num_signatures, 1);
-
 #if !defined(__ANDROID__)
   GTEST_SKIP() << "The rest of this test is specific to Android devices with a "
                   "Qualcomm HTP";
@@ -65,8 +58,11 @@ TEST(JitCompilation, Qualcomm) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
-      litert::CompiledModel::Create(environment, model,
-                                    litert::HwAccelerators::kNpu));
+      litert::CompiledModel::Create(
+          environment, litert::testing::GetTestFilePath(kModelFileName),
+          litert::HwAccelerators::kNpu));
+  auto num_signatures = compiled_model.GetNumSignatures();
+  ASSERT_EQ(num_signatures, 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -118,13 +114,6 @@ class LiteRtCompilationCachingTest : public testing::Test {
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto environment, litert::Environment::Create(environment_options));
 
-    auto model_path = litert::testing::GetTestFilePath(kModelFileName);
-    LITERT_ASSERT_OK_AND_ASSIGN(auto model,
-                                litert::Model::CreateFromFile(model_path));
-
-    auto num_signatures = model.GetNumSignatures();
-    ASSERT_EQ(num_signatures, 1);
-
 #if !defined(__ANDROID__)
     GTEST_SKIP()
         << "The rest of this test is specific to Android devices with a "
@@ -133,8 +122,12 @@ class LiteRtCompilationCachingTest : public testing::Test {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto compiled_model,
-        litert::CompiledModel::Create(environment, model,
-                                      litert::HwAccelerators::kNpu));
+        litert::CompiledModel::Create(
+            environment, litert::testing::GetTestFilePath(kModelFileName),
+            litert::HwAccelerators::kNpu));
+
+    auto num_signatures = compiled_model.GetNumSignatures();
+    ASSERT_EQ(num_signatures, 1);
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_buffers,

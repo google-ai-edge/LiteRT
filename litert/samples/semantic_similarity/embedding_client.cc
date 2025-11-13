@@ -72,16 +72,11 @@ int main(int argc, char* argv[]) {
     ABSL_LOG(FATAL) << "Failed to create LiteRT environment: " << env.Error();
   }
 
-  // Load the model.
-  auto model = litert::Model::CreateFromFile(absl::GetFlag(FLAGS_model_file));
-  if (!model) {
-    ABSL_LOG(FATAL) << "Failed to load model: " << model.Error();
-  }
-
   // Compile the model.
   LITERT_ASSIGN_OR_RETURN(auto options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kCpu);
-  auto compiled_model = litert::CompiledModel::Create(*env, *model, options);
+  auto compiled_model = litert::CompiledModel::Create(
+      *env, absl::GetFlag(FLAGS_model_file), options);
   if (!compiled_model) {
     ABSL_LOG(FATAL) << "Failed to compile model: " << compiled_model.Error();
   }

@@ -69,15 +69,12 @@ int main(int argc, char* argv[]) {
   LITERT_ASSIGN_OR_ABORT(
       auto env, litert::Environment::Create(std::move(environment_options)));
 
-  // Initialize LiteRT model
-  LITERT_ASSIGN_OR_ABORT(auto model, litert::Model::CreateFromFile(model_path));
-
   // Compile the model for the NPU, allowing CPU fallback for unsupported ops.
   LITERT_ASSIGN_OR_ABORT(litert::Options options, litert::Options::Create());
   options.SetHardwareAccelerators(litert::HwAccelerators::kNpu |
                                   litert::HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_ABORT(auto compiled_model,
-                         litert::CompiledModel::Create(env, model, options));
+  LITERT_ASSIGN_OR_ABORT(auto compiled_model, litert::CompiledModel::Create(
+                                                  env, model_path, options));
 
   // Create input and output buffers
   LITERT_ASSIGN_OR_ABORT(auto input_buffers,

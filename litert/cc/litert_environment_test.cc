@@ -54,13 +54,9 @@ TEST(EnvironmentTest, CompiledModelBasic) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model and check signatures.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel.
-  auto compiled_model =
-      CompiledModel::Create(env, model, HwAccelerators::kCpu);
+  auto compiled_model = CompiledModel::Create(
+      env, testing::GetTestFilePath(kModelFileName), HwAccelerators::kCpu);
   EXPECT_TRUE(compiled_model);
 }
 
@@ -81,13 +77,9 @@ TEST(EnvironmentTest, StringLifeCycle) {
   // Change the string value but the environment should still have a copy.
   dispatch_library_dir = "";
 
-  // Create Model and check signatures.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-  ASSERT_TRUE(model);
-
   // Create CompiledModel.
-  auto compiled_model =
-      CompiledModel::Create(*env, model, HwAccelerators::kCpu);
+  auto compiled_model = CompiledModel::Create(
+      *env, testing::GetTestFilePath(kModelFileName), HwAccelerators::kCpu);
   EXPECT_TRUE(compiled_model);
 }
 

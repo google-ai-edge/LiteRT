@@ -71,18 +71,14 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
                               litert::Environment::Create(environment_options));
 
-  // Create Model.
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromFile(model_file_path));
-  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, HwAccelerators::kNpu));
-
+      CompiledModel::Create(env, model_file_path, HwAccelerators::kNpu));
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -139,17 +135,14 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
                               litert::Environment::Create(environment_options));
 
-  // Create Model.
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromFile(model_file_path));
-  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model_file_path, HwAccelerators::kNpu));
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -294,17 +287,14 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env,
                               litert::Environment::Create(environment_options));
 
-  // Create Model.
   std::string model_file_path =
       testing::GetTestFilePath(kPrecompiledTfliteFile);
-  LITERT_ASSERT_OK_AND_ASSIGN(Model model,
-                              Model::CreateFromFile(model_file_path));
-  EXPECT_EQ(model.GetNumSignatures(), 1);
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model, kLiteRtHwAcceleratorNpu));
+      CompiledModel::Create(env, model_file_path, HwAccelerators::kNpu));
+  EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());

@@ -66,16 +66,17 @@ litert::Options CreateGpuOptions(bool use_gl_buffers) {
 
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
     litert::Environment& env, litert::CompiledModel& compiled_model,
-    litert::Model& model, int signature_index) {
-  LITERT_ASSIGN_OR_RETURN(auto input_names,
-                          model.GetSignatureInputNames(signature_index));
+    int signature_index) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto input_names, compiled_model.GetSignatureInputNames(signature_index));
   std::vector<litert::TensorBuffer> input_buffers;
   for (int i = 0; i < input_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBufferRequirements input_buffer_requirements,
         compiled_model.GetInputBufferRequirements(signature_index, i));
-    LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
-                            model.GetInputTensorType(signature_index, i));
+    LITERT_ASSIGN_OR_RETURN(
+        litert::RankedTensorType ranked_tensor_type,
+        compiled_model.GetInputTensorType(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             input_buffer_requirements.BufferSize());
 
@@ -91,17 +92,19 @@ litert::Expected<std::vector<litert::TensorBuffer>> CreateGlInputBuffers(
 
 litert::Expected<std::vector<litert::TensorBuffer>> CreateGlOutputBuffers(
     litert::Environment& env, litert::CompiledModel& compiled_model,
-    litert::Model& model, int signature_index) {
-  LITERT_ASSIGN_OR_RETURN(auto output_names,
-                          model.GetSignatureOutputNames(signature_index));
+    int signature_index) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto output_names,
+      compiled_model.GetSignatureOutputNames(signature_index));
   std::vector<litert::TensorBuffer> output_buffers;
   output_buffers.reserve(output_names.size());
   for (int i = 0; i < output_names.size(); ++i) {
     LITERT_ASSIGN_OR_RETURN(
         litert::TensorBufferRequirements output_buffer_requirements,
         compiled_model.GetOutputBufferRequirements(signature_index, i));
-    LITERT_ASSIGN_OR_RETURN(litert::RankedTensorType ranked_tensor_type,
-                            model.GetOutputTensorType(signature_index, i));
+    LITERT_ASSIGN_OR_RETURN(
+        litert::RankedTensorType ranked_tensor_type,
+        compiled_model.GetOutputTensorType(signature_index, i));
     LITERT_ASSIGN_OR_RETURN(size_t buffer_size,
                             output_buffer_requirements.BufferSize());
 
@@ -160,13 +163,10 @@ int main(int argc, char* argv[]) {
   // Initialize LiteRT environment
   LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
 
-  // Initialize LiteRT model
-  LITERT_ASSIGN_OR_ABORT(auto model, litert::Model::CreateFromFile(model_path));
-
   // Compile the model for the GPU
   litert::Options options = CreateGpuOptions(use_gl_buffers);
-  LITERT_ASSIGN_OR_ABORT(auto compiled_model,
-                         litert::CompiledModel::Create(env, model, options));
+  LITERT_ASSIGN_OR_ABORT(auto compiled_model, litert::CompiledModel::Create(
+                                                  env, model_path, options));
 
   // Create input and output buffers.
   // When using GL buffers, the input and output buffers are created as GL
@@ -176,9 +176,9 @@ int main(int argc, char* argv[]) {
   std::vector<litert::TensorBuffer> output_buffers;
   if (use_gl_buffers) {
     LITERT_ASSIGN_OR_ABORT(input_buffers,
-                           CreateGlInputBuffers(env, compiled_model, model, 0));
-    LITERT_ASSIGN_OR_ABORT(
-        output_buffers, CreateGlOutputBuffers(env, compiled_model, model, 0));
+                           CreateGlInputBuffers(env, compiled_model, 0));
+    LITERT_ASSIGN_OR_ABORT(output_buffers,
+                           CreateGlOutputBuffers(env, compiled_model, 0));
   } else {
     LITERT_ASSIGN_OR_ABORT(input_buffers, compiled_model.CreateInputBuffers());
     LITERT_ASSIGN_OR_ABORT(output_buffers,

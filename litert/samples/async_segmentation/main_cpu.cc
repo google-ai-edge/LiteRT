@@ -61,13 +61,10 @@ int main(int argc, char* argv[]) {
   // Initialize LiteRT environment
   LITERT_ASSIGN_OR_ABORT(auto env, litert::Environment::Create({}));
 
-  // Initialize LiteRT model
-  LITERT_ASSIGN_OR_ABORT(auto model, litert::Model::CreateFromFile(model_path));
-
   // Compile the model for the CPU
-  LITERT_ASSIGN_OR_ABORT(
-      auto compiled_model,
-      litert::CompiledModel::Create(env, model, litert::HwAccelerators::kCpu));
+  LITERT_ASSIGN_OR_ABORT(auto compiled_model,
+                         litert::CompiledModel::Create(
+                             env, model_path, litert::HwAccelerators::kCpu));
 
   // Create input and output buffers
   LITERT_ASSIGN_OR_ABORT(auto input_buffers,

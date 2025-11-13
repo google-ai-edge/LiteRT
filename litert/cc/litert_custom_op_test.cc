@@ -103,9 +103,6 @@ TEST(CompiledModelTest, CustomOp) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
 
-  // Create Model.
-  Model model = testing::LoadTestFileModel(kModelFileName);
-
   LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
@@ -113,8 +110,10 @@ TEST(CompiledModelTest, CustomOp) {
   ASSERT_TRUE(options.AddCustomOpKernel(my_custom_op_kernel));
 
   // Create CompiledModel.
-  LITERT_ASSERT_OK_AND_ASSIGN(CompiledModel compiled_model,
-                              CompiledModel::Create(env, model, options));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+                            options));
 
   // Create and fill input and output buffers.
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,

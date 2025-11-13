@@ -299,15 +299,13 @@ Expected<void> RunModel() {
                  "Model filename is empty. Use --graph to provide it.");
   }
 
-  ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
-  LITERT_ASSIGN_OR_RETURN(auto model,
-                          Model::CreateFromFile(absl::GetFlag(FLAGS_graph)));
-
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model,
-                          CompiledModel::Create(env, model, options));
+  ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;

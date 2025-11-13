@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILED_MODEL_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -28,7 +29,9 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_model.h"
 #include "litert/cc/internal/litert_handle.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
@@ -42,6 +45,14 @@
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
 namespace litert {
+
+namespace benchmark {
+class BenchmarkLiteRtModel;
+}  // namespace benchmark
+
+namespace compiled_model_wrapper {
+class CompiledModelWrapper;
+}  // namespace compiled_model_wrapper
 
 // The CompiledModel is a higher level inference API. It is created by
 // provided model with compilation options. Internally, it instantiates runtime
@@ -62,6 +73,9 @@ namespace litert {
 class CompiledModel
     : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
  public:
+  friend class benchmark::BenchmarkLiteRtModel;
+  friend class compiled_model_wrapper::CompiledModelWrapper;
+
   CompiledModel() = default;
 
   // Creates a CompiledModel from a TFLite file.
@@ -80,14 +94,51 @@ class CompiledModel
   // Note: Even if the model is fully AOT compiled for NPU, you should specify
   // NPU accelerator in `hardware_accelerators` to use NPU properly.
   static Expected<CompiledModel> Create(litert::Environment& env,
-                                        const litert::Model& model,
+                                        const std::string& model_filename,
                                         Options& compilation_options) {
-    LiteRtModel litert_model = model.Get();
     LITERT_RETURN_IF_ERROR(compilation_options.Build());
+    LiteRtModel litert_model;
+    if (auto status =
+            LiteRtCreateModelFromFile(model_filename.c_str(), &litert_model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to load model from file");
+    }
     LiteRtCompiledModel compiled_model;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-    return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
+    if (auto res = LiteRtCreateCompiledModel(env.Get(), litert_model,
+                                             compilation_options.Get(),
+                                             &compiled_model);
+        res != kLiteRtStatusOk) {
+      LiteRtDestroyModel(litert_model);
+      return Unexpected(res, "Failed to compile model");
+    }
+    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kYes,
+                         compiled_model,
+                         /*owned=*/OwnHandle::kYes);
+  }
+
+  // The same as above except this function takes a buffer reference to the
+  // model buffer instead of a model filename.
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        BufferRef<uint8_t> model_buffer,
+                                        Options& compilation_options) {
+    LITERT_RETURN_IF_ERROR(compilation_options.Build());
+    LiteRtModel litert_model;
+    if (auto status = LiteRtCreateModelFromBuffer(
+            model_buffer.Data(), model_buffer.Size(), &litert_model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to load model from buffer");
+    }
+    LiteRtCompiledModel compiled_model;
+    if (auto res = LiteRtCreateCompiledModel(env.Get(), litert_model,
+                                             compilation_options.Get(),
+                                             &compiled_model);
+        res != kLiteRtStatusOk) {
+      LiteRtDestroyModel(litert_model);
+      return Unexpected(res, "Failed to compile model");
+    }
+    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kYes,
+                         compiled_model,
+                         /*owned=*/OwnHandle::kYes);
   }
 
   // Simpler version of Create() that uses the default compilation options.
@@ -95,21 +146,22 @@ class CompiledModel
   //
   // Note: It should be specified for both JIT and AOT compiled models.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, const litert::Model& model,
+      litert::Environment& env, const std::string& model_filename,
       litert::HwAccelerators hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(hardware_accelerators);
-    return Create(env, model, compilation_options);
+    return Create(env, model_filename, compilation_options);
   }
 
-  [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]
+  // The same as above except this function takes a buffer reference to the
+  // model buffer instead of a model filename.
   static Expected<CompiledModel> Create(
-      litert::Environment& env, const litert::Model& model,
-      LiteRtHwAccelerators hardware_accelerators) {
+      litert::Environment& env, BufferRef<uint8_t> model_buffer,
+      litert::HwAccelerators hardware_accelerators) {
     LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
     compilation_options.SetHardwareAccelerators(
         static_cast<HwAccelerators>(hardware_accelerators));
-    return Create(env, model, compilation_options);
+    return Create(env, model_buffer, compilation_options);
   }
 
   // Get input buffer requirements for the given signature and input name.
@@ -522,26 +574,201 @@ class CompiledModel
     return std::string(error_messages);
   }
 
+  //----------------------------------------------------------------------------
+  // Underlying model accessors
+  //----------------------------------------------------------------------------
+
+  // Returns the number of signatures defined in the model.
+  size_t GetNumSignatures() const { return model_.GetNumSignatures(); }
+
+  // Returns the default signature key of the model.
+  static absl::string_view DefaultSignatureKey() {
+    return Model::DefaultSignatureKey();
+  }
+
+  // Returns the list of signature key names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureKeys() const {
+    return model_.GetSignatureKeys();
+  }
+
+  // Returns the list of signatures defined in the model.
+  Expected<std::vector<SimpleSignature>> GetSignatures() const {
+    return model_.GetSignatures();
+  }
+
+  // Returns the signature at the given index.
+  Expected<SimpleSignature> GetSignature(size_t signature_index) const {
+    return model_.GetSignature(signature_index);
+  }
+
+  // Returns the signature index for the given signature key.
+  // Returns 0 if the signature key is empty.
+  Expected<size_t> GetSignatureIndex(absl::string_view signature_key) const {
+    return model_.GetSignatureIndex(signature_key);
+  }
+
+  // Returns the list of input names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureInputNames(
+      size_t signature_index) const {
+    return model_.GetSignatureInputNames(signature_index);
+  }
+
+  // Returns the list of input names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureInputNames() const {
+    return model_.GetSignatureInputNames();
+  }
+
+  // Returns the list of input names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureInputNames(
+      absl::string_view signature_key) const {
+    return model_.GetSignatureInputNames(signature_key);
+  }
+
+  // Returns the list of output names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
+      size_t signature_index) const {
+    return model_.GetSignatureOutputNames(signature_index);
+  }
+
+  // Returns the list of output names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureOutputNames() const {
+    return model_.GetSignatureOutputNames();
+  }
+
+  // Returns the list of output names defined in the signature.
+  Expected<std::vector<absl::string_view>> GetSignatureOutputNames(
+      absl::string_view signature_key) const {
+    return model_.GetSignatureOutputNames(signature_key);
+  }
+
+  // Returns the tensor type for the given n-th input tensor.
+  Expected<RankedTensorType> GetInputTensorType(size_t signature_index,
+                                                size_t input_index) const {
+    return model_.GetInputTensorType(signature_index, input_index);
+  }
+
+  // Returns the tensor type for the given input tensor name.
+  Expected<RankedTensorType> GetInputTensorType(
+      size_t signature_index, absl::string_view input_name) const {
+    return model_.GetInputTensorType(signature_index, input_name);
+  }
+
+  // Returns the tensor type for the given input tensor name.
+  Expected<RankedTensorType> GetInputTensorType(
+      absl::string_view signature_key, absl::string_view input_name) const {
+    return model_.GetInputTensorType(signature_key, input_name);
+  }
+
+  // Get input tensor type of the default signature for input name.
+  Expected<RankedTensorType> GetInputTensorType(
+      absl::string_view input_name) const {
+    return model_.GetInputTensorType(input_name);
+  }
+
+  // Returns the tensor type for the given n-th output tensor.
+  Expected<RankedTensorType> GetOutputTensorType(size_t signature_index,
+                                                 size_t output_index) const {
+    return model_.GetOutputTensorType(signature_index, output_index);
+  }
+
+  // Returns the tensor type for the given output tensor name.
+  Expected<RankedTensorType> GetOutputTensorType(
+      size_t signature_index, absl::string_view output_name) const {
+    return model_.GetOutputTensorType(signature_index, output_name);
+  }
+
+  // Returns the tensor type for the given output tensor name.
+  Expected<RankedTensorType> GetOutputTensorType(
+      absl::string_view signature_key, absl::string_view output_name) const {
+    return model_.GetOutputTensorType(signature_key, output_name);
+  }
+
+  // Get output tensor type of the default signature for output name.
+  Expected<RankedTensorType> GetOutputTensorType(
+      absl::string_view output_name) const {
+    return model_.GetOutputTensorType(output_name);
+  }
+
   ///  \internal Wraps a LiteRtCompiledModel C object in a CompiledModel C++
   ///  object.
+  /// The `compiled_model` doesn't own the provided `litert_model`.
   ///
   /// Warning: This is internal use only.
   static CompiledModel WrapCObject(LiteRtModel litert_model,
                                    LiteRtCompiledModel compiled_model,
                                    OwnHandle owned) {
-    return CompiledModel(litert_model, compiled_model, owned);
+    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
+                         compiled_model, owned);
+  }
+
+  ///  \internal Creates a CompiledModel from a provided litert::Model.
+  ///
+  /// The model is loaded into memory and the caller takes ownership of the
+  /// returned CompiledModel object. The caller should keep the model alive
+  /// until the CompiledModel is destroyed.
+  /// The given `compilation_options` is used for the compilation of the model.
+  /// And compilation_options.hardware_accelerators is used to select the
+  /// accelerator to use regardless of whether the model is AOT compiled or
+  /// not (JIT).
+  ///
+  /// Note: The given environment must outlive the compiled model and any
+  /// execution running it.
+  ///
+  /// Note: Even if the model is fully AOT compiled for NPU, you should specify
+  /// NPU accelerator in `hardware_accelerators` to use NPU properly.
+  static Expected<CompiledModel> Create(litert::Environment& env,
+                                        const litert::Model& model,
+                                        Options& compilation_options) {
+    LITERT_RETURN_IF_ERROR(compilation_options.Build());
+    LiteRtModel litert_model = model.Get();
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
+        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
+    return CompiledModel(litert_model, /*model_owned=*/OwnHandle::kNo,
+                         compiled_model,
+                         /*owned=*/OwnHandle::kYes);
+  }
+
+  ///  \internal Simpler version of Create() that uses the default compilation
+  ///  options.
+  /// The provided hardware accelerator is used to select accelerator to use.
+  ///
+  /// Note: It should be specified for both JIT and AOT compiled models.
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      litert::HwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, model, compilation_options);
+  }
+
+  [[deprecated("Use the version that takes litert::HwAcceleratorSet instead.")]]
+  static Expected<CompiledModel> Create(
+      litert::Environment& env, const litert::Model& model,
+      LiteRtHwAccelerators hardware_accelerators) {
+    LITERT_ASSIGN_OR_RETURN(auto compilation_options, Options::Create());
+    compilation_options.SetHardwareAccelerators(
+        static_cast<HwAccelerators>(hardware_accelerators));
+    return Create(env, model, compilation_options);
   }
 
  protected:
   // Creates a CompiledModel instance.
   //
+  // `model_owned` indicates whether the provided `litert_model` handle is owned
+  // by the CompiledModel or not.
+  //
   // If `owned` is `true`, then the created object takes ownership of the
   // `compiled_model` handle.
-  explicit CompiledModel(LiteRtModel litert_model,
+  explicit CompiledModel(LiteRtModel litert_model, OwnHandle model_owned,
                          LiteRtCompiledModel compiled_model, OwnHandle owned)
       : internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel>(
-            compiled_model, owned),
-        model_(Model::CreateFromNonOwnedHandle(litert_model)) {
+            compiled_model, owned) {
+    if (model_owned == OwnHandle::kYes) {
+      model_ = Model::CreateFromOwnedHandle(litert_model);
+    } else {
+      model_ = Model::CreateFromNonOwnedHandle(litert_model);
+    }
     LiteRtGetCompiledModelEnvironment(compiled_model, &env_);
   }
 

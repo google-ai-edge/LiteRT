@@ -530,22 +530,18 @@ Expected<void> RunModel() {
                  "--dispatch_library_dir to provide it.");
   }
 
-  ABSL_LOG(INFO) << "CPU Model: " << absl::GetFlag(FLAGS_cpu_model);
-  LITERT_ASSIGN_OR_RETURN(
-      auto cpu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_cpu_model)));
-
-  ABSL_LOG(INFO) << "NPU Model: " << absl::GetFlag(FLAGS_npu_model);
-  LITERT_ASSIGN_OR_RETURN(
-      auto npu_model, Model::CreateFromFile(absl::GetFlag(FLAGS_npu_model)));
-
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_cpu,
-                          CompiledModel::Create(env, cpu_model, options));
+  ABSL_LOG(INFO) << "CPU Model: " << absl::GetFlag(FLAGS_cpu_model);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_cpu,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_cpu_model), options));
 
-  LITERT_ASSIGN_OR_RETURN(auto compiled_model_npu,
-                          CompiledModel::Create(env, npu_model, options));
+  ABSL_LOG(INFO) << "NPU Model: " << absl::GetFlag(FLAGS_npu_model);
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model_npu,
+      CompiledModel::Create(env, absl::GetFlag(FLAGS_npu_model), options));
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
