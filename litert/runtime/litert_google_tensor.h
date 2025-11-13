@@ -22,11 +22,12 @@
 
 struct LiteRtGoogleTensorOptionsT {
   LiteRtGoogleTensorOptionsTruncationType float_truncation_type =
-      kLiteRtGoogleTensorFloatTruncationTypeUnspecified;
+      kLiteRtGoogleTensorFloatTruncationTypeAuto;
   bool int64_to_int32_truncation = false;
   std::string output_dir = "";
   bool dump_op_timings = false;
   bool enable_large_model_support = false;
+  bool enable_4bit_compilation = false;
   LiteRtGoogleTensorOptionsShardingIntensity sharding_intensity =
       kLiteRtGoogleTensorShardingIntensityMinimal;
   std::vector<std::vector<std::string>> testing_flags = {};

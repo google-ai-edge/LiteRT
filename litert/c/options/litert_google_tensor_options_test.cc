@@ -14,8 +14,12 @@
 
 #include "litert/c/options/litert_google_tensor_options.h"
 
+#include <cstdint>
+
 #include <gtest/gtest.h>
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/test/matchers.h"
 
@@ -105,7 +109,7 @@ TEST(LiteRtGoogleTensorOptionsTest, DumpOpTimings) {
   LiteRtGoogleTensorOptionsTruncationType truncation_type;
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetFloatTruncationType(
       options_data, &truncation_type));
-  ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeUnspecified);
+  ASSERT_EQ(truncation_type, kLiteRtGoogleTensorFloatTruncationTypeAuto);
 
   LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsSetFloatTruncationType(
       options_data, kLiteRtGoogleTensorFloatTruncationTypeBfloat16));
@@ -125,7 +129,7 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_TRUE(options->GetInt64ToInt32Truncation());
 
   EXPECT_EQ(options->GetFloatTruncationType(),
-            kLiteRtGoogleTensorFloatTruncationTypeUnspecified);
+            kLiteRtGoogleTensorFloatTruncationTypeAuto);
   options->SetFloatTruncationType(
       kLiteRtGoogleTensorFloatTruncationTypeBfloat16);
   EXPECT_EQ(options->GetFloatTruncationType(),
@@ -138,6 +142,85 @@ TEST(GoogleTensorOptionsTest, CppApi) {
   EXPECT_FALSE(options->GetDumpOpTimings());
   options->SetDumpOpTimings(true);
   EXPECT_TRUE(options->GetDumpOpTimings());
+}
+
+TEST(LiteRtGoogleTensorOptionsTest, Hash) {
+  LiteRtOpaqueOptions options1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options1));
+  LiteRtOpaqueOptions options2;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options2));
+
+  uint64_t hash1, hash2;
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options1, &options_data1));
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data1, true));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options1, &hash1));
+  EXPECT_NE(hash1, hash2);
+
+  LiteRtGoogleTensorOptions options_data2;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options2, &options_data2));
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation(options_data2, true));
+  LITERT_ASSERT_OK(LiteRtGetOpaqueOptionsHash(options2, &hash2));
+  EXPECT_EQ(hash1, hash2);
+
+  LiteRtDestroyOpaqueOptions(options1);
+  LiteRtDestroyOpaqueOptions(options2);
+}
+
+TEST(LiteRtGoogleTensorOptionsTest, Enable4BitCompilationCAPI) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
+
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data1));
+
+  // Check default value
+  bool enable_4bit = true;  // Initialize to non-default to ensure it's set
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+      options_data1, &enable_4bit));
+  EXPECT_FALSE(enable_4bit);
+
+  // Set to true
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetEnable4BitCompilation(options_data1, true));
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+      options_data1, &enable_4bit));
+  EXPECT_TRUE(enable_4bit);
+
+  // Set to false
+  LITERT_ASSERT_OK(
+      LiteRtGoogleTensorOptionsSetEnable4BitCompilation(options_data1, false));
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGetEnable4BitCompilation(
+      options_data1, &enable_4bit));
+  EXPECT_FALSE(enable_4bit);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
+TEST(LiteRtGoogleTensorOptionsTest, Enable4BitCompilationCAPINullArgs) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsCreate(&options));
+
+  LiteRtGoogleTensorOptions options_data1;
+  LITERT_ASSERT_OK(LiteRtGoogleTensorOptionsGet(options, &options_data1));
+
+  bool enable_4bit;
+  EXPECT_EQ(LiteRtGoogleTensorOptionsSetEnable4BitCompilation(nullptr, true),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LiteRtGoogleTensorOptionsGetEnable4BitCompilation(nullptr, &enable_4bit),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(
+      LiteRtGoogleTensorOptionsGetEnable4BitCompilation(options_data1, nullptr),
+      kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtDestroyOpaqueOptions(options);
 }
 
 }  // namespace

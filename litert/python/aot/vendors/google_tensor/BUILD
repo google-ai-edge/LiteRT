@@ -16,33 +16,39 @@ load("@org_tensorflow//tensorflow:pytype.default.bzl", "pytype_strict_contrib_te
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:litert_python_users"],
+    default_visibility = ["//visibility:public"],
 )
 
 pytype_strict_library(
-    name = "export_lib",
-    srcs = ["export_lib.py"],
-    visibility = ["//visibility:public"],
+    name = "google_tensor_backend",
+    srcs = ["google_tensor_backend.py"],
     deps = [
+        ":target",
         "//litert/python/aot/core:common",
+        "//litert/python/aot/core:components",
         "//litert/python/aot/core:types",
-        "//litert/python/aot/vendors:fallback_backend",
-        "//litert/python/aot/vendors/google_tensor:target",
-        "//litert/python/aot/vendors/mediatek:mediatek_backend",
-        "//litert/python/aot/vendors/mediatek:target",
-        "//litert/python/aot/vendors/qualcomm:qualcomm_backend",
-        "//litert/python/aot/vendors/qualcomm:target",
+        "//litert/python/aot/vendors:import_vendor",
+    ],
+)
+
+pytype_strict_library(
+    name = "target",
+    srcs = ["target.py"],
+    deps = [
+        "//litert/python/aot/core:types",
     ],
 )
 
 pytype_strict_contrib_test(
-    name = "export_lib_test",
-    srcs = ["export_lib_test.py"],
+    name = "google_tensor_backend_test",
+    srcs = ["google_tensor_backend_test.py"],
     deps = [
-        ":export_lib",
+        ":google_tensor_backend",
+        ":target",
+        "//litert/python/aot/core:common",
+        "//litert/python/aot/core:components",
+        "//litert/python/aot/core:test_common",
         "//litert/python/aot/core:types",
-        "//litert/python/aot/vendors:fallback_backend",
-        "//litert/python/aot/vendors/google_tensor:target",
         "@absl_py//absl/testing:absltest",
     ],
 )

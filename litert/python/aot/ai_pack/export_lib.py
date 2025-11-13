@@ -21,6 +21,7 @@ from typing import cast
 from litert.python.aot.core import common
 from litert.python.aot.core import types
 from litert.python.aot.vendors import fallback_backend
+from litert.python.aot.vendors.google_tensor import target as google_tensor_target
 from litert.python.aot.vendors.mediatek import mediatek_backend
 from litert.python.aot.vendors.mediatek import target as mtk_target
 from litert.python.aot.vendors.qualcomm import qualcomm_backend
@@ -194,6 +195,16 @@ def _target_to_ai_pack_info(target: types.Target) -> str | None:
         device_group_name=group_name, device_selectors=device_selector
     )
     return device_group
+  elif isinstance(target, google_tensor_target.Target):
+    group_name = str(target)
+    soc_manufacturer, soc_model = _process_google_tensor_target(target)
+    device_selector = _DEVICE_SELECTOR_TEMPLATE.format(
+        soc_man=soc_manufacturer, soc_model=soc_model
+    )
+    device_group = _DEVICE_GROUP_TEMPLATE.format(
+        device_group_name=group_name, device_selectors=device_selector
+    )
+    return device_group
   elif isinstance(target, fallback_backend.FallbackTarget):
     # Don't need to have device selector for fallback target.
     return None
@@ -220,6 +231,14 @@ def _process_mtk_target(
   return str(target.soc_manufacturer).replace(
       mtk_target.SocManufacturer.MEDIATEK, 'Mediatek'
   ), str(target.soc_model)
+
+
+# TODO: b/407453529 - Auto-generate this function from CSVs.
+def _process_google_tensor_target(
+    target: google_tensor_target.Target,
+) -> tuple[str, str]:
+  """Returns tuple of (manufacturer, model) for the given Google Tensor target."""
+  return str(target.soc_manufacturer), str(target.soc_model).replace('_', ' ')
 
 
 def _write_targeting_config(

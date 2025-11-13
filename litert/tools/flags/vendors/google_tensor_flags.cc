@@ -18,6 +18,7 @@
 
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -29,15 +30,15 @@
 bool AbslParseFlag(absl::string_view text,
                    LiteRtGoogleTensorOptionsTruncationType* options,
                    std::string* error) {
-  if (text == "unspecified") {
-    *options = kLiteRtGoogleTensorFloatTruncationTypeUnspecified;
+  if (text == "auto") {
+    *options = kLiteRtGoogleTensorFloatTruncationTypeAuto;
     return true;
   }
   if (text == "no_truncation") {
     *options = kLiteRtGoogleTensorFloatTruncationTypeNoTruncation;
     return true;
   }
-  if (text == "bf16") {
+  if (text == "bfloat16") {
     *options = kLiteRtGoogleTensorFloatTruncationTypeBfloat16;
     return true;
   }
@@ -51,12 +52,12 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(LiteRtGoogleTensorOptionsTruncationType options) {
   switch (options) {
-    case kLiteRtGoogleTensorFloatTruncationTypeUnspecified:
-      return "unspecified";
+    case kLiteRtGoogleTensorFloatTruncationTypeAuto:
+      return "auto";
     case kLiteRtGoogleTensorFloatTruncationTypeNoTruncation:
       return "no_truncation";
     case kLiteRtGoogleTensorFloatTruncationTypeBfloat16:
-      return "bf16";
+      return "bfloat16";
     case kLiteRtGoogleTensorFloatTruncationTypeHalf:
       return "half";
   }
@@ -101,20 +102,20 @@ std::string AbslUnparseFlag(
 
 ABSL_FLAG(LiteRtGoogleTensorOptionsTruncationType,
           google_tensor_truncation_type,
-          kLiteRtGoogleTensorFloatTruncationTypeUnspecified,
+          kLiteRtGoogleTensorFloatTruncationTypeAuto,
           "Float truncation type for Google Tensor.");
 
 ABSL_FLAG(bool, google_tensor_int64_to_int32, false,
           "Whether to truncate int64 to int32.");
-
-ABSL_FLAG(std::string, google_tensor_output_dir, "",
-          "Output directory for Google Tensor.");
 
 ABSL_FLAG(bool, google_tensor_dump_op_timings, false,
           "Whether to dump op timings.");
 
 ABSL_FLAG(bool, google_tensor_enable_large_model_support, false,
           "Whether to enable large model support.");
+
+ABSL_FLAG(bool, google_tensor_enable_4bit_compilation, false,
+          "Whether to enable 4bit compilation.");
 
 ABSL_FLAG(LiteRtGoogleTensorOptionsShardingIntensity,
           google_tensor_sharding_intensity,
@@ -134,10 +135,11 @@ Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags() {
       absl::GetFlag(FLAGS_google_tensor_truncation_type));
   options.SetInt64ToInt32Truncation(
       absl::GetFlag(FLAGS_google_tensor_int64_to_int32));
-  options.SetOutputDir(absl::GetFlag(FLAGS_google_tensor_output_dir));
   options.SetDumpOpTimings(absl::GetFlag(FLAGS_google_tensor_dump_op_timings));
   options.SetEnableLargeModelSupport(
       absl::GetFlag(FLAGS_google_tensor_enable_large_model_support));
+  options.SetEnable4BitCompilation(
+      absl::GetFlag(FLAGS_google_tensor_enable_4bit_compilation));
   options.SetShardingIntensity(
       absl::GetFlag(FLAGS_google_tensor_sharding_intensity));
   options.SetTestingFlags(absl::GetFlag(FLAGS_google_tensor_testing_flags));

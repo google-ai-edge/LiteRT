@@ -18,7 +18,7 @@
 // float_truncation_type -------------------------------------------------------
 
 typedef enum LiteRtGoogleTensorOptionsTruncationType {
-  kLiteRtGoogleTensorFloatTruncationTypeUnspecified = 0,
+  kLiteRtGoogleTensorFloatTruncationTypeAuto = 0,
   kLiteRtGoogleTensorFloatTruncationTypeNoTruncation = 1,
   kLiteRtGoogleTensorFloatTruncationTypeBfloat16 = 2,
   kLiteRtGoogleTensorFloatTruncationTypeHalf = 3,

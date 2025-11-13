@@ -69,6 +69,7 @@ cc_library(
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],
     deps = [
+        "//litert/c/options:litert_google_tensor_options_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/options:litert_google_tensor_options",
@@ -88,6 +89,7 @@ cc_test(
     deps = [
         ":google_tensor_flags",
         "//litert/c/options:litert_google_tensor_options",
+        "//litert/c/options:litert_google_tensor_options_type",
         "@com_google_googletest//:gtest_main",
     ],
 )
