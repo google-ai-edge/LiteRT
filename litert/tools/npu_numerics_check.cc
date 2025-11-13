@@ -101,6 +101,8 @@ GetFillerTable() {
   filler_table[ToUnderlying(ElementType::BFloat16)] = &FillInputTensor<float>;
   return filler_table;
 }
+constexpr auto kFillerTable = GetFillerTable();
+
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
 using ::litert::qualcomm::QualcommOptionsFromFlags;
@@ -206,7 +208,7 @@ Expected<std::vector<TensorBuffer>> CreateAndFillInputBuffers(
                                                    signature_key, input_name));
 
     LITERT_ASSIGN_OR_RETURN(auto type, input_buffer.TensorType());
-    FillFn filler_func = GetFillerTable()[ToUnderlying(type.ElementType())];
+    FillFn filler_func = kFillerTable[ToUnderlying(type.ElementType())];
     if (!filler_func) {
       return Error(kLiteRtStatusErrorInvalidArgument,
                    "Unsupported element type for filling tensor.");
