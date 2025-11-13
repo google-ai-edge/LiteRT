@@ -118,9 +118,6 @@ class QualcommOptions : public OpaqueOptions {
   void SetIrJsonDir(const std::string& ir_json_dir);
   absl::string_view GetIrJsonDir();
 
-  void SetDlcDir(const std::string& dlc_dir);
-  absl::string_view GetDlcDir();
-
   void SetVtcmSize(std::uint32_t vtcm_size);
   std::uint32_t GetVtcmSize();
 

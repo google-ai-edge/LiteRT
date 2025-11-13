@@ -151,16 +151,6 @@ absl::string_view QualcommOptions::GetIrJsonDir() {
   return absl::string_view(ir_json_dir);
 }
 
-void QualcommOptions::SetDlcDir(const std::string& dlc_dir) {
-  internal::AssertOk(LiteRtQualcommOptionsSetDlcDir, Data(), dlc_dir.c_str());
-}
-
-absl::string_view QualcommOptions::GetDlcDir() {
-  const char* dlc_dir;
-  internal::AssertOk(LiteRtQualcommOptionsGetDlcDir, Data(), &dlc_dir);
-  return absl::string_view(dlc_dir);
-}
-
 void QualcommOptions::SetVtcmSize(std::uint32_t vtcm_size) {
   internal::AssertOk(LiteRtQualcommOptionsSetVtcmSize, Data(), vtcm_size);
 }

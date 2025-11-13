@@ -20,11 +20,8 @@
 #include <stdio.h>
 
 #include <array>
-#include <filesystem>
-#include <string>
 
 #include "IR/QnnIrGraph.h"
-#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -161,17 +158,13 @@ inline absl::Span<const QnnGraph_Config_t*> GetLegacyGraphConfigs(
   return absl::MakeSpan(result.data(), num_config + 1);
 }
 
-absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs(
-    const ::qnn::Options& options, absl::string_view qnn_graph_name) {
+absl::Span<const QnnGraph_Config_t*> GetDefaultIrGraphConfigs() {
   static std::array<QnnIrGraph_CustomConfig_t, 1> graph_custom_configs;
+  // TODO(Alen): pass dlc path by options.
   graph_custom_configs[0].option = QNN_IR_GRAPH_CONFIG_OPTION_SERIALIZATION;
   graph_custom_configs[0].serializationOption.serializationType =
       QNN_IR_GRAPH_SERIALIZATION_TYPE_FLAT_BUFFER;
-  static std::string dlc_path;  // NOLINT
-  // Set DLC path based on the qnn graph name and DLC directory from options.
-  std::filesystem::path dlc_dir = std::string(options.GetDlcDir());
-  dlc_path = (dlc_dir / absl::StrCat(qnn_graph_name, ".dlc")).string();
-  graph_custom_configs[0].serializationOption.outputPath = dlc_path.c_str();
+  graph_custom_configs[0].serializationOption.outputPath = "";
 
   static std::array<QnnGraph_Config_t, 1> graph_configs;
   graph_configs[0] = QNN_GRAPH_CONFIG_INIT;
@@ -215,8 +208,7 @@ LiteRtStatus GraphMapper::InitQnnGraph(absl::string_view qnn_graph_name,
     case ::qnn::BackendType::kIrBackend: {
       LITERT_RETURN_STATUS_IF_QNN_NOT_OK(qnn_.Api()->graphCreate(
           context_handle_, qnn_graph_name.data(),
-          GetDefaultIrGraphConfigs(options, qnn_graph_name).data(),
-          &QnnGraph()));
+          GetDefaultIrGraphConfigs().data(), &QnnGraph()));
       break;
     }
     default: {

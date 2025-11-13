@@ -61,7 +61,6 @@ TEST(QnnManagerTest, GetOptions) {
             options_ref.GetHtpPerformanceMode());
   EXPECT_EQ(options.GetDumpTensorIds(), options_ref.GetDumpTensorIds());
   EXPECT_EQ(options.GetIrJsonDir(), options_ref.GetIrJsonDir());
-  EXPECT_EQ(options.GetDlcDir(), options_ref.GetDlcDir());
 }
 
 }  // namespace

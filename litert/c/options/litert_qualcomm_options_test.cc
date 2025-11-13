@@ -170,22 +170,6 @@ TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
-TEST(LiteRtQualcommOptionsTest, DlcDir) {
-  LiteRtOpaqueOptions options;
-  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
-
-  LiteRtQualcommOptions qualcomm_options;
-  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
-
-  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetDlcDir(qualcomm_options, "tmp/"));
-
-  const char* dlc_dir;
-  LITERT_ASSERT_OK(LiteRtQualcommOptionsGetDlcDir(qualcomm_options, &dlc_dir));
-  EXPECT_STREQ(dlc_dir, "tmp/");
-
-  LiteRtDestroyOpaqueOptions(options);
-}
-
 TEST(LiteRtQualcommOptionsTest, VtcmSize) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -336,10 +320,6 @@ TEST(QualcommOptionsTest, CppApi) {
   EXPECT_EQ(options->GetIrJsonDir(), "");
   options->SetIrJsonDir("tmp");
   EXPECT_EQ(options->GetIrJsonDir(), "tmp");
-
-  EXPECT_EQ(options->GetDlcDir(), "");
-  options->SetDlcDir("tmp");
-  EXPECT_EQ(options->GetDlcDir(), "tmp");
 
   EXPECT_EQ(options->GetVtcmSize(), 0);
   options->SetVtcmSize(4);

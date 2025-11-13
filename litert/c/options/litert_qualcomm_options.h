@@ -183,12 +183,6 @@ LiteRtStatus LiteRtQualcommOptionsSetIrJsonDir(LiteRtQualcommOptions options,
 LiteRtStatus LiteRtQualcommOptionsGetIrJsonDir(LiteRtQualcommOptions options,
                                                const char** ir_json_dir);
 
-LiteRtStatus LiteRtQualcommOptionsSetDlcDir(LiteRtQualcommOptions options,
-                                            const char* dlc_dir);
-
-LiteRtStatus LiteRtQualcommOptionsGetDlcDir(LiteRtQualcommOptions options,
-                                            const char** dlc_dir);
-
 LiteRtStatus LiteRtQualcommOptionsSetVtcmSize(LiteRtQualcommOptions options,
                                               uint32_t vtcm_size);
 

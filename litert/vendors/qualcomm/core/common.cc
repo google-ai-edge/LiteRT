@@ -12,6 +12,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "QnnLog.h"  // from @qairt
 
 namespace qnn {
 namespace {
@@ -115,10 +116,6 @@ void Options::SetIrJsonDir(absl::string_view ir_json_dir) {
   ir_json_dir_ = ir_json_dir;
 }
 
-absl::string_view Options::GetDlcDir() const { return dlc_dir_; }
-
-void Options::SetDlcDir(absl::string_view dlc_dir) { dlc_dir_ = dlc_dir; }
-
 std::uint32_t Options::GetVtcmSize() const { return vtcm_size_; }
 
 void Options::SetVtcmSize(std::uint32_t vtcm_size) { vtcm_size_ = vtcm_size; }
@@ -151,18 +148,17 @@ UseFoldReLU: %v\n\
 HtpPerformanceMode: %d\n\
 DumpTensorIds: %s\n\
 IrJsonDir: %s\n\
-DlcDir: %s\n\
 VtcmSize: %d\n\
 HvxThread: %d\n\
 OptimizationLevel: %d\n";  // NOLINT
 
   std::string dump_tensor_ids = absl::StrJoin(dump_tensor_ids_, ",");
 
-  return absl::StrFormat(
-      kQnnOptionsDumpFormat, log_level_, profiling_, use_htp_preference_,
-      use_qint16_as_quint16_, enable_weight_sharing_, use_conv_hmx_,
-      use_fold_relu_, htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
-      dlc_dir_, vtcm_size_, num_hvx_threads_, optimization_level_);
+  return absl::StrFormat(kQnnOptionsDumpFormat, log_level_, profiling_,
+                         use_htp_preference_, use_qint16_as_quint16_,
+                         enable_weight_sharing_, use_conv_hmx_, use_fold_relu_,
+                         htp_performance_mode_, dump_tensor_ids, ir_json_dir_,
+                         vtcm_size_, num_hvx_threads_, optimization_level_);
 }
 
 QnnLog_Callback_t GetDefaultStdOutLogger() { return DefaultStdOutLogger; }
