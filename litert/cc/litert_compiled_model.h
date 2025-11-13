@@ -54,6 +54,18 @@ namespace compiled_model_wrapper {
 class CompiledModelWrapper;
 }  // namespace compiled_model_wrapper
 
+namespace lm {
+class EmbeddingLookupText;
+class EndOfMultiModalEmbedding;
+class FrontendModelWrapper;
+class AudioLiteRtCompiledModelExecutor;
+class LlmLiteRtNpuCompiledModelExecutor;
+class VisionLiteRtCompiledModelExecutor;
+class LlmLiteRtCompiledModelExecutorDynamic;
+class LlmLiteRtCompiledModelExecutorStatic;
+class LlmLiteRtCompiledModelExecutorBase;
+}  // namespace lm
+
 // The CompiledModel is a higher level inference API. It is created by
 // provided model with compilation options. Internally, it instantiates runtime
 // and applies Delegates mapped to the compilation options.
@@ -75,6 +87,15 @@ class CompiledModel
  public:
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
+  friend class lm::AudioLiteRtCompiledModelExecutor;
+  friend class lm::EmbeddingLookupText;
+  friend class lm::EndOfMultiModalEmbedding;
+  friend class lm::FrontendModelWrapper;
+  friend class lm::LlmLiteRtNpuCompiledModelExecutor;
+  friend class lm::VisionLiteRtCompiledModelExecutor;
+  friend class lm::LlmLiteRtCompiledModelExecutorDynamic;
+  friend class lm::LlmLiteRtCompiledModelExecutorStatic;
+  friend class lm::LlmLiteRtCompiledModelExecutorBase;
 
   CompiledModel() = default;
 
