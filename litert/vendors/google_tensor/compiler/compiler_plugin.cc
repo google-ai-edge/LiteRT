@@ -53,6 +53,7 @@ constexpr const char* kPluginSocModels[] = {
     "Tensor_G3",
     "Tensor_G4",
     "Tensor_G5",
+    "Tensor_G6",
 };  // get the name for plugin soc model
 
 constexpr LiteRtOpCode kUnSupportedOps[] = {

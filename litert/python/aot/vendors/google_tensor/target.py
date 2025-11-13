@@ -43,6 +43,7 @@ class SocModel(StrEnum):
   TENSOR_G3 = "Tensor_G3"
   TENSOR_G4 = "Tensor_G4"
   TENSOR_G5 = "Tensor_G5"
+  TENSOR_G6 = "Tensor_G6"
 
 
 class SocManufacturer(StrEnum):
