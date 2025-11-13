@@ -174,7 +174,7 @@ litert_device_test(
 # # --test_output=streamed \
 # # --notest_loasd \
 # # --test_arg=--allocation_exit_strategy=FAIL_FAST_NO_MATCH --test_arg=--run_as=mobileiq-user \
-# # --android_ndk_min_sdk_version=26
+# # --android_ndk_min_sdk_version=23
 # # ```
 # #
 # # The following can be copied into your bazelrc to set these with --config=litert_mh
@@ -186,7 +186,7 @@ litert_device_test(
 # # build:litert_mh --test_output=streamed
 # # build:litert_mh --test_arg=--allocation_exit_strategy=FAIL_FAST_NO_MATCH --test_arg=--run_as=mobileiq-user
 # # build:litert_mh --compilation_mode=opt`
-# # build:litert_mh --android_ndk_min_sdk_version=26
+# # build:litert_mh --android_ndk_min_sdk_version=23
 # #```
 #
 # # MH PERMISSIONS
