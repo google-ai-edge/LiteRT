@@ -18,7 +18,7 @@
 # copybara:uncomment_end
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert/c:__subpackages__",
@@ -238,6 +238,7 @@ cc_library(
         # "@mediapipe//mediapipe/tasks/web/genai:__subpackages__",
         # "//litert:__subpackages__",
         # "//third_party/odml/litert_lm/c:__pkg__",
+        # "//third_party/odml/litert_lm/kotlin:__subpackages__",
         # "//third_party/odml/litert_lm/runtime/engine:__pkg__",
         # copybara:uncomment_end_and_comment_begin
         "//visibility:public",
