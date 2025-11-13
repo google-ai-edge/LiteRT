@@ -43,6 +43,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_friends_def.inc"
 
 namespace litert {
 
@@ -75,6 +76,7 @@ class CompiledModel
  public:
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
+#include "litert/cc/litert_friends.inc"
 
   CompiledModel() = default;
 
