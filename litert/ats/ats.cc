@@ -92,7 +92,6 @@ int Ats() {
   typename AtsCompileTest::Capture c_cap;
 
   if (!options->CompileMode()) {
-    // TODO: lukeboyer - Add compile tests.
     RegisterAll<AtsInferenceTest>(*options, test_id, i_cap);
   } else {
     RegisterAll<AtsCompileTest>(*options, test_id, c_cap);
