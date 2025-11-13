@@ -54,6 +54,9 @@ typedef uint64_t ThrSqContainerHandle;
 // Handle that represent a Buffer.
 typedef uint64_t ThrBufferHandle;
 
+// Handle that represents a Fence.
+typedef uint64_t ThrFenceHandle;
+
 // String ID of a graph edge.
 // The `ThrEdgeId` used in SB APIs does not require persistent memory after API
 // usage.
@@ -78,6 +81,23 @@ enum ThrNodeType : int {
   kThrNodeTypeDsp = 1,  // Node for DSP. a function SQ is supported.
   kThrNodeTypeNpu = 2,  // Node for NPU. a ML model SQ is supported.
   kThrNodeTypeCpu = 3,  // Node for CPU. a TFLite model SQ is supported.
+};
+
+// Indicates the type of fence referred to by a file descriptor (fd).
+//
+// In general, `kThrFenceTypeVendorPreferred` should be used by default to
+// afford implementations maximum flexibility with respect to the underlying
+// fence implementation. For example, specifying this type may allow an
+// implementation to utilize a proprietary fence, which generally have superior
+// performance characteristics.
+//
+// However, support for other fence types is maintained for cases where
+// compatibility with external libraries is mandatory.
+enum ThrFenceType : int {
+  kThrFenceNoType = 0,  // Invalid value.
+  kThrFenceTypeDma = 1,
+  kThrFenceTypeEventFd = 2,
+  kThrFenceTypeVendorPreferred = 3,
 };
 
 // Describes how arguments passed to this node should be internally mapped to
@@ -179,6 +199,7 @@ struct ThrInvocationMetrics {
 // - Graph Builder
 // - SchedulingQuantum Management
 // - Buffer Management
+// - Fence Management
 // - InvocationContext
 //
 // Note: SouthBound API doesn't provide thread-safety except async API which
@@ -511,6 +532,28 @@ inline ThrStatus thrRegisterBufferAhwbWithOffset(ThrContext* context,
 // API before the associated `ThrContext` is deleted by `thrContextDelete` API.
 ThrStatus thrUnregisterBuffer(ThrContext* context, ThrBufferHandle handle);
 
+// --------------------------------------------------------------------------
+// Fence Management APIs.
+
+// Registers the given `fence_fd` of type `type` to the given `ThrContext`.
+//
+// Implementations are required to dup `fence_fd` internally. Accordingly, the
+// caller must close `fence_fd`.
+ThrStatus thrRegisterFence(ThrContext* context, ThrFenceType type,
+                           int fence_fd, ThrFenceHandle* handle);
+
+// Unregisters the registered fence associated with the given `ThrFenceHandle`.
+//
+// Implementations are required to close the duped fd internally.
+//
+// Note: the registered `ThrFenceHandle` must be unregistered via this API prior
+// to deleting `context`.
+ThrStatus thrUnregisterFence(ThrContext* context, ThrFenceHandle handle);
+
+// Get a dup of the fence's fd.
+ThrStatus thrFenceGetDupFd(ThrFenceHandle handle, int* fence_fd);
+
+// --------------------------------------------------------------------------
 // InvocationContext APIs
 // These APIs are used to control the execution of the graph.
 //
@@ -553,6 +596,17 @@ ThrStatus thrInvocationContextDetachBuffer(ThrInvocationContext* icontext,
 ThrStatus thrInvocationContextPrepareForInvoke(ThrInvocationContext* icontext,
                                                bool create_output_sync_fence);
 
+// Has identical semantics to `thrInvocationContextPrepareForInvoke`, but allows
+// for the specification of the output fence type. As such,
+// `thrInvocationContextGetOutputBufferFence` must be used to retrieve the
+// output fence.
+//
+// Notes on `output_fence_type`:
+//  - cannot be `kThrFenceTypeEventFd`.
+//  - if `kThrFenceNoType`, then no output fence is created.
+ThrStatus thrInvocationContextPrepareForInvoke2(ThrInvocationContext* icontext,
+                                                ThrFenceType output_fence_type);
+
 // Expects the user has already attached the required arguments. Can be called
 // again to re-invoke the executor, but only after the previous invocation has
 // completed.
@@ -591,10 +645,19 @@ ThrStatus thrInvocationContextCancel(ThrInvocationContext* icontext);
 ThrStatus thrInvocationContextAttachInputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int fence_fd);
 
+// Has identical semantics to `thrInvocationContextAttachInputBufferSyncFence`,
+// but takes a fence handle rather than a raw fd. As such, `handle` must
+// be detached via `thrInvocationContextDetachInputBufferFence`.
+ThrStatus thrInvocationContextAttachInputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle handle);
+
 // Detaches the given sync fence from the graph input edge.
-//
 ThrStatus thrInvocationContextDetachInputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int fence_fd);
+
+// Detaches the given fence from the graph input edge.
+ThrStatus thrInvocationContextDetachInputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle handle);
 
 // Returns an output sync fence to the graph output edge. When graph execution
 // is finished, the sync fence will be fired.
@@ -602,6 +665,11 @@ ThrStatus thrInvocationContextDetachInputBufferSyncFence(
 // Note: User needs to close the returned fd when no longer in use.
 ThrStatus thrInvocationContextGetOutputBufferSyncFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, int* fence_fd);
+
+// Has identical semantics to `thrInvocationContextGetOutputBufferSyncFence`,
+// but returns a fence handle rather than a raw fd.
+ThrStatus thrInvocationContextGetOutputBufferFence(
+    ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle* handle);
 
 // InvocationContext ScratchPad APIs
 //
