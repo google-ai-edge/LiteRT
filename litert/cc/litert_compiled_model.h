@@ -90,17 +90,6 @@ class CompiledModel
     return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
   }
 
-  [[deprecated("Use the version that takes non-const Options& instead.")]]
-  static Expected<CompiledModel> Create(litert::Environment& env,
-                                        const litert::Model& model,
-                                        const Options& compilation_options) {
-    LiteRtModel litert_model = model.Get();
-    LiteRtCompiledModel compiled_model;
-    LITERT_RETURN_IF_ERROR(LiteRtCreateCompiledModel(
-        env.Get(), litert_model, compilation_options.Get(), &compiled_model));
-    return CompiledModel(litert_model, compiled_model, OwnHandle::kYes);
-  }
-
   // Simpler version of Create() that uses the default compilation options.
   // The provided hardware accelerator is used to select accelerator to use.
   //
