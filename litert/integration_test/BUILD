@@ -62,10 +62,10 @@ cc_library(
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_common",
-        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_model",
         "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/internal:litert_compiled_model_next",
         "//litert/core/model",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",

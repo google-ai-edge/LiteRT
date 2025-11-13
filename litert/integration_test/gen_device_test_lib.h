@@ -13,14 +13,15 @@
 // limitations under the License.
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/cc/internal/litert_compiled_model_next.h"
 #include "litert/cc/litert_common.h"
-#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_tensor_buffer.h"
@@ -45,18 +46,19 @@ class CmInvoker {
   // Assumes default signature.
   void Setup() {
     LITERT_ASSERT_OK_AND_ASSIGN(
-        compiled_model_, CompiledModel::Create(env_, model_, Accelerator()));
+        compiled_model_,
+        CompiledModelNext::Create(env_, model_, Accelerator()));
     const auto sig = model_.DefaultSignatureKey();
     LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_,
-                                compiled_model_.CreateInputBuffers(sig));
+                                compiled_model_->CreateInputBuffers(sig));
     LITERT_ASSERT_OK_AND_ASSIGN(output_buffers_,
-                                compiled_model_.CreateOutputBuffers(sig));
+                                compiled_model_->CreateOutputBuffers(sig));
   }
 
   // Invoke the compiled model api. Must be called after Setup().
   void Run() {
-    ASSERT_TRUE(compiled_model_.Run(model_.DefaultSignatureKey(),
-                                    input_buffers_, output_buffers_));
+    ASSERT_TRUE(compiled_model_->Run(model_.DefaultSignatureKey(),
+                                     input_buffers_, output_buffers_));
   }
 
   // Is this test in a state where it should be skipped? Implementations should
@@ -75,7 +77,7 @@ class CmInvoker {
   Environment env_;
   Model model_;
 
-  CompiledModel compiled_model_;
+  std::optional<CompiledModelNext> compiled_model_;
   std::vector<TensorBuffer> input_buffers_;
   std::vector<TensorBuffer> output_buffers_;
 };
