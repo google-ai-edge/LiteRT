@@ -124,6 +124,10 @@ build --incompatible_enforce_config_setting_visibility
 # TODO: also enable this flag after fixing the visibility violations
 # build --incompatible_config_setting_private_default_visibility
 
+# Compiler MLIR Builds
+common --copt=-DMLIR_PYTHON_PACKAGE_PREFIX=ai_edge_litert.mlir.
+common --copt=-DNB_DOMAIN=litert
+
 # Default options should come above this line.
 
 # Android configs. Bazel needs to have --cpu and --fat_apk_cpu both set to the

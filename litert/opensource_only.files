@@ -9,6 +9,7 @@ litert/compiler/BUILD:
 litert/core/util/perfetto_profiling.cc:
 litert/core/util/perfetto_profiling.h:
 litert/python/aot/core/tflxx_util.py:
+litert/python/mlir/BUILD:
 litert/samples/async_segmentation/README.md:
 litert/samples/semantic_similarity/README.md:
 litert/samples/semantic_similarity/deploy_and_run_android.sh:
