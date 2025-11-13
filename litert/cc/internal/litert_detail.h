@@ -273,6 +273,12 @@ constexpr auto CtStrConcat(StrLiteral<Ns>... strs) {
   return CtStr(std::move(data));
 }
 
+// Constexpr friendly ceiling.
+template <typename T>
+constexpr T Ceil(T val, T divisor) {
+  return (val + divisor - 1) / divisor;
+}
+
 namespace internal {
 
 // Call function "get" and assert it returns value equal to given expected
