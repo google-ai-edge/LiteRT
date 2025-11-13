@@ -28,7 +28,7 @@ load(
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = ["//litert:litert_internal_users"],
 )
 
@@ -697,9 +697,9 @@ cc_library(
     deps = [
         ":accelerator",
         "//litert/c:litert_common",
+        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc/internal:litert_shared_library",
-        "@com_google_absl//absl/log:absl_log",
     ],
 )
 
