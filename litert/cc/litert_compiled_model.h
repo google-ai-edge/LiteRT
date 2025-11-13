@@ -44,6 +44,10 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
+namespace mediapipe {
+class InferenceRunnerLiteRt;
+}  // namespace mediapipe
+
 namespace litert {
 
 namespace benchmark {
@@ -75,6 +79,7 @@ class CompiledModel
  public:
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
+  friend class ::mediapipe::InferenceRunnerLiteRt;
 
   CompiledModel() = default;
 
