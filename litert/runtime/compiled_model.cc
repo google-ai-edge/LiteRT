@@ -428,17 +428,30 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
   // and initialize the compiled model from the translated LiteRt model.
   if (hw_accelerators != kLiteRtHwAcceleratorNone) {
 #if !defined(LITERT_DISABLE_NPU)
-    litert::Expected<bool> maybe_initialzed_model =
-        ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
-    if (maybe_initialzed_model.HasValue() &&
-        maybe_initialzed_model.Value() == true) {
-      // The compiled model's flatbuffer has initialized by applying the
-      // plugins.
-      return {};
+    // Check if the model is pre-compiled by looking for LiteRt build stamp.
+    // Fall through to the next step if it's pre-compiled, else try to apply
+    // plugins to the model.
+    if (!IsCompiled(model)) {
+      litert::Expected<bool> maybe_initialzed_model =
+          ApplyPluginsWithCaching(model, hw_accelerators, *options, env);
+      if (maybe_initialzed_model.HasValue() &&
+          maybe_initialzed_model.Value() == true) {
+        // The compiled model's flatbuffer has initialized by applying the
+        // plugins.
+        return {};
+      }
+      // Deliberate fall through, failing to apply plugins is a recoverable
+      // error, we will try to initialize the compiled model from the incoming
+      // litert model.
+    } else {
+      if (env.GetOption(kLiteRtEnvOptionTagCompilerPluginLibraryDir)
+              .has_value()) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Compiler plugin path is provided in the environment, but "
+                   "the model is "
+                   "pre-compiled. Plugins won't be applied.");
+      }
     }
-    // Deliberate fall through, failing to apply plugins is a recoverable
-    // error, we will try to initialize the compiled model from the incoming
-    // litert model.
 #endif
   }
 
