@@ -14,10 +14,12 @@
 
 #include "litert/cc/litert_options.h"
 
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/core/scoped_file.h"
 
 namespace litert {
 
@@ -34,6 +36,35 @@ Expected<void> Options::Build() {
         LiteRtAddOpaqueOptions(Get(), gpu_options_->Release()));
   }
   return {};
+}
+
+Expected<void> Options::SetExternalWeightScopedFile(
+    ScopedFile scoped_file, ScopedWeightSectionMap sections) {
+#if !defined(LITERT_WITH_EXTERNAL_WEIGHT_LOADER)
+  (void)scoped_file;
+  (void)sections;
+  return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                    "LiteRT was built without external weight loader support");
+#else
+  if (!scoped_file.IsValid()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Scoped file handle must be valid");
+  }
+  if (sections.empty()) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "At least one external buffer group must be provided");
+  }
+  for (const auto& [name, section] : sections) {
+    if (section.length == 0) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Section length must be positive for group " + name);
+    }
+  }
+  auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(Get());
+  options_impl->scoped_weight_source = std::make_unique<ScopedWeightSource>(
+      std::move(scoped_file), std::move(sections));
+  return {};
+#endif
 }
 
 }  // namespace litert

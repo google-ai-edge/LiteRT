@@ -1028,6 +1028,10 @@ cc_library_with_testonly_vis(
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
         "//litert/cc/options:litert_gpu_options",
+        "//litert/core:options",
+        "//litert/core:scoped_file",
+        "//litert/core:scoped_weight_source",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
@@ -1221,6 +1225,9 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_logging",
+        "//litert/core:options",
+        "//litert/core:scoped_file",
+        "//litert/core:scoped_weight_source",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
