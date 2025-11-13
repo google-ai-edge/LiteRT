@@ -64,6 +64,7 @@ ABSL_FLAG(bool, external_tensor_mode, false,
 ABSL_FLAG(bool, print_outputs, false, "Whether to print the output tensors.");
 ABSL_FLAG(bool, enable_constant_tensors_sharing, false,
           "Whether to enable constant tensors sharing.");
+ABSL_FLAG(bool, use_fp16, false, "Whether to use FP32 precision.");
 
 namespace litert {
 
@@ -105,7 +106,11 @@ Expected<Options> GetGpuOptions() {
   LITERT_ASSIGN_OR_RETURN(auto& gpu_options, options.GetGpuOptions());
   gpu_options.EnableExternalTensorsMode(
       absl::GetFlag(FLAGS_external_tensor_mode));
-  gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
+  if (absl::GetFlag(FLAGS_use_fp16)) {
+    gpu_options.SetPrecision(GpuOptions::Precision::kFp16);
+  } else {
+    gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
+  }
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
     gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
   } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {

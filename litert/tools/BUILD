@@ -579,6 +579,7 @@ cc_binary(
     ],
     deps = NUMERICS_CHECK_DEPS + [
         "//litert/cc/options:litert_gpu_options",
+        "//litert/cc:litert_common",
         "//litert/core:filesystem",
         # copybara:uncomment_begin(google-only)
         # "//litert/runtime/accelerators/gpu/google:jet_gpu_accelerator",  # buildcleaner: keep
