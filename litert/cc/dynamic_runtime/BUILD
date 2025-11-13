@@ -671,6 +671,10 @@ cc_library(
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/internal:litert_handle",
+        "//litert/core:options",
+        "//litert/core:scoped_file",
+        "//litert/core:scoped_weight_source",
+        "@com_google_absl//absl/container:flat_hash_map",
     ] + select({
         "@org_tensorflow//tensorflow:emscripten": LITERT_C_API_DEPS,
         "@org_tensorflow//tensorflow:ios": LITERT_C_API_DEPS,
