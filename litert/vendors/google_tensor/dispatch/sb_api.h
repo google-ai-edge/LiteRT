@@ -109,6 +109,15 @@ enum ThrNodeInterfaceBindingMode : int {
       2,  // e.g. `d = f(arg2=b, arg1=a)['out_y23']`
 };
 
+// Describes how arguments passed to this node should be internally mapped to
+// the invocation interface.
+enum ThrNodeInterfaceBindingMode : int {
+  kThrNodeInterfaceBindingModeNoType = 0,      // invalid value.
+  kThrNodeInterfaceBindingModePositional = 1,  // e.g. `d, e = f(a, b, c)`
+  kThrNodeInterfaceBindingModeNamed =
+      2,  // e.g. `d = f(arg2=b, arg1=a)['out_y23']`
+};
+
 enum ThrStatus : int {
   kThrStatusSuccess = 0,
   kThrStatusFail = -1,
