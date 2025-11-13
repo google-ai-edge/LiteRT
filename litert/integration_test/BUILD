@@ -420,6 +420,7 @@ cc_binary(
     srcs = ["dummy_binary.cc"],
     copts = ["-DGOOGLE_COMMANDLINEFLAGS_FULL_API=1"] + if_oss(["-DABSL_FLAGS_STRIP_NAMES=0"]),
     deps = [
+        "//litert/cc/internal:litert_detail",
         "//litert/core:filesystem",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/flags:flag",

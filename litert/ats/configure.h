@@ -57,10 +57,10 @@ ABSL_DECLARE_FLAG(std::string, dispatch_dir);
 ABSL_DECLARE_FLAG(std::string, plugin_dir);
 
 // Regex to filter tests.
-ABSL_DECLARE_FLAG(std::string, dont_register);
+ABSL_DECLARE_FLAG(std::vector<std::string>, dont_register);
 
 // Regex for explicit inclusions.
-ABSL_DECLARE_FLAG(std::string, do_register);
+ABSL_DECLARE_FLAG(std::vector<std::string>, do_register);
 
 // Optional list of directories, or model files to add to the test.
 ABSL_DECLARE_FLAG(std::vector<std::string>, extra_models);
@@ -246,7 +246,8 @@ class AtsConf {
  private:
   explicit AtsConf(SeedMap&& seeds_for_params, ExecutionBackend backend,
                    bool quiet, std::string dispatch_dir, std::string plugin_dir,
-                   std::regex&& neg_re, std::regex&& pos_re,
+                   std::vector<std::regex> neg_re,
+                   std::vector<std::regex> pos_re,
                    std::vector<std::string> extra_models,
                    std::optional<int> data_seed, size_t iters_per_test,
                    std::chrono::milliseconds max_ms_per_test,
@@ -263,7 +264,6 @@ class AtsConf {
         neg_re_(std::move(neg_re)),
         pos_re_(std::move(pos_re)),
         extra_models_(std::move(extra_models)),
-
         data_seed_(data_seed),
         iters_per_test_(iters_per_test),
         max_ms_per_test_(std::move(max_ms_per_test)),
@@ -289,8 +289,8 @@ class AtsConf {
   bool quiet_;
   std::string dispatch_dir_;
   std::string plugin_dir_;
-  std::regex neg_re_;
-  std::regex pos_re_;
+  std::vector<std::regex> neg_re_;
+  std::vector<std::regex> pos_re_;
   std::vector<std::string> extra_models_;
   std::optional<int> data_seed_;
   size_t iters_per_test_;

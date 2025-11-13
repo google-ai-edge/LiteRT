@@ -51,8 +51,10 @@ litert_test(
         "//litert/test/generators",
         "//litert/test/generators:common",
         "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/flags:flag",
         "@com_google_absl//absl/flags:parse",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_googletest//:gtest",
     ],
 )

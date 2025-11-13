@@ -14,6 +14,7 @@
 
 #include "litert/ats/configure.h"
 
+#include <algorithm>
 #include <chrono>  // NOLINT
 #include <cstddef>
 #include <cstdint>
@@ -62,11 +63,11 @@ ABSL_FLAG(std::string, plugin_dir, "",
           "relevant for NPU.");
 
 ABSL_FLAG(
-    std::string, dont_register, "^$",
+    std::vector<std::string>, dont_register, std::vector<std::string>{},
     "Regex for test selection. This is a negative search match, if the pattern "
     "can be found anywhere in the test name, it will be skipped.");
 
-ABSL_FLAG(std::string, do_register, ".*",
+ABSL_FLAG(std::vector<std::string>, do_register, std::vector<std::string>{},
           "Regex for test selection. This is a positive search match, if the "
           "pattern can be found anywhere in the test name, it will be run. "
           "This has lower priority over the dont_register filter.");
@@ -192,10 +193,14 @@ void Setup(const AtsConf& options) {
 Expected<AtsConf> AtsConf::ParseFlagsAndDoSetup() {
   LITERT_ASSIGN_OR_RETURN(auto seeds, ParseParamSeedMap());
   LITERT_ASSIGN_OR_RETURN(auto backend, ParseBackend());
-  std::regex neg_re(absl::GetFlag(FLAGS_dont_register),
-                    std::regex_constants::ECMAScript);
-  std::regex pos_re(absl::GetFlag(FLAGS_do_register),
-                    std::regex_constants::ECMAScript);
+  std::vector<std::regex> neg_re;
+  for (const auto& re : absl::GetFlag(FLAGS_dont_register)) {
+    neg_re.push_back(std::regex(re, std::regex_constants::ECMAScript));
+  }
+  std::vector<std::regex> pos_re;
+  for (const auto& re : absl::GetFlag(FLAGS_do_register)) {
+    pos_re.push_back(std::regex(re, std::regex_constants::ECMAScript));
+  }
   auto extra_models = absl::GetFlag(FLAGS_extra_models);
   auto data_seed = absl::GetFlag(FLAGS_data_seed);
   auto dispatch_dir = absl::GetFlag(FLAGS_dispatch_dir);
@@ -242,7 +247,15 @@ int AtsConf::GetSeedForParams(absl::string_view name) const {
 }
 
 bool AtsConf::ShouldRegister(const std::string& name) const {
-  return std::regex_search(name, pos_re_) && !std::regex_search(name, neg_re_);
+  const bool include =
+      pos_re_.empty() ||
+      std::any_of(pos_re_.begin(), pos_re_.end(), [&name](const auto& re) {
+        return std::regex_search(name, re);
+      });
+  const bool exclude = std::any_of(
+      neg_re_.begin(), neg_re_.end(),
+      [&name](const auto& re) { return std::regex_search(name, re); });
+  return include && !exclude;
 };
 
 bool AtsConf::ShouldRegister(absl::string_view name) const {
