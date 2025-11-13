@@ -1,7 +1,7 @@
 # LiteRT
 
 <p align="center">
-  <img src="./docs/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
+  <img src="./g3docs/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
 </p>
 
 Google's On-device framework for high-performance ML & GenAI deployment on edge
@@ -80,8 +80,8 @@ You can build LiteRT from source:
 The script automatically creates a Linux Docker image, which allows you to build
 artifacts for Linux and Android (through cross compilation). See build
 instructions in
-[CMake build instructions](./docs/instructions/CMAKE_BUILD_INSTRUCTIONS.md)
-and [Bazel build instructions](./docs/instructions/BUILD_INSTRUCTIONS.md)
+[CMake build instructions](./g3docs/instructions/CMAKE_BUILD_INSTRUCTIONS.md)
+and [Bazel build instructions](./g3docs/instructions/BUILD_INSTRUCTIONS.md)
 for more information on how to build runtime libraries with the docker
 container.
 
