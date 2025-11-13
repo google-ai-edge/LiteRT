@@ -186,7 +186,9 @@ cc_test(
 cc_library(
     name = "litert_numerics",
     hdrs = ["litert_numerics.h"],
-    deps = [":litert_detail"],
+    deps = [
+        ":litert_detail",
+    ],
 )
 
 cc_library(

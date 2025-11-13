@@ -18,6 +18,7 @@
 // Wrapper of std::numeric_limits, which needs to be extended for exotic
 // datatypes (e.g. quant, half-precision, etc.).
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
@@ -77,6 +78,26 @@ static constexpr T GetOrFlush(T val) {
   }
   return static_cast<T>(0.0f);
 }
+
+// Container element size that supports fractional byte widths.
+class ByteWidth {
+ public:
+  constexpr explicit ByteWidth(size_t numerator, size_t denominator = 1)
+      : numerator_(numerator), denominator_(denominator) {}
+
+  // Get the number of bytes used for a buffer of given number of elements.
+  constexpr size_t NumBytes(size_t num_elements = 1) const {
+    return Ceil(num_elements * numerator_, denominator_);
+  }
+
+  constexpr size_t operator*(size_t num_elements) const {
+    return NumBytes(num_elements);
+  }
+
+ private:
+  size_t numerator_;
+  size_t denominator_;
+};
 
 // Trait of number-like types that may be values within a tensor.
 template <typename T>
