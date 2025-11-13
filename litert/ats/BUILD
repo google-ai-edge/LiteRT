@@ -387,9 +387,11 @@ litert_define_ats(
     extra_flags = [
         "--data_seed=42",
         "--qualcomm_optimization_level=O3",
-        "--qualcomm_use_htp_preference",
+        "--qualcomm_use_htp_preference=true",
         "--qualcomm_htp_performance_mode=burst",
         "--qualcomm_log_level=off",
+        "--qualcomm_use_fold_relu=true",
+        "--qualcomm_use_conv_hmx=true",
     ],
     jit_suffix = "",
 )

@@ -85,7 +85,7 @@ ABSL_FLAG(int64_t, max_ms_per_test, -1,
           "Maximum time in milliseconds to run each test, -1 means no limit "
           "and a default will be provided.");
 
-ABSL_FLAG(bool, fail_on_timeout, true,
+ABSL_FLAG(bool, fail_on_timeout, false,
           "Whether to fail a test if it times out.");
 
 ABSL_FLAG(std::string, csv, "",

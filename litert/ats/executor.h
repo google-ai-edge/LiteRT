@@ -164,16 +164,24 @@ class NpuCompiledModelExecutor : public CompiledModelExecutor {
             litert::Environment::OptionTag::DispatchLibraryDir,
             absl::string_view(dispatch_dir),
         }};
+
     if (plugin_dir) {
       environment_options.push_back(Environment::Option{
           Environment::OptionTag::CompilerPluginLibraryDir,
           absl::string_view(*plugin_dir),
       });
+      environment_options.push_back(Environment::Option{
+          Environment::OptionTag::CompilerCacheDir,
+          // TODO: Make this configurable.
+          "/data/local/tmp/litert_compiler_cache",
+      });
     }
+
     LITERT_ASSIGN_OR_RETURN(auto env, Environment::Create(environment_options));
     LITERT_ASSIGN_OR_RETURN(
         auto api, CompiledModelNext::Create(
                       env, Model::CreateFromNonOwnedHandle(&model), options));
+
     return NpuCompiledModelExecutor(std::move(api), std::move(env));
   }
 
