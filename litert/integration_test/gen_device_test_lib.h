@@ -48,11 +48,10 @@ class CmInvoker {
     LITERT_ASSERT_OK_AND_ASSIGN(
         compiled_model_,
         CompiledModelNext::Create(env_, model_, Accelerator()));
-    const auto sig = model_.DefaultSignatureKey();
     LITERT_ASSERT_OK_AND_ASSIGN(input_buffers_,
-                                compiled_model_->CreateInputBuffers(sig));
+                                compiled_model_->CreateInputBuffers());
     LITERT_ASSERT_OK_AND_ASSIGN(output_buffers_,
-                                compiled_model_->CreateOutputBuffers(sig));
+                                compiled_model_->CreateOutputBuffers());
   }
 
   // Invoke the compiled model api. Must be called after Setup().

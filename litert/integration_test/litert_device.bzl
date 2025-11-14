@@ -172,7 +172,7 @@ def litert_device_exec(
             name = name + remote_suffix,
             target = target,
             run_as = backend.mh_user,
-            data = data,
+            data = data + backend.libs,
             exec_args = exec_args,
             exec_env_vars = backend.env_paths,
             dimensions = backend.default_mh_device,
