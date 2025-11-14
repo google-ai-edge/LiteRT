@@ -64,7 +64,6 @@ litert_dynamic_lib(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_tensor_buffer_types",
-        "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",
@@ -160,6 +159,7 @@ cc_test(
     deps = [
         ":example_dispatch",  # buildcleaner: keep
         "//litert/c:litert_runtime_c_api_shared_lib",
+        "//litert/cc:litert_tensor_buffer_types",
         "//litert/cc/dynamic_runtime:litert_extended_model",
         "//litert/cc/dynamic_runtime:litert_tensor_buffer_requirements",
         "//litert/cc/internal:litert_handle",

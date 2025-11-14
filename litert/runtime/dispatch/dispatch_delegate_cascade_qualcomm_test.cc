@@ -102,54 +102,54 @@ TEST(DispatchDelegate, CompiledModel) {
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg0"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg0,
+      std::vector<TensorBufferType> input_buffer_types_arg0,
       input_buffer_requirements_arg0.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg0,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg1,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg1"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg1,
+      std::vector<TensorBufferType> input_buffer_types_arg1,
       input_buffer_requirements_arg1.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg1,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg2,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg2,
+      std::vector<TensorBufferType> input_buffer_types_arg2,
       input_buffer_requirements_arg2.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg2,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements input_buffer_requirements_arg3,
       compiled_model.GetInputBufferRequirements(
           /*input_name=*/"arg3"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> input_buffer_types_arg3,
+      std::vector<TensorBufferType> input_buffer_types_arg3,
       input_buffer_requirements_arg3.SupportedTypes());
   EXPECT_THAT(input_buffer_types_arg3,
-              ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                          kLiteRtTensorBufferTypeDmaBuf));
+              ElementsAre(TensorBufferType::kFastRpc,
+                          TensorBufferType::kDmaBuf));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBufferRequirements output_buffer_requirements,
       compiled_model.GetOutputBufferRequirements(
           /*output_name=*/"tfl.custom2"));
   LITERT_ASSERT_OK_AND_ASSIGN(
-      std::vector<LiteRtTensorBufferType> output_buffer_types,
+      std::vector<TensorBufferType> output_buffer_types,
       output_buffer_requirements.SupportedTypes());
-  EXPECT_THAT(output_buffer_types, ElementsAre(kLiteRtTensorBufferTypeFastRpc,
-                                               kLiteRtTensorBufferTypeDmaBuf));
+  EXPECT_THAT(output_buffer_types, ElementsAre(TensorBufferType::kFastRpc,
+                                               TensorBufferType::kDmaBuf));
 
   // ///////////////////////////////////////////////////////////////////////////
   // First inference.
