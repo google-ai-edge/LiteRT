@@ -38,6 +38,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
@@ -81,6 +82,8 @@ static constexpr absl::string_view kSimpleMultiSubgraph =
     "multi_subgraph.tflite";
 static constexpr absl::string_view kCstMultiSubgraph =
     "cst_multi_subgraph.tflite";
+static constexpr absl::string_view kPreCompiledModel =
+    "simple_add_op.sm8750.tflite";
 
 // Store buffers to ensure they outlive the models in tests
 static std::unordered_map<std::string, OwningBufferRef<uint8_t>>&
@@ -794,6 +797,19 @@ TEST(ModelSerializeTest,
                                           &metadata, &metadata_size));
   EXPECT_EQ(BufferRef(metadata, metadata_size).StrView(), kMetadataValue);
   LiteRtDestroyModel(result_model);
+}
+
+TEST(ModelLoadSerializeTest, LoadAndSerializeWithBytecode) {
+  auto flatbuffer =
+      FlatbufferWrapper::CreateFromTflFile(GetTestFilePath(kPreCompiledModel));
+  ASSERT_TRUE(flatbuffer);
+
+  auto model = litert::testing::LoadTestFileModel(kPreCompiledModel);
+
+  auto serialized = SerializeModel(std::move(*model.Get()));
+  EXPECT_TRUE(VerifyFlatbuffer(serialized->Span()));
+
+  EXPECT_EQ(serialized->Size(), flatbuffer->get()->Buf().Size());
 }
 
 // Tests that explicitly check litert graph structure.

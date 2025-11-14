@@ -396,6 +396,20 @@ class ExtendedModel : public litert::Model {
     return signature->OutputNames();
   }
 
+  // Serializes the model to a buffer. Model would be released after
+  // serialization.
+  Expected<OwningBufferRef<uint8_t>> Serialize(
+      const LiteRtModelSerializationOptions& options) {
+    OwningBufferRef<uint8_t> buf;
+    auto [data, size, offset] = buf.GetWeak();
+    auto status =
+        LiteRtSerializeModel(Release(), &data, &size, &offset, true, options);
+    if (status != kLiteRtStatusOk) {
+      return Unexpected(status, "Failed to serialize model");
+    }
+    return std::move(buf);
+  }
+
  private:
   // Parameter `owned` indicates if the created TensorBuffer object should take
   // ownership of the provided `tensor_buffer` handle.
