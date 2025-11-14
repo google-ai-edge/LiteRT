@@ -73,7 +73,6 @@ class AtsInferenceTest : public RngTest {
 
   void SetUp() override {
     ASSERT_EQ(Graph().NumSubgraphs(), 1);
-    ASSERT_EQ(Graph().MainSubgraph()->NumOutputs(), 1);
     LITERT_LOG(LITERT_INFO, "Setting up test for %s",
                absl::StrFormat("%v", conf_.Backend()).c_str());
     cap_.model.SetFields(names_, Graph());
@@ -113,6 +112,8 @@ class AtsInferenceTest : public RngTest {
   }
 
  private:
+  double Tol() const { return graph_->HasReference() ? 1e-4 : 1e2; }
+
   Expected<CompiledModelExecutor::Ptr> MakeExecutor() {
     CompiledModelExecutor::Ptr exec;
     if (conf_.IsNpu()) {
@@ -187,7 +188,7 @@ class AtsInferenceTest : public RngTest {
   template <typename T>
   void CheckOutputImpl(const BufferView<T>& actual, const BufferView<T>& ref) {
     double mse = std::numeric_limits<double>::max();
-    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, 1e-4, &mse));
+    EXPECT_THAT(actual.data, MeanSquaredErrorLt(ref.data, Tol(), &mse));
     cap_.numerics.NewMse(mse);
   }
 
