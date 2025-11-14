@@ -14,6 +14,7 @@
 #include "litert/python/mlir/_mlir_libs/model_utils_core.h"
 
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -75,6 +76,34 @@ std::string MlirToFlatbuffer(mlir::ModuleOp module_op) {
   std::string bytes;
   tflite::MlirToFlatBufferTranslateFunction(module_op, options, &bytes, true);
   return bytes;
+}
+
+std::vector<std::string> GetOperationAttributeNames(mlir::Operation* op) {
+  if (op == nullptr) {
+    return {};
+  }
+
+  std::vector<std::string> attr_names;
+  for (auto attr : op->getAttrs()) {
+    attr_names.push_back(attr.getName().str());
+  }
+  return attr_names;
+}
+
+std::vector<std::string> GetDictionaryAttrNames(mlir::DictionaryAttr attr) {
+  if (attr == nullptr) {
+    return {};
+  }
+
+  std::vector<std::string> attr_names;
+  for (auto attr : attr) {
+    attr_names.push_back(attr.getName().str());
+  }
+  return attr_names;
+}
+
+absl::string_view GetDenseElementsAttrBytes(mlir::DenseElementsAttr attr) {
+  return absl::string_view(attr.getRawData().data(), attr.getRawData().size());
 }
 
 }  // namespace litert::model_utils

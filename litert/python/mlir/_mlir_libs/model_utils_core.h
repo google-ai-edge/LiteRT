@@ -16,8 +16,10 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_PYTHON_MLIR__MLIR_LIBS_MODEL_UTILS_CORE_H_
 
 #include <string>
+#include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -30,6 +32,9 @@ void RegisterPasses();
 mlir::OwningOpRef<mlir::ModuleOp> FlatbufferToMlir(mlir::MLIRContext* context,
                                                    absl::string_view buffer);
 std::string MlirToFlatbuffer(mlir::ModuleOp module_op);
+std::vector<std::string> GetOperationAttributeNames(mlir::Operation* op);
+std::vector<std::string> GetDictionaryAttrNames(mlir::DictionaryAttr attr);
+absl::string_view GetDenseElementsAttrBytes(mlir::DenseElementsAttr attr);
 
 }  // namespace litert::model_utils
 

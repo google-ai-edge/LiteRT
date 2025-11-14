@@ -66,6 +66,30 @@ NB_MODULE(model_utils_ext, m) {
     std::string data = model_utils::MlirToFlatbuffer(module_op);
     return nb::bytes(data.c_str(), data.size());
   });
+
+  m.def("get_operation_attribute_names", [](MlirOperation c_op) {
+    mlir::Operation* op = unwrap(c_op);
+    return model_utils::GetOperationAttributeNames(op);
+  });
+
+  m.def("get_dictionary_attr_names", [](MlirAttribute c_attr) {
+    auto attr = llvm::dyn_cast<mlir::DictionaryAttr>(unwrap(c_attr));
+    if (attr == nullptr) {
+      throw nb::value_error(
+          "Failed to cast the input to mlir::DictionaryAttr.");
+    }
+    return model_utils::GetDictionaryAttrNames(attr);
+  });
+
+  m.def("get_dense_elements_attr_bytes", [](MlirAttribute c_attr) {
+    auto attr = llvm::dyn_cast<mlir::DenseElementsAttr>(unwrap(c_attr));
+    if (attr == nullptr) {
+      throw nb::value_error(
+          "Failed to cast the input to mlir::DenseElementsAttr.");
+    }
+    auto bytes = model_utils::GetDenseElementsAttrBytes(attr);
+    return nb::bytes(bytes.data(), bytes.size());
+  });
 }
 
 }  // namespace

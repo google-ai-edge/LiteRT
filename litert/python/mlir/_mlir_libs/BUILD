@@ -16,6 +16,7 @@ load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "pybind_extension")
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//python:py_library.bzl", "py_library")
+load("//litert/build_common:litert_build_defs.bzl", "if_google")
 load("//litert/build_common:symlink_files.bzl", "symlink_inputs")
 
 package(
@@ -128,10 +129,23 @@ pybind_extension(
     ],
     wrap_py_init = False,
     deps = [
-        ":lib_litert_mlir",
         "@com_google_absl//absl/strings:string_view",
-        "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
         "@llvm-project//mlir:MLIRBindingsPythonHeaders",
+        "@local_xla//third_party/python_runtime:headers",
         "@nanobind",
-    ],
+    ] + if_google(
+        [
+            # google only: link everything statically here.
+            ":model_utils_core",
+            "@llvm-project//llvm:Support",
+            "@llvm-project//mlir:IR",
+            "@llvm-project//mlir:CAPIIRHeaders",
+            "@llvm-project//mlir:CAPITransformsHeaders",
+        ],
+        [
+            # oss only: link to the shared library.
+            ":lib_litert_mlir",
+            "@llvm-project//mlir:MLIRBindingsPythonCoreNoCAPI",
+        ],
+    ),
 )
