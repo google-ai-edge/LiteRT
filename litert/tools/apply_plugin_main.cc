@@ -139,10 +139,24 @@ int main(int argc, char* argv[]) {
                           litert::CompilerOptionsFromFlags()) &&
        ParseAndAddOptions(
            *opts, dump_out,
-           litert::google_tensor::GoogleTensorOptionsFromFlags()) &&
-       ParseAndAddOptions(
-           *opts, dump_out,
            litert::intel_openvino::IntelOpenVinoOptionsFromFlags()));
+
+  if (all_flags_parsed) {
+    if (auto google_tensor_opts = opts->GetGoogleTensorOptions();
+        !google_tensor_opts) {
+      run->dump_out.Get().get() << "Failed to create Google Tensor options: "
+                                << google_tensor_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::google_tensor::UpdateGoogleTensorOptionsFromFlags(
+                       *google_tensor_opts);
+               !status) {
+      run->dump_out.Get().get()
+          << "Failed to parse Google Tensor flags, Error: "
+          << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
 
   if (all_flags_parsed) {
     if (auto qnn_opts = opts->GetQualcommOptions(); !qnn_opts) {

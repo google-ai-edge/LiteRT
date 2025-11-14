@@ -1030,6 +1030,7 @@ cc_library_with_testonly_vis(
         "//litert/c:litert_options",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_handle",
+        "//litert/cc/options:litert_google_tensor_options",
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",

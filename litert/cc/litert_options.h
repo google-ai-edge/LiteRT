@@ -28,6 +28,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -130,6 +131,10 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // to set the MediaTek options.
   Expected<mediatek::MediatekOptions&> GetMediatekOptions();
 
+  // Returns the reference to the Google Tensor options. User will use this
+  // function to set the Google Tensor options.
+  Expected<google_tensor::GoogleTensorOptions&> GetGoogleTensorOptions();
+
  private:
   // Builds the options object. This should be called after all the setters.
   // It's automatically called in CompiledModel::Create.
@@ -138,6 +143,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   std::optional<GpuOptions> gpu_options_;
   std::optional<qualcomm::QualcommOptions> qualcomm_options_;
   std::optional<mediatek::MediatekOptions> mediatek_options_;
+  std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
 };
 
 }  // namespace litert
