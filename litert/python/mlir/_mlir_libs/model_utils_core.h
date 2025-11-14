@@ -35,6 +35,7 @@ std::string MlirToFlatbuffer(mlir::ModuleOp module_op);
 std::vector<std::string> GetOperationAttributeNames(mlir::Operation* op);
 std::vector<std::string> GetDictionaryAttrNames(mlir::DictionaryAttr attr);
 absl::string_view GetDenseElementsAttrBytes(mlir::DenseElementsAttr attr);
+bool FileCheckCheckInput(absl::string_view input, absl::string_view check);
 
 }  // namespace litert::model_utils
 

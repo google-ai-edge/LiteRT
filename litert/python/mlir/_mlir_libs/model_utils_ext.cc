@@ -51,6 +51,13 @@ NB_MODULE(model_utils_ext, m) {
     unwrap(context)->loadAllAvailableDialects();
   });
 
+  m.def(
+      "filecheck_check_input",
+      [](std::string input, std::string check) {
+        return model_utils::FileCheckCheckInput(input, check);
+      },
+      "input"_a, "check"_a);
+
   m.def("flatbuffer_to_mlir",
         [](nb::bytes buffer, MlirContext context) -> MlirModule {
           auto module_op = model_utils::FlatbufferToMlir(
