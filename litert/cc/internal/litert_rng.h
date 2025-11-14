@@ -584,6 +584,16 @@ class RandomTensorDataBuilder {
         auto [min, max] = std::get<std::pair<float, float>>(float_config_);
         return {min, max};
       }
+    } else if constexpr (std::is_same_v<D, int64_t>) {
+      if (std::holds_alternative<Dummy>(int64_config_)) {
+        return {0, static_cast<double>(std::numeric_limits<D>::max())};
+      } else if (std::holds_alternative<NullOpt>(int64_config_)) {
+        return {std::numeric_limits<D>::min(),
+                static_cast<double>(std::numeric_limits<D>::max())};
+      } else {
+        auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
+        return {static_cast<double>(min), static_cast<double>(max)};
+      }
     } else {
       static_assert(false, "Unsupported type");
     }
@@ -621,6 +631,18 @@ class RandomTensorDataBuilder {
         RandomTensorData<D, DefaultRangedGenerator> data(min, max);
         return Functor()(data, std::forward<Args>(args)...);
       }
+    } else if constexpr (std::is_same_v<D, int64_t>) {
+      if (std::holds_alternative<Dummy>(int64_config_)) {
+        RandomTensorData<D, DummyGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else if (std::holds_alternative<NullOpt>(int64_config_)) {
+        RandomTensorData<D, DefaultGenerator> data;
+        return Functor()(data, std::forward<Args>(args)...);
+      } else {
+        auto [min, max] = std::get<std::pair<D, D>>(int64_config_);
+        RandomTensorData<D, DefaultRangedGenerator> data(min, max);
+        return Functor()(data, std::forward<Args>(args)...);
+      }
     } else {
       static_assert(false, "Unsupported type");
     }
@@ -640,6 +662,7 @@ class RandomTensorDataBuilder {
 
   IntConfig<int32_t> int_config_ = NullOpt();
   FloatConfig<float> float_config_ = NullOpt();
+  IntConfig<int64_t> int64_config_ = NullOpt();
 };
 
 // Scale random data values down to prevent overflow.

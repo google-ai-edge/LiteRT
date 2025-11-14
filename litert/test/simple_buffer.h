@@ -197,6 +197,9 @@ class SimpleBuffer {
     } else if (Type().ElementType() == ElementType::Int32) {
       return b.Call<int32_t, RandomTensorFunctor>(rng, start, num_elements,
                                                   *this);
+    } else if (Type().ElementType() == ElementType::Int64) {
+      return b.Call<int64_t, RandomTensorFunctor>(rng, start, num_elements,
+                                                  *this);
     }
     // TODO: Add support for other types.
     return Error(kLiteRtStatusErrorInvalidArgument, "Unsupported element type");
