@@ -50,10 +50,6 @@ Expected<void> GpuOptions::SetBackend(Backend backend) {
   return {};
 }
 
-LiteRtStatus GpuOptions::SetGpuBackend(LiteRtGpuBackend backend) {
-  return LiteRtSetGpuOptionsGpuBackend(Get(), backend);
-}
-
 LiteRtStatus GpuOptions::EnableAllowSrcQuantizedFcConvOps(bool enabled) {
   return LiteRtSetGpuAcceleratorCompilationOptionsAllowSrcQuantizedFcConvOps(
       Get(), enabled);
@@ -65,22 +61,11 @@ Expected<void> GpuOptions::SetPrecision(Precision precision) {
   return {};
 }
 
-LiteRtStatus GpuOptions::SetDelegatePrecision(
-    LiteRtDelegatePrecision precision) {
-  return LiteRtSetGpuAcceleratorCompilationOptionsPrecision(Get(), precision);
-}
-
 Expected<void> GpuOptions::SetBufferStorageType(BufferStorageType type) {
   LITERT_RETURN_IF_ERROR(
       LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(
           Get(), static_cast<LiteRtDelegateBufferStorageType>(type)));
   return {};
-}
-
-LiteRtStatus GpuOptions::SetBufferStorageType(
-    LiteRtDelegateBufferStorageType type) {
-  return LiteRtSetGpuAcceleratorCompilationOptionsUseBufferStorageType(Get(),
-                                                                       type);
 }
 
 LiteRtStatus GpuOptions::SetPreferTextureWeights(bool prefer_texture_weights) {
@@ -122,10 +107,6 @@ Expected<void> GpuOptions::SetPriority(Priority priority) {
   LITERT_RETURN_IF_ERROR(LiteRtSetGpuOptionsGpuPriority(
       Get(), static_cast<LiteRtGpuPriority>(priority)));
   return {};
-}
-
-LiteRtStatus GpuOptions::SetGpuPriority(LiteRtGpuPriority priority) {
-  return LiteRtSetGpuOptionsGpuPriority(Get(), priority);
 }
 
 LiteRtStatus GpuOptions::SetMadviseOriginalSharedTensors(

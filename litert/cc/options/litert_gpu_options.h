@@ -42,8 +42,6 @@ class GpuOptions : public litert::OpaqueOptions {
     kFp32 = kLiteRtDelegatePrecisionFp32,
   };
   Expected<void> SetPrecision(Precision precision);
-  [[deprecated("Use SetPrecision above instead.")]]
-  LiteRtStatus SetDelegatePrecision(LiteRtDelegatePrecision precision);
 
   enum class BufferStorageType : int {
     kDefault = kLiteRtDelegateBufferStorageTypeDefault,
@@ -51,8 +49,6 @@ class GpuOptions : public litert::OpaqueOptions {
     kTexture2D = kLiteRtDelegateBufferStorageTypeTexture2D,
   };
   Expected<void> SetBufferStorageType(BufferStorageType type);
-  [[deprecated("Use SetBufferStorageType above instead.")]]
-  LiteRtStatus SetBufferStorageType(LiteRtDelegateBufferStorageType type);
 
   LiteRtStatus SetPreferTextureWeights(bool prefer_texture_weights);
   LiteRtStatus SetSerializationDir(const char* serialization_dir);
@@ -69,8 +65,6 @@ class GpuOptions : public litert::OpaqueOptions {
     kOpenGl = kLiteRtGpuBackendOpenGl,
   };
   Expected<void> SetBackend(Backend backend);
-  [[deprecated("Use SetBackend above instead.")]]
-  LiteRtStatus SetGpuBackend(LiteRtGpuBackend backend);
 
   enum class Priority : int {
     kDefault = kLiteRtGpuPriorityDefault,
@@ -79,8 +73,6 @@ class GpuOptions : public litert::OpaqueOptions {
     kHigh = kLiteRtGpuPriorityHigh,
   };
   Expected<void> SetPriority(Priority priority);
-  [[deprecated("Use SetPriority above instead.")]]
-  LiteRtStatus SetGpuPriority(LiteRtGpuPriority priority);
 
   LiteRtStatus SetMadviseOriginalSharedTensors(
       bool madvise_original_shared_tensors);

@@ -112,9 +112,9 @@ Expected<Options> GetGpuOptions() {
     gpu_options.SetPrecision(GpuOptions::Precision::kFp32);
   }
   if (absl::GetFlag(FLAGS_gpu_backend) == "webgpu") {
-    gpu_options.SetGpuBackend(kLiteRtGpuBackendWebGpu);
+    gpu_options.SetBackend(GpuOptions::Backend::kWebGpu);
   } else if (absl::GetFlag(FLAGS_gpu_backend) == "opengl") {
-    gpu_options.SetGpuBackend(kLiteRtGpuBackendOpenGl);
+    gpu_options.SetBackend(GpuOptions::Backend::kOpenGl);
   }
 
   if (absl::GetFlag(FLAGS_enable_constant_tensors_sharing)) {
