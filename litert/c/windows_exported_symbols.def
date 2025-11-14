@@ -141,6 +141,7 @@ EXPORTS
   LiteRtLockTensorBuffer
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
+  LiteRtQualcommOptionsGetDlcDir
   LiteRtQualcommOptionsGetDumpTensorIds
   LiteRtQualcommOptionsGetEnableWeightSharing
   LiteRtQualcommOptionsGetHtpPerformanceMode
@@ -155,6 +156,7 @@ EXPORTS
   LiteRtQualcommOptionsGetUseHtpPreference
   LiteRtQualcommOptionsGetUseQint16AsQuint16
   LiteRtQualcommOptionsGetVtcmSize
+  LiteRtQualcommOptionsSetDlcDir
   LiteRtQualcommOptionsSetDumpTensorIds
   LiteRtQualcommOptionsSetEnableWeightSharing
   LiteRtQualcommOptionsSetHtpPerformanceMode
