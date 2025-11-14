@@ -36,6 +36,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -472,8 +473,7 @@ Expected<OwningBufferRef<uint8_t>> SerializeWithAppendedBuffers(
       return Error(kLiteRtStatusErrorInvalidFlatbuffer);
     }
   }
-
-  // Allocate buffer enough for original model and appendd buffers and copy.
+  // Allocate buffer enough for original model and appended buffers and copy.
   OwningBufferRef<uint8_t> final_model(cur_offset);
 
   // Copy serialized tflite model.
@@ -519,8 +519,18 @@ Expected<OwningBufferRef<uint8_t>> SerializeModel(LiteRtModelT&& model,
   // Pass the op code list through that was saved during loading. Add one more
   // op code for the dispatch ops
   auto tfl_op_codes = litert::internal::TakeTflOpCodes(model);
-  tfl_op_codes.push_back(
-      MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomName)));
+  // don't push dispatch op code if it already exists
+  bool found_dispatch_op_code = false;
+  for (const auto& op_code : tfl_op_codes) {
+    if (op_code->builtin_code == kLiteRtOpCodeTflCustom) {
+      found_dispatch_op_code = true;
+      break;
+    }
+  }
+  if (!found_dispatch_op_code) {
+    tfl_op_codes.push_back(
+        MakeCustomOpCode(std::string(kLiteRtDispatchOpCustomName)));
+  }
 
   SerializationContext builder(tfl_op_codes.size() - 1, model,
                                bytecode_alignment);
