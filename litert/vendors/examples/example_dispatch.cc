@@ -31,6 +31,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/examples/example_common.h"
@@ -211,8 +212,8 @@ Expected<TensorBufferRequirements> GetTensorBufferRequirements(
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Tensor strides are not supported by QNN");
   }
-  static constexpr std::array<const LiteRtTensorBufferType, 1> types = {
-      kLiteRtTensorBufferTypeHostMemory};
+  static constexpr std::array<const TensorBufferType, 1> types = {
+      TensorBufferType::kHostMemory};
   LITERT_ASSIGN_OR_RETURN(const auto size, t.Bytes());
   return TensorBufferRequirements::Create(types, size, {}, OwnHandle::kNo);
 }
