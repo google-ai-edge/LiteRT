@@ -118,7 +118,7 @@ namespace litert::testing {
 
 namespace {
 
-using ::litert::mediatek::MediatekOptionsFromFlags;
+using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
 Expected<AtsConf::SeedMap> ParseParamSeedMap() {
@@ -156,9 +156,8 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
   if (backend == ExecutionBackend::kNpu) {
     LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
     LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
-    if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-      options.AddOpaqueOptions(std::move(*mediatek_opts));
-    }
+    LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+    LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);

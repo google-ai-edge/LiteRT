@@ -83,7 +83,7 @@ namespace {
 
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
-using ::litert::mediatek::MediatekOptionsFromFlags;
+using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
 litert::HwAcceleratorSet GetAccelerator() {
@@ -139,9 +139,8 @@ Expected<Options> GetOptions() {
   if (auto intel_openvino_opts = IntelOpenVinoOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*intel_openvino_opts));
   }
-  if (auto mediatek_opts = MediatekOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*mediatek_opts));
-  }
+  LITERT_ASSIGN_OR_RETURN(auto& mediatek_opts, options.GetMediatekOptions());
+  LITERT_RETURN_IF_ERROR(UpdateMediatekOptionsFromFlags(mediatek_opts));
   return options;
 }
 

@@ -78,7 +78,9 @@ std::string AbslUnparseFlag(
 
 namespace litert::mediatek {
 
-Expected<MediatekOptions> MediatekOptionsFromFlags();
+// Updates the provided MediatekOptions based on the values of the
+// Mediatek-specific command-line flags defined in this file.
+Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options);
 
 }  // namespace litert::mediatek
 

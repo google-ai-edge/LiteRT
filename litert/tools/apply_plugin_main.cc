@@ -142,9 +142,7 @@ int main(int argc, char* argv[]) {
            litert::google_tensor::GoogleTensorOptionsFromFlags()) &&
        ParseAndAddOptions(
            *opts, dump_out,
-           litert::intel_openvino::IntelOpenVinoOptionsFromFlags()) &&
-       ParseAndAddOptions(*opts, dump_out,
-                          litert::mediatek::MediatekOptionsFromFlags()));
+           litert::intel_openvino::IntelOpenVinoOptionsFromFlags()));
 
   if (all_flags_parsed) {
     if (auto qnn_opts = opts->GetQualcommOptions(); !qnn_opts) {
@@ -156,6 +154,20 @@ int main(int argc, char* argv[]) {
                    litert::qualcomm::UpdateQualcommOptionsFromFlags(*qnn_opts);
                !status) {
       run->dump_out.Get().get() << "Failed to parse Qualcomm flags, Error: "
+                                << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    if (auto mediatek_opts = opts->GetMediatekOptions(); !mediatek_opts) {
+      run->dump_out.Get().get() << "Failed to create Mediatek options: "
+                                << mediatek_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status = litert::mediatek::UpdateMediatekOptionsFromFlags(
+                   *mediatek_opts);
+               !status) {
+      run->dump_out.Get().get() << "Failed to parse Mediatek flags, Error: "
                                 << status.Error().Message() << "\n";
       all_flags_parsed = false;
     }

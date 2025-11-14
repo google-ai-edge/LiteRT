@@ -671,6 +671,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
+        "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
         "//litert/cc/internal:litert_handle",
     ] + select({

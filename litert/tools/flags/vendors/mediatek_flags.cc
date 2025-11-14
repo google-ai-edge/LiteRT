@@ -175,8 +175,7 @@ std::string AbslUnparseFlag(
 
 namespace litert::mediatek {
 
-Expected<MediatekOptions> MediatekOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto options, MediatekOptions::Create());
+Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
   options.SetNeronSDKVersionType(
       absl::GetFlag(FLAGS_mediatek_sdk_version_type));
   options.SetEnableGemmaCompilerOptimizations(
@@ -189,7 +188,7 @@ Expected<MediatekOptions> MediatekOptionsFromFlags() {
   options.SetDisableDlaDirRemoval(
       absl::GetFlag(FLAGS_mediatek_disable_dla_dir_removal));
   options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
-  return options;
+  return {};
 }
 
 }  // namespace litert::mediatek
