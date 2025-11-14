@@ -21,7 +21,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/types/span.h"  // from @com_google_absl
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
 namespace litert::internal {
@@ -55,6 +55,21 @@ TEST(FlatbufferToLiteRtTest, MapStaticTensorInt4Type) {
   ASSERT_EQ(t->first, kLiteRtRankedTensorType);
   auto& ranked = t->second.ranked_tensor_type;
   EXPECT_EQ(ranked.element_type, kLiteRtElementTypeInt4);
+  EXPECT_EQ(absl::MakeSpan(ranked.layout.dimensions, ranked.layout.rank),
+            kDimsSpan);
+}
+
+TEST(FlatbufferToLiteRtTest, MapStaticTensorInt2Type) {
+  static constexpr int32_t kDims[] = {2, 2};
+  static constexpr auto kDimsSpan = absl::MakeConstSpan(kDims);
+
+  auto t = MapTensorType(
+      std::make_pair(TflElementType::TensorType_INT2, TflShapeInfo(kDimsSpan)));
+  ASSERT_TRUE(t);
+
+  ASSERT_EQ(t->first, kLiteRtRankedTensorType);
+  auto& ranked = t->second.ranked_tensor_type;
+  EXPECT_EQ(ranked.element_type, kLiteRtElementTypeInt2);
   EXPECT_EQ(absl::MakeSpan(ranked.layout.dimensions, ranked.layout.rank),
             kDimsSpan);
 }

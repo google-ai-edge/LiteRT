@@ -68,7 +68,7 @@ class RankedTensorType {
     if (!byte_width) {
       return Unexpected(kLiteRtStatusErrorInvalidArgument);
     }
-    return num_elements * *byte_width;
+    return *byte_width * num_elements;
   }
 
  private:

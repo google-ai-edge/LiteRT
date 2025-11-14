@@ -186,7 +186,7 @@ cc_test(
     srcs = ["flatbuffer_to_litert_test.cc"],
     deps = [
         ":flatbuffer_to_litert",
-        "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/core/util:flatbuffer_tools",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",

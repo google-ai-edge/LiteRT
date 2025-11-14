@@ -21,7 +21,7 @@
 #include <type_traits>
 
 #include "litert/c/litert_model_types.h"
-#include "litert/cc/internal/litert_detail.h"
+#include "litert/cc/internal/litert_numerics.h"
 
 namespace litert {
 
@@ -29,6 +29,7 @@ namespace litert {
 enum class ElementType {
   None = kLiteRtElementTypeNone,
   Bool = kLiteRtElementTypeBool,
+  Int2 = kLiteRtElementTypeInt2,
   Int4 = kLiteRtElementTypeInt4,
   Int8 = kLiteRtElementTypeInt8,
   Int16 = kLiteRtElementTypeInt16,
@@ -50,40 +51,42 @@ enum class ElementType {
 };
 
 // Get number of bytes of a single element of given type.
-inline constexpr std::optional<size_t> GetByteWidth(ElementType ty) {
+inline constexpr std::optional<ByteWidth> GetByteWidth(ElementType ty) {
   if (ty == ElementType::Bool)
-    return 1;
+    return ByteWidth(1);
   else if (ty == ElementType::Int8)
-    return 1;
+    return ByteWidth(1);
   else if (ty == ElementType::Int16)
-    return 2;
+    return ByteWidth(2);
   else if (ty == ElementType::Int32)
-    return 4;
+    return ByteWidth(4);
   else if (ty == ElementType::Int64)
-    return 8;
+    return ByteWidth(8);
   else if (ty == ElementType::UInt8)
-    return 1;
+    return ByteWidth(1);
   else if (ty == ElementType::UInt16)
-    return 2;
+    return ByteWidth(2);
   else if (ty == ElementType::UInt32)
-    return 4;
+    return ByteWidth(4);
   else if (ty == ElementType::UInt64)
-    return 8;
+    return ByteWidth(8);
   else if (ty == ElementType::Float16)
-    return 2;
+    return ByteWidth(2);
   else if (ty == ElementType::BFloat16)
-    return 2;
+    return ByteWidth(2);
   else if (ty == ElementType::Float32)
-    return 4;
+    return ByteWidth(4);
   else if (ty == ElementType::Float64)
-    return 8;
+    return ByteWidth(8);
+  else if (ty == ElementType::Int2)
+    return ByteWidth(1, 4);
   else
     return std::nullopt;
 }
 
 // Get number of bytes of a single element of given type via template.
 template <ElementType Ty>
-inline constexpr size_t GetByteWidth() {
+inline constexpr ByteWidth GetByteWidth() {
   constexpr auto byte_width = GetByteWidth(Ty);
   static_assert(byte_width.has_value(), "Type does not have byte width");
   return byte_width.value();

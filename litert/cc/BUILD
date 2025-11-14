@@ -162,6 +162,7 @@ cc_library(
     deps = [
         "//litert/c:litert_model_types",
         "//litert/cc/internal:litert_detail",
+        "//litert/cc/internal:litert_numerics",
     ],
 )
 

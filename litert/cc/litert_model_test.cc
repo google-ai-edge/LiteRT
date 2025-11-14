@@ -222,7 +222,7 @@ TEST(CcTensorTest, Index) {
 //===----------------------------------------------------------------------===//
 
 TEST(CcElementTypeTest, GetByteWidth) {
-  const size_t width = GetByteWidth<ElementType::Bool>();
+  const auto width = GetByteWidth<ElementType::Bool>().NumBytes();
   EXPECT_EQ(width, 1);
 }
 

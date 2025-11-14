@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -38,6 +39,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/internal/litert_model_predicates.h"
@@ -352,6 +354,66 @@ TEST(ModelLoadTest, WithOffsetTensorBuffer) {
     EXPECT_EQ(tensor->Weights().GetBufferManager(),
               litert_model->get()->Buffers());
   }
+}
+
+TEST(ModelTestCApi, Int2) {
+  auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model->Get();
+  const auto& int2_tensor = litert_model.Subgraph(0).Tensor(2);
+
+  const auto& int2_type = int2_tensor.Type().second.ranked_tensor_type;
+  const auto rank = int2_type.layout.rank;
+  EXPECT_EQ(int2_type.element_type, kLiteRtElementTypeInt2);
+
+  size_t num_elements = 1;
+  for (int i = 0; i < rank; ++i) {
+    num_elements *= int2_type.layout.dimensions[i];
+  }
+
+  const auto& weights = int2_tensor.Weights();
+  const auto num_bytes = weights.Buffer().Size();
+  EXPECT_EQ(num_bytes, std::ceil(num_elements / 4.0f));
+
+  const auto& [int2_quant_id, int2_quant_detail] = int2_tensor.Qparams();
+  ASSERT_EQ(int2_quant_id, kLiteRtQuantizationPerChannel);
+  const auto q_dim = int2_quant_detail.per_channel.quantized_dimension;
+  const auto num_channels = int2_quant_detail.per_channel.num_channels;
+  ASSERT_EQ(num_channels, int2_type.layout.dimensions[q_dim]);
+
+  EXPECT_THAT(absl::MakeConstSpan(int2_quant_detail.per_channel.zero_points,
+                                  num_channels),
+              Each(0));
+}
+
+TEST(ModelTestCCApi, Int2) {
+  auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
+  ASSERT_TRUE(model);
+
+  const auto& litert_model = *model;
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto sg, litert_model.MainSubgraph());
+  const auto ops = sg.Ops();
+
+  const auto& fc = ops[1];
+  ASSERT_EQ(fc.Code(), kLiteRtOpCodeTflFullyConnected);
+
+  const auto inputs = fc.Inputs();
+  const auto& int2_tensor = inputs[1];
+
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto rtt, int2_tensor.RankedTensorType());
+  ASSERT_EQ(rtt.ElementType(), ElementType::Int2);
+  const auto& layout = rtt.Layout();
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto num_elements, layout.NumElements());
+  LITERT_ASSERT_OK_AND_ASSIGN(const auto num_bytes, rtt.Bytes());
+  EXPECT_EQ(num_bytes, std::ceil(num_elements / 4.0f));
+  ASSERT_TRUE(int2_tensor.IsConstant());
+
+  const auto q_params = int2_tensor.PerChannelQuantization();
+  const auto q_dim = q_params.quantized_dimension;
+  const auto num_channels = q_params.num_channels;
+  ASSERT_EQ(num_channels, layout.Dimensions()[q_dim]);
+  EXPECT_THAT(absl::MakeConstSpan(q_params.zero_points, num_channels), Each(0));
 }
 
 TEST(ModelSerializeTest, WithOffsetTensorBuffer) {

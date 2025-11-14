@@ -94,6 +94,8 @@ class ByteWidth {
     return NumBytes(num_elements);
   }
 
+  constexpr operator size_t() const { return NumBytes(); }  // NOLINT
+
  private:
   size_t numerator_;
   size_t denominator_;

@@ -20,7 +20,7 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/util/flatbuffer_tools.h"
@@ -70,6 +70,8 @@ Expected<TflElementType> MapElementType(LiteRtElementType litert_element_type) {
       return tflite::TensorType_STRING;
     case kLiteRtElementTypeTfVariant:
       return tflite::TensorType_VARIANT;
+    case kLiteRtElementTypeInt2:
+      return tflite::TensorType_INT2;
     default:
       return Error(kLiteRtStatusErrorUnsupported);
   }
