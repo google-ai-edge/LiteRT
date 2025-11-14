@@ -76,3 +76,32 @@ litert_device_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+litert_device_test(
+    name = "jit_compilation_google_tensor_test",
+    srcs = ["jit_compilation_google_tensor_test.cc"],
+    backend_id = "google_tensor",
+    data = [
+        "//litert/test:testdata/simple_model.tflite",
+        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_model",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/test:common",
+        "//litert/test:matchers",
+        "//litert/test:simple_model",
+        "//tflite:framework",
+        "//tflite/c:c_api_opaque",
+        "//tflite/c:common",
+        "//tflite/kernels:builtin_ops",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
