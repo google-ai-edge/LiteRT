@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tflite/kernels/shim/test_util.h"
 
+#include <cstdint>
 #include <string>
 
 #include <gtest/gtest.h>
