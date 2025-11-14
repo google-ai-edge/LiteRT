@@ -52,6 +52,11 @@ class TensorPool {
       const std::vector<std::uint32_t>& dimentions, std::uint32_t bytes,
       const void* data);
 
+  TensorWrapper* CreateStaticTensorWithValue(
+      Qnn_DataType_t data_type,
+      const QuantizeParamsWrapperVariant& quant_params,
+      const std::vector<std::uint32_t>& dimentions, float fill_value);
+
   TensorWrapper& CreateStaticTensorWithSuffix(
       Qnn_DataType_t data_type,
       const QuantizeParamsWrapperVariant& quant_params,
