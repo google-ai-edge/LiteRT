@@ -17,6 +17,10 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "llvm/ADT/StringRef.h"
+#include "llvm/FileCheck/FileCheck.h"
+#include "llvm/Support/SMLoc.h"
+#include "llvm/Support/SourceMgr.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -104,6 +108,16 @@ std::vector<std::string> GetDictionaryAttrNames(mlir::DictionaryAttr attr) {
 
 absl::string_view GetDenseElementsAttrBytes(mlir::DenseElementsAttr attr) {
   return absl::string_view(attr.getRawData().data(), attr.getRawData().size());
+}
+
+bool FileCheckCheckInput(absl::string_view input, absl::string_view check) {
+  llvm::FileCheckRequest fcr;
+  llvm::FileCheck fc(fcr);
+  llvm::SourceMgr SM = llvm::SourceMgr();
+  SM.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(input), llvm::SMLoc());
+  SM.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBuffer(check), llvm::SMLoc());
+  fc.readCheckFile(SM, llvm::StringRef(check));
+  return fc.checkInput(SM, llvm::StringRef(input));
 }
 
 }  // namespace litert::model_utils
