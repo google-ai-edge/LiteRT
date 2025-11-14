@@ -479,12 +479,10 @@ cc_test(
     deps = [
         ":litert_extended_model",
         "//litert/c:litert_common",
-        "//litert/c:litert_layout",
-        "//litert/c:litert_model",
         "//litert/c:litert_op_code",
         "//litert/cc:litert_element_type",
-        "//litert/cc:litert_layout",
         "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools_testonly",
         "//litert/test:common",
         "//litert/test:matchers",
         "@com_google_absl//absl/strings:string_view",
