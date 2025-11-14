@@ -705,6 +705,9 @@ litert::Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   if (maybe_compiled_plugins.HasValue()) {
     TryApplyPluginsImpl(&model, hw_accelerators, maybe_compiled_plugins.Value(),
                         &need_reserialization);
+    // Store the compiler plugins to a member variable to postpone its
+    // destruction and reduce initialization time.
+    maybe_compiled_plugins_ = std::move(maybe_compiled_plugins.Value());
   }
   if (!need_reserialization) {
     return false;
