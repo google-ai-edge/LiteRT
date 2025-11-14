@@ -110,6 +110,12 @@ LITERT_DEFINE_HANDLE(LiteRtProfiler);
 // (litert_external_litert_buffer_context.h)
 LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 
+#if __ANDROID_API__ >= 26
+#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 1
+#else
+#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 0
+#endif  // __ANDROID_API__ >= 26
+
 #if defined(__linux__) || defined(__ANDROID__)
 #define LITERT_HAS_SYNC_FENCE_SUPPORT 1
 #else
@@ -117,7 +123,6 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #endif
 
 #if defined(__ANDROID__)
-#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 1
 #define LITERT_HAS_OPENGL_SUPPORT_DEFAULT 1
 #define LITERT_HAS_ION_SUPPORT_DEFAULT 1
 #define LITERT_HAS_DMABUF_SUPPORT_DEFAULT 1
@@ -130,7 +135,6 @@ LITERT_DEFINE_HANDLE(LiteRtExternalLiteRtBufferContext);
 #define LITERT_HAS_FASTRPC_SUPPORT_DEFAULT 0
 // copybara:comment_end
 #else
-#define LITERT_HAS_AHWB_SUPPORT_DEFAULT 0
 #define LITERT_HAS_OPENGL_SUPPORT_DEFAULT 0
 #define LITERT_HAS_ION_SUPPORT_DEFAULT 0
 #define LITERT_HAS_DMABUF_SUPPORT_DEFAULT 0

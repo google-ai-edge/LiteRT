@@ -1038,8 +1038,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         if (auto ahwb = buffer->GetAhwbBuffer()) {
           // TODO: b/382330322 - Update logic to check if the AHWB (stride) is
           // CPU compatible.
-          // AHardwareBuffer_Desc desc;
-          // AHardwareBuffer_describe(*ahwb, &desc);
+          AHardwareBuffer_Desc desc;
+          AHardwareBuffer_describe(*ahwb, &desc);
           buffer_is_cpu_compatible = true;
         }
       }

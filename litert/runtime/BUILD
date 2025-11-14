@@ -85,20 +85,12 @@ cc_library(
 )
 
 cc_library(
-    name = "ahwb_wrapper",
-    srcs = ["ahwb_wrapper.cc"],
-    hdrs = ["ahwb_wrapper.h"],
-)
-
-cc_library(
     name = "ahwb_buffer",
     srcs = ["ahwb_buffer.cc"],
     hdrs = ["ahwb_buffer.h"],
     deps = [
-        ":ahwb_wrapper",
         ":event",
         "//litert/c:litert_common",
-        "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],

@@ -16,27 +16,26 @@
 
 #include <cstddef>
 
-#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
-#include "litert/runtime/ahwb_wrapper.h"
 #include "litert/runtime/event.h"
+#if LITERT_HAS_AHWB_SUPPORT
+#include "litert/cc/litert_macros.h"
+#endif  // LITERT_HAS_AHWB_SUPPORT
 
 namespace litert {
 namespace internal {
 
-using ::litert::internal::AndroidHardwareBufferWrapper;
-auto AhwbWrapper = AndroidHardwareBufferWrapper::Instance;
-
-bool AhwbBuffer::IsSupported() { return AhwbWrapper().Supported(); }
+bool AhwbBuffer::IsSupported() {
+#if LITERT_HAS_AHWB_SUPPORT
+  return true;
+#else
+  return false;
+#endif
+}
 
 Expected<AhwbBuffer> AhwbBuffer::Alloc(size_t size) {
-  if (!IsSupported()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "AHardwareBuffers are not supported on this platform");
-  }
-
+#if LITERT_HAS_AHWB_SUPPORT
   AHardwareBuffer* ahwb;
   AHardwareBuffer_Desc ahwb_desc = {
       .width = static_cast<uint32_t>(size),
@@ -46,63 +45,66 @@ Expected<AhwbBuffer> AhwbBuffer::Alloc(size_t size) {
       .usage = AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY |
                AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
                AHARDWAREBUFFER_USAGE_GPU_DATA_BUFFER};
-  if (AhwbWrapper().Allocate(&ahwb_desc, &ahwb) != 0) {
+  if (AHardwareBuffer_allocate(&ahwb_desc, &ahwb) != 0) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate AHWB");
   }
   return AhwbBuffer{/*.ahwb=*/ahwb};
+#else
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "AHardwareBuffers are not supported on this platform");
+#endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
 void AhwbBuffer::Free(AHardwareBuffer* ahwb) {
-  if (!IsSupported()) {
-    LITERT_LOG(LITERT_ERROR,
-               "AHardwareBuffers are not supported on this platform");
-    return;
-  }
-  AhwbWrapper().Release(ahwb);
+#if LITERT_HAS_AHWB_SUPPORT
+  AHardwareBuffer_release(ahwb);
+#endif
 }
 
 Expected<size_t> AhwbBuffer::GetSize(AHardwareBuffer* ahwb) {
-  if (!IsSupported()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "AHardwareBuffers are not supported on this platform");
-  }
-
+#if LITERT_HAS_AHWB_SUPPORT
   AHardwareBuffer_Desc ahwb_desc;
-  AhwbWrapper().Describe(ahwb, &ahwb_desc);
+  AHardwareBuffer_describe(ahwb, &ahwb_desc);
   return static_cast<size_t>(ahwb_desc.width) * ahwb_desc.height *
          ahwb_desc.layers;
+#else
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "AHardwareBuffers are not supported on this platform");
+#endif  // LITERT_HAS_AHWB_SUPPORT
 }
 
 Expected<void*> AhwbBuffer::Lock(AHardwareBuffer* ahwb, LiteRtEventT* event) {
-  if (!IsSupported()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "AHardwareBuffers are not supported on this platform");
-  }
+#if LITERT_HAS_AHWB_SUPPORT
   int fence = -1;
   if (event != nullptr) {
     LITERT_ASSIGN_OR_RETURN(fence, event->GetSyncFenceFd());
   }
   void* host_addr;
   LITERT_RETURN_IF_ERROR(
-      AhwbWrapper().Lock(ahwb,
-                         AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
-                             AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY,
-                         fence, /*rect=*/nullptr, &host_addr) == 0,
+      AHardwareBuffer_lock(ahwb,
+                           AHARDWAREBUFFER_USAGE_CPU_READ_RARELY |
+                               AHARDWAREBUFFER_USAGE_CPU_WRITE_RARELY,
+                           fence, /*rect=*/nullptr, &host_addr) == 0,
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "Failed to lock AHWB"));
   return host_addr;
+#else
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "AHardwareBuffers are not supported on this platform");
+#endif
 }
 
 Expected<void> AhwbBuffer::Unlock(AHardwareBuffer* ahwb) {
-  if (!IsSupported()) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "AHardwareBuffers are not supported on this platform");
-  }
-  if (AhwbWrapper().Unlock(ahwb, /*fence=*/nullptr) != 0) {
+#if LITERT_HAS_AHWB_SUPPORT
+  if (AHardwareBuffer_unlock(ahwb, /*fence=*/nullptr) != 0) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to unlock AHWB");
   }
   return {};
+#else
+  return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                    "AHardwareBuffers are not supported on this platform");
+#endif
 }
 
 }  // namespace internal
