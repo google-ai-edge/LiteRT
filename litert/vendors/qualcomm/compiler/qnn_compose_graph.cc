@@ -719,21 +719,25 @@ LiteRtStatus ConvertOp(const bool use_htp_preferences,
         return kLiteRtStatusErrorInvalidArgument;
       }
       if (info->name == CompositeOptions::kRmsNorm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
+        // auto attributes_map = info->attributes_map.value();
+        // float epsilon = attributes_map["epsilon"].AsFloat();
+        float epsilon = 9.99999997E-7;
         op_wrappers = ::qnn::BuildRmsNormOp(tensor_pool, input_tensors,
                                             output_tensors, epsilon);
       }
       if (info->name == CompositeOptions::kGroupNorm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
-        int num_groups = attributes_map["num_groups"].AsInt32();
+        // auto attributes_map = info->attributes_map.value();
+        // float epsilon = attributes_map["epsilon"].AsFloat();
+        // int num_groups = attributes_map["num_groups"].AsInt32();
+        float epsilon = 9.99999997E-7;
+        int num_groups = 2;
         op_wrappers = ::qnn::BuildGroupNormOp(
             tensor_pool, input_tensors, output_tensors, epsilon, num_groups);
       }
       if (info->name == CompositeOptions::kL2Norm) {
-        auto attributes_map = info->attributes_map.value();
-        float epsilon = attributes_map["epsilon"].AsFloat();
+        // auto attributes_map = info->attributes_map.value();
+        // float epsilon = attributes_map["epsilon"].AsFloat();
+        float epsilon = 9.99999997E-7;
         op_wrappers = ::qnn::BuildL2NormOp(tensor_pool, input_tensors,
                                            output_tensors, epsilon);
       }
