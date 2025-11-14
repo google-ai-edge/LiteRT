@@ -1474,6 +1474,11 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       absl::Format(&sink, "%v", add_opts);
       break;
     }
+    case tflite::BuiltinOptions_SubOptions: {
+      const auto* sub_opts = opts.AsSubOptions();
+      absl::Format(&sink, "%v", sub_opts);
+      break;
+    }
     default:
       absl::Format(&sink, "{%s}", ::litert::kNoPrinterTag);
       break;
@@ -1533,6 +1538,22 @@ void AbslStringify(Sink& sink, const AddOptionsT& opts) {
 
 template <class Sink>
 void AbslStringify(Sink& sink, const AddOptionsT* opts) {
+  ::litert::internal::PrintNullableOpts(sink, opts);
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SubOptionsT& opts) {
+  ::litert::internal::OptionStrBuilder b(sink);
+  const auto faf = opts.fused_activation_function;
+  b("fa", faf);
+  const auto pot = opts.pot_scale_int16;
+  if (pot) {
+    b("pot", pot);
+  }
+}
+
+template <class Sink>
+void AbslStringify(Sink& sink, const SubOptionsT* opts) {
   ::litert::internal::PrintNullableOpts(sink, opts);
 }
 

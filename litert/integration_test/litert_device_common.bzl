@@ -145,23 +145,39 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 
 # QUALCOMM
 
-def _QualcommSpec():
+def _QualcommSpec(version = "V75"):
+    stub_lib = "@qairt//:lib/aarch64-android/libQnnHtp%sStub.so" % version
+    skel_lib = "@qairt//:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
+    id = "qualcomm_%s" % version
+
+    mh = {}
+
+    if version == "V75":
+        # No suffix will be used for V75 by default as to not break existing scripts.
+        id = "qualcomm"
+        mh = {
+            "model": "regex:sm-s928b|sm-s928u1",
+            "pool": "shared",
+        }
+    elif version == "V79":
+        mh = {
+            "model": "regex:sm-s938*",
+            "pool": "shared",
+        }
+
     return {
         "qualcomm": BackendSpec(
-            id = "qualcomm",
+            id = id,
             libs = [
                 ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnHtpV75Stub.so", "LD_LIBRARY_PATH"),
+                (stub_lib, "LD_LIBRARY_PATH"),
                 ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
+                (skel_lib, "ADSP_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
-            mh_devices = [{
-                "model": "regex:sm-s928b|sm-s928u1",
-                "pool": "shared",
-            }],
+            mh_devices = [mh],
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
@@ -248,11 +264,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return name in ["qualcomm", "mediatek", "google_tensor", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):
