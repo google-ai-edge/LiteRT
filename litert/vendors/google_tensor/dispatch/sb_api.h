@@ -107,6 +107,8 @@ enum ThrNodeInterfaceBindingMode : int {
   kThrNodeInterfaceBindingModePositional = 1,  // e.g. `d, e = f(a, b, c)`
   kThrNodeInterfaceBindingModeNamed =
       2,  // e.g. `d = f(arg2=b, arg1=a)['out_y23']`
+  kThrNodeInterfaceBindingModeIndexed =
+      3,  // e.g. `(0)d, (1)e = f((0)a, (1)b, (2)c)`
 };
 
 enum ThrStatus : int {
@@ -274,39 +276,66 @@ ThrStatus thrGraphDelete(ThrGraph* graph);
 // unique on the given `ThrGraph` object.
 ThrStatus thrGraphAddEdge(ThrGraph* graph, ThrEdgeId edge_id, ThrEdgeType type);
 
-// Adds a compute (SchedulingQuantum) node to the given `ThrGraph` object. The
-// given `ThrNodeId` should be unique on the given `ThrGraph` object.
+// Adds a node to the given `ThrGraph` object.
+//
+// The given `ThrNodeId` must be unique on the given `ThrGraph` object.
+//
+// The node is implicitly assigned a binding mode of
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphAddSqNode(ThrGraph* graph, ThrNodeId node_id,
                             ThrNodeType type);
 
-// Adds a node and specifies the interface binding mode.
+// Has identical semantics to `thrGraphAddSqNode`, but allows for the
+// specification of the node's binding mode.
 ThrStatus thrGraphAddSqNodeWithInterfaceBindingMode(
     ThrGraph* graph, ThrNodeId node_id, ThrNodeType type,
     ThrNodeInterfaceBindingMode binding_mode);
 
-// Set input edges of the given node.
-// Can be called multiple times for multiple inputs.
-// Use this function for nodes with kThrNodeInterfaceBindingModePositional.
+// Set an input edge of the given node.
+//
+// This API must be called once for each input edge of the given node.
+//
+// NOTE: the given node must have binding mode
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphConnectNodeInput(ThrGraph* graph, ThrNodeId node_id,
                                    ThrEdgeId edge_id);
 
-// Variant for nodes with kThrNodeInterfaceBindingModeNamed.
+// Has identical semantics to `thrGraphConnectNodeInput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeNamed`.
 ThrStatus thrGraphConnectNodeInputWithPortName(ThrGraph* graph,
                                                ThrNodeId node_id,
                                                ThrEdgeId edge_id,
                                                ThrNodeInterfaceId port_id);
 
-// Set output edges of the given node.
-// Can be called multiple time for multiple outputs.
-// Use this function for nodes with kThrNodeInterfaceBindingModePositional.
+// Has identical semantics to `thrGraphConnectNodeInput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeIndexed`.
+ThrStatus thrGraphConnectNodeInputWithPortIndex(ThrGraph* graph,
+                                                ThrNodeId node_id,
+                                                ThrEdgeId edge_id,
+                                                unsigned int port_index);
+
+// Set an output edge of the given node.
+//
+// This API must be called once for each output edge of the given node.
+//
+// NOTE: the given node must have binding mode
+// `kThrNodeInterfaceBindingModePositional`.
 ThrStatus thrGraphConnectNodeOutput(ThrGraph* graph, ThrNodeId node_id,
                                     ThrEdgeId edge_id);
 
-// Variant for nodes with kThrNodeInterfaceBindingModeNamed.
+// Has identical semantics to `thrGraphConnectNodeOutput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeNamed`.
 ThrStatus thrGraphConnectNodeOutputWithPortName(ThrGraph* graph,
                                                 ThrNodeId node_id,
                                                 ThrEdgeId edge_id,
                                                 ThrNodeInterfaceId port_id);
+
+// Has identical semantics to `thrGraphConnectNodeOutput`, except that the given
+// node must have binding mode `kThrNodeInterfaceBindingModeIndexed`.
+ThrStatus thrGraphConnectNodeOutputWithPortIndex(ThrGraph* graph,
+                                                 ThrNodeId node_id,
+                                                 ThrEdgeId edge_id,
+                                                 unsigned int port_index);
 
 // Set input edges of the given `ThrGraph`.
 // Can be called multiple time for multiple inputs.
