@@ -302,9 +302,7 @@ ABSL_FLAG(bool, qualcomm_use_fold_relu, true,
 
 namespace litert::qualcomm {
 
-Expected<QualcommOptions> QualcommOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto opts, QualcommOptions::Create());
-
+Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto weight_share = absl::GetFlag(FLAGS_qualcomm_enable_weight_sharing);
   opts.SetEnableWeightSharing(weight_share);
 
@@ -353,7 +351,7 @@ Expected<QualcommOptions> QualcommOptionsFromFlags() {
   const auto use_fold_relu = absl::GetFlag(FLAGS_qualcomm_use_fold_relu);
   opts.SetUseFoldReLU(use_fold_relu);
 
-  return opts;
+  return {};
 }
 
 }  // namespace litert::qualcomm

@@ -33,7 +33,7 @@ ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::LogLevel,
 
 namespace litert::qualcomm {
 
-std::string AbslUnparseFlag(QualcommOptions::LogLevel options);
+std::string AbslUnparseFlag(QualcommOptions::LogLevel opts);
 
 bool AbslParseFlag(absl::string_view text, QualcommOptions::LogLevel* options,
                    std::string* error);
@@ -118,7 +118,9 @@ std::string AbslUnparseFlag(QualcommOptions::Profiling options);
 
 namespace litert::qualcomm {
 
-Expected<QualcommOptions> QualcommOptionsFromFlags();
+// Updates the provided QualcommOptions based on the values of the
+// Qualcomm-specific command-line flags defined in this file.
+Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts);
 
 }  // namespace litert::qualcomm
 

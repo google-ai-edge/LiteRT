@@ -84,7 +84,7 @@ namespace {
 using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
 using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::MediatekOptionsFromFlags;
-using ::litert::qualcomm::QualcommOptionsFromFlags;
+using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
 
 litert::HwAcceleratorSet GetAccelerator() {
   const std::string accelerator_str = absl::GetFlag(FLAGS_accelerator);
@@ -131,9 +131,8 @@ Expected<Environment> GetEnvironment() {
 Expected<Options> GetOptions() {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   options.SetHardwareAccelerators(GetAccelerator());
-  if (auto qnn_opts = QualcommOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*qnn_opts));
-  }
+  LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
+  LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
   if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*google_tensor_opts));
   }

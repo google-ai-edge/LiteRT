@@ -137,8 +137,6 @@ int main(int argc, char* argv[]) {
   bool all_flags_parsed =
       (ParseAndAddOptions(*opts, dump_out,
                           litert::CompilerOptionsFromFlags()) &&
-       ParseAndAddOptions(*opts, dump_out,
-                          litert::qualcomm::QualcommOptionsFromFlags()) &&
        ParseAndAddOptions(
            *opts, dump_out,
            litert::google_tensor::GoogleTensorOptionsFromFlags()) &&
@@ -148,7 +146,24 @@ int main(int argc, char* argv[]) {
        ParseAndAddOptions(*opts, dump_out,
                           litert::mediatek::MediatekOptionsFromFlags()));
 
+  if (all_flags_parsed) {
+    if (auto qnn_opts = opts->GetQualcommOptions(); !qnn_opts) {
+      run->dump_out.Get().get()
+          << "Failed to create Qualcomm options: " << qnn_opts.Error().Message()
+          << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::qualcomm::UpdateQualcommOptionsFromFlags(*qnn_opts);
+               !status) {
+      run->dump_out.Get().get() << "Failed to parse Qualcomm flags, Error: "
+                                << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
   if (!all_flags_parsed) {
+    // TODO(b/460591255): Use Expected<void> ParseFllags() instead of toggling
+    // all_flags_parsed.
     return 1;
   }
 

@@ -283,8 +283,9 @@ TEST(OptimizationLevelTest, Parse) {
 }
 
 TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
-  Expected<QualcommOptions> options = QualcommOptionsFromFlags();
+  Expected<QualcommOptions> options = QualcommOptions::Create();
   ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_EQ(options.Value().GetLogLevel(), QualcommOptions::LogLevel::kInfo);
   EXPECT_EQ(options.Value().GetProfiling(), QualcommOptions::Profiling::kOff);
   EXPECT_FALSE(options.Value().GetUseHtpPreference());
