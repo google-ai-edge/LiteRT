@@ -553,7 +553,11 @@ cc_test(
 cc_library(
     name = "litert_compiled_model",
     srcs = ["//litert/cc:litert_compiled_model.cc"],
-    hdrs = ["//litert/cc:litert_compiled_model.h"],
+    hdrs = [
+        "//litert/cc:litert_compiled_model.h",
+        "//litert/cc:litert_friends.inc",
+        "//litert/cc:litert_friends_def.inc",
+    ],
     deps = [
         ":litert_custom_op_kernel",
         ":litert_environment",

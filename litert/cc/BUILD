@@ -262,8 +262,12 @@ cc_test(
 
 cc_library(
     name = "litert_compiled_model",
-    srcs = [":litert_compiled_model.cc"],
-    hdrs = [":litert_compiled_model.h"],
+    srcs = ["litert_compiled_model.cc"],
+    hdrs = [
+        "litert_compiled_model.h",
+        "litert_friends.inc",
+        "litert_friends_def.inc",
+    ],
     visibility = [
         # copybara:uncomment_begin(oss litert_lm)
         # "//litert:litert_cc_users_static_link",
@@ -1124,6 +1128,8 @@ cc_library(
     name = "litert_api_with_dynamic_runtime",
     hdrs = [
         # C++ API headers.
+        "litert_friends_def.inc",
+        "litert_friends.inc",
         "litert_any.h",
         "litert_common.h",
         "litert_buffer_ref.h",
@@ -1250,6 +1256,7 @@ cc_library(
 )
 
 exports_files(glob([
+    "*.inc",
     "*.h",
     "*.cc",
 ]))

@@ -43,6 +43,7 @@
 #include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_friends_def.inc"
 
 namespace litert {
 
@@ -96,6 +97,7 @@ class CompiledModel
   friend class lm::LlmLiteRtCompiledModelExecutorDynamic;
   friend class lm::LlmLiteRtCompiledModelExecutorStatic;
   friend class lm::LlmLiteRtCompiledModelExecutorBase;
+#include "litert/cc/litert_friends.inc"
 
   CompiledModel() = default;
 
@@ -722,6 +724,7 @@ class CompiledModel
                          compiled_model, owned);
   }
 
+ protected:
   ///  \internal Creates a CompiledModel from a provided litert::Model.
   ///
   /// The model is loaded into memory and the caller takes ownership of the
@@ -773,7 +776,6 @@ class CompiledModel
     return Create(env, model, compilation_options);
   }
 
- protected:
   // Creates a CompiledModel instance.
   //
   // `model_owned` indicates whether the provided `litert_model` handle is owned
