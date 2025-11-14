@@ -995,6 +995,9 @@ cc_library(
 #         ":litert_common",
 #         ":litert_options",
 #         "@com_google_googletest//:gtest_main",
+#         "@com_google_absl//absl/strings",
+#         "//litert/core:scoped_file",
+#         "//litert/core:scoped_weight_source",
 #         "//litert/test:matchers",
 #     ],
 # )
@@ -1037,6 +1040,10 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
         "//litert/cc/options:litert_runtime_options",
+        "//litert/core:options",
+        "//litert/core:scoped_file",
+        "//litert/core:scoped_weight_source",
+        "@com_google_absl//absl/container:flat_hash_map",
     ],
 )
 
@@ -1230,6 +1237,9 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "//litert/c/internal:litert_logging",
         "//litert/cc/internal:litert_logging",
+        "//litert/core:options",
+        "//litert/core:scoped_file",
+        "//litert/core:scoped_weight_source",
         "@opencl_headers",
         "//tflite/core/api",
         "//tflite/profiling:memory_info",
