@@ -51,6 +51,8 @@ cc_library(
         "//tflite/converter/quantization/ir:QuantOps",
         "//tflite/converter/stablehlo:prepare_hlo",
         "@com_google_absl//absl/strings:string_view",
+        "@llvm-project//llvm:FileCheckLib",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:FuncExtensions",
