@@ -218,7 +218,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
-  for (int i = 0; i < output_byte_size / sizeof(float); ++i) {
+  for (int i = 0; i < 5; ++i) {
     LITERT_LOG(LITERT_ERROR, "========kLiteRtElementTypeFloat32 %f ", output_data_one[i]);
   }
   for (auto& tensor_buffer_handle : output_tensor_buffer_handles_) {

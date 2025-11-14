@@ -142,6 +142,7 @@ public:
     Microsoft::WRL::ComPtr<ID3D12Heap> heap = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> placed_resources = nullptr;
     Microsoft::WRL::ComPtr<ID3D12Resource> comitted_resource;
+    Microsoft::WRL::ComPtr<ID3D12Resource> readback_resource;
 
 public:
 
@@ -214,7 +215,7 @@ public:
       auto d3d12_create_device_proc =
       platform_functions->d3d12_create_device_proc();
         auto res =
-            d3d12_create_device_proc(adapter.Get(), D3D_FEATURE_LEVEL_1_0_CORE, IID_PPV_ARGS(device.ReleaseAndGetAddressOf()));
+            d3d12_create_device_proc(nullptr, D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(device.ReleaseAndGetAddressOf()));
         RETURN_IF_FAILED(res, "D3D12CreateDevice failed.");
         LITERT_LOG(LITERT_ERROR,    "======D3D12CreateDevice  success.");
     }
@@ -242,7 +243,7 @@ public:
     }
 
     void createPlacedResources(const size_t byte_size) {
-        D3D12_RESOURCE_DESC desc_resource{};
+        D3D12_RESOURCE_DESC desc_resource = {};
         desc_resource.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
         desc_resource.Alignment = D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT;
         desc_resource.Width = byte_size;
@@ -309,7 +310,17 @@ public:
                                         IID_PPV_ARGS(command_list.ReleaseAndGetAddressOf()));
         RETURN_IF_FAILED(res, "CreateCommandList failed.");
 
+        
+        // D3D12_RESOURCE_BARRIER barrier = {};
+        // barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        // barrier.Transition.pResource = placed_resources.Get();
+        // barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_DEST;
+        // barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
+        // barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+        // command_list->ResourceBarrier(1, &barrier);
+
         command_list->CopyBufferRegion(placed_resources.Get(), 0, comitted_resource.Get(), 0, byte_size);
+        // command_list->CopyBufferRegion(readback_resource.Get(), 0, placed_resources.Get(), 0, byte_size);
         res = command_list->Close();
         RETURN_IF_FAILED(res, "Close command list failed.");
 
@@ -323,6 +334,111 @@ public:
         RETURN_IF_FAILED(res, "SetEventOnCompletion failed.");
         WaitForSingleObject(event, INFINITE);
         LITERT_LOG(LITERT_ERROR,    "======copy resources  success.");
+
+        // ==============================================
+      // Step 6: Read Back Data from Readback Buffer
+      // ==============================================
+      // Map readback buffer to host memory (read-only)
+      // void* readbackHostPtr = nullptr;
+      // res = readback_resource->Map(0, nullptr, &readbackHostPtr);
+      // RETURN_IF_FAILED(res, "Failed to map Readback Buffer");
+
+      // // Copy data from readback buffer to host vector
+      // std::vector<float> hostReadbackData(byte_size / sizeof(float));
+      // memcpy(hostReadbackData.data(), readbackHostPtr, byte_size);
+      // for (int i = 0; i < 3; ++i) {
+      //   LITERT_LOG(LITERT_ERROR,    "======copy resources  success %f.", hostReadbackData[i]);
+      // }
+
+      // // Unmap readback buffer (critical to avoid memory leaks)
+      // readback_resource->Unmap(0, nullptr);
+    }
+
+    void readbackResources(const size_t byte_size) {
+      D3D12_RESOURCE_DESC gpuBufferDesc = {};
+      gpuBufferDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+      gpuBufferDesc.Width = byte_size;  // Buffer size in bytes
+      gpuBufferDesc.Height = 1;
+      gpuBufferDesc.DepthOrArraySize = 1;
+      gpuBufferDesc.MipLevels = 1;
+      gpuBufferDesc.Format = DXGI_FORMAT_UNKNOWN;  // Buffers have no format
+      gpuBufferDesc.SampleDesc.Count = 1;
+      gpuBufferDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+      
+      D3D12_HEAP_PROPERTIES readbackHeapProps = {};
+      readbackHeapProps.Type = D3D12_HEAP_TYPE_READBACK;  // Readback memory
+
+      auto res = device->CreateCommittedResource(
+          &readbackHeapProps,
+          D3D12_HEAP_FLAG_NONE,
+          &gpuBufferDesc,  // Same size as GPU buffer
+          D3D12_RESOURCE_STATE_COPY_DEST,  // Initial state: ready to receive copy
+          nullptr,
+          IID_PPV_ARGS(&readback_resource)
+      );
+      RETURN_IF_FAILED(res, "Failed to create Readback Buffer.");
+
+        Microsoft::WRL::ComPtr<ID3D12CommandQueue> command_queue;
+        Microsoft::WRL::ComPtr<ID3D12CommandAllocator> command_allocator;
+        Microsoft::WRL::ComPtr<ID3D12GraphicsCommandList4> command_list;
+        Microsoft::WRL::ComPtr<ID3D12Fence> fence;
+        uint32_t fence_value = 0;
+
+        D3D12_COMMAND_QUEUE_DESC desc{};
+        desc.Type = D3D12_COMMAND_LIST_TYPE_COMPUTE;
+        desc.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+        desc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+        desc.NodeMask = 0;
+        res = device->CreateCommandQueue(&desc, IID_PPV_ARGS(command_queue.ReleaseAndGetAddressOf()));
+        RETURN_IF_FAILED(res, "CreateCommandQueue failed.");
+
+        res = device->CreateFence(0, D3D12_FENCE_FLAG_SHARED, IID_PPV_ARGS(fence.ReleaseAndGetAddressOf()));
+        RETURN_IF_FAILED(res, "CreateFence failed.");
+
+        res = device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_COMPUTE,
+                                             IID_PPV_ARGS(command_allocator.ReleaseAndGetAddressOf()));
+        RETURN_IF_FAILED(res, "CreateCommandAllocator failed.");
+
+        res = device->CreateCommandList(0,
+                                        D3D12_COMMAND_LIST_TYPE_COMPUTE,
+                                        command_allocator.Get(),
+                                        nullptr,
+                                        IID_PPV_ARGS(command_list.ReleaseAndGetAddressOf()));
+        RETURN_IF_FAILED(res, "CreateCommandList failed.");
+
+
+        command_list->CopyBufferRegion(readback_resource.Get(), 0, placed_resources.Get(), 0, byte_size);
+        res = command_list->Close();
+        RETURN_IF_FAILED(res, "Close command list failed.");
+
+        ID3D12CommandList* command_lists[] = {command_list.Get()};
+        command_queue->ExecuteCommandLists(ARRAYSIZE(command_lists), command_lists);
+        res = command_queue->Signal(fence.Get(), ++fence_value);
+        RETURN_IF_FAILED(res, "Signal command queue failed.");
+
+        volatile auto event = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+        res = fence->SetEventOnCompletion(fence_value, event);
+        RETURN_IF_FAILED(res, "SetEventOnCompletion failed.");
+        WaitForSingleObject(event, INFINITE);
+        LITERT_LOG(LITERT_ERROR,    "======copy resources  success.");
+
+        // ==============================================
+      // Step 6: Read Back Data from Readback Buffer
+      // ==============================================
+      // Map readback buffer to host memory (read-only)
+      void* readbackHostPtr = nullptr;
+      res = readback_resource->Map(0, nullptr, &readbackHostPtr);
+      RETURN_IF_FAILED(res, "Failed to map Readback Buffer");
+
+      // Copy data from readback buffer to host vector
+      std::vector<float> hostReadbackData(byte_size / sizeof(float));
+      memcpy(hostReadbackData.data(), readbackHostPtr, byte_size);
+      for (int i = 0; i < 3; ++i) {
+        LITERT_LOG(LITERT_ERROR,    "======copy resources  success %f.", hostReadbackData[i]);
+      }
+
+      // Unmap readback buffer (critical to avoid memory leaks)
+      readback_resource->Unmap(0, nullptr);
     }
 };
 // }
@@ -368,9 +484,15 @@ LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
   dx12_tensor_buffer->createResources(tensor_buffer_size);
   void* mem;
   dx12_tensor_buffer->comitted_resource.Get()->Map(0, nullptr, &mem);
-  memset(mem, 5, tensor_buffer_size);
+  std::vector<float> hostInputData(tensor_buffer_size / sizeof(float), 7.0);  // Dummy input data
+  // memset(mem, 15, tensor_buffer_size);
+  memcpy(mem, hostInputData.data(), tensor_buffer_size);
+  for (int i = 0; i < 3; ++i) {
+    LITERT_LOG(LITERT_ERROR,    "======memset %f.", ((float*)mem)[i]);
+  }
   dx12_tensor_buffer->comitted_resource.Get()->Unmap(0, nullptr);
   dx12_tensor_buffer->copyResources(tensor_buffer_size);
+  dx12_tensor_buffer->readbackResources(tensor_buffer_size);
 
   ov::element::Type ov_element_type =
       litert::openvino::MapLiteTypeToOV(tensor_type.element_type);
