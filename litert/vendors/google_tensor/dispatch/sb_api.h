@@ -580,7 +580,8 @@ ThrStatus thrRegisterFence(ThrContext* context, ThrFenceType type,
 ThrStatus thrUnregisterFence(ThrContext* context, ThrFenceHandle handle);
 
 // Get a dup of the fence's fd.
-ThrStatus thrFenceGetDupFd(ThrFenceHandle handle, int* fence_fd);
+ThrStatus thrFenceGetDupFd(ThrContext* context, ThrFenceHandle handle,
+                           int* fence_fd);
 
 // --------------------------------------------------------------------------
 // InvocationContext APIs
@@ -697,6 +698,9 @@ ThrStatus thrInvocationContextGetOutputBufferSyncFence(
 
 // Has identical semantics to `thrInvocationContextGetOutputBufferSyncFence`,
 // but returns a fence handle rather than a raw fd.
+//
+// Note: the returned fence handle must be unregistered via
+// `thrUnregisterFence`.
 ThrStatus thrInvocationContextGetOutputBufferFence(
     ThrInvocationContext* icontext, ThrEdgeId edge_id, ThrFenceHandle* handle);
 
