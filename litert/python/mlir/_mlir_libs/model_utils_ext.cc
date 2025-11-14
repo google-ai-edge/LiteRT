@@ -35,6 +35,8 @@ namespace {
 namespace nb = nanobind;
 namespace model_utils = litert::model_utils;
 
+using namespace nb::literals;  // NOLINT
+
 NB_MODULE(model_utils_ext, m) {
   Py_Initialize();
 
@@ -81,15 +83,29 @@ NB_MODULE(model_utils_ext, m) {
     return model_utils::GetDictionaryAttrNames(attr);
   });
 
-  m.def("get_dense_elements_attr_bytes", [](MlirAttribute c_attr) {
-    auto attr = llvm::dyn_cast<mlir::DenseElementsAttr>(unwrap(c_attr));
-    if (attr == nullptr) {
-      throw nb::value_error(
-          "Failed to cast the input to mlir::DenseElementsAttr.");
-    }
-    auto bytes = model_utils::GetDenseElementsAttrBytes(attr);
-    return nb::bytes(bytes.data(), bytes.size());
-  });
+  m.def(
+      "get_dense_elements_attr_bytes",
+      [](MlirAttribute c_attr, int64_t offset, int64_t size) {
+        auto attr = llvm::dyn_cast<mlir::DenseElementsAttr>(unwrap(c_attr));
+        if (attr == nullptr) {
+          throw nb::value_error(
+              "Failed to cast the input to mlir::DenseElementsAttr.");
+        }
+        auto bytes = model_utils::GetDenseElementsAttrBytes(attr);
+
+        if (size < 0) {
+          size = bytes.size();
+        }
+        if (offset < 0) {
+          offset = offset + bytes.size();
+        }
+        offset = std::clamp(offset, static_cast<int64_t>(0),
+                            static_cast<int64_t>(bytes.size()));
+        size = std::clamp(size, static_cast<int64_t>(0),
+                          static_cast<int64_t>(bytes.size() - offset));
+        return nb::bytes(bytes.data() + offset, size);
+      },
+      "c_attr"_a, "offset"_a = 0, "size"_a = -1);
 }
 
 }  // namespace
