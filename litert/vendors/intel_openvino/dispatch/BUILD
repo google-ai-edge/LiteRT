@@ -81,6 +81,7 @@ litert_bin(
         "device_context.cc",
         "dispatch_api.cc",
         "invocation_context.cc",
+        "platform_functions.cc",
     ],
     copts = ["-fexceptions"] + select({
         "//litert/runtime/dispatch:windows_msvc": [
@@ -120,6 +121,13 @@ litert_lib(
     hdrs = [
         "device_context.h",
         "invocation_context.h",
+        "platform_functions.h",
+        "DirectML.h",
+        "d3d12.h",
+        "dxcore.h",
+        "dxcore_interface.h",
+        "d3dx12_core.h",
+        "d3dx12_default.h"
     ],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
