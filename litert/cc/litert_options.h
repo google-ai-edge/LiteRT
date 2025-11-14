@@ -29,6 +29,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 
 namespace litert {
 
@@ -120,12 +121,17 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // set the GPU options.
   Expected<GpuOptions&> GetGpuOptions();
 
+  // Returns the reference to the Qualcomm options. User will use this function
+  // to set the Qualcomm options.
+  Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
+
  private:
   // Builds the options object. This should be called after all the setters.
   // It's automatically called in CompiledModel::Create.
   Expected<void> Build();
 
   std::optional<GpuOptions> gpu_options_;
+  std::optional<qualcomm::QualcommOptions> qualcomm_options_;
 };
 
 }  // namespace litert

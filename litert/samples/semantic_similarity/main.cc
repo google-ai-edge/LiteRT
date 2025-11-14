@@ -272,12 +272,10 @@ absl::Status RealMain() {
       return absl::InvalidArgumentError("Dispatch library directory is empty.");
     }
     // QNN options
-    LITERT_ASSIGN_OR_RETURN(auto qnn_opts,
-                            ::litert::qualcomm::QualcommOptions::Create());
+    LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
     qnn_opts.SetLogLevel(::litert::qualcomm::QualcommOptions::LogLevel::kOff);
     qnn_opts.SetHtpPerformanceMode(
         ::litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
-    options.AddOpaqueOptions(std::move(qnn_opts));
     options.SetHardwareAccelerators(accelerator);
     // Add other NPU options here..
   } else if (accelerator & litert::HwAccelerators::kCpu) {

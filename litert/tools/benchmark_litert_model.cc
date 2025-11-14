@@ -82,8 +82,8 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
   if (use_npu) {
     hardware_accelerators |= HwAccelerators::kNpu;
     // QNN options
-    LITERT_ASSIGN_OR_ABORT(auto qnn_opts,
-                           ::litert::qualcomm::QualcommOptions::Create());
+    LITERT_ASSIGN_OR_ABORT(auto& qnn_opts,
+                           compilation_options.GetQualcommOptions());
     qnn_opts.SetLogLevel(litert::qualcomm::QualcommOptions::LogLevel::kOff);
     qnn_opts.SetHtpPerformanceMode(
         litert::qualcomm::QualcommOptions::HtpPerformanceMode::kBurst);
@@ -92,7 +92,6 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     qnn_opts.SetOptimizationLevel(
         litert::qualcomm::QualcommOptions::OptimizationLevel::
             kOptimizeForInferenceO3);
-    compilation_options.AddOpaqueOptions(std::move(qnn_opts));
 
     // MTK options
     LITERT_ASSIGN_OR_ABORT(auto mtk_opts,

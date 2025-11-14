@@ -14,25 +14,53 @@
 
 #include "litert/cc/litert_options.h"
 
+#include <optional>
+#include <utility>
+
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/options/litert_gpu_options.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 
 namespace litert {
 
-Expected<GpuOptions&> Options::GetGpuOptions() {
-  if (!gpu_options_) {
-    LITERT_ASSIGN_OR_RETURN(gpu_options_, GpuOptions::Create());
+namespace {
+
+template <typename OptionType>
+Expected<OptionType&> EnsureOption(std::optional<OptionType>& slot) {
+  if (!slot) {
+    LITERT_ASSIGN_OR_RETURN(auto option, OptionType::Create());
+    slot.emplace(std::move(option));
   }
-  return *gpu_options_;
+  return slot.value();
+}
+
+template <typename OptionType>
+LiteRtStatus AppendAndReset(LiteRtOptions options,
+                            std::optional<OptionType>& slot) {
+  if (!slot) {
+    return kLiteRtStatusOk;
+  }
+  LiteRtOpaqueOptions opaque = slot->Release();
+  slot.reset();
+  return LiteRtAddOpaqueOptions(options, opaque);
+}
+
+}  // namespace
+
+Expected<GpuOptions&> Options::GetGpuOptions() {
+  return EnsureOption(gpu_options_);
+}
+
+Expected<qualcomm::QualcommOptions&> Options::GetQualcommOptions() {
+  return EnsureOption(qualcomm_options_);
 }
 
 Expected<void> Options::Build() {
-  if (gpu_options_) {
-    LITERT_RETURN_IF_ERROR(
-        LiteRtAddOpaqueOptions(Get(), gpu_options_->Release()));
-  }
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), qualcomm_options_));
   return {};
 }
 
