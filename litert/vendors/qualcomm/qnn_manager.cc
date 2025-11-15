@@ -59,6 +59,15 @@ namespace litert::qnn {
 
 namespace {
 
+RtldFlags GetRtldFlags() {
+#if defined(__ANDROID__)
+  // Race condition segfault without NoDelete on android.
+  return RtldFlags::Lazy().Local().NoDelete();
+#else
+  return RtldFlags::Default();
+#endif
+}
+
 constexpr char kLibQnnGetProvidersSymbol[] = "QnnInterface_getProviders";
 
 constexpr char kLibQnnSystemGetProvidersSymbol[] =
@@ -105,14 +114,15 @@ QnnManager::~QnnManager() = default;
 LiteRtStatus QnnManager::LoadLib(absl::string_view path) {
   LITERT_LOG(LITERT_INFO, "Loading qnn shared library from \"%s\"",
              path.data());
-  LITERT_ASSIGN_OR_RETURN(lib_,
-                          SharedLibrary::Load(path, RtldFlags::Default()));
+  LITERT_ASSIGN_OR_RETURN(
+      lib_, SharedLibrary::Load(path, GetRtldFlags()));
   LITERT_LOG(LITERT_INFO, "Loaded qnn shared library", "");
   return kLiteRtStatusOk;
 }
 
 LiteRtStatus QnnManager::LoadSystemLib(absl::string_view path) {
-  auto lib_system_or = SharedLibrary::Load(path, RtldFlags::Default());
+  auto lib_system_or =
+      SharedLibrary::Load(path, GetRtldFlags());
   if (!lib_system_or) {
     LITERT_LOG(LITERT_ERROR, "%s", lib_system_or.Error().Message().data());
     return lib_system_or.Error().Status();
