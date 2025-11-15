@@ -148,8 +148,8 @@ done
 if [[ -n $d_bin ]]; then
   print "Pushing binary to device..."
   push_file "${d_bin}"
-  print "Running: ${hightlight_color}\"adb shell ${d_env_vars} $(device_path "${d_bin}") ${d_args[*]}${host_color}\""
+  print "Running: ${hightlight_color}\"adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]}${host_color}\""
   if [[ -z "${dry_run}" ]]; then
-    adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]} 
+    adb shell ${d_env_vars[*]} $(device_path "${d_bin}") ${d_args[*]}
   fi
 fi
