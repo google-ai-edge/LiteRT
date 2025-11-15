@@ -404,9 +404,9 @@ TEST(CompiledModelTest, WithProfiler) {
   LITERT_ASSIGN_OR_ABORT(Options compilation_options,
                          litert::Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
-  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                         compilation_options.GetRuntimeOptions());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
-  compilation_options.AddOpaqueOptions(std::move(runtime_options));
 
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -641,11 +641,10 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   // Configure BufferErrorReporter mode
-  LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+                              compilation_options.GetRuntimeOptions());
   LITERT_ASSERT_OK(
       runtime_options.SetErrorReporterMode(kLiteRtErrorReporterModeBuffer));
-  LITERT_ASSERT_OK(
-      compilation_options.AddOpaqueOptions(std::move(runtime_options)));
 
   // Create CompiledModel with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -727,11 +726,10 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+                              compilation_options.GetRuntimeOptions());
   LITERT_ASSERT_OK(
       runtime_options.SetErrorReporterMode(kLiteRtErrorReporterModeBuffer));
-  LITERT_ASSERT_OK(
-      compilation_options.AddOpaqueOptions(std::move(runtime_options)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
@@ -781,11 +779,10 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
-  LITERT_ASSERT_OK_AND_ASSIGN(auto runtime_options, RuntimeOptions::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+                              compilation_options.GetRuntimeOptions());
   LITERT_ASSERT_OK(
       runtime_options.SetErrorReporterMode(kLiteRtErrorReporterModeNone));
-  LITERT_ASSERT_OK(
-      compilation_options.AddOpaqueOptions(std::move(runtime_options)));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,

@@ -140,18 +140,18 @@ Options CreateCompiledModelOptions(const BenchmarkParams& params) {
     hardware_accelerators |= HwAccelerators::kCpu;
 
     if (num_threads > 0) {
-      LITERT_ASSIGN_OR_ABORT(auto cpu_options, CpuOptions::Create());
+      LITERT_ASSIGN_OR_ABORT(auto& cpu_options,
+                             compilation_options.GetCpuOptions());
       cpu_options.SetNumThreads(num_threads);
-      compilation_options.AddOpaqueOptions(std::move(cpu_options));
     }
   }
 
   compilation_options.SetHardwareAccelerators(hardware_accelerators);
 
   if (use_profiler) {
-    LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+    LITERT_ASSIGN_OR_ABORT(auto& runtime_options,
+                           compilation_options.GetRuntimeOptions());
     runtime_options.SetEnableProfiling(/*enabled=*/true);
-    compilation_options.AddOpaqueOptions(std::move(runtime_options));
   }
 
   return compilation_options;

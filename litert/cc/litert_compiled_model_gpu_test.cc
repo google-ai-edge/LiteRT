@@ -148,9 +148,8 @@ TEST_P(CompiledModelGpuTest, WithProfiler) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto options,
       CreateGpuOptions(/*no_immutable_external_tensors_mode=*/true));
-  LITERT_ASSIGN_OR_ABORT(auto runtime_options, RuntimeOptions::Create());
+  LITERT_ASSIGN_OR_ABORT(auto& runtime_options, options.GetRuntimeOptions());
   runtime_options.SetEnableProfiling(/*enabled=*/true);
-  options.AddOpaqueOptions(std::move(runtime_options));
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled_model,
       CompiledModel::Create(*env, testing::GetTestFilePath(kModelFileName),
