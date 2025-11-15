@@ -202,6 +202,61 @@ cc_library(
 )
 
 cc_library(
+    name = "d3d12_memory",
+    srcs = [
+        "d3d12_memory.cc",
+        "platform_functions.cc",
+    ],
+    hdrs = [
+        "d3d12_memory.h",
+        "platform_functions.h",
+        "DirectML.h",
+        "d3d12.h",
+        "dxcore.h",
+        "dxcore_interface.h",
+        "d3dx12_core.h",
+        "d3dx12_default.h"
+    ],
+    deps = [
+        ":gpu_environment_header",
+        ":tensor_buffer_lockstate",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_tensor_buffer_types",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/core/util:tensor_type_util",
+        "@com_google_absl//absl/cleanup",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/synchronization",
+        # "@opencl_headers",
+    ],
+)
+
+# litert_lib(
+#     name = "litert_dispatch_api",
+#     hdrs = [
+#         "device_context.h",
+#         "invocation_context.h",
+#     ],
+#     copts = ["-fexceptions"],
+#     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+#     deps = [
+#         "//litert/c:litert_runtime_c_api_shared_lib",
+#         "//litert/cc:litert_element_type",
+#         "//litert/cc:litert_environment_options",
+#         "//litert/cc:litert_expected",
+#         "//litert/cc:litert_macros",
+#         "//litert/cc/dynamic_runtime:litert_model",
+#         "//litert/core/util:tensor_type_util",
+#         "//litert/vendors/c:litert_dispatch_c_api",
+#         "//litert/vendors/intel_openvino:ov_utils",
+#         "@com_google_absl//absl/cleanup",
+#         "@intel_openvino//:openvino",
+#     ],
+# )
+
+cc_library(
     name = "tensor_buffer",
     srcs = [
         "custom_buffer.cc",
@@ -251,6 +306,7 @@ cc_library(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
         "@opencl_headers",
+        ":d3d12_memory",
     ] + select({
         "//litert/build_common:android_gpu_enabled": [
             ":gl_buffer",

@@ -177,6 +177,18 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 }
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
+LiteRtStatus LiteRtGetTensorBufferD3D12Memory(LiteRtTensorBuffer tensor_buffer,
+                                               HANDLE* d3d12_mem_addr) {
+  if (!tensor_buffer || !d3d12_mem_addr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto d3d12_memory, tensor_buffer->GetD3D12Memory());
+
+  *d3d12_mem_addr = d3d12_memory->GetMemoryPtr();
+  return kLiteRtStatusOk;
+}
+
 #if LITERT_HAS_METAL_SUPPORT
 LiteRtStatus LiteRtCreateTensorBufferFromMetalMemory(
     LiteRtEnvironment env, const LiteRtRankedTensorType* tensor_type,

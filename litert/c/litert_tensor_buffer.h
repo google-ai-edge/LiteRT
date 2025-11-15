@@ -27,6 +27,8 @@
 #include "litert/c/litert_gl_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 
+typedef void *HANDLE;
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
@@ -163,6 +165,10 @@ LiteRtStatus LiteRtCreateTensorBufferFromOpenClMemory(
 LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
                                                cl_mem* cl_mem_addr);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+
+// Return an error if the backing buffer is not a OpenCL memory.
+LiteRtStatus LiteRtGetTensorBufferD3D12Memory(LiteRtTensorBuffer tensor_buffer,
+                                               HANDLE* d3d12_mem_addr);
 
 // Create a tensor buffer from an existing OpenGL Buffer.
 //

@@ -78,7 +78,7 @@ LiteRtDispatchInvocationContextT::GetTensorBufferRequirements(
     const LiteRtRankedTensorType& tensor_type) {
   LiteRtTensorBufferType supported_tensor_buffer_types[] = {
 #if defined(LITERT_WINDOWS_OS)
-      kLiteRtTensorBufferTypeOpenClBuffer,
+      kLiteRtTensorBufferTypeD3D12Buffer,
 #else
       kLiteRtTensorBufferTypeAhwb,
       kLiteRtTensorBufferTypeDmaBuf,
@@ -157,7 +157,7 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::AttachOutput(
 #endif
   // TODO: visit this if need to maintain graph indices for inputs and outputs
   // in dispatch_api
-  // infer_request_.set_output_tensor(graph_output_index, ov_tensor);
+  infer_request_.set_output_tensor(graph_output_index, ov_tensor);
   return {};
 }
 
@@ -207,20 +207,20 @@ litert::Expected<void> LiteRtDispatchInvocationContextT::Invoke() {
   //   // }
   //   memcpy(ov_tensor.get(), buffer_host_addr, tensor_buffer_size);
   // }
-  auto output_tensor = infer_request_.get_output_tensor();
-    const auto output_byte_size = output_tensor.get_byte_size();
-    float* output_data_one = new float[output_byte_size / sizeof(float)];
-    ov::Tensor output_data_tensor_one{ov::element::f32, output_tensor.get_shape(), output_data_one};
-    infer_request_.set_output_tensor(output_data_tensor_one);
+  // auto output_tensor = infer_request_.get_output_tensor();
+  //   const auto output_byte_size = output_tensor.get_byte_size();
+  //   float* output_data_one = new float[output_byte_size / sizeof(float)];
+  //   ov::Tensor output_data_tensor_one{ov::element::f32, output_tensor.get_shape(), output_data_one};
+  //   infer_request_.set_output_tensor(output_data_tensor_one);
   infer_request_.start_async();
   if (!infer_request_.wait_for(
           std::chrono::milliseconds(kInferRequestTimeoutMs)))
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         "Failed to execute inference request due to timeout");
-  for (int i = 0; i < 5; ++i) {
-    LITERT_LOG(LITERT_ERROR, "========kLiteRtElementTypeFloat32 %f ", output_data_one[i]);
-  }
+  // for (int i = 0; i < 5; ++i) {
+  //   LITERT_LOG(LITERT_ERROR, "========kLiteRtElementTypeFloat32 %f ", output_data_one[i]);
+  // }
   for (auto& tensor_buffer_handle : output_tensor_buffer_handles_) {
     // LITERT_ASSIGN_OR_RETURN(LiteRtTensorBuffer tensor_buffer,
     //                       device_context_.getTensorBuffer(tensor_buffer_handle));

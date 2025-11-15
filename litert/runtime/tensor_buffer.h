@@ -41,6 +41,7 @@
 #include "litert/runtime/open_cl_memory.h"
 #include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+#include "litert/runtime/d3d12_memory.h"
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "litert/runtime/gl_buffer.h"
@@ -163,6 +164,7 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::OpenClMemory*> GetOpenClMemory();
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
+  litert::Expected<litert::internal::D3D12Memory*> GetD3D12Memory();
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
   litert::Expected<void> Unlock();
@@ -222,6 +224,7 @@ class LiteRtTensorBufferT {
 #if LITERT_HAS_OPENCL_SUPPORT
                    litert::internal::OpenClMemory,
 #endif  // LITERT_HAS_OPENCL_SUPPORT
+                    litert::internal::D3D12Memory,
                    litert::internal::CustomBuffer
 #if LITERT_HAS_OPENGL_SUPPORT
                    ,
@@ -254,6 +257,10 @@ class LiteRtTensorBufferT {
       const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
 
   static litert::Expected<Ptr> CreateManagedOpenClMemory(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      LiteRtTensorBufferType buffer_type, size_t buffer_size);
+
+static litert::Expected<Ptr> CreateManagedD3D12Memory(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
       LiteRtTensorBufferType buffer_type, size_t buffer_size);
 

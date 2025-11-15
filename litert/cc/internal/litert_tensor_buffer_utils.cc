@@ -91,6 +91,8 @@ std::string BufferTypeToString(LiteRtTensorBufferType buffer_type) {
       return "VulkanImageBufferFp16";
     case kLiteRtTensorBufferTypeVulkanBufferPacked:
       return "VulkanBufferPacked";
+    case kLiteRtTensorBufferTypeD3D12Buffer:
+    return "D3D12";
   }
   LITERT_LOG(LITERT_ERROR, "Unexpected value for LiteRtTensorBufferType: %d",
              static_cast<int>(buffer_type));
