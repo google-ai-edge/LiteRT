@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/buffer_manager.h"
@@ -36,22 +37,22 @@ static constexpr absl::string_view kData = "911GT3RS";
 
 using ::testing::ElementsAreArray;
 
-TEST(RewriterTest, InitializeRewriter) {
+TEST(BuilderTest, InitializeBuilder) {
   LiteRtSubgraphT subgraph;
   subgraph.EmplaceOp();
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
 
   EXPECT_EQ(subgraph.Ops().size(), 1);
 }
 
-TEST(RewriterTest, BuildRuntimeTensorWithoutWeights) {
+TEST(BuilderTest, BuildRuntimeTensorWithoutWeights) {
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   auto weights = LiteRtWeightsT();
   const auto quant = MakePerTensorQuantization(kScale, kZero);
   const auto tensor_type =
       MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2});
-  auto& tensor = rewriter.BuildTensor(weights, quant, tensor_type, kTensorName);
+  auto& tensor = builder.BuildTensor(weights, quant, tensor_type, kTensorName);
 
   auto built_tensor_type = tensor.Type();
 
@@ -80,11 +81,11 @@ inline LiteRtTensorT BuildSimpleTensor() {
   return tensor;
 }
 
-TEST(RewriterTest, BuildRuntimeTensorFromExistingTensor) {
+TEST(BuilderTest, BuildRuntimeTensorFromExistingTensor) {
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   auto tensor = BuildSimpleTensor();
-  auto& built_tensor = rewriter.BuildTensor(tensor);
+  auto& built_tensor = builder.BuildTensor(tensor);
   auto built_tensor_type = built_tensor.Type();
 
   EXPECT_EQ(built_tensor_type.first, kLiteRtRankedTensorType);
@@ -95,19 +96,19 @@ TEST(RewriterTest, BuildRuntimeTensorFromExistingTensor) {
       absl::MakeConstSpan(
           built_tensor_type.second.ranked_tensor_type.layout.dimensions, 3),
       ElementsAreArray({2, 2, 2}));
-  EXPECT_EQ(rewriter.IsTensorAllocated(&built_tensor), true);
-  EXPECT_EQ(rewriter.Subgraph().Tensors().size(), 1);
+  EXPECT_EQ(builder.IsTensorAllocated(&built_tensor), true);
+  EXPECT_EQ(builder.Subgraph().Tensors().size(), 1);
 }
 
-TEST(RewriterTest, BuildTensorWithExistingTensorWithWeights) {
+TEST(BuilderTest, BuildTensorWithExistingTensorWithWeights) {
   LiteRtSubgraphT subgraph;
   auto& tensor = subgraph.EmplaceTensor();
   {
     OwningBufferRef<uint8_t> buf(kData);
     SetWeightsFromOwnedBuffer(tensor.Weights(), std::move(buf));
   }
-  LiteRtRewriterT rewriter;
-  auto& built_tensor = rewriter.BuildTensor(tensor);
+  LiteRtBuilderT builder;
+  auto& built_tensor = builder.BuildTensor(tensor);
 
   EXPECT_EQ(built_tensor.Weights().GetBufferId(), 1);
   EXPECT_EQ(built_tensor.Weights().GetBufferManager(),
@@ -115,7 +116,7 @@ TEST(RewriterTest, BuildTensorWithExistingTensorWithWeights) {
   EXPECT_EQ(built_tensor.Weights().Buffer().Size(), kData.size());
 }
 
-TEST(RewriterTest, BuildTensorWithWeights) {
+TEST(BuilderTest, BuildTensorWithWeights) {
   LiteRtSubgraphT subgraph;
   BufferManager manager;
   LiteRtWeightsT weights;
@@ -124,8 +125,8 @@ TEST(RewriterTest, BuildTensorWithWeights) {
     OwningBufferRef<uint8_t> buf(kData);
     SetWeightsFromOwnedBuffer(weights, std::move(buf));
   }
-  LiteRtRewriterT rewriter;
-  auto& built_tensor = rewriter.BuildTensor(
+  LiteRtBuilderT builder;
+  auto& built_tensor = builder.BuildTensor(
       weights, MakePerTensorQuantization(kScale, kZero),
       MakeRankedTensorType(kLiteRtElementTypeInt32, {2, 2, 2}), kTensorName);
 
@@ -134,14 +135,14 @@ TEST(RewriterTest, BuildTensorWithWeights) {
   EXPECT_EQ(built_tensor.Weights().Buffer().Size(), kData.size());
 }
 
-TEST(RewriterTest, BuildOp) {
+TEST(BuilderTest, BuildOp) {
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   auto tensor = BuildSimpleTensor();
-  auto& built_tensor_0 = rewriter.BuildTensor(tensor);
-  auto& built_tensor_1 = rewriter.BuildTensor(tensor);
-  auto& built_op = rewriter.BuildOp(kLiteRtOpCodeTflAdd, {&built_tensor_0},
-                                    {&built_tensor_1});
+  auto& built_tensor_0 = builder.BuildTensor(tensor);
+  auto& built_tensor_1 = builder.BuildTensor(tensor);
+  auto& built_op = builder.BuildOp(kLiteRtOpCodeTflAdd, {&built_tensor_0},
+                                   {&built_tensor_1});
 
   EXPECT_EQ(built_op.OpCode(), kLiteRtOpCodeTflAdd);
   EXPECT_EQ(built_op.Inputs().size(), 1);
@@ -151,16 +152,16 @@ TEST(RewriterTest, BuildOp) {
   EXPECT_EQ(built_tensor_1.DefiningOp(), &built_op);
 }
 
-TEST(RewriterTest, BuildOpFromExistingOp) {
+TEST(BuilderTest, BuildOpFromExistingOp) {
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   auto tensor = BuildSimpleTensor();
-  auto& built_tensor_0 = rewriter.BuildTensor(tensor);
-  auto& built_tensor_1 = rewriter.BuildTensor(tensor);
+  auto& built_tensor_0 = builder.BuildTensor(tensor);
+  auto& built_tensor_1 = builder.BuildTensor(tensor);
 
   auto op = LiteRtOpT();
   op.SetOpCode(kLiteRtOpCodeTflAdd);
-  auto& built_op = rewriter.BuildOp(op, {&built_tensor_0}, {&built_tensor_1});
+  auto& built_op = builder.BuildOp(op, {&built_tensor_0}, {&built_tensor_1});
 
   EXPECT_EQ(built_op.OpCode(), kLiteRtOpCodeTflAdd);
   EXPECT_EQ(built_op.Inputs().size(), 1);
@@ -168,20 +169,20 @@ TEST(RewriterTest, BuildOpFromExistingOp) {
   EXPECT_EQ(built_tensor_0.GetUse(0).first, &built_op);
   EXPECT_EQ(built_tensor_0.GetUse(0).second, 0);
   EXPECT_EQ(built_tensor_1.DefiningOp(), &built_op);
-  EXPECT_EQ(rewriter.IsOpAllocated(&built_op), true);
-  EXPECT_EQ(rewriter.Subgraph().Ops().size(), 1);
+  EXPECT_EQ(builder.IsOpAllocated(&built_op), true);
+  EXPECT_EQ(builder.Subgraph().Ops().size(), 1);
 }
 
-TEST(RewriterTest, EraseOp) {
+TEST(BuilderTest, EraseOp) {
   LiteRtSubgraphT subgraph;
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   auto& op_to_erase = subgraph.EmplaceOp();
-  rewriter.EraseOp(&op_to_erase);
-  EXPECT_EQ(rewriter.Erases().size(), 1);
-  EXPECT_EQ(rewriter.Erases().contains(&op_to_erase), true);
+  builder.EraseOp(&op_to_erase);
+  EXPECT_EQ(builder.Erases().size(), 1);
+  EXPECT_EQ(builder.Erases().contains(&op_to_erase), true);
 }
 
-TEST(RewriterTest, UncommittedTransformation) {
+TEST(BuilderTest, UncommittedTransformation) {
   LiteRtSubgraphT subgraph;
   auto& op_to_replace = subgraph.EmplaceOp();
   op_to_replace.SetOpCode(kLiteRtOpCodeTflAdd);
@@ -190,9 +191,9 @@ TEST(RewriterTest, UncommittedTransformation) {
   AttachInput(&tensor_0, op_to_replace);
   AttachOutput(&tensor_1, op_to_replace);
 
-  LiteRtRewriterT rewriter;
-  rewriter.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&tensor_1});
-  rewriter.EraseOp(&op_to_replace);
+  LiteRtBuilderT builder;
+  builder.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&tensor_1});
+  builder.EraseOp(&op_to_replace);
 
   EXPECT_EQ(subgraph.Ops().size(), 1);
   EXPECT_EQ(&subgraph.Ops().front()->Input(0), &tensor_0);
@@ -203,7 +204,7 @@ TEST(RewriterTest, UncommittedTransformation) {
   EXPECT_EQ(subgraph.Tensors().size(), 2);
 }
 
-TEST(RewriterTest, AddOpToMulOpTransformation) {
+TEST(BuilderTest, AddOpToMulOpTransformation) {
   LiteRtModelT model;
   auto& subgraph = model.EmplaceSubgraph();
   auto& op_to_replace = subgraph.EmplaceOp();
@@ -215,10 +216,10 @@ TEST(RewriterTest, AddOpToMulOpTransformation) {
   AttachInput(&tensor_0, op_to_replace);
   AttachOutput(&tensor_1, op_to_replace);
 
-  LiteRtRewriterT rewriter;
-  rewriter.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&tensor_1});
-  rewriter.EraseOp(&op_to_replace);
-  rewriter.ApplyChanges(&subgraph);
+  LiteRtBuilderT builder;
+  builder.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&tensor_1});
+  builder.EraseOp(&op_to_replace);
+  builder.ApplyChanges(&subgraph);
 
   EXPECT_EQ(subgraph.Ops().size(), 1);
   EXPECT_EQ(subgraph.Ops().front()->Inputs().size(), 1);
@@ -234,7 +235,7 @@ TEST(RewriterTest, AddOpToMulOpTransformation) {
   EXPECT_EQ(model_wrap->get()->Unpack()->subgraphs.size(), 1);
 }
 
-TEST(RewriterTest, AddOpToMulOpAndAddOpTransformation) {
+TEST(BuilderTest, AddOpToMulOpAndAddOpTransformation) {
   LiteRtSubgraphT subgraph;
   auto& op_to_replace = subgraph.EmplaceOp();
   op_to_replace.SetOpCode(kLiteRtOpCodeTflAdd);
@@ -243,12 +244,12 @@ TEST(RewriterTest, AddOpToMulOpAndAddOpTransformation) {
   AttachInput(&tensor_0, op_to_replace);
   AttachOutput(&tensor_1, op_to_replace);
 
-  LiteRtRewriterT rewriter;
-  auto& built_tensor_0 = rewriter.BuildTensor(tensor_0);
-  rewriter.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&built_tensor_0});
-  rewriter.BuildOp(kLiteRtOpCodeTflAdd, {&built_tensor_0}, {&tensor_1});
-  rewriter.EraseOp(&op_to_replace);
-  rewriter.ApplyChanges(&subgraph);
+  LiteRtBuilderT builder;
+  auto& built_tensor_0 = builder.BuildTensor(tensor_0);
+  builder.BuildOp(kLiteRtOpCodeTflMul, {&tensor_0}, {&built_tensor_0});
+  builder.BuildOp(kLiteRtOpCodeTflAdd, {&built_tensor_0}, {&tensor_1});
+  builder.EraseOp(&op_to_replace);
+  builder.ApplyChanges(&subgraph);
 
   EXPECT_EQ(subgraph.Ops().size(), 2);
   EXPECT_EQ(subgraph.Ops().at(0)->OpCode(), kLiteRtOpCodeTflMul);
@@ -256,7 +257,7 @@ TEST(RewriterTest, AddOpToMulOpAndAddOpTransformation) {
   EXPECT_EQ(subgraph.Tensors().size(), 3);
 }
 
-TEST(RewriterTest, AddOpAndMulOpToDivOpTransformation) {
+TEST(BuilderTest, AddOpAndMulOpToDivOpTransformation) {
   LiteRtSubgraphT subgraph;
   auto& add_op_to_replace = subgraph.EmplaceOp();
   auto& mul_op_to_replace = subgraph.EmplaceOp();
@@ -270,11 +271,11 @@ TEST(RewriterTest, AddOpAndMulOpToDivOpTransformation) {
   AttachInput(&tensor_1, mul_op_to_replace);
   AttachOutput(&tensor_2, mul_op_to_replace);
 
-  LiteRtRewriterT rewriter;
-  rewriter.BuildOp(kLiteRtOpCodeTflDiv, {&tensor_0}, {&tensor_2});
-  rewriter.EraseOp(&add_op_to_replace);
-  rewriter.EraseOp(&mul_op_to_replace);
-  rewriter.ApplyChanges(&subgraph);
+  LiteRtBuilderT builder;
+  builder.BuildOp(kLiteRtOpCodeTflDiv, {&tensor_0}, {&tensor_2});
+  builder.EraseOp(&add_op_to_replace);
+  builder.EraseOp(&mul_op_to_replace);
+  builder.ApplyChanges(&subgraph);
 
   EXPECT_EQ(subgraph.Ops().size(), 1);
   EXPECT_EQ(subgraph.Ops().front()->Inputs().size(), 1);
@@ -283,16 +284,16 @@ TEST(RewriterTest, AddOpAndMulOpToDivOpTransformation) {
   EXPECT_EQ(subgraph.Tensors().size(), 2);
 }
 
-TEST(RewriterTest, BuildWeightsSuccess) {
+TEST(BuilderTest, BuildWeightsSuccess) {
   static constexpr absl::string_view kData = "911GT3RS";
   absl::Span<const uint8_t> data = absl::MakeConstSpan(
       reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
-  LiteRtRewriterT rewriter;
+  LiteRtBuilderT builder;
   LiteRtWeightsT null_weights;
   null_weights.SetBufferManager(nullptr);
   auto& tensor =
-      rewriter.BuildTensor(null_weights, Quantization(), TensorType());
-  auto& weights = rewriter.BuildWeights(data.data(), data.size(), &tensor);
+      builder.BuildTensor(null_weights, Quantization(), TensorType());
+  auto& weights = builder.BuildWeights(data.data(), data.size(), &tensor);
   EXPECT_EQ(weights.Buffer().Size(), kData.size());
   EXPECT_EQ(tensor.Weights().Buffer().Size(), kData.size());
   EXPECT_THAT(
@@ -301,32 +302,32 @@ TEST(RewriterTest, BuildWeightsSuccess) {
                                 kData.size()));
 }
 
-TEST(RewriterTest, TransferWeightsAfterApplyingChangesSuccess) {
+TEST(BuilderTest, TransferWeightsAfterApplyingChangesSuccess) {
   static constexpr absl::string_view kData = "911GT3RS";
   absl::Span<const uint8_t> data = absl::MakeConstSpan(
       reinterpret_cast<const uint8_t*>(kData.data()), kData.size());
   BufferManager manager;
   LiteRtSubgraphT subgraph = LiteRtSubgraphT(&manager);
-  // Scope to ensure that the rewriter is destroyed after the changes are
+  // Scope to ensure that the builder is destroyed after the changes are
   // applied.
   {
-    LiteRtRewriterT rewriter;
+    LiteRtBuilderT builder;
     LiteRtTensorT input_tensor;
     LiteRtTensorT output_tensor;
     LiteRtWeightsT null_weights;
     null_weights.SetBufferManager(nullptr);
-    auto& const_tensor = rewriter.BuildTensor(null_weights, Quantization(),
-                                              TensorType(), kTensorName);
+    auto& const_tensor = builder.BuildTensor(null_weights, Quantization(),
+                                             TensorType(), kTensorName);
 
     auto& weights =
-        rewriter.BuildWeights(data.data(), data.size(), &const_tensor);
+        builder.BuildWeights(data.data(), data.size(), &const_tensor);
     EXPECT_THAT(
         absl::MakeConstSpan(weights.Buffer().Data(), weights.Buffer().Size()),
         testing::ElementsAreArray(
             reinterpret_cast<const uint8_t*>(kData.data()), kData.size()));
-    rewriter.BuildOp(kLiteRtOpCodeTflAdd, {&const_tensor, &input_tensor},
-                     {&output_tensor});
-    rewriter.ApplyChanges(&subgraph);
+    builder.BuildOp(kLiteRtOpCodeTflAdd, {&const_tensor, &input_tensor},
+                    {&output_tensor});
+    builder.ApplyChanges(&subgraph);
   }
   ASSERT_EQ(subgraph.Ops().size(), 1);
   ASSERT_EQ(subgraph.Ops().front()->Inputs().size(), 2);

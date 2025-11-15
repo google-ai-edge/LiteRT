@@ -19,7 +19,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
-#include "litert/c/litert_rewriter.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/core/model/model.h"
 #include "litert/test/common.h"
