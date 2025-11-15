@@ -26,7 +26,8 @@ py_strict_library(
     deps = [
         "//litert/python/litert_wrapper/compiled_model_wrapper:_pywrap_litert_compiled_model_wrapper",
         "//litert/python/litert_wrapper/tensor_buffer_wrapper:_pywrap_litert_tensor_buffer_wrapper",
-        "//litert/python/mlir",
+        # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
+        # "//litert/python/mlir",
     ],
 )
 
@@ -49,7 +50,7 @@ pywrap_library(
             "//conditions:default": "//tflite/python:pywrap_tflite_common.lds",
         }),
     },
-    pywrap_count = 12,
+    pywrap_count = 10,
     visibility = ["//visibility:public"],
     deps = [
         ":litert_pywrap_deps",
