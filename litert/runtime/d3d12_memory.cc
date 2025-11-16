@@ -460,10 +460,10 @@ Expected<D3D12Memory> D3D12Memory::Alloc(
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
       Unexpected(kLiteRtStatusErrorRuntimeFailure, "D3D12 is not supported"));
-  if (gpu_env == nullptr) {
-    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                      "D3D12 is not supported");
-  }
+  // if (gpu_env == nullptr) {
+  //   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+  //                     "D3D12 is not supported");
+  // }
 
   // if (buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
   //   tflite::gpu::cl::Buffer buffer;

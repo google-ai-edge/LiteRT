@@ -165,6 +165,12 @@ class TensorBuffer
 #endif
   }
 
+  Expected<HANDLE> GetD3D12Memory() const {
+    HANDLE d3d12_mem_addr;
+    LITERT_RETURN_IF_ERROR(LiteRtGetTensorBufferD3D12Memory(Get(), &d3d12_mem_addr));
+    return d3d12_mem_addr;
+  }
+
   Expected<HwMemoryHandle> GetWebGpuBuffer() const {
 #if LITERT_HAS_WEBGPU_SUPPORT
     HwMemoryHandle hw_memory_handle;
