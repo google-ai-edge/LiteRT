@@ -117,9 +117,6 @@ bazelisk-windows-amd64 build -c opt //litert/vendors/intel_openvino/compiler:Lit
 cp .\bazel-bin\litert\vendors\intel_openvino\compiler\LiteRtCompilerPlugin.dll .\openvino_prebuilts
 cp .\bazel-bin\litert\vendors\intel_openvino\dispatch\LiteRtDispatch.dll .\openvino_prebuilts
 
-cp .\bazel-bin\litert\vendors\intel_openvino\compiler\LiteRtCompilerPlugin.dll C:\Workspace\junwei\gemma\
-cp .\bazel-bin\litert\vendors\intel_openvino\dispatch\LiteRtDispatch.dll C:\Workspace\junwei\gemma\
-
 3, Setup OpenVINO enviroment
 C:\Workspace\junwei\LiteRT>"C:\Program Files (x86)\Intel\openvino_2025.3\setupvars.bat"
 set ZE_INTEL_NPU_PLATFORM_OVERRIDE=LUNARLAKE
@@ -156,6 +153,8 @@ bazelisk-windows-amd64 --output_base=C:\bzl run //schema/py:litertlm_builder_cli
 C:\Workspace\junwei\LiteRT-LM>git checkout bc2cf3a
 bazelisk-windows-amd64.exe --output_base=C:\bzl build --define=DISABLE_HUGGINGFACE_TOKENIZER=1 --config=windows //runtime/engine:litert_lm_main
 
+cp C:\Workspace\junwei\LiteRT-LM\bazel-bin\external\litert\litert\vendors\intel_openvino\compiler\LiteRtCompilerPlugin.dll C:\Workspace\junwei\gemma\
+cp C:\Workspace\junwei\LiteRT-LM\bazel-bin\external\litert\litert\vendors\intel_openvino\dispatch\LiteRtDispatch.dll C:\Workspace\junwei\gemma\
 
 7, 
 LiteRtCompilerPlugin.dll and LiteRtDispatch.dll must be in the same directory as model.
