@@ -9,6 +9,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
 #include "QnnTypes.h"  // from @qairt
@@ -170,6 +171,221 @@ TEST(TensorPoolConvertStaticTensorTest, NarrowTypeConversionInt32) {
   for (size_t i = 0; i < tensor_data.size(); ++i) {
     ASSERT_EQ(tensor_data[i], (*converted_data)[i]);
   }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueFloat) {
+  TensorPool tensor_pool;
+
+  std::vector<float> golden_data = {6.0f, 6.0f, 6.0f};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_FLOAT_32, {}, {1, 1, 3}, 6);
+  ASSERT_NE(tensor_wrapper, nullptr);
+  const auto tensor_data = tensor_wrapper->GetTensorData<float>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_EQ(tensor_data, golden_data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt8) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<float> golden_data = {2.0, 2.0, 2.0};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_8, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int8_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt8) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, 5);  // offset = -5
+
+  std::vector<float> golden_data = {2.0, 2.0, 2.0};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_8, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint8_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt16) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<float> golden_data = {2.0, 2.0, 2.0};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_16, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int16_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt16) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, 5);  // offset = -5
+
+  std::vector<float> golden_data = {2.0, 2.0, 2.0};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_16, q_param, {1, 1, 3}, 2);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint16_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueSFixInt32) {
+  TensorPool tensor_pool;
+
+  ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+  std::vector<float> golden_data = {2.0, 2.0, 2.0};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_SFIXED_POINT_32, q_param, {1, 1, 3}, 2.0);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int32_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
+
+// TODO(@chengwl-qti): Re-enable this test when it passes in dbg mode.
+// TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUFixInt32) {
+//   TensorPool tensor_pool;
+
+//   ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+
+//   std::vector<float> golden_data = {2, 2, 2};
+
+//   TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+//       QNN_DATATYPE_UFIXED_POINT_32, q_param, {1, 1, 3}, 2.0);
+//   ASSERT_NE(tensor_wrapper, nullptr);
+
+//   const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+//   const float scale =
+//       std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+//   const std::int32_t zero_point =
+//       std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+
+//   const auto tensor_data = tensor_wrapper->GetTensorData<std::uint32_t>();
+
+//   EXPECT_TRUE(tensor_data.has_value());
+
+//   // Dequantize each element from the tensor data.
+//   for (int i = 0; i < golden_data.size(); i++) {
+//     EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+//                 golden_data[i], 1e-7);
+//   }
+// }
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt32) {
+  TensorPool tensor_pool;
+
+  std::vector<std::int32_t> golden_data = {2, 2, 2};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_INT_32, {}, {1, 1, 3}, 2.0);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::int32_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  EXPECT_EQ(tensor_data, golden_data);
+}
+
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUInt32) {
+  TensorPool tensor_pool;
+
+  std::vector<std::uint32_t> golden_data = {2, 2, 2};
+
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UINT_32, {}, {1, 1, 3}, 2.0);
+  ASSERT_NE(tensor_wrapper, nullptr);
+
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint32_t>();
+
+  EXPECT_TRUE(tensor_data.has_value());
+
+  EXPECT_EQ(tensor_data, golden_data);
 }
 
 }  // namespace

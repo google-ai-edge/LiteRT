@@ -20,7 +20,6 @@
 #include <string>
 #include <utility>
 
-#include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -90,6 +89,7 @@ const auto kSupportedOps =
                     "simple_logical_and_op.tflite",
                     "simple_logical_or_op.tflite",
                     "simple_logistic.tflite",
+                    "simple_log_softmax_op.tflite",
                     "simple_max_pool_2d.tflite",
                     "simple_max_pool_2d_fused_relu.tflite",
                     "simple_mean_op.tflite",
@@ -121,6 +121,7 @@ const auto kSupportedOps =
                     "simple_sin_op.tflite",
                     "simple_slice_op.tflite",
                     "simple_softmax_op.tflite",
+                    "simple_scatter_nd_op.tflite",
                     "simple_space_to_depth_op.tflite",
                     "simple_split_op.tflite",
                     "simple_strided_slice_op.tflite",

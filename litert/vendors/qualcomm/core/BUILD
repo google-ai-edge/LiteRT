@@ -21,6 +21,7 @@ cc_library(
     hdrs = ["tensor_pool.h"],
     deps = [
         "//litert/vendors/qualcomm/core/utils:log",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@qairt//:qnn_lib_headers",
@@ -34,6 +35,7 @@ cc_test(
     ],
     deps = [
         ":tensor_pool",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:quantize_params_wrapper",
         "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
         "@com_google_googletest//:gtest_main",

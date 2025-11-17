@@ -25,17 +25,6 @@ namespace {
 constexpr size_t kInputIndex = 0;
 constexpr size_t kOutputIndex = 0;
 
-template <typename T>
-TensorWrapper& CreateAlphaTensor(
-    TensorPool& tensor_pool, const Qnn_DataType_t data_type,
-    const QuantizeParamsWrapperVariant& quant_param, const T alpha) {
-  const std::vector<std::uint32_t> alpha_dims{1};
-  const std::array<T, 1> alpha_data{alpha};
-  return tensor_pool.CreateStaticTensor(data_type, quant_param, alpha_dims,
-                                        sizeof(T) * alpha_data.size(),
-                                        alpha_data.data());
-}
-
 }  // namespace
 std::vector<OpWrapper> BuildLeakyReluOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
@@ -46,13 +35,11 @@ std::vector<OpWrapper> BuildLeakyReluOp(
   TensorWrapper& input_tensor = inputs[kInputIndex];
   leaky_relu_op.AddInputTensor(input_tensor);
   leaky_relu_op.AddOutputTensor(outputs[kOutputIndex]);
-
+  TensorWrapper* alpha_tensor = nullptr;
   if (std::holds_alternative<UndefinedQuantizeParamsWrapper>(
           input_tensor.GetQuantParams())) {
-    TensorWrapper& alpha_tensor =
-        CreateAlphaTensor<float>(tensor_pool, input_tensor.GetDataType(),
-                                 input_tensor.GetQuantParams(), alpha);
-    leaky_relu_op.AddInputTensor(alpha_tensor);
+    alpha_tensor = tensor_pool.CreateStaticTensorWithValue(
+        input_tensor.GetDataType(), input_tensor.GetQuantParams(), {1}, alpha);
   } else if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
                  input_tensor.GetQuantParams())) {
     QuantizeParamsWrapperVariant quant_param;
@@ -60,41 +47,30 @@ std::vector<OpWrapper> BuildLeakyReluOp(
                                                           0);
 
     switch (input_tensor.GetDataType()) {
-      case QNN_DATATYPE_UFIXED_POINT_8: {
-        TensorWrapper& alpha_tensor = CreateAlphaTensor<std::uint8_t>(
-            tensor_pool, input_tensor.GetDataType(), quant_param, 1);
-        leaky_relu_op.AddInputTensor(alpha_tensor);
-        break;
-      }
-      case QNN_DATATYPE_SFIXED_POINT_8: {
-        TensorWrapper& alpha_tensor = CreateAlphaTensor<std::int8_t>(
-            tensor_pool, input_tensor.GetDataType(), quant_param, 1);
-        leaky_relu_op.AddInputTensor(alpha_tensor);
-        break;
-      }
-      case QNN_DATATYPE_UFIXED_POINT_16: {
-        TensorWrapper& alpha_tensor = CreateAlphaTensor<std::uint16_t>(
-            tensor_pool, input_tensor.GetDataType(), quant_param, 1);
-        leaky_relu_op.AddInputTensor(alpha_tensor);
-        break;
-      }
+      case QNN_DATATYPE_UFIXED_POINT_8:
+      case QNN_DATATYPE_SFIXED_POINT_8:
+      case QNN_DATATYPE_UFIXED_POINT_16:
       case QNN_DATATYPE_SFIXED_POINT_16: {
-        TensorWrapper& alpha_tensor = CreateAlphaTensor<std::int16_t>(
-            tensor_pool, input_tensor.GetDataType(), quant_param, 1);
-        leaky_relu_op.AddInputTensor(alpha_tensor);
+        alpha_tensor = tensor_pool.CreateStaticTensorWithValue(
+            input_tensor.GetDataType(), quant_param, {1}, alpha);
         break;
       }
-      default: {
+      default:
         QNN_LOG_ERROR(
-            "Unsupported QNN data type when creating alpha tensor for "
+            "Unsupported QNN data type when creating LeakyRelu alpha tensor in "
             "per-tensor quantization.");
-        break;
-      }
+        return {};
     }
   } else {
-    QNN_LOG_ERROR("Unsupported quantization type for LeakyRelu op.");
+    QNN_LOG_ERROR(
+        "Unsupported quantization type when creating LeakyRelu alpha tensor.");
+    return {};
   }
-
+  if (alpha_tensor == nullptr) {
+    QNN_LOG_ERROR("Failed to create alpha tensor for LeakyRelu op.");
+    return res;
+  }
+  leaky_relu_op.AddInputTensor(*alpha_tensor);
   return res;
 }
 
