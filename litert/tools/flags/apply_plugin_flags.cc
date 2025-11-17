@@ -68,12 +68,9 @@ std::string AbslUnparseFlag(
 
 namespace litert {
 
-Expected<CompilerOptions> CompilerOptionsFromFlags() {
-  LITERT_ASSIGN_OR_RETURN(auto options, CompilerOptions::Create());
-
+Expected<void> CompilerOptionsFromFlags(CompilerOptions& options) {
   const auto partition_strategy = absl::GetFlag(FLAGS_partition_strategy);
   LITERT_RETURN_IF_ERROR(options.SetPartitionStrategy(partition_strategy));
-
-  return options;
+  return {};
 }
 }  // namespace litert

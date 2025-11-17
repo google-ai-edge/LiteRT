@@ -63,7 +63,9 @@ ABSL_DECLARE_FLAG(std::string, google_tensor_testing_flags);
 
 namespace litert::google_tensor {
 
-Expected<GoogleTensorOptions> GoogleTensorOptionsFromFlags();
+// Updates the provided GoogleTensorOptions based on the values of the
+// GoogleTensor-specific command-line flags defined in this file.
+Expected<void> UpdateGoogleTensorOptionsFromFlags(GoogleTensorOptions& options);
 
 }  // namespace litert::google_tensor
 
