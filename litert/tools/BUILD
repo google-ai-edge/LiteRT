@@ -461,6 +461,7 @@ cc_library(
 cc_binary(
     name = "run_model",
     srcs = ["run_model.cc"],
+    data = ["//litert/tools/data:pp_test.tflite"],
     deps = [
         ":tensor_utils",
         "//litert/c:litert_common",
