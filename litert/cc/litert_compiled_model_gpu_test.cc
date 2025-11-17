@@ -830,7 +830,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   LITERT_ASSERT_OK_AND_ASSIGN(TensorBufferRequirements requirements,
                               compiled_model.GetInputBufferRequirements(0));
   LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                              requirements.SupportedTypesCC());
+                              requirements.SupportedTypes());
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(

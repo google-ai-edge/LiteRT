@@ -51,7 +51,7 @@ TEST(TensorBufferRequirements, Owned) {
       kBufferSize);
   ASSERT_TRUE(requirements);
 
-  auto supported_types = requirements->SupportedTypesCC();
+  auto supported_types = requirements->SupportedTypes();
   ASSERT_TRUE(supported_types);
   ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
   for (auto i = 0; i < supported_types->size(); ++i) {
@@ -80,7 +80,7 @@ TEST(TensorBufferRequirements, NotOwned) {
   auto requirements = litert::TensorBufferRequirements::WrapCObject(
       litert_requirements, litert::OwnHandle::kNo);
 
-  auto supported_types = requirements.SupportedTypesCC();
+  auto supported_types = requirements.SupportedTypes();
   ASSERT_TRUE(supported_types);
   ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
   for (auto i = 0; i < supported_types->size(); ++i) {
@@ -144,7 +144,7 @@ TEST(TensorBufferRequirements, JoinSuccess) {
       litert::Join(*src_requirements_1, *src_requirements_2);
   ASSERT_TRUE(joint_requirements);
 
-  auto supported_types = joint_requirements->SupportedTypesCC();
+  auto supported_types = joint_requirements->SupportedTypes();
   ASSERT_TRUE(supported_types);
   ASSERT_EQ(supported_types->size(), 2);
   ASSERT_EQ((*supported_types)[0], litert::TensorBufferType::kAhwb);
@@ -200,7 +200,7 @@ TEST(TensorBufferRequirements, CreateWithAlignment) {
   ASSERT_EQ(*alignment, kCustomAlignment);
 
   // Verify other fields are still correct
-  auto supported_types = requirements->SupportedTypesCC();
+  auto supported_types = requirements->SupportedTypes();
   ASSERT_TRUE(supported_types);
   ASSERT_EQ(supported_types->size(), kNumSupportedTensorBufferTypes);
 

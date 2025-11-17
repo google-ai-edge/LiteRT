@@ -24,6 +24,7 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/test/matchers.h"
 #include "litert/test/simple_buffer.h"
 #include "litert/vendors/c/litert_dispatch.h"
@@ -187,7 +188,7 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   auto req =
       TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
 }
 
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
@@ -199,7 +200,7 @@ TEST_F(ExampleDispatchTest, TensorBufferRequirementsOutputs) {
   auto req =
       TensorBufferRequirements::WrapCObject(requirements, OwnHandle::kYes);
   LITERT_ASSERT_OK_AND_ASSIGN(auto supported_types, req.SupportedTypes());
-  EXPECT_THAT(supported_types, ElementsAre(kLiteRtTensorBufferTypeHostMemory));
+  EXPECT_THAT(supported_types, ElementsAre(TensorBufferType::kHostMemory));
 }
 
 TEST_F(ExampleDispatchTest, RegisterBuffer) {
