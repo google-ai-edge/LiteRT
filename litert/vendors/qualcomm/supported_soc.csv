@@ -1,6 +1,14 @@
 # manufacturer,model,runtime_library_version,soc_model
+Qualcomm,SM8850,v81,87
 Qualcomm,SM8750,v79,69
+Qualcomm,QCS8625,v75,90
 Qualcomm,SM8650,v75,57
+Qualcomm,QCM6690,v73,78
+Qualcomm,QCS6690,v73,78
+Qualcomm,QCS9100,v73,77
+Qualcomm,SSG2125P,v73,58
+Qualcomm,SSG2115P,v73,46
+Qualcomm,SAR2130P,v73,46
 Qualcomm,SM8635,v73,68
 Qualcomm,SM8550,v73,43
 Qualcomm,SM7675,v73,70
@@ -44,3 +52,5 @@ Qualcomm,SXR1230P,v73,45
 Qualcomm,SA8255,v73,52
 Qualcomm,SAR2230P,v81,95
 Qualcomm,SXR2330P,v79,75
+Qualcomm,QCS2290,,83
+Qualcomm,QCM2290,,83
