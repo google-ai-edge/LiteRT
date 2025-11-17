@@ -42,10 +42,6 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
 #include "litert/vendors/intel_openvino/utils.h"
-#include "litert/vendors/intel_openvino/dispatch/platform_functions.h"
-#include "litert/vendors/intel_openvino/dispatch/dxcore.h"
-#include "litert/vendors/intel_openvino/dispatch/dxcore_interface.h"
-#include "litert/vendors/intel_openvino/dispatch/d3dx12_core.h"
 
 litert::Expected<LiteRtDispatchDeviceContextT::Ptr>
 LiteRtDispatchDeviceContextT::Create() {
@@ -122,28 +118,6 @@ litert::Expected<int> GetFdFromUnixHandle(AHardwareBuffer *ahwb) {
 // #            undef NOMINMAX
 // #            undef NOMINMAX_DEFINED_CTX_UT
 // #        endif
-
-
-// namespace ml {
-class DX12RemoteRun {
-public:
-    // std::shared_ptr<ov::Core> core = utils::PluginCache::get().core();
-    // ov::AnyMap configuration;
-
-    Microsoft::WRL::ComPtr<IDXCoreAdapter> adapter;
-    Microsoft::WRL::ComPtr<ID3D12Device9> device;
-    Microsoft::WRL::ComPtr<ID3D12Heap> heap = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> placed_resources = nullptr;
-    Microsoft::WRL::ComPtr<ID3D12Resource> comitted_resource;
-    Microsoft::WRL::ComPtr<ID3D12Resource> readback_resource;
-
-public:
-
-    HANDLE shared_mem = nullptr;
-    
-};
-// }
-// #endif
 
 litert::Expected<LiteRtTensorBufferHandle>
 LiteRtDispatchDeviceContextT::RegisterTensorBuffer(
