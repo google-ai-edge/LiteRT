@@ -89,11 +89,11 @@ TEST(CompiledModelTest, RunWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[1].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(output_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -153,11 +153,11 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModel) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[1].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(output_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
 
   LITERT_ASSERT_OK(input_buffers[0].Write<float>(
@@ -305,11 +305,11 @@ TEST(CompiledModel, RunAsyncWithGoogleTensorModelUseAhwbGlInterop) {
   ASSERT_THAT(output_buffers, SizeIs(1));
 
   // Confirm input and output buffers are AHWB.
-  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[1].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
-  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(output_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kAhwb));
   // Write to input buffers on GPU.
   LITERT_ASSERT_OK_AND_ASSIGN(auto gl_buffer_1, input_buffers[0].GetGlBuffer());

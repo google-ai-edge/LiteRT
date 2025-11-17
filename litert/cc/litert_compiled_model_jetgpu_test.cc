@@ -89,12 +89,12 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(input_names.at(0), "arg0");
   EXPECT_EQ(input_names.at(1), "arg1");
   LITERT_ASSERT_OK_AND_ASSIGN(auto buffer0_type,
-                              input_buffers[0].BufferTypeCC());
+                              input_buffers[0].BufferType());
   EXPECT_EQ(buffer0_type, TensorBufferType::kHostMemory);
   ASSERT_TRUE(input_buffers[0].Write<float>(
       absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
   LITERT_ASSERT_OK_AND_ASSIGN(auto buffer1_type,
-                              input_buffers[0].BufferTypeCC());
+                              input_buffers[0].BufferType());
   EXPECT_EQ(buffer1_type, TensorBufferType::kHostMemory);
   ASSERT_TRUE(input_buffers[1].Write<float>(
       absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
@@ -107,7 +107,7 @@ TEST_P(ParameterizedTest, Basic) {
   EXPECT_EQ(output_names.size(), 1);
   EXPECT_EQ(output_names.at(0), "tfl.add");
   LITERT_ASSERT_OK_AND_ASSIGN(auto output_type,
-                              input_buffers[0].BufferTypeCC());
+                              input_buffers[0].BufferType());
   EXPECT_EQ(output_type, TensorBufferType::kHostMemory);
   {
     auto lock_and_addr = litert::TensorBufferScopedLock::Create<const float>(

@@ -571,7 +571,7 @@ TEST_P(CompiledModelGpuTest, SyncWithGlClInterop) {
   // buffer. This ensures proper synchronization in the GPU command queue.
   for (int i = 0; i < input_buffers.size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                                input_buffers[i].BufferTypeCC());
+                                input_buffers[i].BufferType());
     ASSERT_EQ(buffer_type, TensorBufferType::kGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,
@@ -648,7 +648,7 @@ TEST(CompiledModelGpuTest, AsyncWithGlClInterop) {
   // buffer. This ensures proper synchronization in the GPU command queue.
   for (int i = 0; i < input_buffers.size(); ++i) {
     LITERT_ASSERT_OK_AND_ASSIGN(auto buffer_type,
-                                input_buffers[i].BufferTypeCC());
+                                input_buffers[i].BufferType());
     ASSERT_EQ(buffer_type, TensorBufferType::kGlBuffer);
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto input_event,

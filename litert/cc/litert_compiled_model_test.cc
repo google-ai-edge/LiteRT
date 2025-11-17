@@ -362,11 +362,11 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
       compiled_model.CreateOutputBuffers(compiled_model.DefaultSignatureKey()));
 
   // Confirm input and output buffers are host memory.
-  EXPECT_THAT(input_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kHostMemory));
-  EXPECT_THAT(input_buffers[1].BufferTypeCC(),
+  EXPECT_THAT(input_buffers[1].BufferType(),
               IsOkAndHolds(TensorBufferType::kHostMemory));
-  EXPECT_THAT(output_buffers[0].BufferTypeCC(),
+  EXPECT_THAT(output_buffers[0].BufferType(),
               IsOkAndHolds(TensorBufferType::kHostMemory));
 
   ASSERT_THAT(input_buffers, SizeIs(2));
