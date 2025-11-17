@@ -81,7 +81,7 @@ constexpr absl::string_view kCompilerCacheDir =
 namespace litert {
 namespace {
 
-using ::litert::google_tensor::GoogleTensorOptionsFromFlags;
+using ::litert::google_tensor::UpdateGoogleTensorOptionsFromFlags;
 using ::litert::intel_openvino::IntelOpenVinoOptionsFromFlags;
 using ::litert::mediatek::UpdateMediatekOptionsFromFlags;
 using ::litert::qualcomm::UpdateQualcommOptionsFromFlags;
@@ -133,9 +133,10 @@ Expected<Options> GetOptions() {
   options.SetHardwareAccelerators(GetAccelerator());
   LITERT_ASSIGN_OR_RETURN(auto& qnn_opts, options.GetQualcommOptions());
   LITERT_RETURN_IF_ERROR(UpdateQualcommOptionsFromFlags(qnn_opts));
-  if (auto google_tensor_opts = GoogleTensorOptionsFromFlags()) {
-    options.AddOpaqueOptions(std::move(*google_tensor_opts));
-  }
+  LITERT_ASSIGN_OR_RETURN(auto& google_tensor_opts,
+                          options.GetGoogleTensorOptions());
+  LITERT_RETURN_IF_ERROR(
+      UpdateGoogleTensorOptionsFromFlags(google_tensor_opts));
   if (auto intel_openvino_opts = IntelOpenVinoOptionsFromFlags()) {
     options.AddOpaqueOptions(std::move(*intel_openvino_opts));
   }

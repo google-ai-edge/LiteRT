@@ -670,6 +670,7 @@ cc_library(
         "//litert/cc:litert_common",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc/dynamic_runtime/options:litert_google_tensor_options",
         "//litert/cc/dynamic_runtime/options:litert_gpu_options",
         "//litert/cc/dynamic_runtime/options:litert_mediatek_options",
         "//litert/cc/dynamic_runtime/options:litert_qualcomm_options",
