@@ -101,12 +101,12 @@ EXPORTS
   LiteRtGetNumSubgraphOutputs
   LiteRtGetNumTensorBufferRequirementsSupportedBufferTypes
   LiteRtGetNumTensorUses
-  LiteRtGetOpCode
-  LiteRtGetOpInput
-  LiteRtGetOpOutput
   LiteRtGetOpaqueOptions
   LiteRtGetOpaqueOptionsHash
   LiteRtGetOpaqueOptionsIdentifier
+  LiteRtGetOpCode
+  LiteRtGetOpInput
+  LiteRtGetOpOutput
   LiteRtGetRankedTensorType
   LiteRtGetRuntimeOptionsEnableProfiling
   LiteRtGetRuntimeOptionsErrorReporterMode
@@ -137,8 +137,44 @@ EXPORTS
   LiteRtGetTensorUse
   LiteRtGetTensorWeights
   LiteRtGetWeightsBytes
+  LiteRtGoogleTensorOptionsCreate
+  LiteRtGoogleTensorOptionsGet
+  LiteRtGoogleTensorOptionsGetDumpOpTimings
+  LiteRtGoogleTensorOptionsGetEnable4BitCompilation
+  LiteRtGoogleTensorOptionsGetEnableLargeModelSupport
+  LiteRtGoogleTensorOptionsGetFloatTruncationType
+  LiteRtGoogleTensorOptionsGetIdentifier
+  LiteRtGoogleTensorOptionsGetInt64ToInt32Truncation
+  LiteRtGoogleTensorOptionsGetOutputDir
+  LiteRtGoogleTensorOptionsGetShardingIntensity
+  LiteRtGoogleTensorOptionsGetTestingFlags
+  LiteRtGoogleTensorOptionsSetDumpOpTimings
+  LiteRtGoogleTensorOptionsSetEnable4BitCompilation
+  LiteRtGoogleTensorOptionsSetEnableLargeModelSupport
+  LiteRtGoogleTensorOptionsSetFloatTruncationType
+  LiteRtGoogleTensorOptionsSetInt64ToInt32Truncation
+  LiteRtGoogleTensorOptionsSetOutputDir
+  LiteRtGoogleTensorOptionsSetShardingIntensity
+  LiteRtGoogleTensorOptionsSetTestingFlags
   LiteRtGpuEnvironmentCreate
   LiteRtLockTensorBuffer
+  LiteRtMediatekOptionsCreate
+  LiteRtMediatekOptionsGet
+  LiteRtMediatekOptionsGetDisableDlaDirRemoval
+  LiteRtMediatekOptionsGetGemmaCompilerOptimizations
+  LiteRtMediatekOptionsGetIdentifier
+  LiteRtMediatekOptionsGetL1CacheOptimizations
+  LiteRtMediatekOptionsGetMediatekDlaDir
+  LiteRtMediatekOptionsGetNeronSDKVersionType
+  LiteRtMediatekOptionsGetOptimizationHint
+  LiteRtMediatekOptionsGetPerformanceMode
+  LiteRtMediatekOptionsSetDisableDlaDirRemoval
+  LiteRtMediatekOptionsSetGemmaCompilerOptimizations
+  LiteRtMediatekOptionsSetL1CacheOptimizations
+  LiteRtMediatekOptionsSetMediatekDlaDir
+  LiteRtMediatekOptionsSetNeronSDKVersionType
+  LiteRtMediatekOptionsSetOptimizationHint
+  LiteRtMediatekOptionsSetPerformanceMode
   LiteRtQualcommOptionsCreate
   LiteRtQualcommOptionsGet
   LiteRtQualcommOptionsGetDlcDir
