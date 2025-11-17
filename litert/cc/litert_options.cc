@@ -21,6 +21,7 @@
 #include "litert/c/litert_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
@@ -57,6 +58,10 @@ Expected<GpuOptions&> Options::GetGpuOptions() {
   return EnsureOption(gpu_options_);
 }
 
+Expected<CpuOptions&> Options::GetCpuOptions() {
+  return EnsureOption(cpu_options_);
+}
+
 Expected<qualcomm::QualcommOptions&> Options::GetQualcommOptions() {
   return EnsureOption(qualcomm_options_);
 }
@@ -77,6 +82,7 @@ Options::GetIntelOpenVinoOptions() {
 
 Expected<void> Options::Build() {
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), gpu_options_));
+  LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), cpu_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), qualcomm_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), mediatek_options_));
   LITERT_RETURN_IF_ERROR(AppendAndReset(Get(), google_tensor_options_));

@@ -28,6 +28,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
+#include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_intel_openvino_options.h"
@@ -124,6 +125,9 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   // set the GPU options.
   Expected<GpuOptions&> GetGpuOptions();
 
+  // Returns the reference to the CPU options. User will use this function to
+  // set the CPU options.
+  Expected<CpuOptions&> GetCpuOptions();
   // Returns the reference to the Qualcomm options. User will use this function
   // to set the Qualcomm options.
   Expected<qualcomm::QualcommOptions&> GetQualcommOptions();
@@ -146,6 +150,7 @@ class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
   Expected<void> Build();
 
   std::optional<GpuOptions> gpu_options_;
+  std::optional<CpuOptions> cpu_options_;
   std::optional<qualcomm::QualcommOptions> qualcomm_options_;
   std::optional<mediatek::MediatekOptions> mediatek_options_;
   std::optional<google_tensor::GoogleTensorOptions> google_tensor_options_;
