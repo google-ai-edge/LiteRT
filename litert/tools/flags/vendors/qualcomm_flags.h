@@ -64,6 +64,8 @@ ABSL_DECLARE_FLAG(uint32_t, qualcomm_num_hvx_thread);
 
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::OptimizationLevel,
                   qualcomm_optimization_level);
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::GraphPriority,
+                  qualcomm_graph_priority);
 
 namespace litert::qualcomm {
 
@@ -73,6 +75,12 @@ bool AbslParseFlag(absl::string_view text,
 
 std::string AbslUnparseFlag(
     QualcommOptions::OptimizationLevel optimization_level);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::GraphPriority* graph_priority,
+                   std::string* error);
+
+std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority);
 
 }  // namespace litert::qualcomm
 

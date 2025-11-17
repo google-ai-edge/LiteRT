@@ -136,6 +136,17 @@ class QualcommOptions : public OpaqueOptions {
   void SetOptimizationLevel(OptimizationLevel optimization_level);
   OptimizationLevel GetOptimizationLevel();
 
+  enum class GraphPriority : int {
+    kDefault = kLiteRTQualcommGraphPriorityDefault,
+    kLow = kLiteRTQualcommGraphPriorityLow,
+    kNormal = kLiteRTQualcommGraphPriorityNormal,
+    kNormalHigh = kLiteRTQualcommGraphPriorityNormalHigh,
+    kHigh = kLiteRTQualcommGraphPriorityHigh,
+  };
+
+  void SetGraphPriority(GraphPriority graph_priority);
+  GraphPriority GetGraphPriority();
+
  private:
   LiteRtQualcommOptions Data() const;
 };

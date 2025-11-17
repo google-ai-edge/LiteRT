@@ -238,6 +238,24 @@ TEST(LiteRtQualcommOptionsTest, OptimizationLevel) {
   LiteRtDestroyOpaqueOptions(options);
 }
 
+TEST(LiteRtQualcommOptionsTest, GraphPriority) {
+  LiteRtOpaqueOptions options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
+
+  LiteRtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsGet(options, &qualcomm_options));
+
+  LITERT_ASSERT_OK(LiteRtQualcommOptionsSetGraphPriority(
+      qualcomm_options, kLiteRTQualcommGraphPriorityHigh));
+
+  LiteRtQualcommOptionsGraphPriority graph_priority;
+  LITERT_ASSERT_OK(
+      LiteRtQualcommOptionsGetGraphPriority(qualcomm_options, &graph_priority));
+  EXPECT_EQ(graph_priority, kLiteRTQualcommGraphPriorityHigh);
+
+  LiteRtDestroyOpaqueOptions(options);
+}
+
 TEST(LiteRtQualcommOptionsTest, DumpTensorIds) {
   LiteRtOpaqueOptions options;
   LITERT_ASSERT_OK(LiteRtQualcommOptionsCreate(&options));
@@ -355,6 +373,11 @@ TEST(QualcommOptionsTest, CppApi) {
       QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
   EXPECT_EQ(options->GetOptimizationLevel(),
             QualcommOptions::OptimizationLevel::kOptimizeForPrepare);
+
+  EXPECT_EQ(options->GetGraphPriority(),
+            QualcommOptions::GraphPriority::kDefault);
+  options->SetGraphPriority(QualcommOptions::GraphPriority::kHigh);
+  EXPECT_EQ(options->GetGraphPriority(), QualcommOptions::GraphPriority::kHigh);
 
   EXPECT_TRUE(options->GetUseConvHMX());
   options->SetUseConvHMX(false);
