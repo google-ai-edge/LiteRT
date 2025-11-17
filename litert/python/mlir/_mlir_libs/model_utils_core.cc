@@ -21,6 +21,7 @@
 #include "llvm/FileCheck/FileCheck.h"
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SourceMgr.h"
+#include "mlir/Conversion/Passes.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/Extensions/AllExtensions.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -36,6 +37,8 @@
 #include "stablehlo/dialect/Register.h"
 #include "stablehlo/dialect/StablehloOps.h"
 #include "stablehlo/dialect/VhloOps.h"
+#include "stablehlo/transforms/Passes.h"
+#include "stablehlo/transforms/optimization/Passes.h"
 #include "tflite/converter/flatbuffer_export.h"
 #include "tflite/converter/flatbuffer_import.h"
 #include "tflite/converter/ir/tfl_ops.h"
@@ -58,9 +61,13 @@ void RegisterDialects(mlir::DialectRegistry& registry) {
 
 void RegisterPasses() {
   mlir::registerTransformsPasses();
+  mlir::registerReconcileUnrealizedCastsPass();
   mlir::func::registerFuncPasses();
-  mlir::odml::registerLegalizeStablehloToVhloPass();
+  mlir::stablehlo::registerPassPipelines();
+  mlir::stablehlo::registerPasses();
+  mlir::stablehlo::registerOptimizationPasses();
 
+  mlir::odml::registerLegalizeStablehloToVhloPass();
   mlir::PassRegistration<mlir::TFL::OptimizePass>(
       []() { return mlir::TFL::CreateOptimizePass(); });
 }

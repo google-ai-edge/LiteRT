@@ -192,6 +192,14 @@ load("//third_party/dawn:workspace.bzl", dawn = "repo")
 
 dawn()
 
+load("//third_party/lark:workspace.bzl", lark = "repo")
+
+lark()
+
+load("//third_party/xdsl:workspace.bzl", xdsl = "repo")
+
+xdsl()
+
 load("@rules_jvm_external//:defs.bzl", "maven_install")
 
 maven_install(
