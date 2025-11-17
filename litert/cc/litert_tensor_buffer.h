@@ -66,48 +66,6 @@ class TensorBuffer
   static Expected<TensorBuffer> CreateManagedHostMemory(
       const RankedTensorType& tensor_type, size_t buffer_size);
 
-  [[deprecated("Use CreateManagedHostMemory instead.")]]
-  static Expected<TensorBuffer> CreateManaged(
-      TensorBufferType buffer_type, const RankedTensorType& tensor_type,
-      size_t buffer_size);
-
-  [[deprecated(
-      "Use the overload that takes litert::TensorBufferType instead.")]]
-  static Expected<TensorBuffer> CreateManaged(
-      const Environment& env, LiteRtTensorBufferType buffer_type,
-      const RankedTensorType& tensor_type, size_t buffer_size);
-
-  // TODO(b/453768409): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateManaged(
-      LiteRtEnvironment env, LiteRtTensorBufferType buffer_type,
-      const RankedTensorType& tensor_type, size_t buffer_size) {
-    auto cc_env = Environment::WrapCObject(env, OwnHandle::kNo);
-    return CreateManaged(cc_env, buffer_type, tensor_type, buffer_size);
-  }
-
-  // The same as above, but uses the default environment.
-  // Warning: This method can't be used for GPU buffers.
-  // TODO(b/453768409): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateManaged(
-      LiteRtTensorBufferType buffer_type, const RankedTensorType& tensor_type,
-      size_t buffer_size) {
-    switch (buffer_type) {
-      case kLiteRtTensorBufferTypeHostMemory:
-      case kLiteRtTensorBufferTypeAhwb:
-      case kLiteRtTensorBufferTypeIon:
-      case kLiteRtTensorBufferTypeDmaBuf:
-      case kLiteRtTensorBufferTypeFastRpc:
-        return CreateManaged(/*env=*/nullptr, buffer_type, tensor_type,
-                             buffer_size);
-      default:
-        return litert::Unexpected(
-            kLiteRtStatusErrorRuntimeFailure,
-            "You need to provide an environment for this buffer type.");
-    }
-  }
-
   // Creates a TensorBuffer object that wraps the provided host memory.
   // The provided host memory is not owned by the TensorBuffer object and must
   // outlive the TensorBuffer object. Callers are responsible for ensuring that
@@ -131,44 +89,13 @@ class TensorBuffer
       const Environment& env, const RankedTensorType& tensor_type,
       AHardwareBuffer* ahwb, size_t ahwb_offset);
 
-  // TODO(niuchl): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateFromAhwb(
-      const RankedTensorType& tensor_type, AHardwareBuffer* ahwb,
-      size_t ahwb_offset);
-
-  // TODO(niuchl): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateFromAhwb(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      AHardwareBuffer* ahwb, size_t ahwb_offset) {
-    auto cc_env = Environment::WrapCObject(env, OwnHandle::kNo);
-    return CreateFromAhwb(cc_env, tensor_type, ahwb, ahwb_offset);
-  }
-
   static Expected<TensorBuffer> CreateFromClBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       TensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
 
-  [[deprecated(
-      "Use the overload that takes litert::TensorBufferType instead.")]]
-  static Expected<TensorBuffer> CreateFromClBuffer(
-      const Environment& env, const RankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, cl_mem cl_memory, size_t size_bytes);
-
   static Expected<TensorBuffer> CreateFromGlBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset);
-
-  // TODO(niuchl): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateFromGlBuffer(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      LiteRtGLenum target, LiteRtGLuint id, size_t size_bytes, size_t offset) {
-    auto cc_env = Environment::WrapCObject(env, OwnHandle::kNo);
-    return CreateFromGlBuffer(cc_env, tensor_type, target, id, size_bytes,
-                              offset);
-  }
 
   static Expected<TensorBuffer> CreateFromGlTexture(
       const Environment& env, const RankedTensorType& tensor_type,
@@ -179,22 +106,6 @@ class TensorBuffer
   static Expected<TensorBuffer> CreateFromMetalBuffer(
       const Environment& env, const RankedTensorType& tensor_type,
       TensorBufferType buffer_type, void* buffer, size_t size_bytes);
-
-  [[deprecated(
-      "Use the overload that takes litert::TensorBufferType instead.")]]
-  static Expected<TensorBuffer> CreateFromMetalBuffer(
-      const Environment& env, const RankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes);
-
-  // TODO(niuchl): Remove this method once all clients are migrated.
-  [[deprecated]]
-  static Expected<TensorBuffer> CreateFromMetalBuffer(
-      LiteRtEnvironment env, const RankedTensorType& tensor_type,
-      LiteRtTensorBufferType buffer_type, void* buffer, size_t size_bytes) {
-    auto cc_env = Environment::WrapCObject(env, OwnHandle::kNo);
-    return CreateFromMetalBuffer(cc_env, tensor_type, buffer_type, buffer,
-                                 size_bytes);
-  }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
   // Creates a duplicate of the current TensorBuffer object. The returned
