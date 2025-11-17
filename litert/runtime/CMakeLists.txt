@@ -21,6 +21,7 @@ set(LITERT_RUNTIME_SOURCES
     accelerators/dispatch/dispatch_accelerator.cc
     accelerators/xnnpack/xnnpack_accelerator.cc
     ahwb_buffer.cc
+    ahwb_wrapper.cc
     compiled_model.cc
     custom_buffer.cc
     custom_op_dispatcher.cc
