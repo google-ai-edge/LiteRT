@@ -135,11 +135,7 @@ int main(int argc, char* argv[]) {
 
   std::ostream& dump_out = run->dump_out.Get().get();
   bool all_flags_parsed =
-      (ParseAndAddOptions(*opts, dump_out,
-                          litert::CompilerOptionsFromFlags()) &&
-       ParseAndAddOptions(
-           *opts, dump_out,
-           litert::intel_openvino::IntelOpenVinoOptionsFromFlags()));
+      (ParseAndAddOptions(*opts, dump_out, litert::CompilerOptionsFromFlags()));
 
   if (all_flags_parsed) {
     if (auto google_tensor_opts = opts->GetGoogleTensorOptions();
@@ -183,6 +179,24 @@ int main(int argc, char* argv[]) {
                !status) {
       run->dump_out.Get().get() << "Failed to parse Mediatek flags, Error: "
                                 << status.Error().Message() << "\n";
+      all_flags_parsed = false;
+    }
+  }
+
+  if (all_flags_parsed) {
+    auto intel_openvino_opts = opts->GetIntelOpenVinoOptions();
+    if (!intel_openvino_opts) {
+      run->dump_out.Get().get()
+          << "Failed to create Intel OpenVINO options: "
+          << intel_openvino_opts.Error().Message() << "\n";
+      all_flags_parsed = false;
+    } else if (auto status =
+                   litert::intel_openvino::UpdateIntelOpenVinoOptionsFromFlags(
+                       *intel_openvino_opts);
+               !status) {
+      run->dump_out.Get().get()
+          << "Failed to parse Intel OpenVINO flags, Error: "
+          << status.Error().Message() << "\n";
       all_flags_parsed = false;
     }
   }
