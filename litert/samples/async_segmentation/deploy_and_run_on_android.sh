@@ -15,6 +15,7 @@
 #  limitations under the License.
 
 # Script to deploy and run the image merger on an Android device via ADB
+set -e
 
 # --- Default values ---
 ACCELERATOR="gpu" # Default accelerator if not specified
@@ -234,7 +235,7 @@ echo "Pushed gpu accelerator shared library."
 
 # Push NPU dispatch library
 if [[ "$ACCELERATOR" == "npu" ]]; then
-adb push "${HOST_NPU_DISPATCH_LIB/libLiteRtDispatch_Qualcomm.so}" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push "${HOST_NPU_DISPATCH_LIB}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU dispatch library."
 
 # Push NPU libraries
