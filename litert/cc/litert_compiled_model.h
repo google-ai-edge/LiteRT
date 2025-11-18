@@ -44,6 +44,10 @@
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/litert_tensor_buffer_requirements.h"
 
+namespace mediapipe {
+class InferenceRunnerLiteRt;
+}  // namespace mediapipe
+
 namespace litert {
 
 namespace benchmark {
@@ -85,17 +89,18 @@ class LlmLiteRtCompiledModelExecutorBase;
 class CompiledModel
     : public internal::Handle<LiteRtCompiledModel, LiteRtDestroyCompiledModel> {
  public:
+  friend class ::mediapipe::InferenceRunnerLiteRt;
   friend class benchmark::BenchmarkLiteRtModel;
   friend class compiled_model_wrapper::CompiledModelWrapper;
   friend class lm::AudioLiteRtCompiledModelExecutor;
   friend class lm::EmbeddingLookupText;
   friend class lm::EndOfMultiModalEmbedding;
   friend class lm::FrontendModelWrapper;
-  friend class lm::LlmLiteRtNpuCompiledModelExecutor;
-  friend class lm::VisionLiteRtCompiledModelExecutor;
+  friend class lm::LlmLiteRtCompiledModelExecutorBase;
   friend class lm::LlmLiteRtCompiledModelExecutorDynamic;
   friend class lm::LlmLiteRtCompiledModelExecutorStatic;
-  friend class lm::LlmLiteRtCompiledModelExecutorBase;
+  friend class lm::LlmLiteRtNpuCompiledModelExecutor;
+  friend class lm::VisionLiteRtCompiledModelExecutor;
 
   CompiledModel() = default;
 
@@ -722,6 +727,7 @@ class CompiledModel
                          compiled_model, owned);
   }
 
+ protected:
   ///  \internal Creates a CompiledModel from a provided litert::Model.
   ///
   /// The model is loaded into memory and the caller takes ownership of the
@@ -773,7 +779,6 @@ class CompiledModel
     return Create(env, model, compilation_options);
   }
 
- protected:
   // Creates a CompiledModel instance.
   //
   // `model_owned` indicates whether the provided `litert_model` handle is owned
