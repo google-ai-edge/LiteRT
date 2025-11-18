@@ -64,7 +64,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   auto tensor_buffer = litert::TensorBuffer::CreateManaged(*env, kTensorBufferType, kTensorType,
                                                            sizeof(kTensorData));
 
-  auto tensor_buffer_type = tensor_buffer->BufferTypeCC();
+  auto tensor_buffer_type = tensor_buffer->BufferType();
   XCTAssertTrue(tensor_buffer_type);
   XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
 
@@ -132,7 +132,7 @@ constexpr const LiteRtRankedTensorType kTestTensorType = {
   XCTAssertTrue(metal_buffer_created);
 
   // Check properties of the wrapped buffer
-  auto tensor_buffer_type = metal_buffer_created->BufferTypeCC();
+  auto tensor_buffer_type = metal_buffer_created->BufferType();
   XCTAssertTrue(tensor_buffer_type);
   XCTAssertEqual(*tensor_buffer_type, kTensorBufferType);
 

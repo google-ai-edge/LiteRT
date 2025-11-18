@@ -220,15 +220,6 @@ class TensorBuffer
     return gl_texture;
   }
 
-  // TODO(b/454666070): Remove this function once all clients are migrated.
-  [[deprecated("Use BufferType() instead.")]]
-  Expected<TensorBufferType> BufferTypeCC() const {
-    LiteRtTensorBufferType tensor_buffer_type;
-    LITERT_RETURN_IF_ERROR(
-        LiteRtGetTensorBufferType(Get(), &tensor_buffer_type));
-    return static_cast<enum TensorBufferType>(tensor_buffer_type);
-  }
-
   Expected<TensorBufferType> BufferType() const {
     LiteRtTensorBufferType tensor_buffer_type;
     LITERT_RETURN_IF_ERROR(
