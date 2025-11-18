@@ -1060,6 +1060,10 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
             status, absl::StrFormat("Failed to lock the tensor buffer: %s",
                                     tensor->name ? tensor->name : "<unnamed>"));
       }
+      // For the following tflite custom allocation call, we explicitly use
+      // buffer_size instead of tensor->bytes. This is because tensor->bytes
+      // might be updated to the latest value if resize didn't trigger tensor
+      // allocation.
       TfLiteCustomAllocation custom_allocation{host_mem_addr,
                                                buffer->buffer_size()};
       // If this is a constant output, save the locked address for later data
