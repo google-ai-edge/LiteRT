@@ -45,6 +45,14 @@
 // Is equivalent to `EXPECT_THAT(expr, testing::litert::IsOk())`
 #define LITERT_EXPECT_OK(EXPR) EXPECT_THAT((EXPR), ::testing::litert::IsOk())
 
+// Is equivalent to `ASSERT_THAT(expr, testing::litert::IsError())`
+#define LITERT_ASSERT_ERROR(EXPR) \
+  ASSERT_THAT((EXPR), ::testing::litert::IsError())
+
+// Is equivalent to `EXPECT_THAT(expr, testing::litert::IsError())`
+#define LITERT_EXPECT_ERROR(EXPR) \
+  EXPECT_THAT((EXPR), ::testing::litert::IsError())
+
 // Checks that the result of `EXPR` (a `litert::Expected` object) is not an
 // error and assigns the value it holds to `DECL` as if:
 // ```
