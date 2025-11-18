@@ -27,6 +27,7 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
+#include "litert/runtime/tensor_buffer_registry.h"  // IWYU pragma: keep
 #include "litert/runtime/tensor_buffer_requirements.h"
 
 #if LITERT_HAS_OPENCL_SUPPORT
@@ -202,8 +203,15 @@ LiteRtStatus LiteRtGetTensorBufferMetalMemory(
   LITERT_ASSIGN_OR_RETURN(litert::internal::CustomBuffer * custom_buffer,
                           tensor_buffer->GetCustomBuffer());
 
-  *hw_memory_handle = custom_buffer->hw_buffer_handle();
-  return kLiteRtStatusOk;
+  auto* registry = reinterpret_cast<litert::internal::TensorBufferRegistry*>(
+      tensor_buffer->GetTensorBufferRegistry());
+  LITERT_ASSIGN_OR_RETURN(
+      auto handlers, registry->GetCustomHandlers(tensor_buffer->buffer_type()));
+  if (handlers.get_handle_func) {
+    return handlers.get_handle_func(custom_buffer->hw_memory_info(),
+                                    hw_memory_handle);
+  }
+  return kLiteRtStatusErrorUnsupported;
 }
 
 #endif  // LITERT_HAS_METAL_SUPPORT
