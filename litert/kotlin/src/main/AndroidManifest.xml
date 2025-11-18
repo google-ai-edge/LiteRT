@@ -51,6 +51,9 @@
         <!-- MTK NPU -->
         <uses-native-library android:name="libneuronusdk_adapter.mtk.so" android:required="false" />
         <uses-native-library android:name="libneuron_adapter_mgvi.so" android:required="false" />
+        <uses-native-library android:name="libneuron_sys_util.mtk.so" android:required="false" />
+        <!-- MTK devices requiring version 9 SDK. -->
+        <uses-native-library android:name="libneuronusdk_adapter.9.mtk.so" android:required="false" />
 
     </application>
 

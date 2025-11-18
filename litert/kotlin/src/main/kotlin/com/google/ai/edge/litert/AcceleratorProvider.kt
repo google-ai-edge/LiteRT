@@ -50,7 +50,7 @@ interface NpuCompatibilityChecker {
         }
       }
 
-    // Medatek SOCs are only supported on Android 15 devices (API level 35), for now.
+    // Each Medatek SOC only have one supported API level for now.
     internal val SUPPORTED_MEDIATEK_SOCS =
       setOf(
         Triple("Mediatek", "MT6878", 35),
@@ -59,6 +59,7 @@ interface NpuCompatibilityChecker {
         Triple("Mediatek", "MT6985", 35),
         Triple("Mediatek", "MT6989", 35),
         Triple("Mediatek", "MT6991", 35),
+        Triple("Mediatek", "MT6993", 36),
       )
 
     /** Mediatek NPU compatibility checker. */
