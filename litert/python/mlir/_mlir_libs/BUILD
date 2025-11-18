@@ -54,6 +54,7 @@ cc_library(
         "@llvm-project//llvm:FileCheckLib",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:ConversionPasses",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:FuncExtensions",
         "@llvm-project//mlir:FuncTransforms",
@@ -63,6 +64,8 @@ cc_library(
         "@llvm-project//mlir:Transforms",
         "@stablehlo//:register",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:stablehlo_passes",
+        "@stablehlo//:stablehlo_passes_optimization",
         "@stablehlo//:vhlo_ops",
     ],
 )

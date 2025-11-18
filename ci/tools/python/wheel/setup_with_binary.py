@@ -45,9 +45,7 @@ class CustomBuildPy(_build_py):
     super().run()
 
     if self.dry_run:
-      self.announce(
-          'Dry run, skipping import replacement.', level=1  # INFO
-      )
+      self.announce('Dry run, skipping import replacement.', level=1)  # INFO
       return
 
     target_dir = self.build_lib
@@ -173,9 +171,14 @@ setuptools.setup(
     ],
     packages=setuptools.find_packages(exclude=[]),
     package_dir={'': '.'},
-    package_data={'': [
-        '*.so', '*.pyd', '**/*_main', '**/*.so',
-    ]},
+    package_data={
+        '': [
+            '*.so',
+            '*.pyd',
+            '**/*_main',
+            '**/*.so',
+        ]
+    },
     install_requires=[
         'backports.strenum',
         'flatbuffers',
@@ -187,8 +190,15 @@ setuptools.setup(
         'protobuf',
     ],
     extras_require={
-        'npu-sdk': ['ai-edge-litert-sdk-qualcomm~=0.1.0',
-                    'ai-edge-litert-sdk-mediatek~=0.1.0'],
+        'npu-sdk': [
+            'ai-edge-litert-sdk-qualcomm~=0.1.0',
+            'ai-edge-litert-sdk-mediatek~=0.1.0',
+        ],
+        'model-utils': [
+            'lark',
+            'ml_dtypes',
+            'xdsl==0.28.0',
+        ],
     },
     # Use the custom command for the build_py step
     cmdclass={

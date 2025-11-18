@@ -69,7 +69,7 @@ ALL_PY_SRC_MODULES = select({
         "//litert/python/aot/vendors/qualcomm:target",
         # TODO(b/460805332): stop building converter until protobuf symbol conflict is resolved.
         # "//litert/python/mlir",
-        # "//litert/python/mlir/_mlir_libs",
+        # "//litert/python/tools/model_utils",
         # TODO(b/445163709): Remove the following module once litert_lm publishes a pypi package.
         "//litert/python/internal:litertlm_core",
         "//litert/python/internal:litertlm_header_schema_py",

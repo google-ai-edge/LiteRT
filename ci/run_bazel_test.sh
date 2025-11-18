@@ -92,6 +92,7 @@ LITERT_EXCLUDED_TARGETS=(
         "-//litert/c:litert_compiled_model_shared_lib_test"
         "-//litert/c:litert_compiled_model_test"
         "-//litert/cc:litert_compiled_model_test"
+        "-//litert/python/tools/model_utils/test/..."
         # Requires mGPU environment.
         "-//litert/cc:litert_environment_test"
         "-//litert/runtime:compiled_model_test"
