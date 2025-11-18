@@ -1036,6 +1036,7 @@ cc_library_with_testonly_vis(
         "//litert/cc/options:litert_intel_openvino_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/cc/options:litert_runtime_options",
     ],
 )
 
