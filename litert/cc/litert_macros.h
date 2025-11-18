@@ -20,6 +20,7 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -101,6 +102,11 @@ namespace litert {
 // The error message may be completed with extra info by using the << operator.
 class ErrorStatusBuilder {
  public:
+  // Specialize this class with an implicit conversion to `litert::Error` and
+  // an `IsError()` member.
+  template <class Error, class CRTP = void>
+  struct ErrorConversion;
+
   static ErrorStatusBuilder InvalidArgument(
       litert::SourceLocation loc = litert::SourceLocation::current()) {
     return ErrorStatusBuilder(kLiteRtStatusErrorInvalidArgument,
@@ -112,47 +118,15 @@ class ErrorStatusBuilder {
     return ErrorStatusBuilder(kLiteRtStatusErrorWrongVersion, std::move(loc));
   }
 
-  explicit ErrorStatusBuilder(
-      bool expr_result,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(kLiteRtStatusErrorUnknown), loc_(loc) {}
-
   template <class T>
   explicit ErrorStatusBuilder(
-      const litert::Expected<T>& expected,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(expected.Error()), loc_(loc) {}
-
-  template <class T>
-  explicit ErrorStatusBuilder(
-      litert::Expected<T>&& expected,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(std::move(expected.Error())), loc_(loc) {}
+      T&& error, litert::SourceLocation loc = litert::SourceLocation::current())
+      : error_(AsError(std::forward<T>(error))), loc_(loc) {}
 
   explicit ErrorStatusBuilder(
-      LiteRtStatus status,
+      litert::Error error,
       litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(status), loc_(loc) {}
-
-  explicit ErrorStatusBuilder(
-      const litert::Unexpected& unexpected,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(unexpected.Error()), loc_(loc) {}
-
-  explicit ErrorStatusBuilder(
-      litert::Unexpected&& unexpected,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : error_(std::move(unexpected.Error())), loc_(loc) {}
-
-  explicit ErrorStatusBuilder(
-      absl::Status&& status,
-      litert::SourceLocation loc = litert::SourceLocation::current());
-
-  template <class T>
-  explicit ErrorStatusBuilder(
-      absl::StatusOr<T>&& status,
-      litert::SourceLocation loc = litert::SourceLocation::current())
-      : ErrorStatusBuilder(std::move(status).status(), loc) {}
+      : error_(error), loc_(loc) {}
 
   // NOLINTBEGIN(*-explicit-constructor): This class transparently converts to
   // `LiteRtStatus` and `litert::Expected`.
@@ -177,35 +151,14 @@ class ErrorStatusBuilder {
   }
   // NOLINTEND(*-explicit-constructor)
 
-  static constexpr bool IsError(bool status) { return !status; }
-
-  static constexpr bool IsError(LiteRtStatus status) {
-    return status != kLiteRtStatusOk;
+  template <class T>
+  static constexpr bool IsError(T&& value) {
+    return ErrorConversion<std::decay_t<T>>::IsError(std::forward<T>(value));
   }
 
-  static constexpr bool IsError(const litert::Unexpected&) { return true; }
-
-#if defined(LITERT_WINDOWS_OS)
-  // absl::Status::ok() is not constexpr-compatible on Windows MSVC.
-  static bool IsError(const absl::Status& s) { return !s.ok(); }
-
-  // absl::Status::ok() is not constexpr-compatible on Windows MSVC.
   template <class T>
-  static bool IsError(const absl::StatusOr<T>& s) {
-    return !s.ok();
-  }
-#else
-  static constexpr bool IsError(const absl::Status& s) { return !s.ok(); }
-
-  template <class T>
-  static constexpr bool IsError(const absl::StatusOr<T>& s) {
-    return !s.ok();
-  }
-#endif
-
-  template <class T>
-  static constexpr bool IsError(const litert::Expected<T>& expected) {
-    return !expected.HasValue();
+  static litert::Error AsError(T&& value) {
+    return ErrorConversion<std::decay_t<T>>::AsError(std::forward<T>(value));
   }
 
   void PrintLog() const noexcept {
@@ -295,6 +248,78 @@ class ErrorStatusBuilder {
   std::unique_ptr<std::stringstream> extra_log_;
   LiteRtLogSeverity log_level_ = kLiteRtLogSeverityError;
 };
+
+// NOLINTBEGIN(*-explicit-constructor)
+template <>
+struct ErrorStatusBuilder::ErrorConversion<bool> {
+  static constexpr bool IsError(bool value) { return !value; };
+  static litert::Error AsError(bool value) {
+    return litert::Error(kLiteRtStatusErrorUnknown);
+  }
+};
+
+template <class T>
+struct ErrorStatusBuilder::ErrorConversion<T*>
+    : ErrorStatusBuilder::ErrorConversion<bool> {};
+
+template <class T>
+struct ErrorStatusBuilder::ErrorConversion<
+    T, std::enable_if_t<std::is_arithmetic_v<T>>>
+    : ErrorStatusBuilder::ErrorConversion<bool> {};
+
+template <>
+struct ErrorStatusBuilder::ErrorConversion<LiteRtStatus> {
+  static constexpr bool IsError(const LiteRtStatus& value) {
+    return value != kLiteRtStatusOk;
+  };
+  static litert::Error AsError(LiteRtStatus value) {
+    return litert::Error(value);
+  }
+};
+
+template <class T>
+struct ErrorStatusBuilder::ErrorConversion<litert::Expected<T>> {
+  static constexpr bool IsError(const litert::Expected<T>& value) {
+    return !value.HasValue();
+  };
+  static litert::Error AsError(const litert::Expected<T>& value) {
+    return litert::Error(value.Error());
+  }
+  static litert::Error AsError(litert::Expected<T>&& value) {
+    return litert::Error(std::move(value.Error()));
+  }
+};
+
+template <>
+struct ErrorStatusBuilder::ErrorConversion<litert::Unexpected> {
+  static constexpr bool IsError(const litert::Unexpected& value) {
+    return true;
+  };
+  static litert::Error AsError(litert::Unexpected&& value) {
+    return litert::Error(std::move(value.Error()));
+  }
+};
+
+template <>
+struct ErrorStatusBuilder::ErrorConversion<absl::Status> {
+  static bool IsError(const absl::Status& value) { return !value.ok(); };
+  static litert::Error AsError(const absl::Status& value);
+};
+
+template <class T>
+struct ErrorStatusBuilder::ErrorConversion<absl::StatusOr<T>> {
+  static bool IsError(const absl::StatusOr<T>& value) { return !value.ok(); };
+  static litert::Error AsError(const absl::StatusOr<T>& value) {
+    return ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
+        value.status());
+  }
+  static litert::Error AsError(absl::StatusOr<T>&& value) {
+    return ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
+        std::move(value.status()));
+  }
+};
+
+// NOLINTEND(*-explicit-constructor)
 
 class LogBeforeAbort {
  public:

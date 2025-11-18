@@ -69,10 +69,11 @@ LiteRtStatus ToLiteRtStatus(const absl::StatusCode& code) {
 }
 }  // namespace
 
-ErrorStatusBuilder::ErrorStatusBuilder(absl::Status&& status,
-                                       litert::SourceLocation loc)
-    : error_(ToLiteRtStatus(status.code()), std::string(status.message())),
-      loc_(loc) {}
+litert::Error ErrorStatusBuilder::ErrorConversion<absl::Status>::AsError(
+    const absl::Status& value) {
+  return litert::Error(ToLiteRtStatus(value.code()),
+                       std::string(value.message()));
+}
 
 absl::Status ErrorStatusBuilder::ToAbslStatus() const noexcept {
   switch (error_.Status()) {
