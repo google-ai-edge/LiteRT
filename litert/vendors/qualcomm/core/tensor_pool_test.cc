@@ -328,33 +328,33 @@ TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueSFixInt32) {
 }
 
 // TODO(@chengwl-qti): Re-enable this test when it passes in dbg mode.
-// TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUFixInt32) {
-//   TensorPool tensor_pool;
+TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueUFixInt32) {
+  TensorPool tensor_pool;
 
-//   ScaleOffsetQuantizeParamsWrapper q_param(2, -5);  // offset = 5
+  ScaleOffsetQuantizeParamsWrapper q_param(2, 5);  // offset = -5
 
-//   std::vector<float> golden_data = {2, 2, 2};
+  std::vector<float> golden_data = {2, 2, 2};
 
-//   TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
-//       QNN_DATATYPE_UFIXED_POINT_32, q_param, {1, 1, 3}, 2.0);
-//   ASSERT_NE(tensor_wrapper, nullptr);
+  TensorWrapper* tensor_wrapper = tensor_pool.CreateStaticTensorWithValue(
+      QNN_DATATYPE_UFIXED_POINT_32, q_param, {1, 1, 3}, 2.0);
+  ASSERT_NE(tensor_wrapper, nullptr);
 
-//   const auto& q_param_ref = tensor_wrapper->GetQuantParams();
-//   const float scale =
-//       std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
-//   const std::int32_t zero_point =
-//       std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
+  const auto& q_param_ref = tensor_wrapper->GetQuantParams();
+  const float scale =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetScale();
+  const std::int32_t zero_point =
+      std::get<ScaleOffsetQuantizeParamsWrapper>(q_param_ref).GetZeroPoint();
 
-//   const auto tensor_data = tensor_wrapper->GetTensorData<std::uint32_t>();
+  const auto tensor_data = tensor_wrapper->GetTensorData<std::uint32_t>();
 
-//   EXPECT_TRUE(tensor_data.has_value());
+  EXPECT_TRUE(tensor_data.has_value());
 
-//   // Dequantize each element from the tensor data.
-//   for (int i = 0; i < golden_data.size(); i++) {
-//     EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
-//                 golden_data[i], 1e-7);
-//   }
-// }
+  // Dequantize each element from the tensor data.
+  for (int i = 0; i < golden_data.size(); i++) {
+    EXPECT_NEAR(Dequantize((*tensor_data)[i], scale, zero_point),
+                golden_data[i], 1e-7);
+  }
+}
 
 TEST(TensorPoolConvertStaticTensorTest, CreateStatictensorByValueInt32) {
   TensorPool tensor_pool;
