@@ -294,6 +294,6 @@ litert_gpu()
 load("//third_party/intel_openvino:openvino.bzl", "openvino_configure")
 
 openvino_configure(
-    name = "intel_openvino",
-    build_file = "//third_party/intel_openvino:openvino.bazel",
+    # name = "intel_openvino",
+    # build_file = "//third_party/intel_openvino:openvino.bazel",
 )
