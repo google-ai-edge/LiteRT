@@ -148,6 +148,8 @@ jobs:
             //litert/core:error_reporter_test `
             //litert/core:filesystem_test `
             //litert/core:insert_order_map_test `
+            //litert/core:scoped_file `
+            //litert/core:scoped_file_test `
             //litert/core/cache:compilation_cache_test `
             //litert/core/model:buffer_manager_test `
             //litert/core/model:flatbuffer_to_litert_test `
