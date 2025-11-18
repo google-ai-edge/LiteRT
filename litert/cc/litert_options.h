@@ -16,6 +16,7 @@
 #define ODML_LITERT_LITERT_CC_LITERT_COMPILATION_OPTIONS_H_
 
 #include <cstddef>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -41,10 +42,17 @@ namespace litert {
 class CompiledModel;
 class CompiledModelNext;
 
+namespace tools {
+struct ApplyPluginRun;
+LiteRtStatus ApplyPlugin(std::unique_ptr<ApplyPluginRun> run);
+}  // namespace tools
+
 class Options : public internal::Handle<LiteRtOptions, LiteRtDestroyOptions> {
  public:
   friend class CompiledModel;
   friend class CompiledModelNext;
+  friend LiteRtStatus tools::ApplyPlugin(
+      std::unique_ptr<tools::ApplyPluginRun> run);
 
   Options() = default;
 

@@ -476,6 +476,13 @@ LiteRtStatus Apply(Context& ctx) {
 }  // namespace
 
 LiteRtStatus ApplyPlugin(ApplyPluginRun::Ptr run) {
+  if (auto status = run->options.Build(); !status) {
+    run->dump_out.Get().get()
+        << "Failed to build options, Error: " << status.Error().Message()
+        << "\n";
+    return status.Error().Status();
+  }
+
   Context context(std::move(run));
   DumpPreamble(context.Dump());
 
