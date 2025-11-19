@@ -50,11 +50,14 @@ def _prepare_repo_files(ctx):
         fail("A URL must be specified if local repo is not enabled.")
 
     else:
+        file_type = "tar.gz"  # MTK gives us .gz instead of .tar.gz
+        if ctx.attr.file_extension:
+            file_type = ctx.attr.file_extension
         ctx.download_and_extract(
             url = ctx.attr.url,
             auth = get_auth(ctx, [ctx.attr.url]),
             stripPrefix = ctx.attr.strip_prefix,
-            type = "tar.gz",  # MTK gives us .gz instead of .tar.gz
+            type = file_type
         )
 
     if ctx.attr.symlink_mapping:
@@ -105,6 +108,13 @@ configurable_repo = repository_rule(
             doc = """
             The url to the hosted litert repo archive to download. This must be a tarball.
             This may be unspecified if local path approach is used.
+            """,
+            mandatory = False,
+        ),
+        "file_extension": attr.string(
+            doc = """
+            The file extension of the downloaded file. This may be unspecified
+            if local path approach is used.
             """,
             mandatory = False,
         ),
