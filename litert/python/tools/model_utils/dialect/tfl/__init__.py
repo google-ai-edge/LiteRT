@@ -14,7 +14,7 @@
 """TFL dialect definitions."""
 
 # pylint: disable=redefined-builtin
-
+# pylint: disable=g-importing-member
 from ._abs import *
 from ._add import *
 from ._arg_max import *
@@ -56,16 +56,18 @@ from ._greater_equal import *
 from ._no_value import *
 from ._pad_v2 import *
 from ._range import *
-# TODO(cnchan): Update import style with dialect refactor.
-# pylint: disable=g-importing-member
 # pylint: disable=g-multiple-import
 # pylint: disable=g-bad-import-order
+from ._hard_swish import HardSwishOp, hard_swish
+from ._maximum import MaximumOp, maximum
+from ._minimum import MinimumOp, minimum
+from ._relu import ReluOp, relu
+# TODO(cnchan): Update import style with dialect refactor.
 from .const_bytes_attr import ConstBytesAttr
 from .log import LogOp, log
 from .log_softmax import LogSoftmaxOp, log_softmax
 from .logistic import LogisticOp, logistic
 from .max_pool_2d import MaxPool2DOp, max_pool_2d
-from .maximum import MaximumOp, maximum
 from .mean import MeanOp, mean
 from .mul import MulOp, mul
 from .reshape import ReshapeOp, reshape
