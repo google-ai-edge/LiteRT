@@ -11,30 +11,32 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""tfl.maximum operation definition."""
+
 import numpy as np
-from xdsl.ir.core import *
-from xdsl.irdl import *
+from xdsl import irdl
 
 from litert.python.tools.model_utils import core
 from litert.python.tools.model_utils.dialect import mlir
 
+from . import _const
 from . import _utils
+
+ConstantOp = _const.ConstantOp
+SSAValue = irdl.SSAValue
 
 
 @core.register_mlir_transform("tfl.maximum")
 @core.overload_cls_attrs
-@irdl_op_definition
+@irdl.irdl_op_definition
 class MaximumOp(core.MlirOpBase):
-  """Max operator
-
-  Element-wise max operation.
-  """
+  """Max operator: element-wise max operation."""
 
   name = "tfl.maximum"
 
-  lhs = operand_def()
-  rhs = operand_def()
-  max = result_def()
+  lhs = irdl.operand_def()
+  rhs = irdl.operand_def()
+  max = irdl.result_def()
 
   def __init__(
       self,
@@ -64,12 +66,19 @@ class MaximumOp(core.MlirOpBase):
     rhs_type = _utils.get_tensor_type(rhs)
 
     if lhs_type.element_type != rhs_type.element_type:
-      raise ValueError("Operands must have the same element type.")
+      raise ValueError(
+          f"Element types of lhs and rhs do not match: {lhs_type.element_type}"
+          f" != {rhs_type.element_type}"
+      )
 
     return mlir.RankedTensorType(
         np.broadcast_shapes(lhs_type.shape, rhs_type.shape),
         lhs_type.element_type,
     )
+
+  @classmethod
+  def overload_cls_attrs(cls):
+    return {}
 
 
 def maximum(
@@ -79,8 +88,7 @@ def maximum(
     *,
     location=None,
 ):
-  """Max operator
-
-  Element-wise max operation.
-  """
+  """Max operator: element-wise max operation."""
+  if not isinstance(rhs, (SSAValue, core.MlirOpBase)):
+    rhs = ConstantOp(rhs)
   return MaximumOp(lhs, rhs, result_type=result_type, location=location).max
