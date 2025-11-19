@@ -383,7 +383,10 @@ litert_define_ats(
 
 litert_define_ats(
     name = "qualcomm_ats",
-    backend = "qualcomm",
+    backend = [
+        "qualcomm",  # V75: :qualcomm_ats
+        "qualcomm_v79",  # V79: :qualcomm_v79_ats,
+    ],
     compile_only_suffix = "_aot",
     do_register = [
         "SingleOp",

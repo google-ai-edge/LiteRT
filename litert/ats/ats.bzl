@@ -17,7 +17,7 @@ Macros to define pre-configured ATS test suites and run through the litert_devic
 """
 
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec")
-load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "is_npu_backend", "plugin_device_rlocation")
+load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load("//litert/integration_test:litert_device_script.bzl", "litert_device_script")
 
 def _make_ats_args(quote_re, init = [], **kwargs):
@@ -85,57 +85,62 @@ def litert_define_ats(
       param_seeds: A dictionary of parameter seeds for the test suite.
       extra_flags: A list of extra flags to pass to the test suite.
     """
+    if "append" not in dir(backend):
+        backend = [backend]
 
     if compile_aot_and_run_suffix:
         fail("Compile aot and run on device is not supported yet.")
 
-    # TODO: Unify local workdir paths for scripting.
-    init_run_args = ["--extra_models={}".format("/data/local/tmp/runfiles/user/tmp/litert_extras")]
-    if is_npu_backend(backend):
-        init_run_args += [
-            "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(backend)),
-            "--plugin_dir=\"{}\"".format(plugin_device_rlocation(backend)),
-        ]
+    for b in backend:
+        # TODO: Unify local workdir paths for scripting.
+        version_suffix = "_" + version_target_suffix(b)
 
-    run_args = _make_ats_args(
-        init = init_run_args,
-        backend = backend,
-        dont_register = dont_register,
-        do_register = do_register,
-        param_seeds = param_seeds,
-        extra_flags = extra_flags,
-        quote_re = True,
-    )
+        init_run_args = ["--extra_models={}".format("/data/local/tmp/runfiles/user/tmp/litert_extras")]
+        if is_npu_backend(b):
+            init_run_args += [
+                "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(b)),
+                "--plugin_dir=\"{}\"".format(plugin_device_rlocation(b)),
+            ]
 
-    if jit_suffix != None:
-        litert_device_exec(
-            name = name + jit_suffix,
-            target = "//litert/ats:ats",
-            remote_suffix = "_remote",
-            local_suffix = "",
-            exec_args = run_args,
-            backend_id = backend,
-            model_providers = ["//litert/integration_test:ats_models_provider"],
+        run_args = _make_ats_args(
+            init = init_run_args,
+            backend = b,
+            dont_register = dont_register,
+            do_register = do_register,
+            param_seeds = param_seeds,
+            extra_flags = extra_flags,
+            quote_re = True,
         )
 
-    compile_args = _make_ats_args(
-        init = ["--compile_mode=true"],
-        backend = backend,
-        dont_register = dont_register,
-        do_register = do_register,
-        param_seeds = param_seeds,
-        extra_flags = extra_flags,
-        quote_re = True,
-    )
+        if jit_suffix != None:
+            litert_device_exec(
+                name = name + jit_suffix + version_suffix,
+                target = "//litert/ats:ats",
+                remote_suffix = "_remote",
+                local_suffix = "",
+                exec_args = run_args,
+                backend_id = b,
+                model_providers = ["//litert/integration_test:ats_models_provider"],
+            )
 
-    if compile_only_suffix != None:
-        litert_device_script(
-            name = name + compile_only_suffix,
-            script = "//litert/ats:ats_aot.sh",
-            bin = "//litert/ats:ats",
-            backend_id = backend,
-            exec_args = compile_args,
-            build_for_host = True,
-            build_for_device = False,
-            model_providers = ["//litert/integration_test:ats_models_provider"],
+        compile_args = _make_ats_args(
+            init = ["--compile_mode=true"],
+            backend = b,
+            dont_register = dont_register,
+            do_register = do_register,
+            param_seeds = param_seeds,
+            extra_flags = extra_flags,
+            quote_re = True,
         )
+
+        if compile_only_suffix != None:
+            litert_device_script(
+                name = name + compile_only_suffix + version_suffix,
+                script = "//litert/ats:ats_aot.sh",
+                bin = "//litert/ats:ats",
+                backend_id = b,
+                exec_args = compile_args,
+                build_for_host = True,
+                build_for_device = False,
+                model_providers = ["//litert/integration_test:ats_models_provider"],
+            )

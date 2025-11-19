@@ -90,7 +90,7 @@ def make_path_args(spec):
 
 # COMMON
 
-def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = "odml-device-lab", host_libs = []):
+def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = "odml-device-lab", host_libs = [], version_target_suffix = ""):
     """
     Defines a backend specification.
 
@@ -141,33 +141,53 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         plugin = plugin,
         mh_user = mh_user,
         host_libs = host_libs,
+        version_target_suffix = version_target_suffix,
     )
 
 # QUALCOMM
 
-def _QualcommSpec():
+def _QualcommSpec(version = "V75"):
+    stub_lib = "@qairt//:lib/aarch64-android/libQnnHtp%sStub.so" % version
+    skel_lib = "@qairt//:lib/hexagon-%s/unsigned/libQnnHtp%sSkel.so" % (version.lower(), version.upper())
+    version_suffix = version.lower()
+    id = "qualcomm_%s" % version_suffix
+
+    mh = {}
+
+    if version == "V75":
+        # No suffix will be used for V75 by default as to not break existing scripts.
+        id = "qualcomm"
+        version_suffix = ""
+        mh = {
+            "model": "regex:sm-s928b|sm-s928u1",
+            "pool": "shared",
+        }
+    elif version == "V79":
+        mh = {
+            "model": "regex:sm-s938*",
+            "pool": "shared",
+        }
+
     return {
-        "qualcomm": BackendSpec(
-            id = "qualcomm",
+        id: BackendSpec(
+            id = id,
             libs = [
                 ("@qairt//:lib/aarch64-android/libQnnHtp.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/aarch64-android/libQnnHtpV75Stub.so", "LD_LIBRARY_PATH"),
+                (stub_lib, "LD_LIBRARY_PATH"),
                 ("@qairt//:lib/aarch64-android/libQnnSystem.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:lib/aarch64-android/libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
-                ("@qairt//:lib/hexagon-v75/unsigned/libQnnHtpV75Skel.so", "ADSP_LIBRARY_PATH"),
+                (skel_lib, "ADSP_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
-            mh_devices = [{
-                "model": "regex:sm-s928b|sm-s928u1",
-                "pool": "shared",
-            }],
+            mh_devices = [mh],
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
                 "@qairt//:lib/x86_64-linux-clang/libQnnHtp.so",
                 "@qairt//:lib/x86_64-linux-clang/libQnnSystem.so",
             ],
+            version_target_suffix = version_suffix,
         ),
     }
 
@@ -248,11 +268,11 @@ def _GpuSpec():
 # COMMON
 
 def _Specs(name):
-    return (_QualcommSpec() | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
+    return (_QualcommSpec() | _QualcommSpec("V79") | _GoogleTensorSpec() | _MediatekSpec() | _CpuSpec() | _GpuSpec() | _ExampleSpec())[name]
 
 # Check if the backend maps to an NPU backend.
 def is_npu_backend(name):
-    return name in ["qualcomm", "mediatek", "google_tensor", "example"]
+    return "qualcomm" in name or name in ["mediatek", "google_tensor", "example"]
 
 # Get the libs for the given backend.
 def get_libs(name):
@@ -275,6 +295,11 @@ def dispatch_device_rlocation(backend_id):
 def plugin_device_rlocation(backend_id):
     spec = _Specs(backend_id)
     return device_rlocation(spec.plugin, True)
+
+# Get backend version suffix for target naming.
+def version_target_suffix(backend_id):
+    spec = _Specs(backend_id)
+    return spec.version_target_suffix
 
 # buildifier: disable=unnamed-macro
 def split_dep_platform(
