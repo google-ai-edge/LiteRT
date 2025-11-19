@@ -220,53 +220,53 @@ adb shell "mkdir -p ${DEVICE_NPU_LIBRARY_DIR}"
 echo "Created directories on device."
 
 # Push executable
-adb push "${HOST_EXEC_PATH}" "${DEVICE_BASE_DIR}/${DEVICE_EXEC_NAME}"
+adb push --sync "${HOST_EXEC_PATH}" "${DEVICE_BASE_DIR}/${DEVICE_EXEC_NAME}"
 echo "Pushed executable."
 
 # Push shaders
-adb push "${HOST_SHADER_DIR}/passthrough_shader.vert" "${DEVICE_SHADER_DIR}/"
-adb push "${HOST_SHADER_DIR}/mask_blend_compute.glsl" "${DEVICE_SHADER_DIR}/"
-adb push "${HOST_SHADER_DIR}/resize_compute.glsl" "${DEVICE_SHADER_DIR}/"
-adb push "${HOST_SHADER_DIR}/preprocess_compute.glsl" "${DEVICE_SHADER_DIR}/"
-adb push "${HOST_SHADER_DIR}/deinterleave_masks.glsl" "${DEVICE_SHADER_DIR}/"
+adb push --sync "${HOST_SHADER_DIR}/passthrough_shader.vert" "${DEVICE_SHADER_DIR}/"
+adb push --sync "${HOST_SHADER_DIR}/mask_blend_compute.glsl" "${DEVICE_SHADER_DIR}/"
+adb push --sync "${HOST_SHADER_DIR}/resize_compute.glsl" "${DEVICE_SHADER_DIR}/"
+adb push --sync "${HOST_SHADER_DIR}/preprocess_compute.glsl" "${DEVICE_SHADER_DIR}/"
+adb push --sync "${HOST_SHADER_DIR}/deinterleave_masks.glsl" "${DEVICE_SHADER_DIR}/"
 echo "Pushed shaders."
 
 # Push test images
-adb push "${HOST_TEST_IMAGE_DIR}/image.jpeg" "${DEVICE_TEST_IMAGE_DIR}/"
+adb push --sync "${HOST_TEST_IMAGE_DIR}/image.jpeg" "${DEVICE_TEST_IMAGE_DIR}/"
 echo "Pushed test images."
 
 # Push model files
-adb push "${HOST_MODEL_DIR}/${MODEL_FILENAME}" "${DEVICE_MODEL_DIR}/"
+adb push --sync "${HOST_MODEL_DIR}/${MODEL_FILENAME}" "${DEVICE_MODEL_DIR}/"
 echo "Pushed segmentation models."
 
 # Push c api shared library
 LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/"
-adb push "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_BASE_DIR}/"
+adb push --sync "${C_LIBRARY_LOCATION}/libLiteRtRuntimeCApi.so" "${DEVICE_BASE_DIR}/"
 echo "Pushed c api shared library."
 
 # Push gpu accelerator shared library
 LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${DEVICE_BASE_DIR}/"
 if [[ "$ACCELERATOR" == "gpu" ]]; then
-    adb push "${HOST_GPU_LIBRARY_DIR}/libLiteRtOpenClAccelerator.so" "${DEVICE_BASE_DIR}/"
+    adb push --sync "${HOST_GPU_LIBRARY_DIR}/libLiteRtOpenClAccelerator.so" "${DEVICE_BASE_DIR}/"
 fi
 echo "Pushed gpu accelerator shared library."
 
 # Push NPU dispatch library
 if [[ "$ACCELERATOR" == "npu" ]]; then
-adb push "${HOST_NPU_DISPATCH_LIB}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_DISPATCH_LIB}/libLiteRtDispatch_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU dispatch library."
 
 # Push NPU libraries
-adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIB}/aarch64-android/${QNN_STUB_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIB}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIB}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
-adb push "${HOST_NPU_LIB}/${QNN_SKEL_PATH_ARCH}/unsigned/${QNN_SKEL_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_LIB}/aarch64-android/libQnnHtp.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_LIB}/aarch64-android/${QNN_STUB_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_LIB}/aarch64-android/libQnnSystem.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_LIB}/aarch64-android/libQnnHtpPrepare.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+adb push --sync "${HOST_NPU_LIB}/${QNN_SKEL_PATH_ARCH}/unsigned/${QNN_SKEL_LIB}" "${DEVICE_NPU_LIBRARY_DIR}/"
 echo "Pushed NPU libraries."
 
 # Push NPU compiler library
 if [[ "$USE_JIT" == "true" ]]; then
-    adb push "${HOST_NPU_COMPILER_LIB}/libLiteRtCompilerPlugin_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
+    adb push --sync "${HOST_NPU_COMPILER_LIB}/libLiteRtCompilerPlugin_Qualcomm.so" "${DEVICE_NPU_LIBRARY_DIR}/"
     echo "Pushed NPU compiler library."
 fi
 fi
