@@ -158,6 +158,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/cc:litert_expected",
+        "@com_google_absl//absl/strings",
     ],
 )
 

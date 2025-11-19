@@ -17,6 +17,7 @@
 #include <cstring>
 #include <memory>
 
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
@@ -35,8 +36,10 @@ litert::Expected<void> LiteRtEnvironmentOptionsT::SetOption(
     LiteRtEnvOption option, bool overwrite) {
   // Used count instead of contains to support compiling pre C++20.
   if (!overwrite && options_.count(option.tag)) {
-    return litert::Error(kLiteRtStatusErrorAlreadyExists,
-                         "Option was already set for this environment.");
+    return litert::Error(
+        kLiteRtStatusErrorAlreadyExists,
+        absl::StrCat("Option ", option.tag,
+                     " was already set for this environment."));
   }
   if (option.value.type == kLiteRtAnyTypeString) {
     const int size = strlen(option.value.str_value) + 1;
