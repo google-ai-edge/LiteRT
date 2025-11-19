@@ -355,21 +355,29 @@ make_download_model_provider(
 )
 
 litert_define_ats(
-    name = "sample_cpu_ats",
+    name = "cpu_ats",
     backend = "cpu",
     compile_only_suffix = None,
+    dont_register = [
+        "hf_all_minilm_l6_v2",
+        "u2net_lite",
+        "whisper_tiny_decoder",
+        "yolo11n",
+    ],
     jit_suffix = "",
 )
 
 litert_define_ats(
-    name = "example_npu_ats",
+    name = "example_ats",
     backend = "example",
     compile_only_suffix = "_aot",
     do_register = [
         "sub.*f32",
         "mul.*f32",
     ],
-    extra_flags = ["--limit=1"],
+    dont_register = [
+        "ExtraModel",
+    ],
     jit_suffix = "",
 )
 
@@ -377,19 +385,34 @@ litert_define_ats(
     name = "qualcomm_ats",
     backend = "qualcomm",
     compile_only_suffix = "_aot",
+    do_register = [
+        "SingleOp",
+        "hf_all_minilm_l6_v2",
+        "hf_mobilevit_small",
+        "qai_hub_midas",
+        "qai_hub_real_esrgan_x4plus",
+        "torchvision_mobilenet_v2",
+        "u2net_lite",
+        "torchvision_resnet18",
+        "torchvision_squeezenet1_1",
+        "whisper_tiny_encoder",
+        "yamnet",
+        "yolo11n",
+    ],
     dont_register = [
-        ".*5d.*",  # Filter out 5d tests.
-        ".*6d.*",  # Filter out 6d tests.
-        ".*f32.*",  # Filter out f32 tests. TODO: Debug float numerics issue.
-        # NOTE: Comment above and uncomment to run one of the fp tests with numerics issues.
-        # "^(?:(?!npu_ats_87).)*$$",
+        # Model negative filter.
+        "hf_all_minilm_l6_v2",
+        "whisper_tiny_decoder",
+        # Single op negative filter.
+        ".*5d.*",
+        ".*6d.*",
     ],
     extra_flags = [
         "--data_seed=42",
         "--qualcomm_optimization_level=O3",
         "--qualcomm_use_htp_preference=true",
         "--qualcomm_htp_performance_mode=burst",
-        "--qualcomm_log_level=off",
+        "--qualcomm_log_level=info",
         "--qualcomm_use_fold_relu=true",
         "--qualcomm_use_conv_hmx=true",
     ],
