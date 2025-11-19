@@ -4,7 +4,7 @@
   <img src="./g3doc/sources/litert_logo.png" alt="LiteRT Logo" width="250"/>
 </p>
 
-Google's On-device framework for high-performance ML & GenAI deployment on edge
+Google's on-device framework for high-performance ML & GenAI deployment on edge
 platforms, via efficient conversion, runtime, and optimization
 
 📖 [Get Started](#-installation) | 🤝 [Contributing](#-contributing) | 📜
@@ -51,15 +51,15 @@ and making on-device ML inference easier than ever.
 
 LiteRT is designed for cross-platform deployment on a wide range of hardware.
 
-| Platform    | CPU Support | GPU Support           | NPU Support                                              |
-| ----------- | ----------- | --------------------- | -------------------------------------------------------- |
-| 🤖 Android  | ✅          | ✅ OpenCL<br>WebGPU\* | Google Tensor\*<br>✅ Qualcomm<br>✅ MediaTek<br>S.LSI\* |
-| 🍎 iOS      | ✅          | Metal\*               | ANE\*                                                    |
-| 🐧 Linux    | ✅          | WebGPU\*              | N/A                                                      |
-| 🍎 macOS    | ✅          | Metal\*               | ANE\*                                                    |
-| 💻 Windows  | ✅          | WebGPU\*              | Intel\*                                                  |
-| 🌐 Web      | Coming soon | Coming soon           | Coming soon                                              |
-| 🧩 Embedded |             |                       | Broadcom\*<br>Raspberry Pi\*                             |
+| Platform   | CPU Support | GPU Support           | NPU Support                                                       |
+| ---------- | ----------- | --------------------- | ----------------------------------------------------------------- |
+| 🤖 Android | ✅          | ✅OpenCL<br>WebGPU\* | Google Tensor\*<br>✅ Qualcomm<br>✅ MediaTek<br>S.LSI\*<br>Intel\* |
+| 🍎 iOS     | ✅          | ✅ Metal                 | ANE\*                                                             |
+| 🐧 Linux   | ✅          | ✅ WebGPU                | N/A                                                               |
+| 🍎 macOS   | ✅          | ✅ WebGPU<br>✅ Metal                 | ANE\*                                                             |
+| 💻 Windows | ✅          | ✅ WebGPU                | Intel\*                                                           |
+| 🌐 Web     | Coming soon | Coming soon           | Coming soon                                                       |
+| 🧩 IoT     |             |                       | Broadcom\*<br>Raspberry Pi\*                                      |
 
 *\*Coming soon*
 
@@ -80,10 +80,9 @@ You can build LiteRT from source:
 The script automatically creates a Linux Docker image, which allows you to build
 artifacts for Linux and Android (through cross compilation). See build
 instructions in
-[CMake build instructions](./g3doc/instructions/CMAKE_BUILD_INSTRUCTIONS.md)
-and [Bazel build instructions](./g3doc/instructions/BUILD_INSTRUCTIONS.md)
-for more information on how to build runtime libraries with the docker
-container.
+[CMake build instructions](./g3doc/instructions/CMAKE_BUILD_INSTRUCTIONS.md) and
+[Bazel build instructions](./g3doc/instructions/BUILD_INSTRUCTIONS.md) for more
+information on how to build runtime libraries with the docker container.
 
 For more information about using docker interactive shell or building different
 targets, please refer to `docker_build/README.md`.
@@ -104,7 +103,7 @@ get started based on your goals:
 - **Path2 (LLMs)**: Use
   [Torch Generative API](https://github.com/google-ai-edge/ai-edge-torch) to
   reauthor and convert your PyTorch LLMs into Apache format, and deploy it using
-  [LiteRT LM](https://github.com/google/litert).
+  [LiteRT LM](https://github.com/google-ai-edge/litert-lm).
 
 ### 2. 🌱 I'm new to on-device ML...
 
@@ -131,15 +130,15 @@ get started based on your goals:
     acceleration or the NPU acceleration (NPU EAP:
     [g.co/ai/LiteRT-NPU-EAP](https://g.co/ai/LiteRT-NPU-EAP)).
   - **For working with Generative AI**: Dive into
-    [LiteRT LM](https://github.com/google/litert), our specialized solution for
-    running GenAI models.
+    [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM), our specialized
+    solution for running GenAI models.
 
 ### 4. 🧠 I'm working with Generative AI...
 
 - **Goal**: Deploy a large language model (LLM) or diffusion model on a mobile
   device.
-- **Path**: Dive into [LiteRT LM](https://github.com/google/litert), our
-  specialized solution for running GenAI models. You'll focus on model
+- **Path**: Dive into [LiteRT LM](https://github.com/google-ai-edge/LiteRT-LM),
+  our specialized solution for running GenAI models. You'll focus on model
   quantization and optimizations specific to large model architectures.
 
 ## 🗺 Roadmap
@@ -158,7 +157,7 @@ deployment. Our product strategies are:
 
 ## 🗺 What's Next:
 
-**Beta by Oct 2025:**
+**Beta by Dec 2025:**
 
 - Achieve feature parity with TensorFlow Lite
 - Expand GPU backend support
@@ -178,10 +177,11 @@ contribute.
 We encourage you to reach out if you need help.
 
 - **GitHub Issues**: For bug reports and feature requests, please file a new
-  issue on our [GitHub Issues](https://github.com/google/litert/issues) page.
+  issue on our [GitHub Issues](https://github.com/google-ai-edge/LiteRT/issues)
+  page.
 - **GitHub Discussions**: For questions, general discussions, and community
   support, please visit our
-  [GitHub Discussions](https://github.com/google/litert/discussions).
+  [GitHub Discussions](https://github.com/google-ai-edge/LiteRT/discussions).
 
 ## 🔗 Related Products
 
